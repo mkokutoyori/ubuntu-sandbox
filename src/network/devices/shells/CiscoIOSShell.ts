@@ -750,6 +750,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       this.d()._clearNeighborCache();
       return '';
     });
+    this.privilegedTrie.register('clear ipv6 traffic', 'Clear IPv6 traffic statistics', () => {
+      this.d()._clearIpv6Counters();
+      return '';
+    });
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
 
@@ -1065,6 +1069,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (!ifName) return `% Invalid input detected at '^' marker.`;
       return Show.showIpv6Interface(getRouter(), ifName);
     });
+
+    trie.register('show ipv6 traffic', 'Display IPv6 traffic statistics', () =>
+      Show.showIpv6Traffic(getRouter()));
+    trie.register('show ipv6 static', 'Display IPv6 static routes', () =>
+      Show.showIpv6Static(getRouter()));
 
     trie.registerGreedy('show ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
       if (args.length === 0) return Show.showIpv6Neighbors(getRouter());

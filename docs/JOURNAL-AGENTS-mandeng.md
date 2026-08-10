@@ -84,6 +84,42 @@ vertes (766 cas).
 
 ---
 
+### Le plan de données IPv6 COMPTE, et quatre vues le lisent — LIVRÉ
+
+**Agent** : session « logging ». Dernier des manques mesurés sur la
+surface IPv6 d'un routeur : `show ipv6 traffic`, `show ipv6 static`,
+`display ipv6 statistics` et `display icmpv6 statistics` n'existaient
+pas — et il n'y avait rien pour les rendre non plus : `RouterCounters`
+est le bloc IPv4, et `IPv6DataPlane` n'en touchait qu'UN champ.
+
+`Ipv6Counters` est incrémenté aux points RÉELS de ce fichier
+(réception, livraison locale, absence de route, limite de sauts
+dépassée, retransmission, chaque type ICMPv6 en entrée et en sortie).
+La sonde ne vérifie jamais une chaîne : elle fait circuler du trafic et
+vérifie que le compteur a bougé **de ce que ce trafic implique**, des
+deux côtés du câble — un rendu de constantes n'en passerait aucun cas.
+
+**Ce qui est délibérément ABSENT du bloc plutôt que rendu à zéro** :
+erreurs de somme de contrôle (rien ne vérifie une somme ICMPv6 ici),
+fragments et réassemblage (la fragmentation IPv6 n'est pas modélisée),
+`source-routed` (pas d'en-tête de routage). Un zéro qui est COMPTÉ
+reste, lui : `0 hop count exceeded` est une mesure, et un cas l'exige.
+
+**VRP lit les MÊMES compteurs** par ses deux commandes à lui : un
+routeur n'a pas deux plans de données selon la syntaxe qui l'interroge.
+`clear ipv6 traffic` / `reset ipv6 statistics` remettent vraiment à
+zéro — un bloc de compteurs qu'on ne peut pas remettre à zéro est un
+piège.
+
+**Fichiers touchés** : `router/IPv6DataPlane.ts`, `devices/Router.ts`,
+`shells/CiscoIOSShell.ts`, `shells/cisco/CiscoShowCommands.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`.
+
+**Mesures.** `router-ipv6-counters.test.ts` (8 cas) : **les 8 tombent**
+avant. 264 suites vertes (3 884 cas).
+
+---
+
 ### `debug ipv6 nd`, `debug ipv6 icmp`, `show ipv6 route summary` — LIVRÉ
 
 **Agent** : session « logging ». Trois commandes qui répondaient à une

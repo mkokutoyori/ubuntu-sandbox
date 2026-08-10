@@ -1673,6 +1673,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   getNeighborCache() { return this.ipv6Engine.getNeighborCache(); }
 
+  /** What the IPv6 data plane has actually counted. */
+  getIpv6Counters() { return this.ipv6Engine.getIpv6Counters(); }
+  _clearIpv6Counters(): void { this.ipv6Engine.clearIpv6Counters(); }
+
   /** The clock an entry's `timestamp` is expressed in. */
   getNeighborCacheNow(): number { return this.ipv6Engine.neighborCacheNow(); }
 

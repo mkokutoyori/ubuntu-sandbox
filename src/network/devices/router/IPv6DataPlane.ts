@@ -103,6 +103,47 @@ export interface IPv6RouterContext {
   onIcmpv6EchoFailed?(payload: { fromIp: string; reason: string }): void;
 }
 
+/**
+ * What an IPv6 data plane can HONESTLY count.
+ *
+ * Every field here is incremented at a real point of this file; the
+ * fields IOS also prints but this simulator cannot observe (checksum
+ * errors — nothing verifies an ICMPv6 checksum; fragments and reassembly
+ * — IPv6 fragmentation is not modelled; routing-header source routing —
+ * not modelled) are deliberately ABSENT rather than rendered as a zero
+ * nothing backs. Where a zero IS the true count it stays: `hopLimit`
+ * really does count expiries, and reads zero because none happened.
+ */
+export interface Ipv6Counters {
+  inReceives: number;
+  inDelivers: number;
+  inNoRoutes: number;
+  inHopLimitExceeded: number;
+  outForwarded: number;
+  outRequests: number;
+  icmpInEchoRequests: number;
+  icmpInEchoReplies: number;
+  icmpOutEchoReplies: number;
+  icmpOutErrors: number;
+  ndInSolicits: number;
+  ndInAdverts: number;
+  ndOutSolicits: number;
+  ndOutAdverts: number;
+  ndInRouterSolicits: number;
+  ndOutRouterAdverts: number;
+}
+
+export function emptyIpv6Counters(): Ipv6Counters {
+  return {
+    inReceives: 0, inDelivers: 0, inNoRoutes: 0, inHopLimitExceeded: 0,
+    outForwarded: 0, outRequests: 0,
+    icmpInEchoRequests: 0, icmpInEchoReplies: 0, icmpOutEchoReplies: 0,
+    icmpOutErrors: 0,
+    ndInSolicits: 0, ndInAdverts: 0, ndOutSolicits: 0, ndOutAdverts: 0,
+    ndInRouterSolicits: 0, ndOutRouterAdverts: 0,
+  };
+}
+
 /** Where a locally-originated IPv6 packet leaves, once resolved. */
 export interface IPv6EgressResolution {
   iface: string;
@@ -132,6 +173,7 @@ export class IPv6DataPlane {
   private raTimers: Map<string, symbol> = new Map();
   /** TimerSet bound to the injected scheduler. */
   private readonly timers = new TimerSet(() => this.ctx.getScheduler());
+  private readonly v6Counters: Ipv6Counters = emptyIpv6Counters();
 
   constructor(private readonly ctx: IPv6RouterContext) {}
 
@@ -157,6 +199,9 @@ export class IPv6DataPlane {
     return this.neighborCache.snapshot();
   }
   getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache.internalMap(); }
+
+  getIpv6Counters(): Ipv6Counters { return { ...this.v6Counters }; }
+  clearIpv6Counters(): void { Object.assign(this.v6Counters, emptyIpv6Counters()); }
 
   /** The clock the neighbour cache stamps its entries with. */
   neighborCacheNow(): number { return this.neighborCache.nowMs(); }
@@ -272,6 +317,7 @@ export class IPv6DataPlane {
 
     const port = this.ctx.getPorts().get(inPort);
     if (!port) return;
+    this.v6Counters.inReceives++;
 
     const destIP = ipv6.destinationIP;
     let isForUs = false;
@@ -326,6 +372,7 @@ export class IPv6DataPlane {
   }
 
   private handleLocalDelivery(inPort: string, ipv6: IPv6Packet, srcMAC?: MACAddress): void {
+    this.v6Counters.inDelivers++;
     if (ipv6.nextHeader === IP_PROTO_OSPF) {
       const pkt = ipv6.payload as { type?: string; version?: number } | undefined;
       if (pkt?.type === 'ospf' && pkt.version === 3) {
@@ -525,6 +572,8 @@ export class IPv6DataPlane {
     const srcIp = port?.getLinkLocalIPv6();
     if (!port || !srcIp) return null;
     const solicitedNode = dstIp.toSolicitedNodeMulticast();
+    this.v6Counters.ndOutSolicits++;
+    this.v6Counters.outRequests++;
     const ns = createNeighborSolicitation(dstIp, port.getMAC());
     const nsPkt = createIPv6Packet(srcIp, solicitedNode, IP_PROTO_ICMPV6, 255, ns, 32);
     this.ctx.sendFrame(iface, {
@@ -577,6 +626,7 @@ export class IPv6DataPlane {
     egress: IPv6EgressResolution, destIP: IPv6Address,
     id: number, seq: number, dataSize: number, hopLimit?: number,
   ): void {
+    this.v6Counters.outRequests++;
     const echo = createICMPv6EchoRequest(id, seq, dataSize);
     const pkt = createIPv6Packet(
       egress.sourceIP, destIP, IP_PROTO_ICMPV6,
@@ -596,18 +646,23 @@ export class IPv6DataPlane {
 
     switch (icmpv6.icmpType) {
       case 'echo-request':
+        this.v6Counters.icmpInEchoRequests++;
         this.handleEchoRequest(inPort, ipv6, icmpv6);
         break;
       case 'neighbor-solicitation':
+        this.v6Counters.ndInSolicits++;
         this.handleNeighborSolicitation(inPort, ipv6, icmpv6);
         break;
       case 'neighbor-advertisement':
+        this.v6Counters.ndInAdverts++;
         this.handleNeighborAdvertisement(inPort, ipv6, icmpv6);
         break;
       case 'router-solicitation':
+        this.v6Counters.ndInRouterSolicits++;
         this.handleRouterSolicitation(inPort, ipv6, icmpv6);
         break;
       case 'echo-reply':
+        this.v6Counters.icmpInEchoReplies++;
         this.handleEchoReply(ipv6, icmpv6);
         break;
       case 'destination-unreachable':
@@ -663,6 +718,8 @@ export class IPv6DataPlane {
     // unreachable host, and the asker did nothing wrong.
     const dstMAC = this.resolveNeighborSync(inPort, ipv6.sourceIP);
     if (!dstMAC) return;
+    this.v6Counters.icmpOutEchoReplies++;
+    this.v6Counters.outRequests++;
     this.ctx.sendFrame(inPort, {
       srcMAC: port.getMAC(),
       dstMAC,
@@ -707,6 +764,8 @@ export class IPv6DataPlane {
       if (!dstMAC) return;
     }
 
+    this.v6Counters.ndOutAdverts++;
+    this.v6Counters.outRequests++;
     const naPkt = createIPv6Packet(ns.targetAddress, dstIP, IP_PROTO_ICMPV6, 255, na, 32);
 
     this.ctx.sendFrame(inPort, {
@@ -888,6 +947,8 @@ export class IPv6DataPlane {
 
     const raPkt = createIPv6Packet(srcIP, dstIP, IP_PROTO_ICMPV6, 255, ra, 64);
 
+    this.v6Counters.ndOutRouterAdverts++;
+    this.v6Counters.outRequests++;
     this.ctx.sendFrame(ifName, {
       srcMAC: port.getMAC(),
       dstMAC,
@@ -904,6 +965,7 @@ export class IPv6DataPlane {
   private forwardPacket(inPort: string, ipv6: IPv6Packet): void {
     const newHopLimit = ipv6.hopLimit - 1;
     if (newHopLimit <= 0) {
+      this.v6Counters.inHopLimitExceeded++;
       Logger.info(this.ctx.id, 'router:hop-limit-expired',
         `${this.ctx.name}: Hop limit expired for ${ipv6.sourceIP} → ${ipv6.destinationIP}`);
       this.sendICMPv6Error(inPort, ipv6, 'time-exceeded', 0);
@@ -912,6 +974,7 @@ export class IPv6DataPlane {
 
     const route = this.lookupRoute(ipv6.destinationIP);
     if (!route) {
+      this.v6Counters.inNoRoutes++;
       Logger.info(this.ctx.id, 'router:no-ipv6-route',
         `${this.ctx.name}: no route for ${ipv6.destinationIP}`);
       this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', 0);
@@ -930,6 +993,7 @@ export class IPv6DataPlane {
     const cached = this.neighborCache.markUsed(nextHopIP.toString());
     if (cached) {
       this.ctx.getCounters().ipForwDatagrams++;
+      this.v6Counters.outForwarded++;
       this.ctx.sendFrame(route.iface, {
         srcMAC: outPort.getMAC(),
         dstMAC: cached.mac,
@@ -950,6 +1014,8 @@ export class IPv6DataPlane {
       : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
     if (!srcIP) return;
 
+    this.v6Counters.ndOutSolicits++;
+    this.v6Counters.outRequests++;
     const ns = createNeighborSolicitation(targetIP, port.getMAC());
     const nsPkt = createIPv6Packet(srcIP, targetIP, IP_PROTO_ICMPV6, 255, ns, 24);
     this.ctx.sendFrame(entry.iface, {
@@ -990,6 +1056,8 @@ export class IPv6DataPlane {
 
     const dstMAC = this.resolveNeighborSync(inPort, offendingPkt.sourceIP);
     if (!dstMAC) return;
+    this.v6Counters.icmpOutErrors++;
+    this.v6Counters.outRequests++;
     this.ctx.sendFrame(inPort, {
       srcMAC: port.getMAC(),
       dstMAC,
@@ -1017,6 +1085,8 @@ export class IPv6DataPlane {
       const srcIP = port.getLinkLocalIPv6();
       if (!srcIP) return;
 
+      this.v6Counters.ndOutSolicits++;
+      this.v6Counters.outRequests++;
       const ns = createNeighborSolicitation(nextHopIP, port.getMAC());
       const nsPkt = createIPv6Packet(
         srcIP,
@@ -1046,6 +1116,7 @@ export class IPv6DataPlane {
       const outPort = this.ctx.getPorts().get(q.outIface);
       if (outPort) {
         this.ctx.getCounters().ipForwDatagrams++;
+        this.v6Counters.outForwarded++;
         this.ctx.sendFrame(q.outIface, {
           srcMAC: outPort.getMAC(),
           dstMAC: resolvedMAC,

@@ -1150,6 +1150,58 @@ export function showIpv6Neighbors(router: Router, ifFilter?: string): string {
 }
 
 /**
+ * `show ipv6 traffic`. Every number is COUNTED by `IPv6DataPlane` at a
+ * real point of its own code; the lines IOS also prints and this
+ * simulator cannot observe — checksum errors (nothing verifies an
+ * ICMPv6 checksum), fragments and reassembly (IPv6 fragmentation is not
+ * modelled), source-routed (no routing header) — are left OUT rather
+ * than shown as a zero nothing backs. A zero that IS counted stays: no
+ * hop-limit expiry having happened is a measurement.
+ */
+export function showIpv6Traffic(router: Router): string {
+  const c = router.getIpv6Counters();
+  const icmpIn = c.icmpInEchoRequests + c.icmpInEchoReplies + c.ndInSolicits
+    + c.ndInAdverts + c.ndInRouterSolicits;
+  const icmpOut = c.icmpOutEchoReplies + c.icmpOutErrors + c.ndOutSolicits
+    + c.ndOutAdverts + c.ndOutRouterAdverts;
+  return [
+    'IPv6 statistics:',
+    `  Rcvd:  ${c.inReceives} total, ${c.inDelivers} local destination`,
+    `         ${c.inHopLimitExceeded} hop count exceeded`,
+    `         ${c.inNoRoutes} no route`,
+    `  Sent:  ${c.outRequests} generated, ${c.outForwarded} forwarded`,
+    '',
+    'ICMP statistics:',
+    `  Rcvd: ${icmpIn} input`,
+    `        ${c.icmpInEchoRequests} echo request, ${c.icmpInEchoReplies} echo reply`,
+    `        ${c.ndInSolicits} neighbor solicit, ${c.ndInAdverts} neighbor advert`,
+    `        ${c.ndInRouterSolicits} router solicit`,
+    `  Sent: ${icmpOut} output`,
+    `        ${c.icmpOutEchoReplies} echo reply, ${c.icmpOutErrors} errors`,
+    `        ${c.ndOutSolicits} neighbor solicit, ${c.ndOutAdverts} neighbor advert`,
+    `        ${c.ndOutRouterAdverts} router advert`,
+  ].join('\n');
+}
+
+/**
+ * `show ipv6 static` — the static routes alone, read from the same
+ * table `show ipv6 route` renders.
+ */
+export function showIpv6Static(router: Router): string {
+  const rt = (router._getIPv6RoutingTableInternal() ?? []) as Array<{
+    type?: string; prefix?: { toString(): string }; prefixLength?: number;
+    nextHop?: { toString(): string } | null; iface?: string; ad?: number;
+  }>;
+  const statiques = rt.filter((r) => r.type === 'static' || r.type === 'default');
+  const lines = [`IPv6 Static routes`, `Code: * - installed in RIB`];
+  for (const r of statiques) {
+    const via = r.nextHop ? `via ${r.nextHop}` : `via ${r.iface ?? ''}`;
+    lines.push(`*  ${r.prefix}/${r.prefixLength ?? 64} ${via}, distance ${r.ad ?? 1}`);
+  }
+  return lines.join('\n');
+}
+
+/**
  * IOS prints an address in upper case and WITHOUT its zone index here:
  * the zone is an interface name, not part of the 128 bits, and the
  * Interface column already names it. Upper-casing the whole string

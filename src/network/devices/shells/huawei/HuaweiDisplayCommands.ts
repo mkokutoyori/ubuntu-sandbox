@@ -973,6 +973,46 @@ const IPV6_BRIEF_COLUMNS: ReadonlyArray<TableColumn<LigneIpv6Brief>> = [
  * this simulator has no VPN instance or secure-ND model — writing
  * anything else would describe a mechanism that does not run.
  */
+/**
+ * `display ipv6 statistics` and `display icmpv6 statistics` read the
+ * SAME counters as IOS's `show ipv6 traffic` — one data plane, one set
+ * of numbers. VRP splits them across two commands where IOS prints one
+ * block, so what changes is the layout, never the count.
+ */
+export function displayIpv6Statistics(router: Router): string {
+  const c = router.getIpv6Counters();
+  return [
+    'IPv6 Protocol:',
+    `  Received packets:`,
+    `    Total: ${c.inReceives}`,
+    `    Local host: ${c.inDelivers}`,
+    `    Hoplimit exceeded: ${c.inHopLimitExceeded}`,
+    `    No route: ${c.inNoRoutes}`,
+    `  Sent packets:`,
+    `    Total: ${c.outRequests}`,
+    `    Forwarded: ${c.outForwarded}`,
+  ].join('\n');
+}
+
+export function displayIcmpv6Statistics(router: Router): string {
+  const c = router.getIpv6Counters();
+  return [
+    'ICMPv6 Protocol:',
+    '  Received packets:',
+    `    Echo request: ${c.icmpInEchoRequests}`,
+    `    Echo reply: ${c.icmpInEchoReplies}`,
+    `    Neighbor solicit: ${c.ndInSolicits}`,
+    `    Neighbor advert: ${c.ndInAdverts}`,
+    `    Router solicit: ${c.ndInRouterSolicits}`,
+    '  Sent packets:',
+    `    Echo reply: ${c.icmpOutEchoReplies}`,
+    `    Errors: ${c.icmpOutErrors}`,
+    `    Neighbor solicit: ${c.ndOutSolicits}`,
+    `    Neighbor advert: ${c.ndOutAdverts}`,
+    `    Router advert: ${c.ndOutRouterAdverts}`,
+  ].join('\n');
+}
+
 export function displayIpv6Neighbors(router: Router, ifFilter?: string): string {
   const rule = '-'.repeat(79);
   const lines: string[] = [rule];
@@ -1765,6 +1805,15 @@ export function registerDisplayCommands(
 
   trie.register('reset ipv6 neighbors', 'Clear IPv6 neighbour cache', () => {
     getRouter()._clearNeighborCache();
+    return '';
+  });
+
+  trie.register('display ipv6 statistics', 'Display IPv6 packet statistics', () =>
+    displayIpv6Statistics(getRouter()));
+  trie.register('display icmpv6 statistics', 'Display ICMPv6 statistics', () =>
+    displayIcmpv6Statistics(getRouter()));
+  trie.register('reset ipv6 statistics', 'Clear IPv6 statistics', () => {
+    getRouter()._clearIpv6Counters();
     return '';
   });
 
