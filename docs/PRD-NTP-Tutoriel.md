@@ -636,3 +636,79 @@ Les requêtes de **contrôle** (mode 6) n'existent pas dans ce simulateur :
 `query-only` est donc structurellement inerte sur le fil, et sa seule
 conséquence observable est de **refuser** les requêtes de temps — ce que
 le test vérifie. C'est un fait sur ce moteur, pas une approximation.
+
+
+---
+
+## 9. N7 — Livré : `ntp ?` décrit ce que `ntp` a
+
+### 9.1 Le défaut, signalé depuis une vraie session
+
+```
+Router1(config)#ntp ?
+  access-group        Specify access control for packets
+  …
+  md5                 MD5 authentication
+  mode                Set trunking mode of the interface
+  prefer              Preferred server
+```
+
+Trois de ces mots ne sont pas des sous-commandes de `ntp` : `md5` est un
+argument d'`authentication-key`, `prefer` un argument de `server`, et
+**`mode` porte la description de `switchport mode`** — une fuite d'une
+commande vers une autre.
+
+Et la même liste revenait à **toutes les profondeurs** :
+`ntp access-group access-group access-group ?` la reproposait, et la
+commande était **acceptée**.
+
+### 9.2 La cause
+
+`ntp` était un unique nœud **glouton**. Un tel nœud n'a pas de
+sous-arbre — son aide ne peut donc rien descendre — et la liste proposée
+était **extraite du code source du gestionnaire** par
+`autoContinuations`, qui ramasse tout mot comparé dans un `if`. D'où
+`md5` (comparé pour `authentication-key`), `prefer` (comparé pour
+`server`) et `mode` (comparé pour `allow mode control`), ce dernier
+recevant la description que le catalogue partagé associe au mot `mode`.
+
+### 9.3 Ce qui est fait
+
+Chaque sous-commande de `ntp` est un **vrai nœud**, déclaré depuis la
+référence de commandes IOS. Les enfants déclarés sont exclus de
+l'extraction, chacun porte sa propre aide, et ce qui n'est pas dans la
+table est refusé.
+
+Les corps des deux gestionnaires deviennent `appliquerNtp` /
+`retirerNtp`, partagés par toutes les sous-commandes : un analyseur par
+mot-clé finirait par diverger sur ce que `ntp server` et `ntp peer` ont
+en commun.
+
+Les arguments sont **décrits** : `ntp access-group ?` nomme les quatre
+familles, `ntp master ?` donne `<1-15>`, `ntp authentication-key ?`
+donne `<1-4294967295>`, `ntp server ?` attend `A.B.C.D`.
+
+**Une sous-commande sans argument est déclarée non gloutonne**
+(`authenticate`, `update-calendar`) : sinon `ntp authenticate ?`
+proposerait un `WORD` recopiant la description de son parent — le défaut
+exact que ce lot ferme, et que la sonde de l'autre agent a attrapé sur
+mes propres nœuds pendant le développement.
+
+### 9.4 Tests
+
+`tuto-ntp-aide-arborescence.test.ts` (12 cas). Un cas vérifie qu'**aucune
+description ne se répète** dans `ntp ?` — une description recopiée du
+parent apparaîtrait deux fois. Deux cas gardent les formes légitimes et
+les formes `no`, parce que restructurer un arbre ne doit rien casser.
+
+**Mesures.** 141 suites connexes vertes (1 973 cas), dont les trois
+sondes d'aide CLI de l'autre agent. Typecheck : 216, inchangé.
+
+### 9.5 Ce qui reste, et à qui
+
+`ntp access-group access-group access-group ?` propose encore un `WORD`
+générique, alors que la **commande** est correctement refusée. L'aide et
+l'exécution ne disent donc pas tout à fait la même chose après un
+argument invalide. C'est un comportement du marcheur d'arguments
+partagé, pas de `ntp` : signalé à l'agent qui tient ces sondes plutôt
+que corrigé ici.

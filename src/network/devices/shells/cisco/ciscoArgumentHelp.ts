@@ -491,6 +491,44 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ntp server', [
     IP('address', 'IP address of peer'),
   ]);
+  tries.config.describeArgs('ntp peer', [
+    IP('address', 'IP address of peer'),
+  ]);
+  // Les arguments de `ntp` portaient la description de LEUR PARENT :
+  // `ntp access-group ?` repondait « WORD  Control NTP access » au lieu
+  // de nommer les quatre familles qu'IOS accepte. Chacun decrit
+  // desormais ce qu'il attend vraiment.
+  tries.config.describeArgs('ntp access-group', [
+    { name: 'kind', type: 'ENUM', description: 'Access control type',
+      values: [
+        { keyword: 'peer', description: 'Provide full access' },
+        { keyword: 'serve', description: 'Provide server and query access' },
+        { keyword: 'serve-only', description: 'Provide only server access' },
+        { keyword: 'query-only', description: 'Allow only control queries' },
+      ] },
+    INT('access-list', [1, 199], 'Access list number'),
+  ]);
+  tries.config.describeArgs('ntp master', [
+    { ...INT('stratum', [1, 15], 'Stratum number'), optional: true },
+  ]);
+  tries.config.describeArgs('ntp authentication-key', [
+    INT('number', [1, 4294967295], 'Key number'),
+    { name: 'algo', type: 'ENUM', description: 'Authentication type',
+      values: [{ keyword: 'md5', description: 'MD5 authentication' }] },
+    WORD('key', 'Authentication key'),
+  ]);
+  tries.config.describeArgs('ntp allow', [
+    { name: 'mode', type: 'ENUM', description: 'Allow processing of packet modes',
+      values: [{ keyword: 'mode', description: 'Allow processing of control mode packets' }] },
+    { name: 'control', type: 'ENUM', description: 'Control mode packets',
+      values: [{ keyword: 'control', description: 'Allow processing of control mode packets' }] },
+  ]);
+  tries.config.describeArgs('ntp trusted-key', [
+    INT('number', [1, 4294967295], 'Key number'),
+  ]);
+  tries.config.describeArgs('ntp source', [
+    WORD('interface', 'Interface to use for source address'),
+  ]);
   tries.config.describeArgs('snmp-server community', [
     WORD('community', 'SNMP community string'),
     { name: 'access', type: 'ENUM', description: 'Access privileges', optional: true,
