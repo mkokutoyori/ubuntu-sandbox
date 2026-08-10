@@ -25,6 +25,46 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP — lot N8 : les compteurs de paquets — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §10.
+
+**Ce lot corrige d'abord une erreur à moi.** Au lot N1 j'avais refusé
+`show ntp packets` au motif que « rien ne les compte ». Le motif était
+vrai du moteur, la conclusion fausse : **la commande existe sur IOS**,
+son format est documenté, et elle prend un filtre `mode`. Refuser une
+vraie commande parce que sa matière manque revient à **cacher** le
+manque plutôt qu'à le combler — un apprenant en déduisait que la
+commande n'existe pas.
+
+Les trois formats (Cisco, Huawei `display ntp-service statistics
+packet`, chrony `chronyc serverstats`) viennent de leur documentation.
+
+**Un seul comptage, trois lectures** : `NtpCounters` porte des noms
+neutres. Un compteur par plateforme finirait par donner trois nombres
+pour un seul fait — c'est le défaut que ce dépôt referme partout.
+
+**La propriété qui compte** : `reçus = traités + écartés`, vérifiable
+sans connaître aucune plateforme. Elle a attrapé un défaut pendant
+l'écriture — les portes d'accès se franchissent après l'aiguillage, donc
+un paquet était compté « traité » puis écarté.
+
+**Ce qui vaut zéro le vaut pour de vrai** : neuf des quinze compteurs
+Huawei, et les deux compteurs de commande de chrony. Pas de limiteur de
+débit, pas de file, pas de socket de contrôle — aucun paquet n'a jamais
+**pu** être compté là. Les omettre donnerait un format qui n'est pas
+celui de la machine.
+
+**Ce qui vous concerne** : `network/ntp/types.ts` gagne `NtpCounters` et
+`createNtpCounters`, `NtpConfig` gagne `counters`. Ajouts purs.
+`NtpAgent.getCounters()` / `clearCounters()` sont les accesseurs.
+
+**Reste ouvert sur NTP** : le slewing/stepping n'est pas modélisé
+(l'offset est appliqué d'un coup) ; `chrony` ne lit pas son `keyfile` ;
+les requêtes de contrôle (mode 6) n'existent pas.
+
+
 ### NTP — lot N7 : `ntp ?` décrit ce que `ntp` a — **LIVRÉ**
 
 **Agent** : session « CLI Huawei VRP ». Détail dans
@@ -3096,7 +3136,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N7 livrés** |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N8 livrés** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
