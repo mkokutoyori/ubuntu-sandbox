@@ -25,6 +25,73 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### CLI : le cliquet de parité `?`/Tab (P1) + passe DRY switch/routeur — LIVRÉ
+
+**Agent** : session « logging ». Demande : commencer la migration du
+système de commandes par P1 de `docs/DESIGN-Commandes-CLI.md`, sans
+commentaires, et en approche DRY — une commande qu'un commutateur et un
+routeur portent tous les deux ne s'implémente pas deux fois.
+
+**`probe-cli-help-parity-ratchet.test.ts` (19 cas)** parcourt TOUT
+l'arbre des deux plateformes dans les deux modes et compte trois écarts :
+une commande exécutable que `?` ne propose pas, un mot que `?` propose et
+que Tab ne complète pas, une continuation que Tab accepte et que `?`
+tait. Les trois budgets sont à **0** — mais seulement après correctifs :
+avec les trois changements neutralisés, **7 des 19 cas tombent**.
+
+**Trois défauts trouvés par le parcours, corrigés plutôt que consignés :**
+
+1. **La marche de Tab s'arrêtait sur un nœud purement indicatif** qui
+   portait pourtant une suite, là où `?` le traversait : `router os<Tab>`
+   ne complétait rien alors que `router ?` annonçait `ospf`. Traverser
+   n'est pas proposer — un mot DÉJÀ tapé n'est pas offert.
+2. **`describeArgs` INVENTAIT des commandes.** Décrire un argument créait
+   les nœuds du chemin, si bien que la table d'arguments (partagée avec
+   le routeur) faisait proposer `router bgp`, `flow record`, `key chain`
+   et `zone security` sur un commutateur qui refuse les quatre. Une
+   déclaration décrit désormais une commande EXISTANTE ; un chemin dont
+   le parent n'est pas encore enregistré est réessayé plus tard, donc
+   l'ordre d'enregistrement reste sans importance.
+3. **54 vrais mots-clés étaient complétables par Tab et anonymes pour
+   `?`** — `ip sla schedule now`, `username algorithm-type`,
+   `show ip igmp snooping groups`… Le rendu de l'aide écarte un mot
+   grappillé qu'il ne sait pas décrire ; les nommer est ce qui les fait
+   réapparaître.
+
+`crypto dynamic-map`, `crypto keyring` et `vrf definition` passent dans
+un seau `configRouterOnly` de la table partagée : une table, un axe de
+plateforme explicite, pas de seconde copie.
+
+**Passe DRY, et les quatre défauts que la comparaison a exposés :**
+
+- **`exit` depuis un mode EXEC annonçait la fermeture et laissait la
+  session au niveau 15.** L'annonce était là, l'état non : la commande
+  suivante sur le même shell tournait encore en administrateur.
+- **`show startup-config` avait deux implémentations** — le routeur
+  rendait l'en-tête `Using N out of M bytes`, le commutateur crachait le
+  texte brut. Une seule lecture partagée, et le commutateur gagne
+  `show configuration`, l'autre orthographe d'IOS.
+- **`ip ssh version 2` sans clé RSA était accepté et rangé.** IOS refuse
+  (`Please create RSA keys …`), et c'est ainsi qu'un opérateur apprend
+  l'ordre des deux commandes.
+- **Les serveurs NTP n'étaient rendus dans AUCUN running-config**, sur
+  aucune des deux plateformes : une topologie rechargée les perdait
+  tous. Un rendu partagé ; `sntp server` et `ntp server` visant le même
+  agent, l'association retient l'orthographe qui l'a configurée.
+
+Supprimé : le fourre-tout `aaa` de `CiscoShellBase`, ombré sur les deux
+plateformes depuis que la famille identité est partagée, et dont les
+lignes n'étaient relues par personne (`command-trie-hygiene` le
+signalait).
+
+**Trois attentes anciennes corrigées plutôt que le code** : `disable`
+est une commande d'EXEC utilisateur sur IOS ; `crypto key generate rsa`
+écrit « Generating » et jamais « generate » ; un laboratoire qui pose
+`ip ssh version 2` génère sa clé d'abord.
+
+**Reste ouvert pour ce chantier** : P2 à P5 de
+`docs/DESIGN-Commandes-CLI.md`.
+
 ### Tutoriel identité : relecture COMPLÈTE + deux contournements SSH — LIVRÉ
 
 **Agent** : session « logging ». Demande : « est-ce que toutes les

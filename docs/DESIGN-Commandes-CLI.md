@@ -66,9 +66,14 @@ par les deux, rend le désaccord inexprimable.
 Aucune ne demande de réécrire les 533 enregistrements : le registre accepte les deux
 formes pendant toute la migration.
 
-- **P1 — le garde-fou d'abord.** Étendre `probe-switch-help-parite` à tout l'arbre :
-  chaque nœud exécutable est-il proposé par `?` ET par Tab, avec le même ensemble ? Il
-  tombera, et c'est son rôle : il chiffre la dette avant qu'on la paie.
+- **P1 — le garde-fou d'abord. LIVRÉ** (`probe-cli-help-parity-ratchet.test.ts`, 19 cas).
+  Le parcours couvre les deux plateformes dans les deux modes et compte trois écarts :
+  une commande exécutable que `?` ne propose pas, un mot que `?` propose et que Tab ne
+  complète pas, une continuation que Tab accepte et que `?` tait. Il a d'abord chiffré
+  la dette — 54 mots-clés muets, 11 mots non complétables, et une table d'arguments qui
+  INVENTAIT des commandes sur le commutateur — puis les trois causes ont été corrigées,
+  si bien que les budgets sont à 0. Ce sont des budgets, pas des constantes : ils
+  peuvent remonter, et la neutralisation des correctifs fait tomber 7 des 19 cas.
 - **P2 — unifier les sources.** Extraire les cinq derrière `SuggestionSource` sans
   rien changer d'autre. L'extraction depuis le texte source devient une source comme
   les autres, explicitement DERNIÈRE et désactivable. Purement interne.
