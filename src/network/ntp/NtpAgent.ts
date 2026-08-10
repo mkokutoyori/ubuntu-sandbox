@@ -14,6 +14,10 @@ import {
 import { Logger } from '../core/Logger';
 import { calculerMacNtp, verifierMacNtp } from './auth';
 import { verdictAccesNtp, type ActionNtp } from './accessGroups';
+import {
+  disciplinerHorloge, appliquerDecision, creerEtatHorloge,
+  type EtatHorloge, type DecisionDiscipline, type ReglagesDiscipline,
+} from './discipline';
 
 export interface NtpHost {
   readonly id: string;
@@ -148,6 +152,45 @@ export class NtpAgent {
   isInterfaceDisabled(iface: string): boolean {
     return this.config.disabledInterfaces.has(iface);
   }
+  /**
+   * L'etat de la discipline d'horloge (lot N9).
+   *
+   * Il vit a cote de la configuration plutot que dedans : c'est un etat
+   * de FONCTIONNEMENT, pas un reglage, et `show running-config` n'a
+   * aucune raison de le rendre.
+   */
+  private horloge: {
+    etat: EtatHorloge;
+    dernierReglageMs: number;
+    derniereDecision: DecisionDiscipline['quoi'] | null;
+  } = { etat: creerEtatHorloge(), dernierReglageMs: 0, derniereDecision: null };
+
+  private reglagesDiscipline: ReglagesDiscipline = {};
+
+  /** `makestep <seuil> <limite>` de chrony, et l'equivalent d'un `-g`. */
+  setReglagesDiscipline(r: ReglagesDiscipline): void { this.reglagesDiscipline = r; }
+  getEtatHorloge(): Readonly<EtatHorloge> { return this.horloge.etat; }
+  getDerniereDecision(): DecisionDiscipline['quoi'] | null {
+    return this.horloge.derniereDecision;
+  }
+
+  /**
+   * Forcer un saut : `chronyc makestep`, `w32tm /resync /force`.
+   *
+   * Elle existe parce qu'un operateur doit pouvoir passer outre la
+   * discipline — c'est tout l'objet de la commande — et elle n'a d'effet
+   * que s'il y a un ecart a rattraper.
+   */
+  forcerSaut(): boolean {
+    const best = [...this.config.associations.values()].find((a) => a.preferred);
+    if (!best) return false;
+    this.horloge.etat = appliquerDecision(
+      this.horloge.etat, { quoi: 'step', nouvelOffset: best.offsetMs }, 0);
+    this.horloge.derniereDecision = 'step';
+    this.config.offsetMs = this.horloge.etat.offsetApplique;
+    return true;
+  }
+
   /** Les compteurs, en lecture — ce que les trois vues lisent. */
   getCounters(): Readonly<NtpCounters> { return this.config.counters; }
 
@@ -635,7 +678,22 @@ export class NtpAgent {
     }
     if (!best) return;
     for (const a of this.config.associations.values()) a.preferred = a === best;
-    this.config.offsetMs = best.offsetMs;
+    // L'ecart n'est plus applique d'un coup : il traverse la discipline,
+    // qui decide de glisser, de sauter, d'ecarter une aberration ou de
+    // paniquer (lot N9). C'est le §2 du tutoriel, rendu observable.
+    const maintenant = Date.now();
+    const ecoule = this.horloge.dernierReglageMs
+      ? maintenant - this.horloge.dernierReglageMs
+      : (best.pollSec || 64) * 1000;
+    const decision = disciplinerHorloge(
+      this.horloge.etat, best.offsetMs, ecoule, this.reglagesDiscipline);
+    this.horloge.etat = appliquerDecision(this.horloge.etat, decision, ecoule);
+    this.horloge.dernierReglageMs = maintenant;
+    this.horloge.derniereDecision = decision.quoi;
+    // Une aberration ou une panique ne synchronise PAS : l'horloge garde
+    // ce qu'elle avait, et la strate ne descend pas.
+    if (decision.quoi === 'spike' || decision.quoi === 'panic') return;
+    this.config.offsetMs = this.horloge.etat.offsetApplique;
     this.config.localStratum = best.stratum + 1;
     this.config.refIdentifier = best.serverIp;
     this.config.lastSyncMs = Date.now();

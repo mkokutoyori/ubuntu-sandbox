@@ -12,6 +12,7 @@ import { EquipmentStateView } from '@/network/devices/inspection/EquipmentStateV
 import type { NeighborDTO } from '@/network/devices/inspection/DeviceStateView';
 import { pad2 } from '@/lib/format';
 import { CISCO_ERRORS } from '../cli-utils';
+import { nomLoopfilterIos } from '@/network/ntp/discipline';
 import { C3560_SOFTWARE, ciscoSoftwareDescriptor } from './CiscoPlatform';
 import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
 
@@ -646,6 +647,7 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
   const synced = ntp.isSynced();
   const best = [...cfg.associations.values()].find((a) => a.preferred);
   const driftPpm = ntp.getDriftPpm();
+  const boucle = nomLoopfilterIos(ntp.getEtatHorloge().etat);
   const nominalHz = 250;
   const actualHz = nominalHz * (1 + driftPpm / 1e6);
   // Une reference LOCALE (`ntp master`) n'a ni delai ni dispersion vers
@@ -670,7 +672,11 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
     `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || Date.now())}`,
     `clock offset is ${cfg.offsetMs.toFixed(4)} msec, root delay is ${rootDelay.toFixed(2)} msec`,
     `root dispersion is ${rootDisp.toFixed(2)} msec, peer dispersion is ${peerDisp.toFixed(2)} msec`,
-    `loopfilter state is '${synced ? 'CTRL' : 'FSET'}' (${synced ? 'Normal Controlled Loop' : 'Drift set from file'}), drift is ${(driftPpm / 1e6).toFixed(9)} s/s`,
+    // L'etat de la boucle est LU sur la discipline (lot N9) : il valait
+    // `CTRL` des que la machine etait synchronisee, donc il ne pouvait
+    // jamais annoncer une aberration ni une panique — les deux etats que
+    // cette ligne existe pour montrer.
+    `loopfilter state is '${boucle.code}' (${boucle.libelle}), drift is ${(driftPpm / 1e6).toFixed(9)} s/s`,
     `system poll interval is ${pollSec}, ${lastUpdateSec === null ? 'never updated' : `last update was ${lastUpdateSec} sec ago`}.`,
   ].join('\n');
 }

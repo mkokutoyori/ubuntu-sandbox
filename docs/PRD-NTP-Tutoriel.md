@@ -418,9 +418,6 @@ correctifs.
   et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
   moteur compare des identifiants de clé. Un lab « les clés diffèrent,
   la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
-- **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
-  l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
-  demanderait une horloge disciplinée que ce simulateur n'a pas.
 - **`ntp broadcast`/`multicast`, PTP, et les horloges matérielles**
   (`refclock`) : hors périmètre, faute de brique.
 
@@ -788,4 +785,93 @@ avant. **Un test existant corrigé** — le mien, au lot N1, qui prenait
 `show ntp packets` pour exemple d'une commande inexistante.
 
 **Mesures.** 260 suites connexes vertes (4 770 cas). Typecheck : 216,
+inchangé.
+
+
+---
+
+## 11. N9 — Livré : la discipline de l'horloge
+
+### 11.1 Le défaut
+
+`selectAndSync` posait `config.offsetMs = best.offsetMs` : **tout écart
+était appliqué d'un coup**, quelle qu'en soit la taille. Le §2 du
+tutoriel — glissement, saut, mode panique — n'avait aucune contrepartie
+observable, et `chronyc makestep` corrigeait un écart déjà corrigé.
+
+### 11.2 Où le tutoriel simplifie, et pourquoi ça compte
+
+Le tutoriel écrit : « **Stepping (saut)** : si l'offset est grand
+(> 128ms), NTP peut corriger d'un coup. »
+
+La documentation de référence dit autre chose :
+
+> « When an offset exceeds the 128 ms step threshold, it is **initially
+> discarded** rather than applied immediately. However, if such large
+> offsets persist beyond the stepout threshold, the system then performs
+> a clock step. »
+
+Un écart au-delà du seuil est donc d'abord tenu pour une **aberration**
+— une pointe de congestion réseau — et **ignoré**. Seule sa
+**persistance** au-delà du seuil de sortie le rend crédible.
+
+**C'est exactement ce qui empêche une mesure isolée de dérégler une
+machine.** Un simulateur qui sauterait tout de suite enseignerait le
+contraire d'une protection — et c'est le genre d'erreur qu'un apprenant
+emporterait en production.
+
+Les valeurs, vérifiées :
+
+| Seuil | Valeur |
+|---|---|
+| Saut (`STEPT`) | 128 ms |
+| Sortie d'aberration | 300 s |
+| Panique (`PANICT`) | 1000 s |
+| Vitesse de glissement max | 500 ppm |
+
+500 ppm est la limite du noyau Unix, « requiring approximately 33
+minutes per second of correction » : corriger une seconde par
+glissement demande une demi-heure. C'est **pourquoi** le saut existe, et
+pourquoi une machine qui démarre à la mauvaise heure a le droit d'en
+faire un.
+
+### 11.3 Ce qui est fait
+
+`ntp/discipline.ts` porte la machine à états et les quatre décisions —
+`slew`, `step`, `spike`, `panic`. `selectAndSync` la traverse ; une
+aberration ou une panique **ne synchronise pas**, donc la strate ne
+descend pas et l'horloge garde ce qu'elle avait.
+
+`show ntp status` lit l'état réel : `loopfilter state` valait `CTRL` dès
+que la machine était synchronisée, donc il ne pouvait **jamais**
+annoncer une aberration ni une panique — les deux états que cette ligne
+existe pour montrer.
+
+`makestep <seuil> <limite>` de chrony était analysé, stocké, rendu — et
+n'atteignait jamais la discipline. C'est désormais un **réglage** : il
+remplace les 128 ms et borne le nombre de sauts. Et `chronyc makestep`
+**force** le saut au lieu de seulement compter.
+
+### 11.4 Ce qui n'est pas modélisé, et pourquoi
+
+La machine réelle a cinq états ; il y en a quatre ici. **`FREQ` est
+absent** parce qu'il sert à l'entraînement de **fréquence**, et que ce
+simulateur n'a pas d'horloge matérielle qui dérive — la dérive y est une
+mesure, pas une propriété du quartz. Ajouter un état qu'aucune
+transition ne pourrait quitter pour la bonne raison vaudrait moins que
+de le dire.
+
+### 11.5 Tests
+
+`tuto-ntp-discipline.test.ts` (22 cas). `git stash` : **5 tombent**
+avant — les cinq qui passent par une vraie machine. Les dix-sept autres
+exercent le module neuf et sont nommés comme garde-fous dans l'en-tête.
+
+**Une assertion à moi corrigée pendant l'écriture** : j'avais vérifié
+que `chronyc makestep` laisse `derniereDecision === 'step'`. Faux — la
+commande réinterroge après avoir sauté, et cette mesure-là ne trouve
+plus rien à corriger. L'assertion testait l'ordre des appels plutôt que
+l'effet ; elle porte maintenant sur l'écart rattrapé.
+
+**Mesures.** 249 suites connexes vertes (4 636 cas). Typecheck : 216,
 inchangé.
