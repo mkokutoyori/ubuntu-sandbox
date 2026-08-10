@@ -421,8 +421,6 @@ correctifs.
   et rendue, mais aucun condensé MD5 ne circule sur le paquet — le
   moteur compare des identifiants de clé. Un lab « les clés diffèrent,
   la synchronisation échoue » n'est donc pas reproductible aujourd'hui.
-- **`ntp access-group` est stocké et rendu, et ne filtre rien** : aucune
-  ACL n'est consultée à la réception d'un paquet NTP.
 - **Le `slewing` et le `stepping` du §2 ne sont pas modélisés** :
   l'offset est appliqué d'un coup. La distinction — et le `panic mode` —
   demanderait une horloge disciplinée que ce simulateur n'a pas.
@@ -544,3 +542,97 @@ FHRP, tutoriels, famille NTP complète. Typecheck : **228 avant, 216
 après** — douze de moins, parce que ce lot corrige les douze erreurs que
 le lot N4 avait introduites dans son propre fichier de test (voir la
 correction au §5.5). Aucun test existant modifié.
+
+
+---
+
+## 8. N6 — Livré : `ntp access-group` filtre
+
+### 8.1 Le défaut
+
+Les quatre groupes étaient acceptés, rangés et rendus dans la
+configuration — et **aucune ACL n'était consultée à la réception d'un
+paquet NTP**. Le durcissement des §3.7 et §9 du tutoriel n'avait aucun
+effet observable.
+
+### 8.2 Ce que la vérification contre la documentation a apporté
+
+**Quatre points, dont un qui corrige le tutoriel et un mon propre lot.**
+
+1. **La table des permissions**, telle que la référence de commandes IOS
+   la décrit :
+
+   | Mot-clé | Requêtes de temps | Requêtes de contrôle | Se **synchroniser** dessus |
+   |---|---|---|---|
+   | `peer` | oui | oui | **oui** |
+   | `serve` | oui | oui | non |
+   | `serve-only` | oui | non | non |
+   | `query-only` | non | oui | non |
+
+2. **`nomodify` n'est pas un mot-clé IOS.** Le tutoriel écrit
+   `ntp access-group nomodify 10` ; c'est la syntaxe de `ntpd`/`chrony`.
+   Il est désormais **refusé** — et **mon propre lot N1 l'acceptait**,
+   son test l'ayant recopié du tutoriel. Corrigé dans les deux.
+
+3. **L'ordre va du moins au plus restrictif** — `peer`, `serve`,
+   `serve-only`, `query-only` — et le premier groupe dont l'ACL accepte
+   la source décide ; une source qu'aucun ne reconnaît est écartée.
+
+   *Écart de sources, écrit plutôt que tu* : une page de la référence de
+   commandes Cisco place `query-only` en **deuxième** position. Deux
+   autres sources — dont la description de `ntp access-group match-all`
+   — le placent en quatrième, seul ordre cohérent avec « du moins au
+   plus restrictif », `query-only` interdisant précisément les requêtes
+   de temps que `serve` autorise. C'est ce dernier qui est implémenté.
+
+4. **Aucun groupe = accès complet ; un seul groupe = seulement ce qu'il
+   accorde.** C'est le piège que le §3.7 tend sans le dire, et il est
+   maintenant reproductible : un routeur en `serve-only` **continue de
+   servir l'heure** et **cesse de se synchroniser**, puisque se
+   synchroniser demande `peer`. Deux cas de test le montrent, et un
+   troisième montre la correction — ajouter `peer`.
+
+### 8.3 Ce qui est fait
+
+`ntp/accessGroups.ts` porte la table, l'ordre et le verdict.
+`NtpAgent.setAclMatchFn` est un port étroit — même motif que
+`NATEngine.setACLMatchFn` — et `CiscoRouter` le branche sur
+`Router.evaluateAclPermit`, **un seul point d'évaluation** partagé avec
+NAT et les VTY : deux évaluateurs finiraient par répondre différemment
+pour la même liste.
+
+Le contrôle s'applique aux **trois** chemins : requête de client entrante
+(`serve-time`), pair symétrique (`sync-from`), et réponse de serveur
+que l'on veut utiliser (`sync-from`).
+
+**Le refus est silencieux sur le fil** : un routeur qui répondrait « tu
+n'as pas le droit » confirmerait son existence à qui le sonde, ce qui
+est l'inverse d'un durcissement. L'événement `ntp.access.denied` est
+publié, ce qui rend le refus observable sans rien émettre.
+
+### 8.4 Tests
+
+`tuto-ntp-access-group.test.ts` (18 cas). `git stash` : **5 tombent**
+avant. Les 13 autres se partagent entre la table de permissions —
+module neuf, donc sans pouvoir discriminer — et les témoins (aucun
+groupe, ACL qui permet, `serve`/`peer`) qui doivent passer des deux
+côtés.
+
+**Mesures.** 175 suites connexes vertes (2 540 cas). Typecheck : 216,
+inchangé. **Un test existant corrigé** — le mien, au lot N1, qui avait
+recopié le `nomodify` du tutoriel.
+
+### 8.5 Ce qui reste hors de portée, et pourquoi
+
+`ntp access-group match-all` existe sur IOS et change la règle : au lieu
+de s'arrêter au premier groupe qui reconnaît la source, il les parcourt
+tous. Il n'est **pas** implémenté — la commande est refusée plutôt
+qu'acceptée sans effet — parce que les sources consultées décrivent son
+existence sans en donner la sémantique exacte de combinaison, et
+qu'implémenter une règle devinée serait précisément ce que ce PRD
+interdit.
+
+Les requêtes de **contrôle** (mode 6) n'existent pas dans ce simulateur :
+`query-only` est donc structurellement inerte sur le fil, et sa seule
+conséquence observable est de **refuser** les requêtes de temps — ce que
+le test vérifie. C'est un fait sur ce moteur, pas une approximation.

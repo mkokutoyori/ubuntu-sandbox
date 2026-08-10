@@ -55,4 +55,18 @@ export type NtpDomainEvent =
   | { topic: 'ntp.unsynced'; payload: NtpUnsyncedPayload }
   | { topic: 'ntp.server.responded'; payload: NtpServerRespondedPayload }
   | { topic: 'ntp.peer.responded'; payload: NtpPeerRespondedPayload }
-  | { topic: 'ntp.auth.rejected'; payload: NtpAuthRejectedPayload };
+  | { topic: 'ntp.auth.rejected'; payload: NtpAuthRejectedPayload }
+  | { topic: 'ntp.access.denied'; payload: NtpAccessDeniedPayload };
+
+/**
+ * Un paquet ecarte par `ntp access-group` (lot N6).
+ *
+ * `action` dit ce que la source DEMANDAIT, et c'est ce qui rend
+ * l'evenement utile : « refuse » ne se diagnostique pas de la meme
+ * facon selon qu'un client demandait l'heure ou qu'un serveur proposait
+ * la sienne.
+ */
+export interface NtpAccessDeniedPayload extends NtpDeviceRef {
+  fromIp: string;
+  action: 'serve-time' | 'sync-from' | 'control-query';
+}

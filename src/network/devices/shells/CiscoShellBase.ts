@@ -24,6 +24,7 @@ import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
 import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
+import { estGenreAcces } from '../../ntp/accessGroups';
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
 import {
@@ -3660,6 +3661,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       } else if (a[0] === 'trusted-key' && a[1]) {
         agent.addTrustedKey(parseInt(a[1], 10));
       } else if (a[0] === 'access-group' && a[1] && a[2]) {
+        // IOS ne connait QUE ces quatre familles. Le tutoriel ecrit
+        // `ntp access-group nomodify 10`, qui est la syntaxe de `ntpd`
+        // et de `chrony` : l'accepter apprendrait une commande que la
+        // vraie machine refuse (lot N6).
+        if (!estGenreAcces(a[1])) return CISCO_ERRORS.INVALID_INPUT;
         agent.setAccessGroup(a[1], a[2]);
       } else if (a[0] === 'update-calendar') {
         agent.setUpdateCalendar(true);
