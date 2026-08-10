@@ -17,7 +17,7 @@ import {
   EthernetFrame,
   ETHERTYPE_IPV6, IP_PROTO_ICMPV6, IP_PROTO_UDP, IP_PROTO_OSPF,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement, createRouterAdvertisement,
-  createICMPv6EchoReply,
+  createICMPv6EchoReply, createICMPv6EchoRequest,
   IPV6_ALL_NODES_MULTICAST,
 } from '../../core/types';
 import { Logger } from '../../core/Logger';
@@ -92,6 +92,23 @@ export interface IPv6RouterContext {
    * port into the OSPF integration, absent on a router that has none.
    */
   deliverOspfv3?(inPort: string, srcIP: string, packet: unknown, ipsecProtected: boolean): void;
+  /**
+   * An Echo Reply, or an ICMPv6 error ending a probe, addressed to this
+   * router. The data plane owns the receive path; who is waiting for the
+   * answer is the router's business, so it settles its own awaiters.
+   */
+  onIcmpv6EchoReply?(payload: {
+    fromIp: string; toIp: string; id: number; seq: number; hopLimit: number;
+  }): void;
+  onIcmpv6EchoFailed?(payload: { fromIp: string; reason: string }): void;
+}
+
+/** Where a locally-originated IPv6 packet leaves, once resolved. */
+export interface IPv6EgressResolution {
+  iface: string;
+  port: Port;
+  sourceIP: IPv6Address;
+  nextHopMAC: MACAddress;
 }
 
 // ─── IPv6 Data Plane ────────────────────────────────────────────
@@ -140,6 +157,9 @@ export class IPv6DataPlane {
     return this.neighborCache.snapshot();
   }
   getNeighborCacheInternal(): Map<string, NeighborCacheEntry> { return this.neighborCache.internalMap(); }
+
+  /** The clock the neighbour cache stamps its entries with. */
+  neighborCacheNow(): number { return this.neighborCache.nowMs(); }
 
   configureInterface(portName: string, address: IPv6Address, prefixLength: number): boolean {
     const port = this.ctx.getPorts().get(portName);
@@ -510,6 +530,63 @@ export class IPv6DataPlane {
     return this.neighborCache.get(dstIp.toString())?.mac ?? null;
   }
 
+  /**
+   * Where a packet this router originates itself would leave, and with
+   * which source address and next-hop MAC. Returns null when no route
+   * covers the destination, when the egress link is down, or when the
+   * next hop cannot be resolved — the three distinct reasons a probe
+   * never reaches the wire.
+   */
+  resolveEgress(destIP: IPv6Address, sourceIPStr?: string): IPv6EgressResolution | null {
+    let iface: string | null = null;
+    let nextHopIP = destIP;
+    if (destIP.isLinkLocal() || destIP.isMulticast()) {
+      for (const [name, p] of this.ctx.getPorts()) {
+        if (p.isIPv6Enabled() && p.isOperationallyUp()) { iface = name; break; }
+      }
+    } else {
+      const route = this.lookupRoute(destIP);
+      if (!route) return null;
+      iface = route.iface;
+      if (route.nextHop) nextHopIP = route.nextHop;
+    }
+    if (!iface) return null;
+    const port = this.ctx.getPorts().get(iface);
+    if (!port || !port.isOperationallyUp()) return null;
+
+    let sourceIP: IPv6Address | null;
+    if (sourceIPStr) {
+      sourceIP = new IPv6Address(sourceIPStr);
+    } else {
+      sourceIP = destIP.isLinkLocal()
+        ? port.getLinkLocalIPv6()
+        : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    }
+    if (!sourceIP) return null;
+
+    const nextHopMAC = this.resolveNeighborSync(iface, nextHopIP);
+    if (!nextHopMAC) return null;
+    return { iface, port, sourceIP, nextHopMAC };
+  }
+
+  /** Put one Echo Request on the wire; the caller awaits the reply. */
+  sendEchoRequest(
+    egress: IPv6EgressResolution, destIP: IPv6Address,
+    id: number, seq: number, dataSize: number, hopLimit?: number,
+  ): void {
+    const echo = createICMPv6EchoRequest(id, seq, dataSize);
+    const pkt = createIPv6Packet(
+      egress.sourceIP, destIP, IP_PROTO_ICMPV6,
+      hopLimit ?? this.defaultHopLimit, echo, 8 + dataSize,
+    );
+    this.ctx.sendFrame(egress.iface, {
+      srcMAC: egress.port.getMAC(),
+      dstMAC: egress.nextHopMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: pkt,
+    });
+  }
+
   private handleICMPv6(inPort: string, ipv6: IPv6Packet): void {
     const icmpv6 = ipv6.payload as ICMPv6Packet;
     if (!icmpv6 || icmpv6.type !== 'icmpv6') return;
@@ -527,7 +604,33 @@ export class IPv6DataPlane {
       case 'router-solicitation':
         this.handleRouterSolicitation(inPort, ipv6, icmpv6);
         break;
+      case 'echo-reply':
+        this.handleEchoReply(ipv6, icmpv6);
+        break;
+      case 'destination-unreachable':
+      case 'time-exceeded':
+      case 'packet-too-big':
+        this.handleIcmpv6Error(ipv6, icmpv6);
+        break;
     }
+  }
+
+  private handleEchoReply(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    this.neighborCache.confirmReachability(ipv6.sourceIP.toString());
+    this.ctx.onIcmpv6EchoReply?.({
+      fromIp: ipv6.sourceIP.toString(),
+      toIp: ipv6.destinationIP.toString(),
+      id: icmpv6.id ?? 0,
+      seq: icmpv6.sequence ?? 0,
+      hopLimit: ipv6.hopLimit,
+    });
+  }
+
+  private handleIcmpv6Error(ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const reason = icmpv6.icmpType === 'time-exceeded'
+      ? 'ttl-exceeded'
+      : (icmpv6.icmpType === 'packet-too-big' ? 'frag-needed' : 'unreachable');
+    this.ctx.onIcmpv6EchoFailed?.({ fromIp: ipv6.sourceIP.toString(), reason });
   }
 
   private handleEchoRequest(inPort: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
@@ -552,15 +655,17 @@ export class IPv6DataPlane {
       8 + (icmpv6.dataSize || 56),
     );
 
-    const cached = this.neighborCache.get(ipv6.sourceIP.toString());
-    if (cached) {
-      this.ctx.sendFrame(inPort, {
-        srcMAC: port.getMAC(),
-        dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV6,
-        payload: replyPkt,
-      });
-    }
+    // A sender this router has never resolved is solicited now rather
+    // than dropped: a reply nobody sends is indistinguishable from an
+    // unreachable host, and the asker did nothing wrong.
+    const dstMAC = this.resolveNeighborSync(inPort, ipv6.sourceIP);
+    if (!dstMAC) return;
+    this.ctx.sendFrame(inPort, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: replyPkt,
+    });
   }
 
   // ─── NDP ──────────────────────────────────────────────────────
@@ -880,15 +985,14 @@ export class IPv6DataPlane {
       48,
     );
 
-    const cached = this.neighborCache.get(offendingPkt.sourceIP.toString());
-    if (cached) {
-      this.ctx.sendFrame(inPort, {
-        srcMAC: port.getMAC(),
-        dstMAC: cached.mac,
-        etherType: ETHERTYPE_IPV6,
-        payload: errorPkt,
-      });
-    }
+    const dstMAC = this.resolveNeighborSync(inPort, offendingPkt.sourceIP);
+    if (!dstMAC) return;
+    this.ctx.sendFrame(inPort, {
+      srcMAC: port.getMAC(),
+      dstMAC,
+      etherType: ETHERTYPE_IPV6,
+      payload: errorPkt,
+    });
   }
 
   // ─── NDP Resolution + Packet Queue ────────────────────────────

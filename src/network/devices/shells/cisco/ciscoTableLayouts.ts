@@ -51,3 +51,33 @@ export const INTERFACE_STATUS_COLUMNS: ReadonlyArray<TableColumn<InterfaceStatus
 
 /** Un seul blanc de séparation, les largeurs ci-dessus ne le portant pas. */
 export const INTERFACE_STATUS_STYLE: TableStyle = { gap: 1, rule: false };
+
+/**
+ * `show ipv6 neighbors`.
+ *
+ * ```
+ * IPv6 Address                              Age Link-layer Addr State Interface
+ * 2001:DB8::2                                 0 0003.a0d6.141e  REACH Gi0/0
+ * FE80::203:A0FF:FED6:141E                    3 0003.a0d6.141e  STALE Gi0/0
+ * ```
+ *
+ * Limite assumee et ecrite ici plutot que tue : ce layout vient de la
+ * documentation de commande d'IOS et non d'une capture, contrairement a
+ * `show interfaces status` ci-dessus. Les bords sont donc deduits d'un
+ * en-tete dont l'espacement est verifiable, pas mesures ligne a ligne.
+ * `Age` est la seule colonne alignee a DROITE, etant un nombre, et un
+ * voisin statique y porte `-` plutot qu'un age.
+ */
+export interface Ipv6NeighborRow {
+  address: string; age: string; mac: string; state: string; iface: string;
+}
+
+export const IPV6_NEIGHBORS_COLUMNS: ReadonlyArray<TableColumn<Ipv6NeighborRow>> = [
+  { header: 'IPv6 Address', width: 41, value: (r) => r.address },
+  { header: 'Age', width: 3, align: 'right', value: (r) => r.age },
+  { header: 'Link-layer Addr', width: 15, value: (r) => r.mac },
+  { header: 'State', width: 5, value: (r) => r.state },
+  { header: 'Interface', value: (r) => r.iface },
+];
+
+export const IPV6_NEIGHBORS_STYLE: TableStyle = { gap: 1, rule: false };

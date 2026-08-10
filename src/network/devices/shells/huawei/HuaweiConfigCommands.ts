@@ -985,8 +985,13 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.register('ipv6 enable', 'Enable IPv6 on interface', () => {
     const ifName = ctx.getSelectedInterface();
     if (ifName) {
+      // `Port.enableIPv6()` and not the raw flag: an IPv6 interface
+      // always carries a link-local address (RFC 4862 §5.3), and on VRP
+      // this command is exactly what creates it. Writing the flag by
+      // hand left the interface with none, so every NDP exchange had no
+      // source and nothing IPv6 could leave the box.
       const port = ctx.r().getPort(ifName);
-      if (port) (port as any).ipv6Enabled = true;
+      if (port) port.enableIPv6();
     }
     return '';
   });
@@ -994,7 +999,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     const ifName = ctx.getSelectedInterface();
     if (ifName) {
       const port = ctx.r().getPort(ifName);
-      if (port) (port as any).ipv6Enabled = false;
+      if (port) port.disableIPv6();
     }
     return '';
   });

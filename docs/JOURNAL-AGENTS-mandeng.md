@@ -25,6 +25,114 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### `ping ipv6` sur un routeur — LIVRÉ
+
+**Agent** : session « logging ».
+
+**Mesuré d'abord.** Sur un câble où `show ipv6 interface brief` liste
+l'adresse des DEUX bouts, `ping ipv6 2001:db8::2` répondait
+`% Unrecognized host or address, or protocol not running.` côté Cisco et
+`Error: Unknown host 2001:db8::2.` côté Huawei.
+
+La cause n'était pas l'analyseur : **un routeur n'avait aucun émetteur
+ICMPv6**. `IPv6DataPlane` RÉPONDAIT à une demande d'écho et ne savait pas
+en émettre une. C'est exactement la brique que `PRD-IP-SLA.md` et
+`PRD-NQA.md` nomment tous les deux pour justifier leur refus des cibles
+IPv6 — elle est posée, ils peuvent s'en servir.
+
+**Le cache de voisins était réel et INVISIBLE** sur les deux
+plateformes : ni `show ipv6 neighbors` ni `display ipv6 neighbors`
+n'existaient nulle part dans le dépôt, donc rien ne distinguait un
+prochain saut non résolu d'une destination injoignable.
+
+**Trois défauts trouvés en chemin, chacun mesuré :**
+
+1. **VRP `ipv6 enable` n'activait rien de réel** — il écrivait
+   `(port as any).ipv6Enabled = true` au lieu d'appeler
+   `Port.enableIPv6()`, donc **aucune adresse de lien-local n'était
+   jamais fabriquée** (RFC 4862 §5.3). Et comme `ipv6 address` appelle
+   `enableIPv6()` qui sort tôt si le drapeau est déjà posé, c'est
+   l'ordre NORMAL de frappe sur VRP (`ipv6 enable` puis `ipv6 address`)
+   qui cassait tout : plus aucune source pour NDP, donc rien d'IPv6 ne
+   quittait la machine. `undo ipv6 enable` avait la même forme et ne
+   supprimait aucune adresse.
+2. **La réponse à une demande d'écho était abandonnée** quand
+   l'émetteur n'était pas déjà dans le cache — elle le sollicite
+   maintenant. Robustesse : aucune topologie d'ici ne le provoque
+   aujourd'hui, et c'est dit dans l'en-tête de la sonde plutôt que
+   compté comme couverture.
+3. **Deux horloges pour un âge** : le cache horodate au SCHEDULER, les
+   deux vues que j'écrivais calculaient l'âge sur `Date.now()` — elles
+   annonçaient 1 786 343 340. `NeighborCache.nowMs()` est l'horloge
+   unique, comme pour NetFlow.
+
+**Fichiers touchés** : `router/IPv6DataPlane.ts`, `devices/Router.ts`,
+`host/NeighborCache.ts`, `shells/cisco/ciscoPing.ts`,
+`shells/CiscoIOSShell.ts`, `shells/cisco/CiscoShowCommands.ts`,
+`shells/cisco/ciscoTableLayouts.ts`, `shells/HuaweiVRPShell.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`,
+`shells/huawei/HuaweiConfigCommands.ts`.
+
+**Limite écrite plutôt que tue** : le layout de `show ipv6 neighbors`
+vient de la documentation de commande d'IOS et non d'une capture
+`ntc-templates`, contrairement à `show interfaces status` — c'est écrit
+dans `ciscoTableLayouts.ts` à côté du layout.
+
+**Mesures.** `router-ipv6-ping.test.ts` (13 cas) discriminé par
+`git stash` : **11 tombent** avant. 57 suites IPv6/NDP/ping/OSPFv3/DHCPv6
+vertes (766 cas).
+
+---
+
+
+### NTP — lot N5 : l'authentification SIGNE — PRIS
+
+**Agent** : session « CLI Huawei VRP ». Suite du chantier NTP (N1–N4),
+sur le point que j'avais laissé ouvert et nommé.
+
+**Mesuré d'abord, et c'est pire que ce que j'avais écrit.** J'annonçais
+« la clé est portée, comparée et rendue, mais aucun condensé ne
+circule ». La mesure montre que **la comparaison elle-même n'existe
+pas** : `checkAuthentication` ne regarde que le **numéro** de clé.
+
+Trois laboratoires, un routeur client et un serveur `ntp master 2` sur
+un vrai câble :
+
+| Configuration | Attendu (tuto §3.6) | Mesuré |
+|---|---|---|
+| Mêmes clés | synchronisé | synchronisé |
+| **Clés différentes** | **REJET** | **synchronisé** |
+| **Client sans aucune clé** | **REJET** | **synchronisé** |
+
+Le troisième cas est le plus net : le client n'a ni `ntp authenticate`,
+ni `authentication-key`, ni `trusted-key`. Il lui suffit d'écrire
+`ntp server 10.0.0.1 key 1` — de **nommer** un numéro — pour que le
+serveur l'accepte. **Nommer une clé suffit, connaître son secret n'est
+pas requis.** C'est exactement l'usurpation que le §9 du tutoriel décrit
+comme la raison d'être de l'authentification.
+
+Deux autres constats :
+
+- **Le client ne vérifie jamais la réponse** : `acceptServerReply`
+  n'appelle pas `checkAuthentication`. Un routeur configuré pour
+  n'accepter que des serveurs authentifiés accepte n'importe quelle
+  réponse — l'attaque que la commande existe pour empêcher.
+- **`%NTP-4-AUTHENTICATION_FAILURE` n'est émis nulle part**, alors que
+  le tutoriel en fait son signal d'audit.
+
+**Ce que je vais faire** : un vrai condensé. `NtpPacket` gagne un champ
+`mac`, sérialisé depuis un **vrai en-tête NTP de 48 octets**
+(RFC 5905 §7.3) et signé `MD5(clé ‖ en-tête)` — la construction de
+RFC 1305 annexe C, pas une invention. Le `md5` du dépôt est réel
+(`src/crypto/hash/md5.ts`), donc le condensé l'est aussi.
+
+**Fichiers** : `network/ntp/auth.ts` (**nouveau**), `network/ntp/types.ts`,
+`network/ntp/NtpAgent.ts`, plus le journal Cisco pour le message.
+
+**Ce qui ne change pas** : les CLI des quatre plateformes, livrées en
+N1–N4, posent déjà les clés correctement. Ce lot ne touche qu'au moteur.
+
+
 ### `ip link set` pose vraiment — LIVRÉ
 
 **Agent** : session « logging ».

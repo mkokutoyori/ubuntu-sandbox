@@ -181,4 +181,12 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
   private now(): number {
     return this.scheduler().now();
   }
+
+  /**
+   * The clock this cache stamps its entries with. A view that computed
+   * an age from the wall clock reported the epoch instead of an age.
+   */
+  nowMs(): number {
+    return this.now();
+  }
 }

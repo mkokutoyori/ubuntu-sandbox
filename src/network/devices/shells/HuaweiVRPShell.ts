@@ -43,7 +43,8 @@ import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm }
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { looksLikeIPv6 } from './cisco/ciscoPing';
 
 // Extracted command modules
 import {
@@ -3032,6 +3033,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let count = 5;
     let timeoutMs = 2000;
     let sourceIP: string | null = null;
+    let ipv6 = false;
+
+    if (args[0].toLowerCase() === 'ipv6') {
+      ipv6 = true;
+      args = args.slice(1);
+      if (args.length === 0) return 'Error: Please specify a destination IP address.';
+    }
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
@@ -3042,6 +3050,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     if (!target) return 'Error: Please specify a destination IP address.';
+
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
+      return this._handlePing6(target, count, timeoutMs, sourceIP);
+    }
 
     const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (!ipMatch) return `Error: Unknown host ${target}.`;
@@ -3067,6 +3080,44 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return lines.join('\n');
     });
 
+    return '';
+  }
+
+  /**
+   * VRP renders an IPv6 probe differently from an IPv4 one, and the
+   * difference carries information: a reply reports its `hop limit`,
+   * which is the field IPv6 actually has, and the statistics block
+   * counts transmitted and received on separate lines.
+   */
+  private _handlePing6(
+    target: string, count: number, timeoutMs: number, sourceIP: string | null,
+  ): string {
+    const router = this.r();
+    this._pendingAsync = router
+      .executePing6Sequence(new IPv6Address(target), count, timeoutMs, sourceIP ?? undefined)
+      .then((results) => {
+        const ok = results.filter(r => r.success);
+        const rtts = ok.map(r => Math.round(r.rttMs));
+        const loss = count === 0 ? 0 : ((count - ok.length) / count) * 100;
+        const lines = [
+          `  PING ${target} : 56  data bytes, press CTRL_C to break`,
+        ];
+        for (const r of results) {
+          if (!r.success) { lines.push('    Request time out'); continue; }
+          lines.push(`    Reply from ${r.fromIP}`);
+          lines.push(`    bytes=56 Sequence=${r.seq} hop limit=${r.ttl}  time = ${Math.round(r.rttMs)} ms`);
+        }
+        lines.push('');
+        lines.push(`  --- ${target} ping statistics ---`);
+        lines.push(`    ${count} packet(s) transmitted`);
+        lines.push(`    ${ok.length} packet(s) received`);
+        lines.push(`    ${loss.toFixed(2)}% packet loss`);
+        if (rtts.length > 0) {
+          const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
+          lines.push(`    round-trip min/avg/max = ${Math.min(...rtts)}/${avg}/${Math.max(...rtts)} ms`);
+        }
+        return lines.join('\n');
+      });
     return '';
   }
 }

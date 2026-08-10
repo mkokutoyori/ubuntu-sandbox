@@ -21,8 +21,9 @@ import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
-import { IPAddress, SubnetMask } from '../../core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
+import { CliInvalidInput } from './cli/CliDiagnostic';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
@@ -730,6 +731,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
+    this.userTrie.addCompletionKeywords('ping', [
+      { keyword: 'ip', description: 'IP echo' },
+      { keyword: 'ipv6', description: 'IPv6 echo' },
+    ]);
     this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
       return this._handleTraceroute(args);
     });
@@ -1053,6 +1058,13 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return Show.showIpv6Interface(getRouter(), ifName);
     });
 
+    trie.registerGreedy('show ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
+      if (args.length === 0) return Show.showIpv6Neighbors(getRouter());
+      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
+      if (!ifName) throw new CliInvalidInput({ token: args[0] });
+      return Show.showIpv6Neighbors(getRouter(), ifName);
+    });
+
     // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
     const showIpInterfaceCmd = (args: string[]): string => {
       const sub = (args[0] || '').toLowerCase();
@@ -1079,6 +1091,17 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (sourceIP) {
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
+    }
+
+    if (parsed.protocol === 'ipv6') {
+      this._pendingAsync = router
+        .executePing6Sequence(
+          new IPv6Address(parsed.target), parsed.count, parsed.timeoutMs,
+          sourceIP ?? undefined, { sizeBytes: parsed.sizeBytes },
+        )
+        .then(results => formatCiscoPing(
+          parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+      return '';
     }
 
     const targetIP = new IPAddress(parsed.target);

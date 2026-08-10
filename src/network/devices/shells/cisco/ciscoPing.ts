@@ -56,8 +56,22 @@ export interface ParsedPing {
   /** Datagram size in bytes (IOS default 100). */
   sizeBytes: number;
   sourceIP: string | null;
+  /** Which protocol the target belongs to — IOS keys the whole probe on it. */
+  protocol: 'ip' | 'ipv6';
   /** Set when the target is missing or malformed — caller should echo it. */
   error?: string;
+}
+
+/**
+ * IOS accepts `ping ipv6 <addr>` and a bare `ping <addr>` alike, so the
+ * family has to be decided from the literal rather than from a keyword.
+ * A colon is what no IPv4 literal can carry.
+ */
+export function looksLikeIPv6(target: string): boolean {
+  if (!target.includes(':')) return false;
+  return /^[0-9a-fA-F:]+(:\d{1,3}(\.\d{1,3}){3})?(%[^\s]+)?$/.test(target)
+    && !/:::/.test(target)
+    && (target.match(/::/g)?.length ?? 0) <= 1;
 }
 
 /**
@@ -67,13 +81,23 @@ export interface ParsedPing {
  */
 export function parsePingArgs(args: string[]): ParsedPing {
   const base: ParsedPing = {
-    target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null,
+    target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null, protocol: 'ip',
   };
   if (args.length === 0) {
     return { ...base, error: '% Ping requires a target IP address.' };
   }
 
   let i = 0;
+  // `ping ip <addr>` and `ping ipv6 <addr>` name the protocol first; the
+  // keyword only says which family follows, never which target.
+  const first = args[0]?.trim().toLowerCase();
+  if (first === 'ipv6' || first === 'ip') {
+    base.protocol = first === 'ipv6' ? 'ipv6' : 'ip';
+    i++;
+    if (i >= args.length) {
+      return { ...base, error: '% Ping requires a target IP address.' };
+    }
+  }
   base.target = args[i++]?.trim() || '';
 
   while (i < args.length) {
@@ -101,9 +125,16 @@ export function parsePingArgs(args: string[]): ParsedPing {
   if (!base.target) {
     return { ...base, error: '% Ping requires a target IP address.' };
   }
-  const m = base.target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255)) {
-    return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
+  if (base.protocol === 'ipv6' || looksLikeIPv6(base.target)) {
+    if (!looksLikeIPv6(base.target)) {
+      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
+    }
+    base.protocol = 'ipv6';
+  } else {
+    const m = base.target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255)) {
+      return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
+    }
   }
   // Practical simulator bounds (the probes are driven synchronously): a
   // multi-million `repeat` is rejected like an out-of-range IOS parameter.
