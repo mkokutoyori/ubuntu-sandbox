@@ -35,6 +35,7 @@ import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddr
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
@@ -2636,14 +2637,29 @@ export abstract class Switch extends Equipment {
 
   // ─── Management plane: domain / SSH host keys / default-gateway ────
   private _domainName = '';
-  private _hasRsaKeys = false;
+
   private _ipDefaultGateway = '';
   /** @internal `ip domain-name` (device fallback for the shared handler). */
   _setDomainName(name: string): void { this._domainName = name; }
   getDomainName(): string { return this._domainName; }
   /** @internal `crypto key generate rsa`. */
-  _generateRsaKeys(): void { this._hasRsaKeys = true; }
-  hasRsaKeys(): boolean { return this._hasRsaKeys; }
+  /**
+   * Les cles RSA vivent dans `CiscoSecurityConfig`, attache a la machine
+   * par un symbole — le MEME magasin que le routeur. Un booleen a part
+   * donnait deux reponses a « cette machine a-t-elle une paire ? », et
+   * c'est ce qui laissait `crypto key zeroize rsa` du commutateur
+   * annoncer une suppression qui n'ecrivait dans aucun des deux.
+   */
+  _generateRsaKeys(): void {
+    const sec = getSecurityConfig(this);
+    if (sec.cryptoKeys.length === 0) {
+      sec.cryptoKeys.push({
+        label: `${this.getHostname()}.${this.getDomainName() ?? ''}`,
+        modulus: 512, general: true, generatedAtMs: Date.now(),
+      });
+    }
+  }
+  hasRsaKeys(): boolean { return getSecurityConfig(this).cryptoKeys.length > 0; }
   /** @internal `ip default-gateway` (L2 switch management route). */
   _setDefaultGateway(ip: string): void { this._ipDefaultGateway = ip; }
   getDefaultGateway(): string { return this._ipDefaultGateway; }

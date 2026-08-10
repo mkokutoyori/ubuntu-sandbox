@@ -274,6 +274,87 @@ export function buildIdentityConfigCommands(
   trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
   trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
+
+  trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
+    // Le nom de domaine se lit de deux facons selon la plateforme : un
+    // routeur le tient dans son service de gestion, un Catalyst
+    // directement. Ne consulter que la premiere faisait repondre
+    // « definissez d'abord un nom de domaine » a un commutateur qui
+    // venait d'en poser un.
+    const dev = ctx.r() as unknown as {
+      getManagementService?: () => { domainName?: string };
+      getDomainName?: () => string | null | undefined;
+    };
+    const domain = dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '';
+    if (!domain) {
+      return '% Please define a domain-name first.';
+    }
+    let modulus = 1024;
+    // Sans `label`, IOS nomme la paire d'après l'identité pleinement
+    // qualifiée du routeur — c'est pour cela qu'il exige un nom de
+    // domaine avant de la générer.
+    const hote = (ctx.r() as unknown as { getHostname?: () => string }).getHostname?.() ?? 'Router';
+    let label = `${hote}.${domain}`;
+    // `crypto key generate rsa` produit une paire à usage GÉNÉRAL ; ce
+    // sont `usage-keys` qui en produisent deux, dont une de signature.
+    let general = true;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === 'modulus' && args[i + 1]) modulus = parseInt(args[i + 1], 10);
+      if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
+      if (args[i] === 'usage-keys') general = false;
+    }
+    const generatedAtMs = Date.now();
+    sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
+    // Generating the keys is what brings the SSH server up on IOS, so the
+    // listener has to follow — the config and the service cannot disagree.
+    (ctx.r() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
+    const elapsedSec = Math.max(1, Math.round(modulus / 1024));
+    return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was ${elapsedSec} seconds)`;
+  });
+
+  trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
+    const dev = ctx.r() as unknown as {
+      getManagementService?: () => { domainName?: string };
+      getDomainName?: () => string | null | undefined;
+      getHostname?: () => string;
+      _refreshSshAvailability?: () => void;
+    };
+    if (sec().cryptoKeys.length === 0) return '% No Signature RSA Keys found in configuration.';
+    const domaine = dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '';
+    const fqdn = `${dev.getHostname?.() ?? ''}.${domaine}`;
+    sec().cryptoKeys = [];
+    // Wiping the keys really disables SSH — this is the router's F7.2, and
+    // the classic way to lock yourself out of a box you reach over SSH.
+    dev._refreshSshAvailability?.();
+    return `% Keys to be removed are named ${fqdn}.`;
+  });
+
+  trie.registerGreedy('ip ssh', 'SSH config', (args) => {
+    if (args[0] === 'version' && args[1]) { sec().ssh.version = parseInt(args[1], 10); return ''; }
+    if (args[0] === 'time-out' && args[1]) { sec().ssh.timeoutSec = parseInt(args[1], 10); return ''; }
+    if (args[0] === 'authentication-retries' && args[1]) {
+      const n = parseInt(args[1], 10);
+      sec().ssh.authRetries = n;
+      const r = ctx.r() as unknown as { _configureSshAuthRetries?: (n: number) => void };
+      if (r._configureSshAuthRetries && !isNaN(n)) r._configureSshAuthRetries(n);
+      return '';
+    }
+    if (args[0] === 'source-interface' && args[1]) { sec().ssh.sourceInterface = args[1]; return ''; }
+    if (args[0] === 'dh' && args[1] === 'min' && args[2] === 'size' && args[3]) { sec().ssh.dhMinBits = parseInt(args[3], 10); return ''; }
+    if (args[0] === 'logging' && args[1] === 'events') { sec().ssh.loggingEvents = true; return ''; }
+    // `ip ssh server algorithm {mac|encryption|kex} <liste>` etait accepte
+    // et range NULLE PART : la commande de durcissement disparaissait de
+    // la configuration relue.
+    if (args[0] === 'server' && args[1] === 'algorithm' && args[2] && args[3]) {
+      const liste = args.slice(3);
+      if (args[2] === 'mac') { sec().ssh.macAlgorithms = liste; return ''; }
+      if (args[2] === 'encryption') { sec().ssh.encryptionAlgorithms = liste; return ''; }
+      if (args[2] === 'kex') { sec().ssh.kexAlgorithms = liste; return ''; }
+      throw new CliInvalidInput({ token: args[2] });
+    }
+    return '';
+  });
+
 }
 
 export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
@@ -414,76 +495,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
   trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) sec().passwords.minLength = n;
-    return '';
-  });
-
-  trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {
-    const dev = ctx.r() as unknown as { getManagementService?: () => { domainName?: string } };
-    const domain = dev.getManagementService?.().domainName ?? '';
-    if (!domain) {
-      return '% Please define a domain-name first.';
-    }
-    let modulus = 1024;
-    // Sans `label`, IOS nomme la paire d'après l'identité pleinement
-    // qualifiée du routeur — c'est pour cela qu'il exige un nom de
-    // domaine avant de la générer.
-    const hote = (ctx.r() as unknown as { getHostname?: () => string }).getHostname?.() ?? 'Router';
-    let label = `${hote}.${domain}`;
-    // `crypto key generate rsa` produit une paire à usage GÉNÉRAL ; ce
-    // sont `usage-keys` qui en produisent deux, dont une de signature.
-    let general = true;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'modulus' && args[i + 1]) modulus = parseInt(args[i + 1], 10);
-      if (args[i] === 'label' && args[i + 1]) label = args[i + 1];
-      if (args[i] === 'usage-keys') general = false;
-    }
-    const generatedAtMs = Date.now();
-    sec().cryptoKeys.push({ label, modulus, general, generatedAtMs });
-    // Generating the keys is what brings the SSH server up on IOS, so the
-    // listener has to follow — the config and the service cannot disagree.
-    (ctx.r() as unknown as { _refreshSshAvailability?: () => void })._refreshSshAvailability?.();
-    const elapsedSec = Math.max(1, Math.round(modulus / 1024));
-    return `The key modulus size is ${modulus} bits\n% Generating ${modulus} bit RSA keys, keys will be non-exportable...\n[OK] (elapsed time was ${elapsedSec} seconds)`;
-  });
-
-  trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
-    const dev = ctx.r() as unknown as {
-      getManagementService?: () => { domainName?: string };
-      getHostname?: () => string;
-      _refreshSshAvailability?: () => void;
-    };
-    if (sec().cryptoKeys.length === 0) return '% No Signature RSA Keys found in configuration.';
-    const fqdn = `${dev.getHostname?.() ?? ''}.${dev.getManagementService?.().domainName ?? ''}`;
-    sec().cryptoKeys = [];
-    // Wiping the keys really disables SSH — this is the router's F7.2, and
-    // the classic way to lock yourself out of a box you reach over SSH.
-    dev._refreshSshAvailability?.();
-    return `% Keys to be removed are named ${fqdn}.`;
-  });
-
-  trie.registerGreedy('ip ssh', 'SSH config', (args) => {
-    if (args[0] === 'version' && args[1]) { sec().ssh.version = parseInt(args[1], 10); return ''; }
-    if (args[0] === 'time-out' && args[1]) { sec().ssh.timeoutSec = parseInt(args[1], 10); return ''; }
-    if (args[0] === 'authentication-retries' && args[1]) {
-      const n = parseInt(args[1], 10);
-      sec().ssh.authRetries = n;
-      const r = ctx.r() as unknown as { _configureSshAuthRetries?: (n: number) => void };
-      if (r._configureSshAuthRetries && !isNaN(n)) r._configureSshAuthRetries(n);
-      return '';
-    }
-    if (args[0] === 'source-interface' && args[1]) { sec().ssh.sourceInterface = args[1]; return ''; }
-    if (args[0] === 'dh' && args[1] === 'min' && args[2] === 'size' && args[3]) { sec().ssh.dhMinBits = parseInt(args[3], 10); return ''; }
-    if (args[0] === 'logging' && args[1] === 'events') { sec().ssh.loggingEvents = true; return ''; }
-    // `ip ssh server algorithm {mac|encryption|kex} <liste>` etait accepte
-    // et range NULLE PART : la commande de durcissement disparaissait de
-    // la configuration relue.
-    if (args[0] === 'server' && args[1] === 'algorithm' && args[2] && args[3]) {
-      const liste = args.slice(3);
-      if (args[2] === 'mac') { sec().ssh.macAlgorithms = liste; return ''; }
-      if (args[2] === 'encryption') { sec().ssh.encryptionAlgorithms = liste; return ''; }
-      if (args[2] === 'kex') { sec().ssh.kexAlgorithms = liste; return ''; }
-      throw new CliInvalidInput({ token: args[2] });
-    }
     return '';
   });
 
