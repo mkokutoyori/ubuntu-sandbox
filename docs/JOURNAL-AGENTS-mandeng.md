@@ -25,6 +25,51 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### NTP — lot N6 : `ntp access-group` filtre — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-NTP-Tutoriel.md` §8.
+
+Les quatre groupes étaient acceptés, rangés, rendus — et **aucune ACL
+n'était consultée** à la réception d'un paquet NTP.
+
+**La vérification contre la référence de commandes IOS a corrigé le
+tutoriel et mon propre lot** :
+
+- **`nomodify` n'est pas un mot-clé Cisco** — c'est celui de
+  `ntpd`/`chrony`. Le tutoriel l'écrit, mon lot N1 l'acceptait, et son
+  test l'avait recopié. Refusé désormais, test corrigé.
+- **Seul `peer` autorise à se SYNCHRONISER.** Un routeur en
+  `serve-only` continue de servir l'heure et **cesse de se
+  synchroniser** — le piège du §3.7, maintenant reproductible.
+- **Ordre du moins au plus restrictif, premier match gagnant.** Une page
+  Cisco place `query-only` en 2ᵉ, deux autres en 4ᵉ ; l'écart est écrit
+  dans le PRD, et c'est l'ordre majoritaire — seul cohérent avec
+  l'énoncé — qui est implémenté.
+
+**Ce qui vous concerne** :
+
+- **`Router.evaluateAclPermit(acl, srcIp)`** est nouveau : un **point
+  unique** d'évaluation d'ACL, partagé avec NAT et les VTY. Si vous
+  ajoutez un consommateur d'ACL, passez par lui plutôt que d'appeler
+  `aclEngine` directement — deux évaluateurs finiraient par rendre deux
+  verdicts pour la même liste.
+- `NtpAgent.setAclMatchFn` est le port étroit correspondant, même motif
+  que `NATEngine.setACLMatchFn`.
+- `events.ts` gagne `ntp.access.denied`. Ajout pur.
+
+**Refusé plutôt qu'accepté sans effet** : `ntp access-group match-all`.
+Les sources décrivent son existence sans sa sémantique exacte de
+combinaison, et implémenter une règle devinée est ce que le PRD
+interdit.
+
+**Reste ouvert sur NTP** : rien ne compte les paquets (donc
+`show ntp packets` reste refusée) ; le slewing/stepping n'est pas
+modélisé ; `chrony` ne lit pas son `keyfile` ; les requêtes de contrôle
+(mode 6) n'existent pas, ce qui rend `query-only` inerte sur le fil —
+sa seule conséquence observable est de refuser les requêtes de temps.
+
+
 ### `ping ipv6` sur un routeur — LIVRÉ
 
 **Agent** : session « logging ».
@@ -2948,7 +2993,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R7 livrés — clos** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
 | CLI Huawei VRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V15 livrés** ; lot terminé |
-| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N5 livrés** — authentification comprise |
+| NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N6 livrés** — auth. et contrôle d'accès compris |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
