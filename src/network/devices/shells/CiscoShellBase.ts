@@ -307,7 +307,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected selectedConsoleLine: number | null = null;
   protected consoleLinePassword: string | null = null;
   protected consoleLinePasswordEncrypted: boolean = false;
-  protected consoleLineLogin: 'password' | 'local' | 'none' | null = null;
+  protected consoleLineLogin: 'password' | 'local' | 'none' | 'aaa' | null = null;
+  /**
+   * La liste de methodes nommee d'un `login authentication <nom>` pose
+   * sur la console. C'est la ligne de secours de toute activation d'AAA :
+   * elle garde la console sur la base LOCALE, pour qu'un serveur TACACS+
+   * en panne ne ferme pas la porte. Elle etait acceptee, comprise comme
+   * un `login` nu, et rendue nulle part — donc perdue au rechargement,
+   * ce qui est precisement le cas dangereux.
+   */
+  protected consoleLineLoginAuthList: string | null = null;
   protected consoleLinePrivilegeLevel: number | null = null;
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
@@ -328,7 +337,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     line: number;
     password: string | null;
     passwordEncrypted: boolean;
-    login: 'password' | 'local' | 'none' | null;
+    login: 'password' | 'local' | 'none' | 'aaa' | null;
+    loginAuthList: string | null;
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
@@ -340,6 +350,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       password: this.consoleLinePassword,
       passwordEncrypted: this.consoleLinePasswordEncrypted,
       login: this.consoleLineLogin,
+      loginAuthList: this.consoleLineLoginAuthList,
       privilegeLevel: this.consoleLinePrivilegeLevel,
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
@@ -4437,7 +4448,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           }
           if (kw === 'login') {
             const sub = args[0]?.toLowerCase();
-            this.consoleLineLogin = sub === 'local' ? 'local' : 'password';
+            if (sub === 'local') { this.consoleLineLogin = 'local'; this.consoleLineLoginAuthList = null; return ''; }
+            if (sub === 'authentication') {
+              if (!args[1]) return '% Incomplete command.';
+              this.consoleLineLogin = 'aaa';
+              this.consoleLineLoginAuthList = args[1];
+              return '';
+            }
+            this.consoleLineLogin = 'password';
+            this.consoleLineLoginAuthList = null;
             return '';
           }
           if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
@@ -4455,6 +4474,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (kw === 'no') {
             const sub = args[0]?.toLowerCase();
             if (sub === 'login') {
+              this.consoleLineLoginAuthList = null;
               if (args[1]?.toLowerCase() === 'local') {
                 this.consoleLineLogin = null;
               } else {

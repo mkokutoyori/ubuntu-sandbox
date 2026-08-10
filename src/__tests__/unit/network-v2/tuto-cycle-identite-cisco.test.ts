@@ -421,3 +421,32 @@ describe('les jetons de bannière sont ceux d\'IOS, et seulement ceux-là', () =
     expect(vu).toContain('Bienvenue, $USERNAME, a $TIME');
   }, 30_000);
 });
+
+/**
+ * Chapitre 10.3 — la séquence sûre d'activation d'AAA.
+ *
+ * `login authentication CONSOLE_LOCALE` sur `line console 0` est ce qui
+ * garde la console sur la base LOCALE : sans elle, un serveur TACACS+
+ * injoignable ferme la porte de l'équipement. Elle était acceptée,
+ * comprise comme un `login` nu, et rendue nulle part — donc perdue au
+ * rechargement de la topologie, ce qui est précisément le cas dangereux.
+ */
+describe('la ligne de secours d\'AAA survit à la configuration', () => {
+  for (const [nom, fabrique] of PLATEFORMES) {
+    it(`${nom} : \`login authentication <liste>\` est stockée ET rendue`, async () => {
+      const d = await machine(fabrique);
+      await tape(d, [
+        'configure terminal',
+        'username secours privilege 15 secret SecoursSuperSecret!',
+        'aaa authentication login CONSOLE_LOCALE local',
+        'aaa new-model',
+        'line console 0', 'login authentication CONSOLE_LOCALE', 'exit', 'end',
+      ]);
+      const bloc = await d.executeCommand('show running-config | section line console');
+      expect(bloc).toContain('login authentication CONSOLE_LOCALE');
+      // La forme nue ne doit PAS être rendue à sa place : les deux
+      // n'authentifient pas contre la même chose.
+      expect(bloc.split('\n').map((l) => l.trim())).not.toContain('login');
+    }, 30_000);
+  }
+});

@@ -1427,7 +1427,8 @@ export function consoleAndAuxLineConfigLines(
     line: number;
     password: string | null;
     passwordEncrypted: boolean;
-    login: 'password' | 'local' | 'none' | null;
+    login: 'password' | 'local' | 'none' | 'aaa' | null;
+    loginAuthList: string | null;
     privilegeLevel: number | null;
     execTimeoutMin: number | null;
     execTimeoutSec: number;
@@ -1441,7 +1442,9 @@ export function consoleAndAuxLineConfigLines(
         serviceEncryption, false, 'line-console')}`);
     }
     if (consoleCfg.login === 'local') lines.push(' login local');
-    else if (consoleCfg.login === 'password') lines.push(' login');
+    else if (consoleCfg.login === 'aaa') {
+      lines.push(` login authentication ${consoleCfg.loginAuthList ?? 'default'}`);
+    } else if (consoleCfg.login === 'password') lines.push(' login');
     else if (consoleCfg.login === 'none') lines.push(' no login');
     if (consoleCfg.privilegeLevel != null) lines.push(` privilege level ${consoleCfg.privilegeLevel}`);
     if (consoleCfg.execTimeoutMin != null) {
