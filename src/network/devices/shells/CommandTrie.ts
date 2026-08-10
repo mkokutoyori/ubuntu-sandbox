@@ -18,6 +18,11 @@
 
 import { extractHandlerKeywords } from './HandlerKeywordExtractor';
 import { descriptionForKeyword } from './CliKeywordDescriptions';
+import {
+  SUGGESTION_SOURCES, DERIVED_ORIGINS,
+  type SuggestionCandidate, type SuggestionOrigin, type SuggestionRequest,
+  type SuggestionTrieAccess,
+} from './cli/SuggestionSources';
 
 // ─── Parameter Types ────────────────────────────────────────────────
 
@@ -946,26 +951,16 @@ export class CommandTrie {
       results.push(prefix + word);
     };
 
-    for (const m of this.suggestionsApplicables(
-      this.prefixMatch(node, partialLower, true), paramIdx, argsSoFar)) {
-      push(m.keyword);
-    }
-
-    // La MÊME règle que `?`, lue au même endroit : ce que l'aide a
-    // délibérément retiré, la complétion ne le rend pas non plus.
-    if (node.hintSuggestions) {
-      for (const h of this.suggestionsApplicables(node.hintSuggestions, paramIdx, argsSoFar)) {
-        if (h.keyword.toLowerCase().startsWith(partialLower)) push(h.keyword);
+    const requete: SuggestionRequest = {
+      node, path: completed, consumedArgs: paramIdx, argsSoFar,
+      partial, matchPartial: true, forTab: true,
+    };
+    const statiques = this.collectSuggestions(
+      requete, new Set<SuggestionOrigin>(['child', 'hint', 'auto', 'param']));
+    for (const c of this.suggestionsApplicables(statiques, paramIdx, argsSoFar)) {
+      if (c.origin === 'child' || c.keyword.toLowerCase().startsWith(partialLower)) {
+        push(c.keyword);
       }
-    }
-
-    for (const auto of this.suggestionsApplicables(
-      this.autoContinuations(node), paramIdx, argsSoFar)) {
-      if (auto.keyword.startsWith(partialLower)) push(auto.keyword);
-    }
-
-    for (const v of this.enumValues(node, paramIdx, true)) {
-      if (v.keyword.toLowerCase().startsWith(partialLower)) push(v.keyword);
     }
 
     // Un MOT-CLÉ et une VALEUR ne se disputent jamais la même place sur
@@ -981,14 +976,9 @@ export class CommandTrie {
     // reviennent dès qu'aucun mot-clé ne correspond (`interface 0/1`,
     // `ip route 10.0.0.0 255.255.255.`), et `?` continue de les lister,
     // ce qui reste le bon endroit pour découvrir les ports réels.
-    if (this.dynamicResolver && results.length === 0) {
-      const context: DynamicCompletionContext = {
-        path: completed,
-        paramType: node.params[paramIdx]?.type ?? null,
-        partial,
-      };
-      for (const value of this.dynamicResolver.candidatesFor(context)) {
-        if (value.toLowerCase().startsWith(partialLower)) push(value);
+    if (results.length === 0) {
+      for (const c of this.collectSuggestions(requete, new Set<SuggestionOrigin>(['dynamic']))) {
+        if (c.keyword.toLowerCase().startsWith(partialLower)) push(c.keyword);
       }
     }
 
@@ -1150,6 +1140,96 @@ export class CommandTrie {
     return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
   }
 
+  private autoExtractionEnabled = true;
+
+  setAutoExtractionEnabled(on: boolean): void {
+    this.autoExtractionEnabled = on;
+  }
+
+  isAutoExtractionEnabled(): boolean {
+    return this.autoExtractionEnabled;
+  }
+
+  private suggestionAccess(): SuggestionTrieAccess {
+    return {
+      childCandidates: (r) => this.childCandidates(r),
+      paramCandidates: (r) => this.paramCandidates(r),
+      hintCandidates: (r) => this.hintCandidates(r),
+      autoCandidates: (r) => this.autoCandidates(r),
+      dynamicCandidates: (r) => this.dynamicCandidates(r),
+    };
+  }
+
+  private collectSuggestions(
+    request: SuggestionRequest,
+    origins: ReadonlySet<SuggestionOrigin>,
+  ): SuggestionCandidate[] {
+    const access = this.suggestionAccess();
+    const out: SuggestionCandidate[] = [];
+    for (const source of SUGGESTION_SOURCES) {
+      if (!origins.has(source.origin)) continue;
+      if (DERIVED_ORIGINS.has(source.origin) && !this.autoExtractionEnabled) continue;
+      out.push(...source.collect(request, access));
+    }
+    return out;
+  }
+
+  private childCandidates(r: SuggestionRequest): SuggestionCandidate[] {
+    const enfants = r.matchPartial
+      ? this.prefixMatch(r.node, r.partial.toLowerCase(), true)
+      : [...r.node.children.values()].filter((c) => !c._hintOnly || c._passthrough);
+    return enfants.map((child) => ({
+      keyword: child.keyword,
+      description: this.resolveDescription(child) || this.hintDescription(r.node, child.keyword),
+      origin: 'child' as const,
+    }));
+  }
+
+  private paramCandidates(r: SuggestionRequest): SuggestionCandidate[] {
+    if (r.forTab) {
+      return this.enumValues(r.node, r.consumedArgs, true)
+        .map((v) => ({ ...v, origin: 'param' as const }));
+    }
+    const out: SuggestionCandidate[] = [];
+    for (const param of r.node.params.slice(r.consumedArgs)) {
+      if (param.type === 'ENUM' && param.values) {
+        for (const v of param.values) out.push({ ...v, origin: 'param' });
+      } else {
+        out.push({
+          keyword: renderParamKeyword(param),
+          description: param.description,
+          origin: 'param',
+        });
+      }
+      if (!param.optional) break;
+    }
+    return out;
+  }
+
+  private hintCandidates(r: SuggestionRequest): SuggestionCandidate[] {
+    return (r.node.hintSuggestions ?? []).map((h) => ({
+      keyword: h.keyword,
+      description: h.description || descriptionForKeyword(h.keyword),
+      leadingOnly: h.leadingOnly,
+      origin: 'hint' as const,
+    }));
+  }
+
+  private autoCandidates(r: SuggestionRequest): SuggestionCandidate[] {
+    return this.autoContinuations(r.node)
+      .map((a) => ({ keyword: a.keyword, description: a.description, origin: 'auto' as const }));
+  }
+
+  private dynamicCandidates(r: SuggestionRequest): SuggestionCandidate[] {
+    if (!this.dynamicResolver) return [];
+    const values = this.dynamicResolver.candidatesFor({
+      path: r.path,
+      paramType: r.node.params[r.consumedArgs]?.type ?? null,
+      partial: r.partial,
+    });
+    return values.map((v) => ({ keyword: v, description: '', origin: 'dynamic' as const }));
+  }
+
   private enumValues(
     node: CommandNode,
     consumedArgs: number,
@@ -1303,30 +1383,19 @@ export class CommandTrie {
     // 192.168.10.1`, IOS attend le masque, pas `dhcp`. Une fois les
     // arguments servis, les mots-clés qui les suivent redeviennent
     // proposables — `access-list 10 ?` rend bien `deny`/`permit`.
+    const requete: SuggestionRequest = {
+      node, path: [], consumedArgs, argsSoFar,
+      partial: '', matchPartial: false, forTab: false,
+    };
+    const depuis = (origin: SuggestionOrigin) =>
+      this.collectSuggestions(requete, new Set([origin]));
+
     const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
-    if (!argumentsConsumed) {
-      const enfants: Array<{ keyword: string; description: string }> = [];
-      for (const [, child] of node.children) {
-        if (child._hintOnly && !child._passthrough) continue;
-        const described = this.resolveDescription(child);
-        enfants.push({
-          keyword: child.keyword,
-          description: described || this.hintDescription(node, child.keyword),
-        });
-      }
-      results.push(...jamaisDeuxFois(enfants));
-    }
+    if (!argumentsConsumed) results.push(...jamaisDeuxFois(depuis('child')));
 
     // Un paramètre déjà fourni n'est plus proposé : après
     // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.
-    for (const param of node.params.slice(consumedArgs)) {
-      if (param.type === 'ENUM' && param.values) {
-        for (const v of param.values) results.push({ ...v });
-      } else {
-        results.push({ keyword: renderParamKeyword(param), description: param.description });
-      }
-      if (!param.optional) break;
-    }
+    results.push(...depuis('param'));
 
     // Une continuation déclarée vient APRÈS l'argument obligatoire, pas
     // à sa place : `logging host ?` offrait `transport` et
@@ -1335,16 +1404,11 @@ export class CommandTrie {
     const pending = node.params[consumedArgs];
     const awaitsMandatory = pending !== undefined && !pending.optional;
 
-    if (!argumentsConsumed && !awaitsMandatory
-        && node.hintSuggestions && node.hintSuggestions.length > 0) {
+    if (!argumentsConsumed && !awaitsMandatory) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      for (const hint of jamaisDeuxFois(node.hintSuggestions)) {
+      for (const hint of jamaisDeuxFois(depuis('hint'))) {
         if (!seen.has(hint.keyword.toLowerCase())) {
-          // Un hint déclaré sous sa forme courte (`['count']`) naît sans
-          // description ; la table canonique en a une.
-          results.push(hint.description
-            ? hint
-            : { keyword: hint.keyword, description: descriptionForKeyword(hint.keyword) });
+          results.push({ keyword: hint.keyword, description: hint.description });
           seen.add(hint.keyword.toLowerCase());
         }
       }
@@ -1355,7 +1419,7 @@ export class CommandTrie {
     let autoIndescriptibles = false;
     if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
-      for (const auto of jamaisDeuxFois(this.autoContinuations(node))) {
+      for (const auto of jamaisDeuxFois(depuis('auto'))) {
         // Un mot EXTRAIT du corps d'un handler et qu'on ne sait pas
         // décrire n'est probablement pas un mot-clé : c'est un nom de
         // variable que l'extracteur a ramassé au passage. `acl ?` sur
