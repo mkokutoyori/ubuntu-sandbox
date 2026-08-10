@@ -639,6 +639,11 @@ export function displayCurrentConfig(
     // revenait en `version 2` apres rechargement.
     lines.push(` version ${(router as unknown as { _ripVersion?: number })._ripVersion ?? 2}`);
     if (huaweiRipExtras(router).autoSummary === false) lines.push(' undo summary');
+    // `maximum load-balancing` n'etait rendu nulle part, sur AUCUN des
+    // quatre protocoles : une configuration rejouee a l'import perdait
+    // donc le plafond d'ECMP.
+    const ripMax = huaweiRipExtras(router).maximumPaths;
+    if (ripMax !== undefined) lines.push(` maximum load-balancing ${ripMax}`);
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -653,6 +658,8 @@ export function displayCurrentConfig(
     if (config.routerId && config.routerId !== '0.0.0.0') {
       lines.push(` router-id ${config.routerId}`);
     }
+    const ospfMax = (router._getOSPFExtraConfig() as { maximumPaths?: number }).maximumPaths;
+    if (ospfMax !== undefined) lines.push(` maximum load-balancing ${ospfMax}`);
     // Group network statements by area
     const areaNetworks = new Map<string, Array<{ network: string; wildcard: string }>>();
     for (const net of config.networks) {

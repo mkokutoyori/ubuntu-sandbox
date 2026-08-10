@@ -316,8 +316,13 @@ export function buildRoutingProtoConfig(
   routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
     const n = parseInt(a[0], 10);
     const p = curProto(ctx).proto;
+    if (Number.isNaN(n) || n < 1) return '';
+    // Le plafond va au ROUTEUR, qui est la seule chose que le plan de
+    // données consulte : sans cet appel, la valeur restait rangée dans
+    // le magasin du protocole et ne bornait rien.
+    ctx.r().setMaximumPaths(p, n);
     if (p === 'rip') repo.rip.maximumPaths = n;
-    else if (p === 'eigrp' && !Number.isNaN(n) && n >= 1) {
+    else if (p === 'eigrp') {
       eigrp().maximumPaths = n;
       eigrpEng().getConfig().maximumPaths = n;
       converge();

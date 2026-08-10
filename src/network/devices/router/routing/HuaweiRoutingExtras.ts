@@ -25,10 +25,14 @@ export interface HuaweiBgpGroupCfg {
  *
  * C'est la catégorie que `CLAUDE.md` suit déjà pour
  * `HuaweiRoutingExtras.importedRoutes` et `BGPEngine.redistribute`.
- * Deux de ces commandes n'écrivent d'ailleurs même pas dans `rawLines`
- * (`maximum load-balancing`, `ipv4-family`/`ipv6-family` côté BGP) :
- * elles n'ont donc aucun effet observable, ce qui est un défaut distinct
- * et plus grave que le typage, et qui reste ouvert.
+ * `maximum load-balancing` n'était ni lu NI RENDU — donc sans effet et
+ * perdu au rechargement d'une topologie ; il est désormais les deux (le
+ * plafond vit sur le `Router`, seule chose que le plan de données
+ * consulte, et la ligne est rendue ci-dessous). `ipv4-family` /
+ * `ipv6-family` restent stockés sans effet : ce simulateur n'a pas de
+ * table de routage par famille d'adresses, donc entrer dans une vue de
+ * famille ne peut rien changer — le dire vaut mieux que de rendre une
+ * ligne qui promettrait une séparation qui n'existe pas.
  */
 export interface HuaweiBgpProcess {
   asn: number;
@@ -41,7 +45,7 @@ export interface HuaweiBgpProcess {
   /** `timer keepalive <s> hold <s>` — stocké, lu par personne. */
   keepaliveSec?: number;
   holdSec?: number;
-  /** `maximum load-balancing <n>` — stocké, lu par personne. */
+  /** `maximum load-balancing <n>` — le plafond d'ECMP, rendu et agissant. */
   maximumPaths?: number;
   /** `ipv4-family` / `ipv6-family` — stockés, lus par personne. */
   ipv4Family?: boolean;
@@ -64,7 +68,7 @@ export interface HuaweiIsisProcess {
   lspRefreshSec?: number;
   /** `set-overload` / `undo set-overload` — stocké, lu par personne. */
   overload?: boolean;
-  /** `maximum load-balancing <n>` — stocké, lu par personne. */
+  /** `maximum load-balancing <n>` — le plafond d'ECMP, rendu et agissant. */
   maximumPaths?: number;
   /** `preference <n>` — stocké, lu par personne. */
   preference?: number;
@@ -111,6 +115,12 @@ export class HuaweiRoutingExtras {
         lines.push(` peer ${p.ip}${p.groupName ? ' group ' + p.groupName : ''}${p.asNumber !== undefined ? ' as-number ' + p.asNumber : ''}`);
         for (const line of p.rawLines) lines.push(` ${line}`);
       }
+      // Rendue APRÈS les pairs et avant les lignes brutes : c'est une
+      // ligne de la vue BGP elle-même, et une configuration relue est ce
+      // qui REFAIT le réglage à l'import d'une topologie.
+      if (this.bgpProcess.maximumPaths !== undefined) {
+        lines.push(` maximum load-balancing ${this.bgpProcess.maximumPaths}`);
+      }
       for (const r of this.bgpProcess.rawLines) lines.push(` ${r}`);
     }
     for (const [, p] of this.isisProcesses) {
@@ -122,6 +132,9 @@ export class HuaweiRoutingExtras {
       else if (p.checkzero) lines.push(' checkzero');
       if (p.defaultRouteAdvertise) lines.push(' default-route-advertise');
       if (p.gracefulRestart) lines.push(' graceful-restart');
+      if (p.maximumPaths !== undefined) {
+        lines.push(` maximum load-balancing ${p.maximumPaths}`);
+      }
       for (const ir of p.importedRoutes) lines.push(` import-route ${ir}`);
       for (const r of p.rawLines) lines.push(` ${r}`);
     }

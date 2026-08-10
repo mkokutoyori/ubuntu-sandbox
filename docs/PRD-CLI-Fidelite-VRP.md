@@ -1428,7 +1428,12 @@ chose **greppable**, ce qu'un `any` empêchait. C'est la catégorie que
 Deux de ces commandes n'écrivent même pas dans `rawLines`
 (`maximum load-balancing`, `ipv4-family`/`ipv6-family` côté BGP) : elles
 n'ont **aucun effet observable**, ce qui est un défaut distinct et plus
-grave que le typage. Il reste ouvert, et il est maintenant nommé.
+grave que le typage. Il est maintenant nommé — **et traité** pour
+`maximum load-balancing` par `PRD-Routage-Fidelite.md` §15 (lot R8), qui
+a trouvé le défaut bien plus large que sa moitié Huawei : la valeur était
+rangée dans sept magasins, sur les deux constructeurs, et lue par
+personne. `ipv4-family`/`ipv6-family` restent sans effet, avec leur
+raison écrite dans `HuaweiRoutingExtras.ts`.
 
 ### Les huit magasins bricolés
 

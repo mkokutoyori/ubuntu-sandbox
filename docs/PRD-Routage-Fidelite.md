@@ -1074,3 +1074,119 @@ OSPF, Huawei, sérialisation, vues d'interface. Typecheck
 (192 problèmes avant, 192 après).
 
 **Le PRD est clos** : R1 à R7 livrés.
+
+---
+
+## 15. R8 — Livré : `maximum-paths` borne vraiment la répartition de charge
+
+Le chantier `PRD-Routage-Fidelite.md` avait été déclaré clos en R7. Ce lot
+le rouvre pour une raison précise : `PRD-CLI-Fidelite-VRP.md` §18 avait
+nommé, sans le traiter, un défaut qui n'était pas de typage mais de
+**fonction** — et la mesure a montré qu'il était bien plus large que la
+moitié Huawei qui l'avait fait remarquer.
+
+### 15.1 Un moteur réel, et aucun plafond
+
+L'ECMP de ce dépôt est réel depuis l'audit 02 : `Router.lookupRoute`
+collecte toutes les routes à égalité parfaite (même préfixe, même
+distance administrative, même métrique) et les emploie à tour de rôle.
+
+**Le plafond, lui, n'existait pas.** La valeur était rangée dans **sept
+magasins** — un par protocole et par constructeur — et lue par personne :
+
+| Écriture | Lecteur |
+|---|---|
+| `repo.rip.maximumPaths` (IOS) | aucun |
+| `eigrp().maximumPaths` (IOS) | EIGRP seul, qui a le sien |
+| OSPF `extra().maximumPaths` (IOS) | aucun |
+| OSPF `_getOSPFExtraConfig()` (VRP) | aucun |
+| BGP `b.maximumPaths` (VRP) | aucun |
+| IS-IS `i.maximumPaths` (VRP) | aucun |
+| RIP `ripExtras().maximumPaths` (VRP) | aucun |
+
+Conséquence : **`maximum-paths 1` n'avait aucun effet**. C'est la façon
+normale de COUPER la répartition, et le premier geste de tout diagnostic
+de trafic asymétrique — une machine où ce geste ne change rien enseigne
+exactement le contraire de ce qu'il faut.
+
+Côté VRP le défaut allait plus loin : `maximum load-balancing` n'était
+**rendu nulle part**, sur aucun des quatre protocoles, donc perdu au
+rechargement d'une topologie — la configuration rendue étant ce qui
+REFAIT le réglage à l'import.
+
+### 15.2 Les défauts sont ceux du matériel, et la différence est le sujet
+
+Vérifiés plutôt que supposés, et c'est la seule chose qu'il ne fallait
+pas rater :
+
+- **BGP vaut 1.** « By default, BGP installs only the best path to a
+  destination in the IP routing table », et Huawei l'écrit aussi (« la
+  répartition de charge entre routes BGP n'est pas activée par
+  défaut »).
+- **Les IGP valent 4.** La documentation Huawei ajoute la phrase qui
+  donne son sens à la valeur 1 : « to disable load balancing, set the
+  value of number to 1 ».
+
+Les aligner tous sur 4 apprendrait qu'un iBGP répartit tout seul, ce qui
+est faux et coûteux. Une conséquence agréable de la valeur juste :
+**côté BGP la commande OUVRE au lieu de restreindre**, ce qui est le sens
+inverse de son emploi sous un IGP, et la sonde le vérifie dans les deux
+sens.
+
+### 15.3 Un seul magasin, et ce qui n'est pas plafonné
+
+`Router.maximumPathsFor(proto)` / `setMaximumPaths(proto, n)` est
+l'autorité unique que le plan de données consulte ; les sept sites
+d'écriture y passent tous, chacun gardant son champ pour son propre
+rendu — un site d'écriture par commande, donc aucune dérive possible.
+
+**`connected` et `static` n'ont pas de plafond, et c'est voulu** :
+`maximum-paths` vit sous un processus de routage, aucune commande ne
+borne les statiques, donc six routes statiques à égalité se répartissent
+toujours — comme sur une vraie machine. `maximumPathsFor` rend
+`Infinity` pour elles plutôt qu'une valeur inventée.
+
+### 15.4 Le plafond s'applique aussi à l'INSTALLATION, pas seulement au choix
+
+`RouterOSPFIntegration.installRoutes` — la seule intégration qui produise
+réellement plusieurs prochains sauts pour un préfixe — n'installe plus
+que `maximumPathsFor('ospf')` entrées. Sans cela, `show ip route`
+listerait quatre chemins sur une machine qui n'en emprunte qu'un, et les
+deux vues de la même machine se contrediraient : c'est la forme de défaut
+que ce dépôt referme partout.
+
+Le plafond appliqué dans `lookupRoute` reste, comme filet pour les
+protocoles dont l'installation ne passe pas par là. Il porte sur le
+GROUPE de chemins à égalité et non route par route : `maximum-paths`
+borne un nombre de chemins vers une destination, pas la validité d'une
+route — c'est pourquoi il ne pouvait pas vivre dans `isRouteUsable`.
+
+### 15.5 Une valeur absurde est ignorée plutôt que rangée
+
+`maximum-paths 0` ne stocke rien : un plafond de zéro chemin est une
+configuration qu'aucune machine n'accepte, et le ranger produirait un
+routeur qui ne route plus rien pour une raison introuvable.
+
+### 15.6 Ce qui reste, et pourquoi
+
+`ipv4-family` / `ipv6-family` côté BGP VRP restent stockés sans effet, et
+c'est dit dans `HuaweiRoutingExtras.ts` plutôt que tu : ce simulateur n'a
+pas de table de routage par famille d'adresses, donc entrer dans une vue
+de famille ne peut rien changer — rendre la ligne promettrait une
+séparation qui n'existe pas.
+
+Le plafond n'est pas appliqué à l'installation pour RIP, IS-IS et BGP :
+leurs intégrations n'installent qu'un chemin par préfixe aujourd'hui,
+donc il n'y a rien à plafonner là, et le filet de `lookupRoute` couvre le
+jour où ce ne sera plus vrai.
+
+### 15.7 Mesures
+
+`probe-maximum-paths-borne-ecmp.test.ts` (15 cas) discriminé par
+`git stash` sur les huit fichiers touchés : **12 tombent**. Les 3 qui
+passent des deux côtés sont les cas de rendu VRP dont la ligne était déjà
+absente avant comme après le retrait — ils prouvent le rendu, pas le
+plafond.
+
+264 suites connexes vertes (3 665 cas). Typecheck : jeu d'erreurs
+**identique** (217). Lint : 177 problèmes avant, 177 après.

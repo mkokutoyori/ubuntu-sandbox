@@ -2741,7 +2741,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('maximum load-balancing', 'BGP ECMP', (args) => {
       const b = bgp(); const n = parseInt(args[0] ?? '', 10);
-      if (b && !isNaN(n)) b.maximumPaths = n;
+      if (!b || isNaN(n) || n < 1) return '';
+      b.maximumPaths = n;
+      // Le plafond va au ROUTEUR : c'est la seule chose que le plan de
+      // données consulte. Sans cet appel, la commande qui ACTIVE la
+      // répartition BGP — désactivée par défaut chez les deux
+      // constructeurs — ne l'activait pas.
+      this.r().setMaximumPaths('bgp', n);
       return '';
     });
     t.registerGreedy('ipv4-family', 'Enter IPv4 address family', (_args) => {
@@ -2814,7 +2820,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('maximum load-balancing', 'IS-IS ECMP paths', (args) => {
       const i = isis(); const n = parseInt(args[0] ?? '', 10);
-      if (i && !isNaN(n)) i.maximumPaths = n;
+      if (!i || isNaN(n) || n < 1) return '';
+      i.maximumPaths = n;
+      this.r().setMaximumPaths('isis', n);
       return '';
     });
     t.registerGreedy('preference', 'Set IS-IS preference', (args) => {
@@ -2914,7 +2922,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('maximum load-balancing', 'Set ECMP for RIP', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!isNaN(n)) ripExtras().maximumPaths = n;
+      if (isNaN(n) || n < 1) return '';
+      ripExtras().maximumPaths = n;
+      this.r().setMaximumPaths('rip', n);
       return '';
     });
     // VRP accepts "GigabitEthernet0/0/0" and "GigabitEthernet 0/0/0";

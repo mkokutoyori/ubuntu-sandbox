@@ -137,7 +137,9 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
 
   trie.registerGreedy('maximum-paths', 'Forward equal-cost paths', (args) => {
     const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().maximumPaths = n;
+    if (isNaN(n) || n < 1) return '';
+    extra().maximumPaths = n;
+    ctx.r().setMaximumPaths('ospf', n);
     return '';
   });
   trie.registerGreedy('compatible', 'Compatibility mode', (args) => {

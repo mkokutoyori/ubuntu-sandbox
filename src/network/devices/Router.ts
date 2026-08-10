@@ -270,6 +270,47 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private routingTable: RouteEntry[] = [];
   /** Round-robin cursor across genuinely tied (same prefix/AD/metric) ECMP candidates in lookupRoute(). */
   private ecmpCursor = 0;
+
+  /**
+   * Combien de chemins de coût égal un protocole a le droit d'installer.
+   *
+   * `maximum-paths <n>` (IOS) et `maximum load-balancing <n>` (VRP) sont
+   * la MÊME décision, et elle était rangée dans **sept** magasins
+   * différents — un par protocole et par constructeur — que **personne
+   * ne lisait** : `Router.lookupRoute` répartissait sur tous les chemins
+   * à égalité sans plafond, donc `maximum-paths 1`, qui est la façon
+   * normale de COUPER la répartition et le premier geste de tout
+   * diagnostic de trafic asymétrique, n'avait aucun effet.
+   *
+   * Les défauts sont ceux du matériel, vérifiés et non supposés, et la
+   * différence entre eux est la seule chose qu'il ne fallait pas rater :
+   * **BGP vaut 1** — « by default, BGP installs only the best path »,
+   * et Huawei l'écrit aussi (« la répartition de charge entre routes BGP
+   * n'est pas activée par défaut ») — tandis que les IGP valent **4**.
+   * Les aligner tous sur 4 apprendrait qu'un iBGP répartit tout seul, ce
+   * qui est faux et coûteux.
+   *
+   * Ce qui n'a PAS de plafond, et c'est voulu : `connected` et `static`.
+   * Aucune commande ne les borne — `maximum-paths` vit sous un processus
+   * de routage — donc deux routes statiques à égalité se répartissent
+   * toujours, comme sur une vraie machine.
+   */
+  private maxPathsByProto = new Map<string, number>();
+
+  private static readonly MAX_PATHS_DEFAUT: Readonly<Record<string, number>> = {
+    bgp: 1, ospf: 4, rip: 4, eigrp: 4, isis: 4,
+  };
+
+  setMaximumPaths(proto: string, n: number): void {
+    this.maxPathsByProto.set(proto, n);
+  }
+
+  /** Le plafond effectif ; `Infinity` pour ce qu'aucune commande ne borne. */
+  maximumPathsFor(proto: string): number {
+    const pose = this.maxPathsByProto.get(proto);
+    if (pose !== undefined) return pose;
+    return Router.MAX_PATHS_DEFAUT[proto] ?? Infinity;
+  }
   private arpTable: Map<string, ARPEntry> = new Map();
   protected ipv6AccessLists: IPv6ACL[] = [];
 
@@ -1608,7 +1649,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     if (candidates.length === 0) return null;
     if (candidates.length === 1) return candidates[0];
-    return candidates[this.ecmpCursor++ % candidates.length];
+    // Le plafond du protocole s'applique ICI, sur le groupe de chemins à
+    // égalité, et non route par route : `maximum-paths` borne un NOMBRE
+    // DE CHEMINS vers une destination, pas la validité d'une route.
+    const plafond = this.maximumPathsFor(candidates[0].type);
+    const retenus = candidates.length > plafond ? candidates.slice(0, plafond) : candidates;
+    if (retenus.length === 1) return retenus[0];
+    return retenus[this.ecmpCursor++ % retenus.length];
   }
 
   private findInterfaceForIP(targetIP: IPAddress): Port | null {

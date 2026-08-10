@@ -91,6 +91,13 @@ export interface OSPFRouterContext {
   getBfdAgent?(): BfdAgent | undefined;
   getIpPrefixListStore?(): import('./policy/IpPrefixList').IpPrefixListStore;
   getBus?(): import('@/events/EventBus').IEventBus;
+  /**
+   * Le plafond de chemins à coût égal du protocole (`maximum-paths` /
+   * `maximum load-balancing`). Optionnel parce que ce contexte est aussi
+   * rempli par des objets de test qui n'ont pas de `Router` derrière ;
+   * absent, rien n'est plafonné, ce qui est le comportement d'avant.
+   */
+  maximumPathsFor?(proto: string): number;
 }
 
 // ─── OSPF Integration Engine ────────────────────────────────────
@@ -1674,7 +1681,14 @@ export class RouterOSPFIntegration {
       const ifaces: Array<string | undefined> =
         route.ifaces?.length ? route.ifaces : [route.iface || route.interface || ''];
 
-      for (let i = 0; i < nextHops.length; i++) {
+      // `maximum-paths` / `maximum load-balancing` borne ce que le
+      // protocole INSTALLE, pas seulement ce que le plan de données
+      // choisit : sans ce plafond ici, `show ip route` listerait quatre
+      // chemins sur une machine qui n'en emprunte qu'un, et les deux
+      // vues de la même machine se contrediraient.
+      const plafondOspf = this.ctx.maximumPathsFor?.('ospf') ?? Infinity;
+      const retenus = Math.min(nextHops.length, plafondOspf);
+      for (let i = 0; i < retenus; i++) {
         const nextHop = nextHops[i];
         const iface = ifaces[i] ?? ifaces[0] ?? '';
         const entry: any = {

@@ -176,6 +176,7 @@ export function buildOSPFViewCommands(
       const ospf = ctx.r()._getOSPFEngineInternal();
       if (ospf && (ospf as any).setMaximumPaths) (ospf as any).setMaximumPaths(n);
       (ctx.r()._getOSPFExtraConfig() as any).maximumPaths = n;
+      ctx.r().setMaximumPaths('ospf', n);
     }
     return '';
   });
