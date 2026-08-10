@@ -2370,7 +2370,9 @@ décision à mesurer, pas un ajout à celui-ci.
 **GLBP n'a pas d'authentification** : `glbp <n> authentication md5
 key-string` range la clé sur la façade et `GlbpAgent` n'a aucune notion
 d'authentification — ni champ, ni contrôle. La lui donner est le jumeau
-du lot V16 côté GLBP, et non un branchement.
+du lot V16 côté GLBP, et non un branchement. **Livré par le lot V19, en
+§28** — qui a trouvé la commande non pas rangée sur la façade mais
+purement JETÉE, un cran plus bas que ce que cette phrase annonçait.
 
 ### 27.6 Mesures
 
@@ -2381,3 +2383,74 @@ de passer — et le cas de remise à zéro.
 
 102 suites connexes vertes (1 514 cas). Typecheck : jeu d'erreurs
 **identique** (217). Lint propre.
+
+---
+
+## 28. V19 — Livré : GLBP authentifie, et son délai de préemption retarde
+
+§27.5 laissait ces deux points ouverts. La mesure a trouvé le défaut
+**un cran en dessous** de celui de VRRP.
+
+### 28.1 Les commandes n'étaient pas inertes, elles étaient JETÉES
+
+```ts
+case 'forwarder': case 'authentication': return '';
+```
+
+`glbp <n> authentication md5 key-string …` ne laissait **aucune trace
+nulle part** : la clé n'atteignait même pas la façade, donc ni effet, ni
+configuration rendue, rien à relire. Et `case 'preempt'` ne lisait pas
+`delay minimum` du tout — la valeur disparaissait dans le mot-clé.
+
+C'est pire que le défaut du lot V18, où la valeur était au moins rangée
+et affichée : ici, l'opérateur tape une commande de durcissement, la
+machine répond sans rien dire, et **plus rien n'en témoigne**.
+
+### 28.2 Ce que le matériel fait, vérifié
+
+« A device within a GLBP group with a different authentication string
+than other devices will be ignored by other group members », et « a
+device will ignore incoming GLBP packets from devices that do not have
+the same authentication configuration for a GLBP group » : le hello est
+**écarté en silence**, pas refusé par une réponse.
+
+Le journal, lui, parle, et son texte est attesté :
+`%GLBP-4-BADAUTH: Bad authentication received from [IP_address], group
+[dec]`. Il n'est écrit qu'en cas de discordance — un journal qui crierait
+au loup à chaque hello ne servirait à rien, et un cas le vérifie.
+
+### 28.3 Les mêmes règles que VRRP, pour les mêmes raisons
+
+L'authentification est **portée par le paquet** (`GlbpPacket.authType` /
+`authData`) : la déduire de la configuration du récepteur serait la
+définition même de se croire authentifié. Le contrôle passe **avant** que
+le hello ne serve à quoi que ce soit, sans quoi un imposteur pourrait
+maintenir en vie un AVG qu'il n'a pas le droit d'être. Le refus
+**distingue le type de la clé**. Et un groupe **sans** authentification
+accepte un hello qui en porte une — le côté non configuré doit VOIR
+l'asymétrie plutôt que de perdre les deux sens d'un coup.
+
+`text` et `md5` sont deux modes **distincts** et non un md5 déguisé : ce
+sont deux commandes différentes sur la machine, et les confondre ferait
+passer une maquette en clair pour une maquette signée.
+
+### 28.4 Mesures
+
+`probe-glbp-authentification.test.ts` (13 cas) discriminé par `git stash`
+sur les trois fichiers touchés : **9 tombent**. Les 4 qui passent des deux
+côtés sont les témoins (mêmes clés, pas de délai), le cas d'asymétrie —
+dont c'est l'objet de passer — et le cas « aucun BADAUTH sans
+discordance », qui passait avant parce qu'aucun BADAUTH n'existait.
+
+103 suites connexes vertes (1 527 cas). Typecheck : **aucune erreur
+ajoutée** (les 6 nouvelles viennent du lot TFTP fusionné en parallèle).
+Lint propre.
+
+### 28.5 Ce qui reste sur la famille FHRP
+
+**VRRP ne passe pas par l'état Backup au démarrage** (RFC 5798 §6.4.1) :
+`recompute` rend `master` dès que `masterIp` est nul, là où la RFC fait
+démarrer en Backup et attendre l'intervalle de maître absent, sauf pour
+le propriétaire. C'est le dernier point ouvert de la famille, et il
+touche le démarrage de **tout** groupe VRRP du dépôt — un lot à part et
+une décision à mesurer.

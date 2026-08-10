@@ -18,6 +18,7 @@ import {
   IP_PROTO_UDP, ETHERTYPE_IPV4, nextIPv4Id, computeIPv4Checksum,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import type { GlbpAuthMode } from './types';
 import { FhrpAgentBase } from '../fhrp/FhrpAgentBase';
 import type { FhrpHost, FhrpRecomputeReason } from '../fhrp/types';
 
@@ -29,6 +30,34 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
   getConfig(): Readonly<GlbpConfig> { return this.config; }
 
   protected groupIdOf(g: { group: number }): number { return g.group; }
+
+  /** Le numero de type qu'annonce ce groupe. */
+  private numeroAuth(g: GlbpGroupRuntime): number {
+    return g.authMode === 'text' ? 1 : g.authMode === 'md5' ? 2 : 0;
+  }
+
+  /**
+   * Ce hello est-il authentique pour ce groupe ?
+   *
+   * Meme regle que VRRP (lot V16), et pour les memes raisons : un groupe
+   * SANS authentification accepte tout, y compris un paquet qui en porte
+   * une — c'est la seule facon de ne pas perdre les deux sens d'un coup
+   * quand un seul cote a ete configure, et il faut que l'operateur VOIE
+   * l'asymetrie.
+   */
+  private helloAuthentique(g: GlbpGroupRuntime, pkt: GlbpPacket): boolean {
+    const attendu = this.numeroAuth(g);
+    if (attendu === 0) return true;
+    if ((pkt.authType ?? 0) !== attendu) return false;
+    return (pkt.authData ?? '') === (g.authKey ?? '');
+  }
+
+  /** `glbp <n> authentication { text <c> | md5 key-string <c> }`. */
+  setAuth(iface: string, group: number, mode: GlbpAuthMode, key?: string): void {
+    const g = this.ensureGroup(iface, group);
+    g.authMode = mode;
+    g.authKey = key;
+  }
 
   // ── FhrpAgentBase hooks ───────────────────────────────────────────
   protected groupId(g: GlbpGroupRuntime): number { return g.group; }
@@ -184,6 +213,26 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
       },
     });
 
+    // « A device will ignore incoming GLBP packets from devices that do
+    // not have the same authentication configuration for a GLBP group »
+    // : le controle passe AVANT que le paquet ne serve a quoi que ce
+    // soit, sans quoi un imposteur pourrait maintenir en vie un AVG
+    // qu'il n'a pas le droit d'etre.
+    if (!this.helloAuthentique(g, payload)) {
+      this.getBus().publish({
+        topic: 'glbp.auth.rejected',
+        payload: {
+          ...this.deviceRef(), iface: inPort, group: g.group,
+          fromIp: payload.senderIp,
+          reason: (payload.authType ?? 0) !== this.numeroAuth(g) ? 'type' : 'key',
+        },
+      });
+      // Le message est celui d'IOS, atteste : « %GLBP-4-BADAUTH: Bad
+      // authentication received from [IP_address], group [dec] ».
+      Logger.warn(this.host.id, 'glbp:badauth',
+        `%GLBP-4-BADAUTH: Bad authentication received from ${payload.senderIp}, group ${g.group}`);
+      return;
+    }
     const hello = payload.tlvs.find((t): t is GlbpHelloTlv => t.type === 'hello');
     const assigns = payload.tlvs.filter((t): t is GlbpAssignTlv => t.type === 'assign');
     const hasRequest = payload.tlvs.some(t => t.type === 'request');
@@ -379,6 +428,8 @@ export class GlbpAgent extends FhrpAgentBase<GlbpGroupRuntime> {
     const payload: GlbpPacket = {
       type: 'glbp', version: 1, group: g.group,
       senderIp: srcIp.toString(), tlvs,
+      authType: this.numeroAuth(g),
+      authData: g.authMode && g.authMode !== 'none' ? (g.authKey ?? '') : undefined,
     };
     const udp: UDPPacket = {
       type: 'udp', sourcePort: UDP_PORT_GLBP, destinationPort: UDP_PORT_GLBP,

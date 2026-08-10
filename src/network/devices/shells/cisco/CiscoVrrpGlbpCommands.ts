@@ -99,10 +99,20 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
       g.priority = parseInt(rest[0], 10) || g.priority;
       agent?.setPriority(iface, group, g.priority);
       return '';
-    case 'preempt':
+    case 'preempt': {
       g.preempt = true;
-      agent?.setPreempt(iface, group, true);
+      // Le delai n'etait meme pas ANALYSE cote GLBP : `glbp <n> preempt
+      // delay minimum 30` etait avale par le mot-cle et la valeur
+      // disparaissait sans laisser de trace, pas meme sur la facade.
+      let delai: number | undefined;
+      if (rest[0] === 'delay' && rest[1] === 'minimum') {
+        const n = parseInt(rest[2], 10);
+        delai = Number.isFinite(n) && n > 0 ? n : undefined;
+        g.preemptDelay = delai;
+      }
+      agent?.setPreempt(iface, group, true, delai);
       return '';
+    }
     case 'load-balancing': {
       const mode = rest[0] || g.loadBalancing;
       g.loadBalancing = mode;
@@ -130,7 +140,18 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
       if (n.length >= 2) agent?.setTimers(iface, group, n[0], n[1]);
       return '';
     }
-    case 'forwarder': case 'authentication': return '';
+    case 'authentication': {
+      // Elle etait acceptee et JETEE — pas meme rangee sur la facade —
+      // donc `glbp <n> authentication md5 key-string …` n'avait aucune
+      // trace nulle part : ni effet, ni configuration rendue.
+      const iKey = rest.indexOf('key-string');
+      const md5 = rest[0] === 'md5';
+      const cle = iKey >= 0 ? rest[iKey + 1] : rest[rest.length - 1];
+      g.authMd5 = cle;
+      agent?.setAuth(iface, group, md5 ? 'md5' : 'text', cle);
+      return '';
+    }
+    case 'forwarder': return '';
     default: return '';
   }
 }

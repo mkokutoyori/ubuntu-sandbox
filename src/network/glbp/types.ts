@@ -51,11 +51,28 @@ export interface GlbpPacket extends NetworkPdu {
   group: number;
   senderIp: string;
   tlvs: GlbpTlv[];
+  /**
+   * L'authentification, PORTEE par le paquet.
+   *
+   * La deduire de la configuration du recepteur serait la definition
+   * meme de se croire authentifie : l'emetteur annonce ce qu'il emploie,
+   * le recepteur compare. `0` aucune, `1` texte simple, `2` MD5 — la
+   * numerotation du TLV d'authentification de GLBP, calquee sur celle
+   * que VRRPv2 emploie pour la meme distinction.
+   */
+  authType?: number;
+  authData?: string;
 }
+
+/** `glbp <n> authentication { text <chaine> | md5 key-string <chaine> }`. */
+export type GlbpAuthMode = 'none' | 'text' | 'md5';
 
 export interface GlbpGroupRuntime extends FhrpGroupBase {
   iface: string;
   group: number;
+  /** `glbp <n> authentication …` — le mode et le secret. */
+  authMode?: GlbpAuthMode;
+  authKey?: string;
   avgState: GlbpAvgState;
   vip: string | null;
   priority: number;

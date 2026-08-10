@@ -43,9 +43,23 @@ export interface GlbpAvfStateChangedPayload extends GlbpDeviceRef {
   newState: GlbpAvfState;
 }
 
+/**
+ * Un hello ECARTE pour authentification.
+ *
+ * Le motif distingue le TYPE de la CLE, comme cote VRRP : les deux
+ * envoient l'operateur a deux endroits differents.
+ */
+export interface GlbpAuthRejectedPayload extends GlbpDeviceRef {
+  iface: string;
+  group: number;
+  fromIp: string;
+  reason: 'type' | 'key';
+}
+
 export type GlbpDomainEvent =
   | { topic: 'glbp.packet.sent'; payload: GlbpPacketSentPayload }
   | { topic: 'glbp.packet.received'; payload: GlbpPacketReceivedPayload }
   | { topic: 'glbp.avg.changed'; payload: GlbpAvgChangedPayload }
   | { topic: 'glbp.avf.assigned'; payload: GlbpAvfAssignedPayload }
-  | { topic: 'glbp.avf.state.changed'; payload: GlbpAvfStateChangedPayload };
+  | { topic: 'glbp.avf.state.changed'; payload: GlbpAvfStateChangedPayload }
+  | { topic: 'glbp.auth.rejected'; payload: GlbpAuthRejectedPayload };

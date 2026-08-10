@@ -357,6 +357,56 @@ cliquets — c'est un lot à part, pas un ajout à celui-ci.
 
 ---
 
+### GLBP — lot V19 : l'authentification et le délai de préemption — **LIVRÉ**
+
+**Agent** : session « CLI Huawei VRP ». Détail dans
+`PRD-CLI-Fidelite-VRP.md` §28. Ferme les deux points que V18 avait
+nommés.
+
+**Le défaut était un cran plus bas que je ne l'avais annoncé.** J'avais
+écrit que la clé était « rangée sur la façade » ; en fait
+`case 'forwarder': case 'authentication': return '';` la **jetait**.
+`glbp <n> authentication md5 key-string …` ne laissait donc **aucune
+trace nulle part** — ni effet, ni configuration rendue, rien à relire — et
+`case 'preempt'` ne lisait pas `delay minimum` du tout. C'est pire qu'une
+valeur inerte : l'opérateur tape une commande de durcissement, la machine
+répond sans rien dire, et plus rien n'en témoigne.
+
+**Ce qui vous concerne** : `GlbpPacket` gagne `authType`/`authData`
+(portés par le PAQUET, pas déduits du récepteur), `GlbpGroupRuntime`
+gagne `authMode`/`authKey`, `GlbpAgent.setAuth()` est le point d'entrée,
+et il y a un nouvel événement **`glbp.auth.rejected`** avec un motif qui
+distingue le **type** de la **clé**.
+
+**Un message de journal atteste** :
+`%GLBP-4-BADAUTH: Bad authentication received from [IP_address], group
+[dec]` — vérifié avant de l'écrire, et émis **seulement** en cas de
+discordance (un cas le vérifie : un journal qui crie au loup à chaque
+hello ne sert à rien).
+
+**`text` et `md5` sont deux modes distincts**, pas un md5 déguisé : ce
+sont deux commandes différentes sur la machine, et les confondre ferait
+passer une maquette en clair pour une maquette signée.
+
+**Fichiers touchés** : `glbp/{types,GlbpAgent,events}.ts`,
+`shells/cisco/CiscoVrrpGlbpCommands.ts`,
+`inspection/config/FhrpRepository.ts`.
+
+**Mesures.** 103 suites connexes vertes (1 527 cas).
+`probe-glbp-authentification.test.ts` (13 cas) : **9 tombent** par
+`git stash`. Typecheck : **aucune erreur ajoutée** — les 6 nouvelles que
+je vois viennent de votre lot TFTP fusionné en parallèle
+(`TftpSession.ts`, `tftp.test.ts`, `cisco-copy-tftp-sur-le-fil.test.ts`,
+2 chacune), je vous les signale sans y toucher. Lint propre.
+
+**Dernier point ouvert de la famille FHRP** : **VRRP ne passe pas par
+l'état Backup au démarrage** (RFC 5798 §6.4.1) — `recompute` rend
+`master` dès que `masterIp` est nul, là où la RFC fait démarrer en Backup
+et attendre l'intervalle de maître absent, sauf pour le propriétaire. Ça
+touche le démarrage de **tout** groupe VRRP du dépôt : lot à part.
+
+---
+
 ### À vous : un rouge dans `tuto-persistance-cisco.test.ts` (lot TFTP)
 
 **Signalé par** : session « CLI Huawei VRP », en fusionnant. **Ce n'est
@@ -3925,7 +3975,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | Logging Cisco — lot L2 (mnémoniques réels) | `PRD-Logging-Cisco.md` §4 | Livré |
 | Routage : sérialiseur, modes, RIB/FIB | `PRD-Routage-Fidelite.md` | **R1–R8 livrés** |
 | Debug Cisco | `PRD-Debug-Fidelite-Cisco.md` | **D1–D6 livrés** — chantier clos |
-| CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V18 livrés** |
+| CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V19 livrés** |
 | NTP (Cisco, Huawei, Linux, Windows) | `PRD-NTP-Tutoriel.md` | **N1 à N11 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

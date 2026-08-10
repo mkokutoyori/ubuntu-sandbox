@@ -58,9 +58,13 @@ export interface GlbpGroup {
   vip: string | null;
   priority: number;            // default 100
   preempt: boolean;
+  /** `preempt delay minimum <s>` — pour le rendu ; l'agent porte l'effet. */
+  preemptDelay?: number;
   weighting: number;           // default 100
   loadBalancing: string;       // default 'round-robin'
   name?: string;
+  /** `authentication { text | md5 key-string } <c>` — idem. */
+  authMd5?: string;
 }
 
 function vrrpDefaults(iface: string, group: number): VrrpGroup {
