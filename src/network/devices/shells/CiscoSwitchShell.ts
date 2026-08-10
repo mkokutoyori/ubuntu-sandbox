@@ -29,6 +29,7 @@ import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
+import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
   buildIdentityShowCommands, type CiscoSecurityShellContext,
@@ -4386,6 +4387,30 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const t of [this.userTrie, this.privilegedTrie]) {
       buildIdentityShowCommands(t, () => this.d());
     }
+
+    // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
+    // posee sur le seul shell du routeur, si bien qu'un Catalyst
+    // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,
+    // `exec`, `incoming` — la commande marchait et ne se laissait pas
+    // decouvrir. Les tries qu'un commutateur n'a pas (processus de
+    // routage, route-map, time-range, track) recoivent des arbres
+    // jetables : decrire un argument sur un arbre que rien ne consulte
+    // ne coute rien et evite d'avoir DEUX tables a tenir.
+    const inutilise = () => new CommandTrie();
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      privileged: this.privilegedTrie,
+      configStdNacl: this.configAclTrie,
+      configExtNacl: this.configAclTrie,
+      configRouter: inutilise(),
+      configRouterOspf: inutilise(),
+      configRouteMap: inutilise(),
+      configTimeRange: inutilise(),
+      configTrack: inutilise(),
+    });
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {

@@ -355,6 +355,46 @@ export function buildIdentityConfigCommands(
     return '';
   });
 
+
+  trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
+    sec().servicePasswordEncryption = true;
+    const r = ctx.r() as unknown as {
+      _setServiceFlag?: (n: string, on: boolean) => void;
+      getEnablePassword?: () => { value: string; algo: 'plain' | 'type-7' } | null;
+      _setEnablePassword?: (v: string, algo: 'plain' | 'type-7') => void;
+      listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
+      _setEnablePasswordForLevel?: (level: number, v: string, algo: 'plain' | 'type-7') => void;
+      _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string }>;
+      _upsertCiscoUsername?: (n: string, kv: { secret?: string; secretAlgo?: 'type-7' }) => void;
+    };
+    r._setServiceFlag?.('password-encryption', true);
+    const encrypt = (value: string): string => {
+      const salt = parseInt(md5Hex(`cisco-type7:${value}`).slice(0, 1), 16);
+      return encryptType7(value, salt);
+    };
+    // Real IOS: turning `service password-encryption` ON retroactively
+    // obfuscates every currently type-0 password already in the config —
+    // enable password (every level), and every `username … password`
+    // entry — not just newly-typed ones going forward.
+    const ep = r.getEnablePassword?.();
+    if (ep && ep.algo === 'plain') r._setEnablePassword?.(encrypt(ep.value), 'type-7');
+    for (const e of r.listEnablePasswordLevels?.() ?? []) {
+      if (e.algo === 'plain') r._setEnablePasswordForLevel?.(e.level, encrypt(e.value), 'type-7');
+    }
+    for (const u of r._listLocalUsers?.() ?? []) {
+      if (u.secretAlgo === 'plain-password') {
+        r._upsertCiscoUsername?.(u.name, { secret: encrypt(u.secret), secretAlgo: 'type-7' });
+      }
+    }
+    return '';
+  });
+
+  trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
+    const n = parseInt(args[0], 10);
+    if (!isNaN(n)) sec().passwords.minLength = n;
+    return '';
+  });
+
 }
 
 export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurityShellContext): void {
@@ -456,45 +496,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         + "password. However, type 0 passwords will soon be deprecated. Migrate\n"
         + "to a supported password type";
     }
-    return '';
-  });
-
-  trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
-    sec().servicePasswordEncryption = true;
-    const r = ctx.r() as unknown as {
-      _setServiceFlag?: (n: string, on: boolean) => void;
-      getEnablePassword?: () => { value: string; algo: 'plain' | 'type-7' } | null;
-      _setEnablePassword?: (v: string, algo: 'plain' | 'type-7') => void;
-      listEnablePasswordLevels?: () => ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }>;
-      _setEnablePasswordForLevel?: (level: number, v: string, algo: 'plain' | 'type-7') => void;
-      _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string }>;
-      _upsertCiscoUsername?: (n: string, kv: { secret?: string; secretAlgo?: 'type-7' }) => void;
-    };
-    r._setServiceFlag?.('password-encryption', true);
-    const encrypt = (value: string): string => {
-      const salt = parseInt(md5Hex(`cisco-type7:${value}`).slice(0, 1), 16);
-      return encryptType7(value, salt);
-    };
-    // Real IOS: turning `service password-encryption` ON retroactively
-    // obfuscates every currently type-0 password already in the config —
-    // enable password (every level), and every `username … password`
-    // entry — not just newly-typed ones going forward.
-    const ep = r.getEnablePassword?.();
-    if (ep && ep.algo === 'plain') r._setEnablePassword?.(encrypt(ep.value), 'type-7');
-    for (const e of r.listEnablePasswordLevels?.() ?? []) {
-      if (e.algo === 'plain') r._setEnablePasswordForLevel?.(e.level, encrypt(e.value), 'type-7');
-    }
-    for (const u of r._listLocalUsers?.() ?? []) {
-      if (u.secretAlgo === 'plain-password') {
-        r._upsertCiscoUsername?.(u.name, { secret: encrypt(u.secret), secretAlgo: 'type-7' });
-      }
-    }
-    return '';
-  });
-
-  trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) sec().passwords.minLength = n;
     return '';
   });
 

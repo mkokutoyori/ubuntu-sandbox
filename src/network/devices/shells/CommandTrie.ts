@@ -814,8 +814,15 @@ export class CommandTrie {
     for (let i = 0; i < tokens.length - 1; i++) {
       const token = tokens[i].toLowerCase();
 
+      // Un nœud `_hintOnly` ne se PROPOSE pas — c'est ce que
+      // `prefixMatch` garantit — mais il porte les arguments déclarés de
+      // la suite, et la marche doit donc pouvoir y descendre quand le
+      // mot a DÉJÀ été tapé. L'aide y descendait, la complétion non :
+      // `aaa authentication lo` restait sur le nœud `aaa`, où `login`
+      // n'est pas déclaré, et Tab tombait sur le mot grappillé `local`.
       const exactRaw = node.children.get(token);
-      const exact = exactRaw && !exactRaw._hintOnly ? exactRaw : undefined;
+      const exact = exactRaw && (!exactRaw._hintOnly || exactRaw.params.length > 0)
+        ? exactRaw : undefined;
       if (exact) {
         completed.push(exact.keyword);
         node = exact;
@@ -978,7 +985,18 @@ export class CommandTrie {
       node._autoKeywords = [];
       return node._autoKeywords;
     }
-    const curated = new Set((node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()));
+    // Une liste d'ARGUMENTS déclarée (`describeArgs`) dit la même chose
+    // qu'une liste d'indices curatés : l'auteur connaît les suites de ce
+    // nœud. Seule la première était consultée, si bien que Tab
+    // complétait `aaa authentication local` — un mot grappillé dans le
+    // corps du handler d'`aaa`, qu'IOS n'accepte pas à cette place et
+    // que `?` ne proposait pas. Les deux portes lisaient deux règles.
+    const declares = node.params.flatMap((p) =>
+      (p.values ?? []).map((v) => v.keyword.toLowerCase()));
+    const curated = new Set([
+      ...(node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()),
+      ...declares,
+    ]);
     // Une liste CURATÉE dit que l'auteur connaît les suites de ce nœud.
     // Y ajouter les mots grappillés dans le corps du handler annule ce
     // qu'elle affirme : vingt mots-clés de `line` partagent un seul

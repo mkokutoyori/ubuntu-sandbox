@@ -729,8 +729,31 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
       ['system', 'For system events'],
     ]),
   ]);
-  tries.config.describeArgs('banner motd', [
-    { name: 'delimiter', type: 'STRING', description: 'Message text, delimited by a chosen character' },
+  // Les QUATRE bannieres d'IOS, pas seulement `motd` : `banner ?` n'en
+  // proposait qu'une, donc les trois autres etaient acceptees, rendues
+  // dans la configuration, et introuvables par l'aide.
+  tries.config.describeArgs('banner', [
+    ENUM('type', 'Type of banner', [
+      ['exec', 'Set EXEC process creation banner'],
+      ['incoming', 'Set incoming terminal line banner'],
+      ['login', 'Set login banner'],
+      ['motd', 'Set Message of the Day banner'],
+    ]),
+  ]);
+  for (const genre of ['motd', 'login', 'exec', 'incoming']) {
+    tries.config.describeArgs(`banner ${genre}`, [
+      { name: 'delimiter', type: 'STRING', description: 'Message text, delimited by a chosen character' },
+    ]);
+  }
+  // `crypto key generate rsa ?` ne repondait que `<cr>` : les trois
+  // mots-cles que la commande consomme vraiment n'etaient nulle part.
+  tries.config.describeArgs('crypto key generate rsa', [
+    { ...ENUM('option', 'Key generation options', [
+      ['general-keys', 'Generate a general purpose RSA key pair'],
+      ['label', 'Provide a label for the key pair'],
+      ['modulus', 'Provide number of modulus bits on the command line'],
+      ['usage-keys', 'Generate separate signature and encryption keys'],
+    ]), optional: true },
   ]);
 
   tries.configLine.describeArgs('exec-timeout', [
