@@ -79,6 +79,14 @@ export function looksLikeIPv6(target: string): boolean {
  * [source X]` command. Returns an `error` string (IOS-worded) when the
  * target is absent or not a dotted-quad.
  */
+export function estUneAdresseLitterale(target: string): boolean {
+  const t = target.trim();
+  if (t.length === 0) return false;
+  if (looksLikeIPv6(t)) return true;
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(t);
+  return m !== null && [+m[1], +m[2], +m[3], +m[4]].every((o) => o <= 255);
+}
+
 export function parsePingArgs(args: string[]): ParsedPing {
   const base: ParsedPing = {
     target: '', count: 5, timeoutMs: 2000, sizeBytes: 100, sourceIP: null, protocol: 'ip',

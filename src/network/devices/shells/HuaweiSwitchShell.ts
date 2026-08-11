@@ -26,6 +26,7 @@ import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
+import { getCredentialStore } from '@/network/equipment/RouterServiceCapabilities';
 import {
   displayClock, displayCpuUsage, displayMemoryUsage, displayUsers,
   displayDevice, displayHistoryCommand, displayAlarm, displayElabel,
@@ -1640,13 +1641,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     upsert(a: NetworkOsAccount): unknown;
     remove(n: string): void;
   } | null {
-    return (this.swRef as unknown as {
-      getCredentialStore?: () => {
-        get(n: string): unknown;
-        upsert(a: NetworkOsAccount): unknown;
-        remove(n: string): void;
-      };
-    } | null)?.getCredentialStore?.() ?? null;
+    return getCredentialStore(this.swRef) ?? null;
   }
 
   /**

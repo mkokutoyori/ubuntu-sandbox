@@ -82,8 +82,11 @@ describe('aucune sortie CLI ne parle de son propre substrat', () => {
     expect(diag).toContain('CISCO2911/K9');
     expect(diag).not.toMatch(/\(real\)/i);
 
-    const udi = await r.executeCommand('show license udi');
-    expect(udi).toContain('FTX1234567A');
+    const udi = String(await r.executeCommand('show license udi'));
+    const inventaire = String(await r.executeCommand('show inventory'));
+    const serie = /SN: (\S+)/.exec(inventaire)?.[1];
+    expect(serie).toMatch(/^[A-Z]{3}\w{8}$/);
+    expect(udi).toContain(serie!);
     expect(udi).not.toMatch(/hostname:/i);
   }, 30_000);
 

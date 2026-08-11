@@ -23,6 +23,7 @@ import type { GlbpAgent } from '../glbp/GlbpAgent';
 import type { VrrpAgent } from '../vrrp/VrrpAgent';
 import type { HuaweiRoutingExtras } from '../devices/router/routing/HuaweiRoutingExtras';
 import type { SwitchSecurityService } from '../devices/switch/SwitchSecurityService';
+import type { NetworkOsCredentialStore } from '../devices/router/aaa/NetworkOsCredentialStore';
 
 export interface ManagementServiceHost { getManagementService(): RouterManagementService; }
 export interface CiscoHttpServiceHost { getHttpService(): CiscoHttpService; }
@@ -34,13 +35,14 @@ export interface GlbpAgentHost { getGlbpAgent(): GlbpAgent; }
 export interface VrrpAgentHost { getVrrpAgent(): VrrpAgent; }
 export interface HuaweiRoutingExtrasHost { getHuaweiRoutingExtras(): HuaweiRoutingExtras; }
 export interface SwitchSecurityServiceHost { getSecurityService(): SwitchSecurityService; }
+export interface CredentialStoreHost { getCredentialStore(): NetworkOsCredentialStore; }
 
 /** An `Equipment` that MAY expose any of the optional services above. */
 export type ServiceCapableDevice = Equipment & Partial<
   ManagementServiceHost & CiscoHttpServiceHost &
   SnmpServiceHost & SnmpAgentHost & NtpAgentHost &
   HsrpAgentHost & GlbpAgentHost & VrrpAgentHost &
-  HuaweiRoutingExtrasHost & SwitchSecurityServiceHost
+  HuaweiRoutingExtrasHost & SwitchSecurityServiceHost & CredentialStoreHost
 >;
 
 /** The one boundary in this file where the structural cast actually happens. */
@@ -69,3 +71,5 @@ export const getHuaweiRoutingExtras = (dev: unknown): HuaweiRoutingExtras | unde
   call(dev, 'getHuaweiRoutingExtras');
 export const getSwitchSecurityService = (dev: unknown): SwitchSecurityService | undefined =>
   call(dev, 'getSecurityService');
+export const getCredentialStore = (dev: unknown): NetworkOsCredentialStore | undefined =>
+  call(dev, 'getCredentialStore');

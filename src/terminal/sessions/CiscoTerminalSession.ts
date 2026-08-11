@@ -17,7 +17,7 @@ import { Switch } from '@/network/devices/Switch';
 import { IPAddress } from '@/network/core/types';
 import {
   parsePingArgs, formatCiscoPingSummary, ciscoPingMark, answerOr, isYes,
-  sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams,
+  sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams, estUneAdresseLitterale,
   type CiscoPingRow, type ExtendedPingParams,
 } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
@@ -283,7 +283,11 @@ export class CiscoTerminalSession extends CLITerminalSession {
     const brut = dev.getBanner?.(kind) ?? '';
     return expandBannerTokens(brut, {
       hostname: () => dev.getHostname?.() ?? '',
-      domain: () => dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '',
+      domain: () => (dev as unknown as { _getDnsConfig?: () => { domainName: string } })
+        ._getDnsConfig?.().domainName
+        || dev.getManagementService?.().domainName
+        || dev.getDomainName?.()
+        || '',
       line: () => String(this.numeroDeLigne()),
       lineDescription: () => '',
     });
@@ -792,7 +796,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         // IOS re-asks rather than carrying a bad address through the whole
         // dialog and failing at the end.
         validation: (value) => (
-          value.trim() === '' || parsePingArgs([value.trim()]).error === undefined
+          value.trim() === '' || estUneAdresseLitterale(value.trim())
             ? { valid: true }
             : { valid: false, errorMessage: '% Unrecognized host or address, or protocol not running.' }
         ),

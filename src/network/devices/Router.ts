@@ -3525,6 +3525,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         () => this.hostsTable,
         () => this.dnsTransport(),
         (texte) => {
+          this._debugService?.emitLine('ip.domain', texte);
           this.getLoggingConfig()?.append('debugging', 'domain', texte, true, 'DOMAIN');
         },
       );
