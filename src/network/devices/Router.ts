@@ -454,6 +454,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
       isInterfaceUsable: (iface) => !(this.getPort(iface)?.isAdminDown() ?? false),
+      sendIpv4ArpAware: (iface, packet, nextHop) =>
+        this.sendIpv4FrameArpAware(iface, packet, nextHop),
       getInterfaceRipAuth: (iface) => this.ripAuthOn(iface),
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),

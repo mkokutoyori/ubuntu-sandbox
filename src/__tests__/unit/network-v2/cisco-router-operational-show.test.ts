@@ -46,9 +46,16 @@ describe('Cisco router operational show (real state)', () => {
 
   it('show ip rip database reflects real RIP config', async () => {
     const r = new CiscoRouter('R1');
+    const peer = new CiscoRouter('R2');
+    new Cable('c-rip').connect(r.getPort('GigabitEthernet0/0')!, peer.getPort('GigabitEthernet0/0')!);
     await r.executeCommand('enable');
     expect(await r.executeCommand('show ip rip database')).not.toMatch(/Invalid input/);
     await r.executeCommand('configure terminal');
+    // La base RIP decrit des ROUTES : sans lien actif dans ce reseau, un
+    // vrai routeur n'a rien a y mettre — d'ou le cable.
+    await r.executeCommand('interface GigabitEthernet0/0');
+    await r.executeCommand('ip address 192.168.1.1 255.255.255.0');
+    await r.executeCommand('no shutdown');
     await r.executeCommand('router rip');
     await r.executeCommand('version 2');
     await r.executeCommand('network 192.168.1.0');

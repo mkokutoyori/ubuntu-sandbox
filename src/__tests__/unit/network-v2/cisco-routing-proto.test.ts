@@ -42,8 +42,11 @@ describe('Cisco RIP submode — full knob set, real state', () => {
     expect(proto).toMatch(/Routing Protocol is "rip"/);
     expect(proto).toMatch(/Automatic network summarization is not in effect/);
     expect(proto).toContain('192.168.1.0');
-    expect(proto).toMatch(/Distance: 120/);
-    expect(await r.executeCommand('show ip rip database')).toContain('192.168.1.0');
+    expect(proto).toMatch(/Distance: \(default is 120\)/);
+    // La base RIP decrit des ROUTES : ce routeur ne porte aucune adresse,
+    // donc elle est vide — les instructions `network` sont dans la vue
+    // ci-dessus, pas ici.
+    expect(await r.executeCommand('show ip rip database')).toBe('');
   });
 });
 

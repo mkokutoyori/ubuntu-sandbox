@@ -136,6 +136,8 @@ export interface RIPCallbacks {
   getInterfaceAuth?(iface: string): RIPInterfaceAuth | null;
   /** Whether a route's egress interface can still carry traffic. */
   isInterfaceUsable?(iface: string): boolean;
+  /** Unicast an IPv4 packet, resolving the destination's MAC by ARP. */
+  sendIpv4ArpAware?(iface: string, packet: import('../core/types').IPv4Packet, nextHop: IPAddress): void;
 }
 
 export interface RIPInterfaceAuth {
@@ -463,7 +465,14 @@ export class RIPEngine implements IProtocolEngine {
 
     if (ripPkt.command === 1) {
       // A passive interface never transmits — not even Request replies.
-      if (!this.isPassiveInterface(inPort)) this.sendUpdate(inPort);
+      if (this.isPassiveInterface(inPort)) return;
+      if (this.isWholeTableRequest(ripPkt)) {
+        // RFC 2453 §3.9.1 — la table entière passe par la sortie
+        // ordinaire, horizon partagé compris.
+        this.sendUpdate(inPort, srcIP);
+      } else {
+        this.answerSpecificEntries(inPort, srcIP, ripPkt);
+      }
       return;
     }
 
@@ -640,7 +649,32 @@ export class RIPEngine implements IProtocolEngine {
     else this.config.splitHorizonByInterface.set(iface, on);
   }
 
-  private sendUpdate(outIface: string): void {
+  private isWholeTableRequest(ripPkt: RIPPacket): boolean {
+    return ripPkt.entries.length === 1
+      && ripPkt.entries[0].afi === 0
+      && ripPkt.entries[0].metric === RIP_METRIC_INFINITY;
+  }
+
+  /**
+   * RFC 2453 §3.9.1 — une demande portant des entrées précises est
+   * servie telle quelle, SANS horizon partagé : elle sert au diagnostic
+   * et doit dire ce que la table contient vraiment.
+   */
+  private answerSpecificEntries(inPort: string, srcIP: IPAddress, request: RIPPacket): void {
+    const table = this.callbacks.getRoutingTable();
+    const entries: RIPRouteEntry[] = request.entries.map((asked) => {
+      const found = table.find((r) =>
+        r.network.toString() === asked.ipAddress.toString()
+        && r.mask.toCIDR() === asked.subnetMask.toCIDR());
+      const metric = found ? this.advertisableMetric(found) : null;
+      return { ...asked, metric: metric ?? RIP_METRIC_INFINITY };
+    });
+    this.sendPacket(inPort, {
+      type: 'rip', command: 2, version: this.ripVersion(), entries,
+    }, srcIP);
+  }
+
+  private sendUpdate(outIface: string, destIP?: IPAddress): void {
     const entries: RIPRouteEntry[] = [];
     const routingTable = this.callbacks.getRoutingTable();
 
@@ -678,7 +712,7 @@ export class RIPEngine implements IProtocolEngine {
       const response: RIPPacket = {
         type: 'rip', command: 2, version: this.ripVersion(), entries: chunk,
       };
-      this.sendPacket(outIface, response);
+      this.sendPacket(outIface, response, destIP);
     }
     this.updatesSent++;
     this.getBus().publish({
@@ -785,7 +819,7 @@ export class RIPEngine implements IProtocolEngine {
       : MACAddress.broadcast();
   }
 
-  private sendPacket(outIface: string, ripPkt: RIPPacket): void {
+  private sendPacket(outIface: string, ripPkt: RIPPacket, destIP?: IPAddress): void {
     const myIP = this.callbacks.getPortIP(outIface);
     if (!myIP) return;
 
@@ -806,19 +840,27 @@ export class RIPEngine implements IProtocolEngine {
       payload: ripPkt,
     };
 
+    const destination = destIP ?? this.destinationIp();
     const ipPkt = createIPv4Packet(
-      myIP, this.destinationIp(), IP_PROTO_UDP, 1, udpPkt, 8 + ripSize);
+      myIP, destination, IP_PROTO_UDP, 1, udpPkt, 8 + ripSize);
 
-    this.callbacks.sendFrame(outIface, {
-      srcMAC: this.callbacks.getPortMAC(outIface),
-      dstMAC: this.destinationMac(),
-      etherType: ETHERTYPE_IPV4,
-      payload: ipPkt,
-    });
+    // RFC 2453 §3.9.1 — la réponse à une demande retourne à celui qui l'a
+    // posée, en unicast : elle emprunte donc la résolution d'adresse
+    // ordinaire au lieu du groupe.
+    if (destIP && this.callbacks.sendIpv4ArpAware) {
+      this.callbacks.sendIpv4ArpAware(outIface, ipPkt, destIP);
+    } else {
+      this.callbacks.sendFrame(outIface, {
+        srcMAC: this.callbacks.getPortMAC(outIface),
+        dstMAC: this.destinationMac(),
+        etherType: ETHERTYPE_IPV4,
+        payload: ipPkt,
+      });
+    }
 
     Logger.debug(this.equipmentId, 'rip:send',
       `${this.hostname}: RIP ${ripPkt.command === 1 ? 'Request' : 'Response'} sent on ${outIface} `
-      + `to ${this.destinationIp()} (${ripPkt.entries.length} entries)`);
+      + `to ${destination} (${ripPkt.entries.length} entries)`);
   }
 
   private processRouteEntry(inPort: string, srcIP: IPAddress, entry: RIPRouteEntry): void {

@@ -11,7 +11,7 @@
  */
 
 import {
-  IPAddress, SubnetMask, RIPPacket, EthernetFrame, MACAddress,
+  IPAddress, SubnetMask, RIPPacket, EthernetFrame, MACAddress, IPv4Packet,
 } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { IEventBus } from '@/events/EventBus';
@@ -31,6 +31,7 @@ export interface RIPRouterContext {
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
   isInterfaceUsable?(iface: string): boolean;
+  sendIpv4ArpAware?(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
   evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
@@ -59,6 +60,9 @@ export class RouterRIPEngine {
       updateRoute: (network, mask, route) =>
         this.updateInRib(network, mask, route),
       getRipVersion: () => ctx.getRipVersion?.() ?? 2,
+      sendIpv4ArpAware: ctx.sendIpv4ArpAware
+        ? (iface, packet, nextHop) => ctx.sendIpv4ArpAware!(iface, packet, nextHop)
+        : undefined,
       isInterfaceUsable: ctx.isInterfaceUsable
         ? (iface) => ctx.isInterfaceUsable!(iface)
         : undefined,
