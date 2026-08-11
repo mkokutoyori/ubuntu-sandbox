@@ -361,6 +361,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.setMode(level >= 15 ? 'privileged' : 'user');
     if (user) this.configSessionLabel = user;
     this.cmdHistory = [];
+    this.terminalHistorySize = this.tailleHistoriqueDeLigne();
+    this.terminalHistoryEnabled = this.terminalHistorySize > 0;
   }
 
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
@@ -465,7 +467,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       // purely to satisfy the shared VtySnapshot shape.
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
-      historySize: 10,
+      historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
   }
@@ -497,6 +499,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.terminalWidth = s.terminalWidth;
     this.terminalMonitor = s.terminalMonitor;
     this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
+    this.terminalHistorySize = s.historySize;
+    this.terminalHistoryEnabled = s.historySize > 0;
     this.cmdHistory = [...s.cmdHistory];
   }
 

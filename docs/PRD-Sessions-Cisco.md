@@ -480,3 +480,96 @@ traverse pas le trie. Elle est restaurée : ce n'est pas un second rendu,
 les deux routes appellent la même fonction. Et un cas existant encodait
 l'en-tête inventé `UI` comme contrat ; il est corrigé sur la valeur
 mesurée, pas contourné.
+
+## Lot S7 — les points restants du rapport de transcript, tous traités
+
+Le rapport comptait seize points. S5 et S6 en ont fermé neuf ; ceux-ci
+ferment les sept autres, plus les deux que ces lots avaient eux-mêmes
+laissés derrière. **Rien n'est reporté.**
+
+### §5 — `history size` de ligne et `terminal history size` de session
+
+Le rapport avait vu juste, et la mesure a montré **trois magasins pour
+une notion, aucun relié** :
+
+| Magasin | Écrit par | Lu par |
+|---|---|---|
+| `terminalHistorySize` (shell) | `terminal history size` | le shell |
+| `VtySnapshot.historySize` | **personne** (figé à `10`) | personne |
+| `VtyLineConfig.historySize` | `history size` sous `line vty` | **personne** |
+
+Et sous `line console 0`, `history size` tombait dans la branche console,
+qui rend `''` pour tout ce qu'elle ne connaît pas : la commande était
+acceptée et jetée.
+
+Livré : la ligne porte le DÉFAUT (`history size N` / `no history` sous
+`line console 0`, retenue, rendue, rejouable à l'import), la session
+porte la valeur COURANTE, elle tourne avec l'instantané, et fermer la
+session la rend au défaut de la ligne — sans quoi un `terminal` tapé une
+fois gouvernait la machine pour toujours. `terminal no history` VIDE le
+tampon : le drapeau seul laissait `show history` rendre ce qui y était.
+
+### §10 — `%SYS-5-CONFIG_I` nomme la ligne
+
+Le mot « console » était la source pour tout le monde. IOS écrit
+`Configured from console by <user> on vty0 (<ip>)` quand la
+configuration ne vient pas de la console — le seul moyen pour un auditeur
+de savoir d'où elle vient. Le suffixe était omis parce que le numéro de
+ligne vivait hors de portée ; le registre porte désormais la ligne, le
+transport et l'adresse, donc la question a une réponse. Une session
+console n'en reçoit aucun : `by console` dit déjà tout.
+
+### §13 — le registre de configuration au démarrage
+
+`show version` lisait la vraie valeur, le démarrage ne l'imprimait pas du
+tout — alors que c'est la seule façon de voir qu'un `config-register
+0x2142` fera ignorer la configuration au prochain reload. Le démarrage lit
+**le même rendu** (`renderConfigRegisterLine`), pas une seconde copie.
+
+### §14 — la table de licences, et quelle commande la produit
+
+Le rapport demandait de déterminer quelle commande produit cette sortie.
+Réponse mesurée : **ce sont deux tables différentes**. `show license`
+liste les licences par fonctionnalité ; la table des paquets
+technologiques (`ipbase`/`security`/`uc`/`data`) est celle de
+`show license feature` — qui **n'existait pas**, si bien que la table du
+démarrage défilait une fois et n'était plus relisible. Elle existe, et
+lit la même source que le démarrage.
+
+### §15 — l'identité est une propriété de l'instance
+
+`serialNumber` était une constante du profil matériel, donc **toute une
+topologie était un troupeau de jumeaux** : dix routeurs, dix fois
+`FTX1234567A`. Quatre vues l'écrivaient même en dur (`show platform`,
+`show license udi`, `show diag`, `show inventory`).
+
+`chassisSerial(profil, deviceId)` le dérive : forme Cisco (site, semaine,
+séquence), **stable** d'un appel et d'un rechargement à l'autre, unique
+d'une machine à l'autre. Un tirage aléatoire donnerait un numéro
+différent à chaque lecture, ce qui n'identifie plus rien.
+
+### §9 — les trois états d'interface
+
+Vérifié plutôt que supposé : `no shutdown` sans câble laisse bien
+`GigabitEthernet0/0 is down, line protocol is down` et retire seulement
+`administratively down`. Les trois faits sont distincts et le restent ;
+deux cas les épinglent pour que ça ne régresse pas.
+
+### Les deux points que S5 et S6 avaient laissés derrière
+
+**Le message SSH n'était celui d'aucune machine.** `Session opened for
+'alice' on vty 0 from 10.0.0.5` n'existe ni sur IOS ni sur VRP. IOS écrit
+`%SSH-5-SSH2_SESSION: SSH2 Session request from <ip> (tty = N) using
+crypto cipher '<c>', hmac '<h>' Succeeded` — sévérité **5**, pas 6. Le
+couple chiffrement/HMAC est **lu de la configuration** via la règle qui
+servait déjà `show ssh` (`algorithmesRetenus`), extraite pour que les
+deux vues ne puissent pas se contredire : `ip ssh server algorithm
+encryption aes256-ctr` change ce que le journal annonce.
+
+**`local-user` du commutateur Huawei déclare un vrai compte.** Il rangeait
+dans une carte locale au shell en remplaçant le mot de passe par
+`******` : le compte n'existait pour personne. Il alimente le même
+magasin que le routeur — le secret est gardé, donc le compte
+s'authentifie — tout en conservant sa carte pour le rendu de la
+configuration. `undo local-user` le retire vraiment ; son parseur
+n'existait pas, la forme tombait dans le fourre-tout `rawLines`.

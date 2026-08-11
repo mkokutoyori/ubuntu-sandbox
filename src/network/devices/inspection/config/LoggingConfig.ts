@@ -1235,8 +1235,8 @@ export class LoggingConfig {
       bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
         const p = e.payload as unknown as {
           session?: {
-            user?: string; line?: string; fromIp?: string;
-            transport?: string; localPort?: number;
+            user?: string; line?: string; lineIndex?: number; fromIp?: string;
+            transport?: string; localPort?: number; cipher?: string; hmac?: string;
           };
         };
         const s = p.session;
@@ -1244,8 +1244,15 @@ export class LoggingConfig {
         // `login.success` ci-dessus (`%SEC_LOGIN-5-LOGIN_SUCCESS`) :
         // deux emetteurs pour un evenement ecriraient la ligne deux fois.
         if (s?.transport && s.transport !== 'ssh') return;
-        this.append('informational', 'ssh',
-          `Session opened for '${s?.user ?? '?'}' on ${s?.line ?? 'vty'} from ${s?.fromIp || '?'}`, true, 'SSH2_SESSION');
+        // La formulation d'IOS, relevee sur des transcriptions reelles :
+        // `SSH2 Session request from <ip> (tty = N) using crypto cipher
+        // '<c>', hmac '<h>' Succeeded`, en severite 5. Le texte
+        // precedent (« Session opened for 'x' on vty 0 from … ») n'etait
+        // celui d'AUCUNE machine — ni IOS, ni VRP.
+        this.append('notifications', 'ssh',
+          `SSH2 Session request from ${s?.fromIp || '0.0.0.0'} (tty = ${s?.lineIndex ?? 0})`
+          + ` using crypto cipher '${s?.cipher ?? 'aes256-ctr'}',`
+          + ` hmac '${s?.hmac ?? 'hmac-sha2-256'}' Succeeded`, true, 'SSH2_SESSION');
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
         const p = e.payload as unknown as {

@@ -75,6 +75,7 @@ import {
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets,
   showStacks, showReload, showAaa, showEnvironment, showControllers,
+  chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
@@ -117,6 +118,9 @@ import {
  * ceci — c'est ce qui distingue les trois.
  */
 const PIPE_WRITE_BANNER = '!!';
+
+/** La taille d'historique d'IOS quand aucune ligne ne l'a fixee. */
+const HISTORIQUE_PAR_DEFAUT = 20;
 
 /** Le texte que `help` imprime sur IOS, mot pour mot. */
 const HELP_SYSTEM_TEXT = [
@@ -328,7 +332,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected terminalLength: number = 24;
   protected terminalWidth: number = 80;
-  protected terminalHistorySize: number = 20;
+  protected terminalHistorySize: number = HISTORIQUE_PAR_DEFAUT;
   protected terminalHistoryEnabled: boolean = true;
 
   protected selectedConsoleLine: number | null = null;
@@ -348,6 +352,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
   protected consoleLineLoggingSynchronous: boolean = false;
+  /**
+   * `history size N` sous `line console 0` — le DEFAUT des sessions
+   * ouvertes sur cette ligne, distinct de `terminal history size` qui ne
+   * vaut que pour la session en cours. Les deux existaient et n'etaient
+   * relies a rien : la valeur de ligne etait jetee par la branche
+   * console, celle de session etait figee a 10 dans l'instantane, et le
+   * shell lisait un troisieme champ que personne n'ecrivait.
+   */
+  protected consoleLineHistorySize: number | null = null;
+  protected consoleLineHistoryEnabled: boolean = true;
+
+  /**
+   * Le numero de serie du chassis, derive de l'identifiant de CETTE
+   * machine. Quatre vues l'ecrivaient en dur (`show platform`,
+   * `show license udi`, `show diag`, `show inventory`), donc toute une
+   * topologie etait un troupeau de jumeaux.
+   */
+  protected numeroDeSerie(): string {
+    return chassisSerial(
+      CISCO_HARDWARE_PROFILES[this.getChassisProfile()],
+      (this.deviceRef as unknown as { id?: string } | null)?.id ?? 'unknown');
+  }
+
+  /** La taille par defaut d'une session ouverte sur cette ligne. */
+  protected tailleHistoriqueDeLigne(): number {
+    if (!this.consoleLineHistoryEnabled) return 0;
+    return this.consoleLineHistorySize ?? HISTORIQUE_PAR_DEFAUT;
+  }
 
   // `line aux 0` — real storage for `no exec` / `transport input`, which
   // used to be silently swallowed (any directive typed under the AUX
@@ -370,8 +402,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     execTimeoutMin: number | null;
     execTimeoutSec: number;
     loggingSynchronous: boolean;
+    historySize: number | null;
+    historyEnabled: boolean;
   } | null {
-    if (this.consoleLinePassword == null && this.consoleLineLogin == null && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null && !this.consoleLineLoggingSynchronous) return null;
+    if (this.consoleLinePassword == null && this.consoleLineLogin == null
+      && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null
+      && !this.consoleLineLoggingSynchronous
+      && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled) return null;
     return {
       line: this.selectedConsoleLine ?? 0,
       password: this.consoleLinePassword,
@@ -382,6 +419,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
       loggingSynchronous: this.consoleLineLoggingSynchronous,
+      historySize: this.consoleLineHistorySize,
+      historyEnabled: this.consoleLineHistoryEnabled,
     };
   }
 
@@ -2112,9 +2151,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     } | null;
     const target = device?._loggingConfig ?? device?.getLoggingConfig?.() ?? this.logging;
     target.append('notifications', 'sys',
-      `Configured from console by ${this.configSessionLabel}`, true, 'CONFIG_I');
+      `Configured from console by ${this.configSessionLabel}${this.suffixeLigneConfig()}`,
+      true, 'CONFIG_I');
     (this.configExitLogTarget as { _noteConfigChange?: (u: string) => void } | null)
       ?._noteConfigChange?.(this.configSessionLabel);
+  }
+
+  /**
+   * ` on vty0 (10.0.0.5)` — le suffixe qu'IOS ajoute quand la
+   * configuration ne vient PAS de la console, et le seul moyen pour un
+   * auditeur de savoir d'ou elle vient. Il etait omis parce que le
+   * numero de ligne vivait hors de portee ; le registre porte desormais
+   * la ligne ET le transport, donc la question a une reponse.
+   *
+   * Une session console n'en recoit aucun : `by console` dit deja tout,
+   * et ajouter ` on con0` decrirait une machine qui n'ecrit pas cela.
+   */
+  protected suffixeLigneConfig(): string {
+    if (this.configSessionLabel === 'console') return '';
+    const reg = ((this.configExitLogTarget ?? this.deviceRef) as unknown as {
+      getSshSessionRegistry?: () => {
+        list(): ReadonlyArray<{
+          user: string; lineKind: string; lineIndex: number; fromIp: string;
+        }>;
+      };
+    })?.getSshSessionRegistry?.();
+    const s = reg?.list().find(x => x.user === this.configSessionLabel && x.lineKind === 'vty');
+    if (!s) return '';
+    return ` on vty${s.lineIndex}${s.fromIp ? ` (${s.fromIp})` : ''}`;
   }
 
   protected configExitLogTarget: unknown = null;
@@ -2230,6 +2294,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.mode = 'user';
     this.fsm.mode = 'user';
     this.cmdHistory = [];
+    // `terminal history size` ne vaut que pour la session : la suivante
+    // repart du reglage de la LIGNE, sans quoi un `terminal` tape une
+    // fois gouvernait la machine pour toujours.
+    this.terminalHistorySize = this.tailleHistoriqueDeLigne();
+    this.terminalHistoryEnabled = this.terminalHistorySize > 0;
     return 'Connection closed.';
   }
 
@@ -2652,7 +2721,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
     trie.register('show inventory', 'Display hardware inventory', () =>
-      showInventory(this.d().getHostname(), this.getChassisProfile()));
+      showInventory(this.d().getHostname(), this.getChassisProfile(),
+        (this.deviceRef as unknown as { id?: string } | null)?.id));
     trie.register('show processes', 'Display active processes', () =>
       showProcessesCpu());
     trie.register('show processes cpu', 'Display CPU utilisation', () =>
@@ -2694,8 +2764,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
       return profile === 'router-isr2911'
-        ? 'Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: FTX1234567A'
-        : 'Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: FOC1234X56Y';
+        ? `Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: ${this.numeroDeSerie()}`
+        : `Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: ${this.numeroDeSerie()}`;
     });
     trie.register('show license', 'Display licenses', () => {
       const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
@@ -2704,16 +2774,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
       return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
     });
+    // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
+    // au demarrage — n'avait aucune commande pour la relire : elle
+    // defilait une fois et disparaissait. C'est une AUTRE table que
+    // celle de `show license`, qui liste les licences par
+    // fonctionnalite ; les confondre ferait croire qu'un routeur sans
+    // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
+    trie.register('show license feature', 'Display technology package licenses', () =>
+      licenseTable(this.getChassisProfile() === 'router-isr2911' ? 'c2900' : 'c2960').join('\n'));
     trie.register('show license udi', 'Display Unique Device Identifier', () => {
       const profile = this.getChassisProfile();
-      const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
+      const sn = this.numeroDeSerie();
       const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
       return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${sn}`;
     });
     trie.register('show diag', 'Display chassis diagnostics', () => {
       const profile = this.getChassisProfile();
       const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-      const sn = profile === 'router-isr2911' ? 'FTX1234567A' : 'FOC1234X56Y';
+      const sn = this.numeroDeSerie();
       return [
         'Slot 0:',
         `        ${pid} Motherboard Port adapter, 3 ports`,
@@ -3020,7 +3098,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const sub = (rest[0] ?? '').toLowerCase();
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
-      if (sub === 'history') { this.terminalHistoryEnabled = false; return ''; }
+      // `terminal no history` DESACTIVE l'historique de cette session :
+      // le drapeau seul laissait le tampon en place, donc `show history`
+      // continuait de rendre ce qui y etait deja.
+      if (sub === 'history') {
+        this.terminalHistoryEnabled = false;
+        this.terminalHistorySize = 0;
+        this.cmdHistory = [];
+        return '';
+      }
       if (sub === 'monitor' || (sub.length >= 3 && 'monitor'.startsWith(sub))) { this.terminalMonitor = false; this.terminalMonitorExplicit = true; return ''; }
       return CISCO_ERRORS.INVALID_INPUT;
     }
@@ -3034,7 +3120,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this.terminalHistoryEnabled = true;
         return '';
       }
-      if (rest.length === 0) { this.terminalHistoryEnabled = true; return ''; }
+      if (rest.length === 0) {
+        this.terminalHistoryEnabled = true;
+        if (this.terminalHistorySize === 0) this.terminalHistorySize = this.tailleHistoriqueDeLigne();
+        return '';
+      }
       return '';
     }
     return CISCO_ERRORS.INVALID_INPUT;
@@ -4653,8 +4743,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             this.consoleLinePrivilegeLevel = lvl;
             return '';
           }
+          if (kw === 'history') {
+            if ((args[0] ?? '').toLowerCase() !== 'size') return CISCO_ERRORS.INVALID_INPUT;
+            const n = parseInt(args[1] ?? '', 10);
+            if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
+            this.consoleLineHistorySize = n;
+            this.consoleLineHistoryEnabled = true;
+            this.terminalHistorySize = n;
+            this.terminalHistoryEnabled = n > 0;
+            return '';
+          }
           if (kw === 'no') {
             const sub = args[0]?.toLowerCase();
+            if (sub === 'history') {
+              this.consoleLineHistoryEnabled = false;
+              this.consoleLineHistorySize = null;
+              this.terminalHistorySize = 0;
+              this.terminalHistoryEnabled = false;
+              return '';
+            }
             if (sub === 'login') {
               this.consoleLineLoginAuthList = null;
               if (args[1]?.toLowerCase() === 'local') {

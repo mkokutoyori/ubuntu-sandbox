@@ -14,6 +14,7 @@
  */
 
 import { CommandTrie } from './CommandTrie';
+import { NetworkOsAccount } from '../router/aaa/NetworkOsAccount';
 import {
   withVrpCommonHelp, withVrpCommonCandidates,
   type VrpViewKind,
@@ -1634,22 +1635,80 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `port-group group-member ${this.portGroupMembers ?? ''}`.trim());
   }
 
+  private magasinComptes(): {
+    get(n: string): unknown;
+    upsert(a: NetworkOsAccount): unknown;
+    remove(n: string): void;
+  } | null {
+    return (this.swRef as unknown as {
+      getCredentialStore?: () => {
+        get(n: string): unknown;
+        upsert(a: NetworkOsAccount): unknown;
+        remove(n: string): void;
+      };
+    } | null)?.getCredentialStore?.() ?? null;
+  }
+
+  /**
+   * Poser ou completer le compte dans le magasin partage. Le secret est
+   * garde tel qu'il a ete saisi, sinon `local-user` declarerait un
+   * compte que personne ne peut authentifier — ce qui etait exactement
+   * l'etat precedent.
+   */
+  private declarerCompteLocal(nom: string, kv: { secret?: string; privilege?: number }): void {
+    const store = this.magasinComptes();
+    if (!store) return;
+    let compte = (store.get(nom) as NetworkOsAccount | undefined)
+      ?? NetworkOsAccount.create({ name: nom });
+    if (kv.secret !== undefined) compte = compte.withSecret(kv.secret, 'plain');
+    if (kv.privilege !== undefined) compte = compte.withPrivilege(kv.privilege);
+    store.upsert(compte);
+  }
+
   /** AAA sub-view ([host-aaa]) — local-user / scheme / domain. */
   private buildAaaCommands(): void {
     const t = this.aaaTrie;
+    // `local-user` DECLARE un compte, il ne remplit pas un tableau
+    // d'affichage. Il rangeait dans une carte locale au shell en
+    // remplacant le mot de passe par `******` : le compte n'existait pour
+    // personne, donc rien ne pouvait l'authentifier et `display users`
+    // ne pouvait jamais le nommer. Il alimente desormais le MEME magasin
+    // que le routeur, tout en gardant sa carte pour le rendu de la
+    // configuration (VRP y ecrit le condense, pas le secret).
     t.registerGreedy('local-user', 'Configure a local user', (args) => {
       if (args.length < 2) return 'Error: Incomplete command.';
       const name = args[0];
       const u = this.localUsers.get(name) ?? {};
       const kw = args[1].toLowerCase();
-      if (kw === 'password') u.password = '******';
-      else if (kw === 'privilege') u.privilege = args[args.length - 1];
-      else if (kw === 'service-type') u.serviceType = args.slice(2).join(',');
+      if (kw === 'password') {
+        u.password = '******';
+        this.declarerCompteLocal(name, { secret: args[args.length - 1] });
+      } else if (kw === 'privilege') {
+        u.privilege = args[args.length - 1];
+        const lvl = parseInt(args[args.length - 1], 10);
+        if (Number.isFinite(lvl)) this.declarerCompteLocal(name, { privilege: lvl });
+      } else if (kw === 'service-type') {
+        u.serviceType = args.slice(2).join(',');
+        this.declarerCompteLocal(name, {});
+      }
       this.localUsers.set(name, u);
       return '';
     });
+    t.registerGreedy('undo', 'aaa undo', (args, raw) => {
+      if ((args[0] ?? '').toLowerCase() === 'local-user' && args[1]) {
+        this.localUsers.delete(args[1]);
+        this.magasinComptes()?.remove(args[1]);
+        return '';
+      }
+      const cfg = this.aaaExtraConfig ?? (this.aaaExtraConfig = {
+        authenticationSchemes: [], authorizationSchemes: [],
+        accountingSchemes: [], domains: [], rawLines: [],
+      });
+      cfg.rawLines.push(raw ?? `undo ${args.join(' ')}`.trim());
+      return '';
+    });
     for (const kw of ['authentication-scheme', 'authorization-scheme',
-      'accounting-scheme', 'domain', 'undo']) {
+      'accounting-scheme', 'domain']) {
       t.registerGreedy(kw, `aaa ${kw}`, (args, raw) => {
         const cfg = this.aaaExtraConfig ?? (this.aaaExtraConfig = {
           authenticationSchemes: [], authorizationSchemes: [],

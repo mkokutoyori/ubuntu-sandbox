@@ -72,6 +72,10 @@ export interface SshSessionRecord {
   readonly terminalType: string | null;
   readonly localPort: number;
   readonly peerPort: number;
+  /** Le chiffrement retenu — `%SSH-5-SSH2_SESSION` le nomme. */
+  readonly cipher: string;
+  /** Le HMAC retenu — idem. */
+  readonly hmac: string;
 }
 
 export interface SshSessionRegistryOptions {
@@ -81,6 +85,12 @@ export interface SshSessionRegistryOptions {
   capacity?: () => number;
   historyLimit?: number;
   now?: () => number;
+  /**
+   * Le couple que le serveur retiendrait. Lu a l'ouverture plutot que
+   * fige, pour qu'`ip ssh server algorithm encryption …` change ce que
+   * le journal annonce comme il change deja ce que `show ssh` affiche.
+   */
+  algorithms?: () => { chiffrement: string; hmac: string };
 }
 
 interface MutableSession {
@@ -103,6 +113,8 @@ interface MutableSession {
   terminalType: string | null;
   localPort: number;
   peerPort: number;
+  cipher: string;
+  hmac: string;
 }
 
 export class SshSessionRegistry {
@@ -112,6 +124,7 @@ export class SshSessionRegistry {
   private readonly capacity: (() => number) | null;
   private readonly historyLimit: number;
   private readonly now: () => number;
+  private readonly algorithms: (() => { chiffrement: string; hmac: string }) | null;
   private readonly subs: Unsubscribe[] = [];
 
   private readonly active: Map<string, MutableSession> = new Map();
@@ -126,6 +139,7 @@ export class SshSessionRegistry {
     this.capacity = opts.capacity ?? null;
     this.historyLimit = opts.historyLimit ?? 256;
     this.now = opts.now ?? Date.now;
+    this.algorithms = opts.algorithms ?? null;
     this.subs.push(this.bus.subscribe('router.aaa.account.login.success', this.onLoginSuccess));
     this.subs.push(this.bus.subscribe('router.ssh.session.closed', this.onSessionClosed));
   }
@@ -144,6 +158,7 @@ export class SshSessionRegistry {
       idleSeconds: Math.max(0, Math.floor(((s.closedAt ?? now) - s.lastActivityAt) / 1000)),
       bytesIn: s.bytesIn, bytesOut: s.bytesOut, terminalType: s.terminalType,
       localPort: s.localPort, peerPort: s.peerPort,
+      cipher: s.cipher, hmac: s.hmac,
     };
   }
 
@@ -213,6 +228,7 @@ export class SshSessionRegistry {
   }): SshSessionRecord | null {
     const transport = input.transport ?? transportDepuisSource(input.fromIp, input.localPort);
     const kind = LIGNE_DE[transport];
+    const algos = this.algorithms?.() ?? { chiffrement: 'aes256-ctr', hmac: 'hmac-sha2-256' };
     const slot = this.allocateLine(kind);
     if (!slot) return null;
     const at = input.at ?? this.now();
@@ -236,6 +252,8 @@ export class SshSessionRegistry {
       terminalType: input.terminalType ?? null,
       localPort: input.localPort ?? PORT_DE[transport],
       peerPort: input.peerPort ?? 0,
+      cipher: algos.chiffrement,
+      hmac: algos.hmac,
     };
     this.active.set(session.id, session);
     this.noteLineUse(kind, slot.index);

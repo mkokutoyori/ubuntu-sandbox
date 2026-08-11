@@ -14,7 +14,7 @@ import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRu
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
-import { CISCO_HARDWARE_PROFILES, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
+import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
 import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
@@ -43,7 +43,7 @@ export function showVersion(
     ...licenseTable(),
     '',
     `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
-    `Processor board ID ${hw.serialNumber}`,
+    `Processor board ID ${chassisSerial(hw, router.id)}`,
     `${giPorts.length} Gigabit Ethernet interfaces`,
     `DRAM configuration is 64 bits wide with parity enabled.`,
     `${hw.nvramDisplayKB}K bytes of non-volatile configuration memory.`,
@@ -1469,6 +1469,8 @@ export function consoleAndAuxLineConfigLines(
     execTimeoutMin: number | null;
     execTimeoutSec: number;
     loggingSynchronous: boolean;
+    historySize: number | null;
+    historyEnabled: boolean;
   };
   if (consoleCfg) {
     lines.push(`line console ${consoleCfg.line}`);
@@ -1487,6 +1489,8 @@ export function consoleAndAuxLineConfigLines(
       lines.push(` exec-timeout ${consoleCfg.execTimeoutMin} ${consoleCfg.execTimeoutSec}`);
     }
     if (consoleCfg.loggingSynchronous) lines.push(' logging synchronous');
+    if (!consoleCfg.historyEnabled) lines.push(' no history');
+    else if (consoleCfg.historySize != null) lines.push(` history size ${consoleCfg.historySize}`);
     lines.push('!');
   }
 

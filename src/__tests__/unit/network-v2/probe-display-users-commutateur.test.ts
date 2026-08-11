@@ -75,24 +75,14 @@ describe('un commutateur Huawei tient ses sessions', () => {
     expect(out).toContain('CON 0');
   }, 30_000);
 
-  /**
-   * LIMITE MESUREE, epinglee plutot que tue : `local-user` du
-   * commutateur Huawei range dans une carte LOCALE AU SHELL et remplace
-   * le mot de passe par `******` — il n'atteint jamais
-   * `NetworkOsCredentialStore`, donc aucun compte declare ainsi ne peut
-   * authentifier quoi que ce soit. C'est la meme famille de defaut que
-   * celui qu'on vient de refermer, mais un autre sujet : le brancher
-   * ferait demander un mot de passe a la console d'un commutateur, ce
-   * qui depasse une correction d'affichage.
-   */
-  it('LIMITE — `local-user` du commutateur n\'atteint pas le magasin', async () => {
+  it('`local-user` declare un compte que le magasin porte', async () => {
     const d = commutateurHuawei();
     for (const c of ['system-view', 'aaa',
       'local-user admin password irreversible-cipher Huawei@123', 'quit', 'quit']) {
       await d.executeCommand(c);
     }
     expect(d.getCredentialStore().get('admin'),
-      'le compte n\'existe pas cote magasin').toBeUndefined();
+      'un compte declare existe').toBeTruthy();
   }, 30_000);
 });
 

@@ -63,7 +63,9 @@ import type { IEventBus } from '@/events/EventBus';
 import { CertificateVerifier as CertificateVerifierImpl } from '../pki/CertificateVerifier';
 import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
-import { CISCO_HARDWARE_PROFILES, licenseTable } from './shells/cisco/CiscoCommonShow';
+import {
+  algorithmesRetenus, chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
+} from './shells/cisco/CiscoCommonShow';
 import { formatUptime } from './shells/cisco/CiscoTrackCommands';
 
 export class CiscoRouter extends Router {
@@ -475,6 +477,10 @@ export class CiscoRouter extends Router {
 
   protected sshVendorTag(): 'cisco' { return 'cisco'; }
 
+  protected override sshNegotiatedAlgorithms(): { chiffrement: string; hmac: string } {
+    return algorithmesRetenus(getSecurityConfig(this).ssh);
+  }
+
   protected createShell(): IRouterShell {
     return new CiscoIOSShell();
   }
@@ -633,7 +639,7 @@ export class CiscoRouter extends Router {
       ...licenseTable(),
       '',
       `Cisco ${hw.pid} (revision 1.0) with ${hw.dramKB}K/${hw.ioMemoryKB}K bytes of memory.`,
-      `Processor board ID ${hw.serialNumber}`,
+      `Processor board ID ${chassisSerial(hw, this.id)}`,
       `${giPorts.length} Gigabit Ethernet interfaces`,
       ...(faPorts.length > 0 ? [`${faPorts.length} FastEthernet interfaces`] : []),
       'DRAM configuration is 64 bits wide with parity enabled.',
@@ -641,6 +647,12 @@ export class CiscoRouter extends Router {
       `${Math.floor(hw.flashTotalBytes / 1024)}K bytes of ATA System CompactFlash 0 (Read/Write)`,
       '',
       `Base ethernet MAC address: ${ports.values().next().value?.getMAC() || '00:00:00:00:00:00'}`,
+      // Le registre gouverne le demarrage : il est ANNONCE au demarrage
+      // sur une vraie machine, et c'est la seule facon de voir qu'un
+      // `config-register 0x2142` va faire ignorer la configuration au
+      // prochain reload. Il manquait, alors que `show version` le rend —
+      // et c'est le MEME rendu qui est lu, pas une seconde copie.
+      this._getCiscoFileSystem('router-isr2911').renderConfigRegisterLine(),
       '',
       '         --- System Configuration Dialog ---',
       '',

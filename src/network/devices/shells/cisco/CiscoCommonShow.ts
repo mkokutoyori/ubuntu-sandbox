@@ -163,6 +163,37 @@ export function licenseTable(module = 'c2900'): string[] {
   ];
 }
 
+/**
+ * Le numero de serie d'un chassis IDENTIFIE ce chassis : deux routeurs
+ * ne peuvent pas porter le meme. Il etait constant dans le profil
+ * materiel, donc toute une topologie etait un troupeau de jumeaux, et
+ * `show inventory` de dix machines rendait dix fois `FTX1234567A`.
+ *
+ * La forme est celle de Cisco — trois lettres de site, quatre chiffres
+ * d'annee/semaine, quatre caracteres de sequence — et la valeur est
+ * DERIVEE de l'identifiant de la machine : stable d'un appel a l'autre
+ * et d'un rechargement de topologie a l'autre, unique d'une machine a
+ * l'autre. Un tirage aleatoire donnerait un numero different a chaque
+ * lecture, ce qui n'identifie plus rien.
+ */
+export function chassisSerial(profil: CiscoHardwareProfile, deviceId: string): string {
+  const prefixe = profil.serialNumber.slice(0, 3);
+  let h = 2166136261;
+  for (let i = 0; i < deviceId.length; i++) {
+    h ^= deviceId.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+  const semaine = String(1000 + (h % 9000));
+  let suite = '';
+  let reste = h >>> 4;
+  for (let i = 0; i < 4; i++) {
+    suite += ALPHABET[reste % ALPHABET.length];
+    reste = Math.floor(reste / ALPHABET.length) + i * 7;
+  }
+  return `${prefixe}${semaine}${suite}`;
+}
+
 export const CISCO_HARDWARE_PROFILES: Record<CiscoChassisProfile, CiscoHardwareProfile> = {
   'router-isr2911': {
     pid: 'CISCO2911/K9',
@@ -243,12 +274,14 @@ export function formatIosUptime(ms: number): string {
   return parts.length > 0 ? parts.join(', ') : '0 minutes';
 }
 
-export function showInventory(hostname: string, profile: CiscoChassisProfile = 'switch-c3560'): string {
+export function showInventory(
+  hostname: string, profile: CiscoChassisProfile = 'switch-c3560', deviceId?: string,
+): string {
   void hostname;
   const c = CISCO_HARDWARE_PROFILES[profile];
   return [
     `NAME: "${c.pid} chassis", DESCR: "${c.description}"`,
-    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${c.serialNumber}`,
+    `PID: ${c.pid.padEnd(20)}, VID: V01  , SN: ${chassisSerial(c, deviceId ?? hostname)}`,
   ].join('\n');
 }
 
@@ -1057,6 +1090,24 @@ export function showIpSsh(ssh?: {
  * pile TCP (limite deja ecrite pour le serveur HTTP) : il repond donc
  * « aucune connexion », ce qui est la verite et non un repli.
  */
+/**
+ * Le couple chiffrement/HMAC que le serveur retient — la PREFERENCE DU
+ * SERVEUR, c'est-a-dire le premier de la liste qu'il accepte, ce qu'un
+ * vrai serveur choisit quand le client offre tout.
+ *
+ * Une seule regle, parce que deux vues la posent : `show ssh` et le
+ * message `%SSH-5-SSH2_SESSION`. Les laisser choisir chacune de leur
+ * cote ferait annoncer au journal un chiffre que la table contredit.
+ */
+export function algorithmesRetenus(algos?: {
+  encryptionAlgorithms?: string[]; macAlgorithms?: string[];
+}): { chiffrement: string; hmac: string } {
+  return {
+    chiffrement: algos?.encryptionAlgorithms?.[0] ?? 'aes256-ctr',
+    hmac: algos?.macAlgorithms?.[0] ?? 'hmac-sha2-256',
+  };
+}
+
 export function showSshSessions(registre?: {
   list: () => readonly { lineIndex: number; user: string }[];
 } | null, algos?: {
@@ -1079,8 +1130,7 @@ export function showSshSessions(registre?: {
   // rien), donc il n'y a pas d'intersection a calculer ; ce qui change
   // est que la valeur affichee vient desormais de la machine et non
   // d'une constante.
-  const chiffrement = algos?.encryptionAlgorithms?.[0] ?? 'aes256-ctr';
-  const hmac = algos?.macAlgorithms?.[0] ?? 'hmac-sha2-256';
+  const { chiffrement, hmac } = algorithmesRetenus(algos);
   const entete = 'Connection Version Mode Encryption           Hmac                  State                 Username';
   const rangs = actives.map((s) =>
     `${String(s.lineIndex).padEnd(11)}2.0     IN   ${chiffrement.padEnd(21)}${hmac.padEnd(22)}Session started       ${s.user}`);

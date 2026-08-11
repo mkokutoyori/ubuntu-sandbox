@@ -4688,6 +4688,72 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S7 — les points restants du rapport de transcript, tous traites
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S7 ».
+
+Le rapport comptait seize points ; S5 et S6 en ont ferme neuf, ceux-ci
+ferment les sept autres plus les deux que ces lots avaient laisses
+derriere. **Rien n'est reporte.**
+
+**§5 — trois magasins pour une notion, aucun relie.** `terminalHistorySize`
+sur le shell, `VtySnapshot.historySize` fige a 10 et lu par PERSONNE,
+`VtyLineConfig.historySize` ecrit par `history size` sous `line vty` et lu
+par PERSONNE. Et sous `line console 0` la commande tombait dans une
+branche qui rend `''` pour tout ce qu'elle ignore. Desormais : la ligne
+porte le DEFAUT, la session la valeur COURANTE, elle tourne avec
+l'instantane, et fermer la session rend au defaut de la ligne — sans quoi
+un `terminal` tape une fois gouvernait la machine pour toujours.
+`terminal no history` VIDE le tampon.
+
+**§10 — `%SYS-5-CONFIG_I` nomme la ligne.** Le mot « console » etait la
+source pour tout le monde ; IOS ecrit `by <user> on vty0 (<ip>)` quand ce
+n'est pas la console. Le suffixe etait omis faute de connaitre la ligne ;
+le registre la porte depuis S5.
+
+**§13 — le registre de configuration au demarrage.** `show version` lisait
+la vraie valeur, le demarrage ne l'imprimait pas — alors que c'est la
+seule facon de voir qu'un `config-register 0x2142` fera ignorer la
+configuration au prochain reload. Meme rendu, pas une copie.
+
+**§14 — deux tables, pas une.** Le rapport demandait quelle commande
+produit cette sortie : `show license` liste par FONCTIONNALITE, la table
+des PAQUETS TECHNOLOGIQUES est celle de `show license feature`, qui
+n'existait pas — la table du demarrage defilait et n'etait plus
+relisible.
+
+**§15 — dix routeurs, dix fois `FTX1234567A`.** Le numero de serie etait
+une constante du profil materiel, ecrite en dur dans quatre vues de plus.
+`chassisSerial(profil, deviceId)` le derive : stable d'un appel et d'un
+rechargement a l'autre, unique d'une machine a l'autre. Un tirage
+aleatoire n'identifierait plus rien.
+
+**§9 — verifie plutot que suppose** : `no shutdown` sans cable laisse bien
+`is down, line protocol is down` et ne retire que `administratively
+down`. Deux cas l'epinglent.
+
+**Les deux points laisses derriere.** Le message SSH n'etait celui
+d'AUCUNE machine : IOS ecrit `%SSH-5-SSH2_SESSION: SSH2 Session request
+from <ip> (tty = N) using crypto cipher '<c>', hmac '<h>' Succeeded`, en
+severite 5 et non 6 ; le couple est LU de la configuration par la regle
+qui servait deja `show ssh`, extraite pour que les deux vues ne se
+contredisent pas. Et `local-user` du commutateur Huawei alimente le meme
+magasin que le routeur, secret compris, donc le compte s'authentifie ;
+`undo local-user` le retire vraiment, son parseur n'existait pas.
+
+**Fichiers touches** : `shells/CiscoShellBase.ts`, `shells/CiscoIOSShell.ts`,
+`shells/cisco/CiscoCommonShow.ts`, `shells/cisco/CiscoShowCommands.ts`,
+`shells/HuaweiSwitchShell.ts`, `router/aaa/SshSessionRegistry.ts`,
+`inspection/config/LoggingConfig.ts`, `devices/CiscoRouter.ts`,
+`devices/Router.ts`.
+
+**Mesures.** `probe-rapport-transcript-restants.test.ts` (25 cas)
+discrimine par `git stash` : **15 tombent** avant correctif. 25 suites
+sessions/SSH/telnet/logging/show/Huawei vertes (1222 cas). E2E vert.
+Typecheck 119, lint identique.
+
+---
+
 ## Lot S6 — `display users` du commutateur, et un seul rendu pour VRP
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S6 ». Suite directe de
@@ -4927,7 +4993,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S6 livrés** — console/vty separees, un seul rendu VRP |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S7 livrés** — rapport de transcript entierement traite |
 | rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 + SY2 livrés** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

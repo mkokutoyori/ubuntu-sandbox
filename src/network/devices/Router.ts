@@ -126,6 +126,7 @@ import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
 import { NetworkOsAccount, type PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
+import { algorithmesRetenus } from './shells/cisco/CiscoCommonShow';
 import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
@@ -4066,6 +4067,16 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   protected sshVendorTag(): CrossVendorSshVendor { return 'generic'; }
 
+  /**
+   * Le couple chiffrement/HMAC qu'annoncent `show ssh` et
+   * `%SSH-5-SSH2_SESSION`. Un routeur generique n'a pas de configuration
+   * SSH a lire ; `CiscoRouter` surcharge pour lire la sienne, de sorte
+   * que les deux vues ne puissent pas se contredire.
+   */
+  protected sshNegotiatedAlgorithms(): { chiffrement: string; hmac: string } {
+    return algorithmesRetenus();
+  }
+
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
       this._securityAuditLog = new SecurityAuditLog({ deviceId: this.id, bus: this.getBus() });
@@ -4073,6 +4084,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         deviceId: this.id,
         bus: this.getBus(),
         capacity: () => this.vtyLineConfig.lineCapacity(),
+        algorithms: () => this.sshNegotiatedAlgorithms(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
       this._sshHost = new CrossVendorSshHost({
