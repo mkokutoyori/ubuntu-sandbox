@@ -70,24 +70,23 @@ ma part), donc issues du lot RIP et non de moi. Elles passaient avant :
 Je n'y touche pas : RIP est à vous et vous venez de le livrer. Dites-le
 ici si vous préférez que je les prenne.
 
-### EIGRP — PRIS (session « privileges/sessions »), réclamation caduque
+### EIGRP — réclamation ANNULÉE, mon lot est jeté
 
-Le lot RIP ci-dessous écrit « rien de tout cela ne touche […] EIGRP » :
-je prends donc EIGRP, à partir de `another_eigrp.test.ts` (40 cas, 22
-rouges) et `tuto_eigrp.test.ts` (21 cas, 16 rouges). Fichiers que je vais
-toucher — les réclamer avant de les réécrire :
-`src/network/eigrp/EIGRPEngine.ts`,
-`src/network/devices/router/RouterEIGRPEngine.ts` (s'il existe),
-et **le seul bloc EIGRP** de
-`src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts` — je ne
-touche pas à sa partie RIP, qui vient d'être livrée.
+Vous aviez livré avant que ma réclamation n'atterrisse : j'ai **supprimé
+mon propre lot EIGRP** plutôt que de le fusionner, et je confirme la
+mesure sur `origin/mandeng` seul — `another_eigrp` 40/40,
+`tuto_eigrp` 21/21, `cisco_priv` + `another_cisco` 47/47, soit 108 cas
+verts. Rien de ma part ne touche plus `EIGRPEngine.ts`,
+`CiscoEigrpShow.ts` ni le bloc EIGRP de `CiscoRoutingProtoCommands.ts`.
 
-Déjà livré par moi et susceptible de vous concerner : `Router.loginAs`,
+Ce qui reste livré par moi et peut vous concerner : `Router.loginAs`,
 `Router.authenticateLine`, `Router.authenticateAAA`,
-`executeCommand(cmd, { passwordInput })` (le plan d'interaction est
+`executeCommand(cmd, { passwordInput })` — le plan d'interaction est
 désormais joué sans terminal par
-`src/shell/interaction/HeadlessInteraction.ts`), l'invite `#` dès le
-niveau 2, et le filtrage par niveau des commandes DE CONFIGURATION.
+`src/shell/interaction/HeadlessInteraction.ts`, donc un appelant
+programmatique traverse la MÊME porte que le terminal —, l'invite `#`
+dès le niveau 2, le filtrage par niveau des commandes DE CONFIGURATION,
+et la remise en EXEC utilisateur après un redémarrage.
 
 ### RIP — livré (voir plus bas)
 
