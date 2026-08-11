@@ -256,3 +256,48 @@ discriminé par `git stash` : **10 tombent** avant correctif. Les 7 autres
 sont les cas d'épuisement des VTY (mécanisme préexistant) et les refus.
 12 suites connexes vertes (**318 cas**), 6 cas Playwright verts.
 Typecheck 119, lint identique.
+
+
+---
+
+## Conformité au tutoriel (lot S4)
+
+`tuto-sessions-conformite.test.ts` — **107 cas**, organisés selon le
+**plan du tutoriel** et non selon la liste des correctifs : c'est le
+parcours d'un apprenant, du premier `show users` au dernier scénario, sur
+le routeur et le commutateur.
+
+Il couvre ce que les trois fichiers précédents ne couvraient pas — les
+types de session (partie 1), le nombre de lignes et leur épuisement
+(partie 2), **l'isolation entre sessions** (partie 6.1 et scénario 3),
+les sessions sortantes (partie 5), l'historique (partie 8) — et il
+**balaie le récapitulatif** : chaque commande de la table de référence
+répond, et les deux formes inventées par le tutoriel
+(`show line vty 0 detail`, `send all` / `send line vty 0`) sont pincées
+comme des refus.
+
+### Un défaut trouvé en écrivant ce fichier
+
+**`show users` ne listait AUCUNE session.** La fonction ne prenait aucun
+argument et rendait quatre lignes constantes — une console seule,
+toujours, quel que soit le nombre de sessions ouvertes. Le registre, lui,
+savait les lister (`SshSessionRegistry.formatShowUsers`) et **personne ne
+le lui demandait**.
+
+C'est la commande par laquelle commence toute la partie 3 (« voir les
+sessions ») et le diagnostic du scénario 1 (« toutes les VTY sont
+occupées ») : les deux portaient sur un texte qui ne mesurait rien.
+`show who`, son synonyme, était touché de la même façon.
+
+### Deux limites nommées plutôt que passées sous silence
+
+- **L'historique EST partagé entre deux sessions d'une même machine.**
+  Le tutoriel §6.1 le range parmi ce qu'une session ne partage pas, et il
+  a raison ; `cmdHistory` figure bien dans `VtySnapshot`, mais la
+  rotation d'état ne l'isole pas. Le cas pince ce qui est vrai
+  aujourd'hui — chaque session tient son propre tampon de saisie — et
+  nomme l'écart. Le corriger touche la rotation d'état vty, pas la vue.
+- **Deux cas sont ignorés sur le commutateur** (`Uses`, épuisement des
+  VTY) : il n'a pas de registre de sessions parce qu'il n'a pas de pile
+  TCP. Différence de plateforme déjà écrite pour `show ssh` et le serveur
+  HTTP, pas un trou de couverture.

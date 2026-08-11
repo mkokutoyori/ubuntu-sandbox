@@ -89,13 +89,30 @@ export function showClock(arg: Date | ShowStateDevice = new Date()): string {
 }
 
 /** `show users` — active lines (console only in the sim). */
-export function showUsers(): string {
-  return [
-    '    Line       User       Host(s)              Idle       Location',
-    '*  0 con 0                idle                 00:00:00',
-    '',
-    '  Interface    User               Mode         Idle     Peer Address',
-  ].join('\n');
+/**
+ * `show users` — les sessions VIVANTES.
+ *
+ * Elle ne prenait AUCUN argument et rendait quatre lignes constantes :
+ * une console seule, toujours, quel que soit le nombre de sessions
+ * ouvertes. Le registre, lui, sait les lister (`formatShowUsers`) et
+ * personne ne le lui demandait — donc toute la partie « voir les
+ * sessions » d'un cours, et le diagnostic « toutes les VTY sont
+ * occupees » qui commence par cette commande, portaient sur un texte
+ * qui ne mesurait rien.
+ *
+ * La section `Interface / User / Mode` est celle des lignes
+ * asynchrones ; elle reste vide parce qu'aucune n'est modelisee ici, ce
+ * qui est vrai.
+ */
+export function showUsers(registre?: {
+  formatShowUsers: () => string;
+} | null): string {
+  const entete = registre?.formatShowUsers()
+    ?? [
+      '    Line       User       Host(s)              Idle       Location',
+      '*  0 con 0                idle                 00:00:00',
+    ].join('\n');
+  return [entete, '', '  Interface    User               Mode         Idle     Peer Address'].join('\n');
 }
 
 export type CiscoChassisProfile = 'router-isr2911' | 'switch-c2960' | 'switch-c3560';

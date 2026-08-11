@@ -4671,6 +4671,39 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S4 — conformite du tutoriel des sessions
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Conformite au tutoriel ».
+
+`tuto-sessions-conformite.test.ts` (107 cas) suit le PLAN DU TUTORIEL et
+non la liste des correctifs : le parcours d'un apprenant, sur les deux
+plateformes. Il couvre ce que les trois fichiers precedents ne
+couvraient pas — types de session, nombre de lignes et epuisement,
+ISOLATION entre sessions, sessions sortantes, historique — et balaie le
+recapitulatif, les deux formes inventees du tutoriel etant pincees comme
+des refus.
+
+**Defaut trouve en l'ecrivant** : `show users` ne listait AUCUNE session.
+La fonction ne prenait aucun argument et rendait quatre lignes
+constantes — une console seule, toujours — alors que le registre savait
+les lister et que personne ne le lui demandait. C'est la commande par
+laquelle commencent la partie 3 entiere et le diagnostic du scenario 1.
+`show who` etait touche de meme.
+
+**Deux limites nommees** : l'historique EST partage entre deux sessions
+d'une meme machine (le tutoriel a raison de dire l'inverse ;
+`cmdHistory` est dans `VtySnapshot` mais la rotation ne l'isole pas —
+correctif dans la rotation d'etat vty, pas dans la vue) ; et deux cas
+sont ignores sur le commutateur, qui n'a pas de registre faute de pile
+TCP.
+
+**Mesures.** 107 cas, 1 tombe avant correctif (le `show users`) — c'est
+attendu d'un fichier de CONFORMITE, dont l'objet est de prouver que le
+tutoriel passe, pas de discriminer un correctif. 8 suites connexes
+vertes (258 cas). Typecheck 119, lint identique.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4690,7 +4723,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S3 livrés — chantier clos** |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S4 livrés** — conformité pincée |
 | rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 livré** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

@@ -2116,6 +2116,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected configExitLogTarget: unknown = null;
 
   /**
+   * Le registre des sessions, quand la plateforme en a un. Un
+   * commutateur n'en a pas — il n'a pas de pile TCP — et rend donc la
+   * console seule, ce qui est la verite et non un repli.
+   */
+  protected registreSessions(): { formatShowUsers: () => string } | null {
+    return (this.d() as unknown as {
+      getSshSessionRegistry?: () => { formatShowUsers: () => string } | null;
+    }).getSshSessionRegistry?.() ?? null;
+  }
+
+  /**
    * `archive log config` — retient la commande de configuration qui
    * vient d'être tapée, et l'annonce en syslog
    * (`docs/PRD-Pistes-Audit-Cisco.md` §3).
@@ -2597,13 +2608,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(trie: CommandTrie): void {
     trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
-    trie.register('show users', 'Display active lines', () => showUsers());
+    trie.register('show users', 'Display active lines', () => showUsers(this.registreSessions()));
     // `show who` est le SYNONYME historique de `show users` sur IOS, et
     // la sequence de collecte de preuves d'un auditeur les enchaine.
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    trie.register('show who', 'Display active lines', () => showUsers());
+    trie.register('show who', 'Display active lines', () => showUsers(this.registreSessions()));
     trie.register('show sessions', 'Display open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
