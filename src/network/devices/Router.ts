@@ -51,6 +51,11 @@ import { RoutePolicyStore } from './router/policy/RoutePolicy';
 import { TrafficPolicyStore } from './router/policy/TrafficPolicy';
 import { NqaService } from '../nqa/NqaService';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
+import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
+import { RouterDnsService, DNS_PORT, type DnsTransport } from './router/dns/RouterDnsService';
+import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
+import { RRType } from '../dns/wire/RRType';
+import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -3500,6 +3505,79 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
   readonly hostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.hostsTable; }
+
+  private readonly dnsConfig = new CiscoDnsConfig();
+  _getDnsConfig(): CiscoDnsConfig { return this.dnsConfig; }
+  _getDnsStats() { return this.getDnsService().stats; }
+  _syncDnsService(): void { this.getDnsService().sync(); }
+
+  private dnsService: RouterDnsService | null = null;
+  getDnsService(): RouterDnsService {
+    if (!this.dnsService) {
+      this.dnsService = new RouterDnsService(
+        () => this.dnsConfig,
+        () => this.hostsTable,
+        () => this.dnsTransport(),
+        (texte) => {
+          this.getLoggingConfig()?.append('debugging', 'domain', texte, true, 'DOMAIN');
+        },
+      );
+    }
+    return this.dnsService;
+  }
+
+  private dnsTransport(): DnsTransport {
+    const ep = this.getUdpEndpoint();
+    return {
+      bind: (port, onQuery) => ep.udpBind(port, (d) => {
+        onQuery(d.sourceIP.toString(), d.udp.sourcePort, d.udp.payload);
+      }),
+      unbind: (port) => { ep.udpClose(port); },
+      reply: (dst, dstPort, charge) => {
+        ep.sendUdpDatagramTo(new IPAddress(dst), dstPort, DNS_PORT, charge as Uint8Array);
+      },
+      sendQuery: (serveur, nom) => this.dnsQuerySurLeFil(serveur, nom),
+    };
+  }
+
+  private dnsQuerySurLeFil(serveur: string, nom: string): Promise<string[]> {
+    return new Promise((resolve) => {
+      const ep = this.getUdpEndpoint();
+      const port = ep.allocateEphemeralPort();
+      let fini = false;
+      const terminer = (adresses: string[]) => {
+        if (fini) return;
+        fini = true;
+        ep.udpClose(port);
+        resolve(adresses);
+      };
+      ep.udpBind(port, (d) => {
+        try {
+          const msg = decodeDnsMessage(d.udp.payload as unknown as Uint8Array);
+          const ips: string[] = [];
+          for (const rr of msg.answers) {
+            const data = rr.data as { type: number; address?: { toString(): string } };
+            if (data.type === RRType.A && data.address) ips.push(data.address.toString());
+          }
+          terminer(ips);
+        } catch { terminer([]); }
+      });
+      const requete: DnsMessage = {
+        id: Math.floor(Math.random() * 65535),
+        flags: { qr: false, opcode: 0, aa: false, tc: false, rd: true, ra: false, ad: false, cd: false, rcode: 0 },
+        questions: [{ qname: `${nom}.`, qtype: RRType.A, qclass: 1 }],
+        answers: [], authorities: [], additionals: [],
+      };
+      ep.sendUdpDatagramTo(new IPAddress(serveur), DNS_PORT, port, encodeDnsMessage(requete));
+      let tours = 0;
+      const attendre = () => {
+        if (fini) return;
+        if (tours++ > 40) { terminer([]); return; }
+        queueMicrotask(attendre);
+      };
+      queueMicrotask(attendre);
+    });
+  }
   /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
   readonly sshKnownHosts = new RouterSshKnownHosts();
   _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }

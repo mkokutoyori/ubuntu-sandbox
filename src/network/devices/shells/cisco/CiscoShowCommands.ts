@@ -607,9 +607,13 @@ export function showRunningConfig(router: Router): string {
     lines.push(`${on ? '' : 'no '}service ${name}`);
   }
 
+  const dnsCfg = (router as unknown as {
+    _getDnsConfig?: () => import('../../router/dns/CiscoDnsConfig').CiscoDnsConfig;
+  })._getDnsConfig?.();
+  if (dnsCfg) lines.push(...dnsCfg.runningConfigLines());
+
   const mgmtForSsh = (router as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
   if (mgmtForSsh) {
-    if (mgmtForSsh.domainName) lines.push(`ip domain-name ${mgmtForSsh.domainName}`);
     // Les lignes `ip ssh version|time-out|authentication-retries` sont
     // rendues par `CiscoSecurityConfig.runningConfigLines()`, qui lit le
     // magasin que la CLI ECRIT vraiment. Elles etaient rendues ICI AUSSI,

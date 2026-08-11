@@ -3289,7 +3289,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (niveaux.length > 0) lines.push(...niveaux);
     if (enableSecret || enablePassword || niveaux.length > 0) lines.push('!');
 
-    if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
+    const dnsLignes = sw._getDnsConfig().runningConfigLines();
+    if (dnsLignes.length > 0) { lines.push(...dnsLignes); lines.push('!'); }
+    else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
 
     // Local AAA users (`username NAME privilege N secret …`).

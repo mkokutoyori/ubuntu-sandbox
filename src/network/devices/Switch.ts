@@ -76,6 +76,8 @@ import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/P
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
+import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
+import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
@@ -2747,6 +2749,13 @@ export abstract class Switch extends Equipment {
     return this._sshSessionRegistry!;
   }
   private _sshSessionRegistry: SshSessionRegistry | null = null;
+
+  private readonly dnsConfig = new CiscoDnsConfig();
+  _getDnsConfig(): CiscoDnsConfig { return this.dnsConfig; }
+  _syncDnsService(): void { /* un commutateur n'a pas de pile UDP a lier */ }
+
+  private readonly dnsHostsTable = new RouterHostsTable();
+  _getHostsTable(): RouterHostsTable { return this.dnsHostsTable; }
   /** @internal `username NAME [privilege N] [secret|password …]`. */
   _upsertCiscoUsername(name: string, kv: {
     privilege?: number; secret?: string; secretAlgo?: PasswordHashAlgorithm;

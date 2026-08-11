@@ -22,6 +22,7 @@ import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
 import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
@@ -1145,12 +1146,25 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return '';
     }
 
-    const targetIP = new IPAddress(parsed.target);
-    this._pendingAsync = router
-      .executePingSequence(targetIP, parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
-      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    this._pendingAsync = this.resoudreCible(router, parsed.target).then((adresse) => {
+      if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
+      return router
+        .executePingSequence(
+          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+        .then(results => formatCiscoPing(
+          adresse, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    });
 
     return '';
+  }
+
+  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
+    if (isValidIPv4(cible)) return Promise.resolve(cible);
+    const svc = (appareil as {
+      getDnsService?: () => { resolve(n: string): Promise<string | null> };
+    }).getDnsService?.();
+    if (!svc) return Promise.resolve(null);
+    return svc.resolve(cible);
   }
 
   private _handleTraceroute(args: string[]): string {
@@ -1203,16 +1217,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return '';
     }
 
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) return `% Unrecognized host or address, or protocol not running.`;
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) return `% Unrecognized host or address, or protocol not running.`;
-
-    const targetIP = new IPAddress(target);
     const router = this.d();
-
-    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs, probesPerHop).then(hops => {
-      return this._formatCiscoTraceroute(target, maxHops, hops);
+    this._pendingAsync = this.resoudreCible(router, target).then((adresse) => {
+      if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
+      return router
+        .executeTraceroute(new IPAddress(adresse), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatCiscoTraceroute(adresse, maxHops, hops));
     });
 
     return '';

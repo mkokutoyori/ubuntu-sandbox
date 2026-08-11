@@ -531,6 +531,19 @@ export function displayCurrentConfig(
     '#',
   ];
 
+  const dnsCfg = router._getDnsConfig();
+  const dnsLignes: string[] = [];
+  if (dnsCfg.lookupEnabled) dnsLignes.push('dns resolve');
+  for (const s of dnsCfg.nameServers) dnsLignes.push(`dns server ${s}`);
+  for (const d of dnsCfg.domainList) dnsLignes.push(`dns domain ${d}`);
+  for (const e of router._getHostsTable().entries()) {
+    if (e.permanent) dnsLignes.push(`ip host ${e.name} ${e.ips.join(' ')}`);
+  }
+  if (dnsLignes.length > 0) {
+    lines.push(...dnsLignes);
+    lines.push('#');
+  }
+
   if (dhcpEnabled) {
     lines.push('dhcp enable');
     lines.push('#');

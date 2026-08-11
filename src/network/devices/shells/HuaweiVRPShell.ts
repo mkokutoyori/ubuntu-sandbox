@@ -1568,9 +1568,32 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display sockets', 'Display open sockets', () =>
       renderHuaweiSockets(this.r()));
     t.register('display dns server', 'Display DNS servers', () => {
-      const servers = this.r().getManagementService().nameServers;
+      const servers = this.r()._getDnsConfig().nameServers;
       if (servers.length === 0) return 'No DNS server configured.';
-      return ` DNS Server(s): ${servers.join(', ')}`;
+      return [
+        ' Type: D:Dynamic  S:Static',
+        ' Domain-name-server           Type',
+        ...servers.map((s) => ` ${s.padEnd(29)}S`),
+      ].join('\n');
+    });
+    t.register('display dns domain', 'Display DNS domain suffixes', () => {
+      const cfg = this.r()._getDnsConfig();
+      const suffixes = cfg.suffixesDeRecherche();
+      if (suffixes.length === 0) return 'No domain name configured.';
+      return [
+        ' Type: D:Dynamic  S:Static',
+        ' No.   Domain-name                             Type',
+        ...suffixes.map((s, i) => ` ${String(i + 1).padEnd(6)}${s.padEnd(40)}S`),
+      ].join('\n');
+    });
+    t.register('display dns dynamic-host', 'Display the dynamic DNS cache', () => {
+      const entrees = this.r()._getHostsTable().entries().filter((e) => !e.permanent);
+      if (entrees.length === 0) return 'No dynamic host resolved.';
+      return [
+        ' No.  Host                     TTL         IpAddress',
+        ...entrees.map((e, i) =>
+          ` ${String(i + 1).padEnd(5)}${e.name.padEnd(25)}${String(86400 - e.ageSeconds).padEnd(12)}${e.ips.join(' ')}`),
+      ].join('\n');
     });
 
     registerDhcpDisplayCommands(t, getRouter);
@@ -1657,8 +1680,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    // `ip host <name> <ip>` — VRP static hostname → IP table consulted
-    // before any DNS fallback by stelnet / ping / traceroute.
+    t.register('dns resolve', 'Enable dynamic DNS resolution', () => {
+      this.r()._getDnsConfig().lookupEnabled = true;
+      return '';
+    });
+    t.register('undo dns resolve', 'Disable dynamic DNS resolution', () => {
+      this.r()._getDnsConfig().lookupEnabled = false;
+      return '';
+    });
+    t.registerGreedy('dns server', 'Configure a DNS server', (args) => {
+      const err = this.r()._getDnsConfig().setNameServers(args);
+      if (!err) return '';
+      return err.kind === 'incomplete'
+        ? 'Error: Incomplete command found at \'^\' position.'
+        : 'Error: Wrong parameter found at \'^\' position.';
+    });
+    t.registerGreedy('undo dns server', 'Remove a DNS server', (args) => {
+      this.r()._getDnsConfig().removeNameServers(args);
+      return '';
+    });
+    t.registerGreedy('dns domain', 'Configure a DNS domain suffix', (args) => {
+      const err = this.r()._getDnsConfig().addDomainToList(args[0]);
+      return err ? 'Error: Incomplete command found at \'^\' position.' : '';
+    });
+    t.registerGreedy('undo dns domain', 'Remove a DNS domain suffix', (args) => {
+      this.r()._getDnsConfig().removeDomainFromList(args[0]);
+      return '';
+    });
+
     t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return 'Error: Incomplete command.';
       getRouter()._getHostsTable?.().upsert(args[0], args[1]);

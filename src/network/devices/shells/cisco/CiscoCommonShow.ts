@@ -1137,28 +1137,56 @@ export function showSshSessions(registre?: {
   return [entete, ...rangs, finV1].join('\n');
 }
 
-export function showHosts(router?: { _getHostsTable?: () => import('../../router/dns/RouterHostsTable').RouterHostsTable; getManagementService?: () => { domainName: string; ipDomainLookupEnabled: boolean; nameServers: string[] } }): string {
+export interface ShowHostsDevice {
+  _getHostsTable?: () => import('../../router/dns/RouterHostsTable').RouterHostsTable;
+  _getDnsConfig?: () => import('../../router/dns/CiscoDnsConfig').CiscoDnsConfig;
+}
+
+export function showHosts(router?: ShowHostsDevice): string {
   const hosts = router?._getHostsTable?.();
-  const mgmt = router?.getManagementService?.();
+  const dns = router?._getDnsConfig?.();
   const lines: string[] = [];
-  if (mgmt?.domainName) lines.push(`Default domain is ${mgmt.domainName}`);
-  else lines.push('Default domain is not set');
-  if (mgmt?.ipDomainLookupEnabled === false) lines.push('Name/address lookup is disabled');
-  else if (mgmt && mgmt.nameServers.length > 0) lines.push('Name/address lookup uses domain service');
+  lines.push(dns?.domainName
+    ? `Default domain is ${dns.domainName}`
+    : 'Default domain is not set');
+  if (dns && dns.domainList.length > 0) {
+    lines.push(`Domain list: ${dns.domainList.join(', ')}`);
+  }
+  if (dns?.lookupEnabled === false) lines.push('Name/address lookup is disabled');
+  else if (dns && dns.nameServers.length > 0) lines.push('Name/address lookup uses domain service');
   else lines.push('Name/address lookup uses static mappings');
-  lines.push(mgmt && mgmt.nameServers.length > 0
-    ? `Name servers are ${mgmt.nameServers.join(', ')}`
+  lines.push(dns && dns.nameServers.length > 0
+    ? `Name servers are ${dns.nameServers.join(', ')}`
     : 'Name servers are 255.255.255.255');
+  lines.push('');
   lines.push('Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate');
   lines.push('       temp - temporary, perm - permanent');
   lines.push('       NA - Not Applicable None - Not defined');
   lines.push('');
   lines.push('Host                      Port  Flags      Age Type   Address(es)');
-  const entries = hosts?.entries() ?? [];
-  for (const e of entries) {
-    lines.push(`${e.name.padEnd(26)}None  (perm, OK)  0   IP     ${e.ip}`);
+  for (const e of hosts?.entries() ?? []) {
+    const drapeaux = `(${e.permanent ? 'perm' : 'temp'}, OK)`;
+    lines.push(`${e.name.padEnd(26)}None  ${drapeaux.padEnd(11)}${String(e.ageSeconds).padEnd(4)}IP     ${e.ips.join(' ')}`);
   }
   return lines.join('\n');
+}
+
+export interface DnsStatsDevice {
+  _getDnsStats?: () => {
+    recues: number; repondues: number; nxdomain: number; transferees: number;
+  };
+}
+
+export function showIpDnsStatistics(router?: DnsStatsDevice): string {
+  const s = router?._getDnsStats?.()
+    ?? { recues: 0, repondues: 0, nxdomain: 0, transferees: 0 };
+  return [
+    'DNS requests statistics:',
+    `  Number of DNS requests received: ${s.recues}`,
+    `  Number of DNS requests answered: ${s.repondues}`,
+    `  Number of DNS requests forwarded: ${s.transferees}`,
+    `  Number of DNS requests failed: ${s.nxdomain}`,
+  ].join('\n');
 }
 
 /** `show vrf` / `show ip vrf` — enumerate configured VRF instances. */

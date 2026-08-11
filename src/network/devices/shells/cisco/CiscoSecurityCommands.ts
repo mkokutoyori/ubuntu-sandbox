@@ -441,9 +441,11 @@ export function buildIdentityConfigCommands(
     // venait d'en poser un.
     const dev = ctx.r() as unknown as {
       getManagementService?: () => { domainName?: string };
+      _getDnsConfig?: () => { domainName: string };
       getDomainName?: () => string | null | undefined;
     };
-    const domain = dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '';
+    const domain = dev._getDnsConfig?.().domainName
+      || dev.getManagementService?.().domainName || dev.getDomainName?.() || '';
     if (!domain) {
       return '% Please define a domain-name first.';
     }
@@ -478,12 +480,14 @@ export function buildIdentityConfigCommands(
   trie.registerGreedy('crypto key zeroize rsa', 'Delete RSA host keys', () => {
     const dev = ctx.r() as unknown as {
       getManagementService?: () => { domainName?: string };
+      _getDnsConfig?: () => { domainName: string };
       getDomainName?: () => string | null | undefined;
       getHostname?: () => string;
       _refreshSshAvailability?: () => void;
     };
     if (sec().cryptoKeys.length === 0) return '% No Signature RSA Keys found in configuration.';
-    const domaine = dev.getManagementService?.().domainName ?? dev.getDomainName?.() ?? '';
+    const domaine = dev._getDnsConfig?.().domainName
+      || dev.getManagementService?.().domainName || dev.getDomainName?.() || '';
     const fqdn = `${dev.getHostname?.() ?? ''}.${domaine}`;
     sec().cryptoKeys = [];
     // Wiping the keys really disables SSH — this is the router's F7.2, and

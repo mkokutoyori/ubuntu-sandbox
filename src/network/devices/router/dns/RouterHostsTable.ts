@@ -1,25 +1,31 @@
-/**
- * RouterHostsTable — vendor-neutral static-hostname registry.
- *
- * Cisco IOS `ip host pc1 10.0.0.1` and Huawei VRP `ip host pc1
- * 10.0.0.1` both register a name → IP mapping that local CLI verbs
- * (ping, traceroute, ssh, stelnet) consult before falling back to
- * DNS. This model class is the single store consulted by both shells.
- *
- * Entries are name-keyed (case-insensitive) and aliases for the same
- * IP are allowed — looking up by name returns the first declared IP.
- */
-
 export interface RouterHostsEntry {
   readonly name: string;
   readonly ip: string;
+  readonly ips: readonly string[];
+  readonly permanent: boolean;
+  readonly ageSeconds: number;
+}
+
+interface Entree {
+  nom: string;
+  ips: string[];
+  permanent: boolean;
+  poseeA: number;
 }
 
 export class RouterHostsTable {
-  private readonly byName = new Map<string, string>();
+  private readonly byName = new Map<string, Entree>();
+  private readonly maintenant: () => number;
 
-  upsert(name: string, ip: string): void {
-    this.byName.set(name.toLowerCase(), ip);
+  constructor(maintenant: () => number = Date.now) {
+    this.maintenant = maintenant;
+  }
+
+  upsert(name: string, ip: string | string[], permanent = true): void {
+    const ips = Array.isArray(ip) ? [...ip] : [ip];
+    this.byName.set(name.toLowerCase(), {
+      nom: name, ips, permanent, poseeA: this.maintenant(),
+    });
   }
 
   remove(name: string): boolean {
@@ -27,26 +33,51 @@ export class RouterHostsTable {
   }
 
   resolve(name: string): string | null {
-    return this.byName.get(name.toLowerCase()) ?? null;
+    return this.byName.get(name.toLowerCase())?.ips[0] ?? null;
+  }
+
+  resolveAll(name: string): readonly string[] {
+    return this.byName.get(name.toLowerCase())?.ips ?? [];
+  }
+
+  isPermanent(name: string): boolean {
+    return this.byName.get(name.toLowerCase())?.permanent ?? false;
   }
 
   entries(): readonly RouterHostsEntry[] {
-    return Array.from(this.byName.entries()).map(([name, ip]) =>
-      Object.freeze({ name, ip }),
-    );
+    const now = this.maintenant();
+    return Array.from(this.byName.values()).map(e => Object.freeze({
+      name: e.nom,
+      ip: e.ips[0],
+      ips: Object.freeze([...e.ips]),
+      permanent: e.permanent,
+      ageSeconds: Math.max(0, Math.floor((now - e.poseeA) / 1000)),
+    }));
   }
 
   clear(): void {
     this.byName.clear();
   }
 
-  /** Cisco show running-config block — one `ip host <name> <ip>` per entry. */
-  renderCisco(): string[] {
-    return this.entries().map(e => `ip host ${e.name} ${e.ip}`);
+  clearLearned(): number {
+    let n = 0;
+    for (const [cle, e] of [...this.byName]) {
+      if (e.permanent) continue;
+      this.byName.delete(cle);
+      n += 1;
+    }
+    return n;
   }
 
-  /** Huawei display current-configuration block — same shape on VRP. */
+  renderCisco(): string[] {
+    return this.entries()
+      .filter(e => e.permanent)
+      .map(e => `ip host ${e.name} ${e.ips.join(' ')}`);
+  }
+
   renderHuawei(): string[] {
-    return this.entries().map(e => `ip host ${e.name} ${e.ip}`);
+    return this.entries()
+      .filter(e => e.permanent)
+      .map(e => `ip host ${e.name} ${e.ips.join(' ')}`);
   }
 }

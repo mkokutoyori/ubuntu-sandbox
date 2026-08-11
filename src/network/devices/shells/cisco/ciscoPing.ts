@@ -132,7 +132,8 @@ export function parsePingArgs(args: string[]): ParsedPing {
     base.protocol = 'ipv6';
   } else {
     const m = base.target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255)) {
+    const ressembleAUneAdresse = /^[\d.]+$/.test(base.target);
+    if (ressembleAUneAdresse && (!m || [+m[1], +m[2], +m[3], +m[4]].some(o => o > 255))) {
       return { ...base, error: '% Unrecognized host or address, or protocol not running.' };
     }
   }

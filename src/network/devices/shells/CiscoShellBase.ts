@@ -70,7 +70,7 @@ import {
   showSnmpGroup, showSnmpUser, showSnmpView, showSnmpEngineId,
   showNtpStatus, showNtpAssociations, showNtpAssociationsDetail, showNtpAuthenticationKeys,
   showNtpPackets,
-  showLine, showIpSsh, showSshSessions, showHosts, showVrf,
+  showLine, showIpSsh, showSshSessions, showHosts, showIpDnsStatistics, showVrf,
   showVrfDetail, showVrfInterfaces, showAdjacency,
   showRedundancy, showFileSystems, showCalendar, showTerminal,
   showBuffers, showTcpBrief, showSockets,
@@ -78,6 +78,11 @@ import {
   chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
   type ShowStateDevice,
 } from './cisco/CiscoCommonShow';
+import {
+  registerCiscoDnsCommands, registerCiscoDnsExecCommands, type DnsCommandContext,
+} from './cisco/CiscoDnsCommands';
+import type { CiscoDnsConfig } from '../router/dns/CiscoDnsConfig';
+import type { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import { CiscoConfigState } from '../inspection/config/CiscoConfigState';
 import { AliasRepository, type AliasMode } from '../inspection/config/AliasRepository';
 import { LoggingConfig, disabledTimestampSpec, bareTimestampSpec, deviceClockSource } from '../inspection/config/LoggingConfig';
@@ -2188,6 +2193,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * commutateur n'en a pas — il n'a pas de pile TCP — et rend donc la
    * console seule, ce qui est la verite et non un repli.
    */
+  protected dnsCommandContext(): DnsCommandContext {
+    return {
+      config: () => (this.deviceRef as unknown as {
+        _getDnsConfig?: () => CiscoDnsConfig;
+      } | null)?._getDnsConfig?.() ?? null,
+      hosts: () => (this.deviceRef as unknown as {
+        _getHostsTable?: () => RouterHostsTable;
+      } | null)?._getHostsTable?.() ?? null,
+      afterApply: () => { this.syncDnsService(); },
+    };
+  }
+
+  protected syncDnsService(): void {
+    (this.deviceRef as unknown as { _syncDnsService?: () => void } | null)?._syncDnsService?.();
+  }
+
   protected registreSessions(): { formatShowUsers: () => string } | null {
     return (this.d() as unknown as {
       getSshSessionRegistry?: () => { formatShowUsers: () => string } | null;
@@ -2965,6 +2986,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       });
     });
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
+    registerCiscoDnsExecCommands(trie, this.dnsCommandContext());
+    trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>
+      showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]));
     trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {
       const sub = args[0]?.toLowerCase();
       if (sub === 'detail') return showVrfDetail(this.d(), args[1]);
@@ -3318,6 +3342,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'ipv6',     description: 'Debug IPv6 subsystem' },
       { keyword: 'crypto',   description: 'Debug crypto subsystem' },
       { keyword: 'dhcp',     description: 'Debug DHCP' },
+      { keyword: 'domain',   description: 'Debug DNS name resolution' },
     ]);
     this.privilegedTrie.registerSuggestions('debug ip', [
       { keyword: 'icmp',     description: 'Debug ICMP packets' },
@@ -3482,9 +3507,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const svc = (this.d() as unknown as { getDebugService?: () => { disable: (c: string) => string } }).getDebugService?.();
       return svc ? svc.disable('ip.arp') : 'ARP packet debugging is off';
     });
+    this.privilegedTrie.register('debug domain', 'Debug DNS name resolution', () => {
+      const svc = (this.d() as unknown as {
+        getDebugService?: () => { enable: (c: 'ip.domain') => string };
+      }).getDebugService?.();
+      return svc ? svc.enable('ip.domain') : 'Domain Name System debugging is on';
+    });
+    this.privilegedTrie.register('undebug domain', 'Stop DNS debugging', () => {
+      const svc = (this.d() as unknown as {
+        getDebugService?: () => { disable: (c: 'ip.domain') => string };
+      }).getDebugService?.();
+      return svc ? svc.disable('ip.domain') : '';
+    });
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string, detail?: boolean) => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.domain' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string, detail?: boolean) => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is on';
       if (sub === 'packet') return svc.enable('ip.packet');
@@ -3496,6 +3533,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
       }
       if (sub === 'icmp') return svc.enable('ip.icmp');
+      if (sub === 'domain') return svc.enable('ip.domain');
       if (sub === 'tcp' || sub.startsWith('tcp ')) {
         const reste = args.slice(1).filter(a => !/^transactions$/i.test(a));
         const acl = reste[0];
@@ -3525,7 +3563,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
+      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.domain' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
       const svc = dev.getDebugService?.();
       if (!svc) return 'IP debugging is off';
       if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
@@ -4188,34 +4226,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configState.set('ipv6 unicast-routing', false);
       return '';
     });
-    this.configTrie.registerGreedy('ip name-server', 'Configure DNS name servers', (args) => {
-      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      for (const s of args) if (!isValidIPv4(s)) return CISCO_ERRORS.INVALID_INPUT;
-      const mgmt = getManagementService(this.d());
-      if (mgmt) for (const s of args) if (!mgmt.nameServers.includes(s)) mgmt.nameServers.push(s);
-      return '';
-    });
-    this.configTrie.registerGreedy('no ip name-server', 'Clear DNS name servers', (args) => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt) {
-        if (args.length === 0) mgmt.nameServers.length = 0;
-        else for (const s of args) {
-          const i = mgmt.nameServers.indexOf(s);
-          if (i >= 0) mgmt.nameServers.splice(i, 1);
-        }
-      }
-      return '';
-    });
-    this.configTrie.register('ip domain-lookup', 'Enable DNS lookups', () => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt) mgmt.ipDomainLookupEnabled = true;
-      return '';
-    });
-    this.configTrie.register('no ip domain-lookup', 'Disable DNS lookups', () => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt) mgmt.ipDomainLookupEnabled = false;
-      return '';
-    });
+    registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
     this.configTrie.register('ip bootp server', 'Enable BOOTP server', () => {
       const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
       r._setServiceFlag?.('bootp-server', true);
@@ -4381,42 +4392,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
 
-    this.configTrie.registerGreedy('ip domain-name', 'Set domain name', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      const dev = this.d() as unknown as { _setDomainName?: (name: string) => void };
-      const mgmt = getManagementService(this.d());
-      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[0];
-      else dev._setDomainName?.(args[0]);
-      return '';
-    });
-    this.configTrie.registerGreedy('ip domain', 'IP domain configuration', (args) => {
-      if (args[0]?.toLowerCase() !== 'name' || !args[1]) return '';
-      const mgmt = getManagementService(this.d());
-      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = args[1];
-      return '';
-    });
-    this.configTrie.registerGreedy('no ip domain-name', 'Clear domain name', () => {
-      const dev = this.d() as unknown as { _setDomainName?: (name: string) => void };
-      const mgmt = getManagementService(this.d());
-      if (mgmt) (mgmt as unknown as { domainName: string }).domainName = '';
-      else dev._setDomainName?.('');
-      return '';
-    });
-    // `ip host <name> <ip>` — static hostname → IP mapping consulted by
-    // outbound ssh / stelnet / ping / traceroute before any DNS fallback.
-    this.configTrie.registerGreedy('ip host', 'Configure a static host entry', (args) => {
-      if (args.length < 2) return '% Incomplete command.';
-      if (!isValidIPv4(args[1])) return `% Invalid IP address ${args[1]}.`;
-      const dev = this.d() as unknown as { _getHostsTable?: () => { upsert: (n: string, ip: string) => void } };
-      dev._getHostsTable?.().upsert(args[0], args[1]);
-      return '';
-    });
-    this.configTrie.registerGreedy('no ip host', 'Remove a static host entry', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      const dev = this.d() as unknown as { _getHostsTable?: () => { remove: (n: string) => boolean } };
-      dev._getHostsTable?.().remove(args[0]);
-      return '';
-    });
     this.configTrie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
       const which = args[0]?.toLowerCase();
       if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {

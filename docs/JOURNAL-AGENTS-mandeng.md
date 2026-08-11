@@ -4688,6 +4688,43 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot D1 — DNS sur Cisco, du client au serveur
+
+**PRD** : `PRD-DNS-Cisco.md`. **Perimetre pris** : tout le DNS cote
+Cisco (routeur ET commutateur) plus le pendant VRP.
+
+Audit par fichier de conformite d'abord : `tuto-dns-cisco-conformite.test.ts`
+(66 cas, neuf parties, du protocole au serveur). **40 echouaient.**
+
+La surface tenait en quatre commandes rangees dans un magasin que
+presque personne ne lisait. Le defaut central n'est pas une commande
+manquante : **`ping <nom>` ne resolvait rien** — `parsePingArgs` refusait
+tout ce qui n'etait pas une adresse, donc la table d'hotes elle-meme,
+pourtant remplie, n'etait jamais consultee par la commande que le
+tutoriel fait taper en premier.
+
+Livre : `CiscoDnsConfig` (magasin unique, seize reglages, les DEUX
+orthographes d'IOS, les defauts non rendus), une table d'hotes qui porte
+jusqu'a huit adresses et distingue permanent/temporaire,
+`RouterDnsService` qui resout POUR DE VRAI en UDP/53 a travers la FIB
+(table statique d'abord, puis serveurs, chacun avec chaque suffixe),
+`ip dns server` qui LIE le port et repond depuis `ip host` (NXDOMAIN pour
+un nom inconnu), `show ip dns statistics` qui compte ce qui est passe,
+`debug ip domain` + `debug domain`, la parite commutateur, et cote VRP
+`dns resolve|server|domain` avec `display dns server|domain|dynamic-host`.
+
+**Defaut trouve EN CORRIGEANT, et c'est la meme famille** : `crypto key
+generate rsa` lisait le nom de domaine sur l'ancien magasin pendant que
+`ip domain-name` ecrivait sur le nouveau — la commande repondait
+`% Please define a domain-name first.` juste apres qu'on l'ait defini.
+Deux magasins pour un fait, reproduit pendant la correction meme.
+
+**Mesures.** 66 cas, 66 passent ; **39 tombent** avant correctif
+(`git stash`). 9 suites connexes vertes (526 cas). Typecheck 119, lint
+identique.
+
+---
+
 ## Lot S8 — SSH ne parle que de SSH, a l'ouverture ET a la fermeture
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S8 ».

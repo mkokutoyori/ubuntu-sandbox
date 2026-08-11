@@ -20,6 +20,7 @@ export type DebugCategory =
   | 'interface'
   | 'ip.dhcp.server'
   | 'ip.ssh'
+  | 'ip.domain'
   | 'ip.nhrp'
   | 'standby'
   | 'vrrp'
@@ -105,7 +106,7 @@ const DEBUG_CATEGORIES: ReadonlySet<string> = new Set<string>([
   'ip.ospf.packet', 'ip.ospf.lsa-generation',
   'ip.rip', 'ip.eigrp', 'ip.bgp', 'ip.routing', 'ip.icmp', 'ip.packet',
   'ip.tcp', 'ip.udp', 'ip.nat', 'ip.arp', 'interface', 'ip.dhcp.server',
-  'ip.ssh', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
+  'ip.ssh', 'ip.domain', 'ip.nhrp', 'standby', 'vrrp', 'glbp', 'track',
   'ip.sla.trace', 'ip.sla.error',
   'aaa.authentication', 'aaa.authorization', 'aaa.accounting',
   'radius', 'tacacs', 'ntp.events', 'ntp.packets',
@@ -119,6 +120,7 @@ const ALIAS: ReadonlyArray<readonly [RegExp, DebugCategory]> = [
   [/^lldp(\.|\s|$)/, 'lldp.packets'],
   [/^port[-_ ]security$/, 'port-security'],
   [/^(ip[. ])?dhcp/, 'ip.dhcp.server'],
+  [/^(ip[. ])?domain$/, 'ip.domain'],
   [/^vxlan$/, 'vxlan'],
   [/^mac([- ]address-table)?$/, 'mac'],
   [/^link([- ]state)?$/, 'link'],
@@ -974,6 +976,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'interface': return 'Interface';
       case 'ip.dhcp.server': return 'DHCP server';
       case 'ip.ssh': return 'SSH';
+      case 'ip.domain': return 'Domain Name System';
       case 'ip.nhrp': return 'NHRP';
       case 'standby': return 'HSRP';
       case 'vrrp': return 'VRRP';
@@ -1016,6 +1019,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'nat': return 'ip.nat';
       case 'arp': return 'ip.arp';
       case 'dhcp': return 'ip.dhcp.server';
+      case 'domain': return 'ip.domain';
       case 'pim': return 'ip.pim';
       case 'vxlan': return 'vxlan';
       case 'port_security': return 'port-security';
@@ -1045,6 +1049,7 @@ export class RouterDebugService implements TerminalDebugSource {
     ['NHRP', ['ip.nhrp']],
     ['DHCP', ['ip.dhcp.server']],
     ['SSH', ['ip.ssh']],
+    ['Domain Name System', ['ip.domain']],
     ['First-hop redundancy', ['standby', 'vrrp', 'glbp']],
     ['IP SLA', ['ip.sla.trace', 'ip.sla.error', 'track']],
     ['AAA', ['aaa.authentication', 'aaa.authorization', 'aaa.accounting', 'radius', 'tacacs']],
