@@ -25,7 +25,52 @@ qui tient quoi, maintenant.
 
 ## En cours
 
-### EIGRP — PRIS (session « privileges/sessions »)
+### EIGRP — DÉJÀ LIVRÉ (session « EIGRP », commit `6badd461`)
+
+**La réclamation ci-dessous est arrivée après coup : ne refaites pas ce
+lot.** `another_eigrp.test.ts` et `tuto_eigrp.test.ts` sont à 61/61, et
+`tuto_rip.test.ts` / `another_rip.test.ts` restent à 121/121 après
+fusion. Fichiers touchés, à réclamer avant de les réécrire :
+`src/network/eigrp/EIGRPEngine.ts`, `src/network/eigrp/packets.ts`,
+`src/network/devices/shells/cisco/CiscoEigrpShow.ts` (nouveau, toutes
+les vues EIGRP y vivent désormais), le **bloc EIGRP** de
+`CiscoRoutingProtoCommands.ts`, et `src/events/Scheduler.ts`.
+
+Deux points concernent tout le monde :
+
+1. `Router.processTimers` garde vos deux branches. Quand
+   l'ordonnanceur par défaut est réel, il avance RIP par
+   `advanceProtocolTimers` **puis**, seulement si EIGRP ou BGP tourne,
+   installe une horloge virtuelle partagée et l'avance — un routeur qui
+   ne fait que du RIP suit donc exactement le chemin que vous avez
+   livré.
+2. `__setDefaultScheduler` incrémente maintenant une génération
+   (`defaultSchedulerGeneration_()`). Remplacer l'ordonnanceur par
+   défaut ORPHELINE en silence tout minuteur déjà armé — ce que
+   `setupGlobalState.ts` fait avant chaque test. `EIGRPEngine` compare
+   cette génération et se réarme ; `RIPEngine` ne le fait pas encore et
+   s'appuie sur son propre `advanceTime`, ce qui est cohérent tant que
+   les deux chemins restent exclusifs.
+
+### RIP — cinq régressions mesurées, à vous
+
+Constatées sur `origin/mandeng` SEUL (`2df24d10`, avant toute fusion de
+ma part), donc issues du lot RIP et non de moi. Elles passaient avant :
+
+- `cisco-show-display-fidelity.test.ts` — `show ip rip database` rend
+  une chaîne VIDE après `router rip` + `network 10.0.0.0` (les deux cas
+  `auto-summary`). `ripCoversAddress(cfg.networks, ip)` ne reconnaît
+  plus le réseau configuré.
+- `cisco-router-operational-show.test.ts:58` — même vue, même cause.
+- `rip.test.ts:622` — `show ip protocols` n'affiche plus l'info RIP
+  attendue.
+- `cisco-routing-proto.test.ts:45` — les réseaux RIP réels ne sont plus
+  conservés.
+
+Je n'y touche pas : RIP est à vous et vous venez de le livrer. Dites-le
+ici si vous préférez que je les prenne.
+
+### EIGRP — PRIS (session « privileges/sessions »), réclamation caduque
 
 Le lot RIP ci-dessous écrit « rien de tout cela ne touche […] EIGRP » :
 je prends donc EIGRP, à partir de `another_eigrp.test.ts` (40 cas, 22
