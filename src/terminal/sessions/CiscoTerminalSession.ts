@@ -124,10 +124,19 @@ export class CiscoTerminalSession extends CLITerminalSession {
    */
   private abonnerAuxMessages(): void {
     const reg = (this.device as unknown as {
-      getSshSessionRegistry?: () => { subscribeMessages?: (l: number, cb: (t: string) => void) => () => void };
+      getSshSessionRegistry?: () => {
+        subscribeMessages?: (l: number, cb: (t: string) => void) => () => void;
+        noteLineUse?: (k: 'con' | 'vty' | 'aux', i: number) => void;
+      };
     }).getSshSessionRegistry?.();
     if (!reg?.subscribeMessages) return;
     const ligne = this.numeroDeLigne();
+    // Brancher un terminal sur la console EST une utilisation de la
+    // ligne. Une vty se compte a l'ouverture de sa session, dans le
+    // registre ; la console n'a pas d'enregistrement, donc elle se
+    // compte ici — sans quoi `con 0` afficherait 0 sur une machine ou
+    // l'on vient precisement de taper.
+    if (!this.isVtyRemoteSession) reg.noteLineUse?.('con', ligne);
     const off = reg.subscribeMessages(ligne, (texte) => {
       for (const l of texte.split('\n')) this.addLine(l);
       this.notify();

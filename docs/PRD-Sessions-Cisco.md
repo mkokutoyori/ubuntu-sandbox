@@ -192,14 +192,51 @@ absente l'est bien. Un commutateur répond « aucune connexion » parce
 qu'il n'a pas de pile TCP : c'est la vérité, pas un repli, et il le dit
 désormais dans les mêmes mots que le routeur (pincé par test).
 
-## Reste ouvert
+## Les deux derniers points — traités (lot S3)
 
-- **`Uses`** est toujours 0 : rien ne compte les connexions par ligne
-  depuis le démarrage. Le champ est rendu parce qu'il fait partie du
-  tableau, pas parce qu'il mesure quelque chose.
-- **`show ssh` décrit un chiffrement qui n'est pas négocié** : `aes256-ctr`
-  et `sha256` sont écrits en dur pour toute session. La colonne existe,
-  la négociation qu'elle décrirait n'a pas lieu ici.
+### `Uses` compte pour de bon
+
+La colonne valait **0 pour toujours, sur toutes les lignes** : elle était
+rendue sans qu'aucun compteur vive derrière. C'est pourtant le chiffre qui
+distingue une ligne **qu'on n'a jamais utilisée** d'une ligne simplement
+libre en ce moment — la question que ce tableau sert à poser, et celle par
+laquelle commence le diagnostic du scénario 1.
+
+Deux décisions :
+
+- **Le compte est cumulatif** et ne redescend pas à la fermeture.
+  « Combien de connexions depuis le dernier démarrage » n'est pas
+  « combien maintenant », que la table des sessions dit déjà.
+- **La clé porte le type en plus du rang** (`con:0`, `vty:0`), parce que
+  `con 0` et `vty 0` valent tous deux zéro dans leur propre numérotation :
+  une clé numérique seule les aurait confondus et la console aurait compté
+  pour la première vty. La première version de ce correctif avait
+  exactement ce défaut, trouvé avant de le pousser.
+
+La console se compte à l'ouverture du terminal (elle n'a pas
+d'enregistrement de session), une vty dans `SshSessionRegistry.open()`.
+L'AUX reste à 0 et c'est vrai : rien ne s'y connecte ici.
+
+### `show ssh` décrit les algorithmes de la machine
+
+Le chiffrement et le HMAC étaient **écrits en dur**. Une machine sur
+laquelle on venait de taper
+`ip ssh server algorithm encryption aes128-ctr` annonçait quand même
+`aes256-ctr` — elle contredisait sa propre configuration au même instant,
+alors que `show ip ssh` la lisait correctement à deux lignes de là.
+
+Ce qui est rendu est la **préférence du serveur** — le premier de la liste
+qu'il accepte — c'est-à-dire ce qu'un vrai serveur retient quand le client
+offre tout.
+
+**Ce que cela ne fait pas, et qui reste écrit** : ce simulateur ne
+**négocie** pas ces algorithmes. Il n'y a pas d'intersection à calculer
+parce qu'aucun client n'offre quoi que ce soit. Ce qui change est que la
+valeur affichée vient désormais de la machine et non d'une constante.
+
+**Mesures S3** : `tuto-sessions-uses-et-chiffrement.test.ts`, **12 cas**,
+discriminé par `git stash` : **10 tombent** avant correctif. 12 suites
+connexes vertes (**504 cas**). Typecheck 119, lint identique.
 
 ---
 

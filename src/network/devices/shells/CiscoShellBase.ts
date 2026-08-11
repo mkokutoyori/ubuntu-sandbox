@@ -2856,7 +2856,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const dev = this.d() as unknown as {
         getSshSessionRegistry?: () => { list: () => readonly { lineIndex: number; user: string }[] } | null;
       };
-      return showSshSessions(dev.getSshSessionRegistry?.() ?? null);
+      const ssh = getSecurityConfig(this.d() as object).ssh;
+      return showSshSessions(dev.getSshSessionRegistry?.() ?? null, {
+        encryptionAlgorithms: ssh.encryptionAlgorithms,
+        macAlgorithms: ssh.macAlgorithms,
+      });
     });
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {

@@ -913,12 +913,24 @@ function inventaireLignes(dev: ShowStateDevice): LigneTty[] {
   })._getVtyLineConfig?.();
   let maxVty = 4;
   for (const bloc of store?.all() ?? []) maxVty = Math.max(maxVty, bloc.last);
+  // `Uses` valait 0 pour toujours, sur toutes les lignes : la colonne
+  // etait rendue sans que rien ne compte derriere. C'est pourtant le
+  // chiffre qui distingue une ligne JAMAIS servie d'une ligne
+  // simplement libre en ce moment.
+  const reg = (dev as unknown as {
+    getSshSessionRegistry?: () => {
+      usesFor?: (k: 'con' | 'vty' | 'aux', i: number) => number;
+    } | null;
+  }).getSshSessionRegistry?.();
+  const uses = (k: 'con' | 'vty' | 'aux', i: number): number => reg?.usesFor?.(k, i) ?? 0;
   const lignes: LigneTty[] = [
-    { tty: 0, type: 'CTY', rang: 0, courante: true, uses: 0 },
+    { tty: 0, type: 'CTY', rang: 0, courante: true, uses: uses('con', 0) },
+    // L'AUX n'est pas modelisee comme une ligne ouvrable ici : son
+    // compteur reste 0 parce que rien ne s'y connecte, ce qui est vrai.
     { tty: 1, type: 'AUX', rang: 0, courante: false, uses: 0 },
   ];
   for (let i = 0; i <= maxVty; i++) {
-    lignes.push({ tty: 2 + i, type: 'VTY', rang: i, courante: false, uses: 0 });
+    lignes.push({ tty: 2 + i, type: 'VTY', rang: i, courante: false, uses: uses('vty', i) });
   }
   return lignes;
 }
@@ -1030,15 +1042,31 @@ export function showIpSsh(ssh?: {
  */
 export function showSshSessions(registre?: {
   list: () => readonly { lineIndex: number; user: string }[];
-} | null): string {
+} | null, algos?: {
+  encryptionAlgorithms?: string[]; macAlgorithms?: string[];
+}): string {
   const actives = registre?.list() ?? [];
   const finV1 = '%No SSHv1 server connections running.';
   if (actives.length === 0) {
     return ['%No SSHv2 server connections running.', finV1].join('\n');
   }
-  const entete = 'Connection Version Mode Encryption           Hmac      State                 Username';
+  // Le chiffrement et le HMAC etaient ECRITS EN DUR : une machine sur
+  // laquelle on venait de taper
+  // `ip ssh server algorithm encryption aes128-ctr` annoncait quand meme
+  // `aes256-ctr`, contredisant sa propre configuration au meme instant.
+  //
+  // Ce qui est rendu est la PREFERENCE DU SERVEUR — le premier de la
+  // liste qu'il accepte — ce qu'un vrai serveur retient lorsque le
+  // client offre tout. La limite reste entiere et n'est pas maquillee :
+  // ce simulateur ne NEGOCIE pas ces algorithmes (le client n'offre
+  // rien), donc il n'y a pas d'intersection a calculer ; ce qui change
+  // est que la valeur affichee vient desormais de la machine et non
+  // d'une constante.
+  const chiffrement = algos?.encryptionAlgorithms?.[0] ?? 'aes256-ctr';
+  const hmac = algos?.macAlgorithms?.[0] ?? 'hmac-sha2-256';
+  const entete = 'Connection Version Mode Encryption           Hmac                  State                 Username';
   const rangs = actives.map((s) =>
-    `${String(s.lineIndex).padEnd(11)}2.0     IN   aes256-ctr           sha256    Session started       ${s.user}`);
+    `${String(s.lineIndex).padEnd(11)}2.0     IN   ${chiffrement.padEnd(21)}${hmac.padEnd(22)}Session started       ${s.user}`);
   return [entete, ...rangs, finV1].join('\n');
 }
 

@@ -4584,6 +4584,42 @@ n'est pas negocie.
 
 ---
 
+## Lot S3 — `Uses` compte, et `show ssh` lit la machine
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Les deux derniers points ».
+
+**`Uses` valait 0 pour toujours, sur toutes les lignes** — colonne rendue
+sans qu'aucun compteur vive derriere. C'est le chiffre qui distingue une
+ligne JAMAIS utilisee d'une ligne simplement libre, donc celui par lequel
+commence le diagnostic du scenario 1 du tutoriel. Le compte est
+CUMULATIF (il ne redescend pas a la fermeture : « depuis le demarrage »
+n'est pas « maintenant », que la table des sessions dit deja), et la cle
+porte le TYPE en plus du rang (`con:0`, `vty:0`) — **la premiere version
+de ce correctif avait exactement le defaut inverse**, une cle numerique
+seule confondant `con 0` et `vty 0`, donc la console comptait pour la
+premiere vty ; trouve avant de pousser.
+
+**`show ssh` decrivait un chiffrement ECRIT EN DUR** : une machine sur
+laquelle on venait de taper
+`ip ssh server algorithm encryption aes128-ctr` annoncait quand meme
+`aes256-ctr`, contredisant sa propre configuration au meme instant, alors
+que `show ip ssh` la lisait correctement a deux lignes de la. La valeur
+vient desormais de la machine — la PREFERENCE du serveur, premier de la
+liste. **Ce que cela ne fait pas est ecrit** : rien n'est negocie ici, il
+n'y a pas d'intersection a calculer parce qu'aucun client n'offre rien.
+
+**Fichiers touches** : `router/aaa/SshSessionRegistry.ts`,
+`shells/cisco/CiscoCommonShow.ts`, `shells/CiscoShellBase.ts`,
+`terminal/sessions/CiscoTerminalSession.ts`.
+
+**Mesures.** `tuto-sessions-uses-et-chiffrement.test.ts` (12 cas)
+discrimine par `git stash` : **10 tombent** avant. 12 suites connexes
+vertes (504 cas). Typecheck 119, lint identique. **Le chantier des
+sessions est clos** — les cinq points du lot S1 et les trois ouverts sont
+tous traites.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4603,7 +4639,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 + S2 livrés** |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S3 livrés — chantier clos** |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

@@ -157,6 +157,7 @@ export class SshSessionRegistry {
       peerPort: input.peerPort ?? 0,
     };
     this.active.set(session.id, session);
+    this.noteLineUse('vty', slot.index);
     this.bus.publish({
       topic: 'router.ssh.session.opened',
       payload: { deviceId: this.deviceId, session: this.snapshot(session, at) },
@@ -232,6 +233,38 @@ export class SshSessionRegistry {
   // table est vide), et un `send *` qui sauterait la console laisserait
   // hors du message la seule ligne dont on est sur qu'elle est occupee.
   private readonly canaux: Map<number, Set<(texte: string) => void>> = new Map();
+
+  // ── `Uses` : combien de fois la ligne a servi depuis le demarrage ──
+  //
+  // La colonne existait dans `show line` et valait 0 pour toujours :
+  // aucun compteur ne vivait derriere, sur aucune ligne. C'est pourtant
+  // ce chiffre qui distingue une ligne QU'ON N'A JAMAIS UTILISEE d'une
+  // ligne libre en ce moment — la question que le tableau sert a poser.
+  //
+  // Le compte est CUMULATIF et ne redescend pas a la fermeture : c'est
+  // « combien de connexions depuis le dernier redemarrage », pas
+  // « combien maintenant », que la table des sessions dit deja.
+  //
+  // La cle porte le TYPE en plus du rang (`con:0`, `vty:0`) et non le
+  // rang seul : `con 0` et `vty 0` valent tous deux zero dans leur
+  // propre numerotation, donc une cle numerique les aurait confondus et
+  // la console aurait compte pour la premiere vty.
+  private readonly uses: Map<string, number> = new Map();
+
+  /**
+   * Compter une ouverture. Public parce que la CONSOLE n'a pas
+   * d'enregistrement de session ici — elle n'est pas une connexion
+   * reseau — et que son compteur doit pourtant exister : sur une vraie
+   * machine `con 0` est la ligne au plus gros `Uses`.
+   */
+  noteLineUse(kind: 'con' | 'vty' | 'aux', index: number): void {
+    const k = `${kind}:${index}`;
+    this.uses.set(k, (this.uses.get(k) ?? 0) + 1);
+  }
+
+  usesFor(kind: 'con' | 'vty' | 'aux', index: number): number {
+    return this.uses.get(`${kind}:${index}`) ?? 0;
+  }
 
   subscribeMessages(lineIndex: number, cb: (texte: string) => void): () => void {
     let set = this.canaux.get(lineIndex);
