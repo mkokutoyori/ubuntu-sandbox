@@ -25,6 +25,9 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### RIP — livré (voir plus bas)
+
+
 ### Deux cliquets rouges qui ne sont pas les miens
 
 Vérifié en datant les fichiers plutôt qu'en supposant :
@@ -5189,3 +5192,43 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
 l'horodatage de la trace de debug, via `info-center timestamp debug` —
 détail et point d'accroche dans l'entrée V6.
+
+---
+
+## Livré — RIP : le temps avance, les paquets circulent
+
+Commit `9fe215f`. Fichiers touchés (les réclamer avant de les réécrire) :
+`src/network/rip/RIPEngine.ts`, `src/network/devices/Router.ts`,
+`src/network/devices/router/RouterRIPEngine.ts`,
+`src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`,
+`CiscoShowCommands.ts`, `CiscoConfigCommands.ts`, `CiscoOspfCommands.ts`
+(uniquement `filterRouteTableByCode`), `src/network/hardware/Port.ts`,
+`src/network/core/types.ts` (`RIPPacket.auth`),
+`src/network/devices/router/diag/RouterDebugService.ts` (une étiquette).
+
+**Ce qui change pour vous :**
+
+1. **`Router.processTimers(seconds)` existe.** Elle avance les minuteurs
+   de CE routeur seul. Un équipement ne lit pas le registre des
+   équipements : ce que les voisins apprennent, ils l'apprennent des
+   paquets. Un laboratoire à trois routeurs demande donc un tour par
+   routeur, et deux tours pour deux sauts.
+2. **`RIPEngine` a une horloge à lui** (`advanceTime`), distincte du
+   `Scheduler`. Sous un `VirtualTimeScheduler`, `processTimers` avance
+   le scheduler comme avant ; le reste du temps elle avance le moteur.
+3. **`show ip protocols` a changé de forme** pour la partie RIP : c'est
+   maintenant le bloc réel d'IOS (vérifié contre une sortie capturée).
+   Le second rendu RIP qui vivait dans `CiscoRoutingProtoCommands` est
+   supprimé — il produisait un `[object Object]`.
+4. **`Port` porte quatre champs RIP typés** (`ripSendVersion`,
+   `ripReceiveVersion`, `ripAuthMode`, `ripAuthKeyChain`) à la place des
+   propriétés non typées posées au vol.
+5. **`RIPPacket` porte `auth?`** et le moteur applique la RFC 2453 §4.1
+   dans les deux sens.
+6. **Une interface passée `shutdown` empoisonne** ce qui passait par
+   elle, et RIP n'annonce plus une route dont l'interface est
+   administrativement basse.
+
+Rien de tout cela ne touche OSPF, EIGRP ni BGP, sauf
+`filterRouteTableByCode` qui garde désormais la ligne de continuation
+d'une route affichée sur deux lignes.
