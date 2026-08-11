@@ -87,6 +87,7 @@ import { dmesgCommand } from './system/Dmesg';
 import { ufwCommand } from './system/Ufw';
 import { chownCommand } from './fs/Chown';
 import { chgrpCommand } from './fs/Chgrp';
+import { chattrCommand, lsattrCommand } from './fs/Chattr';
 import { truncateCommand } from './fs/Truncate';
 import { mountCommand } from './fs/Mount';
 import { umountCommand } from './fs/Umount';
@@ -209,6 +210,8 @@ export {
   ufwCommand,
   chownCommand,
   chgrpCommand,
+  chattrCommand,
+  lsattrCommand,
   truncateCommand,
   mountCommand,
   umountCommand,
@@ -345,6 +348,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   ufwCommand,
   chownCommand,
   chgrpCommand,
+  chattrCommand,
+  lsattrCommand,
   truncateCommand,
   mountCommand,
   umountCommand,

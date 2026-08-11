@@ -4688,6 +4688,80 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot SY2 — les sept points ignores du fichier de conformite syslog
+
+**PRD** : `PRD-Rsyslog.md`, section « Les sept points du fichier de
+conformite, refermes ».
+
+`tuto-syslog-conformite.test.ts` marquait sept points `it.skip` avec leur
+raison. **Six sont refermes**, le septieme est devenu un contrat de
+refus, et le fichier ne porte plus aucun `skip` : **70 cas, tous actifs**.
+
+**Huawei — `level` et `source-ip` etaient refuses.** `VrpLoghost` portait
+`channel`, `facility`, `port`, `transport` et pas ces deux-la. Le detail
+qui n'est pas cosmetique : **redeclarer un collecteur MODIFIE son
+entree** (une adresse identifie un collecteur), donc l'analyseur lit
+d'abord ce qui est deja pose, sans quoi poser `source-ip` apres `level`
+aurait efface le `level` — et la configuration rendue est **rejouee a
+l'import d'une topologie**.
+
+**Huawei — `display logbuffer level <sev>` n'existait pas.** Le seuil
+descend jusqu'a `renderHuawei`, qui filtre. **Deux vocabulaires
+cohabitent** — IOS ecrit `warnings` au pluriel, VRP `warning` au
+singulier — et c'est le NUMERO qui les reconcilie, `VRP_SEVERITIES`
+indexant dans le meme ordre que `SEVERITY_ORDER`. `Current messages`
+compte les messages RETENUS et non ceux du tampon.
+
+**Linux — `chattr +i` rend le fichier VRAIMENT immuable.** `INode.immutable`
+est ajoute et **`writeFile`/`deleteFile` le respectent** : une archive
+protegee resiste a `echo … >` et a `rm -f`, ce qui EST la demonstration
+du §8.2. Un `chattr` qui n'aurait affiche qu'un drapeau aurait enseigne
+le contraire de ce que la commande garantit. `lsattr` rend la lettre a sa
+POSITION dans l'ordre du noyau (`----i---------e----`). Piege de cablage
+trouve en route : `needsNetworkContext: false` rend une commande du
+registre **injoignable** — malgre son nom, ce drapeau veut dire
+« dispatcher par le registre », comme le note deja `Xxd.ts`.
+
+**Linux — `/etc/logrotate.d/rsyslog`** rejoint les fichiers livres : le
+§4.5 portait sur un fichier absent.
+
+**Le point le plus instructif, et il vient d'une VERIFICATION EXTERNE.**
+Le collecteur remplacait le nom d'hote du message par l'adresse source.
+En verifiant contre la documentation de rsyslog plutot que de memoire :
+`RSYSLOG_TraditionalFileFormat` s'ecrit `%TIMESTAMP% %HOSTNAME% …`, or
+**`%TIMESTAMP%` est un alias de `%timereported%`** — l'heure PORTEE PAR
+LE MESSAGE — et `%HOSTNAME%` est de meme celui du message. **Deux** champs
+etaient donc reecrits a tort, pas un. Les reecrire effacait l'identite et
+l'heure de l'emetteur d'origine des que le moindre relais est en jeu, ce
+que ce gabarit existe precisement pour conserver. Consequence
+methodologique ecrite plutot que tue : **deux cas de
+`rsyslog-recepteur-reel.test.ts` encodaient le defaut comme contrat** et
+passaient au vert — ce n'est pas la suite qui l'a trouve, c'est la
+verification. Un test vert ne prouve que la coherence du code avec
+lui-meme.
+
+**TLS reste refuse, deliberement, et le test pose le refus COMME
+CONTRAT** avec sa raison : accepter `transport tls` en continuant
+d'emettre en clair ferait lire a un apprenant un chiffrement qui n'a pas
+lieu. Un refus est faux sur ce qu'un IOS 15 sait faire ; une acceptation
+serait fausse sur ce qui circule sur le fil.
+
+**Fichiers touches** : `router/management/InfoCenterConfig.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `HuaweiInfoCenterCommands.ts`,
+`shells/HuaweiVRPShell.ts`, `inspection/config/LoggingConfig.ts`,
+`linux/syslog/LinuxRsyslogService.ts`, `RsyslogFiles.ts`,
+`linux/VirtualFileSystem.ts`, `linux/commands/fs/Chattr.ts` (nouveau),
+`linux/commands/index.ts`, `linux/service/CriticalFiles.ts`.
+
+**Mesures.** `tuto-syslog-conformite.test.ts` (70 cas) +
+`rsyslog-recepteur-reel.test.ts` (20 cas) discrimines par `git stash` :
+**12 tombent** avant correctif. 13 suites logging/syslog vertes (285
+cas), 7 suites VFS/commandes (182), 5 suites Huawei (226).
+`e2e/syslog-collecteur-central.spec.ts` (2 cas Playwright) vert.
+Typecheck 119, lint identique.
+
+---
+
 ## Lot S4 — conformite du tutoriel des sessions
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Conformite au tutoriel ».
@@ -4741,7 +4815,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
 | Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S4 livrés** — conformité pincée |
-| rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 livré** — TCP/TLS/relais ouverts |
+| rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 + SY2 livrés** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :

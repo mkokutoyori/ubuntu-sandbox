@@ -231,16 +231,13 @@ describe('partie 2 : la configuration Cisco', () => {
     expect(await d.executeCommand('show logging')).not.toContain('%SYS-5-CONFIG_I');
   }, 30_000);
 
-  /**
-   * MANQUE : §6.3 du tutoriel configure Syslog sur TLS cote Cisco. Le
-   * transport `tls` est refuse — ni le client Cisco ni le collecteur
-   * Linux ne portent le 6514 chiffre. Ecrit dans `PRD-Rsyslog.md`.
-   */
-  it.skip('MANQUE — `logging host X transport tls port 6514`', async () => {
+  it('`transport tls` est REFUSE, faute de 6514 chiffre des deux cotes', async () => {
     const d = await cisco();
     await d.executeCommand('configure terminal');
     const r = await d.executeCommand('logging host 192.168.100.50 transport tls port 6514');
-    expect(refuse(r)).toBe(false);
+    expect(refuse(r), 'accepter ferait croire a un chiffrement qui n\'a pas lieu').toBe(true);
+    const rc = await d.executeCommand('do show running-config');
+    expect(rc, 'rien n\'est range').not.toContain('transport tls');
   }, 30_000);
 });
 
@@ -293,27 +290,50 @@ describe('partie 3 : l\'info-center Huawei', () => {
     expect(refuse(await d.executeCommand('reset logbuffer'))).toBe(false);
   }, 30_000);
 
-  /**
-   * MANQUES mesures de la partie 3. Le tutoriel les utilise tous les
-   * trois ; ils sont refuses aujourd'hui. Nommes dans `PRD-Rsyslog.md`.
-   */
-  it.skip('MANQUE — `info-center loghost X level informational`', async () => {
-    const d = await huawei();
-    await d.executeCommand('system-view');
-    const r = await d.executeCommand('info-center loghost 192.168.100.50 level informational');
-    expect(refuse(r)).toBe(false);
+  it('`info-center loghost X level informational` est retenue et rendue', async () => {
+    const d = await huawei('info-center enable',
+      'info-center loghost 192.168.100.50 level informational');
+    const cc = await d.executeCommand('display current-configuration');
+    expect(cc).toContain('level informational');
   }, 30_000);
 
-  it.skip('MANQUE — `info-center loghost X source-ip <ip>`', async () => {
-    const d = await huawei();
-    await d.executeCommand('system-view');
-    const r = await d.executeCommand('info-center loghost 192.168.100.50 source-ip 10.0.0.1');
-    expect(refuse(r)).toBe(false);
+  it('`info-center loghost X source-ip <ip>` est retenue et rendue', async () => {
+    const d = await huawei('info-center enable',
+      'info-center loghost 192.168.100.50 source-ip 10.0.0.1');
+    const cc = await d.executeCommand('display current-configuration');
+    expect(cc).toContain('source-ip 10.0.0.1');
   }, 30_000);
 
-  it.skip('MANQUE — `display logbuffer level warning`', async () => {
+  it('redeclarer le collecteur garde les champs deja poses', async () => {
+    const d = await huawei('info-center enable',
+      'info-center loghost 192.168.100.50 level informational',
+      'info-center loghost 192.168.100.50 source-ip 10.0.0.1');
+    const cc = await d.executeCommand('display current-configuration');
+    const ligne = cc.split('\n').filter(l => l.includes('info-center loghost 192.168.100.50'));
+    expect(ligne, 'une adresse = une ligne').toHaveLength(1);
+    expect(ligne[0]).toContain('level informational');
+    expect(ligne[0]).toContain('source-ip 10.0.0.1');
+  }, 30_000);
+
+  it('une severite inconnue est refusee, pas rangee', async () => {
     const d = await huawei('info-center enable');
-    expect(refuse(await d.executeCommand('display logbuffer level warning'))).toBe(false);
+    await d.executeCommand('system-view');
+    const r = await d.executeCommand('info-center loghost 192.168.100.50 level bavard');
+    await d.executeCommand('quit');
+    expect(refuse(r)).toBe(true);
+  }, 30_000);
+
+  it('`display logbuffer level <sev>` ne rend que ce niveau et plus grave', async () => {
+    const d = await huawei('info-center enable');
+    const log = d.getLoggingConfig()!;
+    log.append('warnings', 'IFNET', 'un avertissement', false, 'LINK_STATE');
+    log.append('informational', 'IFNET', 'une information', false, 'LINK_STATE');
+    const tout = await d.executeCommand('display logbuffer');
+    expect(tout).toContain('un avertissement');
+    expect(tout).toContain('une information');
+    const filtre = await d.executeCommand('display logbuffer level warning');
+    expect(filtre).toContain('un avertissement');
+    expect(filtre, 'informational est moins grave que warning').not.toContain('une information');
   }, 30_000);
 });
 
@@ -354,15 +374,14 @@ describe('partie 4 : rsyslog et journald', () => {
     expect(await s.executeCommand('journalctl -u ssh')).not.toContain('command not found');
   }, 30_000);
 
-  /**
-   * MANQUE : §4.5 du tutoriel fait poser une rotation quotidienne dans
-   * `/etc/logrotate.d/`. Le binaire `logrotate` existe, mais l'image ne
-   * livre aucun fichier de rotation, donc l'exemple du tutoriel porte
-   * sur un fichier absent.
-   */
-  it.skip('MANQUE — `/etc/logrotate.d/` livre une rotation pour rsyslog', async () => {
+  it('`/etc/logrotate.d/` livre la rotation de Debian pour rsyslog', async () => {
     const s = serveur();
     expect(await s.executeCommand('ls /etc/logrotate.d/')).toContain('rsyslog');
+    const f = await s.executeCommand('cat /etc/logrotate.d/rsyslog');
+    expect(f).toContain('/var/log/syslog');
+    expect(f).toContain('rotate 4');
+    expect(f).toContain('weekly');
+    expect(f).toContain('missingok');
   }, 30_000);
 });
 
@@ -423,9 +442,9 @@ describe('partie 6 : le collecteur central recoit vraiment', () => {
 
     expect(await r.executeCommand('show logging'), 'l\'emetteur compte ses envois')
       .toContain('192.168.100.50');
-    const recu = await srv.executeCommand('grep 192.168.100.1 /var/log/syslog');
-    expect(recu, 'le collecteur a recu').toContain('192.168.100.1');
-    expect(recu).toContain('%SYS-5-CONFIG_I');
+    const recu = await srv.executeCommand('grep CONFIG_I /var/log/syslog');
+    expect(recu, 'le collecteur a recu').toContain('%SYS-5-CONFIG_I');
+    expect(recu, 'le nom d\'hote est celui de l\'emetteur').toContain('R1-PROD');
   }, 60_000);
 
   it('une regle `local7` dediee ecrit un fichier par equipement', async () => {
@@ -447,20 +466,24 @@ describe('partie 6 : le collecteur central recoit vraiment', () => {
     expect(deux).not.toContain('OSPF');
   }, 30_000);
 
-  /**
-   * DIVERGENCE mesuree : le collecteur remplace le nom d'hote porte par
-   * le message par l'adresse source. Le vrai rsyslog garde `%HOSTNAME%`
-   * (celui du message) et n'utilise `%FROMHOST-IP%` que si le gabarit le
-   * demande — le tutoriel §4.2 distingue d'ailleurs les deux. Un message
-   * relaye perd donc ici l'identite de son emetteur d'origine.
-   */
-  it.skip('DIVERGENCE — le nom d\'hote du message devrait survivre', async () => {
+  it('le nom d\'hote porte par le message survit au collecteur', async () => {
     const s = new LinuxServer('linux-server', 'srv', 0, 0);
     s.powerOn();
     const svc = (s as unknown as { executor: { rsyslogService: {
       recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
     svc.recevoir('10.0.12.1', '<189>Aug 11 05:00:00 R1-PROD OSPF: adjacence');
-    expect(await s.executeCommand('grep OSPF /var/log/syslog')).toContain('R1-PROD');
+    const l = await s.executeCommand('grep OSPF /var/log/syslog');
+    expect(l, '%HOSTNAME% est celui du message').toContain('R1-PROD');
+    expect(l, 'l\'adresse source est %FROMHOST-IP%, un AUTRE champ').not.toContain('10.0.12.1');
+  }, 30_000);
+
+  it('sans nom d\'hote dans le message, l\'adresse source prend la place', async () => {
+    const s = new LinuxServer('linux-server', 'srv', 0, 0);
+    s.powerOn();
+    const svc = (s as unknown as { executor: { rsyslogService: {
+      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
+    svc.recevoir('10.0.12.9', '<189>brut sans en-tete RFC 3164');
+    expect(await s.executeCommand('grep brut /var/log/syslog')).toContain('10.0.12.9');
   }, 30_000);
 });
 
@@ -519,15 +542,43 @@ describe('partie 8 : verifier l\'integrite des journaux', () => {
     expect(a).not.toBe(b);
   }, 30_000);
 
-  /**
-   * MANQUE : §8.2 rend les archives immuables avec `chattr +i`, verifie
-   * par `lsattr`. Aucune des deux commandes n'existe, et il n'y a pas
-   * d'attribut etendu sur le VFS pour les porter.
-   */
-  it.skip('MANQUE — `chattr +i` et `lsattr` pour l\'immutabilite', async () => {
+  it('`chattr +i` rend l\'archive immuable et `lsattr` le montre', async () => {
     const s = new LinuxServer('linux-server', 'srv', 0, 0);
     s.powerOn();
-    await s.executeCommand('chattr +i /var/log/syslog');
-    expect(await s.executeCommand('lsattr /var/log/syslog')).toMatch(/^-*i/);
+    await s.executeCommand('echo archive > /tmp/syslog.1');
+    expect(await s.executeCommand('lsattr /tmp/syslog.1')).toMatch(/^-{4}-/);
+    await s.executeCommand('chattr +i /tmp/syslog.1');
+    expect(await s.executeCommand('lsattr /tmp/syslog.1')).toMatch(/^-{4}i/);
+  }, 30_000);
+
+  it('un fichier immuable resiste vraiment a l\'ecriture et a la suppression', async () => {
+    const s = new LinuxServer('linux-server', 'srv', 0, 0);
+    s.powerOn();
+    await s.executeCommand('echo archive > /tmp/syslog.1');
+    await s.executeCommand('chattr +i /tmp/syslog.1');
+    await s.executeCommand('echo falsifie > /tmp/syslog.1');
+    expect(await s.executeCommand('cat /tmp/syslog.1'),
+      'le contenu n\'a pas bouge').toContain('archive');
+    await s.executeCommand('rm -f /tmp/syslog.1');
+    expect(await s.executeCommand('cat /tmp/syslog.1'),
+      'le fichier est toujours la').toContain('archive');
+  }, 30_000);
+
+  it('`chattr -i` rend le fichier a nouveau modifiable', async () => {
+    const s = new LinuxServer('linux-server', 'srv', 0, 0);
+    s.powerOn();
+    await s.executeCommand('echo archive > /tmp/syslog.1');
+    await s.executeCommand('chattr +i /tmp/syslog.1');
+    await s.executeCommand('chattr -i /tmp/syslog.1');
+    await s.executeCommand('echo suite > /tmp/syslog.1');
+    expect(await s.executeCommand('cat /tmp/syslog.1')).toContain('suite');
+  }, 30_000);
+
+  it('une lettre d\'attribut inexistante est refusee', async () => {
+    const s = new LinuxServer('linux-server', 'srv', 0, 0);
+    s.powerOn();
+    await s.executeCommand('echo archive > /tmp/syslog.1');
+    expect(await s.executeCommand('chattr +9 /tmp/syslog.1')).toContain('Usage: chattr');
+    expect(await s.executeCommand('chattr +w /tmp/syslog.1')).toContain('Unrecognized argument');
   }, 30_000);
 });

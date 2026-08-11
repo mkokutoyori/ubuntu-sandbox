@@ -52,6 +52,9 @@ const NOM_FACILITE: Record<number, string> = Object.fromEntries(
   Object.entries(SYSLOG_FACILITY).map(([nom, num]) => [num, nom]),
 ) as Record<number, string>;
 
+/** `Aug  9 14:32:15 R1-PROD OSPF: msg` → horodatage, hote, corps. */
+const ENTETE_3164 = /^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})(?:\.\d+)?\s+(\S+)\s+(.*)$/s;
+
 /** `<189>Aug  9 14:32:15 R1-PROD OSPF: msg` → ses parties. */
 export function analyserMessageRecu(brut: string): {
   facilite: string; severite: number; reste: string;
@@ -146,10 +149,13 @@ export class LinuxRsyslogService implements ServiceSocketServer {
    */
   recevoir(sourceIp: string, charge: string): void {
     const { facilite, severite, reste } = analyserMessageRecu(charge);
+    const entete = ENTETE_3164.exec(reste);
+    const hote = entete ? entete[2] : sourceIp;
     for (const r of this.config.regles) {
       if (!regleRetient(r, facilite, severite)) continue;
       if (r.fichier === null) continue;
-      this.host.ecrireLigne(this.resoudreChemin(r.fichier, sourceIp), this.ligneRecue(sourceIp, reste));
+      this.host.ecrireLigne(
+        this.resoudreChemin(r.fichier, sourceIp, hote), this.ligneRecue(sourceIp, reste));
     }
   }
 
@@ -198,37 +204,45 @@ export class LinuxRsyslogService implements ServiceSocketServer {
    * `%FROMHOST-IP%` et les variables de date. Sans cette resolution, le
    * laboratoire « un fichier par equipement » ecrirait tous les
    * equipements dans un fichier nomme `%FROMHOST-IP%`.
+   *
+   * `%HOSTNAME%` est le nom porte PAR LE MESSAGE et `%FROMHOST%` celui
+   * de qui l'a transmis : sur un relais les deux different, et c'est
+   * precisement ce que ce laboratoire cherche a distinguer.
    */
-  private resoudreChemin(gabarit: string, sourceIp: string): string {
+  private resoudreChemin(gabarit: string, sourceIp: string, hote: string): string {
     const d = new Date(this.host.maintenant());
     const deuxChiffres = (n: number) => String(n).padStart(2, '0');
     return gabarit
       .replace(/%FROMHOST-IP%/g, sourceIp)
-      .replace(/%HOSTNAME%|%FROMHOST%/g, sourceIp)
+      .replace(/%HOSTNAME%/g, hote)
+      .replace(/%FROMHOST%/g, sourceIp)
       .replace(/%\$YEAR%/g, String(d.getFullYear()))
       .replace(/%\$MONTH%/g, deuxChiffres(d.getMonth() + 1))
       .replace(/%\$DAY%/g, deuxChiffres(d.getDate()));
   }
 
   /**
-   * rsyslog REECRIT l'horodatage avec le sien et prefixe l'hote source.
-   * Recopier la ligne telle qu'elle arrive garderait l'heure de
-   * l'emetteur, donc rendrait incorrelables deux equipements dont les
-   * horloges divergent — ce qui est le cas normal avant que NTP prenne.
+   * Le gabarit par defaut de Debian est `RSYSLOG_TraditionalFileFormat`,
+   * soit `%TIMESTAMP% %HOSTNAME% %syslogtag%%msg%`. `%TIMESTAMP%` est un
+   * ALIAS de `%timereported%` — l'heure portee par le message — et non
+   * de `%timegenerated%`, l'heure de reception ; `%HOSTNAME%` est de
+   * meme celui du message. Les reecrire avec ceux du collecteur ferait
+   * perdre l'identite et l'heure de l'emetteur d'origine des qu'un
+   * relais est en jeu, ce que ce format existe pour conserver.
+   *
+   * Un message sans en-tete RFC 3164 exploitable n'en porte aucun des
+   * deux : le collecteur pose alors les siens, comme le fait rsyslog
+   * quand son analyseur ne trouve pas d'horodatage.
    */
   private ligneRecue(sourceIp: string, corps: string): string {
+    const m = ENTETE_3164.exec(corps);
+    if (m) return `${m[1]} ${m[2]} ${m[3]}`;
     const d = new Date(this.host.maintenant());
     const MOIS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const hh = (n: number) => String(n).padStart(2, '0');
     const horodatage = `${MOIS[d.getMonth()]} ${String(d.getDate()).padStart(2, ' ')} `
       + `${hh(d.getHours())}:${hh(d.getMinutes())}:${hh(d.getSeconds())}`;
-    // Le corps recu porte deja l'horodatage et le nom d'hote de
-    // l'emetteur (RFC 3164) ; on garde ce qui suit, et on prefixe notre
-    // propre datation et l'adresse d'ou c'est venu.
-    const sansEntete = corps.replace(
-      /^[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+\S+\s+/, '',
-    );
-    return `${horodatage} ${sourceIp} ${sansEntete}`;
+    return `${horodatage} ${sourceIp} ${corps}`;
   }
 }
 

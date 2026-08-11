@@ -51,13 +51,14 @@ import {
 import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
+import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
   isDhcpEnabled(): boolean;
   isDhcpSnoopingEnabled(): boolean;
   getDhcpSelectGlobal(): Set<string>;
-  renderLogbuffer?(): string;
+  renderLogbuffer?(seuil?: number | null): string;
 }
 
 // ─── Pure Display Functions ──────────────────────────────────────────
@@ -1894,9 +1895,20 @@ export function registerDisplayCommands(
   trie.register('display elabel', 'Display electronic label', () =>
     commonDisplayElabel(getRouter().getHostname(), AR2220_HARDWARE_PROFILE));
   trie.register('display license', 'Display license information', () => commonDisplayLicense());
-  trie.register('display logbuffer', 'Display log buffer', () =>
-    getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(),
-  );
+  trie.registerGreedy('display logbuffer', 'Display log buffer', (args) => {
+    if (args.length === 0) {
+      return getState().renderLogbuffer?.() ?? commonDisplayLogbuffer();
+    }
+    if (args[0]?.toLowerCase() !== 'level' || args.length !== 2) {
+      return `Error: Unrecognized command found at '^' position.`;
+    }
+    const seuil = normVrpSeverity(args[1]);
+    if (seuil === null) return `Error: Wrong parameter found at '^' position.`;
+    return getState().renderLogbuffer?.(VRP_SEVERITIES.indexOf(seuil)) ?? commonDisplayLogbuffer();
+  });
+  trie.addCompletionKeywords('display logbuffer', [
+    { keyword: 'level', description: 'Lowest severity to display' },
+  ]);
   trie.register('display trapbuffer', 'Display trap buffer', () => {
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
     const ic = mgmt?.getInfoCenter();

@@ -131,7 +131,9 @@ const SUBCOMMANDS: readonly Sub[] = [
     continuations: [
       { keyword: 'channel', description: 'Channel the log host subscribes to' },
       { keyword: 'facility', description: 'Syslog facility' },
+      { keyword: 'level', description: 'Lowest severity sent to this log host' },
       { keyword: 'port', description: 'UDP or TCP port of the log host' },
+      { keyword: 'source-ip', description: 'Source IP address of syslog packets' },
       { keyword: 'transport', description: 'Transport protocol' },
     ],
   },

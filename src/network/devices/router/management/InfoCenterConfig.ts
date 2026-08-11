@@ -80,6 +80,8 @@ export interface VrpLoghost {
   facility: string;
   port: number;
   transport: 'udp' | 'tcp';
+  level: string | null;
+  sourceIp: string | null;
 }
 
 /** `info-center source <module> channel <n> {log|trap|debug} …`. */
@@ -170,15 +172,25 @@ export class InfoCenterConfig {
       if (i >= 0) this.loghosts.splice(i, 1);
       return null;
     }
-    let channel = this.destinationChannel.loghost;
-    let facility = 'local7';
-    let port = 514;
-    let transport: 'udp' | 'tcp' = 'udp';
+    const dejaLa = this.loghosts.find(h => h.ip === premier);
+    let channel = dejaLa?.channel ?? this.destinationChannel.loghost;
+    let facility = dejaLa?.facility ?? 'local7';
+    let port = dejaLa?.port ?? 514;
+    let transport: 'udp' | 'tcp' = dejaLa?.transport ?? 'udp';
+    let level = dejaLa?.level ?? null;
+    let sourceIp = dejaLa?.sourceIp ?? null;
     for (let i = 1; i < rest.length; i++) {
       const kw = rest[i].toLowerCase();
       const val = rest[i + 1];
       if (val === undefined) return INCOMPLETE;
-      if (kw === 'channel') {
+      if (kw === 'level') {
+        const n = normVrpSeverity(val);
+        if (n === null) return WRONG(val);
+        level = n;
+      } else if (kw === 'source-ip') {
+        if (!isValidIPv4(val)) return WRONG(val);
+        sourceIp = val;
+      } else if (kw === 'channel') {
         const c = this.resolveChannel(val);
         if (c === null) return WRONG(val);
         channel = c;
@@ -201,8 +213,8 @@ export class InfoCenterConfig {
     // la MODIFIE, comme sur un vrai VRP. L'empiler donnait deux lignes
     // pour un seul serveur.
     const existant = this.loghosts.find(h => h.ip === premier);
-    if (existant) Object.assign(existant, { channel, facility, port, transport });
-    else this.loghosts.push({ ip: premier, channel, facility, port, transport });
+    if (existant) Object.assign(existant, { channel, facility, port, transport, level, sourceIp });
+    else this.loghosts.push({ ip: premier, channel, facility, port, transport, level, sourceIp });
     return null;
   }
 
@@ -400,8 +412,10 @@ export class InfoCenterConfig {
     for (const h of this.loghosts) {
       const port = h.port === 514 ? '' : ` port ${h.port}`;
       const transport = h.transport === 'udp' ? '' : ` transport ${h.transport}`;
+      const level = h.level === null ? '' : ` level ${h.level}`;
+      const source = h.sourceIp === null ? '' : ` source-ip ${h.sourceIp}`;
       lines.push(`info-center loghost ${h.ip}${port} channel ${h.channel}`
-        + ` facility ${h.facility}${transport}`);
+        + ` facility ${h.facility}${level}${source}${transport}`);
     }
     if (this.logbufferSize !== LOGBUFFER_SIZE_DEFAUT) {
       lines.push(`info-center logbuffer size ${this.logbufferSize}`);

@@ -2155,11 +2155,17 @@ export class LoggingConfig {
    * Le numéro de canal était écrit en dur, donc juste par coïncidence —
    * un `info-center logbuffer channel 6` ne le changeait pas.
    */
-  renderHuawei(vrp?: { size: number; channel: number; channelName: string }): string {
+  renderHuawei(
+    vrp?: { size: number; channel: number; channelName: string },
+    seuil?: number | null,
+  ): string {
     const pad2 = (n: number) => String(n).padStart(2, '0');
     const taille = vrp?.size ?? this.bufferedSize;
     const canal = vrp?.channel ?? 4;
     const nomCanal = vrp?.channelName ?? 'logbuffer';
+    const retenus = seuil === undefined || seuil === null
+      ? this.messages
+      : this.messages.filter((m) => this.SEVERITY_ORDER[m.severity] <= seuil);
     const lines = [
       `Logging buffer configuration and contents: ${this.enabled ? 'enabled' : 'disabled'}`,
       `Allowed max buffer size : ${taille}`,
@@ -2167,9 +2173,9 @@ export class LoggingConfig {
       `Channel number : ${canal} , Channel name : ${nomCanal}`,
       'Dropped messages : 0',
       'Overwritten messages : 0',
-      `Current messages : ${this.messages.length}`,
+      `Current messages : ${retenus.length}`,
     ];
-    for (const m of this.messages) {
+    for (const m of retenus) {
       const d = new Date(m.ts);
       const stamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
         `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;

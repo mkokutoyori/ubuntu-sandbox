@@ -207,27 +207,42 @@ describe('un routeur Cisco envoie, le collecteur Linux recoit', () => {
     // distinguerait pas un collecteur sourd d'un emetteur muet.
     expect(await r.executeCommand('show logging')).toContain('192.168.100.50');
 
-    const recu = await srv.executeCommand('grep 192.168.100.1 /var/log/syslog');
-    expect(recu, 'le collecteur doit avoir recu').toContain('192.168.100.1');
-    expect(recu).toContain('%SYS-5-CONFIG_I');
+    const recu = await srv.executeCommand('grep CONFIG_I /var/log/syslog');
+    expect(recu, 'le collecteur doit avoir recu').toContain('%SYS-5-CONFIG_I');
+    expect(recu, 'sous le nom que l\'emetteur s\'est donne').toContain('R1-PROD');
   }, 60_000);
 
   /**
-   * Le message est REECRIT au format de reception : rsyslog remplace
-   * l'horodatage de l'emetteur par le sien et prefixe l'adresse source.
-   * C'est ce qui permet de correler deux equipements dont les horloges
-   * divergent — le cas normal avant que NTP prenne.
+   * `RSYSLOG_TraditionalFileFormat` — le gabarit par defaut de Debian —
+   * s'ecrit `%TIMESTAMP% %HOSTNAME% %syslogtag%%msg%`, et `%TIMESTAMP%`
+   * est un alias de `%timereported%`, l'heure PORTEE PAR LE MESSAGE.
+   * Le collecteur conserve donc l'heure et le nom de l'emetteur ; ses
+   * propres valeurs sont `%timegenerated%` et `%FROMHOST-IP%`, deux
+   * autres champs, que ce gabarit n'utilise pas.
    */
-  it('le collecteur redate le message et prefixe la source', async () => {
+  it('le collecteur garde l\'horodatage et le nom portes par le message', async () => {
     const s = serveur();
     await activerImudp(s);
     const svc = (s as unknown as { executor: { rsyslogService: {
       recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
     svc.recevoir('10.9.9.9', '<190>Jan  1 00:00:00 VIEUX-NOM TEST: corps du message');
-    const ligne = await s.executeCommand('grep 10.9.9.9 /var/log/syslog');
-    expect(ligne).toContain('10.9.9.9');
+    const ligne = await s.executeCommand('grep VIEUX-NOM /var/log/syslog');
+    expect(ligne).toContain('VIEUX-NOM');
     expect(ligne).toContain('TEST: corps du message');
-    expect(ligne, 'l\'horodatage de l\'emetteur ne doit pas survivre').not.toContain('Jan  1 00:00:00');
+    expect(ligne, '%TIMESTAMP% est %timereported%').toContain('Jan  1 00:00:00');
+    expect(ligne, 'l\'adresse source est %FROMHOST-IP%, absent du gabarit')
+      .not.toContain('10.9.9.9');
+  }, 30_000);
+
+  it('un message SANS en-tete exploitable prend l\'heure et la source du collecteur', async () => {
+    const s = serveur();
+    await activerImudp(s);
+    const svc = (s as unknown as { executor: { rsyslogService: {
+      recevoir(ip: string, c: string): void } } }).executor.rsyslogService;
+    svc.recevoir('10.9.9.7', '<190>TEST: sans en-tete');
+    const ligne = await s.executeCommand('grep "sans en-tete" /var/log/syslog');
+    expect(ligne).toContain('10.9.9.7');
+    expect(ligne).toMatch(/^[A-Z][a-z]{2}\s+\d{1,2}\s\d{2}:\d{2}:\d{2}\s/m);
   }, 30_000);
 
   it('un message SANS `<PRI>` n\'est pas jete', async () => {

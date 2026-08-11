@@ -95,8 +95,31 @@ user.*				-/var/log/user.log
 *.emerg				:omusrmsg:*
 `;
 
+export const RSYSLOG_LOGROTATE_PATH = '/etc/logrotate.d/rsyslog';
+
+/** `/etc/logrotate.d/rsyslog` de Debian, celui que le paquet installe. */
+export const RSYSLOG_LOGROTATE_DEBIAN = `/var/log/syslog
+/var/log/mail.log
+/var/log/kern.log
+/var/log/auth.log
+/var/log/user.log
+{
+	rotate 4
+	weekly
+	missingok
+	notifempty
+	compress
+	delaycompress
+	sharedscripts
+	postrotate
+		/usr/lib/rsyslog/rsyslog-rotate
+	endscript
+}
+`;
+
 /** Ce que l'image pose au demarrage. */
 export const RSYSLOG_SEEDED_FILES: ReadonlyArray<readonly [string, string]> = [
   [RSYSLOG_CONF_PATH, RSYSLOG_CONF_DEBIAN],
   [`${RSYSLOG_D_DIR}/50-default.conf`, RSYSLOG_50_DEFAULT],
+  [RSYSLOG_LOGROTATE_PATH, RSYSLOG_LOGROTATE_DEBIAN],
 ];

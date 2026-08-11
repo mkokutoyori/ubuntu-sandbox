@@ -26,6 +26,12 @@ export interface INode {
   ctime: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
   /**
+   * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
+   * peut modifier ni supprimer le fichier. C'est ce qui rend une
+   * archive de journaux opposable.
+   */
+  immutable?: boolean;
+  /**
    * Generated pseudo-file: when set, the content is produced by this
    * function on every read (like a real procfs entry), never stored.
    * Writes to such a node are ignored.
@@ -683,6 +689,7 @@ export class VirtualFileSystem {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
       if (this.isReadOnly(path)) return false;
+      if (inode.immutable) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
       const nextSize = declaredSizeBytes
         ?? (append ? inode.content.length + content.length : content.length);
@@ -808,6 +815,7 @@ export class VirtualFileSystem {
     const child = this.inodes.get(childId);
     if (!child) return false;
     if (child.type === 'directory') return false;
+    if (child.immutable) return false;
 
     parentInode.children.delete(basename);
     parentInode.mtime = Date.now();

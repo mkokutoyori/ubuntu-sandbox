@@ -513,13 +513,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
   isDhcpSnoopingEnabled(): boolean { return this.dhcpSnoopingEnabled; }
-  renderLogbuffer(): string {
+  renderLogbuffer(seuil?: number | null): string {
     const ic = this.r().getManagementService?.().getInfoCenter();
-    if (!ic) return this.logging.renderHuawei();
+    if (!ic) return this.logging.renderHuawei(undefined, seuil);
     const canal = ic.destinationChannel.logbuffer;
     return this.logging.renderHuawei({
       size: ic.logbufferSize, channel: canal, channelName: ic.channelNames[canal],
-    });
+    }, seuil);
   }
 
   // ─── Prompt Generation ─────────────────────────────────────────────

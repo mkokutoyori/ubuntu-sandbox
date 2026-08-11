@@ -166,6 +166,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   ls: '/bin/ls', cp: '/bin/cp', mv: '/bin/mv', rm: '/bin/rm', touch: '/bin/touch',
   mkdir: '/bin/mkdir', rmdir: '/bin/rmdir', ln: '/bin/ln', chmod: '/bin/chmod',
   chown: '/bin/chown', chgrp: '/bin/chgrp', su: '/bin/su', sudo: '/usr/bin/sudo',
+  chattr: '/usr/bin/chattr', lsattr: '/usr/bin/lsattr',
   whoami: '/usr/bin/whoami', head: '/usr/bin/head', tail: '/usr/bin/tail',
   grep: '/bin/grep', sed: '/bin/sed', awk: '/usr/bin/awk', sort: '/usr/bin/sort',
   uniq: '/usr/bin/uniq', wc: '/usr/bin/wc', cut: '/usr/bin/cut', tr: '/usr/bin/tr',
