@@ -439,6 +439,7 @@ const KEYWORD_DESCRIPTIONS: ReadonlyMap<string, string> = new Map<string, string
   ['udp-echo', 'UDP echo operation'],
   ['username', 'Identify a user'],
   ['view', 'Command-line interface view'],
+  ['ns', 'Name server for this host entry'],
 ]);
 
 /**

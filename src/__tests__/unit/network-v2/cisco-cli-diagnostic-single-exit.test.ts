@@ -47,10 +47,10 @@ describe('the count of hand-written error literals only goes down', () => {
       .reduce((n, f) => n + readFileSync(f, 'utf8').split(needle).length - 1, 0);
 
   it('% Invalid input is written in at most the sites left to migrate', () => {
-    expect(countIn(CARET_MESSAGE)).toBeLessThanOrEqual(56);
+    expect(countIn(CARET_MESSAGE)).toBeLessThanOrEqual(41);
   });
 
   it('% Incomplete command. is written in at most the sites left to migrate', () => {
-    expect(countIn('% Incomplete command.')).toBeLessThanOrEqual(257);
+    expect(countIn('% Incomplete command.')).toBeLessThanOrEqual(256);
   });
 });

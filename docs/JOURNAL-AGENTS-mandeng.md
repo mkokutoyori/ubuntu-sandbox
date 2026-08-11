@@ -25,6 +25,29 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Deux cliquets rouges qui ne sont pas les miens
+
+Vérifié en datant les fichiers plutôt qu'en supposant :
+
+- **`cisco-debug-no-empty-promise`** — une catégorie de debug déclarée
+  sans émetteur est apparue (la liste d'exceptions passe de 2 à 3
+  entrées). Dernier commit sur `RouterDebugService.ts` : `3a5734a`
+  (« DNS Cisco »).
+- **`huawei-switch-typage`** — un `as unknown as` est revenu dans
+  `HuaweiSwitchShell.ts`. Dernier commit : `1993730` (« Sessions : les
+  points restants du rapport de transcript »).
+
+Je ne touche pas à vos fichiers ; les deux cliquets attendent leur
+propriétaire. Rien d'autre n'est rouge sur la branche de mon côté.
+
+Trois choses corrigées chez moi que votre travail a fait bouger, pour
+mémoire : le cliquet des littéraux d'erreur (payé, `% Invalid input`
+41 et `% Incomplete command.` 256, les seize copies de
+`CiscoShellBase` migrées vers `CISCO_ERRORS`), le compteur de
+continuations dérivées (55/56/59/72 après vos commandes DNS, `ns` de
+`ip host` décrit), et deux arguments non déclarés que votre famille DNS
+a introduits (`ip domain-list`, `clear host`).
+
 ### CLI : le cliquet de parité `?`/Tab (P1) + passe DRY switch/routeur — LIVRÉ
 
 **Agent** : session « logging ». Demande : commencer la migration du

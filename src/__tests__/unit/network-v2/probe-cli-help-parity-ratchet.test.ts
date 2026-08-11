@@ -32,9 +32,9 @@ const RECORDED_GAPS: Readonly<Record<string, {
   unsuggested: number; uncompletable: number; undescribed: number; derived: number;
 }>> = {
   'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 56 },
-  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 50 },
+  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 55 },
   'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 72 },
-  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 54 },
+  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 59 },
 };
 
 const MODES: ReadonlyArray<{ name: string; enter: string[] }> = [

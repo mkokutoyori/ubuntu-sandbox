@@ -2400,9 +2400,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected parseClockSetArgs(args: string[]): number | string {
     if (args.length < 4) return '% Incomplete command.';
     const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[0]);
-    if (!hm) return "% Invalid input detected at '^' marker.";
+    if (!hm) return CISCO_ERRORS.INVALID_INPUT;
     const [h, mn, sec] = [+hm[1], +hm[2], hm[3] ? +hm[3] : 0];
-    if (h > 23 || mn > 59 || sec > 59) return "% Invalid input detected at '^' marker.";
+    if (h > 23 || mn > 59 || sec > 59) return CISCO_ERRORS.INVALID_INPUT;
 
     const moisDe = (mot: string): number => {
       const bas = (mot ?? '').toLowerCase();
@@ -2419,9 +2419,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       mois = moisDe(args[1]);
       jour = parseInt(args[2], 10);
     }
-    if (!mois || isNaN(jour) || isNaN(annee)) return "% Invalid input detected at '^' marker.";
+    if (!mois || isNaN(jour) || isNaN(annee)) return CISCO_ERRORS.INVALID_INPUT;
     if (jour < 1 || jour > 31 || annee < 1993 || annee > 2035) {
-      return "% Invalid input detected at '^' marker.";
+      return CISCO_ERRORS.INVALID_INPUT;
     }
     return Date.UTC(annee, mois - 1, jour, h, mn, sec);
   }
@@ -3222,7 +3222,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (args[0]?.toLowerCase() === 'view') return this.entrerDansUneVue(args.slice(1));
       const lvl = args[0] ? parseInt(args[0], 10) : 15;
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       // Authentication itself (real IOS "Password:" prompt against
       // `enable secret` / `enable password level N`) happens BEFORE this
@@ -3488,7 +3488,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (args[0]?.toLowerCase() === 'in') {
         if (!args[1]) return '% Incomplete command.';
-        if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
+        if (!/^\d+$/.test(args[1])) return CISCO_ERRORS.INVALID_INPUT;
         const min = parseInt(args[1], 10);
         this.armReloadTimer(min * 60_000);
         return `Reload scheduled in ${min} minute${min === 1 ? '' : 's'}`;
@@ -4327,13 +4327,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const mode = args[0]?.toLowerCase();
       if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const lvl = parseInt(args[2] ?? '', 10);
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
       const router = this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> };
@@ -4395,7 +4395,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('banner', 'Set a banner', (args, rawLine) => {
       const which = args[0]?.toLowerCase();
       if (!which || !['motd', 'login', 'exec', 'incoming'].includes(which)) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       // The delimiter is the first non-space character after the banner
       // type; everything after it (spaces included) is content — split
@@ -4550,8 +4550,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const algoName = args[0]?.toLowerCase();
       const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
       const algo = algoMap[algoName ?? ''];
-      if (!algo) return "% Invalid input detected at '^' marker.";
-      if (args[1]?.toLowerCase() !== 'secret') return "% Invalid input detected at '^' marker.";
+      if (!algo) return CISCO_ERRORS.INVALID_INPUT;
+      if (args[1]?.toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
       let level = 15;
       let rest = args.slice(2);
       if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
@@ -4713,7 +4713,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
             const lvl = parseInt(args[1], 10);
             if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-              return "% Invalid input detected at '^' marker.";
+              return CISCO_ERRORS.INVALID_INPUT;
             }
             this.consoleLinePrivilegeLevel = lvl;
             return '';
@@ -4983,7 +4983,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
       if (args.length === 0) return '% Incomplete command.';
       if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       const range = this.selectedVtyRange;
       if (!range) {
@@ -5008,7 +5008,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!range) return '';
       if (!args[0] || !args[1]) return '% Incomplete command.';
       const dir = args[1].toLowerCase();
-      if (dir !== 'in' && dir !== 'out') return "% Invalid input detected at '^' marker.";
+      if (dir !== 'in' && dir !== 'out') return CISCO_ERRORS.INVALID_INPUT;
       const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
       const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
       dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
@@ -5029,11 +5029,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // sortantes d'un serveur de terminaux : il est accepté et
       // n'entraîne rien ici, mais il est refusé plutôt que stocké
       // inerte, faute de quoi l'aide promettrait un réglage sans effet.
-      if (dir !== 'input' && dir !== 'output') return "% Invalid input detected at '^' marker.";
+      if (dir !== 'input' && dir !== 'output') return CISCO_ERRORS.INVALID_INPUT;
       const proto = (args[1] ?? '').toLowerCase();
       if (!proto) return '% Incomplete command.';
       if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       if (dir !== 'input') return '';
       if (this.selectedAuxLine != null) {

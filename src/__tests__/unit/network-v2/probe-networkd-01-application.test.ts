@@ -138,7 +138,7 @@ describe('Scénario 2 — `[Link]` : MTU et MAC', () => {
     ecrire('/etc/systemd/network/10-eth0.network', RESEAU_STATIQUE);
     await redemarrer();
 
-    expect(await pc.executeCommand('ip -br link')).toContain('mtu 1400');
+    expect(await pc.executeCommand('ip link show eth0')).toContain('mtu 1400');
     expect(await pc.executeCommand('networkctl status eth0')).toMatch(/MTU: 1400/);
   }, LONG);
 
