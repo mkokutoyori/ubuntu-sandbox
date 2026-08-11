@@ -81,6 +81,24 @@ function isUnsupportedOnThisSwitch(e: unknown): boolean {
   return e instanceof UnsupportedOnThisSwitchError;
 }
 
+const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'backbonefast', description: 'Enable BackboneFast' },
+  { keyword: 'bpdufilter', description: 'Default BPDU filtering on portfast ports' },
+  { keyword: 'bpduguard', description: 'Default BPDU guard on portfast ports' },
+  { keyword: 'extend', description: 'Spanning tree 802.1t extensions' },
+  { keyword: 'forward-time', description: 'Forward delay of the spanning tree' },
+  { keyword: 'hello-time', description: 'Hello interval of the spanning tree' },
+  { keyword: 'loopguard', description: 'Default loop guard on all ports' },
+  { keyword: 'max-age', description: 'Maximum age of the spanning tree' },
+  { keyword: 'mode', description: 'Spanning tree operating mode' },
+  { keyword: 'mst', description: 'Multiple spanning tree configuration' },
+  { keyword: 'pathcost', description: 'Spanning tree pathcost options' },
+  { keyword: 'portfast', description: 'Default portfast on access ports' },
+  { keyword: 'priority', description: 'Bridge priority of the spanning tree' },
+  { keyword: 'uplinkfast', description: 'Enable UplinkFast' },
+  { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
+];
+
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   /** Ce shell rend la table avec ses filtres — la base ne doit pas la masquer. */
   protected providesOwnMacAddressTableView(): boolean {
@@ -1392,7 +1410,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '';
       }
       return '';
-    });
+    }, [
+      { keyword: 'enable', description: 'Enable UDLD in normal mode on fibre ports' },
+      { keyword: 'aggressive', description: 'Enable UDLD in aggressive mode on fibre ports' },
+      { keyword: 'message', description: 'Set the message interval' },
+    ]);
     this.configTrie.registerGreedy('no udld', 'Disable UDLD globally', () => {
       this.requireUdld().setGlobalMode('disabled');
       return '';
@@ -1693,7 +1715,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         this.requireStp().setPathcostMethod(m);
       }
       return '';
-    });
+    }, STP_GLOBAL_CONTINUATIONS);
     this.configTrie.registerGreedy('spanning-tree mst', 'MST instance configuration', (args) => {
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);

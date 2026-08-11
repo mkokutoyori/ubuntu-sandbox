@@ -44,6 +44,16 @@ export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; descr
   { keyword: 'timeout', description: 'Time to wait for a TACACS+ server to reply' },
 ];
 
+export const IP_SSH_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'authentication-retries', description: 'Number of authentication retries' },
+  { keyword: 'dh', description: 'Diffie-Hellman key exchange parameters' },
+  { keyword: 'logging', description: 'Log SSH events' },
+  { keyword: 'server', description: 'SSH server options' },
+  { keyword: 'source-interface', description: 'Interface the SSH client sources from' },
+  { keyword: 'time-out', description: 'Authentication timeout' },
+  { keyword: 'version', description: 'SSH protocol version to accept' },
+];
+
 export const USERNAME_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'access-class', description: 'Restrict access by access-class' },
   { keyword: 'algorithm-type', description: 'Algorithm used to hash the password' },
@@ -515,7 +525,7 @@ export function buildIdentityConfigCommands(
       throw new CliInvalidInput({ token: args[2] });
     }
     return '';
-  });
+  }, IP_SSH_CONTINUATIONS);
 
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
