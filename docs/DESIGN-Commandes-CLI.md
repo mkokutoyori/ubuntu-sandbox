@@ -97,8 +97,23 @@ formes pendant toute la migration.
   `declaredConfigLines` le collecte ; rien d'écrit à la main n'y migre encore, c'est P5.
   Pilote pour que ce soit un chemin et pas un type sans appelant : `show startup-config`
   et `show configuration` du commutateur sont déclarés.
-- **P4 — migrer par famille**, en s'arrêtant à chaque fois que le compteur du
-  garde-fou descend. L'ordre suit le risque : d'abord ce que les tutoriels traversent.
+- **P4 — migrer par famille. EN COURS** (350 → 232). Le compteur qui pilote cette
+  phase n'est pas celui de P1 — il est à zéro et garde l'acquis — mais le nombre de
+  continuations **dérivées du texte source** d'un gestionnaire au lieu d'être
+  déclarées (`enumerateDerivedContinuations`, cliquet par plateforme et par mode).
+  Déclarer les suites d'un nœud retire sa grappe entière, l'extraction s'effaçant
+  devant un auteur qui a dit ce qui suit. Familles migrées : `username`,
+  `radius-server`, `tacacs-server`, `enable`, `login`, `spanning-tree`, `udld`,
+  `ip ssh`, et les quatre commandes `ip sla` d'ordonnancement et de réaction.
+  Restent les gros aiguillages : `debug` / `no debug` (43), `show` (17), `clear`
+  (12), `ip` par sous-familles, `crypto`.
+
+  Ce que la migration a trouvé compte plus que le compteur : **trois commandes
+  avaient DEUX implémentations** (`aaa`, `username`, `login`), la copie riche étant
+  câblée par le seul routeur et le commutateur tournant sur une copie pauvre ; et
+  l'extraction **inventait des commandes** que `?` proposait — `spanning-tree long`,
+  `ip ssh min`, `udld time`, `ip sla reaction-configuration average` — toutes des
+  valeurs ou des mots du milieu d'une commande, offerts un niveau trop haut.
 - **P5 — rapatrier la sérialisation.** `serialize()` sur la spécification retire les
   rendus de `running-config` écrits à la main, d'où viennent les « acceptée mais perdue
   au rechargement ». La plus payante et la plus intrusive : elle vient en dernier.

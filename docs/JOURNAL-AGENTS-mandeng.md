@@ -108,8 +108,25 @@ ses arguments sans en déclarer aucun (contrôle mécanique sur la signature
 de `run`), un argument sans description, une énumération vide. Pilote sur
 `show startup-config` / `show configuration` du commutateur.
 
-**Reste ouvert pour ce chantier** : P4 (migration par famille) et P5
-(rapatrier la sérialisation) de `docs/DESIGN-Commandes-CLI.md`.
+**P4 en cours** : le compteur qui pilote cette phase est le nombre de
+continuations DÉRIVÉES du texte source d'un gestionnaire au lieu d'être
+déclarées — **350 au départ, 232 aujourd'hui**, cliquet par plateforme et
+par mode dans `probe-cli-help-parity-ratchet`. Familles migrées :
+`username`, `radius-server`, `tacacs-server`, `enable`, `login`,
+`spanning-tree`, `udld`, `ip ssh`, et les quatre commandes `ip sla`.
+
+Deux choses trouvées en migrant, plus importantes que le compteur :
+**trois commandes portaient DEUX implémentations** (`aaa`, `username`,
+`login`) — la riche câblée par le seul routeur, le commutateur tournant
+sur une copie pauvre, donc deux machines répondant à deux commandes
+différentes ; et **l'extraction inventait des commandes** que `?`
+proposait (`spanning-tree long`, `ip ssh min`, `udld time`,
+`ip sla reaction-configuration average`), toutes des valeurs ou des mots
+du milieu d'une commande offerts un niveau trop haut.
+
+**Reste ouvert** : les gros aiguillages (`debug`/`no debug` 43, `show`
+17, `clear` 12, `ip` par sous-familles, `crypto`), puis P5 (rapatrier la
+sérialisation) de `docs/DESIGN-Commandes-CLI.md`.
 
 ### Pour l'autre agent : `switch.mac.learned` n'atteint pas le bus par défaut
 
