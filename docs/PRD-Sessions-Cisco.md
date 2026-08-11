@@ -671,3 +671,31 @@ changé : `enable` monte à `#`, `disable` redescend à `>` **sans fermer**
 la session, et `exit` depuis `>` comme depuis `#` libère la console —
 `exit` quitte l'EXEC, c'est `disable` qui change de niveau. Un compte
 déclaré `privilege 15` par l'opérateur ouvre toujours sur `#`.
+
+### L'incohérence de privilège signalée, et ce qu'elle était vraiment
+
+Transcript fourni : `username mandeng privilege 1` dans la configuration,
+et `show privilege` répondant **15** sur la console de ce même
+utilisateur. Deux causes distinctes, et une seule est un défaut.
+
+**Le défaut** : les comptes livrés étaient provisionnés à 15 (corrigé
+ci-dessus), donc la configuration affirmait quatre administrateurs que
+personne n'avait déclarés.
+
+**Ce qui n'en est pas un** : `enable` sans mot de passe d'activation
+**passe sur la console** et est refusé (`% No password set`) sur une
+vty. Ce n'est pas une commodité mais une règle de sécurité d'IOS —
+une ligne réseau ne doit pas offrir le mode privilégié à qui sait taper
+`enable`, alors qu'un accès console suppose d'être devant la machine.
+Le dépôt l'implémentait déjà correctement ; deux cas l'épinglent
+maintenant pour que ça ne régresse pas, parce que la lecture naturelle du
+transcript est d'y voir un bug.
+
+**Une correction envisagée puis annulée, et pourquoi** : masquer les
+comptes livrés du `show running-config` (un vrai routeur n'a aucun compte
+d'usine). `cross-equipment-default-users.test.ts` a montré que c'était la
+mauvaise décision — ce fichier vérifie que la distribution de démonstration
+est **découvrable sur chaque plateforme** : `id` sous Linux, `net user`
+sous Windows, la configuration sur IOS. Les masquer supprimait la seule
+façon de les trouver sur un équipement Cisco. Ils restent rendus, au
+niveau 1.

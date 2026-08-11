@@ -123,3 +123,62 @@ describe('cote Huawei, les memes comptes ouvrent en vue utilisateur', () => {
     expect(d.getCredentialStore().get(nom)?.privilege).toBe(1);
   }, 30_000);
 });
+
+describe('la configuration decrit les comptes au bon niveau', () => {
+  it('les comptes livres y figurent au niveau 1, et non 15', async () => {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    await d.executeCommand('enable');
+    const rc = await d.executeCommand('show running-config');
+    for (const nom of COMPTES) {
+      expect(rc, nom).toContain(`username ${nom} privilege 1 `);
+      expect(rc, `${nom} n'est pas un administrateur`)
+        .not.toContain(`username ${nom} privilege 15`);
+    }
+  }, 30_000);
+
+  it('un compte cree par l\'operateur y figure tel qu\'il a ete tape', async () => {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    await d.executeCommand('enable');
+    await d.executeCommand('configure terminal');
+    await d.executeCommand('username mandeng privilege 1 secret x');
+    await d.executeCommand('end');
+    expect(await d.executeCommand('show running-config')).toContain('username mandeng privilege 1');
+  }, 30_000);
+
+  it('elever un compte livre le rend au niveau 15', async () => {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    await d.executeCommand('enable');
+    await d.executeCommand('configure terminal');
+    await d.executeCommand('username alice privilege 15 secret nouveau');
+    await d.executeCommand('end');
+    expect(await d.executeCommand('show running-config')).toContain('username alice privilege 15');
+  }, 30_000);
+});
+
+describe('`enable` sans mot de passe : la console passe, la vty non', () => {
+  it('sur la console, `enable` monte a 15 — la machine est physiquement de confiance', async () => {
+    const { s } = await laboConsole();
+    await texte(s, 'alice');
+    await motDePasse(s, 'alice');
+    await taper(s, 'enable');
+    expect(s.getPrompt()).toMatch(/#$/);
+  }, 30_000);
+
+  it('sur une vty, `enable` est refuse par `% No password set`', async () => {
+    const d = new CiscoRouter('R1', 0, 0);
+    d.powerOn();
+    const shell = (d as unknown as {
+      getShell(): {
+        interactionPlanFor(c: string, ctx: Record<string, unknown>):
+          { steps: Array<{ kind: string; lines?: string[] }> } | null;
+      };
+    }).getShell();
+    const plan = shell.interactionPlanFor('enable', { onVtyLine: true, mode: 'user' });
+    expect(plan, 'une vty a un plan de refus').toBeTruthy();
+    expect(JSON.stringify(plan), 'une ligne reseau n\'offre pas le mode privilegie')
+      .toContain('% No password set');
+  }, 30_000);
+});
