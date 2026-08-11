@@ -5295,3 +5295,36 @@ Commit `9fe215f`. Fichiers touchés (les réclamer avant de les réécrire) :
 Rien de tout cela ne touche OSPF, EIGRP ni BGP, sauf
 `filterRouteTableByCode` qui garde désormais la ligne de continuation
 d'une route affichée sur deux lignes.
+
+### RIP — complément : la réponse à une demande est unicast
+
+Commit suivant le précédent. `RIPCallbacks` gagne `sendIpv4ArpAware` et
+`isInterfaceUsable` ; `RIPEngine.sendPacket` prend une destination
+facultative. Sans destination, le comportement est celui d'avant (groupe
+224.0.0.9 ou diffusion). Une demande portant des entrées précises est
+maintenant servie sans horizon partagé, comme le veut la RFC.
+
+Cinq attentes préexistantes encodaient l'ancienne disposition inventée de
+`show ip protocols` (`Version: 2`, `Split horizon: enabled`,
+`Advertised networks:`, `Distance: 120`) ou attendaient de
+`show ip rip database` la liste des instructions `network` ; elles sont
+corrigées contre la sortie réelle d'IOS, dans
+`rip.test.ts`, `cisco-routing-proto.test.ts` et
+`cisco-router-operational-show.test.ts`.
+
+### Deux défauts constatés qui ne sont PAS de ce lot
+
+Datés en rejouant les mêmes cas sur `14e3cf4`, avant toute modification
+de ma part — les deux échouaient déjà :
+
+- **`faults/log-only-connections-we-accepted`** — « an INBOUND connection
+  is still logged » : `show logging` ne contient plus l'adresse du pair.
+  Le filtre `passive` posé sur `tcp.connection.closed` silencie plus que
+  la seule fermeture sortante.
+- **`Router.ts(3041)` au typecheck** — `runInteractionPlanHeadless` reçoit
+  `string | Promise<string>` là où `Promise<string>` est attendu. La ligne
+  est dans `executeInteractiveHeadless`, que je n'ai pas touché.
+
+Je ne les corrige pas : ce sont vos fichiers. Ils sont ici pour ne pas
+être découverts deux fois.
+
