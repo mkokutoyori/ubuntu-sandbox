@@ -36,6 +36,16 @@ import {
   type RIPObservables,
 } from './observables';
 import { RIPSignalRefreshActor } from './actors';
+import { md5Hex } from '@/crypto/hash';
+
+/**
+ * RFC 2453 §4.1 puts the authentication in the first entry of the
+ * message. Plain text carries the key itself; the MD5 form carries a
+ * digest, which is what makes a mismatched key visible on the wire.
+ */
+function ripAuthDigest(auth: { mode: 'md5' | 'text'; keyId: number; key: string }): string {
+  return auth.mode === 'text' ? auth.key : md5Hex(`${auth.keyId}:${auth.key}`);
+}
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -122,6 +132,16 @@ export interface RIPCallbacks {
   getRipVersion?(): 1 | 2;
   /** Evaluate a `route-policy` referenced by `import-route ... route-policy <name>`. */
   evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
+  /** RFC 2453 §4.1 authentication configured on an interface, if any. */
+  getInterfaceAuth?(iface: string): RIPInterfaceAuth | null;
+  /** Whether a route's egress interface can still carry traffic. */
+  isInterfaceUsable?(iface: string): boolean;
+}
+
+export interface RIPInterfaceAuth {
+  mode: 'md5' | 'text';
+  keyId: number;
+  key: string;
 }
 
 // ─── Default Config ─────────────────────────────────────────────────
@@ -177,6 +197,18 @@ export class RIPEngine implements IProtocolEngine {
   private signalRefreshActor: RIPSignalRefreshActor | null = null;
 
   // Counters that feed projectRipStats.
+  private readonly updateSources = new Map<string, number>();
+
+  /** Neighbours whose Responses were accepted, and when (RFC 2453 §3.9.2). */
+  getUpdateSources(): Map<string, number> {
+    const out = new Map<string, number>();
+    const now = this.clock();
+    for (const [ip, at] of this.updateSources) {
+      out.set(ip, Math.max(0, Math.floor((now - at) / 1000)));
+    }
+    return out;
+  }
+
   private updatesSent = 0;
   private updatesReceived = 0;
   private routesAddedCount = 0;
@@ -187,6 +219,54 @@ export class RIPEngine implements IProtocolEngine {
     this.attachActors();
   }
   setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+
+  private clockSkewMs = 0;
+  private lastPeriodicAt = 0;
+
+  /** Engine clock: wall time plus whatever `advanceTime()` has fast-forwarded. */
+  private clock(): number { return Date.now() + this.clockSkewMs; }
+
+  /**
+   * Fast-forward this engine's own timers by `ms`, firing the periodic
+   * update, route invalidation and garbage collection at the instants the
+   * configured timers would have fired them.
+   */
+  advanceTime(ms: number): void {
+    if (!this.running || ms <= 0) return;
+    let remaining = ms;
+    while (remaining > 0) {
+      const step = Math.min(remaining, this.nextEventIn());
+      this.clockSkewMs += step;
+      remaining -= step;
+      this.fireDueTimers();
+    }
+  }
+
+  private nextEventIn(): number {
+    const now = this.clock();
+    let next = this.config.updateInterval - (now - this.lastPeriodicAt);
+    for (const state of this.routes.values()) {
+      const budget = state.garbageCollect ? this.config.gcTimeout : this.config.routeTimeout;
+      next = Math.min(next, budget - (now - state.lastUpdate));
+    }
+    return Math.max(1, next);
+  }
+
+  private fireDueTimers(): void {
+    const now = this.clock();
+    for (const [key, state] of [...this.routes]) {
+      const age = now - state.lastUpdate;
+      if (state.garbageCollect) {
+        if (age >= this.config.gcTimeout) this.garbageCollect(key);
+      } else if (age >= this.config.routeTimeout) {
+        this.invalidateRoute(key, state);
+      }
+    }
+    if (now - this.lastPeriodicAt >= this.config.updateInterval) {
+      this.lastPeriodicAt = now;
+      this.sendPeriodicUpdate();
+    }
+  }
   private getBus(): IEventBus { return this.busOverride ?? getDefaultEventBus(); }
   private getScheduler(): IScheduler { return this.schedulerOverride ?? getDefaultScheduler(); }
   /** Public — used by `RIPSignalRefreshActor` to filter events. */
@@ -239,6 +319,7 @@ export class RIPEngine implements IProtocolEngine {
 
   start(): void {
     this.running = true;
+    this.lastPeriodicAt = this.clock();
 
     this.updateTimer = this.timers.setInterval(() => {
       this.sendPeriodicUpdate();
@@ -270,6 +351,7 @@ export class RIPEngine implements IProtocolEngine {
       state.gcTimer = null;
     }
     this.routes.clear();
+    this.updateSources.clear();
     this.signalRefreshActor?.stop();
 
     Logger.info(this.equipmentId, 'rip:disabled', `${this.hostname}: RIPv2 disabled`);
@@ -302,7 +384,25 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
+    const already = this.config.networks.some((n) =>
+      n.network.toString() === network.toString() && n.mask.toString() === mask.toString());
+    if (already) return;
+    const before = this.callbacks.getPortNames().filter((p) => this.isRIPInterface(p));
     this.config.networks.push({ network, mask });
+    if (!this.running) return;
+    // RFC 2453 §3.9.1 — an interface that joins the process asks the link
+    // for a complete table instead of waiting for the next periodic update.
+    for (const portName of this.callbacks.getPortNames()) {
+      if (before.includes(portName)) continue;
+      if (!this.isRIPInterface(portName)) continue;
+      if (this.isPassiveInterface(portName)) continue;
+      this.sendPacket(portName, this.wholeTableRequest());
+    }
+  }
+
+  withdrawNetwork(network: IPAddress): void {
+    this.config.networks = this.config.networks.filter((n) =>
+      n.network.toString() !== network.toString());
   }
 
   // ── Passive interfaces (IOS `passive-interface` / VRP `silent-interface`) ──
@@ -347,7 +447,7 @@ export class RIPEngine implements IProtocolEngine {
       result.set(key, {
         metric: state.route.metric,
         learnedFrom: state.learnedFrom,
-        age: Math.floor((Date.now() - state.lastUpdate) / 1000),
+        age: Math.floor((this.clock() - state.lastUpdate) / 1000),
         garbageCollect: state.garbageCollect,
       });
     }
@@ -368,7 +468,13 @@ export class RIPEngine implements IProtocolEngine {
     }
 
     if (ripPkt.command === 2) {
+      if (!this.authenticated(inPort, ripPkt)) {
+        Logger.warn(this.equipmentId, 'rip:auth-failed',
+          `${this.hostname}: RIP update from ${srcIP} on ${inPort} rejected (authentication)`);
+        return;
+      }
       this.updatesReceived++;
+      this.updateSources.set(srcIP.toString(), this.clock());
       this.getBus().publish({
         topic: 'rip.update.received',
         payload: {
@@ -385,6 +491,13 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   // ─── Private Methods ──────────────────────────────────────────────
+
+  private authenticated(inPort: string, ripPkt: RIPPacket): boolean {
+    const auth = this.callbacks.getInterfaceAuth?.(inPort) ?? null;
+    if (!auth) return !ripPkt.auth;
+    if (!auth.key || !ripPkt.auth) return false;
+    return ripPkt.auth.digest === ripAuthDigest(auth);
+  }
 
   private isRIPInterface(portName: string): boolean {
     const ip = this.callbacks.getPortIP(portName);
@@ -406,10 +519,10 @@ export class RIPEngine implements IProtocolEngine {
     return this.callbacks.getRipVersion?.() ?? 2;
   }
 
-  private sendRequest(): void {
-    // RFC 2453 §3.9.1 — a request for the full table is a single
-    // entry with AFI 0 and metric 16.
-    const request: RIPPacket = {
+  /** RFC 2453 §3.9.1 — a request for the full table is a single entry
+   *  with AFI 0 and metric 16. */
+  private wholeTableRequest(): RIPPacket {
+    return {
       type: 'rip',
       command: 1,
       version: this.ripVersion(),
@@ -421,12 +534,37 @@ export class RIPEngine implements IProtocolEngine {
         metric: RIP_METRIC_INFINITY,
       }],
     };
+  }
+
+  private sendRequest(): void {
+    const request = this.wholeTableRequest();
 
     for (const portName of this.callbacks.getPortNames()) {
       if (!this.isRIPInterface(portName)) continue;
       if (this.isPassiveInterface(portName)) continue;
       this.sendPacket(portName, request);
     }
+  }
+
+  /**
+   * RFC 2453 §3.10.1 — a link that goes down changes the metric of every
+   * route that used it, so the router poisons them at once instead of
+   * waiting for its neighbours to time them out.
+   */
+  onInterfaceDown(iface: string, network?: IPAddress, mask?: SubnetMask): void {
+    if (!this.running) return;
+    for (const [key, state] of [...this.routes]) {
+      if (state.learnedOnIface === iface && !state.garbageCollect) {
+        this.invalidateRoute(key, state);
+      }
+    }
+    if (network && mask) {
+      this.pendingTriggered.set(`${network}/${mask.toCIDR()}`, {
+        network, mask, nextHop: new IPAddress('0.0.0.0'), iface,
+        type: 'rip', ad: ADMINISTRATIVE_DISTANCE.RIP, metric: RIP_METRIC_INFINITY,
+      });
+    }
+    this.flushTriggeredUpdates();
   }
 
   private sendPeriodicUpdate(): void {
@@ -507,6 +645,7 @@ export class RIPEngine implements IProtocolEngine {
     const routingTable = this.callbacks.getRoutingTable();
 
     for (const route of routingTable) {
+      if (route.iface && this.callbacks.isInterfaceUsable?.(route.iface) === false) continue;
       const metric = this.advertisableMetric(route);
       if (metric === null) continue;
 
@@ -518,6 +657,20 @@ export class RIPEngine implements IProtocolEngine {
       }
 
       entries.push(this.routeToRIPEntry(route, metric));
+    }
+
+    // IOS `default-information originate` generates 0.0.0.0/0 by itself:
+    // it does not require a default route to already sit in the RIB.
+    if (this.config.defaultInformationOriginate
+      && !entries.some((e) => e.ipAddress.toUint32() === 0)) {
+      entries.push({
+        afi: 2,
+        routeTag: 0,
+        ipAddress: new IPAddress('0.0.0.0'),
+        subnetMask: new SubnetMask('0.0.0.0'),
+        nextHop: new IPAddress('0.0.0.0'),
+        metric: 1,
+      });
     }
 
     for (let i = 0; i < entries.length; i += RIP_MAX_ENTRIES_PER_MESSAGE) {
@@ -636,7 +789,13 @@ export class RIPEngine implements IProtocolEngine {
     const myIP = this.callbacks.getPortIP(outIface);
     if (!myIP) return;
 
-    const ripSize = 4 + ripPkt.entries.length * 20;
+    const auth = this.callbacks.getInterfaceAuth?.(outIface) ?? null;
+    if (auth) {
+      if (!auth.key) return;
+      ripPkt = { ...ripPkt, auth: { keyId: auth.keyId, digest: ripAuthDigest(auth) } };
+    }
+
+    const ripSize = 4 + ripPkt.entries.length * 20 + (ripPkt.auth ? 20 : 0);
 
     const udpPkt: UDPPacket = {
       type: 'udp',
@@ -658,7 +817,8 @@ export class RIPEngine implements IProtocolEngine {
     });
 
     Logger.debug(this.equipmentId, 'rip:send',
-      `${this.hostname}: RIP ${ripPkt.command === 1 ? 'Request' : 'Response'} sent on ${outIface} (${ripPkt.entries.length} entries)`);
+      `${this.hostname}: RIP ${ripPkt.command === 1 ? 'Request' : 'Response'} sent on ${outIface} `
+      + `to ${this.destinationIp()} (${ripPkt.entries.length} entries)`);
   }
 
   private processRouteEntry(inPort: string, srcIP: IPAddress, entry: RIPRouteEntry): void {
@@ -691,7 +851,7 @@ export class RIPEngine implements IProtocolEngine {
       } else {
         const metricChanged = existing.route.metric !== newMetric;
         existing.route.metric = newMetric;
-        existing.lastUpdate = Date.now();
+        existing.lastUpdate = this.clock();
         existing.garbageCollect = false;
         this.resetTimeout(key, existing);
         this.callbacks.updateRoute(existing.route.network, existing.route.mask, existing.route);
@@ -735,7 +895,7 @@ export class RIPEngine implements IProtocolEngine {
 
     const state: RIPRouteState = {
       route,
-      lastUpdate: Date.now(),
+      lastUpdate: this.clock(),
       learnedFrom: srcIP.toString(),
       learnedOnIface: inPort,
       garbageCollect: false,
@@ -766,9 +926,13 @@ export class RIPEngine implements IProtocolEngine {
   }
 
   private invalidateRoute(key: string, state: RIPRouteState): void {
+    // RFC 2453 §3.9.2 — a further metric-16 update for a route already
+    // being collected must NOT restart the garbage-collection timer,
+    // otherwise the neighbours' poison keeps the route alive for ever.
+    if (state.garbageCollect) return;
     state.route.metric = RIP_METRIC_INFINITY;
     state.garbageCollect = true;
-    state.lastUpdate = Date.now();
+    state.lastUpdate = this.clock();
 
     if (state.timeoutTimer) {
       this.timers.clear(state.timeoutTimer);

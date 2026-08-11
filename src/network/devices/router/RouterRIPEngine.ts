@@ -30,11 +30,13 @@ export interface RIPRouterContext {
   readonly name: string;
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
+  isInterfaceUsable?(iface: string): boolean;
   evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
   sendFrame(iface: string, frame: EthernetFrame): void;
   getRipVersion?(): 1 | 2;
+  getInterfaceRipAuth?(iface: string): { mode: 'md5' | 'text'; keyId: number; key: string } | null;
   /** Optional reactive overrides (multi-topology tests). */
   getBus?(): IEventBus;
   getScheduler?(): IScheduler;
@@ -57,6 +59,12 @@ export class RouterRIPEngine {
       updateRoute: (network, mask, route) =>
         this.updateInRib(network, mask, route),
       getRipVersion: () => ctx.getRipVersion?.() ?? 2,
+      isInterfaceUsable: ctx.isInterfaceUsable
+        ? (iface) => ctx.isInterfaceUsable!(iface)
+        : undefined,
+      getInterfaceAuth: ctx.getInterfaceRipAuth
+        ? (iface) => ctx.getInterfaceRipAuth!(iface)
+        : undefined,
       evaluateRoutePolicy: ctx.evaluateRoutePolicy
         ? (name, network, mask) => ctx.evaluateRoutePolicy!(name, network, mask)
         : undefined,
@@ -85,8 +93,34 @@ export class RouterRIPEngine {
     return this.engine.getRoutes();
   }
 
+  onInterfaceDown(iface: string, port?: Port): void {
+    const ip = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    this.engine.onInterfaceDown(
+      iface,
+      ip && mask ? ip.networkAddress(mask) : undefined,
+      mask ?? undefined,
+    );
+  }
+
+  getUpdateSources(): Map<string, number> {
+    return this.engine.getUpdateSources();
+  }
+
+  advanceTime(ms: number): void {
+    this.engine.advanceTime(ms);
+  }
+
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
     this.engine.advertiseNetwork(network, mask);
+  }
+
+  withdrawNetwork(network: IPAddress): void {
+    this.engine.withdrawNetwork(network);
+  }
+
+  configure(config: Partial<RIPConfig>): void {
+    this.engine.configure(config);
   }
 
   setPassiveInterface(iface: string): void {

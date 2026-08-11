@@ -68,6 +68,15 @@ function requireProto(ctx: CiscoShellContext, keyword: string): void {
   if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
 }
 
+/**
+ * A `network` statement names a classful unicast network: multicast,
+ * experimental and loopback addresses can never carry a RIP adjacency.
+ */
+function ripRoutableNetwork(addr: string): boolean {
+  const first = parseInt(addr.split('.')[0], 10);
+  return first > 0 && first < 224 && first !== 127;
+}
+
 function pushOnce(list: string[], value: string): boolean {
   if (list.includes(value)) return false;
   list.push(value);
@@ -134,16 +143,15 @@ export function buildRoutingProtoConfig(
     if (proto === 'rip') {
       if (args.length < 1) return '% Incomplete command.';
       if (!ctx.r().isRIPEnabled()) return '% RIP is not enabled.';
-      try {
-        const net = new IPAddress(args[0]);
-        const mask = args.length >= 2 && args[1] !== 'mask'
-          ? new SubnetMask(args[1]) : classfulMask(net);
-        ctx.r().ripAdvertiseNetwork(net, mask);
-        pushOnce(repo.rip.networks, args.join(' '));
-        return '';
-      } catch (e) {
-        return `% Invalid input: ${e instanceof Error ? e.message : e}`;
+      if (!isValidIPv4(args[0]) || !ripRoutableNetwork(args[0])) {
+        return "% Invalid input detected at '^' marker.";
       }
+      const net = new IPAddress(args[0]);
+      const mask = classfulMask(net);
+      const classful = net.networkAddress(mask);
+      ctx.r().ripAdvertiseNetwork(classful, mask);
+      pushOnce(repo.rip.networks, classful.toString());
+      return '';
     }
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
@@ -164,11 +172,31 @@ export function buildRoutingProtoConfig(
     return '';
   });
 
+  routerTrie.registerGreedy('no network', 'Stop advertising a network', (args) => {
+    if (curProto(ctx).proto !== 'rip') return '';
+    if (args.length < 1) return '% Incomplete command.';
+    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    const net = new IPAddress(args[0]);
+    const classful = net.networkAddress(classfulMask(net)).toString();
+    ctx.r().ripWithdrawNetwork(new IPAddress(classful));
+    repo.rip.networks = repo.rip.networks.filter((n) => n !== classful);
+    return '';
+  });
+
   routerTrie.register('version 2', 'Use RIPv2', () => {
-    repo.rip.version = 2; return '';
+    repo.rip.version = 2;
+    ctx.r()._setRipVersion(2);
+    return '';
   });
   routerTrie.register('version 1', 'Use RIPv1', () => {
-    repo.rip.version = 1; return '';
+    repo.rip.version = 1;
+    ctx.r()._setRipVersion(1);
+    return '';
+  });
+  routerTrie.register('no version', 'Restore default version control', () => {
+    repo.rip.version = null;
+    ctx.r()._setRipVersion(1);
+    return '';
   });
 
   routerTrie.register('no router rip', 'Disable RIP', () => {
@@ -211,7 +239,7 @@ export function buildRoutingProtoConfig(
       return '';
     }
     const ifName = ctx.resolveInterfaceName(a.join(' '));
-    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    if (!ifName) return '%Invalid interface type and number';
     setPassive(p, ifName, true);
     return '';
   });
@@ -224,7 +252,7 @@ export function buildRoutingProtoConfig(
       return '';
     }
     const ifName = ctx.resolveInterfaceName(a.join(' '));
-    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    if (!ifName) return '%Invalid interface type and number';
     setPassive(p, ifName, false);
     return '';
   });
@@ -300,23 +328,66 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('distance', 'Administrative distance', (a) => {
+    if (curProto(ctx).proto !== 'rip') return '';
+    if (a.length < 1) return '% Incomplete command.';
+    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
     const n = parseInt(a[0], 10);
-    if (!Number.isNaN(n) && curProto(ctx).proto === 'rip') repo.rip.distance = n;
+    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
+    repo.rip.distance = n;
     return '';
   });
   routerTrie.registerGreedy('timers', 'Adjust timers', (a, raw) => {
     const line = raw ?? `timers ${a.join(' ')}`.trim();
     const p = curProto(ctx).proto;
-    if (p === 'rip') { repo.rip.timersBasic = raw ?? a.join(' '); return ''; }
+    if (p === 'rip') {
+      if (a[0]?.toLowerCase() !== 'basic') return "% Invalid input detected at '^' marker.";
+      const values = a.slice(1);
+      if (values.length < 4) return '% Incomplete command.';
+      if (values.length > 4) return "% Invalid input detected at '^' marker.";
+      if (!values.every((v) => /^\d+$/.test(v) && Number(v) <= 4294967295)) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const [update, invalid, holddown, flush] = values.map(Number);
+      if (invalid <= update || flush <= invalid) return '% Invalid timers';
+      repo.rip.timersBasic = `basic ${update} ${invalid} ${holddown} ${flush}`;
+      ctx.r().ripConfigure({
+        updateInterval: update * 1000,
+        routeTimeout: invalid * 1000,
+        gcTimeout: (flush - invalid) * 1000,
+      });
+      return '';
+    }
     // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
     if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
     else if (p === 'eigrp') pushOnce(eigrp().extras, line);
     return '';
   });
-  routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
-    const n = parseInt(a[0], 10);
+  routerTrie.registerGreedy('no timers', 'Restore default timers', (a) => {
+    if (curProto(ctx).proto !== 'rip') return '';
+    if ((a[0] ?? 'basic').toLowerCase() !== 'basic') return "% Invalid input detected at '^' marker.";
+    repo.rip.timersBasic = undefined;
+    ctx.r().ripConfigure({
+      updateInterval: 30_000, routeTimeout: 180_000, gcTimeout: 60_000,
+    });
+    return '';
+  });
+  routerTrie.registerGreedy('no maximum-paths', 'Restore default path count', () => {
     const p = curProto(ctx).proto;
-    if (Number.isNaN(n) || n < 1) return '';
+    ctx.r().setMaximumPaths(p, 4);
+    if (p === 'rip') repo.rip.maximumPaths = undefined;
+    return '';
+  });
+  routerTrie.registerGreedy('no distance', 'Restore default distance', () => {
+    if (curProto(ctx).proto === 'rip') repo.rip.distance = undefined;
+    return '';
+  });
+  routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
+    const p = curProto(ctx).proto;
+    if (a.length < 1) return '% Incomplete command.';
+    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    const n = parseInt(a[0], 10);
+    if (p === 'rip' && (n < 1 || n > 16)) return "% Invalid input detected at '^' marker.";
+    if (n < 1 || n > 32) return "% Invalid input detected at '^' marker.";
     // Le plafond va au ROUTEUR, qui est la seule chose que le plan de
     // données consulte : sans cet appel, la valeur restait rangée dans
     // le magasin du protocole et ne bornait rien.
@@ -854,20 +925,6 @@ export function registerRoutingProtoShow(
     // rendu, appelé sans condition.
     const canonique = showIpProtocols(ctx.r());
     if (canonique !== 'No routing protocol is configured.') out.push(canonique);
-    if (ctx.r().isRIPEnabled()) {
-      if (!repo.rip.autoSummary) {
-        out.push('  Automatic network summarization is not in effect');
-      }
-      if (repo.rip.passive.size || repo.rip.passiveDefault) {
-        out.push('  Passive Interface(s):');
-        if (repo.rip.passiveDefault) out.push('    (default)');
-        for (const p of repo.rip.passive) out.push(`    ${p}`);
-      }
-      for (const r of repo.rip.redistribute) out.push(`  ${r}`);
-      if (repo.rip.distance !== undefined) {
-        out.push(`  Distance: ${repo.rip.distance}`);
-      }
-    }
     for (const p of repo.allEigrp()) {
       out.push(`Routing Protocol is "eigrp ${p.asn}"`);
       out.push('  Outgoing update filter list for all interfaces is not set');

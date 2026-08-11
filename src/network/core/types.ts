@@ -1475,6 +1475,8 @@ export interface RIPPacket extends NetworkPdu {
   version: number;
   /** Route entries (up to 25 per message) */
   entries: RIPRouteEntry[];
+  /** RFC 2453 §4.1 authentication, carried as the first entry on the wire. */
+  auth?: { keyId: number; digest: string };
 }
 
 // ─── Device Types ────────────────────────────────────────────────────

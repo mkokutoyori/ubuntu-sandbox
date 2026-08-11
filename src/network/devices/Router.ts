@@ -74,7 +74,7 @@ import { SshHostKey } from '../protocols/ssh/SshHostKey';
 import { FtpServer } from '../ftp/FtpServer';
 import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import { getDefaultScheduler, VirtualTimeScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
@@ -450,6 +450,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
+      isInterfaceUsable: (iface) => !(this.getPort(iface)?.isAdminDown() ?? false),
+      getInterfaceRipAuth: (iface) => this.ripAuthOn(iface),
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
       evaluateRoutePolicy: (name, network, mask) => {
@@ -1118,6 +1120,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           // once, without waiting out their hold time — IOS logs it as
           // '%DUAL-5-NBRCHANGE … is down: interface down'.
           this.dynamicRouting?.onInterfaceDown(name);
+          this.ripOnInterfaceDown(name);
         }
         if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
@@ -1812,15 +1815,63 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   isRIPEnabled() { return this.ripEngine.isEnabled(); }
   getRIPConfig() { return this.ripEngine.getConfig(); }
   getRIPRoutes() { return this.ripEngine.getRoutes(); }
+  getRIPUpdateSources() { return this.ripEngine.getUpdateSources(); }
+  ripOnInterfaceDown(iface: string) { this.ripEngine.onInterfaceDown(iface, this.getPort(iface)); }
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
+  ripWithdrawNetwork(network: IPAddress) { this.ripEngine.withdrawNetwork(network); }
+  ripConfigure(config: Partial<import('./router/RouterRIPEngine').RIPConfig>) { this.ripEngine.configure(config); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
   ripSetInterfaceSplitHorizon(iface: string, on: boolean | null) { this.ripEngine.setInterfaceSplitHorizon(iface, on); }
   ripSplitHorizonOn(iface: string) { return this.ripEngine.splitHorizonOn(iface); }
+  ripSendVersionOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipSendVersion() ?? null;
+  }
+  ripReceiveVersionOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipReceiveVersion() ?? null;
+  }
+  ripAuthKeyChainOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipAuthKeyChain() ?? null;
+  }
+
+  ripAuthOn(iface: string): { mode: 'md5' | 'text'; keyId: number; key: string } | null {
+    const port = this.getPort(iface);
+    const chainName = port?.getRipAuthKeyChain();
+    if (!chainName) return null;
+    const chains = (this as unknown as {
+      shell?: { getKeyChains?: () => import('./inspection/config/KeyChainRepository').KeyChainRepository };
+    }).shell?.getKeyChains?.();
+    const mode = port?.getRipAuthMode() === 'text' ? 'text' : 'md5';
+    const chain = chains?.getChain(chainName);
+    for (const [id, key] of [...(chain?.keys ?? [])].sort((a, b) => a[0] - b[0])) {
+      if (key.keyString) return { mode, keyId: id, key: key.keyString };
+    }
+    return { mode, keyId: 0, key: '' };
+  }
   ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number, routePolicy?: string) { this.ripEngine.setRedistribution(source, metric, routePolicy); }
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
   ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
+
+  /**
+   * Fast-forward THIS device's protocol timers by `seconds`, so a
+   * periodic update, a route expiry or a garbage collection can be
+   * observed without waiting for wall time. What the neighbours learn
+   * from it, they learn from the packets this device puts on the wire.
+   */
+  async processTimers(seconds: number): Promise<void> {
+    const ms = Math.max(0, seconds) * 1000;
+    const scheduler = getDefaultScheduler();
+    if (scheduler instanceof VirtualTimeScheduler) {
+      scheduler.advance(ms);
+      return;
+    }
+    this.advanceProtocolTimers(ms);
+  }
+
+  advanceProtocolTimers(ms: number): void {
+    this.ripEngine.advanceTime(ms);
+  }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
   getDynamicRouting() { return this.dynamicRouting; }

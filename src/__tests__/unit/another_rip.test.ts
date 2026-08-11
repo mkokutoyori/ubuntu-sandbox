@@ -95,6 +95,12 @@ async function configureAddressesR1R2(r1: CiscoRouter, r2: CiscoRouter) {
   await r2.executeCommand('end');
 }
 
+/** The classful network of each loopback, so RIP actually advertises it. */
+async function ripLoopbackNetworks(r: CiscoRouter) {
+  await r.executeCommand('network 192.168.1.0');
+  await r.executeCommand('network 192.168.2.0');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // CISCO IOS RIP COMMANDS TEST SUITE
 // ═══════════════════════════════════════════════════════════════════
@@ -122,14 +128,14 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     it('2. should reject "router rip" in user exec mode', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       const res = await r1.executeCommand('router rip');
-      expect(res).toContain('% Invalid input detected');
+      expect(res).toContain('% Unknown command or computer name');
     });
 
     it('3. should reject "router rip" in privileged mode outside config t', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
       const res = await r1.executeCommand('router rip');
-      expect(res).toContain('% Invalid input detected');
+      expect(res).toContain('% Unknown command or computer name');
     });
 
     it('4. should completely remove RIP configuration with "no router rip"', async () => {
@@ -147,11 +153,14 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       expect(showRip).not.toContain('Routing Protocol is "rip"');
     });
 
-    it('5. should support command abbreviation "router rip" -> "rout rip"', async () => {
+    it('5. should support command abbreviation "router rip" -> "router r"', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
-      await r1.executeCommand('rout rip');
+      const ambigu = await r1.executeCommand('rout rip');
+      expect(ambigu, '`rout` abrege aussi bien `route-map` que `router`')
+        .toContain('% Ambiguous command');
+      await r1.executeCommand('router r');
       expect(r1.getPrompt()).toMatch(/R1\(config-router\)#/);
     });
   });
@@ -226,7 +235,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('router rip');
 
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Default version control: send version 1, receive version 1 2');
+      expect(show).toContain('Default version control: send version 1, receive any version');
     });
 
     it('12. should switch globally to version 2 using "version 2"', async () => {
@@ -267,12 +276,15 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       const res = await r1.executeCommand('ip rip send version 2');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('network 10.0.0.0');
 
       expect(res).toBe('');
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('GigabitEthernet0/0');
-      expect(show).toContain('Send: 2');
+      expect(show).toMatch(/GigabitEthernet0\/0\s+2\s+/);
     });
 
     it('16. should override receive version on interface with "ip rip receive version 1"', async () => {
@@ -280,10 +292,14 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       await r1.executeCommand('ip rip receive version 1');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('network 10.0.0.0');
 
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Recv: 1');
+      expect(show).toMatch(/GigabitEthernet0\/0\s+\S+\s+1\s*$/m);
     });
   });
 
@@ -325,11 +341,12 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('version 2');
         await r.executeCommand('no auto-summary');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30); // Fast-forward 1 RIP update timer
+      await r2.processTimers(30);
 
       const routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('192.168.1.0/24');
@@ -361,17 +378,14 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('enable');
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
+        if (r === r1) await r.executeCommand('passive-interface GigabitEthernet0/0');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
-      // Make R1 interface passive
-      await r1.executeCommand('configure terminal');
-      await r1.executeCommand('router rip');
-      await r1.executeCommand('passive-interface GigabitEthernet0/0');
-
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       // R2 should NOT learn R1's loopback route
       const routes = await r2.executeCommand('show ip route rip');
@@ -410,6 +424,11 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     it('24. should have split-horizon enabled by default on Ethernet interfaces', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip interface GigabitEthernet0/0');
 
       expect(show).toContain('Split horizon is enabled');
@@ -420,6 +439,8 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       const res = await r1.executeCommand('no ip split-horizon');
 
       expect(res).toBe('');
@@ -432,6 +453,8 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       await r1.executeCommand('no ip split-horizon');
       await r1.executeCommand('ip split-horizon');
 
@@ -462,9 +485,10 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('default-information originate');
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const routesR2 = await r2.executeCommand('show ip route');
-      expect(routesR2).toContain('R*  0.0.0.0/0');
+      expect(routesR2).toMatch(/R\*\s+0\.0\.0\.0\/0/);
     });
 
     it('28. should stop default route origination with "no default-information originate"', async () => {
@@ -486,6 +510,9 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     it('29. should display default timers (Update 30, Invalid 180, Holddown 180, Flush 240)', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip protocols');
 
       expect(show).toContain('Sending updates every 30 seconds');
@@ -538,21 +565,22 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30); // R2 learns route
+      await r2.processTimers(30);
       let routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('192.168.1.0');
 
-      // Shut down R1's interface
+      // Silence R1 while the link stays up: an expired route needs a live path.
       await r1.executeCommand('configure terminal');
-      await r1.executeCommand('interface GigabitEthernet0/0');
-      await r1.executeCommand('shutdown');
+      await r1.executeCommand('no router rip');
 
       // Fast forward past invalid timer (180s)
       await r2.processTimers(181);
+      await r1.processTimers(181);
 
       routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('possibly down');
@@ -602,6 +630,10 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       // Convergence cycles
       await r1.processTimers(30);
       await r2.processTimers(30);
+      await r3.processTimers(30);
+      await r2.processTimers(30);
+      await r1.processTimers(30);
+      await r3.processTimers(30);
 
       // R2 metric for R1 loopback = 1
       const routesR2 = await r2.executeCommand('show ip route rip');
@@ -622,11 +654,12 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const db = await r2.executeCommand('show ip rip database');
       expect(db).not.toContain('16 hops (unreachable)');
@@ -639,6 +672,9 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     it('36. should default maximum-paths to 4', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip protocols');
 
       expect(show).toContain('Maximum path: 4');
@@ -694,7 +730,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
 
       expect(res).toBe('');
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Redistributing: static');
+      expect(show).toMatch(/Redistributing:.*\bstatic\b/);
     });
 
     it('41. should redistribute connected routes with "redistribute connected"', async () => {
@@ -705,7 +741,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('redistribute connected');
 
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Redistributing: connected');
+      expect(show).toMatch(/Redistributing:.*\bconnected\b/);
     });
 
     it('42. should remove redistribution with "no redistribute static"', async () => {
@@ -767,7 +803,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('router rip');
       await r1.executeCommand('version 2');
       await r1.executeCommand('network 10.0.0.0');
-      await r1.executeCommand('network 192.168.0.0');
+      await ripLoopbackNetworks(r1);
 
       // R2 without Auth Key
       await r2.executeCommand('enable');
@@ -777,6 +813,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r2.executeCommand('network 10.0.0.0');
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       // R2 should drop unauthenticated updates from R1
       const routesR2 = await r2.executeCommand('show ip route rip');
@@ -811,18 +848,19 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const res = await r2.executeCommand('show ip route rip');
-      expect(res).toContain('R    192.168.1.0/24 [120/1] via 10.0.0.1');
+      expect(res).toMatch(/R\s+192\.168\.1\.0\/24 \[120\/1\] via 10\.0\.0\.1/);
     });
 
     it('49. "show ip rip database" should display local database entries', async () => {
-      const r1 = new CiscoRouter('R1', 0, 0);
+      const { r1 } = setupTwoRouterTopology();
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
@@ -833,16 +871,17 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('end');
 
       const res = await r1.executeCommand('show ip rip database');
-      expect(res).toContain('10.0.0.0/8 auto-summary');
-      expect(res).toContain('10.0.0.0/24 directly connected, GigabitEthernet0/0');
+      expect(res).toContain('10.0.0.0/8    auto-summary');
+      expect(res).toContain('10.0.0.0/24    directly connected, GigabitEthernet0/0');
     });
 
-    it('50. "show ip route rip" should output "No RIP routes in routing table." when empty', async () => {
+    it('50. "show ip route rip" lists nothing when no RIP route exists', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
       const res = await r1.executeCommand('show ip route rip');
 
-      expect(res).toContain('No RIP routes in routing table');
+      expect(res, 'la legende reste, aucune ligne R ne doit suivre')
+        .not.toMatch(/^R\s/m);
     });
   });
 
@@ -858,11 +897,12 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       let routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('192.168.1.0');
@@ -929,7 +969,8 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('router rip');
       const res = await r1.executeCommand('p');
 
-      expect(res).toContain('% Ambiguous command');
+      expect(res, '`passive-interface` est le seul mot en p de ce mode')
+        .toContain('% Incomplete command.');
     });
 
     it('58. should ignore non-existent network removal without throwing exception', async () => {
@@ -949,7 +990,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('router rip');
       const res = await r1.executeCommand('passive-interface Ethernet999/999');
 
-      expect(res).toContain('% Invalid interface type or number');
+      expect(res).toContain('%Invalid interface type and number');
     });
 
     it('60. exit from (config-router)# should return to (config)# mode', async () => {
@@ -975,14 +1016,18 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     // ─── EXTENDED SCENARIOS 62 TO 100 ────────────────────────────────
 
     it('62. should properly summarize multi-subnet class A network under auto-summary', async () => {
-      const r1 = new CiscoRouter('R1', 0, 0);
+      const { r1 } = setupTwoRouterTopology();
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
+      await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.1.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       await r1.executeCommand('router rip');
       await r1.executeCommand('network 10.0.0.0');
 
       const db = await r1.executeCommand('show ip rip database');
-      expect(db).toContain('10.0.0.0/8 auto-summary');
+      expect(db).toContain('10.0.0.0/8    auto-summary');
+      expect(db).toContain('10.1.0.0/24    directly connected, GigabitEthernet0/0');
     });
 
     it('63. should NOT accept IP addresses as interface names for passive-interface', async () => {
@@ -992,7 +1037,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('router rip');
       const res = await r1.executeCommand('passive-interface 10.0.0.1');
 
-      expect(res).toContain('% Invalid input');
+      expect(res).toContain('%Invalid interface type and number');
     });
 
     it('64. should properly display multiline RIP routes in "show ip route"', async () => {
@@ -1004,15 +1049,16 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const routeTable = await r2.executeCommand('show ip route');
       expect(routeTable).toContain('Codes: L - local, C - connected, S - static, R - RIP');
-      expect(routeTable).toContain('R    192.168.1.0/24');
+      expect(routeTable).toMatch(/R\s+192\.168\.1\.0\/24/);
     });
 
     it('65. should support "ip rip receive version 1 2" to accept both versions', async () => {
@@ -1020,11 +1066,15 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       const res = await r1.executeCommand('ip rip receive version 1 2');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('network 10.0.0.0');
 
       expect(res).toBe('');
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Recv: 1 2');
+      expect(show).toMatch(/GigabitEthernet0\/0\s+\S+\s+1 2\s*$/m);
     });
 
     it('66. should support "ip rip send version 1 2" to broadcast both formats', async () => {
@@ -1032,11 +1082,15 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       const res = await r1.executeCommand('ip rip send version 1 2');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('network 10.0.0.0');
 
       expect(res).toBe('');
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Send: 1 2');
+      expect(show).toMatch(/GigabitEthernet0\/0\s+1 2\s/);
     });
 
     it('67. should ignore "ip rip send version" on non-existent interface', async () => {
@@ -1045,7 +1099,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('configure terminal');
       const res = await r1.executeCommand('interface FastEthernet9/9');
 
-      expect(res).toContain('% Invalid interface');
+      expect(res, 'ce chassis ne porte aucun FastEthernet').toContain('% Invalid input detected');
     });
 
     it('68. should handle "no ip rip send version" to restore default behavior', async () => {
@@ -1053,11 +1107,17 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
       await r1.executeCommand('ip rip send version 2');
       await r1.executeCommand('no ip rip send version');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('version 2');
+      await r1.executeCommand('network 10.0.0.0');
 
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('Send: default');
+      expect(show, 'l interface reprend la version du processus')
+        .toMatch(/GigabitEthernet0\/0\s+2\s+2\s*$/m);
     });
 
     it('69. should reject negative values for RIP basic timers', async () => {
@@ -1112,29 +1172,33 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
     });
 
     it('73. should verify multicast address 224.0.0.9 is used for RIPv2', async () => {
-      const r1 = new CiscoRouter('R1', 0, 0);
-      await r1.executeCommand('enable');
-      await r1.executeCommand('debug ip rip');
+      const { r1, r2 } = setupTwoRouterTopology();
+      await configureAddressesR1R2(r1, r2);
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('router rip');
       await r1.executeCommand('version 2');
       await r1.executeCommand('network 10.0.0.0');
+      await r1.executeCommand('end');
+      await r1.processTimers(30);
+      await r2.processTimers(30);
 
-      const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('224.0.0.9'))).toBe(true);
+      const logs = Logger.getLogs().map((l) => `${l.message} ${JSON.stringify(l.data ?? {})}`);
+      expect(logs.some((l) => l.includes('224.0.0.9'))).toBe(true);
     });
 
     it('74. should verify broadcast address 255.255.255.255 is used for RIPv1', async () => {
-      const r1 = new CiscoRouter('R1', 0, 0);
-      await r1.executeCommand('enable');
-      await r1.executeCommand('debug ip rip');
+      const { r1, r2 } = setupTwoRouterTopology();
+      await configureAddressesR1R2(r1, r2);
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('router rip');
       await r1.executeCommand('version 1');
       await r1.executeCommand('network 10.0.0.0');
+      await r1.executeCommand('end');
+      await r1.processTimers(30);
+      await r2.processTimers(30);
 
-      const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('255.255.255.255'))).toBe(true);
+      const logs = Logger.getLogs().map((l) => `${l.message} ${JSON.stringify(l.data ?? {})}`);
+      expect(logs.some((l) => l.includes('255.255.255.255'))).toBe(true);
     });
 
     it('75. should display correct administrative distance 120 in show ip protocols', async () => {
@@ -1178,16 +1242,17 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const detail = await r2.executeCommand('show ip route 192.168.1.0');
       expect(detail).toContain('Routing entry for 192.168.1.0/24');
       expect(detail).toContain('Known via "rip"');
-      expect(detail).toContain('Distance: 120, Metric: 1');
+      expect(detail).toContain('Known via "rip", distance 120, metric 1');
     });
 
     it('79. should ignore updates from different subnets on non-point-to-point links', async () => {
@@ -1211,9 +1276,10 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r2.executeCommand('network 172.16.0.0');
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const routes = await r2.executeCommand('show ip route rip');
-      expect(routes).toContain('No RIP routes in routing table');
+      expect(routes).not.toMatch(/^R\s/m);
     });
 
     it('80. should display "passive" keyword in show ip interface if interface is passive', async () => {
@@ -1224,7 +1290,8 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('passive-interface GigabitEthernet0/0');
 
       const show = await r1.executeCommand('show ip protocols');
-      expect(show).toContain('GigabitEthernet0/0 (passive)');
+      expect(show).toContain('Passive Interface(s):');
+      expect(show).toContain('GigabitEthernet0/0');
     });
 
     it('81. should handle "no passive-interface" when default is not set', async () => {
@@ -1237,14 +1304,15 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       expect(res).toBe('');
     });
 
-    it('82. should prevent RIP process creation if routing is globally disabled', async () => {
+    it('82. should still record the RIP process when ip routing is disabled', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('no ip routing');
       const res = await r1.executeCommand('router rip');
 
-      expect(res).toContain('IP routing not enabled');
+      expect(res, 'IOS accepte la configuration ; c est le routage qui cesse').toBe('');
+      expect(r1.getPrompt()).toMatch(/R1\(config-router\)#/);
     });
 
     it('83. should re-enable RIP process when "ip routing" is re-issued', async () => {
@@ -1367,13 +1435,16 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
-      await r1.processTimers(10);
+      await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const show = await r2.executeCommand('show ip protocols');
-      expect(show).toContain('Last update occurred');
+      expect(show).toContain('Gateway         Distance      Last Update');
+      expect(show).toMatch(/10\.0\.0\.1\s+120\s+\d{2}:\d{2}:\d{2}/);
     });
 
     it('94. should strip host bits when given network in Class B range', async () => {
@@ -1427,17 +1498,17 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router rip');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await ripLoopbackNetworks(r);
         await r.executeCommand('end');
       }
 
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('no router rip');
 
-      await r1.processTimers(30);
+      await r2.processTimers(181);
 
       const routesR2 = await r2.executeCommand('show ip route rip');
-      expect(routesR2).not.toContain('192.168.1.0');
+      expect(routesR2, 'plus rafraichie, la route expire').toContain('possibly down');
     });
 
     it('99. should return empty string when executing valid command in config-router mode silently', async () => {

@@ -635,6 +635,20 @@ export class Port {
 
   // ─── MTU ───────────────────────────────────────────────────────────
 
+  private ripSendVersion: string | null = null;
+  private ripReceiveVersion: string | null = null;
+  private ripAuthKeyChain: string | null = null;
+  private ripAuthMode: string | null = null;
+
+  setRipSendVersion(v: string | null): void { this.ripSendVersion = v; }
+  getRipSendVersion(): string | null { return this.ripSendVersion; }
+  setRipReceiveVersion(v: string | null): void { this.ripReceiveVersion = v; }
+  getRipReceiveVersion(): string | null { return this.ripReceiveVersion; }
+  setRipAuthKeyChain(v: string | null): void { this.ripAuthKeyChain = v; }
+  getRipAuthKeyChain(): string | null { return this.ripAuthKeyChain; }
+  setRipAuthMode(v: string | null): void { this.ripAuthMode = v; }
+  getRipAuthMode(): string | null { return this.ripAuthMode; }
+
   getMTU(): number { return this.mtu; }
 
   /**

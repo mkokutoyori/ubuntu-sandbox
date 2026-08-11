@@ -963,7 +963,7 @@ export class RouterDebugService implements TerminalDebugSource {
       case 'ip.ospf.hello': return 'OSPF Hello';
       case 'ip.ospf.packet': return 'OSPF packet';
       case 'ip.ospf.lsa-generation': return 'OSPF LSA generation';
-      case 'ip.rip': return 'RIP';
+      case 'ip.rip': return 'RIP protocol';
       case 'ip.eigrp': return 'EIGRP';
       case 'ip.bgp': return 'BGP';
       case 'ip.routing': return 'IP routing';
