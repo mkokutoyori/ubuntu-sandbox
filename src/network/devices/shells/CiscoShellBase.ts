@@ -1910,6 +1910,48 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * table trancherait — donc le comportement dependrait de l'ordre de
    * frappe de l'operateur.
    */
+  private reglesExecAccordees(): Array<{ cible: string; niveau: number }> {
+    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })
+      ._ciscoPrivilegeRules;
+    if (!rules || rules.size === 0) return [];
+    const out: Array<{ cible: string; niveau: number }> = [];
+    for (const [key, niveau] of rules) {
+      if (!key.startsWith('exec ')) continue;
+      if (niveau > this.currentPrivilegeLevel) continue;
+      out.push({ cible: key.slice(5).trim().toLowerCase(), niveau });
+    }
+    return out;
+  }
+
+  protected completionsAccordeesParNiveau(
+    input: string, device?: TDevice,
+  ): Array<{ keyword: string; description: string }> {
+    if (!device) return [];
+    if (this.mode !== 'user') return [];
+    if (this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return [];
+    const precedent = this.deviceRef;
+    this.deviceRef = device;
+    try {
+      const regles = this.reglesExecAccordees();
+      if (regles.length === 0) return [];
+      const prefixe = input.trim().toLowerCase();
+      const partiel = input.endsWith(' ') ? '' : (prefixe.split(/\s+/).pop() ?? '');
+      const base = input.endsWith(' ') ? prefixe : prefixe.slice(0, prefixe.length - partiel.length).trim();
+      const out: Array<{ keyword: string; description: string }> = [];
+      for (const { cible } of regles) {
+        if (base.length > 0 && !cible.startsWith(base + ' ')) continue;
+        const reste = base.length > 0 ? cible.slice(base.length + 1) : cible;
+        const mot = reste.split(/\s+/)[0];
+        if (!mot || !mot.startsWith(partiel)) continue;
+        const node = this.privilegedTrie.nodeAt(base.length > 0 ? `${base} ${mot}` : mot);
+        out.push({ keyword: mot, description: node?.description ?? '' });
+      }
+      return out;
+    } finally {
+      this.deviceRef = precedent;
+    }
+  }
+
   protected commandeHisseeAuDessusDuNiveau(cmdPart: string): boolean {
     if (this.currentPrivilegeLevel >= 15) return false;
     const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
@@ -2603,7 +2645,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
     try {
-      const completions = trie.getCompletions(input);
+      const filtreNiveau = (ligne: string): boolean => {
+        if (!device) return true;
+        const precedent = this.deviceRef;
+        this.deviceRef = device;
+        try { return !this.commandeHisseeAuDessusDuNiveau(ligne); }
+        finally { this.deviceRef = precedent; }
+      };
+      const completions = trie.getCompletions(input)
+        .filter((c) => filtreNiveau(`${input.trim()} ${c.keyword}`.trim()));
+      for (const c of this.completionsAccordeesParNiveau(input, device)) {
+        if (!completions.some((x) => x.keyword.toLowerCase() === c.keyword.toLowerCase())) {
+          completions.push(c);
+        }
+      }
+      completions.sort((a, b) => a.keyword.localeCompare(b.keyword));
       if (completions.length === 0) {
         return CISCO_ERRORS.UNRECOGNIZED_HELP;
       }
@@ -2636,7 +2692,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(device));
     try {
-      return this.withUniversalCandidates(input, trie.tabCandidates(input));
+      const precedent = this.deviceRef;
+      this.deviceRef = device;
+      try {
+        const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
+          .filter((c) => !this.commandeHisseeAuDessusDuNiveau(c));
+        const prefixe = input.trim().toLowerCase();
+        for (const { cible } of this.reglesExecAccordees()) {
+          if (cible.startsWith(prefixe) && !base.includes(cible)) base.push(cible);
+        }
+        return base;
+      } finally {
+        this.deviceRef = precedent;
+      }
     } finally {
       trie.setDynamicResolver(null);
     }

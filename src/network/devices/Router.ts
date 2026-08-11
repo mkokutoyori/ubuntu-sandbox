@@ -3029,6 +3029,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this.shell.tabComplete(input);
   }
 
+  override getCompletions(partial: string): string[] {
+    return this.shell.tabCandidates(partial, this);
+  }
+
   /** All full-line Tab candidates (static keywords + live device values). */
   cliTabCandidates(input: string): string[] {
     return this.shell.tabCandidates(input, this);
