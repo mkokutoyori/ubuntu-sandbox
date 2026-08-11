@@ -290,7 +290,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   });
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {
-    if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP();
+    if (!ctx.r().isRIPEnabled()) ctx.r().enableRIP({ gcTimeout: 60_000 });
     ctx.setSelectedRoutingProto({ proto: 'rip' });
     ctx.setMode('config-router');
     return '';
@@ -763,22 +763,65 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // A node created along the way carries no label of its own, so
   // `ipv6 nd ?` would list a bare `ra`.
   trie.describeNode('ipv6 nd ra', 'Router advertisement parameters');
-  trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args, raw) => {
+  trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.ripAuth ??= []).push(raw ?? `ip rip authentication ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    if (args[0] === 'mode' && args[1]) { port.setRipAuthMode(args[1]); return ''; }
+    if (args[0] === 'key-chain' && args[1]) { port.setRipAuthKeyChain(args[1]); return ''; }
+    return CISCO_ERRORS.INVALID_INPUT;
+  }, [
+    { keyword: 'mode', description: 'Authentication mode' },
+    { keyword: 'key-chain', description: 'Key chain to authenticate with' },
+  ]);
+  trie.registerGreedy('no ip rip authentication', 'Remove RIP authentication', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    if (args[0] === 'mode') port.setRipAuthMode(null);
+    else port.setRipAuthKeyChain(null);
     return '';
-  });
+  }, [
+    { keyword: 'mode', description: 'Authentication mode' },
+    { keyword: 'key-chain', description: 'Key chain to authenticate with' },
+  ]);
+  const versionRip = (args: string[]): string | null => {
+    const mots = args.filter((a) => a.length > 0);
+    if (mots.length === 0 || mots.some((m) => m !== '1' && m !== '2')) return null;
+    return mots.join(' ');
+  };
   trie.registerGreedy('ip rip send version', 'Set RIP send version', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.ripSendVersion = args.join(' ');
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    const v = versionRip(args);
+    if (v === null) return CISCO_ERRORS.INVALID_INPUT;
+    port.setRipSendVersion(v);
     return '';
-  });
+  }, [
+    { keyword: '1', description: 'RIP version 1' },
+    { keyword: '2', description: 'RIP version 2' },
+  ]);
   trie.registerGreedy('ip rip receive version', 'Set RIP receive version', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.ripRecvVersion = args.join(' ');
+    const port = ctx.r().getPort(ifName);
+    if (!port) return '';
+    const v = versionRip(args);
+    if (v === null) return CISCO_ERRORS.INVALID_INPUT;
+    port.setRipReceiveVersion(v);
+    return '';
+  }, [
+    { keyword: '1', description: 'RIP version 1' },
+    { keyword: '2', description: 'RIP version 2' },
+  ]);
+  trie.register('no ip rip send version', 'Restore the default send version', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    ctx.r().getPort(ifName)?.setRipSendVersion(null);
+    return '';
+  });
+  trie.register('no ip rip receive version', 'Restore the default receive version', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    ctx.r().getPort(ifName)?.setRipReceiveVersion(null);
     return '';
   });
   trie.register('ip rip v2-broadcast', 'Broadcast RIPv2 instead of multicast', () => {
@@ -1015,6 +1058,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const port = ctx.r().getPort(ifName);
     if (port) {
       port.setAdminShutdown(true);
+      ctx.r().ripOnInterfaceDown(ifName);
       // Clear IPSec SAs bound to this interface (like a real Cisco router)
       const ipsecEngine = (ctx.r() as any)._getIPSecEngineInternal?.();
       if (ipsecEngine) ipsecEngine.clearSAsForInterface(ifName);

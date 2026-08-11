@@ -25,6 +25,28 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### EIGRP — PRIS (session « privileges/sessions »)
+
+Le lot RIP ci-dessous écrit « rien de tout cela ne touche […] EIGRP » :
+je prends donc EIGRP, à partir de `another_eigrp.test.ts` (40 cas, 22
+rouges) et `tuto_eigrp.test.ts` (21 cas, 16 rouges). Fichiers que je vais
+toucher — les réclamer avant de les réécrire :
+`src/network/eigrp/EIGRPEngine.ts`,
+`src/network/devices/router/RouterEIGRPEngine.ts` (s'il existe),
+et **le seul bloc EIGRP** de
+`src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts` — je ne
+touche pas à sa partie RIP, qui vient d'être livrée.
+
+Déjà livré par moi et susceptible de vous concerner : `Router.loginAs`,
+`Router.authenticateLine`, `Router.authenticateAAA`,
+`executeCommand(cmd, { passwordInput })` (le plan d'interaction est
+désormais joué sans terminal par
+`src/shell/interaction/HeadlessInteraction.ts`), l'invite `#` dès le
+niveau 2, et le filtrage par niveau des commandes DE CONFIGURATION.
+
+### RIP — livré (voir plus bas)
+
+
 ### Deux cliquets rouges qui ne sont pas les miens
 
 Vérifié en datant les fichiers plutôt qu'en supposant :
@@ -4711,6 +4733,54 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S10 — les privileges tenus par la MACHINE, pas par le terminal
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S10 ». Fichiers du
+demandeur : `cisco_priv.test.ts` (46 cas), `another_cisco.test.ts`
+(11 cas).
+
+**L'incoherence d'interface etait mesurable** : le typecheck la nommait.
+Les deux fichiers appellent `executeCommand(cmd, { passwordInput })`,
+`loginAs`, `authenticateLine`, `authenticateAAA` et `getBanner()` — cinq
+points d'entree qui n'existaient sur AUCUN equipement. Derriere
+l'absence, un vrai defaut : `executeCommand('enable')` allait droit au
+gestionnaire du trie, donc de l'autre cote du mot de passe — sur une
+machine portant `enable secret`, cet appel accordait le niveau 15 sans
+rien demander. `src/shell/interaction/HeadlessInteraction.ts` joue le
+MEME plan que le terminal, donc les deux chemins ne peuvent plus diverger.
+
+**Six defauts produit**, chacun verifie contre du materiel reel avant
+correction : l'invite d'un niveau intermediaire (`enable 7` laissait
+`R1>` ; le guide 15MT verifie `Device> enable 7 Zy72sKj` puis `Device#
+show privilege` → niveau 7 — un commentaire du depot affirmait l'inverse
+et deux cas l'avaient epingle) ; la configuration ne filtrait RIEN par
+niveau, donc un technicien de niveau 7 admis en configuration y faisait
+tout, `router ospf` compris ; `privilege <mode> reset <commande>`
+n'existait pas ; `no aaa new-model` ne faisait rien ; `username X
+privilege -1` etait accepte ; et DIX directives de ligne
+(`autocommand`, `authorization`, `accounting`, `length`, `width`,
+`speed`, `stopbits`, `rotary`, `motd-banner`, `exec banner`) etaient
+acceptees et jetees faute de champ — meme famille que
+`session-timeout`/`history size` du lot precedent.
+
+**Quatre attentes de test corrigees**, aucune n'etant un defaut produit :
+`configure terminal` au niveau 1 et une commande hors vue rendent
+`% Invalid input detected` (l'arbre ne les contient pas ; `% Command
+authorization failed` appartient a l'autorisation AAA par commande) ;
+`show clock` est une commande de NIVEAU 1, donc un mauvais cobaye pour
+`reset` — le cas utilise `reload`, l'exemple de Cisco ; et le mode
+silencieux de `login block-for` ne ferme PAS la console (« the only
+available connection is through the console »), le cas console etant
+desormais la moitie qui compte.
+
+**Mesures.** 47 cas verts sur les deux fichiers du demandeur (19
+tombaient). 6 suites privileges/vues/identite vertes (202 cas).
+Typecheck 337 contre une base de 361 mesuree par `git stash` — les 24
+ecarts fermes sont exactement les appels d'interface manquants. Lint
+identique (13 problemes preexistants sur les fichiers touches).
+
+---
+
 ## Lot S9 — acces concurrents a la console, et niveau des comptes livres
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».
@@ -5141,3 +5211,43 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
 l'horodatage de la trace de debug, via `info-center timestamp debug` —
 détail et point d'accroche dans l'entrée V6.
+
+---
+
+## Livré — RIP : le temps avance, les paquets circulent
+
+Commit `9fe215f`. Fichiers touchés (les réclamer avant de les réécrire) :
+`src/network/rip/RIPEngine.ts`, `src/network/devices/Router.ts`,
+`src/network/devices/router/RouterRIPEngine.ts`,
+`src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts`,
+`CiscoShowCommands.ts`, `CiscoConfigCommands.ts`, `CiscoOspfCommands.ts`
+(uniquement `filterRouteTableByCode`), `src/network/hardware/Port.ts`,
+`src/network/core/types.ts` (`RIPPacket.auth`),
+`src/network/devices/router/diag/RouterDebugService.ts` (une étiquette).
+
+**Ce qui change pour vous :**
+
+1. **`Router.processTimers(seconds)` existe.** Elle avance les minuteurs
+   de CE routeur seul. Un équipement ne lit pas le registre des
+   équipements : ce que les voisins apprennent, ils l'apprennent des
+   paquets. Un laboratoire à trois routeurs demande donc un tour par
+   routeur, et deux tours pour deux sauts.
+2. **`RIPEngine` a une horloge à lui** (`advanceTime`), distincte du
+   `Scheduler`. Sous un `VirtualTimeScheduler`, `processTimers` avance
+   le scheduler comme avant ; le reste du temps elle avance le moteur.
+3. **`show ip protocols` a changé de forme** pour la partie RIP : c'est
+   maintenant le bloc réel d'IOS (vérifié contre une sortie capturée).
+   Le second rendu RIP qui vivait dans `CiscoRoutingProtoCommands` est
+   supprimé — il produisait un `[object Object]`.
+4. **`Port` porte quatre champs RIP typés** (`ripSendVersion`,
+   `ripReceiveVersion`, `ripAuthMode`, `ripAuthKeyChain`) à la place des
+   propriétés non typées posées au vol.
+5. **`RIPPacket` porte `auth?`** et le moteur applique la RFC 2453 §4.1
+   dans les deux sens.
+6. **Une interface passée `shutdown` empoisonne** ce qui passait par
+   elle, et RIP n'annonce plus une route dont l'interface est
+   administrativement basse.
+
+Rien de tout cela ne touche OSPF, EIGRP ni BGP, sauf
+`filterRouteTableByCode` qui garde désormais la ligne de continuation
+d'une route affichée sur deux lignes.

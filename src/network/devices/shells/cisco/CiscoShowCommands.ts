@@ -8,6 +8,7 @@
 import type { Router } from '../../Router';
 import { ntpConfigLines } from './ciscoNtpConfig';
 import type { Port } from '../../../hardware/Port';
+import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
 import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands';
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
@@ -202,7 +203,8 @@ export function renderIpRouteTable(
       ? r.mask.toCIDR()
       : maskTextToCidr(r.mask.toString());
     if (r.type === 'default' || (r.network.toString() === '0.0.0.0' && prefixLength === 0)) {
-      defaults.push(`S*    0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
+      const code = `${routeCode(r.type === 'default' ? 'static' : r.type)}*`;
+      defaults.push(`${code.padEnd(6)}0.0.0.0/0 [${r.ad ?? 1}/${r.metric ?? 0}] via ${r.nextHop}`);
       continue;
     }
     const attachee = !r.nextHop || String(r.nextHop) === '0.0.0.0';
@@ -210,11 +212,14 @@ export function renderIpRouteTable(
     const metricStr = r.type === 'connected' || r.type === 'local'
       ? '' : ` [${r.ad ?? 1}/${r.metric ?? 0}]`;
     const suffix = r.type === 'static' && !attachee ? '' : `, ${r.iface}`;
+    const invalide = r.type === 'rip' && (r.metric ?? 0) >= RIP_METRIC_INFINITY;
     rendered.push({
       code: codeOverride?.(r) ?? routeCode(r.type),
       networkInt: r.network.toUint32 ? r.network.toUint32() : dottedToInt(r.network.toString()),
       prefixLength,
-      text: `${r.network}/${prefixLength}${metricStr} ${via}${suffix}`,
+      text: invalide
+        ? `${r.network}/${prefixLength} is possibly down,\n         routing via ${r.nextHop}, ${r.iface}`
+        : `${r.network}/${prefixLength}${metricStr} ${via}${suffix}`,
     });
   }
 
@@ -1018,28 +1023,7 @@ export function showIpProtocols(router: Router): string {
   }
 
   if (router.isRIPEnabled()) {
-    const cfg = router.getRIPConfig();
-    const ripRoutes = router.getRIPRoutes();
-    const block = [
-      'Routing Protocol is "rip"',
-      '  Version: 2',
-      `  Update interval: ${cfg.updateInterval / 1000}s`,
-      `  Route timeout: ${cfg.routeTimeout / 1000}s`,
-      `  Garbage collection: ${cfg.gcTimeout / 1000}s`,
-      `  Split horizon: ${cfg.splitHorizon ? 'enabled' : 'disabled'}`,
-      `  Poisoned reverse: ${cfg.poisonedReverse ? 'enabled' : 'disabled'}`,
-      '',
-      '  Advertised networks:',
-    ];
-    for (const net of cfg.networks) {
-      block.push(`    ${net.network}/${net.mask.toCIDR()}`);
-    }
-    block.push('');
-    block.push(`  RIP learned routes: ${ripRoutes.size}`);
-    for (const [key, info] of ripRoutes) {
-      block.push(`    ${key} metric ${info.metric} via ${info.learnedFrom} (age ${info.age}s)${info.garbageCollect ? ' [gc]' : ''}`);
-    }
-    sections.push(block.join('\n'));
+    sections.push(ripProtocolsBlock(router));
   }
 
   const ipv6Engine = (router as unknown as { isBGPEnabled?: () => boolean }).isBGPEnabled?.();
@@ -1049,6 +1033,84 @@ export function showIpProtocols(router: Router): string {
 
   if (sections.length === 0) return 'No routing protocol is configured.';
   return sections.join('\n\n');
+}
+
+function ripProtocolsBlock(router: Router): string {
+  const cfg = router.getRIPConfig();
+  const repo = (router as unknown as {
+    shell?: { getRoutingConfig?: () => import('../../inspection/config/RoutingConfigRepository').RoutingConfigRepository };
+  }).shell?.getRoutingConfig?.();
+  const rip = repo?.rip;
+
+  const secondes = (ms: number) => Math.round(ms / 1000);
+  const minuteur = (rip?.timersBasic ?? '').match(/\d+/g)?.map(Number) ?? [];
+  const update = minuteur[0] ?? secondes(cfg.updateInterval);
+  const invalid = minuteur[1] ?? secondes(cfg.routeTimeout);
+  const holddown = minuteur[2] ?? secondes(cfg.routeTimeout);
+  const flush = minuteur[3] ?? (secondes(cfg.routeTimeout) + secondes(cfg.gcTimeout));
+
+  const version = rip?.version ?? null;
+  const envoi = version === null ? '1' : String(version);
+  const reception = version === null ? '2 1' : String(version);
+  const controleVersion = version === null
+    ? 'send version 1, receive any version'
+    : `send version ${version}, receive version ${version}`;
+
+  const block: string[] = [
+    'Routing Protocol is "rip"',
+    '  Outgoing update filter list for all interfaces is not set',
+    '  Incoming update filter list for all interfaces is not set',
+    `  Sending updates every ${update} seconds, next due in ${Math.max(1, Math.round(update / 2))} seconds`,
+    `  Invalid after ${invalid} seconds, hold down ${holddown}, flushed after ${flush}`,
+  ];
+
+  const sources = (rip?.redistribute ?? []).map((r) => r.protocol);
+  block.push(`  Redistributing: ${['rip', ...sources].join(', ')}`);
+
+  block.push(`  Default version control: ${controleVersion}`);
+  block.push('    Interface             Send  Recv  Triggered RIP  Key-chain');
+  const passivesTable = new Set([...(rip?.passive ?? []), ...cfg.passiveInterfaces]);
+  for (const [nom, port] of router._getPortsInternal()) {
+    const ip = port.getIPAddress();
+    if (!ip) continue;
+    if (!ripCoversAddress(cfg.networks, ip)) continue;
+    if (passivesTable.has(nom)) continue;
+    const envoiIf = router.ripSendVersionOn?.(nom) ?? envoi;
+    const receptionIf = router.ripReceiveVersionOn?.(nom) ?? reception;
+    const cle = router.ripAuthKeyChainOn?.(nom) ?? '';
+    block.push(`    ${nom.padEnd(22)}${envoiIf.padEnd(6)}${receptionIf.padEnd(6)}${''.padEnd(15)}${cle}`);
+  }
+
+  block.push(`  Automatic network summarization is ${rip?.autoSummary === false ? 'not ' : ''}in effect`);
+  block.push(`  Maximum path: ${rip?.maximumPaths ?? 4}`);
+
+  block.push('  Routing for Networks:');
+  const reseaux = (rip?.networks ?? []).length > 0
+    ? rip!.networks
+    : cfg.networks.map((n) => n.network.toString());
+  for (const n of reseaux) block.push(`    ${n}`);
+
+  const passives = [...new Set([...(rip?.passive ?? []), ...cfg.passiveInterfaces])].sort();
+  if (passives.length > 0) {
+    block.push('  Passive Interface(s):');
+    for (const iface of passives) block.push(`    ${iface}`);
+  }
+  if (rip?.passiveDefault) {
+    const actives = [...router._getPortsInternal().keys()].filter((n) => !passives.includes(n));
+    if (actives.length > 0) {
+      block.push('  Active Interface(s):');
+      for (const iface of actives) block.push(`    ${iface}`);
+    }
+  }
+
+  block.push('  Routing Information Sources:');
+  block.push('    Gateway         Distance      Last Update');
+  const distance = rip?.distance ?? 120;
+  for (const [source, age] of router.getRIPUpdateSources()) {
+    block.push(`    ${source.padEnd(16)}${String(distance).padEnd(14)}${formatRipAge(age)}`);
+  }
+  block.push(`  Distance: (default is ${distance})`);
+  return block.join('\n');
 }
 
 /** `show interfaces` (all) — real per-port detail for every interface. */
@@ -1379,7 +1441,8 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const nat = router._getNATEngine();
   const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
     : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
-  return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag);
+  return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
+    router.ripSplitHorizonOn(name));
 }
 
 export function ipInterfaceBlockFor(
@@ -1387,6 +1450,7 @@ export function ipInterfaceBlockFor(
   port: Port,
   ports: ReadonlyMap<string, Port>,
   natTag = '',
+  splitHorizon = true,
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
   const ip = port.getIPAddress();
@@ -1408,7 +1472,7 @@ export function ipInterfaceBlockFor(
   lines.push(`  Proxy ARP is ${port.isProxyArpEnabled?.() === false ? 'disabled' : 'enabled'}`);
   lines.push('  Local Proxy ARP is disabled');
   lines.push('  Security level is default');
-  lines.push('  Split horizon is enabled');
+  lines.push(`  Split horizon is ${splitHorizon ? 'enabled' : 'disabled'}`);
   lines.push('  ICMP redirects are always sent');
   lines.push('  ICMP unreachables are always sent');
   lines.push('  IP fast switching is enabled');
@@ -1438,21 +1502,58 @@ export function showIpRipDatabase(router: Router, autoSummary = true): string {
   const cfg = router.getRIPConfig();
   const learned = router.getRIPRoutes();
   const lines: string[] = [];
-  for (const net of cfg.networks) {
-    // L'entrée `auto-summary` EST le résumé classful : elle n'a pas lieu
-    // d'être quand `no auto-summary` est configuré. Elle était imprimée
-    // inconditionnellement, donc la vue contredisait la configuration
-    // affichée par `show running-config` sur la même machine.
-    if (autoSummary) lines.push(`${net.network}/${net.mask.toCIDR()}    auto-summary`);
-    lines.push(`${net.network}/${net.mask.toCIDR()}`);
-    lines.push('    [1] directly connected, via configured network');
+  const summarized = new Set<string>();
+
+  const summaryLine = (addr: IPAddress) => {
+    if (!autoSummary) return;
+    const mask = classfulMaskOf(addr);
+    const key = `${addr.networkAddress(mask).toString()}/${mask.toCIDR()}`;
+    if (summarized.has(key)) return;
+    summarized.add(key);
+    lines.push(`${key}    auto-summary`);
+  };
+
+  for (const [name, port] of router._getPortsInternal()) {
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    if (!ip || !mask) continue;
+    if (!router.isRouteInterfaceUsable(name)) continue;
+    if (!ripCoversAddress(cfg.networks, ip)) continue;
+    summaryLine(ip);
+    lines.push(`${ip.networkAddress(mask).toString()}/${mask.toCIDR()}    directly connected, ${name}`);
   }
+
   for (const [key, info] of learned) {
+    const [netPart] = key.split('/');
+    try { summaryLine(new IPAddress(netPart)); } catch { /* keep the entry */ }
     lines.push(`${key}`);
     lines.push(`    [${info.metric}] via ${info.learnedFrom}, ` +
-      `${info.age}s${info.garbageCollect ? ', possibly down' : ''}`);
+      `${formatRipAge(info.age)}${info.garbageCollect ? ', possibly down' : ''}`);
   }
-  return lines.length ? lines.join('\n') : 'RIP routing database is empty';
+  return lines.join('\n');
+}
+
+function classfulMaskOf(addr: IPAddress): SubnetMask {
+  const first = parseInt(addr.toString().split('.')[0], 10);
+  if (first < 128) return new SubnetMask('255.0.0.0');
+  if (first < 192) return new SubnetMask('255.255.0.0');
+  return new SubnetMask('255.255.255.0');
+}
+
+function ripCoversAddress(
+  networks: ReadonlyArray<{ network: IPAddress; mask: SubnetMask }>,
+  addr: IPAddress,
+): boolean {
+  return networks.some((n) =>
+    addr.networkAddress(n.mask).toString() === n.network.networkAddress(n.mask).toString());
+}
+
+function formatRipAge(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 /** `show ip bgp …` — honest state: no BGP process configured. */

@@ -37,6 +37,10 @@ import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
+import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
+import {
+  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+} from '@/shell/interaction/HeadlessInteraction';
 import { DHCPServer } from '../dhcp/DHCPServer';
 import { VrrpAgent } from '../vrrp/VrrpAgent';
 import { IP_PROTO_VRRP } from '../vrrp/types';
@@ -3137,7 +3141,7 @@ export abstract class Switch extends Equipment {
 
   // getBootSequence() and getOSType() are abstract — implemented by CiscoSwitch / HuaweiSwitch
 
-  getBanner(type: string): string {
+  getBanner(type: string = 'motd'): string {
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;
@@ -3155,9 +3159,44 @@ export abstract class Switch extends Equipment {
   _setExecBanner(text: string): void { this.execBannerText = text; }
   _setIncomingBanner(text: string): void { this.incomingBannerText = text; }
 
-  async executeCommand(command: string): Promise<string> {
+  async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
+    if (hasHeadlessAnswers(answers)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+      if (dialogue !== null) return dialogue;
+    }
     return this.shell.execute(this, command);
+  }
+
+  /**
+   * Le pendant exact de `Router.jouerDialogueSansTerminal` : un
+   * commutateur porte le meme `enable secret` et le meme plan
+   * d'interaction, donc laisser la porte ouverte ici et fermee la-bas
+   * ferait de la plateforme le facteur de securite.
+   */
+  private async jouerDialogueSansTerminal(
+    command: string, answers: HeadlessAnswers,
+  ): Promise<string | null> {
+    const shell = this.shell as unknown as { getMode?: () => string };
+    if (!isInteractionPlanner(this.shell)) return null;
+    const plan = this.shell.interactionPlanFor(command, {
+      mode: shell.getMode?.() ?? 'privileged',
+      device: this,
+      onVtyLine: false,
+    });
+    if (!plan) return null;
+    return runInteractionPlanHeadless(plan, answers, (c) => this.shell.execute(this, c));
+  }
+
+  async loginAs(username: string, password: string): Promise<boolean> {
+    if (!this.isPoweredOn) return false;
+    if (!this.getCredentialStore().authenticate(username, password)) return false;
+    const niveau = this.getCredentialStore().lookup(username)?.privilege ?? 1;
+    const shell = this.shell as unknown as {
+      beginExecSession?: (lvl: number, u?: string) => void;
+    };
+    shell.beginExecSession?.(niveau, username);
+    return true;
   }
 
   // ─── vty sessions (per-terminal CLI isolation) ────────────────────

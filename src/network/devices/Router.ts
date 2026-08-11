@@ -43,6 +43,10 @@ import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
+import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
+import {
+  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+} from '@/shell/interaction/HeadlessInteraction';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
@@ -449,6 +453,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       pushRoute: (route) => { this.routingTable.push({ ...route, installedAt: Date.now() }); },
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       getRipVersion: () => this._ripVersion,
+      isInterfaceUsable: (iface) => !(this.getPort(iface)?.isAdminDown() ?? false),
+      getInterfaceRipAuth: (iface) => this.ripAuthOn(iface),
       getBus: () => this.getBus(),
       getScheduler: () => this.getRouterScheduler(),
       evaluateRoutePolicy: (name, network, mask) => {
@@ -1124,6 +1130,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           // once, without waiting out their hold time — IOS logs it as
           // '%DUAL-5-NBRCHANGE … is down: interface down'.
           this.dynamicRouting?.onInterfaceDown(name);
+          this.ripOnInterfaceDown(name);
         }
         if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
       });
@@ -1839,29 +1846,67 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   isRIPEnabled() { return this.ripEngine.isEnabled(); }
   getRIPConfig() { return this.ripEngine.getConfig(); }
   getRIPRoutes() { return this.ripEngine.getRoutes(); }
+  getRIPUpdateSources() { return this.ripEngine.getUpdateSources(); }
+  ripOnInterfaceDown(iface: string) { this.ripEngine.onInterfaceDown(iface, this.getPort(iface)); }
   ripAdvertiseNetwork(network: IPAddress, mask: SubnetMask) { this.ripEngine.advertiseNetwork(network, mask); }
+  ripWithdrawNetwork(network: IPAddress) { this.ripEngine.withdrawNetwork(network); }
+  ripConfigure(config: Partial<import('./router/RouterRIPEngine').RIPConfig>) { this.ripEngine.configure(config); }
   ripSetPassiveInterface(iface: string) { this.ripEngine.setPassiveInterface(iface); }
   ripRemovePassiveInterface(iface: string) { this.ripEngine.removePassiveInterface(iface); }
   ripSetInterfaceSplitHorizon(iface: string, on: boolean | null) { this.ripEngine.setInterfaceSplitHorizon(iface, on); }
   ripSplitHorizonOn(iface: string) { return this.ripEngine.splitHorizonOn(iface); }
+  ripSendVersionOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipSendVersion() ?? null;
+  }
+  ripReceiveVersionOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipReceiveVersion() ?? null;
+  }
+  ripAuthKeyChainOn(iface: string): string | null {
+    return this.getPort(iface)?.getRipAuthKeyChain() ?? null;
+  }
+
+  ripAuthOn(iface: string): { mode: 'md5' | 'text'; keyId: number; key: string } | null {
+    const port = this.getPort(iface);
+    const chainName = port?.getRipAuthKeyChain();
+    if (!chainName) return null;
+    const chains = (this as unknown as {
+      shell?: { getKeyChains?: () => import('./inspection/config/KeyChainRepository').KeyChainRepository };
+    }).shell?.getKeyChains?.();
+    const mode = port?.getRipAuthMode() === 'text' ? 'text' : 'md5';
+    const chain = chains?.getChain(chainName);
+    for (const [id, key] of [...(chain?.keys ?? [])].sort((a, b) => a[0] - b[0])) {
+      if (key.keyString) return { mode, keyId: id, key: key.keyString };
+    }
+    return { mode, keyId: 0, key: '' };
+  }
   ripSetRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg, metric?: number, routePolicy?: string) { this.ripEngine.setRedistribution(source, metric, routePolicy); }
   ripRemoveRedistribution(source: import('./router/RouterRIPEngine').RIPRedistSourceArg) { this.ripEngine.removeRedistribution(source); }
   ripSetDefaultMetric(metric: number | null) { this.ripEngine.setDefaultMetric(metric); }
   ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
 
-  /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
-  getDynamicRouting() { return this.dynamicRouting; }
-  getEIGRPEngine() { return this.dynamicRouting.eigrp; }
-  getBGPEngine() { return this.dynamicRouting.bgp; }
-  /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
-  convergeDynamicRouting() { this.dynamicRouting.converge(); }
-
+  /**
+   * Fast-forward THIS device's protocol timers by `seconds`, so a
+   * periodic update, a route expiry or a garbage collection can be
+   * observed without waiting for wall time. What the neighbours learn
+   * from it, they learn from the packets this device puts on the wire.
+   */
   async processTimers(seconds: number): Promise<void> {
-    const horloge = Router.horlogeDeSimulation();
+    const ms = Math.max(0, seconds) * 1000;
+    const scheduler = getDefaultScheduler();
+    if (scheduler instanceof VirtualTimeScheduler) {
+      scheduler.advance(ms);
+      if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
+      return;
+    }
+    this.advanceProtocolTimers(ms);
+    if (!this.dynamicRouting?.hasActive()) return;
     this.convergeDynamicRouting();
-    if (this.isRIPEnabled()) this.ripEngine.setScheduler(null);
-    horloge.advance(Math.max(0, seconds) * 1000);
+    Router.horlogeDeSimulation().advance(ms);
     this.convergeDynamicRouting();
+  }
+
+  advanceProtocolTimers(ms: number): void {
+    this.ripEngine.advanceTime(ms);
   }
 
   private static horlogeDeSimulation(): VirtualTimeScheduler {
@@ -1871,6 +1916,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     __setDefaultScheduler(neuve);
     return neuve;
   }
+
+  /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */
+  getDynamicRouting() { return this.dynamicRouting; }
+  getEIGRPEngine() { return this.dynamicRouting.eigrp; }
+  getBGPEngine() { return this.dynamicRouting.bgp; }
+  /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
+  convergeDynamicRouting() { this.dynamicRouting.converge(); }
 
   /**
    * A powered-off router stops talking. EIGRP's Hello timer would
@@ -2998,11 +3050,135 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Management Plane: Terminal (vendor-abstracted) ────────────
 
-  async executeCommand(command: string): Promise<string> {
+  async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
+    if (hasHeadlessAnswers(answers)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+      if (dialogue !== null) { this.syncRouteDebug(); return dialogue; }
+    }
     const out = await this.shell.execute(this, command);
     this.syncRouteDebug();
     return out;
+  }
+
+  /**
+   * `executeCommand` allait droit au gestionnaire du trie, c'est-a-dire
+   * de l'autre cote de la porte : sur une machine portant `enable
+   * secret`, un appelant programmatique obtenait le niveau 15 sans avoir
+   * a produire le moindre mot de passe. Le plan d'interaction — celui-la
+   * meme que joue le terminal — est desormais joue ici quand l'appelant
+   * fournit une reponse, donc les deux chemins traversent la MEME porte.
+   */
+  private async jouerDialogueSansTerminal(
+    command: string, answers: HeadlessAnswers,
+  ): Promise<string | null> {
+    const shell = this.shell as unknown as { getMode?: () => string };
+    if (!isInteractionPlanner(this.shell)) return null;
+    const plan = this.shell.interactionPlanFor(command, {
+      mode: shell.getMode?.() ?? 'privileged',
+      device: this,
+      onVtyLine: false,
+    });
+    if (!plan) return null;
+    return runInteractionPlanHeadless(plan, answers,
+      async (c) => this.shell.execute(this, c));
+  }
+
+  /**
+   * Ouvrir une session EXEC au nom d'un compte, sans terminal.
+   *
+   * C'est ce que fait une ligne en `login local` quand l'operateur se
+   * presente : le compte est verifie, puis la session s'ouvre AU NIVEAU
+   * DU COMPTE. Sans cette porte, un appelant programmatique n'avait
+   * aucun moyen d'etre quelqu'un — il etait toujours la console anonyme.
+   */
+  async loginAs(username: string, password: string): Promise<boolean> {
+    if (!this.isPoweredOn) return false;
+    const verdict = await this.authenticateLine('console', { user: username, pass: password });
+    if (!verdict) return false;
+    const niveau = this.getCredentialStore().lookup(username)?.privilege ?? 1;
+    const shell = this.shell as unknown as {
+      beginExecSession?: (lvl: number, u?: string) => void;
+    };
+    shell.beginExecSession?.(niveau, username);
+    const registre = this.getSshSessionRegistry();
+    const ouverte = registre.sessionSurLigne('con');
+    if (ouverte) registre.noterAuthentification(ouverte.id, username, niveau);
+    else registre.open({ user: username, privilege: niveau, fromIp: '', transport: 'console' });
+    return true;
+  }
+
+  /**
+   * Presenter des identifiants A UNE LIGNE, en respectant la methode que
+   * cette ligne declare (`login`, `login local`, `login authentication`).
+   *
+   * La difference console/vty n'est pas cosmetique : le mode silencieux
+   * de `login block-for` ne ferme QUE les lignes reseau — « when the
+   * device is in quiet mode, all login requests are denied and the only
+   * available connection is through the console » (guide de configuration
+   * Login Block). Une console refusee par le mode silencieux enfermerait
+   * l'operateur dehors, ce qu'IOS existe precisement pour eviter.
+   */
+  async authenticateLine(
+    kind: 'console' | 'vty' | 'aux', credentials: { user?: string; pass: string },
+  ): Promise<boolean> {
+    if (!this.isPoweredOn) return false;
+    if (kind === 'vty' && this.getLoginBlocker()?.isBlocked()) return false;
+    const user = credentials.user ?? '';
+    const methode = this.methodeDeLigne(kind);
+    if (methode === 'none') return true;
+    if (methode === 'password') {
+      const attendu = this.motDePasseDeLigne(kind);
+      const ok = attendu !== null && attendu === credentials.pass;
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      return ok;
+    }
+    if (methode === 'aaa') {
+      const ok = await this.authenticateViaAaa(user, credentials.pass);
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      return ok;
+    }
+    const ok = this.getCredentialStore().authenticate(user, credentials.pass);
+    if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+    return ok;
+  }
+
+  /**
+   * Authentifier par la chaine de methodes AAA et DIRE laquelle a
+   * tranche. `authenticateViaAaa` rend un booleen, donc « le serveur a
+   * refuse » et « aucun serveur n'a repondu, la base locale a tranche »
+   * etaient indiscernables — c'est pourtant la distinction que le repli
+   * existe pour produire.
+   */
+  async authenticateAAA(req: {
+    user: string; pass: string; methodList?: string; serverAvailable?: boolean;
+  }): Promise<{ success: boolean; methodUsed: string }> {
+    const outcome = await this.getAaaAuthenticator()
+      .authenticate(req.user, req.pass, req.methodList);
+    return { success: outcome.accepted, methodUsed: outcome.method };
+  }
+
+  private configurationDeConsole(): {
+    login: 'password' | 'local' | 'none' | 'aaa' | null; password: string | null;
+  } | null {
+    const shell = this.shell as unknown as {
+      _getConsoleLineConfig?: () => {
+        login: 'password' | 'local' | 'none' | 'aaa' | null; password: string | null;
+      } | null;
+    };
+    return shell._getConsoleLineConfig?.() ?? null;
+  }
+
+  protected methodeDeLigne(kind: 'console' | 'vty' | 'aux'): 'none' | 'password' | 'local' | 'aaa' {
+    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.login ?? 'none';
+    if (kind === 'aux') return 'none';
+    return this.configurationDeConsole()?.login ?? 'none';
+  }
+
+  protected motDePasseDeLigne(kind: 'console' | 'vty' | 'aux'): string | null {
+    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.linePassword ?? null;
+    if (kind === 'aux') return null;
+    return this.configurationDeConsole()?.password ?? null;
   }
 
   private _routeDebugSnapshot: Map<string, string> | null = null;
@@ -3230,7 +3406,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
-  getBanner(type: string): string {
+  getBanner(type: string = 'motd'): string {
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;

@@ -34,8 +34,8 @@ function setupLab2Routers() {
 
   const cable = new Cable('c1');
   cable.connect(
-    r1.getPort('FastEthernet0/0')!,
-    r2.getPort('FastEthernet0/0')!
+    r1.getPort('GigabitEthernet0/0')!,
+    r2.getPort('GigabitEthernet0/0')!
   );
 
   return { r1, r2 };
@@ -46,10 +46,10 @@ async function configureIPsLab2(r1: CiscoRouter, r2: CiscoRouter) {
   // R1 Configuration
   await r1.executeCommand('enable');
   await r1.executeCommand('configure terminal');
-  await r1.executeCommand('interface FastEthernet0/0');
+  await r1.executeCommand('interface GigabitEthernet0/0');
   await r1.executeCommand('ip address 10.0.12.1 255.255.255.0');
   await r1.executeCommand('no shutdown');
-  await r1.executeCommand('interface FastEthernet0/1');
+  await r1.executeCommand('interface GigabitEthernet0/1');
   await r1.executeCommand('ip address 192.168.10.1 255.255.255.0');
   await r1.executeCommand('no shutdown');
   await r1.executeCommand('end');
@@ -57,10 +57,10 @@ async function configureIPsLab2(r1: CiscoRouter, r2: CiscoRouter) {
   // R2 Configuration
   await r2.executeCommand('enable');
   await r2.executeCommand('configure terminal');
-  await r2.executeCommand('interface FastEthernet0/0');
+  await r2.executeCommand('interface GigabitEthernet0/0');
   await r2.executeCommand('ip address 10.0.12.2 255.255.255.0');
   await r2.executeCommand('no shutdown');
-  await r2.executeCommand('interface FastEthernet0/1');
+  await r2.executeCommand('interface GigabitEthernet0/1');
   await r2.executeCommand('ip address 192.168.20.1 255.255.255.0');
   await r2.executeCommand('no shutdown');
   await r2.executeCommand('end');
@@ -76,8 +76,8 @@ function setupLab3Routers() {
   const r2 = new CiscoRouter('R2', 100, 0);
   const r3 = new CiscoRouter('R3', 200, 0);
 
-  new Cable('c1').connect(r1.getPort('FastEthernet0/0')!, r2.getPort('FastEthernet0/0')!);
-  new Cable('c2').connect(r2.getPort('FastEthernet0/2')!, r3.getPort('FastEthernet0/0')!);
+  new Cable('c1').connect(r1.getPort('GigabitEthernet0/0')!, r2.getPort('GigabitEthernet0/0')!);
+  new Cable('c2').connect(r2.getPort('GigabitEthernet0/2')!, r3.getPort('GigabitEthernet0/0')!);
 
   return { r1, r2, r3 };
 }
@@ -87,10 +87,10 @@ async function configureLab3Full(r1: CiscoRouter, r2: CiscoRouter, r3: CiscoRout
   // R1
   await r1.executeCommand('enable');
   await r1.executeCommand('configure terminal');
-  await r1.executeCommand('interface FastEthernet0/0');
+  await r1.executeCommand('interface GigabitEthernet0/0');
   await r1.executeCommand('ip address 10.0.12.1 255.255.255.0');
   await r1.executeCommand('no shutdown');
-  await r1.executeCommand('interface FastEthernet0/1');
+  await r1.executeCommand('interface GigabitEthernet0/1');
   await r1.executeCommand('ip address 192.168.10.1 255.255.255.0');
   await r1.executeCommand('no shutdown');
   await r1.executeCommand('router rip');
@@ -103,13 +103,13 @@ async function configureLab3Full(r1: CiscoRouter, r2: CiscoRouter, r3: CiscoRout
   // R2
   await r2.executeCommand('enable');
   await r2.executeCommand('configure terminal');
-  await r2.executeCommand('interface FastEthernet0/0');
+  await r2.executeCommand('interface GigabitEthernet0/0');
   await r2.executeCommand('ip address 10.0.12.2 255.255.255.0');
   await r2.executeCommand('no shutdown');
-  await r2.executeCommand('interface FastEthernet0/1');
+  await r2.executeCommand('interface GigabitEthernet0/1');
   await r2.executeCommand('ip address 192.168.20.1 255.255.255.0');
   await r2.executeCommand('no shutdown');
-  await r2.executeCommand('interface FastEthernet0/2');
+  await r2.executeCommand('interface GigabitEthernet0/2');
   await r2.executeCommand('ip address 10.0.23.1 255.255.255.0');
   await r2.executeCommand('no shutdown');
   await r2.executeCommand('router rip');
@@ -123,10 +123,10 @@ async function configureLab3Full(r1: CiscoRouter, r2: CiscoRouter, r3: CiscoRout
   // R3
   await r3.executeCommand('enable');
   await r3.executeCommand('configure terminal');
-  await r3.executeCommand('interface FastEthernet0/0');
+  await r3.executeCommand('interface GigabitEthernet0/0');
   await r3.executeCommand('ip address 10.0.23.2 255.255.255.0');
   await r3.executeCommand('no shutdown');
-  await r3.executeCommand('interface FastEthernet0/1');
+  await r3.executeCommand('interface GigabitEthernet0/1');
   await r3.executeCommand('ip address 192.168.30.1 255.255.255.0');
   await r3.executeCommand('no shutdown');
   await r3.executeCommand('router rip');
@@ -172,8 +172,9 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('version 2');
       await r1.executeCommand('network 10.0.12.0');
 
-      const logs = Logger.getLogs();
-      expect(logs.some(log => log.includes('224.0.0.9'))).toBe(true);
+      await r1.processTimers(30);
+      const logs = Logger.getLogs().map((l) => l.message);
+      expect(logs.some((log) => log.includes('224.0.0.9'))).toBe(true);
     });
   });
 
@@ -183,6 +184,9 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
     it('Affiche les timers par defaut (Update 30s, Invalid 180s, Holddown 180s, Flush 240s)', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router rip');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip protocols');
 
       expect(show).toContain('Sending updates every 30 seconds');
@@ -211,7 +215,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('timers basic 10 60 60 80');
       await r1.executeCommand('end');
 
-      const showCible = await r1.executeCommand('show ip protocols | include timer');
+      const showCible = await r1.executeCommand('show ip protocols | include Sending');
       expect(showCible).toContain('Sending updates every 10 seconds');
     });
   });
@@ -222,7 +226,12 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
     it('Split horizon est active par defaut sur les interfaces LAN/Ethernet', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
-      const res = await r1.executeCommand('show ip interface FastEthernet0/0 | include split');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
+      await r1.executeCommand('end');
+      const res = await r1.executeCommand('show ip interface GigabitEthernet0/0 | include Split');
 
       expect(res).toContain('Split horizon is enabled');
     });
@@ -231,14 +240,16 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
-      await r1.executeCommand('interface FastEthernet0/0');
+      await r1.executeCommand('interface GigabitEthernet0/0');
+      await r1.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await r1.executeCommand('no shutdown');
 
       await r1.executeCommand('no ip split-horizon');
-      let check = await r1.executeCommand('show ip interface FastEthernet0/0 | include split');
+      let check = await r1.executeCommand('show ip interface GigabitEthernet0/0 | include Split');
       expect(check).toContain('Split horizon is disabled');
 
       await r1.executeCommand('ip split-horizon');
-      check = await r1.executeCommand('show ip interface FastEthernet0/0 | include split');
+      check = await r1.executeCommand('show ip interface GigabitEthernet0/0 | include Split');
       expect(check).toContain('Split horizon is enabled');
     });
   });
@@ -283,17 +294,18 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
 
       // Attendre la premiere mise a jour (30s)
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       // Verifier que R1 apprend le reseau 192.168.20.0/24 avec [120/1]
       const routeTable = await r1.executeCommand('show ip route');
-      expect(routeTable).toContain('R    192.168.20.0/24 [120/1] via 10.0.12.2');
+      expect(routeTable).toMatch(/R\s+192\.168\.20\.0\/24 \[120\/1\] via 10\.0\.12\.2/);
 
       // Ping vers le reseau distant fonctionne maintenant
       const pingDistant = await r1.executeCommand('ping 192.168.20.1');
       expect(pingDistant).toContain('!!!!!');
 
-      // Ping avec source de FastEthernet0/1 (COMPTA)
-      const pingSource = await r1.executeCommand('ping 192.168.20.1 source FastEthernet0/1');
+      // Ping avec source de GigabitEthernet0/1 (COMPTA)
+      const pingSource = await r1.executeCommand('ping 192.168.20.1 source GigabitEthernet0/1');
       expect(pingSource).toContain('!!!!!');
     });
 
@@ -314,10 +326,11 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       }
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       const db = await r1.executeCommand('show ip rip database');
       expect(db).toContain('10.0.12.0/24');
-      expect(db).toContain('directly connected, FastEthernet0/0');
+      expect(db).toContain('directly connected, GigabitEthernet0/0');
       expect(db).toContain('192.168.20.0/24');
       expect(db).toContain('[1] via 10.0.12.2');
     });
@@ -353,8 +366,12 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
 
       // Cycle 1 (T=30s)
       await r1.processTimers(30);
+      await r2.processTimers(30);
+      await r3.processTimers(30);
       // Cycle 2 (T=60s)
       await r1.processTimers(30);
+      await r2.processTimers(30);
+      await r3.processTimers(30);
 
       const routesR1 = await r1.executeCommand('show ip route rip');
       // R2 link (1 saut)
@@ -368,7 +385,11 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
     it('Etape 7.3 : Simulation de panne (Link Down) et Poison Reverse (Metric 16)', async () => {
       const { r1, r2, r3 } = setupLab3Routers();
       await configureLab3Full(r1, r2, r3);
-      await r1.processTimers(60);
+      for (let tour = 0; tour < 2; tour++) {
+        await r1.processTimers(30);
+        await r2.processTimers(30);
+        await r3.processTimers(30);
+      }
 
       // Verifier que R1 a la route vers R3
       let routesR1 = await r1.executeCommand('show ip route rip');
@@ -376,7 +397,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
 
       // Simuler la panne du lien R3 vers PC-SERVEUR
       await r3.executeCommand('configure terminal');
-      await r3.executeCommand('interface FastEthernet0/1');
+      await r3.executeCommand('interface GigabitEthernet0/1');
       await r3.executeCommand('shutdown');
       await r3.executeCommand('end');
 
@@ -385,12 +406,17 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
 
       // Propager la mise a jour de poison
       await r3.processTimers(30);
+      await r1.processTimers(30);
+      await r2.processTimers(30);
 
-      const logs = Logger.getLogs();
-      expect(logs.some(l => l.message.includes('16 hops') || l.message.includes('inaccessible'))).toBe(true);
+      const logs = Logger.getLogs().map((l) => l.message);
+      expect(logs.some((l) => /metric=16|unreachable|possibly down/.test(l))).toBe(true);
 
       // Apres holddown/flush, la route doit être retirée de R1
-      await r1.processTimers(180);
+      // Invalide a 180 s, retiree seulement au flush (240 s).
+      await r1.processTimers(240);
+      await r2.processTimers(240);
+      await r3.processTimers(240);
       routesR1 = await r1.executeCommand('show ip route rip');
       expect(routesR1).not.toContain('192.168.30.0/24');
     });
@@ -404,11 +430,11 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('enable');
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('router rip');
-      await r1.executeCommand('passive-interface FastEthernet0/1');
+      await r1.executeCommand('passive-interface GigabitEthernet0/1');
 
       const show = await r1.executeCommand('show ip protocols');
       expect(show).toContain('Passive Interface(s):');
-      expect(show).toContain('FastEthernet0/1');
+      expect(show).toContain('GigabitEthernet0/1');
     });
 
     it('Securise avec la bonne pratique "passive-interface default" et "no passive-interface <iface>"', async () => {
@@ -418,13 +444,13 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('router rip');
 
       await r1.executeCommand('passive-interface default');
-      await r1.executeCommand('no passive-interface FastEthernet0/0');
+      await r1.executeCommand('no passive-interface GigabitEthernet0/0');
 
       const show = await r1.executeCommand('show ip protocols');
       expect(show).toContain('Passive Interface(s):');
       expect(show).toContain('Default');
       expect(show).toContain('Active Interface(s):');
-      expect(show).toContain('FastEthernet0/0');
+      expect(show).toContain('GigabitEthernet0/0');
     });
   });
 
@@ -444,7 +470,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('exit');
 
       // Application sur l'interface
-      await r1.executeCommand('interface FastEthernet0/0');
+      await r1.executeCommand('interface GigabitEthernet0/0');
       await r1.executeCommand('ip rip authentication mode md5');
       const res = await r1.executeCommand('ip rip authentication key-chain MA_CLE_RIP');
 
@@ -463,7 +489,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r1.executeCommand('key-string MotDePasseRIP2024!');
       await r1.executeCommand('exit');
       await r1.executeCommand('exit');
-      await r1.executeCommand('interface FastEthernet0/0');
+      await r1.executeCommand('interface GigabitEthernet0/0');
       await r1.executeCommand('ip rip authentication mode md5');
       await r1.executeCommand('ip rip authentication key-chain MA_CLE_RIP');
       await r1.executeCommand('router rip');
@@ -479,7 +505,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r2.executeCommand('key-string MAUVAIS_PASSWORD');
       await r2.executeCommand('exit');
       await r2.executeCommand('exit');
-      await r2.executeCommand('interface FastEthernet0/0');
+      await r2.executeCommand('interface GigabitEthernet0/0');
       await r2.executeCommand('ip rip authentication mode md5');
       await r2.executeCommand('ip rip authentication key-chain MA_CLE_RIP');
       await r2.executeCommand('router rip');
@@ -488,6 +514,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r2.executeCommand('network 192.168.20.0');
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       // R1 doit ignorer la mise à jour de R2 -> pas de route appris
       const routesR1 = await r1.executeCommand('show ip route rip');
@@ -523,10 +550,11 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r2.executeCommand('end');
 
       await r1.processTimers(30);
+      await r2.processTimers(30);
 
       // R2 doit apprendre la route par défaut (0.0.0.0/0) via RIP
       const routesR2 = await r2.executeCommand('show ip route');
-      expect(routesR2).toContain('R*   0.0.0.0/0 [120/1] via 10.0.12.1');
+      expect(routesR2).toMatch(/R\*\s+0\.0\.0\.0\/0 \[120\/1\] via 10\.0\.12\.1/);
     });
   });
 

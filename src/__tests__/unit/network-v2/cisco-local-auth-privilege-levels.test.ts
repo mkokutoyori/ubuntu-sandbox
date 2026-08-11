@@ -204,8 +204,10 @@ describe('Scénario 1 — enable / enable N : véritable gate par mot de passe',
     await submitPassword(session, 'Level7@2025');
     expect(session.currentInputMode.type).toBe('normal');
 
-    // Real IOS: intermediate levels still show '>', only 15 shows '#'.
-    expect(session.getPrompt().endsWith('>')).toBe(true);
+    // Real IOS: `Device> enable 7 Zy72sKj` then `Device# show privilege`
+    // → `Current privilege level is 7` (IOS 15MT security guide). Every
+    // level above 1 shows '#'; what stays restricted is the command tree.
+    expect(session.getPrompt().endsWith('#')).toBe(true);
     await type(session, 'show privilege');
     expect(lastLines(session)).toContain('Current privilege level is 7');
   });
@@ -352,7 +354,7 @@ describe('Scénario 1 — connexion console : User Access Verification / Usernam
     expect(lastLines(session)).toContain('Current privilege level is 15');
   });
 
-  it("des identifiants corrects (operateur, niveau 7) ouvrent une session au prompt '>' avec le niveau 7 réel", async () => {
+  it("des identifiants corrects (operateur, niveau 7) ouvrent une session au prompt '#' avec le niveau 7 réel", async () => {
     const sw = await labWithAccounts();
     const session = new CiscoTerminalSession('t2', sw);
     await session.init();
@@ -363,7 +365,11 @@ describe('Scénario 1 — connexion console : User Access Verification / Usernam
     await submitPassword(session, 'Oper@2025');
 
     expect(session.currentInputMode.type).toBe('normal');
-    expect(session.getPrompt()).toBe('SW-MANDENG-01>');
+    // L'invite passe a `#` des le niveau 2 : le guide de securite d'IOS
+    // 15MT verifie `enable 7` par `Device# show privilege` / `Current
+    // privilege level is 7`. Ce qui reste limite est l'ARBRE des
+    // commandes, pas le caractere affiche — le cas suivant le mesure.
+    expect(session.getPrompt()).toBe('SW-MANDENG-01#');
     await type(session, 'show privilege');
     expect(lastLines(session)).toContain('Current privilege level is 7');
   });

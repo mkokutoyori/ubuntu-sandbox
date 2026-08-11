@@ -2498,12 +2498,22 @@ function filterRouteTableByCode(all: string, codes: readonly string[]): string {
   };
   const out: string[] = [];
   let pendingSubnetHeader: string | null = null;
+  let kept = false;
   for (const l of body) {
     if (l.trim() === '') continue;
-    if (/is subnetted|is variably subnetted/.test(l)) { pendingSubnetHeader = l; continue; }
-    if (!matches(l)) continue;
+    if (/is subnetted|is variably subnetted/.test(l)) {
+      pendingSubnetHeader = l; kept = false; continue;
+    }
+    if (!matches(l)) {
+      // Une route inutilisable tient sur deux lignes chez IOS ; la
+      // seconde appartient à la première et se garde avec elle.
+      if (kept && /^\s{6,}/.test(l)) out.push(l);
+      else kept = false;
+      continue;
+    }
     if (pendingSubnetHeader) { out.push(pendingSubnetHeader); pendingSubnetHeader = null; }
     out.push(l);
+    kept = true;
   }
   return [...head, ...out].join('\n');
 }
