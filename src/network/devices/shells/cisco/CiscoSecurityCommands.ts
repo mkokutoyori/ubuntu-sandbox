@@ -28,6 +28,22 @@ const USERNAME_KEYWORDS_AVEC_ARG = new Set([
   'access-class', 'common-criteria-policy', 'mac', 'user-maxlinks',
 ]);
 
+export const RADIUS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }> = [
+  { keyword: 'host', description: 'Specify a RADIUS server', leadingOnly: true },
+  { keyword: 'key', description: 'Per-server encryption key' },
+  { keyword: 'auth-port', description: 'UDP port for RADIUS authentication server' },
+  { keyword: 'acct-port', description: 'UDP port for RADIUS accounting server' },
+  { keyword: 'timeout', description: 'Time to wait for a RADIUS server to reply' },
+  { keyword: 'retransmit', description: 'Number of retries to an active server' },
+];
+
+export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }> = [
+  { keyword: 'host', description: 'Specify a TACACS+ server', leadingOnly: true },
+  { keyword: 'key', description: 'Per-server encryption key' },
+  { keyword: 'port', description: 'TCP port the server listens on' },
+  { keyword: 'timeout', description: 'Time to wait for a TACACS+ server to reply' },
+];
+
 export const USERNAME_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'access-class', description: 'Restrict access by access-class' },
   { keyword: 'algorithm-type', description: 'Algorithm used to hash the password' },
@@ -327,11 +343,11 @@ export function buildIdentityConfigCommands(
       stats: newRadiusServerStats(),
     });
     return '';
-  });
+  }, RADIUS_SERVER_CONTINUATIONS);
   trie.registerGreedy('no radius-server', 'Remove legacy radius host', (args) => {
     if (args[0] === 'host' && args[1]) sec().radiusServers.delete(args[1]);
     return '';
-  });
+  }, [{ keyword: 'host', description: 'Specify a RADIUS server' }]);
 
   /*
    * `tacacs-server host <ip> [port P] [timeout T] [key K]` — la forme
@@ -373,7 +389,7 @@ export function buildIdentityConfigCommands(
       stats: newTacacsServerStats(),
     });
     return '';
-  });
+  }, TACACS_SERVER_CONTINUATIONS);
   trie.registerGreedy('no tacacs-server', 'Remove legacy tacacs host', (args) => {
     if (args[0] === 'host' && args[1]) sec().tacacsServers.delete(args[1]);
     return '';
