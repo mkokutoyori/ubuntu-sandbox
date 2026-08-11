@@ -81,3 +81,37 @@ export const IPV6_NEIGHBORS_COLUMNS: ReadonlyArray<TableColumn<Ipv6NeighborRow>>
 ];
 
 export const IPV6_NEIGHBORS_STYLE: TableStyle = { gap: 1, rule: false };
+
+/**
+ * `show users`.
+ *
+ * ```
+ *     Line       User       Host(s)              Idle       Location
+ * *  0 con 0                idle                 00:00:00
+ *    2 vty 0     jean-bapt  idle                 00:02:14 192.168.1.55
+ * ```
+ *
+ * L'en-tete n'est PAS aligne sur ses propres donnees sur une vraie
+ * machine — `Line` commence a la colonne 4 quand la valeur commence a la
+ * 1, `Host(s)` a la 26 quand `idle` commence a la 22. Il reste donc une
+ * constante mesuree (`SHOW_USERS_HEADER`) et seules les DONNEES passent
+ * par la table, meme regle que `chronyc sources` et `ntpq -p`.
+ */
+export interface ShowUsersRow {
+  marker: string; line: string; lineName: string;
+  user: string; idle: string; location: string;
+}
+
+export const SHOW_USERS_HEADER =
+  '    Line       User       Host(s)              Idle       Location';
+
+export const SHOW_USERS_COLUMNS: ReadonlyArray<TableColumn<ShowUsersRow>> = [
+  { header: '', width: 4, align: 'right', value: (r) => `${r.marker} ${r.line}` },
+  { header: '', width: 10, value: (r) => ` ${r.lineName}` },
+  { header: '', width: 11, value: (r) => ` ${r.user}` },
+  { header: '', width: 21, value: () => ' idle' },
+  { header: '', width: 9, value: (r) => ` ${r.idle}` },
+  { header: '', width: 16, value: (r) => ` ${r.location}` },
+];
+
+export const SHOW_USERS_STYLE: TableStyle = { gap: 0, rule: false };

@@ -465,7 +465,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
       historySize: 10,
-      cmdHistory: this.cmdHistory,
+      cmdHistory: [...this.cmdHistory],
     };
   }
 
@@ -496,7 +496,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.terminalWidth = s.terminalWidth;
     this.terminalMonitor = s.terminalMonitor;
     this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
-    this.cmdHistory = s.cmdHistory;
+    this.cmdHistory = [...s.cmdHistory];
   }
 
   // ─── Abstract Method Implementations ─────────────────────────────

@@ -210,18 +210,31 @@ for (const [nom, fabrique] of PLATEFORMES) {
     }, 30_000);
 
     /**
-     * MANQUE MESURE, et ecrit ici plutot que passe sous silence :
-     * l'historique EST partage entre deux sessions de la meme machine.
-     * Le tutoriel §6.1 le range parmi ce qu'une session NE partage PAS,
-     * et il a raison — `cmdHistory` figure bien dans `VtySnapshot`, mais
-     * la rotation ne l'isole pas : `show history` d'une session B fait
-     * apparaitre les commandes tapees dans A.
-     *
-     * Ce cas pince donc ce qui est VRAI aujourd'hui — chaque session a
-     * son propre historique de FRAPPE (flèches haut/bas) — et nomme
-     * l'ecart pour qu'il ne se decouvre pas par surprise. Le corriger
-     * touche la rotation d'etat vty, pas cette vue.
+     * L'historique n'est pas partage — et c'est le COMMUTATEUR qui ne
+     * le tenait pas : son `snapshotVtyState` copiait `cmdHistory` et son
+     * `applyVtyState` ne le restaurait jamais, donc le shell accumulait
+     * les commandes de toutes les sessions et chaque instantane
+     * recapturait ce tas commun. Une session ouverte apres une autre
+     * HERITAIT de son historique. Le routeur, lui, restaurait depuis
+     * toujours — d'ou un defaut invisible tant qu'on ne comparait pas
+     * les deux plateformes.
      */
+    it('l\'historique n\'est pas partage', async () => {
+      const d = fabrique();
+      d.powerOn();
+      const a = await terminal(d, 'ta');
+      const b = await terminal(d, 'tb');
+      await tape(a, 'enable');
+      await tape(a, 'show users');
+      await tape(b, 'enable');
+      await tape(b, 'show line');
+      await tape(b, 'show history');
+      const fin = b.lines.slice(-6).map((l) => l.text).join('\n');
+      expect(fin, 'B doit voir SES commandes').toContain('show line');
+      expect(fin, "la commande de A ne doit pas etre dans l'historique de B")
+        .not.toContain('show users');
+    }, 30_000);
+
     it('chaque session tient son propre tampon de saisie', async () => {
       const d = fabrique();
       d.powerOn();

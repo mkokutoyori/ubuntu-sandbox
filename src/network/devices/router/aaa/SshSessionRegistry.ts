@@ -1,5 +1,9 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope, SshAuthMethod } from './NetworkOsAccount';
+import { renderTable } from '../../shells/cli/TextTable';
+import {
+  SHOW_USERS_HEADER, SHOW_USERS_COLUMNS, SHOW_USERS_STYLE,
+} from '../../shells/cisco/ciscoTableLayouts';
 
 export type VtySessionState = 'active' | 'idle' | 'closed';
 
@@ -293,17 +297,22 @@ export class SshSessionRegistry {
   }
 
   formatShowUsers(now: number = this.now()): string {
-    const header = '    Line       User       Host(s)              Idle       Location';
-    if (this.active.size === 0) return `${header}\n*  0 con 0                idle                 00:00:00`;
-    const rows: string[] = [header];
-    let starred = false;
-    for (const s of this.list(now)) {
-      const idle = secondsToHms(s.idleSeconds);
-      const marker = !starred ? '*' : ' ';
-      starred = true;
-      rows.push(`${marker} ${(s.lineIndex + 1).toString().padStart(3, ' ')} ${s.line.padEnd(7, ' ')}   ${s.user.padEnd(10, ' ')} idle                 ${idle} ${s.fromIp}`);
+    if (this.active.size === 0) {
+      return `${SHOW_USERS_HEADER}\n*  0 con 0                idle                 00:00:00`;
     }
-    return rows.join('\n');
+    const lignes = renderTable(
+      this.list(now).map((s, i) => ({
+        marker: i === 0 ? '*' : ' ',
+        line: String(s.lineIndex + 1),
+        lineName: s.line,
+        user: s.user,
+        idle: secondsToHms(s.idleSeconds),
+        location: s.fromIp,
+      })),
+      SHOW_USERS_COLUMNS,
+      SHOW_USERS_STYLE,
+    ).slice(1);
+    return [SHOW_USERS_HEADER, ...lignes].join('\n');
   }
 
   formatDisplayUsers(now: number = this.now()): string {

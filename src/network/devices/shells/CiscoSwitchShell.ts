@@ -291,6 +291,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.terminalWidth = s.terminalWidth;
     this.terminalMonitor = s.terminalMonitor;
     this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
+    this.cmdHistory = [...s.cmdHistory];
   }
 
   // ─── Abstract Method Implementations ─────────────────────────────
