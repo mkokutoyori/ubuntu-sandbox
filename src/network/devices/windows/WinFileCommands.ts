@@ -258,6 +258,33 @@ export function cmdTasklist(ctx: WinFileCommandContext): string {
 
 // ─── netstat ───────────────────────────────────────────────────────
 
+function statistiquesInterfaces(netCtx: WinCommandContext): string {
+  let octetsRecus = 0, octetsEnvoyes = 0, paquetsRecus = 0, paquetsEnvoyes = 0;
+  for (const [, port] of netCtx.ports) {
+    const c = port.getCounters?.();
+    octetsRecus += c?.bytesIn ?? 0;
+    octetsEnvoyes += c?.bytesOut ?? 0;
+    paquetsRecus += c?.framesIn ?? 0;
+    paquetsEnvoyes += c?.framesOut ?? 0;
+  }
+  const ligne = (nom: string, recu: number, envoye: number) =>
+    `${nom.padEnd(24)}${String(recu).padStart(12)}${String(envoye).padStart(16)}`;
+  return [
+    '',
+    'Interface Statistics',
+    '',
+    `${''.padEnd(24)}${'Received'.padStart(12)}${'Sent'.padStart(16)}`,
+    '',
+    ligne('Bytes', octetsRecus, octetsEnvoyes),
+    ligne('Unicast packets', paquetsRecus, paquetsEnvoyes),
+    ligne('Non-unicast packets', 0, 0),
+    ligne('Discards', 0, 0),
+    ligne('Errors', 0, 0),
+    ligne('Unknown protocols', 0, 0),
+    '',
+  ].join('\n');
+}
+
 export function cmdNetstat(
   ctx: WinFileCommandContext,
   args: string[] = [],
@@ -270,6 +297,10 @@ export function cmdNetstat(
 
   if (hasFlag('r')) {
     return netCtx ? showRoutePrint(netCtx) : '';
+  }
+
+  if (hasFlag('e')) {
+    return netCtx ? statistiquesInterfaces(netCtx) : '';
   }
 
   const showAll = hasFlag('a') || args.includes('-an');

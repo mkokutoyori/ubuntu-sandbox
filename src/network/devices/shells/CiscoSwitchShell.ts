@@ -3840,10 +3840,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         // so it is wrong the moment an operator forces speed or duplex —
         // and the hardcoded `a-full`/`a-100` denied the configuration
         // outright on a port set to `duplex half` / `speed 10`.
-        duplex: !connected ? 'auto'
-          : (port.isAutoNegotiation() ? 'a-' : '') + port.getNegotiatedDuplex(),
-        speed: !connected ? 'auto'
-          : (port.isAutoNegotiation() ? 'a-' : '') + String(port.getNegotiatedSpeed()),
+        duplex: port.isAutoNegotiation()
+          ? (connected ? `a-${port.getNegotiatedDuplex()}` : 'auto')
+          : port.getNegotiatedDuplex(),
+        speed: port.isAutoNegotiation()
+          ? (connected ? `a-${port.getNegotiatedSpeed()}` : 'auto')
+          : String(port.getNegotiatedSpeed()),
         type: portName.startsWith('Gi') ? '1000BASE-T' : '10/100BaseTX',
       });
     }

@@ -1064,3 +1064,273 @@ describe('Windows — la table de routage et les cartes s\'accordent', () => {
     }
   }, 30_000);
 });
+
+// ───────────────── Les compteurs, après du vrai trafic ─────────────────
+
+async function paireLinux(): Promise<{ a: LinuxPC; b: LinuxPC; iface: string }> {
+  const a = new LinuxPC('linux-pc', 'pcA', 0, 0);
+  const b = new LinuxPC('linux-pc', 'pcB', 0, 0);
+  a.powerOn(); b.powerOn();
+  new Cable('lien').connect(a.getPorts()[1], b.getPorts()[1]);
+  const m = new SubnetMask(MASQUE_24);
+  a.getPorts()[1].configureIP(new IPAddress('10.0.0.1'), m);
+  b.getPorts()[1].configureIP(new IPAddress('10.0.0.2'), m);
+  await a.executeCommand('ping -c 3 10.0.0.2');
+  return { a, b, iface: a.getPorts()[1].getName() };
+}
+
+describe('Linux — après un ping, les quatre compteurs disent le même nombre', () => {
+  it('`netstat -i` et `/proc/net/dev` comptent les mêmes paquets', async () => {
+    const { a, iface } = await paireLinux();
+    const net = ligneDe(await vue(a as unknown as Cli, 'netstat -i'), iface);
+    const proc = ligneDe(await vue(a as unknown as Cli, 'cat /proc/net/dev'), `${iface}:`);
+    const rxNet = Number(net.trim().split(/\s+/)[2]);
+    const rxProc = Number(proc.trim().split(/\s+/)[2]);
+    expect(rxNet).toBeGreaterThan(0);
+    expect(rxProc).toBe(rxNet);
+  }, 30_000);
+
+  it('`ifconfig` compte les mêmes paquets et les mêmes octets que `/proc/net/dev`', async () => {
+    const { a, iface } = await paireLinux();
+    const ifc = await vue(a as unknown as Cli, `ifconfig ${iface}`);
+    const proc = ligneDe(await vue(a as unknown as Cli, 'cat /proc/net/dev'), `${iface}:`);
+    const champs = proc.trim().split(/\s+/);
+    const rx = /RX packets (\d+)\s+bytes (\d+)/.exec(ifc);
+    const tx = /TX packets (\d+)\s+bytes (\d+)/.exec(ifc);
+    expect(rx).not.toBeNull();
+    expect(tx).not.toBeNull();
+    expect(Number(rx![1])).toBe(Number(champs[2]));
+    expect(Number(rx![2])).toBe(Number(champs[1]));
+    expect(Number(tx![1])).toBe(Number(champs[10]));
+  }, 30_000);
+
+  it('une interface sans trafic reste à zéro dans les trois vues', async () => {
+    const { a } = await paireLinux();
+    const net = ligneDe(await vue(a as unknown as Cli, 'netstat -i'), 'eth2');
+    const proc = ligneDe(await vue(a as unknown as Cli, 'cat /proc/net/dev'), 'eth2:');
+    const ifc = await vue(a as unknown as Cli, 'ifconfig eth2');
+    expect(Number(net.trim().split(/\s+/)[2])).toBe(0);
+    expect(Number(proc.trim().split(/\s+/)[2])).toBe(0);
+    expect(ifc).toContain('RX packets 0');
+  }, 30_000);
+});
+
+describe('Cisco — après un ping, la vue détaillée compte ce qui est passé', () => {
+  it('les paquets entrés et sortis sont non nuls et cohérents', async () => {
+    const r = new CiscoRouter('R1', 0, 0);
+    r.powerOn();
+    const voisin = new CiscoRouter('R9', 0, 0);
+    voisin.powerOn();
+    for (const d of [r, voisin]) {
+      await suite(d as unknown as Cli, ['enable', 'configure terminal',
+        'interface GigabitEthernet0/0', 'no shutdown', 'end']);
+    }
+    await suite(r as unknown as Cli, ['configure terminal', 'interface GigabitEthernet0/0',
+      `ip address 10.0.0.1 ${MASQUE_24}`, 'end']);
+    await suite(voisin as unknown as Cli, ['configure terminal', 'interface GigabitEthernet0/0',
+      `ip address 10.0.0.2 ${MASQUE_24}`, 'end']);
+    new Cable('lien2').connect(r.getPorts()[0], voisin.getPorts()[0]);
+    await vue(r as unknown as Cli, 'ping 10.0.0.2');
+
+    const detail = await vue(r as unknown as Cli, 'show interfaces GigabitEthernet0/0');
+    const entres = /(\d+) packets input/.exec(detail);
+    const sortis = /(\d+) packets output/.exec(detail);
+    expect(entres).not.toBeNull();
+    expect(sortis).not.toBeNull();
+    expect(Number(sortis![1])).toBeGreaterThan(0);
+    expect(Number(entres![1])).toBeGreaterThan(0);
+  }, 30_000);
+});
+
+describe('Windows — les deux vues de compteurs s\'accordent', () => {
+  it('`netstat -e` est un tableau de statistiques, pas la liste des connexions', async () => {
+    const pc = windowsConfigure();
+    const e = await vue(pc as unknown as Cli, 'netstat -e');
+    expect(e).toContain('Interface Statistics');
+    expect(e).not.toContain('Active Connections');
+    expect(e).toContain('Unicast packets');
+  }, 30_000);
+
+  it('`netstat -e` et `Get-NetAdapterStatistics` partent des mêmes compteurs', async () => {
+    const pc = windowsConfigure();
+    const e = await vue(pc as unknown as Cli, 'netstat -e');
+    const ps = await vue(pc as unknown as Cli, 'powershell Get-NetAdapterStatistics');
+    const octets = /Bytes\s+(\d+)\s+(\d+)/.exec(e);
+    expect(octets).not.toBeNull();
+    const recusPs = [...ps.matchAll(/ReceivedBytes\s+:\s+(\d+)/g)]
+      .reduce((n, m) => n + Number(m[1]), 0);
+    expect(Number(octets![1])).toBe(recusPs);
+  }, 30_000);
+});
+
+// ───────────────── Vitesse et duplex ─────────────────
+
+describe('Cisco commutateur — la vitesse et le duplex configurés se voient partout', () => {
+  it('un port forcé n\'est plus annoncé `auto` par le tableau des états', async () => {
+    const sw = await commutateurCisco();
+    await suite(sw as unknown as Cli, [
+      'configure terminal', 'interface FastEthernet0/1',
+      'speed 100', 'duplex full', 'end',
+    ]);
+    const statut = ligneDe(await vue(sw as unknown as Cli, 'show interfaces status'), 'Fa0/1');
+    const detail = await vue(sw as unknown as Cli, 'show interfaces FastEthernet0/1');
+    const conf = await vue(sw as unknown as Cli, 'show running-config interface FastEthernet0/1');
+
+    expect(statut).toMatch(/\bfull\b/);
+    expect(statut).toMatch(/\b100\b/);
+    expect(statut).not.toMatch(/\bauto\b/);
+    expect(detail).toContain('Full-duplex, 100Mbps');
+    expect(conf).toContain('speed 100');
+    expect(conf).toContain('duplex full');
+  }, 30_000);
+
+  it('un port en négociation automatique reste `auto` tant qu\'il n\'a pas de lien', async () => {
+    const sw = await commutateurCisco();
+    const statut = ligneDe(await vue(sw as unknown as Cli, 'show interfaces status'), 'Fa0/2');
+    expect(statut).toMatch(/auto\s+auto/);
+  }, 30_000);
+
+  it('la vitesse forcée est celle que la vue détaillée annonce', async () => {
+    const sw = await commutateurCisco();
+    await suite(sw as unknown as Cli, [
+      'configure terminal', 'interface FastEthernet0/3', 'speed 10', 'duplex half', 'end',
+    ]);
+    expect(await vue(sw as unknown as Cli, 'show interfaces FastEthernet0/3'))
+      .toContain('Half-duplex, 10Mbps');
+    expect(ligneDe(await vue(sw as unknown as Cli, 'show interfaces status'), 'Fa0/3'))
+      .toMatch(/half\s+10\b/);
+  }, 30_000);
+});
+
+describe('Linux — la vitesse annoncée par /sys et par ethtool ne se contredit pas', () => {
+  it('sur un lien établi, les deux annoncent la même vitesse', async () => {
+    const { a, iface } = await paireLinux();
+    const sys = (await vue(a as unknown as Cli, `cat /sys/class/net/${iface}/speed`)).trim();
+    const eth = await vue(a as unknown as Cli, `ethtool ${iface}`);
+    const m = /Speed: (\d+)Mb\/s/.exec(eth);
+    if (m) expect(m[1]).toBe(sys);
+    else expect(eth).toContain('Speed: Unknown!');
+  }, 30_000);
+});
+
+// ───────────────── IPv6 ─────────────────
+
+describe('Cisco — les vues IPv6 s\'accordent avec les vues IPv4 sur l\'état', () => {
+  it('`show ipv6 interface brief` donne le même état que `show ip interface brief`', async () => {
+    const r = await routeurCisco();
+    const v4 = ligneDe(await vue(r as unknown as Cli, 'show ip interface brief'), 'GigabitEthernet0/0');
+    const v6 = await vue(r as unknown as Cli, 'show ipv6 interface brief');
+    const ligneV6 = v6.split('\n').find((l) => l.startsWith('GigabitEthernet0/0')) ?? '';
+    const monteV4 = /\bup\b/.test(v4) && !v4.includes('administratively down');
+    const monteV6 = ligneV6.includes('[up/');
+    expect(monteV6).toBe(monteV4);
+  }, 30_000);
+
+  it('une interface éteinte l\'est aussi pour la vue IPv6', async () => {
+    const r = await routeurCisco();
+    await suite(r as unknown as Cli, [
+      'configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end',
+    ]);
+    const v6 = await vue(r as unknown as Cli, 'show ipv6 interface brief');
+    const ligne = v6.split('\n').find((l) => l.startsWith('GigabitEthernet0/0')) ?? '';
+    expect(ligne).toContain('[administratively down/down]');
+  }, 30_000);
+
+  it('une adresse IPv6 configurée est annoncée par la vue IPv6', async () => {
+    const r = await routeurCisco();
+    await suite(r as unknown as Cli, [
+      'configure terminal', 'interface GigabitEthernet0/0',
+      'ipv6 address 2001:db8::1/64', 'end',
+    ]);
+    const bref = await vue(r as unknown as Cli, 'show ipv6 interface brief');
+    const detail = await vue(r as unknown as Cli, 'show ipv6 interface GigabitEthernet0/0');
+    const conf = await vue(r as unknown as Cli, 'show running-config interface GigabitEthernet0/0');
+    for (const [nom, sortie] of [['brief', bref], ['detail', detail], ['config', conf]] as const) {
+      expect(sortie.toLowerCase(), nom).toContain('2001:db8::1');
+    }
+    expect(bref.toLowerCase()).toContain('fe80::');
+    expect(detail.toLowerCase()).toContain('fe80::');
+  }, 30_000);
+});
+
+describe('Linux — les adresses IPv6 sont les mêmes dans les vues qui les portent', () => {
+  it('`ip -6 addr` et `ip addr` décrivent la même interface', async () => {
+    const pc = linuxConfigure();
+    const v6 = await vue(pc as unknown as Cli, 'ip -6 addr show eth0');
+    const v4 = await vue(pc as unknown as Cli, 'ip addr show eth0');
+    expect(v6).toContain('eth0');
+    expect(v4).toContain('eth0');
+    const mtuV6 = /mtu (\d+)/.exec(v6)?.[1];
+    const mtuV4 = /mtu (\d+)/.exec(v4)?.[1];
+    expect(mtuV6).toBe(mtuV4);
+  }, 30_000);
+});
+
+// ───────────────── Une modification bouge toutes les vues ─────────────────
+
+describe('Une modification se voit dans toutes les vues à la fois', () => {
+  it('Cisco : renommer la description la change dans les trois vues', async () => {
+    const r = await routeurCisco();
+    await suite(r as unknown as Cli, [
+      'configure terminal', 'interface GigabitEthernet0/0', 'description NOUVELLE', 'end',
+    ]);
+    expect(await vue(r as unknown as Cli, 'show interfaces GigabitEthernet0/0'))
+      .toContain('Description: NOUVELLE');
+    expect(ligneDe(await vue(r as unknown as Cli, 'show interfaces description'), 'GigabitEthernet0/0'))
+      .toContain('NOUVELLE');
+    expect(await vue(r as unknown as Cli, 'show running-config interface GigabitEthernet0/0'))
+      .toContain('description NOUVELLE');
+  }, 30_000);
+
+  it('Cisco : changer l\'adresse la change dans les quatre vues', async () => {
+    const r = await routeurCisco();
+    await suite(r as unknown as Cli, [
+      'configure terminal', 'interface GigabitEthernet0/0',
+      `ip address 172.16.0.1 ${MASQUE_24}`, 'end',
+    ]);
+    for (const commande of [
+      'show interfaces GigabitEthernet0/0',
+      'show ip interface GigabitEthernet0/0',
+      'show ip interface brief',
+      'show running-config interface GigabitEthernet0/0',
+    ]) {
+      const sortie = await vue(r as unknown as Cli, commande);
+      expect(sortie, commande).toContain('172.16.0.1');
+      expect(sortie, commande).not.toContain('10.0.0.1');
+    }
+  }, 30_000);
+
+  it('Cisco commutateur : changer le VLAN d\'accès le change dans les deux vues', async () => {
+    const sw = await commutateurCisco();
+    await suite(sw as unknown as Cli, [
+      'configure terminal', 'vlan 30', 'exit',
+      'interface FastEthernet0/1', 'switchport access vlan 30', 'end',
+    ]);
+    expect(ligneDe(await vue(sw as unknown as Cli, 'show interfaces status'), 'Fa0/1'))
+      .toMatch(/\s30\s/);
+    expect(await vue(sw as unknown as Cli, 'show interfaces FastEthernet0/1 switchport'))
+      .toContain('Access Mode VLAN: 30');
+    expect(await vue(sw as unknown as Cli, 'show running-config interface FastEthernet0/1'))
+      .toContain('switchport access vlan 30');
+  }, 30_000);
+
+  it('Linux : changer l\'adresse la change dans les trois vues', async () => {
+    const pc = linuxConfigure();
+    await vue(pc as unknown as Cli, 'ip addr del 10.0.0.5/24 dev eth0');
+    await vue(pc as unknown as Cli, 'ip addr add 192.168.50.5/24 dev eth0');
+    expect(await vue(pc as unknown as Cli, 'ip addr show eth0')).toContain('192.168.50.5/24');
+    expect(ligneDe(await vue(pc as unknown as Cli, 'ip -br addr'), 'eth0')).toContain('192.168.50.5/24');
+    expect(await vue(pc as unknown as Cli, 'ifconfig eth0')).toContain('inet 192.168.50.5');
+  }, 30_000);
+
+  it('Huawei : changer la description la change dans les deux vues', async () => {
+    const r = await routeurHuawei();
+    await suite(r as unknown as Cli, [
+      'system-view', 'interface GigabitEthernet0/0/0', 'description AUTRE', 'quit', 'quit',
+    ]);
+    expect(await vue(r as unknown as Cli, 'display interface GigabitEthernet0/0/0'))
+      .toContain('Description: AUTRE');
+    expect(await vue(r as unknown as Cli, 'display current-configuration interface GigabitEthernet0/0/0'))
+      .toContain('description AUTRE');
+  }, 30_000);
+});

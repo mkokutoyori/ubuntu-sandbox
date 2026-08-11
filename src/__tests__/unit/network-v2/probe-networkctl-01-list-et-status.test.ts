@@ -53,6 +53,9 @@ function listRows(sortie: string): Array<Record<string, string>> {
 /** Ce que `ip -br link` dit de la porteuse de chaque interface. */
 function porteuseSelonIp(sortie: string): Map<string, boolean> {
   const out = new Map<string, boolean>();
+  for (const m of sortie.matchAll(/^(\S+)\s+\S+\s+\S*\s*<([^>]*)>/gm)) {
+    out.set(m[1], m[2].split(',').includes('LOWER_UP'));
+  }
   for (const m of sortie.matchAll(/^\s*\d+:\s+(\S+):\s+<([^>]*)>/gm)) {
     out.set(m[1], m[2].split(',').includes('LOWER_UP'));
   }
@@ -92,7 +95,7 @@ describe('Scénario 1 — `list` s\'accorde avec le noyau', () => {
 
     expect(eth0!.OPERATIONAL, 'administrativement bas, donc `off` et non `no-carrier`').toBe('off');
     expect(
-      /eth0:\s+<[^>]*>/.exec(ipLink)![0],
+      ipLink.split('\n').find((l) => /(^|\s)eth0:?(\s|$)/.test(l))!,
       'et ip doit avoir perdu le drapeau UP en même temps',
     ).not.toContain('UP');
   }, LONG);
