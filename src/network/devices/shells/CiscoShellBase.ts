@@ -231,7 +231,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.d().powerOff();
     this.d().powerOn();
     this.logging.noteRestart();
-    this.mode = 'user';
+    this.reinitialiserSessionApresRedemarrage();
     this.terminalMonitor = false;
     this.cmdHistory = [];
     this.aliases.reset();
@@ -247,11 +247,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     device.powerOff();
     device.powerOn();
     this.logging.noteRestart();
-    this.mode = 'user';
+    this.reinitialiserSessionApresRedemarrage();
     this.terminalMonitor = false;
     this.cmdHistory = [];
     this.debugConsole.length = 0;
     (device as unknown as { getDebugService?: () => { disableAll?: () => void } }).getDebugService?.().disableAll?.();
+  }
+
+  /**
+   * Une machine qui redemarre repart en EXEC UTILISATEUR.
+   *
+   * Les deux redemarrages ne posaient que `mode`, et c'est le meme
+   * oubli que `exit` avait : `show privilege` et `modeDeRetour` lisent
+   * `currentPrivilegeLevel`, pas `mode`. Un routeur qui venait de
+   * redemarrer repondait donc `Current privilege level is 15` — et le
+   * mode privilegie revenait de lui-meme des la premiere sortie de
+   * configuration, sans que le secret d'activation soit redemande.
+   */
+  protected reinitialiserSessionApresRedemarrage(): void {
+    this.mode = 'user';
+    this.fsm.mode = 'user';
+    this.currentPrivilegeLevel = 1;
   }
 
   protected attachLoggingToDevice(device: TDevice): void {

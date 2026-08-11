@@ -54,6 +54,14 @@ export const IP_SSH_CONTINUATIONS: ReadonlyArray<{ keyword: string; description:
   { keyword: 'version', description: 'SSH protocol version to accept' },
 ];
 
+export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'new-model', description: 'Disable the AAA access control model' },
+  { keyword: 'authentication', description: 'Remove an authentication method list' },
+  { keyword: 'authorization', description: 'Remove an authorization method list' },
+  { keyword: 'accounting', description: 'Remove an accounting method list' },
+  { keyword: 'session-id', description: 'Restore the default session ID behaviour' },
+];
+
 export const USERNAME_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
   { keyword: 'access-class', description: 'Restrict access by access-class' },
   { keyword: 'algorithm-type', description: 'Algorithm used to hash the password' },
@@ -200,7 +208,7 @@ export function buildIdentityConfigCommands(
       return '';
     }
     return '';
-  });
+  }, NO_AAA_CONTINUATIONS);
 
   trie.registerGreedy('username', 'Local user', (args) => {
     if (args.length < 1) return '% Incomplete command.';
