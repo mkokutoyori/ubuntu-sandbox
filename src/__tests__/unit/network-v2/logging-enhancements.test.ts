@@ -50,9 +50,6 @@ describe('Logging — SyslogAgent forwards buffer entries to remote servers', ()
       (p) => (p as { deviceId?: string }).deviceId === r.id,
       () => { drops++; });
 
-    // `tcp.listener.changed` ne journalise plus rien : le
-    // `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y trouvait
-    // était inventé. On déclenche donc un message RÉEL d'IOS.
     bus.publish({
       topic: 'port.link.up',
       payload: { deviceId: r.id, hostname: 'R', portName: 'GigabitEthernet0/0' },
@@ -97,9 +94,6 @@ describe('Logging — unified device.syslog.entry across all device types', () =
       entries.push({ deviceId: p.deviceId, tag: p.tag, message: p.message });
     });
 
-    // `tcp.listener.changed` ne journalise plus rien : le
-    // `%SYS-5-NOTIFICATIONS: TCP listener bound` qui s'y trouvait
-    // était inventé. On déclenche donc un message RÉEL d'IOS.
     bus.publish({
       topic: 'port.link.up',
       payload: { deviceId: cisco.id, hostname: 'CSCO', portName: 'GigabitEthernet0/0' },
@@ -114,8 +108,6 @@ describe('Logging — unified device.syslog.entry across all device types', () =
       action: 'Block', direction: 'Inbound', protocol: 'TCP',
       localPort: '9999', remotePort: 'Any', description: 'test',
     });
-    // Filtering Platform Packet Drop is off by default on real Windows —
-    // auditpol must enable it before 5152 is generated (PRD-Auditpol.md §2.1 P9).
     win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
     bus.publish({
       topic: 'windows.firewall.drop',
@@ -185,7 +177,7 @@ describe('Logging — Linux iptables drops appear in /var/log/kern.log', () => {
 });
 
 describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
-  it('an SSH connection (port 22) lands in `show logging` buffer', async () => {
+  it('une connexion TCP nue sur le 22 n\'annonce AUCUNE session SSH', async () => {
     const bus = new EventBus();
     const cli = new CiscoRouter('CLI');
     const srv = new CiscoRouter('SRV');
@@ -196,13 +188,9 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
-    // `enable` first: without it IOS rejects `configure terminal`, and
-    // every line below it, with "% Invalid input detected".
     await Promise.resolve(srv.executeCommand('enable'));
     await Promise.resolve(srv.executeCommand('configure terminal'));
     await Promise.resolve(srv.executeCommand('logging buffered 8000 informational'));
-    // No RSA host keys, no SSH server on IOS — so no port 22 to connect
-    // to, and nothing to log.
     await Promise.resolve(srv.executeCommand('ip domain-name lab.local'));
     await Promise.resolve(srv.executeCommand('crypto key generate rsa modulus 2048'));
     await Promise.resolve(srv.executeCommand('end'));
@@ -210,7 +198,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
     expect(out).toContain('Log Buffer');
-    expect(out).toMatch(/%SSH-5-SSH2_SESSION:.+AUTHENTICATION.+from 10\.0\.0\.1:\d+ accepted on port 22/);
+    expect(out, 'aucune session n\'est etablie').not.toContain('SSH2_SESSION');
   });
 
   it('an inbound ACL deny on TCP lands in the show-logging buffer', async () => {
@@ -256,8 +244,6 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
       enabled: true, action: 'Block', direction: 'Inbound',
       protocol: 'TCP', localPort: '22', remotePort: 'Any', description: 'test',
     });
-    // Filtering Platform Packet Drop is off by default on real Windows —
-    // auditpol must enable it before 5152 is generated (PRD-Auditpol.md §2.1 P9).
     win.auditPolicy.set('Filtering Platform Packet Drop', { success: true, failure: true });
 
     cli.getTcpStack().connect('10.0.0.2', 22);
@@ -269,7 +255,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     )).toBe(true);
   });
 
-  it('Huawei `display logbuffer` renders SSH/AUTHENTICATION dynamically', async () => {
+  it('Huawei : une connexion TCP nue sur le 22 n\'annonce aucune session SSH', async () => {
     const bus = new EventBus();
     const cli = new HuaweiRouter('CLI');
     const srv = new HuaweiRouter('SRV');
@@ -280,16 +266,13 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     cli.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
-    // VRP ne fait tourner aucun serveur STelnet sans paire de clés
-    // locale : sans elle, il n'y a pas de port 22 à joindre, donc
-    // rien à journaliser.
     await Promise.resolve(srv.executeCommand('system-view'));
     await Promise.resolve(srv.executeCommand('rsa local-key-pair create'));
     await Promise.resolve(srv.executeCommand('quit'));
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('display logbuffer'));
-    expect(out).toMatch(/%01SSH\/5\/NOTIFICATIONS:.+AUTHENTICATION.+from 10\.0\.0\.1/);
+    expect(out, 'aucune session n\'est etablie').not.toMatch(/SSH.+AUTHENTICATION/);
   });
 
   it('Cisco show logging captures interface link up/down as %LINK-3', async () => {
@@ -311,11 +294,6 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
     expect(out).toMatch(/%LINK-3-UPDOWN:.+GigabitEthernet0\/0.+state to down/);
   });
 
-  // Un vrai IOS ne journalise RIEN quand un segment arrive sur un port
-  // fermé : il répond un RST, en silence. La ligne
-  // `%TCP-4-WARNINGS: Segment dropped (no-listener)` que ce cas exigeait
-  // était fabriquée de bout en bout — sévérité prise pour mnémonique,
-  // sur un événement qu'aucun équipement ne publie.
   it('a TCP segment dropped for no-listener writes nothing at all', async () => {
     const bus = new EventBus();
     const cli = new CiscoRouter('CLI');

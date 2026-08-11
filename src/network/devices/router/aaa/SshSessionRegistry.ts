@@ -8,14 +8,6 @@ import { rendreDisplayUsers } from '../../shells/huawei/huaweiTableLayouts';
 
 export type VtySessionState = 'active' | 'idle' | 'closed';
 
-/**
- * Le PROTOCOLE par lequel la session est arrivee. Distinct du TYPE DE
- * LIGNE qu'elle occupe et de la SOURCE d'ou elle vient : une session SSH
- * arrive par SSH, prend une vty et vient d'une adresse ; une session
- * console arrive par le port console, prend `con 0` et ne vient de nulle
- * part. Les confondre produisait `%SSH-6-SSH2_SESSION: … on vty 0 from
- * console`, trois faits contradictoires dans une ligne.
- */
 export type SessionTransport = 'console' | 'ssh' | 'telnet' | 'aux';
 
 export type LineKind = 'con' | 'vty' | 'aux';
@@ -24,24 +16,10 @@ const LIGNE_DE: Record<SessionTransport, LineKind> = {
   console: 'con', aux: 'aux', ssh: 'vty', telnet: 'vty',
 };
 
-/**
- * Un chassis a UN port console et UN port auxiliaire. Le nombre de vty
- * est configurable et vient de `capacity()`.
- */
 const LIGNES_PHYSIQUES: Record<LineKind, number | null> = { con: 1, aux: 1, vty: null };
 
-/**
- * `localport` d'IOS dans `%SEC_LOGIN-*` : le port TCP par lequel la
- * session est arrivee, et **0 pour une connexion locale** — la console
- * n'ecoute sur aucun port.
- */
 const PORT_DE: Record<SessionTransport, number> = { console: 0, aux: 0, ssh: 22, telnet: 23 };
 
-/**
- * Une source qui n'est pas une adresse designe un acces LOCAL. Le champ
- * `from` de `recordLoginSuccess` porte deja `'console'` depuis toujours
- * — l'information existait et etait jetee.
- */
 function transportDepuisSource(from: string, localPort?: number): SessionTransport {
   const s = (from ?? '').trim().toLowerCase();
   if (s === 'console' || s === 'con' || s === 'local' || s === '') return 'console';
@@ -72,9 +50,7 @@ export interface SshSessionRecord {
   readonly terminalType: string | null;
   readonly localPort: number;
   readonly peerPort: number;
-  /** Le chiffrement retenu — `%SSH-5-SSH2_SESSION` le nomme. */
   readonly cipher: string;
-  /** Le HMAC retenu — idem. */
   readonly hmac: string;
 }
 
@@ -85,11 +61,6 @@ export interface SshSessionRegistryOptions {
   capacity?: () => number;
   historyLimit?: number;
   now?: () => number;
-  /**
-   * Le couple que le serveur retiendrait. Lu a l'ouverture plutot que
-   * fige, pour qu'`ip ssh server algorithm encryption …` change ce que
-   * le journal annonce comme il change deja ce que `show ssh` affiche.
-   */
   algorithms?: () => { chiffrement: string; hmac: string };
 }
 
@@ -179,16 +150,6 @@ export class SshSessionRegistry {
     return s ? this.snapshot(s, this.now()) : null;
   }
 
-  /**
-   * Une ligne se choisit DANS SON PROPRE ESPACE. `con 0` et `vty 0` sont
-   * deux lignes differentes qui portent toutes deux le rang 0, donc le
-   * jeu des rangs pris est filtre par type — sans quoi une console
-   * occupait la premiere vty et la vty suivante se numerotait 1.
-   *
-   * Le nombre de lignes physiques ne se configure pas : un chassis a un
-   * port console et un port auxiliaire, et `line con 1` n'existe pas.
-   * Seules les vty ont une capacite reglable.
-   */
   private allocateLine(kind: LineKind): { line: string; index: number } | null {
     const taken = new Set(Array.from(this.active.values())
       .filter(s => s.lineKind === kind)
@@ -204,12 +165,6 @@ export class SshSessionRegistry {
     return this.allocateLine(kind) !== null;
   }
 
-  /**
-   * Quelle session execute la commande en cours. C'est ce que `show
-   * users` marque d'une etoile, et cela ne peut pas se deduire de la
-   * table : la premiere ligne de la liste est la plus BASSE, pas celle
-   * qui pose la question.
-   */
   setCurrentSession(id: string | null): void { this.courante = id; }
 
   currentSession(): string | null { return this.courante; }
@@ -265,11 +220,6 @@ export class SshSessionRegistry {
     return this.snapshot(session, at);
   }
 
-  /**
-   * The client's announced terminal type, learned after the line was
-   * claimed — telnet negotiates it in parallel with the login dialog, so
-   * it is not always known when `open()` runs.
-   */
   setTerminalType(id: string, terminalType: string): void {
     const s = this.active.get(id);
     if (s) s.terminalType = terminalType;
@@ -314,10 +264,6 @@ export class SshSessionRegistry {
   private onLoginSuccess = (e: { topic: string; payload: unknown }) => {
     const env = e as unknown as NetworkOsAccountEventEnvelope;
     if (env.payload.deviceId !== this.deviceId) return;
-    // `from` porte deja le mot `console` quand la connexion est locale :
-    // le transport se LIT ici au lieu d'etre suppose SSH pour tout le
-    // monde. Sans cette lecture, un operateur assis devant le port
-    // console ouvrait une vty et la machine annoncait une session SSH.
     this.open({
       user: env.payload.account.name,
       privilege: env.payload.account.privilege,
@@ -329,39 +275,10 @@ export class SshSessionRegistry {
 
   private onSessionClosed = () => { /* placeholder for external close hook */ };
 
-  // ── `send` : porter un message a une session vivante ───────────────
-  //
-  // Un terminal s'inscrit pour SA ligne ; `send` pousse le texte a qui
-  // s'est inscrit. Le canal est keye par le NUMERO DE LIGNE et non par
-  // l'enregistrement de session, pour une raison mesuree : la console
-  // n'a pas d'enregistrement ici (`show users` la synthetise quand la
-  // table est vide), et un `send *` qui sauterait la console laisserait
-  // hors du message la seule ligne dont on est sur qu'elle est occupee.
   private readonly canaux: Map<number, Set<(texte: string) => void>> = new Map();
 
-  // ── `Uses` : combien de fois la ligne a servi depuis le demarrage ──
-  //
-  // La colonne existait dans `show line` et valait 0 pour toujours :
-  // aucun compteur ne vivait derriere, sur aucune ligne. C'est pourtant
-  // ce chiffre qui distingue une ligne QU'ON N'A JAMAIS UTILISEE d'une
-  // ligne libre en ce moment — la question que le tableau sert a poser.
-  //
-  // Le compte est CUMULATIF et ne redescend pas a la fermeture : c'est
-  // « combien de connexions depuis le dernier redemarrage », pas
-  // « combien maintenant », que la table des sessions dit deja.
-  //
-  // La cle porte le TYPE en plus du rang (`con:0`, `vty:0`) et non le
-  // rang seul : `con 0` et `vty 0` valent tous deux zero dans leur
-  // propre numerotation, donc une cle numerique les aurait confondus et
-  // la console aurait compte pour la premiere vty.
   private readonly uses: Map<string, number> = new Map();
 
-  /**
-   * Compter une ouverture. Public parce que la CONSOLE n'a pas
-   * d'enregistrement de session ici — elle n'est pas une connexion
-   * reseau — et que son compteur doit pourtant exister : sur une vraie
-   * machine `con 0` est la ligne au plus gros `Uses`.
-   */
   noteLineUse(kind: 'con' | 'vty' | 'aux', index: number): void {
     const k = `${kind}:${index}`;
     this.uses.set(k, (this.uses.get(k) ?? 0) + 1);
@@ -383,11 +300,6 @@ export class SshSessionRegistry {
     };
   }
 
-  /**
-   * Rend le nombre de lignes REELLEMENT touchees. Ce compte est ce qui
-   * distingue un message livre d'un message tombe dans le vide, donc la
-   * commande peut dire la verite au lieu d'annoncer un succes constant.
-   */
   deliverMessage(cible: 'all' | number, texte: string): number {
     let n = 0;
     for (const [ligne, abonnes] of this.canaux) {
@@ -397,14 +309,6 @@ export class SshSessionRegistry {
     return n;
   }
 
-  /**
-   * Le RANG ABSOLU de la ligne dans la colonne `Line`, distinct du rang
-   * dans son propre type : IOS numerote `con 0` a 0, puis les vty a
-   * partir de 1. C'est ce qui fait que `show users` sur un chassis
-   * occupe par la console et une session SSH rend `0 con 0` et `1 vty 0`
-   * — deux nombres differents pour deux lignes dont le rang propre est
-   * le meme.
-   */
   private rangAbsolu(s: SshSessionRecord): number {
     if (s.lineKind === 'con') return s.lineIndex;
     if (s.lineKind === 'aux') return 1 + s.lineIndex;
@@ -412,8 +316,6 @@ export class SshSessionRegistry {
   }
 
   formatShowUsers(now: number = this.now()): string {
-    // Une console est toujours physiquement la, meme sans authentifica-
-    // tion : sans session enregistree, `show users` la decrit libre.
     if (this.active.size === 0) {
       return `${SHOW_USERS_HEADER}\n*  0 con 0                idle                 00:00:00`;
     }
@@ -432,12 +334,6 @@ export class SshSessionRegistry {
     return [SHOW_USERS_HEADER, ...lignes].join('\n');
   }
 
-  /**
-   * Le NUMERO d'interface utilisateur de VRP, distinct du rang de la
-   * ligne dans son type : la console est l'interface 0, les vty
-   * commencent a 129. Deux espaces de numerotation, un seul champ
-   * affiche.
-   */
   private interfaceUtilisateur(s: SshSessionRecord): number {
     if (s.lineKind === 'con') return s.lineIndex;
     if (s.lineKind === 'aux') return 1 + s.lineIndex;
@@ -448,12 +344,6 @@ export class SshSessionRegistry {
     console: 'CON', aux: 'AUX', telnet: 'TEL', ssh: 'SSH',
   };
 
-  /**
-   * `display users`. Une console PHYSIQUE existe meme sans personne
-   * dessus — c'est ce que decrit la ligne de repli — mais des qu'une
-   * session est ouverte la vue doit la LIRE plutot que d'affirmer un
-   * etat que rien ne mesure.
-   */
   formatDisplayUsers(now: number = this.now()): string {
     const sessions = this.list(now);
     if (sessions.length === 0) {

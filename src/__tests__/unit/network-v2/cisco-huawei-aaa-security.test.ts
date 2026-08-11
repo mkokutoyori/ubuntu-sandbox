@@ -60,9 +60,6 @@ describe('§A — Cisco local-user database is queryable and persistent', () => 
   });
 
   test('a second username adds a separate account', async () => {
-    // The lab fixture pre-seeds the standard cross-vendor cast
-    // (alice/bob/carl/dave) so SSH cross-vendor tests work without
-    // per-pairing setup. Assert containment rather than strict equality.
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret a');
     await lab.ciscoR1.executeCommand('username readonly privilege 1 secret b');
@@ -94,17 +91,11 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
     await lab.hwR1.executeCommand('quit');
     const u = lab.hwR1._getLocalUser('admin');
     expect(u?.privilege).toBe(15);
-    // Le magasin range desormais la valeur SOUS SA FORME RENDUE — un
-    // `password cipher` y met le chiffre, pas le clair, faute de quoi la
-    // configuration echouerait a se rejouer (PRD-CLI-Fidelite-VRP §10).
-    // Ce qui compte est que le compte s'ouvre avec le mot de passe pose.
     expect(u?.secret).not.toBe('Admin@123');
     expect(lab.hwR1.getCredentialStore().get('admin')?.authenticate('Admin@123')).toBe(true);
   });
 
   test('multiple local-users are stored', async () => {
-    // See note in §A — the default cast (alice/bob/carl/dave) is
-    // present, so assert containment.
     await lab.hwR1.executeCommand('system-view');
     await lab.hwR1.executeCommand('aaa');
     await lab.hwR1.executeCommand('local-user admin password cipher a');
@@ -135,12 +126,6 @@ describe('§C — local users appear in running-config / current-configuration',
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    // Le nom du compte AUTHENTIFIE, pas la chaine vide. `show
-    // running-config` est une commande de niveau 15 et la porte SSH lit
-    // le niveau du compte : un utilisateur inconnu vaut 1, donc ce cas
-    // interrogeait la machine en tant que personne et lisait le refus.
-    // En production `RouterSshServerContext` passe toujours le nom
-    // authentifie ; seule cette abreviation de test ne le faisait pas.
     const out = lab.ciscoR1.runSshCommandSync('admin', 'show running-config');
     expect(out?.output).toMatch(/username admin privilege 15 secret/);
   });
@@ -549,8 +534,6 @@ describe('§K — SshSessionRegistry tracks active VTY sessions reactively', () 
   test('formatDisplayUsers returns VRP-style listing', () => {
     store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
     const text = registry.formatDisplayUsers();
-    // VRP ecrit `User-Intf`, pas `UI` : ce cas encodait comme contrat un
-    // en-tete que le depot avait invente.
     expect(text).toMatch(/User-Intf\s+Delay/);
     expect(text).toMatch(/SSH/);
     expect(text).toMatch(/admin/);
@@ -604,8 +587,6 @@ describe('§M — VtyLineConfig domain model carries every line directive', () =
     expect(cfg.range.last).toBe(4);
     expect(cfg.first).toBe(0);
     expect(cfg.last).toBe(4);
-    // Unset directives render nothing in show running-config — only the
-    // bare `line vty 0 4` header is emitted until an operator changes a field.
     expect(cfg.login).toBeNull();
     expect(cfg.linePassword).toBeNull();
     expect(cfg.transportInput).toBeNull();

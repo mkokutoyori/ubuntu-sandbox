@@ -573,3 +573,50 @@ magasin que le routeur — le secret est gardé, donc le compte
 s'authentifie — tout en conservant sa carte pour le rendu de la
 configuration. `undo local-user` le retire vraiment ; son parseur
 n'existait pas, la forme tombait dans le fourre-tout `rawLines`.
+
+## Lot S8 — SSH ne parle que de SSH, à l'ouverture ET à la fermeture
+
+Signalé : « il y a toujours le souci avec les notif de ssh qui
+apparaissent ». En rejouant le transcript complet et en filtrant sur
+`SSH` — plutôt qu'en supposant que S5 avait tout couvert — une seule
+ligne restait :
+
+```
+*Aug 11 14:15:26.105: %SSH-6-SSH2_CLOSE: Session closed for 'alice' on con 0 (logout)
+```
+
+S5 avait corrigé l'OUVERTURE et laissé la FERMETURE : exactement la même
+contradiction — le sous-système SSH annonçant une ligne console — du côté
+qui n'avait pas été regardé. La leçon est celle du lot lui-même : un
+événement qui a deux moitiés se corrige des deux côtés, sinon on déplace
+le défaut au lieu de le fermer.
+
+En cherchant tous les émetteurs plutôt que celui-là seul, un **troisième**
+est apparu : `tcp.connection.opened` écrivait `%SSH-…-SSH2_SESSION` dès
+l'acceptation d'une connexion TCP sur le port 22. Une connexion TCP n'est
+ni une session SSH établie ni une authentification : elle précède les
+deux et peut n'aboutir à aucune. C'était donc un second émetteur pour le
+message que `router.ssh.session.opened` écrit déjà, dans une formulation
+(`AUTHENTICATION: SSH connection from …`) qui n'est celle d'aucun IOS —
+et sa branche non-SSH doublait `%SEC_LOGIN-5-LOGIN_SUCCESS`. L'abonnement
+est supprimé.
+
+### Ce qui est livré
+
+- La fermeture est gardée par la même règle que l'ouverture : un
+  transport non-SSH n'écrit aucun `%SSH-`.
+- **Le départ reste annoncé** — `%SYS-6-LOGOUT` le fait pour toutes les
+  lignes, et c'est la trace qu'un auditeur cherche. Taire SSH ne devait
+  pas taire le départ ; un cas le vérifie.
+- La formulation de fermeture est celle d'IOS, relevée sur transcription :
+  `%SSH-5-SSH2_CLOSE: SSH2 Session from <ip> (tty = N) for user '<u>'
+  using crypto cipher '<c>', hmac '<h>' closed`.
+- `%SYS-6-LOGOUT` utilisait `?? '0.0.0.0'`, qui ne rattrape pas la chaîne
+  VIDE que porte désormais une session locale : il rendait `0()`.
+
+### Deux cas existants encodaient le défaut comme contrat
+
+`logging-enhancements.test.ts` affirmait qu'une connexion TCP nue sur le
+22 produit `%SSH-5-SSH2_SESSION`, côté Cisco **et** côté Huawei. Les deux
+sont corrigés sur la mesure : rien n'est journalisé à ce moment-là, ni sur
+IOS ni sur VRP.

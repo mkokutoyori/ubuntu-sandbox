@@ -1,45 +1,9 @@
-/**
- * `show line` — l'inventaire des lignes, et le BLOC DE DETAIL d'une
- * ligne nommee.
- *
- * Ce que la mesure a trouve avant d'ecrire ce module :
- *
- * 1. **L'argument etait ignore.** `show line 2` listait TOUTES les
- *    lignes, comme `show line` nu — une reponse fausse a une question
- *    precise, le meme defaut que `dir flash:<repertoire>` portait.
- * 2. **Le bloc de detail n'existait pas.** Sur une vraie machine,
- *    `show line vty 0` rend la ligne de resume PUIS un bloc d'une
- *    vingtaine de champs — delais, limite de session, temps depuis
- *    activation, historique, transports autorises. C'est ce bloc qui dit
- *    a un operateur pourquoi sa session va tomber. Il n'y en avait
- *    aucun : la commande rendait un tableau `Tty Line Speed Timeout`
- *    qui n'existe dans AUCUNE version d'IOS — une mise en page inventee.
- * 3. **La colonne `Modem` manquait** dans l'en-tete du resume.
- *
- * Syntaxe reelle, relevee sur la reference Cisco (Terminal Services
- * Command Reference, entree `show line`) :
- *
- * ```
- * show line [line-number [upper-line-number]
- *           | [{aux | console | tty | vty} line-number [upper-line-number]]]
- *           [summary]
- * ```
- *
- * **Il n'y a pas de mot-cle `detail`** — un numero de ligne SUFFIT a
- * demander le detail, et `summary` est le seul suffixe accepte. Les
- * supports de cours ecrivent souvent `show line vty 0 detail` ; une
- * vraie machine repond `% Invalid input detected`, donc c'est ce que
- * cette implementation repond aussi. Accepter la forme inventee pour
- * coller a un support apprendrait une commande que le materiel refuse.
- */
 
 import { renderTableText, type TableColumn, FIXED_TABLE } from '../cli/TextTable';
 
-/** Une ligne de l'equipement, telle que les deux vues la lisent. */
 export interface LigneTty {
   readonly tty: number;
   readonly type: 'CTY' | 'AUX' | 'VTY';
-  /** Le rang DANS son type (`vty 0`, `con 0`) — distinct du numero absolu. */
   readonly rang: number;
   readonly courante: boolean;
   readonly uses: number;
@@ -65,7 +29,6 @@ export const REGLAGES_PAR_DEFAUT: ReglagesLigne = {
   transportInput: null, accessClassIn: null, screenLengthLines: null,
 };
 
-/** Etat vivant d'une session posee sur la ligne, quand il y en a une. */
 export interface SessionSurLigne {
   readonly user: string | null;
   readonly depuisMs: number;
@@ -77,23 +40,12 @@ const HHMMSS = (secondes: number): string => {
     .map((n) => String(n).padStart(2, '0')).join(':');
 };
 
-/**
- * Le delai d'inactivite d'une ligne. Le defaut d'IOS est 10 minutes, et
- * `exec-timeout 0 0` veut dire JAMAIS — pas zero seconde ; rendre
- * `00:00:00` la ferait lire comme une ligne qui tombe immediatement,
- * l'inverse exact de ce que l'operateur a demande.
- */
 export function delaiExec(r: ReglagesLigne): string {
   if (r.execTimeoutMinutes === null && r.execTimeoutSeconds === null) return '00:10:00';
   const total = (r.execTimeoutMinutes ?? 0) * 60 + (r.execTimeoutSeconds ?? 0);
   return total === 0 ? 'never' : HHMMSS(total);
 }
 
-// ── Le tableau de resume ────────────────────────────────────────────
-//
-// Largeurs relevees sur la sortie reelle. `AccO` est un O et non un
-// zero : la colonne nomme la classe d'acces SORTANTE, face a `AccI` pour
-// l'entrante.
 const COLONNES: ReadonlyArray<TableColumn<LigneTty>> = [
   { header: '   Tty', width: 6, align: 'right', value: (l) => (l.courante ? '*' : ' ') + String(l.tty).padStart(5) },
   { header: ' Typ', width: 4, value: (l) => ' ' + l.type },
@@ -113,14 +65,6 @@ export function tableauLignes(lignes: readonly LigneTty[]): string {
   return renderTableText(lignes, COLONNES, FIXED_TABLE);
 }
 
-/**
- * Le bloc de detail d'une ligne, dans l'ordre et avec les intitules
- * qu'IOS ecrit. Les champs sans mecanisme derriere (etat modem, codes de
- * groupe, remplissage) sont rendus a leur valeur par defaut reelle
- * plutot qu'omis : ils font partie de ce qu'un operateur cherche des
- * yeux, et en inventer la valeur serait le seul tort — ici la valeur
- * par defaut EST la valeur vraie d'une ligne qui n'a ni modem ni rotary.
- */
 export function blocDetailLigne(
   l: LigneTty, r: ReglagesLigne, session: SessionSurLigne | null, maintenantMs: number,
 ): string[] {
@@ -163,11 +107,6 @@ export function blocDetailLigne(
   return lignes;
 }
 
-/**
- * `absolute-timeout` est rendu ici, et c'est la seule vue ou un
- * operateur peut le VOIR : IOS l'ecrit `Session limit is <n> minutes.`
- * face a `not set` quand rien ne borne la session.
- */
 function limiteSession(r: ReglagesLigne): string {
   return r.absoluteTimeoutMinutes !== null && r.absoluteTimeoutMinutes > 0
     ? `Session limit is ${r.absoluteTimeoutMinutes} minutes.`
@@ -185,11 +124,6 @@ function ligneHistorique(r: ReglagesLigne): string {
   return `History is enabled, history size is ${r.historySize ?? 10}.`;
 }
 
-/**
- * `^^x` est la notation d'IOS pour Ctrl-Shift-6 puis X, la sequence
- * d'echappement par defaut. `escape-character none` la supprime, ce qui
- * se lit `none` — une ligne dont on ne peut plus suspendre la session.
- */
 function caractereEchappement(r: ReglagesLigne): string {
   const c = r.escapeCharacter;
   if (c === null || c === 'default' || c === 'break') return '^^x';
@@ -202,12 +136,6 @@ function caractereEchappement(r: ReglagesLigne): string {
   return String.fromCharCode(code);
 }
 
-/**
- * Une CONSOLE n'accepte aucun transport entrant — elle n'est pas sur le
- * reseau. C'est une des lectures que le bloc sert a faire, et rendre
- * `telnet ssh` sur `con 0` decrirait une machine joignable par un port
- * qui ne l'est pas.
- */
 function transportsEntrants(l: LigneTty, r: ReglagesLigne): string {
   if (l.type !== 'VTY') return 'none';
   switch (r.transportInput) {

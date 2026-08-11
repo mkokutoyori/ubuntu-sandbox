@@ -1,20 +1,3 @@
-/**
- * `display users` / `show users` sur un COMMUTATEUR.
- *
- * Mesure de depart : `HuaweiCommonDisplay.displayUsers()` est une
- * CONSTANTE. Elle decrit toujours une console libre, quel que soit qui
- * est connecte, et elle ne lit aucun registre — un affichage qui affirme
- * un etat que rien ne mesure. Le commutateur Cisco a le meme trou par un
- * autre chemin : `registreSessions()` cherche `getSshSessionRegistry`,
- * que `Switch` ne porte pas, donc `show users` retombe sur son texte de
- * repli.
- *
- * Et les DEUX rendus de `display users` du depot se contredisaient : le
- * routeur ecrivait `UI` la ou VRP ecrit `User-Intf`, mettait le nom
- * d'utilisateur en COLONNE la ou VRP l'ecrit sur sa propre ligne
- * (`Username : admin`), et rendait `AuthorcmdFlag` par `N` la ou VRP
- * ecrit `no`.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';

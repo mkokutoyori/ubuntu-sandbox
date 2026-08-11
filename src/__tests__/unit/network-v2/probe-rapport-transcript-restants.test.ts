@@ -1,25 +1,3 @@
-/**
- * Les points du rapport de transcript qui restaient a traiter.
- *
- * Le lot precedent avait ferme la confusion console/vty/SSH et
- * l'historique partage. Restaient, dans le meme rapport :
- *
- *  §5  `history size` de LIGNE et `terminal history size` de SESSION
- *      sont deux reglages distincts, et le tampon ne doit jamais etre
- *      partage — or les trois magasins existaient sans etre relies.
- *  §9  `adminState`, `operState` et l'etat du protocole de ligne sont
- *      trois faits distincts, pas `no shutdown → up`.
- *  §10 `%SYS-5-CONFIG_I` employait « console » comme source generique
- *      au lieu de nommer la ligne d'ou vient la configuration.
- *  §13 la sortie de demarrage.
- *  §14 la table de licences.
- *  §15 numero de serie et adresse MAC de base doivent etre des
- *      proprietes de l'INSTANCE, sans quoi deux routeurs sont jumeaux.
- *
- * Plus deux points ouverts par le lot precedent lui-meme : le texte de
- * `%SSH-…-SSH2_SESSION`, qui n'etait celui d'aucune machine reelle, et
- * `local-user` du commutateur Huawei, qui n'atteignait aucun magasin.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
@@ -42,8 +20,6 @@ async function routeur(nom = 'R1'): Promise<CiscoRouter> {
   await d.executeCommand('enable');
   return d;
 }
-
-// ── §5 — deux reglages distincts, un tampon par session ─────────────
 
 describe('§5 — `history size` de ligne et `terminal history size` de session', () => {
   it('`history size` sous `line` est retenue et rendue', async () => {
@@ -78,9 +54,6 @@ describe('§5 — `history size` de ligne et `terminal history size` de session'
     for (const c of ['show clock', 'show version', 'show users', 'show privilege']) {
       await d.executeCommand(c);
     }
-    // Cinq et non quatre : `terminal history size 5` entre elle-meme
-    // dans l'historique, comme sur un vrai IOS — seules `show history`
-    // et `clear history` en sont exclues.
     const h = (await d.executeCommand('show history')).trim().split('\n');
     expect(h.length, 'le reglage de session surclasse celui de la ligne').toBe(5);
   }, 30_000);
@@ -113,8 +86,6 @@ describe('§5 — `history size` de ligne et `terminal history size` de session'
   }, 30_000);
 });
 
-// ── §9 — trois etats distincts ──────────────────────────────────────
-
 describe('§9 — administratif, operationnel et protocole de ligne', () => {
   it('sans cable, `no shutdown` ne monte PAS l\'interface', async () => {
     const d = await routeur();
@@ -136,8 +107,6 @@ describe('§9 — administratif, operationnel et protocole de ligne', () => {
     expect(out).toMatch(/administratively down.*line protocol is down/);
   }, 30_000);
 });
-
-// ── §10 — la source de `%SYS-5-CONFIG_I` ────────────────────────────
 
 describe('§10 — `%SYS-5-CONFIG_I` nomme la ligne d\'ou vient la configuration', () => {
   it('depuis la console, `by console`', async () => {
@@ -166,8 +135,6 @@ describe('§10 — `%SYS-5-CONFIG_I` nomme la ligne d\'ou vient la configuration
   }, 30_000);
 });
 
-// ── §13/§14 — demarrage et licences ─────────────────────────────────
-
 describe('§13 et §14 — la sortie de demarrage et la table de licences', () => {
   it('le demarrage annonce le registre de configuration', async () => {
     const d = await routeur();
@@ -191,12 +158,6 @@ describe('§13 et §14 — la sortie de demarrage et la table de licences', () =
     expect(d.getBootSequence(), 'le demarrage lit la meme valeur').toContain('0x2142');
   }, 30_000);
 
-  /**
-   * `show license` liste les licences PAR FONCTIONNALITE ; la table des
-   * PAQUETS TECHNOLOGIQUES qu'imprime le demarrage est celle de
-   * `show license feature`. Deux commandes, deux tables — les confondre
-   * ferait croire qu'un routeur sans `uc` n'a pas de ligne `uc`.
-   */
   it('`show license feature` relit la table du demarrage', async () => {
     const d = await routeur();
     const lic = await d.executeCommand('show license feature');
@@ -216,8 +177,6 @@ describe('§13 et §14 — la sortie de demarrage et la table de licences', () =
       .not.toContain('Technology-package');
   }, 30_000);
 });
-
-// ── §15 — l'identite est une propriete de l'INSTANCE ────────────────
 
 describe('§15 — deux routeurs ne sont pas jumeaux', () => {
   it('deux routeurs portent deux numeros de serie differents', async () => {
@@ -250,8 +209,6 @@ describe('§15 — deux routeurs ne sont pas jumeaux', () => {
     expect(d.getBootSequence()).toContain(mac);
   }, 30_000);
 });
-
-// ── Les deux points laisses ouverts par le lot precedent ────────────
 
 describe('le message SSH est celui d\'une vraie machine', () => {
   it('`%SSH-5-SSH2_SESSION` porte la formulation d\'IOS', async () => {

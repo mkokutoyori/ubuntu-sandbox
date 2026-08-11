@@ -4688,6 +4688,47 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S8 — SSH ne parle que de SSH, a l'ouverture ET a la fermeture
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S8 ».
+
+Signale : « il y a toujours le souci avec les notif de ssh ». En rejouant
+le transcript complet et en FILTRANT sur `SSH` — plutot qu'en supposant
+que S5 avait tout couvert — une seule ligne restait :
+`%SSH-6-SSH2_CLOSE: Session closed for 'alice' on con 0 (logout)`.
+
+S5 avait corrige l'OUVERTURE et laisse la FERMETURE : la meme
+contradiction, du cote qui n'avait pas ete regarde. **Lecon du lot** : un
+evenement qui a deux moities se corrige des deux cotes, sinon on deplace
+le defaut au lieu de le fermer.
+
+En cherchant TOUS les emetteurs plutot que celui-la seul, un TROISIEME
+est apparu : `tcp.connection.opened` ecrivait `%SSH-…-SSH2_SESSION` des
+l'acceptation TCP sur le port 22. Une connexion TCP n'est ni une session
+etablie ni une authentification — elle precede les deux et peut n'aboutir
+a aucune. C'etait un second emetteur pour le message que
+`router.ssh.session.opened` ecrit deja, dans une formulation qui n'est
+celle d'aucun IOS, et sa branche non-SSH doublait
+`%SEC_LOGIN-5-LOGIN_SUCCESS`. Supprime.
+
+Le depart reste annonce par `%SYS-6-LOGOUT` pour toutes les lignes — taire
+SSH ne devait pas taire le depart, et un cas le verifie. `%SYS-6-LOGOUT`
+utilisait `?? '0.0.0.0'`, qui ne rattrape pas la chaine VIDE d'une session
+locale : il rendait `0()`.
+
+**Deux cas existants encodaient le defaut comme contrat**
+(`logging-enhancements.test.ts`, cote Cisco ET cote Huawei) : ils
+affirmaient qu'une connexion TCP nue sur le 22 produit
+`%SSH-5-SSH2_SESSION`. Corriges sur la mesure.
+
+**Mesures.** 6 cas nouveaux tombent avant correctif. 22 suites vertes
+(1262 cas). E2E vert. Typecheck 119, lint identique.
+
+**Au passage** : les commentaires ont ete retires des fichiers de ce
+chantier, sur demande.
+
+---
+
 ## Lot S7 — les points restants du rapport de transcript, tous traites
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S7 ».

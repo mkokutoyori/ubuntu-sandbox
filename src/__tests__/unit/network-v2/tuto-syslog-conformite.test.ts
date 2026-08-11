@@ -60,8 +60,6 @@ async function huawei(...cfg: string[]): Promise<HuaweiRouter> {
   return d;
 }
 
-// ── Partie 1 : le protocole ─────────────────────────────────────────
-
 describe('partie 1 : PRIORITY, facilities et severities', () => {
   it('PRIORITY = (Facility x 8) + Severity', () => {
     expect(priValue(23, 5)).toBe(189);
@@ -115,8 +113,6 @@ describe('partie 1 : PRIORITY, facilities et severities', () => {
   });
 });
 
-// ── Partie 2 : Cisco ────────────────────────────────────────────────
-
 describe('partie 2 : la configuration Cisco', () => {
   const COMMANDES = [
     'logging on',
@@ -155,22 +151,12 @@ describe('partie 2 : la configuration Cisco', () => {
     ]) expect(rc, attendu).toContain(attendu);
   }, 30_000);
 
-  /**
-   * `informational` est le defaut d'IOS pour `logging trap` : comme
-   * `local7` pour la facility, il ne parait pas dans la configuration.
-   * `show logging` l'annonce quand meme, et c'est la qu'on le lit.
-   */
   it('`logging trap informational` est le defaut, donc non rendu', async () => {
     const d = await cisco('logging trap informational');
     expect(await d.executeCommand('show running-config')).not.toContain('logging trap');
     expect(await d.executeCommand('show logging')).toContain('Trap logging: level informational');
   }, 30_000);
 
-  /**
-   * `local7` est le defaut d'IOS : il ne parait PAS dans la
-   * configuration, et c'est juste. Une facility qui n'est pas le defaut
-   * doit y paraitre, sinon elle serait perdue au rechargement.
-   */
   it('`logging facility` n\'est rendue que si elle n\'est pas le defaut', async () => {
     const parDefaut = await cisco('logging facility local7');
     expect(await parDefaut.executeCommand('show running-config'))
@@ -240,8 +226,6 @@ describe('partie 2 : la configuration Cisco', () => {
     expect(rc, 'rien n\'est range').not.toContain('transport tls');
   }, 30_000);
 });
-
-// ── Partie 3 : Huawei ───────────────────────────────────────────────
 
 describe('partie 3 : l\'info-center Huawei', () => {
   const COMMANDES = [
@@ -337,8 +321,6 @@ describe('partie 3 : l\'info-center Huawei', () => {
   }, 30_000);
 });
 
-// ── Partie 4 : Linux ────────────────────────────────────────────────
-
 describe('partie 4 : rsyslog et journald', () => {
   const serveur = () => {
     const s = new LinuxServer('linux-server', 'srv', 0, 0);
@@ -385,8 +367,6 @@ describe('partie 4 : rsyslog et journald', () => {
   }, 30_000);
 });
 
-// ── Partie 5 : Windows ──────────────────────────────────────────────
-
 describe('partie 5 : l\'Event Log Windows', () => {
   const poste = () => {
     const w = new WindowsPC('windows-pc', 'PC1', 0, 0);
@@ -415,8 +395,6 @@ describe('partie 5 : l\'Event Log Windows', () => {
     expect(await w.executeCommand('wevtutil qe Security /c:2')).toContain('Log Name: Security');
   }, 30_000);
 });
-
-// ── Partie 6 : la centralisation ────────────────────────────────────
 
 describe('partie 6 : le collecteur central recoit vraiment', () => {
   it('un routeur Cisco emet, un serveur Linux recoit et classe', async () => {
@@ -487,8 +465,6 @@ describe('partie 6 : le collecteur central recoit vraiment', () => {
   }, 30_000);
 });
 
-// ── Partie 7 : l'analyse ────────────────────────────────────────────
-
 describe('partie 7 : chercher dans les logs', () => {
   it('`grep` retrouve les echecs d\'authentification recus', async () => {
     const s = new LinuxServer('linux-server', 'srv', 0, 0);
@@ -518,8 +494,6 @@ describe('partie 7 : chercher dans les logs', () => {
     expect(refuse(await d.executeCommand('display logbuffer | include Channel'))).toBe(false);
   }, 30_000);
 });
-
-// ── Partie 8 : integrite ────────────────────────────────────────────
 
 describe('partie 8 : verifier l\'integrite des journaux', () => {
   it('`sha256sum` donne une empreinte, et elle CHANGE quand le fichier change', async () => {

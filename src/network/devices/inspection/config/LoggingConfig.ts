@@ -982,16 +982,6 @@ export class LoggingConfig {
     this.attachedBus = bus;
     this.attachedDeviceId = deviceId;
     const unsubs = [
-      bus.subscribeWhere('tcp.connection.opened', isOurs, (e) => {
-        const p = e.payload;
-        if (!p.passive) return;
-        const ssh = p.localPort === 22;
-        const tag = ssh ? 'ssh' : 'sec_login';
-        const msg = ssh
-          ? `AUTHENTICATION: SSH connection from ${p.remoteIp}:${p.remotePort} accepted on port 22 (stelnet)`
-          : `Login accepted: connection from ${p.remoteIp}:${p.remotePort} accepted on port ${p.localPort}`;
-        this.append('notifications', tag, msg, true, ssh ? 'SSH2_SESSION' : 'LOGIN_SUCCESS');
-      }),
       bus.subscribeWhere('port.link.up', isOurs, (e) => {
         const p = e.payload;
         this.append('errors', 'link',
@@ -1256,22 +1246,22 @@ export class LoggingConfig {
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
         const p = e.payload as unknown as {
-          session?: { user?: string; line?: string; lineIndex?: number; fromIp?: string; closeReason?: string | null };
+          session?: {
+            user?: string; line?: string; lineIndex?: number; fromIp?: string;
+            closeReason?: string | null; transport?: string;
+            cipher?: string; hmac?: string;
+          };
         };
-        this.append('informational', 'ssh',
-          `Session closed for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'}${p.session?.closeReason ? ` (${p.session.closeReason})` : ''}`, true, 'SSH2_CLOSE');
-        // `%SYS-6-LOGOUT` n'existait NULLE PART, alors que c'est la seule
-        // trace disant qui est parti et depuis quelle ligne — la moitie
-        // fermeture de « qui s'est connecte, quand, depuis ou ».
-        //
-        // La formulation est celle d'IOS et non celle des supports de
-        // cours : `User X has exited tty session N(1.2.3.4)`. Les
-        // supports y ajoutent souvent un motif et une duree
-        // (« with timeout after 00:15:00 ») qu'aucune vraie machine
-        // n'ecrit sur cette ligne.
+        const s = p.session;
+        if (!s?.transport || s.transport === 'ssh') {
+          this.append('notifications', 'ssh',
+            `SSH2 Session from ${s?.fromIp || '0.0.0.0'} (tty = ${s?.lineIndex ?? 0})`
+            + ` for user '${s?.user ?? ''}' using crypto cipher '${s?.cipher ?? 'aes256-ctr'}',`
+            + ` hmac '${s?.hmac ?? 'hmac-sha2-256'}' closed`, true, 'SSH2_CLOSE');
+        }
         this.append('informational', 'sys',
-          `User ${p.session?.user || 'unknown'} has exited tty session`
-          + ` ${p.session?.lineIndex ?? 0}(${p.session?.fromIp ?? '0.0.0.0'})`, true, 'LOGOUT');
+          `User ${s?.user || 'unknown'} has exited tty session`
+          + ` ${s?.lineIndex ?? 0}(${s?.fromIp || '0.0.0.0'})`, true, 'LOGOUT');
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; state?: string };

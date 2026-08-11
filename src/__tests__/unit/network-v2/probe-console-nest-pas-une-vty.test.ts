@@ -1,15 +1,3 @@
-/**
- * Une connexion par la CONSOLE n'est pas une session SSH sur une VTY.
- *
- * La mesure de depart vient d'un transcript reel : `line console 0` +
- * `login local`, puis deux operateurs se succedent sur le port console.
- * La machine repondait `%SSH-6-SSH2_SESSION: Session opened for 'alice'
- * on vty 0 from console` — trois faits contradictoires dans une seule
- * ligne (protocole SSH, ligne virtuelle, source locale) — `show users`
- * listait les deux operateurs sur `vty 0` et `vty 1`, la premiere
- * session survivait a son propre `exit`, et le second operateur relisait
- * l'historique du premier.
- */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -172,12 +160,6 @@ describe('l\'historique appartient a la session EXEC', () => {
   }, 30_000);
 });
 
-// ── Le transcript, rejoue par le VRAI terminal ──────────────────────
-//
-// Les cas ci-dessus tiennent le registre ; ceux-ci tiennent le chemin
-// complet — c'est par la que le defaut avait ete observe, et un registre
-// correct qu'aucun terminal n'appelle ne prouverait rien.
-
 const touche = (k: string): KeyEvent => ({
   key: k, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false,
 });
@@ -255,14 +237,6 @@ describe('le transcript rejoue par le terminal', () => {
     expect(registre(d).list()).toHaveLength(1);
   }, 30_000);
 
-  /**
-   * Deux moities, et la premiere est indispensable : avant correctif
-   * l'historique du terminal ne retenait PAS ce qui venait d'etre tape
-   * (il rendait `enable`, une commande d'avant l'authentification, et
-   * perdait la suivante). Un cas qui ne verifierait que l'absence chez
-   * bob passerait donc pour une mauvaise raison — parce que la commande
-   * d'alice n'a jamais ete retenue nulle part.
-   */
   it('chaque operateur voit SES commandes, et seulement les siennes', async () => {
     const { s } = await labo();
     await taper(s, 'exit');
@@ -288,8 +262,6 @@ describe('le transcript rejoue par le terminal', () => {
       .not.toContain('login local');
   }, 30_000);
 });
-
-// ── Huawei : le meme registre, donc la meme separation ──────────────
 
 describe('cote Huawei, `display users` nomme la ligne CON', () => {
   it('une session console est rendue `CON`, une session SSH `SSH`', async () => {
@@ -319,5 +291,90 @@ describe('cote Huawei, `display users` nomme la ligne CON', () => {
     }).getSshSessionRegistry();
     r.open({ user: 'alice', fromIp: 'console', transport: 'console' });
     expect(r.open({ user: 'carol', fromIp: '10.0.0.9', transport: 'ssh' })!.line).toBe('vty 0');
+  }, 30_000);
+});
+
+function lignesSsh(d: CiscoRouter): string[] {
+  return d.getLoggingConfig()!.render().split('\n').filter((l) => /%SSH-/.test(l));
+}
+
+describe('aucune notification SSH ne sort pour ce qui n\'est pas SSH', () => {
+  it('ouvrir ET fermer une session console n\'ecrit aucun `%SSH-`', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const s = r.open({ user: 'alice', fromIp: 'console', transport: 'console' })!;
+    r.close(s.id, 'logout');
+    expect(lignesSsh(d), 'la console ne concerne pas le sous-systeme SSH').toEqual([]);
+  }, 30_000);
+
+  it('le depart reste annonce, par `%SYS-6-LOGOUT`', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const s = r.open({ user: 'alice', fromIp: 'console', transport: 'console' })!;
+    r.close(s.id, 'logout');
+    expect(d.getLoggingConfig()!.render(),
+      'taire SSH ne doit pas taire le depart').toContain('%SYS-6-LOGOUT: User alice');
+  }, 30_000);
+
+  it('une session telnet non plus', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const s = r.open({ user: 'carol', fromIp: '10.0.0.9', transport: 'telnet' })!;
+    r.close(s.id, 'logout');
+    expect(lignesSsh(d), 'telnet n\'est pas SSH').toEqual([]);
+  }, 30_000);
+
+  it('une session SSH ecrit les DEUX messages, dans les mots d\'IOS', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const s = r.open({ user: 'alice', fromIp: '10.0.0.5', transport: 'ssh' })!;
+    r.close(s.id, 'logout');
+    const l = lignesSsh(d);
+    expect(l).toHaveLength(2);
+    expect(l[0]).toMatch(
+      /%SSH-5-SSH2_SESSION: SSH2 Session request from 10\.0\.0\.5 \(tty = 0\) using crypto cipher '[^']+', hmac '[^']+' Succeeded$/);
+    expect(l[1]).toMatch(
+      /%SSH-5-SSH2_CLOSE: SSH2 Session from 10\.0\.0\.5 \(tty = 0\) for user 'alice' using crypto cipher '[^']+', hmac '[^']+' closed$/);
+  }, 30_000);
+
+  it('la formulation inventee a disparu des deux cotes', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const s = r.open({ user: 'alice', fromIp: '10.0.0.5', transport: 'ssh' })!;
+    r.close(s.id, 'logout');
+    const j = d.getLoggingConfig()!.render();
+    expect(j).not.toContain('Session opened for');
+    expect(j).not.toContain('Session closed for');
+    expect(j, 'ni le message emis a l\'acceptation TCP').not.toContain('AUTHENTICATION: SSH connection');
+  }, 30_000);
+
+  it('une session SSH fermee ne parle jamais d\'une ligne console', async () => {
+    const d = await routeur();
+    const r = registre(d);
+    const c = r.open({ user: 'alice', fromIp: 'console', transport: 'console' })!;
+    const s = r.open({ user: 'carol', fromIp: '10.0.0.5', transport: 'ssh' })!;
+    r.close(c.id, 'logout');
+    r.close(s.id, 'logout');
+    for (const l of lignesSsh(d)) expect(l, l).not.toMatch(/con 0|console/);
+  }, 30_000);
+});
+
+describe('le transcript, cote notifications', () => {
+  it('le parcours complet de la console n\'affiche aucun `%SSH-`', async () => {
+    const { d, s } = await labo();
+    await taper(s, 'exit');
+    await taper(s, '');
+    await texte(s, 'alice');
+    await motDePasse(s, 'cisco');
+    await taper(s, 'configure terminal');
+    await taper(s, 'interface gi0/0');
+    await taper(s, 'no shutdown');
+    await taper(s, 'end');
+    await taper(s, 'exit');
+    await taper(s, '');
+    await texte(s, 'bob');
+    await motDePasse(s, 'cisco');
+    expect(ecran(s), 'rien de SSH a l\'ecran').not.toMatch(/%SSH-/);
+    expect(lignesSsh(d), 'ni dans le journal').toEqual([]);
   }, 30_000);
 });
