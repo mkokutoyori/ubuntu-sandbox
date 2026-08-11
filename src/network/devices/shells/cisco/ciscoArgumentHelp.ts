@@ -588,6 +588,12 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   tries.configRouter.describeArgs('network', [
     IP('network', 'Network number'),
   ]);
+  tries.configRouter.describeArgs('no network', [
+    IP('network', 'Network number'),
+  ]);
+  tries.configRouter.describeArgs('no timers', [
+    ENUM('family', 'Timer family to restore', [['basic', 'Basic routing timers']]),
+  ]);
   // `neighbor ?` proposait `activate`, `remote-as`, `weight`… avant
   // l'adresse, parce qu'aucun argument n'était déclaré : les mots-clés
   // extraits du gestionnaire remontaient d'un niveau. Ils sont bien de
@@ -602,6 +608,12 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     INT('distance', [1, 255], 'Administrative distance'),
   ]);
   tries.configRouter.describeArgs('maximum-paths', [
+    INT('paths', [1, 32], 'Number of paths'),
+  ]);
+  tries.configRouter.describeArgs('no distance', [
+    INT('distance', [1, 255], 'Administrative distance'),
+  ]);
+  tries.configRouter.describeArgs('no maximum-paths', [
     INT('paths', [1, 32], 'Number of paths'),
   ]);
   tries.configRouter.describeArgs('redistribute', [
@@ -702,6 +714,17 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   // que rien ne décrivait ce qui vient après. Chaque niveau porte
   // maintenant ses propres valeurs.
   tries.config.describeArgs('aaa', [
+    ENUM('function', 'AAA function', [
+      ['accounting', 'Accounting configurations parameters'],
+      ['authentication', 'Authentication configurations parameters'],
+      ['authorization', 'Authorization configurations parameters'],
+      ['group', 'AAA server-group definitions'],
+      ['local', 'AAA local authentication parameters'],
+      ['new-model', 'Enable NEW access control commands and functions'],
+      ['session-id', 'AAA Session ID'],
+    ]),
+  ]);
+  tries.config.describeArgs('no aaa', [
     ENUM('function', 'AAA function', [
       ['accounting', 'Accounting configurations parameters'],
       ['authentication', 'Authentication configurations parameters'],
