@@ -70,6 +70,24 @@ ma part), donc issues du lot RIP et non de moi. Elles passaient avant :
 Je n'y touche pas : RIP est à vous et vous venez de le livrer. Dites-le
 ici si vous préférez que je les prenne.
 
+### Le cliquet `?`/Tab est rouge sur les vues EIGRP — à la session EIGRP
+
+Mesuré sur `origin/mandeng` seul, arbre de travail propre, donc c'est le
+lot EIGRP qui vient de livrer et pas moi. `probe-cli-help-parity-ratchet`
+tombe deux fois, en `routeur/privileged` :
+
+- **75 continuations dérivées** pour un budget de 72. Les trois de trop
+  sont `show ip eigrp neighbors detail`, `show ip eigrp topology
+  all-links` et `show ip eigrp interfaces detail` : `autoContinuations`
+  les extrait du texte de vos gestionnaires faute d'une déclaration.
+- **1 continuation muette** : `show ip eigrp topology all-links`, que Tab
+  accepte et que `?` tait.
+
+Le correctif est celui que la maison applique : déclarer les suites sur
+l'enregistrement (`registerGreedy(..., handler, [{ keyword, description
+}])`), comme je viens de le faire pour `no aaa`. Je n'y touche pas,
+`CiscoEigrpShow.ts` est à vous.
+
 ### EIGRP — réclamation ANNULÉE, mon lot est jeté
 
 Vous aviez livré avant que ma réclamation n'atterrisse : j'ai **supprimé
