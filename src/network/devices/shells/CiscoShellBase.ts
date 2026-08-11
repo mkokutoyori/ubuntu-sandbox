@@ -1952,6 +1952,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
   }
 
+  /**
+   * `privilege <mode> reset <commande>` — rend a la commande son niveau
+   * d'origine. IOS documente le mot-cle avec `privilege exec reset
+   * reload`, qui retire la ligne `privilege exec level N reload` de la
+   * configuration ; sans ce retrait la regle survivrait au rechargement
+   * de la topologie, la configuration rendue etant rejouee a l'import.
+   */
+  protected reinitialiserNiveauDeCommande(mode: string, commande: string): string {
+    const cible = commande.trim().toLowerCase();
+    if (cible.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const router = this.d() as unknown as {
+      _ciscoPrivilegeRules?: Map<string, number>;
+      _removeUnhandledConfigLine?: (l: string) => void;
+    };
+    const key = `${mode} ${cible}`;
+    const niveau = router._ciscoPrivilegeRules?.get(key);
+    if (niveau === undefined) return '';
+    router._ciscoPrivilegeRules?.delete(key);
+    router._removeUnhandledConfigLine?.(`privilege ${mode} level ${niveau} ${commande.trim()}`);
+    return '';
+  }
+
+  private static readonly ESPACE_DE_REGLE: Record<string, string> = {
+    'config': 'configure',
+    'config-if': 'interface',
+    'config-subif': 'interface',
+    'config-line': 'line',
+  };
+
+  private static readonly CONFIG_TOUJOURS_PERMIS = ['exit', 'end', 'do', 'show'];
+
+  /**
+   * En configuration, un niveau intermediaire ne voit QUE ce qu'on lui a
+   * donne — toutes les commandes de configuration naissent au niveau 15.
+   *
+   * C'est le piege classique de la delegation : `privilege exec level 7
+   * configure terminal` ouvre la PORTE et rien d'autre, il faut encore
+   * `privilege configure level 7 <commande>` pour chaque commande a
+   * l'interieur. Le filtre n'existait que pour l'EXEC, si bien qu'un
+   * technicien de niveau 7 admis en configuration y faisait tout, `router
+   * ospf` compris : la moitie de la delegation etait sans effet.
+   *
+   * `exit` et `end` restent toujours permis — un mode dont on ne peut
+   * pas sortir n'est plus une restriction mais une souriciere.
+   */
+  protected commandeDeConfigurationAccordee(cmdPart: string): boolean {
+    if (this.currentPrivilegeLevel >= 15) return true;
+    const espace = CiscoShellBase.ESPACE_DE_REGLE[this.mode];
+    if (!espace) return true;
+    const lower = cmdPart.trim().toLowerCase();
+    const tete = lower.split(/\s+/)[0] ?? '';
+    if (CiscoShellBase.CONFIG_TOUJOURS_PERMIS.includes(tete)) return true;
+    const cible = lower.startsWith('no ') ? lower.slice(3).trim() : lower;
+    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })
+      ._ciscoPrivilegeRules;
+    if (!rules || rules.size === 0) return false;
+    for (const [key, niveau] of rules) {
+      if (!key.startsWith(espace + ' ')) continue;
+      if (niveau > this.currentPrivilegeLevel) continue;
+      const commande = key.slice(espace.length + 1);
+      if (cible === commande || cible.startsWith(commande + ' ')) return true;
+    }
+    return false;
+  }
+
   protected commandeHisseeAuDessusDuNiveau(cmdPart: string): boolean {
     if (this.currentPrivilegeLevel >= 15) return false;
     const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
@@ -2108,6 +2173,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // "refusee", elle est absente.
     if ((this.mode === 'user' || this.mode === 'privileged')
       && !this.commandeAutoriseeParLaVue(cmdPart)) {
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+
+    if (this.isConfigMode() && !this.commandeDeConfigurationAccordee(cmdPart)) {
       return CISCO_ERRORS.INVALID_INPUT;
     }
 
@@ -2400,7 +2469,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * c'est le mode qui decidait.
    *
    * Un niveau intermediaire reste en mode `user` — c'est deja la regle
-   * qu'`enable N` applique, IOS n'affichant jamais `#` sous 15.
+   * qu'`enable N` applique. L'invite, elle, affiche `#` des le niveau 2
+   * (`Device> enable 7` puis `Device# show privilege` dans le guide de
+   * securite d'IOS 15MT) : c'est un RENDU, pas le mode de dispatch, et
+   * `buildDevicePrompt` est le seul endroit qui en decide.
    */
   protected modeDeRetour(modeCalcule: CLIMode): CLIMode {
     if (modeCalcule !== 'privileged') return modeCalcule;
@@ -2771,7 +2843,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   getMode(): string { return this.mode; }
 
   protected buildDevicePrompt(device: TDevice): string {
-    return buildPrompt(this.mode, device._getHostnameInternal(), this.getPromptMap());
+    const mode = this.mode === 'user' && this.currentPrivilegeLevel >= 2 ? 'privileged' : this.mode;
+    return buildPrompt(mode, device._getHostnameInternal(), this.getPromptMap());
   }
 
   // ─── Shared Command Registration ───────────────────────────────
@@ -4397,6 +4470,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
+      if (args[1]?.toLowerCase() === 'reset') {
+        if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+        return this.reinitialiserNiveauDeCommande(mode ?? '', args.slice(2).join(' '));
+      }
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
       if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
       const lvl = parseInt(args[2] ?? '', 10);
@@ -4906,6 +4983,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
           else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
           else if (sub === 'escape-character') update.escapeCharacter = 'default';
+          else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
+          else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
+          else if (sub === 'autocommand') update.autocommand = '';
           update.removed = (raw ?? `no ${args.join(' ')}`).trim();
         }
         const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);

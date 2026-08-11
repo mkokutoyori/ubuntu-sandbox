@@ -100,6 +100,28 @@ export interface VtyLineConfigInit {
    * un nombre designe un code ASCII.
    */
   readonly escapeCharacter?: string;
+  /**
+   * La MEME famille de defauts que `sessionTimeoutMinutes` plus haut, et
+   * pour la meme raison : la CLI posait `update.autocommand`,
+   * `update.authorizationList`, `update.accountingList`,
+   * `update.terminalLength`, `update.terminalWidth`, `update.speedBaud`,
+   * `update.stopbits`, `update.rotaryGroup`, `update.motdBannerSuppressed`
+   * et `update.execBannerSuppressed` — dix noms qui n'existaient dans
+   * AUCUN champ, donc `withFields` les laissait tomber sans un mot. La
+   * commande repondait `` et ne faisait rien : `autocommand show status`
+   * etait acceptee, absente de la configuration, donc perdue au
+   * rechargement de la topologie.
+   */
+  readonly autocommand?: string;
+  readonly authorizationList?: string;
+  readonly accountingList?: string;
+  readonly terminalLength?: number;
+  readonly terminalWidth?: number;
+  readonly speedBaud?: number;
+  readonly stopbits?: number;
+  readonly rotaryGroup?: number;
+  readonly motdBannerSuppressed?: boolean;
+  readonly execBannerSuppressed?: boolean;
 }
 
 export class VtyLineConfig {
@@ -128,6 +150,16 @@ export class VtyLineConfig {
   readonly historyEnabled: boolean;
   readonly absoluteTimeoutMinutes: number | null;
   readonly escapeCharacter: string | null;
+  readonly autocommand: string | null;
+  readonly authorizationList: string | null;
+  readonly accountingList: string | null;
+  readonly terminalLength: number | null;
+  readonly terminalWidth: number | null;
+  readonly speedBaud: number | null;
+  readonly stopbits: number | null;
+  readonly rotaryGroup: number | null;
+  readonly motdBannerSuppressed: boolean;
+  readonly execBannerSuppressed: boolean;
 
   constructor(init: VtyLineConfigInit) {
     this.first              = init.first;
@@ -155,6 +187,16 @@ export class VtyLineConfig {
     this.historyEnabled = init.historyEnabled ?? true;
     this.absoluteTimeoutMinutes = init.absoluteTimeoutMinutes ?? null;
     this.escapeCharacter = init.escapeCharacter ?? null;
+    this.autocommand = init.autocommand ?? null;
+    this.authorizationList = init.authorizationList ?? null;
+    this.accountingList = init.accountingList ?? null;
+    this.terminalLength = init.terminalLength ?? null;
+    this.terminalWidth = init.terminalWidth ?? null;
+    this.speedBaud = init.speedBaud ?? null;
+    this.stopbits = init.stopbits ?? null;
+    this.rotaryGroup = init.rotaryGroup ?? null;
+    this.motdBannerSuppressed = init.motdBannerSuppressed ?? false;
+    this.execBannerSuppressed = init.execBannerSuppressed ?? false;
     Object.freeze(this);
   }
 
@@ -197,6 +239,16 @@ export class VtyLineConfig {
       historyEnabled:     patch.historyEnabled     ?? this.historyEnabled,
       absoluteTimeoutMinutes: patch.absoluteTimeoutMinutes ?? this.absoluteTimeoutMinutes ?? undefined,
       escapeCharacter:    patch.escapeCharacter    ?? this.escapeCharacter    ?? undefined,
+      autocommand:        patch.autocommand        ?? this.autocommand        ?? undefined,
+      authorizationList:  patch.authorizationList  ?? this.authorizationList  ?? undefined,
+      accountingList:     patch.accountingList     ?? this.accountingList     ?? undefined,
+      terminalLength:     patch.terminalLength     ?? this.terminalLength     ?? undefined,
+      terminalWidth:      patch.terminalWidth      ?? this.terminalWidth      ?? undefined,
+      speedBaud:          patch.speedBaud          ?? this.speedBaud          ?? undefined,
+      stopbits:           patch.stopbits           ?? this.stopbits           ?? undefined,
+      rotaryGroup:        patch.rotaryGroup        ?? this.rotaryGroup        ?? undefined,
+      motdBannerSuppressed: patch.motdBannerSuppressed ?? this.motdBannerSuppressed,
+      execBannerSuppressed: patch.execBannerSuppressed ?? this.execBannerSuppressed,
     });
   }
 
@@ -223,6 +275,8 @@ export class VtyLineConfig {
     else if (this.historySize !== null) lines.push(` history size ${this.historySize}`);
     if (this.accessClassIn  !== null) lines.push(` access-class ${this.accessClassIn} in`);
     if (this.accessClassOut !== null) lines.push(` access-class ${this.accessClassOut} out`);
+    if (this.authorizationList !== null) lines.push(` authorization ${this.authorizationList}`);
+    if (this.accountingList !== null) lines.push(` accounting ${this.accountingList}`);
     if (this.linePassword) {
       lines.push(` password ${renderPasswordField(this.linePassword, this.linePasswordAlgo === 'type-7' ? 'type-7' : 'plain-password', serviceEncryption, false, `line-vty:${this.first}`)}`);
     }
@@ -232,7 +286,15 @@ export class VtyLineConfig {
       else if (this.login === 'password') lines.push(' login');
       else lines.push(' no login');
     }
+    if (this.autocommand) lines.push(` autocommand ${this.autocommand}`);
+    if (this.execBannerSuppressed) lines.push(' no exec-banner');
+    if (this.motdBannerSuppressed) lines.push(' no motd-banner');
     if (this.privilege !== null) lines.push(` privilege level ${this.privilege}`);
+    if (this.terminalLength !== null) lines.push(` length ${this.terminalLength}`);
+    if (this.terminalWidth !== null) lines.push(` width ${this.terminalWidth}`);
+    if (this.speedBaud !== null) lines.push(` speed ${this.speedBaud}`);
+    if (this.stopbits !== null) lines.push(` stopbits ${this.stopbits}`);
+    if (this.rotaryGroup !== null) lines.push(` rotary ${this.rotaryGroup}`);
     if (this.transportInput !== null) lines.push(` transport input ${this.transportInput}`);
     if (this.loggingSynchronous) lines.push(' logging synchronous');
     return lines;

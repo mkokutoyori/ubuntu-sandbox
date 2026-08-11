@@ -4711,6 +4711,54 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S10 — les privileges tenus par la MACHINE, pas par le terminal
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S10 ». Fichiers du
+demandeur : `cisco_priv.test.ts` (46 cas), `another_cisco.test.ts`
+(11 cas).
+
+**L'incoherence d'interface etait mesurable** : le typecheck la nommait.
+Les deux fichiers appellent `executeCommand(cmd, { passwordInput })`,
+`loginAs`, `authenticateLine`, `authenticateAAA` et `getBanner()` — cinq
+points d'entree qui n'existaient sur AUCUN equipement. Derriere
+l'absence, un vrai defaut : `executeCommand('enable')` allait droit au
+gestionnaire du trie, donc de l'autre cote du mot de passe — sur une
+machine portant `enable secret`, cet appel accordait le niveau 15 sans
+rien demander. `src/shell/interaction/HeadlessInteraction.ts` joue le
+MEME plan que le terminal, donc les deux chemins ne peuvent plus diverger.
+
+**Six defauts produit**, chacun verifie contre du materiel reel avant
+correction : l'invite d'un niveau intermediaire (`enable 7` laissait
+`R1>` ; le guide 15MT verifie `Device> enable 7 Zy72sKj` puis `Device#
+show privilege` → niveau 7 — un commentaire du depot affirmait l'inverse
+et deux cas l'avaient epingle) ; la configuration ne filtrait RIEN par
+niveau, donc un technicien de niveau 7 admis en configuration y faisait
+tout, `router ospf` compris ; `privilege <mode> reset <commande>`
+n'existait pas ; `no aaa new-model` ne faisait rien ; `username X
+privilege -1` etait accepte ; et DIX directives de ligne
+(`autocommand`, `authorization`, `accounting`, `length`, `width`,
+`speed`, `stopbits`, `rotary`, `motd-banner`, `exec banner`) etaient
+acceptees et jetees faute de champ — meme famille que
+`session-timeout`/`history size` du lot precedent.
+
+**Quatre attentes de test corrigees**, aucune n'etant un defaut produit :
+`configure terminal` au niveau 1 et une commande hors vue rendent
+`% Invalid input detected` (l'arbre ne les contient pas ; `% Command
+authorization failed` appartient a l'autorisation AAA par commande) ;
+`show clock` est une commande de NIVEAU 1, donc un mauvais cobaye pour
+`reset` — le cas utilise `reload`, l'exemple de Cisco ; et le mode
+silencieux de `login block-for` ne ferme PAS la console (« the only
+available connection is through the console »), le cas console etant
+desormais la moitie qui compte.
+
+**Mesures.** 47 cas verts sur les deux fichiers du demandeur (19
+tombaient). 6 suites privileges/vues/identite vertes (202 cas).
+Typecheck 337 contre une base de 361 mesuree par `git stash` — les 24
+ecarts fermes sont exactement les appels d'interface manquants. Lint
+identique (13 problemes preexistants sur les fichiers touches).
+
+---
+
 ## Lot S9 — acces concurrents a la console, et niveau des comptes livres
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».

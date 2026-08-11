@@ -220,6 +220,30 @@ export class SshSessionRegistry {
     return this.snapshot(session, at);
   }
 
+  /**
+   * La ligne portait deja la session — c'est l'UTILISATEUR qui vient
+   * d'etre etabli. Une console en `login local` s'ouvre anonyme et se
+   * nomme apres l'authentification ; `show users` doit alors ecrire le
+   * nom dans sa colonne `User`, sans quoi la ligne la plus utilisee de
+   * la machine est la seule qui ne dise jamais qui est dessus.
+   */
+  noterAuthentification(id: string, user: string, privilege?: number): void {
+    const s = this.active.get(id);
+    if (!s) return;
+    s.user = user;
+    if (privilege !== undefined) s.privilege = privilege;
+    s.lastActivityAt = this.now();
+  }
+
+  /** La session ouverte sur une ligne d'un genre donne, s'il y en a une. */
+  sessionSurLigne(kind: LineKind): SshSessionRecord | null {
+    const now = this.now();
+    for (const s of this.active.values()) {
+      if (s.lineKind === kind) return this.snapshot(s, now);
+    }
+    return null;
+  }
+
   setTerminalType(id: string, terminalType: string): void {
     const s = this.active.get(id);
     if (s) s.terminalType = terminalType;

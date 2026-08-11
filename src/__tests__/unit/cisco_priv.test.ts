@@ -261,12 +261,24 @@ describe('Cisco IOS Security: Privilege Levels, RBAC & AAA Architecture', () => 
   // ─── 5. CUSTOM ROLE-BASED ACCESS CONTROL (RBAC) ─────────────────
 
   describe('5. Role-Based Access Control (RBAC): Command Privilege Customization', () => {
+    /**
+     * Le message est celui d'une commande ABSENTE, pas d'un refus.
+     *
+     * Chez Cisco : « configuration commands default to Level 15 […] and
+     * are therefore unavailable to or invalid for » un utilisateur de
+     * niveau inferieur — l'arbre d'analyse du niveau 1 ne CONTIENT pas
+     * `configure`, donc IOS repond `% Invalid input detected at '^'
+     * marker.`. `% Command authorization failed` est le message de
+     * l'autorisation AAA par commande (`aaa authorization commands`),
+     * qui n'est pas configuree ici ; l'attendre revient a demander le
+     * message d'un autre mecanisme.
+     */
     it('5.1 Should deny Level 1 user from executing Level 15 commands (e.g. "configure terminal")', async () => {
       const r = createTestRouter();
       // Initially in Level 1
       const res = await r.executeCommand('configure terminal');
 
-      expect(res).toContain('% Command authorization failed');
+      expect(res).toContain("% Invalid input detected at '^' marker.");
       expect(r.getPrompt()).toBe('R1>');
     });
 
@@ -291,6 +303,12 @@ describe('Cisco IOS Security: Privilege Levels, RBAC & AAA Architecture', () => 
       await r.executeCommand('configure terminal');
       await r.executeCommand('username tech privilege 7 secret TechPass');
 
+      // Entrer en configuration est une commande EXEC : sans
+      // `privilege exec level 7 configure terminal`, le niveau 7 ne
+      // franchit pas la porte, quoi qu'on lui accorde a l'interieur
+      // (« you must allow access for the global configuration command
+      // to a privilege level to configure »).
+      await r.executeCommand('privilege exec level 7 configure terminal');
       // Grant Level 7 access to configure interface reboot/shutdown
       await r.executeCommand('privilege configure level 7 interface');
       await r.executeCommand('privilege interface level 7 shutdown');
@@ -308,9 +326,11 @@ describe('Cisco IOS Security: Privilege Levels, RBAC & AAA Architecture', () => 
       const shutRes = await r.executeCommand('shutdown');
       expect(shutRes).toBe('');
 
-      // Attempting unassigned command (e.g., router ospf) MUST fail for level 7
+      // Une commande non accordee est ABSENTE de l'arbre du niveau 7,
+      // donc IOS la refuse comme une commande qui n'existe pas.
+      await r.executeCommand('exit');
       const unassignedRes = await r.executeCommand('router ospf 1');
-      expect(unassignedRes).toContain('% Command authorization failed');
+      expect(unassignedRes).toContain("% Invalid input detected at '^' marker.");
     });
   });
 

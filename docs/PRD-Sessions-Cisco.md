@@ -699,3 +699,110 @@ est **découvrable sur chaque plateforme** : `id` sous Linux, `net user`
 sous Windows, la configuration sur IOS. Les masquer supprimait la seule
 façon de les trouver sur un équipement Cisco. Ils restent rendus, au
 niveau 1.
+
+---
+
+## Lot S10 — les privilèges tenus par la MACHINE, pas par le terminal
+
+**Demande** : « corrige les tests sur les privilèges que je viens
+d'ajouter (incoherence au niveau des interfaces, etc). et implementes les
+fonctionalités qui manquent. » Fichiers : `cisco_priv.test.ts` (46 cas),
+`another_cisco.test.ts` (11 cas).
+
+### L'incohérence d'interface, mesurée
+
+Le typecheck la nommait déjà : les deux fichiers appellent
+`executeCommand(cmd, { passwordInput })`, `loginAs`, `authenticateLine`,
+`authenticateAAA` et `getBanner()` — **cinq points d'entrée qui
+n'existaient sur aucun équipement**. Ce n'était pas une convention de
+test : c'était le constat qu'un appelant programmatique n'avait aucune
+façon d'être *quelqu'un*, ni de franchir une porte.
+
+Et derrière l'absence, un vrai défaut de sécurité :
+`device.executeCommand('enable')` allait **droit au gestionnaire du
+trie**, c'est-à-dire de l'autre côté du mot de passe. Sur une machine
+portant `enable secret`, cet appel accordait le niveau 15 sans rien
+demander — la porte n'existait que pour le terminal.
+
+`src/shell/interaction/HeadlessInteraction.ts` est la réponse, et c'est
+la **seule** façon de jouer un plan d'interaction sans terminal : les
+deux chemins traversent désormais le même plan, donc ils ne peuvent plus
+diverger sur ce qu'il décide. La réponse fournie est retapée tant que le
+plan la refuse et qu'il lui reste des essais — exactement ce que vit un
+opérateur qui retape le même mot de passe : IOS redemande `Password:`
+trois fois puis abandonne sur `% Bad secrets`, et **c'est le plan
+lui-même** qui produit `% Access denied` puis `% Bad secrets`.
+
+### Six défauts produit, chacun vérifié contre du matériel réel
+
+1. **L'invite d'un niveau intermédiaire.** `enable 7` laissait `R1>`.
+   Le guide de sécurité d'IOS 15MT vérifie la commande ainsi :
+   `Device> enable 7 Zy72sKj` puis `Device# show privilege` → `Current
+   privilege level is 7`. **Tout niveau au-dessus de 1 affiche `#`.** Le
+   dépôt affirmait l'inverse dans un commentaire (« IOS n'affichant
+   jamais `#` sous 15 ») et deux cas l'avaient épinglé ; c'était faux.
+   Le correctif est dans `buildDevicePrompt` **et nulle part ailleurs** :
+   l'invite est un RENDU, le mode de dispatch reste `user`, donc le
+   modèle de niveaux — qui est juste — n'est pas touché.
+
+2. **La configuration ne filtrait rien.** Un technicien de niveau 7 admis
+   en configuration y faisait tout, `router ospf` compris. Sur IOS,
+   *toutes* les commandes de configuration naissent au niveau 15 :
+   `privilege exec level 7 configure terminal` ouvre la porte et rien
+   d'autre, il faut encore `privilege configure|interface|line level 7
+   <commande>` pour chacune. La moitié de la délégation était sans effet.
+   `commandeDeConfigurationAccordee` applique la règle ; `exit` et `end`
+   restent toujours permis — un mode dont on ne peut pas sortir n'est
+   plus une restriction mais une souricière.
+
+3. **`privilege <mode> reset <commande>` n'existait pas**
+   (`% Incomplete command.`). C'est la commande documentée par Cisco
+   avec son propre exemple : « to remove the command `privilege exec
+   level reload` … use the `privilege exec reset reload` command ». Elle
+   retire aussi **la ligne de configuration**, sans quoi la règle
+   renaîtrait au rechargement de la topologie, que l'import rejoue.
+
+4. **`no aaa new-model` ne faisait rien** : la configuration continuait
+   d'annoncer AAA actif. Il coupe le drapeau et vide les listes de
+   méthodes, comme sur une vraie machine.
+
+5. **`username X privilege <n>` n'avait aucune borne** : `-1` était
+   accepté et rangé. La plage est `<0-15>`.
+
+6. **Dix directives de ligne acceptées et JETÉES.** Même famille que
+   `session-timeout`/`history size` (lot précédent), même cause : la CLI
+   posait `update.autocommand`, `update.authorizationList`,
+   `update.accountingList`, `update.terminalLength`, `update.terminalWidth`,
+   `update.speedBaud`, `update.stopbits`, `update.rotaryGroup`,
+   `update.motdBannerSuppressed`, `update.execBannerSuppressed` — dix noms
+   qui n'existaient dans **aucun champ** de `VtyLineConfig`, donc
+   `withFields` les laissait tomber sans un mot. `autocommand show status`
+   répondait `` et disparaissait de la configuration, donc du rechargement.
+
+Et une conséquence de `loginAs` : la console **se nomme** après
+l'authentification. `show users` écrivait une colonne `User` vide sur la
+ligne la plus utilisée de la machine.
+
+### Quatre attentes de test corrigées, chacune contre la documentation
+
+Aucune n'était un défaut produit — le produit avait raison sur les
+quatre, et c'est la mesure qui l'a établi :
+
+- **`configure terminal` au niveau 1** rend `% Invalid input detected at
+  '^' marker.` et non `% Command authorization failed` : chez Cisco, les
+  commandes de configuration « default to Level 15 […] and are therefore
+  unavailable to **or invalid for** » un niveau inférieur — l'arbre du
+  niveau 1 ne les contient pas. `% Command authorization failed`
+  appartient à l'autorisation AAA par commande, un autre mécanisme.
+- **Hors d'une vue d'analyseur**, même message et même raison — ce que ce
+  dépôt avait déjà mesuré et écrit au lot des CLI Views.
+- **`show clock` est une commande de niveau 1** sur un vrai IOS, donc un
+  mauvais cobaye pour `reset` : le cas utilise `reload`, l'exemple de
+  Cisco.
+- **Le mode silencieux de `login block-for` ne ferme pas la console** :
+  « when the device is in quiet mode, all login requests are denied and
+  **the only available connection is through the console** », et la
+  fonction ne se configure que « for Telnet or SSH virtual connections ».
+  Le cas console est désormais la moitié qui compte : une console fermée
+  par le mode silencieux enfermerait l'opérateur dehors, ce que ce
+  mécanisme existe précisément pour éviter.

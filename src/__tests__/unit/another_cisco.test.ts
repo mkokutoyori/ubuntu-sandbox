@@ -99,11 +99,19 @@ describe('Cisco IOS Security: Advanced Privilege Mechanisms & Parser Views', () 
 
       // Ping MUST succeed
       const pingRes = await r.executeCommand('ping 127.0.0.1');
-      expect(pingRes).not.toContain('% Command authorization failed');
+      expect(pingRes).not.toContain("% Invalid input detected at '^' marker.");
 
-      // Unincluded command (e.g., show ip route or configure terminal) MUST fail
+      /**
+       * Une vue REMPLACE l'arbre visible : une commande qui n'y est pas
+       * n'est pas « refusee », elle est ABSENTE, et IOS rend le meme
+       * message que pour une commande inexistante. Les transcriptions de
+       * vues montrent bien `% Invalid input detected` sur `show run`,
+       * `conf t` et `ping` hors vue. `% Command authorization failed`
+       * appartient a l'autorisation AAA par commande, un autre
+       * mecanisme.
+       */
       const unincludedRes = await r.executeCommand('show ip route');
-      expect(unincludedRes).toContain('% Command authorization failed');
+      expect(unincludedRes).toContain("% Invalid input detected at '^' marker.");
     });
   });
 
@@ -153,24 +161,37 @@ describe('Cisco IOS Security: Advanced Privilege Mechanisms & Parser Views', () 
   // ─── 3. PRIVILEGE RESET MECHANICS ───────────────────────────────
 
   describe('3. Privilege Reset Mechanics: "privilege <mode> reset <cmd>"', () => {
+    /**
+     * La commande de reference est celle de la documentation Cisco
+     * elle-meme : « to remove the command privilege exec level reload
+     * command from the configuration and return the reload command to
+     * its default privilege of 15 use the privilege exec reset reload
+     * command ». `show clock` ne conviendrait pas comme cobaye — c'est
+     * une commande de NIVEAU 1 sur un vrai IOS (`Router>show clock`
+     * repond), donc la remettre a son defaut la laisse accessible et le
+     * test ne distinguerait rien.
+     */
     it('3.1 Should reset a modified command back to default Level 15 using "privilege <mode> reset <cmd>"', async () => {
       const r = createRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
 
-      // Move 'show clock' to Level 1
-      await r.executeCommand('privilege exec level 1 show clock');
-      
-      // Reset 'show clock' back to default Level 15
-      const res = await r.executeCommand('privilege exec reset show clock');
+      await r.executeCommand('privilege exec level 1 reload');
+      expect(await r.executeCommand('do show running-config'))
+        .toContain('privilege exec level 1 reload');
+
+      const res = await r.executeCommand('privilege exec reset reload');
       expect(res).toBe('');
 
       await r.executeCommand('end');
-      await r.executeCommand('disable'); // Level 1
+      // La regle disparait de la configuration : sans ce retrait elle
+      // renaitrait au rechargement de la topologie, que l'import rejoue.
+      expect(await r.executeCommand('show running-config'))
+        .not.toContain('privilege exec level 1 reload');
 
-      // Now Level 1 user should no longer be able to run 'show clock' if it was originally Level 15
-      const execRes = await r.executeCommand('show clock');
-      expect(execRes).toContain('% Command authorization failed');
+      await r.executeCommand('disable'); // Level 1
+      const execRes = await r.executeCommand('reload');
+      expect(execRes).toContain("% Invalid input detected at '^' marker.");
     });
   });
 
@@ -188,7 +209,18 @@ describe('Cisco IOS Security: Advanced Privilege Mechanisms & Parser Views', () 
       expect(config).toContain('login block-for 60 attempts 3 within 30');
     });
 
-    it('4.2 MUST trigger Quiet Period and reject ALL login attempts when threshold is exceeded', async () => {
+    /**
+     * Le mode silencieux ferme les lignes RESEAU, jamais la console.
+     * Cisco l'ecrit dans le guide de `login block-for` : « when the
+     * device is in quiet mode, all login requests are denied and the
+     * only available connection is through the console », et la
+     * fonction ne se configure que « for Telnet or SSH virtual
+     * connections ». Une console fermee par le mode silencieux
+     * enfermerait l'operateur dehors, ce que ce mecanisme existe
+     * justement pour eviter ; le cas console ci-dessous est donc la
+     * moitie qui compte.
+     */
+    async function labyrintheQuietMode() {
       const r = createRouter();
       await r.executeCommand('enable');
       await r.executeCommand('configure terminal');
@@ -196,20 +228,37 @@ describe('Cisco IOS Security: Advanced Privilege Mechanisms & Parser Views', () 
       await r.executeCommand('line console 0');
       await r.executeCommand('login local');
       await r.executeCommand('exit');
+      await r.executeCommand('line vty 0 4');
+      await r.executeCommand('login local');
+      await r.executeCommand('exit');
       await r.executeCommand('login block-for 60 attempts 3 within 30');
       await r.executeCommand('end');
+      return r;
+    }
+
+    it('4.2 MUST trigger Quiet Period and reject ALL vty login attempts when threshold is exceeded', async () => {
+      const r = await labyrintheQuietMode();
 
       // Fail 3 times within 30s
-      await r.authenticateLine('console', { user: 'admin', pass: 'wrong1' });
-      await r.authenticateLine('console', { user: 'admin', pass: 'wrong2' });
-      await r.authenticateLine('console', { user: 'admin', pass: 'wrong3' });
+      expect(await r.authenticateLine('vty', { user: 'admin', pass: 'wrong1' })).toBe(false);
+      expect(await r.authenticateLine('vty', { user: 'admin', pass: 'wrong2' })).toBe(false);
+      expect(await r.authenticateLine('vty', { user: 'admin', pass: 'wrong3' })).toBe(false);
+
+      expect(r.getLoginBlocker()?.isBlocked()).toBe(true);
 
       // 4th attempt with CORRECT password MUST be blocked due to quiet period
-      const quietAttempt = await r.authenticateLine('console', { user: 'admin', pass: 'CorrectPass' });
+      const quietAttempt = await r.authenticateLine('vty', { user: 'admin', pass: 'CorrectPass' });
       expect(quietAttempt).toBe(false);
+    });
 
-      const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('QUIET_MODE_ON') || l.includes('login quiet period'))).toBe(true);
+    it('4.3 The console stays open during the quiet period — it is the way back in', async () => {
+      const r = await labyrintheQuietMode();
+      await r.authenticateLine('vty', { user: 'admin', pass: 'wrong1' });
+      await r.authenticateLine('vty', { user: 'admin', pass: 'wrong2' });
+      await r.authenticateLine('vty', { user: 'admin', pass: 'wrong3' });
+      expect(r.getLoginBlocker()?.isBlocked()).toBe(true);
+
+      expect(await r.authenticateLine('console', { user: 'admin', pass: 'CorrectPass' })).toBe(true);
     });
   });
 

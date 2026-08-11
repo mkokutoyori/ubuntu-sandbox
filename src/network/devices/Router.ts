@@ -43,6 +43,10 @@ import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
+import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
+import {
+  hasHeadlessAnswers, runInteractionPlanHeadless, type HeadlessAnswers,
+} from '@/shell/interaction/HeadlessInteraction';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CommandAliasTable } from './router/cli/CommandAliasTable';
@@ -2951,11 +2955,134 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Management Plane: Terminal (vendor-abstracted) ────────────
 
-  async executeCommand(command: string): Promise<string> {
+  async executeCommand(command: string, answers?: HeadlessAnswers): Promise<string> {
     if (!this.isPoweredOn) return '% Device is powered off';
+    if (hasHeadlessAnswers(answers)) {
+      const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
+      if (dialogue !== null) { this.syncRouteDebug(); return dialogue; }
+    }
     const out = await this.shell.execute(this, command);
     this.syncRouteDebug();
     return out;
+  }
+
+  /**
+   * `executeCommand` allait droit au gestionnaire du trie, c'est-a-dire
+   * de l'autre cote de la porte : sur une machine portant `enable
+   * secret`, un appelant programmatique obtenait le niveau 15 sans avoir
+   * a produire le moindre mot de passe. Le plan d'interaction — celui-la
+   * meme que joue le terminal — est desormais joue ici quand l'appelant
+   * fournit une reponse, donc les deux chemins traversent la MEME porte.
+   */
+  private async jouerDialogueSansTerminal(
+    command: string, answers: HeadlessAnswers,
+  ): Promise<string | null> {
+    const shell = this.shell as unknown as { getMode?: () => string };
+    if (!isInteractionPlanner(this.shell)) return null;
+    const plan = this.shell.interactionPlanFor(command, {
+      mode: shell.getMode?.() ?? 'privileged',
+      device: this,
+      onVtyLine: false,
+    });
+    if (!plan) return null;
+    return runInteractionPlanHeadless(plan, answers, (c) => this.shell.execute(this, c));
+  }
+
+  /**
+   * Ouvrir une session EXEC au nom d'un compte, sans terminal.
+   *
+   * C'est ce que fait une ligne en `login local` quand l'operateur se
+   * presente : le compte est verifie, puis la session s'ouvre AU NIVEAU
+   * DU COMPTE. Sans cette porte, un appelant programmatique n'avait
+   * aucun moyen d'etre quelqu'un — il etait toujours la console anonyme.
+   */
+  async loginAs(username: string, password: string): Promise<boolean> {
+    if (!this.isPoweredOn) return false;
+    const verdict = await this.authenticateLine('console', { user: username, pass: password });
+    if (!verdict) return false;
+    const niveau = this.getCredentialStore().lookup(username)?.privilege ?? 1;
+    const shell = this.shell as unknown as {
+      beginExecSession?: (lvl: number, u?: string) => void;
+    };
+    shell.beginExecSession?.(niveau, username);
+    const registre = this.getSshSessionRegistry();
+    const ouverte = registre.sessionSurLigne('con');
+    if (ouverte) registre.noterAuthentification(ouverte.id, username, niveau);
+    else registre.open({ user: username, privilege: niveau, fromIp: '', transport: 'console' });
+    return true;
+  }
+
+  /**
+   * Presenter des identifiants A UNE LIGNE, en respectant la methode que
+   * cette ligne declare (`login`, `login local`, `login authentication`).
+   *
+   * La difference console/vty n'est pas cosmetique : le mode silencieux
+   * de `login block-for` ne ferme QUE les lignes reseau — « when the
+   * device is in quiet mode, all login requests are denied and the only
+   * available connection is through the console » (guide de configuration
+   * Login Block). Une console refusee par le mode silencieux enfermerait
+   * l'operateur dehors, ce qu'IOS existe precisement pour eviter.
+   */
+  async authenticateLine(
+    kind: 'console' | 'vty' | 'aux', credentials: { user?: string; pass: string },
+  ): Promise<boolean> {
+    if (!this.isPoweredOn) return false;
+    if (kind === 'vty' && this.getLoginBlocker()?.isBlocked()) return false;
+    const user = credentials.user ?? '';
+    const methode = this.methodeDeLigne(kind);
+    if (methode === 'none') return true;
+    if (methode === 'password') {
+      const attendu = this.motDePasseDeLigne(kind);
+      const ok = attendu !== null && attendu === credentials.pass;
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      return ok;
+    }
+    if (methode === 'aaa') {
+      const ok = await this.authenticateViaAaa(user, credentials.pass);
+      if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+      return ok;
+    }
+    const ok = this.getCredentialStore().authenticate(user, credentials.pass);
+    if (!ok) this.getCredentialStore().recordLoginFailure(user, '', 'bad password', Date.now());
+    return ok;
+  }
+
+  /**
+   * Authentifier par la chaine de methodes AAA et DIRE laquelle a
+   * tranche. `authenticateViaAaa` rend un booleen, donc « le serveur a
+   * refuse » et « aucun serveur n'a repondu, la base locale a tranche »
+   * etaient indiscernables — c'est pourtant la distinction que le repli
+   * existe pour produire.
+   */
+  async authenticateAAA(req: {
+    user: string; pass: string; methodList?: string; serverAvailable?: boolean;
+  }): Promise<{ success: boolean; methodUsed: string }> {
+    const outcome = await this.getAaaAuthenticator()
+      .authenticate(req.user, req.pass, req.methodList);
+    return { success: outcome.accepted, methodUsed: outcome.method };
+  }
+
+  private configurationDeConsole(): {
+    login: 'password' | 'local' | 'none' | 'aaa' | null; password: string | null;
+  } | null {
+    const shell = this.shell as unknown as {
+      _getConsoleLineConfig?: () => {
+        login: 'password' | 'local' | 'none' | 'aaa' | null; password: string | null;
+      } | null;
+    };
+    return shell._getConsoleLineConfig?.() ?? null;
+  }
+
+  protected methodeDeLigne(kind: 'console' | 'vty' | 'aux'): 'none' | 'password' | 'local' | 'aaa' {
+    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.login ?? 'none';
+    if (kind === 'aux') return 'none';
+    return this.configurationDeConsole()?.login ?? 'none';
+  }
+
+  protected motDePasseDeLigne(kind: 'console' | 'vty' | 'aux'): string | null {
+    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.linePassword ?? null;
+    if (kind === 'aux') return null;
+    return this.configurationDeConsole()?.password ?? null;
   }
 
   private _routeDebugSnapshot: Map<string, string> | null = null;
@@ -3183,7 +3310,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
   }
 
-  getBanner(type: string): string {
+  getBanner(type: string = 'motd'): string {
     if (type === 'motd') return this.motdBannerText;
     if (type === 'login') return this.loginBannerText;
     if (type === 'exec') return this.execBannerText;

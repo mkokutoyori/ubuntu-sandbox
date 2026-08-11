@@ -179,6 +179,29 @@ export function buildIdentityConfigCommands(
     return '';
   });
 
+  trie.registerGreedy('no aaa', 'Disable AAA', (args) => {
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const quoi = (args[0] ?? '').toLowerCase();
+    if (!AAA_TOP_KEYWORDS.includes(quoi)) throw new CliInvalidInput({ token: args[0] });
+    if (quoi === 'new-model') {
+      const s = sec();
+      s.aaaNewModel = false;
+      s.aaaMethods.length = 0;
+      return '';
+    }
+    if (quoi === 'session-id') { sec().aaaSessionId = undefined; return ''; }
+    if (quoi === 'authentication' || quoi === 'authorization' || quoi === 'accounting') {
+      const phase = quoi as AaaPhase;
+      const service = (args[1] ?? '').toLowerCase();
+      const nom = (args[2] ?? '').toLowerCase() === 'default' ? 'default' : args[2];
+      const s = sec();
+      s.aaaMethods = s.aaaMethods.filter((m) =>
+        !(m.phase === phase && m.service === service && (!nom || m.listName === nom)));
+      return '';
+    }
+    return '';
+  });
+
   trie.registerGreedy('username', 'Local user', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
@@ -206,7 +229,13 @@ export function buildIdentityConfigCommands(
     let vue: string | undefined;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
-      if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
+      if (t === 'privilege' && args[i + 1]) {
+        const niveau = Number(args[i + 1]);
+        if (!Number.isInteger(niveau) || niveau < 0 || niveau > 15) {
+          throw new CliInvalidInput({ token: args[i + 1] });
+        }
+        privilege = niveau; i++;
+      }
       else if (t === 'algorithm-type') {
         const nom = (args[i + 1] ?? '').toLowerCase();
         if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
