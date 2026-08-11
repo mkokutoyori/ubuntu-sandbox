@@ -4688,6 +4688,63 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S5 — la console n'est pas une VTY, et SSH ne parle pas pour elle
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S5 ».
+
+Signale sur transcript reel. Le simulateur confondait **le protocole**,
+**le type de ligne** et **la source** : trois notions, une variable.
+`%SSH-6-SSH2_SESSION: Session opened for 'alice' on vty 0 from console`
+tient les trois contradictions dans une ligne, pour un operateur assis
+devant le port console.
+
+**Cause unique** : `SshSessionRegistry.onLoginSuccess` s'abonnait a
+TOUTE authentification reussie et appelait `open()`, qui allouait
+inconditionnellement une **vty** puis publiait
+`router.ssh.session.opened`. Aucune notion de transport n'existait.
+**L'information etait pourtant transportee et jetee** — le champ `from`
+de `recordLoginSuccess` porte le mot `console` depuis toujours.
+
+`SessionTransport` et `LineKind` sont deux types DISTINCTS, relies par
+une table. Chaque type de ligne se numerote dans SON espace (`con 0` et
+`vty 0` portent tous deux le rang 0). Le nombre de lignes PHYSIQUES ne se
+configure pas — une seconde console est refusee, `line con 1` n'existe
+pas. Une session locale n'a pas d'adresse : `Location` vide, et
+`[Source: 0.0.0.0] [localport: 0]` dans `%SEC_LOGIN-*`, ce qu'IOS ecrit.
+`%SSH-6-` n'est emis que pour un transport SSH, et une session non-SSH
+est deja annoncee par `login.success` — deux emetteurs auraient double la
+ligne. `*` marque la session COURANTE (`setCurrentSession`) et non la
+premiere de la liste, qui est la plus BASSE et non celle qui pose la
+question. La session console se FERME quand l'operateur quitte : elle
+etait ouverte a l'authentification et fermee nulle part.
+
+**Second defaut trouve en mesurant, et il allait dans l'AUTRE sens.** Le
+premier cas d'historique passait avant comme apres correctif : avant
+correctif le terminal ne retenait pas non plus ce qui venait d'etre tape
+— il rendait `enable`, une commande d'avant l'authentification, et
+PERDAIT la suivante. Un cas qui n'aurait verifie que l'absence chez bob
+serait passe pour une mauvaise raison. Le cas pince les deux moities.
+
+**Cote Huawei** le registre est partage, donc la separation l'est :
+`display users` du routeur rend `CON`/`AUX`/`TEL`/`SSH`. Reste ouvert et
+ecrit : celui du COMMUTATEUR est une constante qui ne lit aucun registre.
+
+**Non traites, chacun avec sa raison** : la sortie de demarrage abregee
+(le simulateur reproduit la CLI, pas le chargeur d'amorcage), et
+`no shutdown → down`, que le signalement juge lui-meme correct.
+
+**Fichiers touches** : `router/aaa/SshSessionRegistry.ts`,
+`inspection/config/LoggingConfig.ts`, `terminal/sessions/CLITerminalSession.ts`,
+`shells/CiscoShellBase.ts`, `shells/CiscoIOSShell.ts`.
+
+**Mesures.** `probe-console-nest-pas-une-vty.test.ts` (18 cas, registre
+ET terminal reel) discrimine par `git stash` : **13 tombent** avant
+correctif. 16 suites sessions/SSH/telnet/logging vertes (694 cas).
+`e2e/cisco-console-nest-pas-une-vty.spec.ts` vert. Typecheck 119, lint
+identique.
+
+---
+
 ## Lot SY2 — les sept points ignores du fichier de conformite syslog
 
 **PRD** : `PRD-Rsyslog.md`, section « Les sept points du fichier de
@@ -4814,7 +4871,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S4 livrés** — conformité pincée |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S5 livrés** — console/vty separees |
 | rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 + SY2 livrés** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

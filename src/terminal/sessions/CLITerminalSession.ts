@@ -220,6 +220,8 @@ export abstract class CLITerminalSession extends TerminalSession {
    * ouvert depuis un autre terminal) : la, la session EST la connexion.
    */
   protected endExecSession(): void {
+    this.fermerSessionEnregistree();
+    this.viderHistoriqueDeSession();
     const banniere = this.consoleReleasedBanner();
     if (!banniere) { this._onRequestClose?.(); return; }
     for (const l of banniere) this.addLine(l);
@@ -234,6 +236,38 @@ export abstract class CLITerminalSession extends TerminalSession {
    * d'un constructeur dont on n'a pas la transcription.
    */
   protected consoleReleasedBanner(): string[] | null { return null; }
+
+  /**
+   * Liberer la ligne dans le registre de l'equipement. Sans cela un
+   * operateur parti restait indefiniment dans `show users` : la session
+   * etait OUVERTE a l'authentification et n'etait jamais fermee, donc la
+   * vue decrivait comme presents des gens qui avaient quitte la machine
+   * — et sur la console, ou il n'y a qu'une ligne, la suivante etait
+   * refusee faute de place.
+   *
+   * La session visee est celle de CETTE ligne : une console ferme la
+   * console, jamais la vty de quelqu'un d'autre.
+   */
+  private fermerSessionEnregistree(): void {
+    const dev = this.device as unknown as {
+      getSshSessionRegistry?: () => {
+        closeWhere(p: (s: { lineKind?: string; transport?: string }) => boolean, r?: string): number;
+      };
+    };
+    if (this.isRemoteChild) return;
+    dev.getSshSessionRegistry?.().closeWhere((s) => s.lineKind === 'con', 'logout');
+  }
+
+  /**
+   * `show history` decrit la session EXEC courante. `VtySnapshot` porte
+   * deja `cmdHistory` — l'etat par session existait — mais la console le
+   * traversait sans jamais le remettre a zero, si bien que l'operateur
+   * suivant heritait des commandes du precedent.
+   */
+  private viderHistoriqueDeSession(): void {
+    const v = (this as unknown as { vty?: { state: { cmdHistory: string[] } } | null }).vty;
+    if (v) v.state.cmdHistory = [];
+  }
 
   /** La console attend la frappe qui rouvre une session EXEC. */
   protected consoleAwaitingReturn = false;

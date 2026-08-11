@@ -7,10 +7,54 @@ import {
 
 export type VtySessionState = 'active' | 'idle' | 'closed';
 
+/**
+ * Le PROTOCOLE par lequel la session est arrivee. Distinct du TYPE DE
+ * LIGNE qu'elle occupe et de la SOURCE d'ou elle vient : une session SSH
+ * arrive par SSH, prend une vty et vient d'une adresse ; une session
+ * console arrive par le port console, prend `con 0` et ne vient de nulle
+ * part. Les confondre produisait `%SSH-6-SSH2_SESSION: … on vty 0 from
+ * console`, trois faits contradictoires dans une ligne.
+ */
+export type SessionTransport = 'console' | 'ssh' | 'telnet' | 'aux';
+
+export type LineKind = 'con' | 'vty' | 'aux';
+
+const LIGNE_DE: Record<SessionTransport, LineKind> = {
+  console: 'con', aux: 'aux', ssh: 'vty', telnet: 'vty',
+};
+
+/**
+ * Un chassis a UN port console et UN port auxiliaire. Le nombre de vty
+ * est configurable et vient de `capacity()`.
+ */
+const LIGNES_PHYSIQUES: Record<LineKind, number | null> = { con: 1, aux: 1, vty: null };
+
+/**
+ * `localport` d'IOS dans `%SEC_LOGIN-*` : le port TCP par lequel la
+ * session est arrivee, et **0 pour une connexion locale** — la console
+ * n'ecoute sur aucun port.
+ */
+const PORT_DE: Record<SessionTransport, number> = { console: 0, aux: 0, ssh: 22, telnet: 23 };
+
+/**
+ * Une source qui n'est pas une adresse designe un acces LOCAL. Le champ
+ * `from` de `recordLoginSuccess` porte deja `'console'` depuis toujours
+ * — l'information existait et etait jetee.
+ */
+function transportDepuisSource(from: string, localPort?: number): SessionTransport {
+  const s = (from ?? '').trim().toLowerCase();
+  if (s === 'console' || s === 'con' || s === 'local' || s === '') return 'console';
+  if (s === 'aux') return 'aux';
+  if (localPort === 23) return 'telnet';
+  return 'ssh';
+}
+
 export interface SshSessionRecord {
   readonly id: string;
   readonly line: string;
   readonly lineIndex: number;
+  readonly lineKind: LineKind;
+  readonly transport: SessionTransport;
   readonly user: string;
   readonly privilege: number;
   readonly fromIp: string;
@@ -42,6 +86,8 @@ interface MutableSession {
   id: string;
   line: string;
   lineIndex: number;
+  lineKind: LineKind;
+  transport: SessionTransport;
   user: string;
   privilege: number;
   fromIp: string;
@@ -70,6 +116,7 @@ export class SshSessionRegistry {
   private readonly active: Map<string, MutableSession> = new Map();
   private readonly closed: MutableSession[] = [];
   private nextSessionSeq = 1;
+  private courante: string | null = null;
 
   constructor(opts: SshSessionRegistryOptions) {
     this.deviceId = opts.deviceId;
@@ -86,7 +133,8 @@ export class SshSessionRegistry {
 
   private snapshot(s: MutableSession, now: number): SshSessionRecord {
     return {
-      id: s.id, line: s.line, lineIndex: s.lineIndex, user: s.user,
+      id: s.id, line: s.line, lineIndex: s.lineIndex,
+      lineKind: s.lineKind, transport: s.transport, user: s.user,
       privilege: s.privilege, fromIp: s.fromIp, fromHost: s.fromHost,
       authMethod: s.authMethod, loginAt: s.loginAt,
       lastActivityAt: s.lastActivityAt, closedAt: s.closedAt,
@@ -99,8 +147,9 @@ export class SshSessionRegistry {
   }
 
   list(now: number = this.now()): readonly SshSessionRecord[] {
+    const rang = (s: MutableSession) => (s.lineKind === 'con' ? 0 : 1) * 1000 + s.lineIndex;
     return Array.from(this.active.values())
-      .sort((a, b) => a.lineIndex - b.lineIndex)
+      .sort((a, b) => rang(a) - rang(b))
       .map(s => this.snapshot(s, now));
   }
 
@@ -114,18 +163,40 @@ export class SshSessionRegistry {
     return s ? this.snapshot(s, this.now()) : null;
   }
 
-  private allocateLine(): { line: string; index: number } | null {
-    const taken = new Set(Array.from(this.active.values()).map(s => s.lineIndex));
-    const limit = this.capacity ? this.capacity() : this.maxLines;
+  /**
+   * Une ligne se choisit DANS SON PROPRE ESPACE. `con 0` et `vty 0` sont
+   * deux lignes differentes qui portent toutes deux le rang 0, donc le
+   * jeu des rangs pris est filtre par type — sans quoi une console
+   * occupait la premiere vty et la vty suivante se numerotait 1.
+   *
+   * Le nombre de lignes physiques ne se configure pas : un chassis a un
+   * port console et un port auxiliaire, et `line con 1` n'existe pas.
+   * Seules les vty ont une capacite reglable.
+   */
+  private allocateLine(kind: LineKind): { line: string; index: number } | null {
+    const taken = new Set(Array.from(this.active.values())
+      .filter(s => s.lineKind === kind)
+      .map(s => s.lineIndex));
+    const limit = LIGNES_PHYSIQUES[kind] ?? (this.capacity ? this.capacity() : this.maxLines);
     for (let i = 0; i < limit; i++) {
-      if (!taken.has(i)) return { line: `vty ${i}`, index: i };
+      if (!taken.has(i)) return { line: `${kind} ${i}`, index: i };
     }
     return null;
   }
 
-  hasFreeLine(): boolean {
-    return this.allocateLine() !== null;
+  hasFreeLine(kind: LineKind = 'vty'): boolean {
+    return this.allocateLine(kind) !== null;
   }
+
+  /**
+   * Quelle session execute la commande en cours. C'est ce que `show
+   * users` marque d'une etoile, et cela ne peut pas se deduire de la
+   * table : la premiere ligne de la liste est la plus BASSE, pas celle
+   * qui pose la question.
+   */
+  setCurrentSession(id: string | null): void { this.courante = id; }
+
+  currentSession(): string | null { return this.courante; }
 
   open(input: {
     user: string;
@@ -137,17 +208,22 @@ export class SshSessionRegistry {
     terminalType?: string;
     localPort?: number;
     peerPort?: number;
+    transport?: SessionTransport;
   }): SshSessionRecord | null {
-    const slot = this.allocateLine();
+    const transport = input.transport ?? transportDepuisSource(input.fromIp, input.localPort);
+    const kind = LIGNE_DE[transport];
+    const slot = this.allocateLine(kind);
     if (!slot) return null;
     const at = input.at ?? this.now();
     const session: MutableSession = {
-      id: `ssh-${this.nextSessionSeq++}`,
+      id: `${kind}-${this.nextSessionSeq++}`,
       line: slot.line,
       lineIndex: slot.index,
+      lineKind: kind,
+      transport,
       user: input.user,
       privilege: input.privilege ?? 1,
-      fromIp: input.fromIp,
+      fromIp: transport === 'console' || transport === 'aux' ? '' : input.fromIp,
       fromHost: input.fromHost ?? null,
       authMethod: input.authMethod ?? 'password',
       loginAt: at,
@@ -157,11 +233,12 @@ export class SshSessionRegistry {
       bytesIn: 0,
       bytesOut: 0,
       terminalType: input.terminalType ?? null,
-      localPort: input.localPort ?? 22,
+      localPort: input.localPort ?? PORT_DE[transport],
       peerPort: input.peerPort ?? 0,
     };
     this.active.set(session.id, session);
-    this.noteLineUse('vty', slot.index);
+    this.noteLineUse(kind, slot.index);
+    this.courante = session.id;
     this.bus.publish({
       topic: 'router.ssh.session.opened',
       payload: { deviceId: this.deviceId, session: this.snapshot(session, at) },
@@ -193,6 +270,7 @@ export class SshSessionRegistry {
     s.closedAt = at;
     s.closeReason = reason;
     this.active.delete(id);
+    if (this.courante === id) this.courante = null;
     this.closed.push(s);
     while (this.closed.length > this.historyLimit) this.closed.shift();
     const snap = this.snapshot(s, at);
@@ -217,6 +295,10 @@ export class SshSessionRegistry {
   private onLoginSuccess = (e: { topic: string; payload: unknown }) => {
     const env = e as unknown as NetworkOsAccountEventEnvelope;
     if (env.payload.deviceId !== this.deviceId) return;
+    // `from` porte deja le mot `console` quand la connexion est locale :
+    // le transport se LIT ici au lieu d'etre suppose SSH pour tout le
+    // monde. Sans cette lecture, un operateur assis devant le port
+    // console ouvrait une vty et la machine annoncait une session SSH.
     this.open({
       user: env.payload.account.name,
       privilege: env.payload.account.privilege,
@@ -296,14 +378,30 @@ export class SshSessionRegistry {
     return n;
   }
 
+  /**
+   * Le RANG ABSOLU de la ligne dans la colonne `Line`, distinct du rang
+   * dans son propre type : IOS numerote `con 0` a 0, puis les vty a
+   * partir de 1. C'est ce qui fait que `show users` sur un chassis
+   * occupe par la console et une session SSH rend `0 con 0` et `1 vty 0`
+   * — deux nombres differents pour deux lignes dont le rang propre est
+   * le meme.
+   */
+  private rangAbsolu(s: SshSessionRecord): number {
+    if (s.lineKind === 'con') return s.lineIndex;
+    if (s.lineKind === 'aux') return 1 + s.lineIndex;
+    return 1 + s.lineIndex;
+  }
+
   formatShowUsers(now: number = this.now()): string {
+    // Une console est toujours physiquement la, meme sans authentifica-
+    // tion : sans session enregistree, `show users` la decrit libre.
     if (this.active.size === 0) {
       return `${SHOW_USERS_HEADER}\n*  0 con 0                idle                 00:00:00`;
     }
     const lignes = renderTable(
-      this.list(now).map((s, i) => ({
-        marker: i === 0 ? '*' : ' ',
-        line: String(s.lineIndex + 1),
+      this.list(now).map((s) => ({
+        marker: s.id === this.courante ? '*' : ' ',
+        line: String(this.rangAbsolu(s)),
         lineName: s.line,
         user: s.user,
         idle: secondsToHms(s.idleSeconds),
@@ -321,7 +419,9 @@ export class SshSessionRegistry {
     const rows: string[] = [header];
     for (const s of this.list(now)) {
       const delay = secondsToHms(s.idleSeconds);
-      const type = s.localPort === 23 ? 'TEL' : 'SSH';
+      const type = s.transport === 'console' ? 'CON'
+        : s.transport === 'aux' ? 'AUX'
+        : s.transport === 'telnet' ? 'TEL' : 'SSH';
       rows.push(`+ ${(129 + s.lineIndex).toString().padEnd(5, ' ')} ${delay} ${type.padEnd(8, ' ')} ${s.fromIp.padEnd(20, ' ')} pass            N               ${s.user}`);
     }
     return rows.join('\n');

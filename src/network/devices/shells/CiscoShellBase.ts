@@ -2216,11 +2216,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * d'administration a la premiere frappe suivante. C'est le meme couple
    * que `disable` remet a zero.
    */
+  /**
+   * L'historique appartient a la SESSION EXEC : IOS documente `show
+   * history` comme rendant les commandes de la session courante. Le
+   * tampon vivait sur le shell, or la console n'a qu'un shell pour toute
+   * la vie de la machine — donc l'operateur suivant relisait les
+   * commandes du precedent, y compris ce qu'il avait tape avant de se
+   * faire refuser un mot de passe.
+   */
   protected fermerSessionExec(): string {
     this.terminalMonitor = false;
     this.currentPrivilegeLevel = 1;
     this.mode = 'user';
     this.fsm.mode = 'user';
+    this.cmdHistory = [];
     return 'Connection closed.';
   }
 

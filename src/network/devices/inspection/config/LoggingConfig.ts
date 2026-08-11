@@ -324,6 +324,9 @@ export function bareTimestampSpec(): TimestampSpec {
  * Le port est etroit a dessein : ce module ne doit pas connaitre
  * `CiscoSecurityConfig`, il doit connaitre la reponse a deux questions.
  */
+/** Les sources qui designent un acces local plutot qu'une adresse. */
+const LOGIN_LOCAL = new Set(['console', 'con', 'aux', 'local', '']);
+
 export interface LoginLoggingPolicy {
   logSuccess(): boolean;
   logFailure(): boolean;
@@ -1194,18 +1197,26 @@ export class LoggingConfig {
       bus.subscribeWhere('router.aaa.account.login.success', isOurs, (e) => {
         if (!this.loginPolicy?.logSuccess()) return;
         const p = e.payload as unknown as { account?: { name?: string }; from?: string; localPort?: number };
+        // Un acces LOCAL n'a ni adresse d'origine ni port d'ecoute :
+        // IOS ecrit `[Source: 0.0.0.0] [localport: 0]`. Recopier le mot
+        // `console` dans un champ qui attend une adresse decrivait une
+        // source qui n'en est pas une.
+        const local = LOGIN_LOCAL.has((p.from ?? '').trim().toLowerCase());
         this.append('notifications', 'sec_login',
-          `Login Success [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`
-          + ` [localport: ${p.localPort ?? 22}]`, true, 'LOGIN_SUCCESS');
+          `Login Success [user: ${p.account?.name ?? '?'}]`
+          + ` [Source: ${local ? '0.0.0.0' : (p.from ?? '?')}]`
+          + ` [localport: ${local ? 0 : (p.localPort ?? 22)}]`, true, 'LOGIN_SUCCESS');
       }),
       bus.subscribeWhere('router.aaa.account.login.failure', isOurs, (e) => {
         if (!this.loginPolicy?.logFailure()) return;
         const p = e.payload as unknown as {
           account?: { name?: string }; from?: string; reason?: string; localPort?: number;
         };
+        const local = LOGIN_LOCAL.has((p.from ?? '').trim().toLowerCase());
         this.append('warnings', 'sec_login',
-          `Login failed [user: ${p.account?.name ?? '?'}] [Source: ${p.from ?? '?'}]`
-          + ` [localport: ${p.localPort ?? 22}]`
+          `Login failed [user: ${p.account?.name ?? '?'}]`
+          + ` [Source: ${local ? '0.0.0.0' : (p.from ?? '?')}]`
+          + ` [localport: ${local ? 0 : (p.localPort ?? 22)}]`
           + ` [Reason: ${p.reason ?? 'Login Authentication Failed'}]`, true, 'LOGIN_FAILED');
       }),
       bus.subscribeWhere('router.aaa.account.locked', isOurs, (e) => {
@@ -1213,10 +1224,28 @@ export class LoggingConfig {
         this.append('critical', 'sec',
           `Account ${p.account?.name ?? '?'} locked (${p.account?.lockReason ?? 'repeated failures'})`, true, 'USER_LOCKED');
       }),
+      // `%SSH-6-SSH2_SESSION` appartient au sous-systeme SSH et a lui
+      // seul. Une session console passe par le meme registre — c'est le
+      // bon endroit pour les tenir toutes — mais annoncer SSH pour elle
+      // produisait `on vty 0 from console` : le protocole, le type de
+      // ligne et la source y etaient tous les trois faux. Ce qu'une
+      // vraie machine ecrit pour un login non-SSH est
+      // `%SEC_LOGIN-5-LOGIN_SUCCESS`, et seulement si `login on-success
+      // log` est configure — sinon elle n'ecrit rien du tout.
       bus.subscribeWhere('router.ssh.session.opened', isOurs, (e) => {
-        const p = e.payload as unknown as { session?: { user?: string; line?: string; fromIp?: string } };
+        const p = e.payload as unknown as {
+          session?: {
+            user?: string; line?: string; fromIp?: string;
+            transport?: string; localPort?: number;
+          };
+        };
+        const s = p.session;
+        // Une session non-SSH est deja annoncee par l'abonnement a
+        // `login.success` ci-dessus (`%SEC_LOGIN-5-LOGIN_SUCCESS`) :
+        // deux emetteurs pour un evenement ecriraient la ligne deux fois.
+        if (s?.transport && s.transport !== 'ssh') return;
         this.append('informational', 'ssh',
-          `Session opened for '${p.session?.user ?? '?'}' on ${p.session?.line ?? 'vty'} from ${p.session?.fromIp ?? '?'}`, true, 'SSH2_SESSION');
+          `Session opened for '${s?.user ?? '?'}' on ${s?.line ?? 'vty'} from ${s?.fromIp || '?'}`, true, 'SSH2_SESSION');
       }),
       bus.subscribeWhere('router.ssh.session.closed', isOurs, (e) => {
         const p = e.payload as unknown as {

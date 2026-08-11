@@ -301,3 +301,109 @@ occupées ») : les deux portaient sur un texte qui ne mesurait rien.
   VTY) : il n'a pas de registre de sessions parce qu'il n'a pas de pile
   TCP. Différence de plateforme déjà écrite pour `show ssh` et le serveur
   HTTP, pas un trou de couverture.
+
+## Lot S5 — la console n'est pas une VTY, et SSH ne parle pas pour elle
+
+Signalé sur transcript réel, et le diagnostic était le bon : le
+simulateur confondait **le protocole**, **le type de ligne** et **la
+source**. Trois notions distinctes, une seule variable.
+
+### La mesure
+
+`line console 0` + `login local`, puis deux opérateurs se succèdent sur
+le port console. La machine répondait :
+
+```
+Username: alice
+Password:
+*Aug 11 07:14:37.428: %SSH-6-SSH2_SESSION: Session opened for 'alice' on vty 0 from console
+```
+
+Une seule ligne, trois faits contradictoires — protocole SSH, ligne
+virtuelle, source locale — pour un opérateur assis devant le port
+console. Puis `show users` listait alice sur `vty 0` et bob sur `vty 1`,
+alice survivait à son propre `exit`, et bob relisait l'historique
+d'alice.
+
+### La cause, une et non quatre
+
+`SshSessionRegistry.onLoginSuccess` s'abonnait à **toute**
+authentification réussie et appelait `open()`, qui allouait
+inconditionnellement une **vty** puis publiait
+`router.ssh.session.opened`, que `LoggingConfig` rend en `%SSH-6-`.
+Aucune notion de transport n'existait dans le registre.
+
+**L'information était pourtant là et jetée** : `recordLoginSuccess`
+porte le mot `console` dans son champ `from` depuis toujours. C'est la
+forme de défaut que ce dépôt referme sans cesse — une valeur transportée
+que personne ne lit.
+
+### Ce qui est livré
+
+`SessionTransport` (`console | ssh | telnet | aux`) et `LineKind`
+(`con | vty | aux`) sont **deux types distincts**, reliés par une table :
+un transport décide quel type de ligne il occupe, et rien d'autre n'en
+déduit rien.
+
+- **Chaque type de ligne se numérote dans SON espace.** `con 0` et
+  `vty 0` portent tous deux le rang 0 : le jeu des rangs pris est filtré
+  par type, sans quoi une console occupait la première vty.
+- **Le nombre de lignes physiques ne se configure pas** — un châssis a un
+  port console et un port auxiliaire, et `line con 1` n'existe pas. Une
+  seconde console est donc refusée ; seules les vty ont une capacité
+  réglable.
+- **Une session locale n'a pas d'adresse d'origine** : `Location` est
+  vide dans `show users`, et `%SEC_LOGIN-*` écrit `[Source: 0.0.0.0]
+  [localport: 0]`, ce qu'IOS écrit pour un accès local. Recopier le mot
+  `console` dans un champ qui attend une adresse décrivait une source qui
+  n'en est pas une.
+- **`%SSH-6-SSH2_SESSION` n'est émis que pour un transport SSH.** Une
+  session non-SSH est déjà annoncée par l'abonnement à `login.success`
+  (`%SEC_LOGIN-5-LOGIN_SUCCESS`, et seulement si `login on-success log`
+  est configuré — sinon une vraie machine n'écrit rien) : deux émetteurs
+  pour un événement auraient écrit la ligne deux fois.
+- **`*` marque la session COURANTE** et non la première de la liste. Cela
+  ne peut pas se déduire de la table — la première ligne est la plus
+  BASSE, pas celle qui pose la question — donc le registre porte
+  explicitement `setCurrentSession`.
+- **La colonne `Line` porte le rang ABSOLU** (`0 con 0`, `1 vty 0`),
+  distinct du rang dans le type.
+- **Une session console se ferme quand l'opérateur quitte.** Elle était
+  OUVERTE à l'authentification et fermée nulle part, donc `show users`
+  décrivait comme présents des gens partis — et, la console n'ayant
+  qu'une ligne, le suivant aurait été refusé faute de place.
+- **L'historique appartient à la session EXEC**, comme IOS le documente.
+  `VtySnapshot` portait déjà `cmdHistory` — l'état par session existait —
+  mais la console le traversait sans jamais le remettre à zéro.
+
+### Un second défaut trouvé en mesurant, et il allait dans l'autre sens
+
+Le premier test d'historique passait **avant comme après** correctif. En
+mesurant plutôt qu'en supposant : avant correctif l'historique du
+terminal ne retenait pas non plus ce qui venait d'être tapé — il rendait
+`enable`, une commande d'avant l'authentification, et **perdait** la
+suivante. Un cas qui n'aurait vérifié que l'absence chez bob serait donc
+passé pour une mauvaise raison. Le cas pince maintenant les deux moitiés :
+alice relit **sa** commande, bob ne relit **ni** celle d'alice **ni** ce
+qui a été tapé avant l'authentification.
+
+### Côté Huawei
+
+Le registre est partagé, donc la séparation l'est. `display users` du
+routeur rend désormais `CON`/`AUX`/`TEL`/`SSH` au lieu de choisir entre
+`TEL` et `SSH` sur le seul numéro de port. **Reste ouvert et écrit plutôt
+que tu** : `display users` du COMMUTATEUR Huawei
+(`HuaweiCommonDisplay.displayUsers`) est une constante qui décrit
+toujours une console libre et ne lit aucun registre — même famille de
+défaut, autre sujet.
+
+### Points du signalement délibérément non traités
+
+- **La sortie de démarrage** (bootstrap, registre de configuration) est
+  volontairement abrégée : le simulateur reproduit la CLI, pas le
+  chargeur d'amorçage.
+- **`no shutdown → down`** est correct et le signalement le dit :
+  `adminState`, `operState` et l'état du protocole de ligne sont bien
+  trois choses distinctes ici, et une interface sans lien tombe.
+- **La table des licences** est une sortie de synthèse et non la
+  transcription d'une version d'IOS précise.

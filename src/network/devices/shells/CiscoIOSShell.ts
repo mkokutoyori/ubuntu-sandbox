@@ -360,6 +360,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.currentPrivilegeLevel = level;
     this.setMode(level >= 15 ? 'privileged' : 'user');
     if (user) this.configSessionLabel = user;
+    this.cmdHistory = [];
   }
 
   override getMode(): CiscoShellMode { return this.mode as CiscoShellMode; }
