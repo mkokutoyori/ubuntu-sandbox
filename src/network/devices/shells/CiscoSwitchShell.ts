@@ -193,7 +193,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       // wording for a command the platform does not have — an unmanaged
       // switch has no VTP, no DTP, no EtherChannel to configure.
       if (!(e instanceof UnsupportedOnThisSwitchError)) throw e;
-      return "% Invalid input detected at '^' marker.";
+      return CISCO_ERRORS.INVALID_INPUT;
     }
     if (before) {
       const events = this.stpDebugEvents(sw, before);
@@ -871,7 +871,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return '% IP addresses may not be configured on L2 links.';
       }
       if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
       return '';
@@ -889,7 +889,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const vlan = this.sviVlanId(this.selectedInterface ?? '');
         if (vlan === null) return '% Command rejected: not applicable on this interface.';
         if (args.length < 1 || !IPAddress.isValid(args[0])) {
-          return "% Invalid input detected at '^' marker.";
+          return CISCO_ERRORS.INVALID_INPUT;
         }
         this.d().addSviHelperAddress(vlan, args[0]);
         return '';
@@ -918,7 +918,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       agent.ensureGroup(iface, group);
       switch (args[1]) {
         case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
           if (args[2]) agent.setVip(iface, group, args[2]);
           return '';
         case 'priority': {
@@ -993,7 +993,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       agent.ensureGroup(iface, group, version);
       switch (args[1]) {
         case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
           if (args[2]) agent.setVip(iface, group, args[2]);
           return '';
         case 'priority': {
@@ -1060,7 +1060,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       agent.ensureGroup(iface, group);
       switch (args[1]) {
         case 'ip':
-          if (args[2] && !IPAddress.isValid(args[2])) return "% Invalid input detected at '^' marker.";
+          if (args[2] && !IPAddress.isValid(args[2])) return CISCO_ERRORS.INVALID_INPUT;
           if (args[2]) agent.setVip(iface, group, args[2]);
           return '';
         case 'priority': {
@@ -1467,7 +1467,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (kw === 'address') {
       if (on && !rest[1]) return CISCO_ERRORS.INCOMPLETE;
       if (on && !/^\d{1,3}(\.\d{1,3}){3}$/.test(rest[1])) {
-        return `% Invalid input detected at '^' marker.`;
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       agent.setQuerierAddress(on ? rest[1] : null);
       return '';
@@ -1475,12 +1475,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (kw === 'query-interval') {
       const secs = parseInt(rest[1] ?? '', 10);
       if (on && (Number.isNaN(secs) || secs < 1 || secs > 18000)) {
-        return `% Invalid input detected at '^' marker.`;
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       agent.setQuerierInterval(on ? secs : 60);
       return '';
     }
-    if (kw !== undefined) return `% Invalid input detected at '^' marker.`;
+    if (kw !== undefined) return CISCO_ERRORS.INVALID_INPUT;
     agent.setQuerierEnabled(vlan, on);
     return '';
   }
@@ -1492,11 +1492,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (a.length === 0) { agent.setEnabled(on); return ''; }
     if (a[0] === 'vlan' && a[1]) {
       const vlan = parseInt(a[1], 10);
-      if (Number.isNaN(vlan)) return `% Invalid input detected at '^' marker.`;
+      if (Number.isNaN(vlan)) return CISCO_ERRORS.INVALID_INPUT;
       agent.setVlanEnabled(vlan, on);
       return '';
     }
-    return `% Invalid input detected at '^' marker.`;
+    return CISCO_ERRORS.INVALID_INPUT;
   }
 
   private showPimSnooping(args: string[]): string {
@@ -1659,7 +1659,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         const knob = args[2].toLowerCase();
         const n = parseInt(args[3] ?? '', 10);
         const agent = this.requireStp();
-        if (isNaN(vlan)) return "% Invalid input detected at '^' marker.";
+        if (isNaN(vlan)) return CISCO_ERRORS.INVALID_INPUT;
         if (knob === 'priority' && !isNaN(n)) agent.setVlanPriority(vlan, n);
         else if (knob === 'hello-time' && !isNaN(n)) agent.setVlanHelloSec(vlan, n);
         else if (knob === 'max-age' && !isNaN(n)) agent.setVlanMaxAgeSec(vlan, n);
@@ -1688,7 +1688,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[0]?.toLowerCase() === 'backbonefast') this.requireStp().setBackboneFast(true);
       if (args[0]?.toLowerCase() === 'pathcost' && args[1]?.toLowerCase() === 'method') {
         const m = args[2]?.toLowerCase();
-        if (m !== 'long' && m !== 'short') return "% Invalid input detected at '^' marker.";
+        if (m !== 'long' && m !== 'short') return CISCO_ERRORS.INVALID_INPUT;
         this.requireStp().setPathcostMethod(m);
       }
       return '';
@@ -1697,7 +1697,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (args[1]?.toLowerCase() === 'priority') {
         const inst = parseInt(args[0] ?? '', 10);
         const prio = parseInt(args[2] ?? '', 10);
-        if (isNaN(inst) || isNaN(prio)) return "% Invalid input detected at '^' marker.";
+        if (isNaN(inst) || isNaN(prio)) return CISCO_ERRORS.INVALID_INPUT;
         this.requireStp().setMstInstancePriority(inst, prio);
       }
       return '';
@@ -1943,7 +1943,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
         if (!a[0]) return this.showMstInstances();
         const id = parseInt(a[0], 10);
-        if (isNaN(id)) return "% Invalid input detected at '^' marker.";
+        if (isNaN(id)) return CISCO_ERRORS.INVALID_INPUT;
         return this.showMstInstances(id);
       });
     }
@@ -1956,7 +1956,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const guard = (raw: string): boolean => /[A-Z]/.test((raw.trim().split(/\s+/)[0]) ?? '');
 
     p.register('show debugging', 'Display active debugging', () =>
-      this.mode === 'user' ? "% Invalid input detected at '^' marker." : (svc()?.format() ?? 'No debug flags are enabled'));
+      this.mode === 'user' ? CISCO_ERRORS.INVALID_INPUT : (svc()?.format() ?? 'No debug flags are enabled'));
 
     p.register('debug all', 'Enable all debugging', () => svc()?.enableAll() ?? '');
     p.registerGreedy('debug spanning-tree', 'Enable STP debugging', (a) => {
@@ -1967,10 +1967,10 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     p.registerGreedy('debug mac-address-table', 'Enable MAC table debugging', () => svc()?.enableScope('mac') ?? '');
     p.registerGreedy('debug link-state', 'Enable link-state debugging', () => svc()?.enableScope('link') ?? '');
     p.registerGreedy('debug', 'Enable debugging', (a, raw) => {
-      if (guard(raw ?? '')) return "% Invalid input detected at '^' marker.";
+      if (guard(raw ?? '')) return CISCO_ERRORS.INVALID_INPUT;
       const arg = a.join(' ');
       const service = svc();
-      if (!service || !service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      if (!service || !service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
       return service.enableScope(arg);
     });
 
@@ -1986,7 +1986,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const service = svc();
       if (!service) return '';
       if (arg.trim() === '' || arg.trim() === 'all') return service.disableAll();
-      if (!service.recognizes(arg)) return "% Invalid input detected at '^' marker.";
+      if (!service.recognizes(arg)) return CISCO_ERRORS.INVALID_INPUT;
       return service.disableScope(arg);
     };
     p.registerGreedy('undebug', 'Disable debugging', (a) => undebugScope(a.join(' ')));
@@ -2540,7 +2540,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (virt) {
         const vlan = this.sviVlanId(virt);
         if (vlan !== null) {
-          if (vlan < 1 || vlan > 4094) return "% Invalid input detected at '^' marker.";
+          if (vlan < 1 || vlan > 4094) return CISCO_ERRORS.INVALID_INPUT;
           this.d().ensureSvi(vlan);
         }
         this.selectedInterface = virt;
@@ -2612,7 +2612,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // sont enregistrees avec la famille identite, sur le meme magasin que
     // le routeur.
     this.configTrie.registerGreedy('ip default-gateway', 'Set the management default gateway', (args) => {
-      if (!args[0] || !IPAddress.isValid(args[0])) return "% Invalid input detected at '^' marker.";
+      if (!args[0] || !IPAddress.isValid(args[0])) return CISCO_ERRORS.INVALID_INPUT;
       this.d()._setDefaultGateway(args[0]);
       return '';
     });
@@ -2710,7 +2710,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     }
 
-    return "% Invalid input detected at '^' marker.";
+    return CISCO_ERRORS.INVALID_INPUT;
   }
 
   private showMonitor(only: number | null): string {
@@ -2780,7 +2780,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.registerGreedy('switchport mode private-vlan trunk', 'Set interface as a private VLAN trunk port', (args) => {
       const kind = args[0]?.toLowerCase();
       if (kind !== undefined && kind !== 'promiscuous' && kind !== 'host') {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       return this.applyToSelectedInterfaces(portName =>
         this.d().setSwitchportMode(portName, 'trunk') ? '' : '% Error'
@@ -2890,7 +2890,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configIfTrie.registerGreedy('l2protocol-tunnel', 'Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally', (args) => {
       const proto = (args[0] ?? '').toLowerCase();
       if (proto !== 'cdp' && proto !== 'stp' && proto !== 'vtp' && proto !== 'lldp') {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       return this.applyToSelectedInterfaces(portName => {
         if (!this.d().getSwitchportConfig(portName)) return '% Error';
@@ -2984,7 +2984,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
     this.configIfTrie.registerGreedy('switchport trunk encapsulation', 'Trunk encapsulation', (args) => {
       if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       const t = (args[0] ?? '').toLowerCase();
       if (t !== 'dot1q' && t !== 'negotiate') {
@@ -3049,7 +3049,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         // These are physical-port-only; an SVI is a virtual L3 interface and
         // rejects them just like real IOS does.
         if (this.selectedInterface && this.sviVlanId(this.selectedInterface) !== null) {
-          return "% Invalid input detected at '^' marker.";
+          return CISCO_ERRORS.INVALID_INPUT;
         }
         return recordIf(`${sub} ${args.join(' ')}`.trim());
       });
@@ -3069,7 +3069,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const kw = args[0].toLowerCase();
       const v = parseInt(args[0], 10);
       if (kw !== 'dot1p' && kw !== 'none' && kw !== 'untagged' && (isNaN(v) || v < 1 || v > 4094)) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       const ifs = this.selectedInterface ? [this.selectedInterface] : this.selectedInterfaceRange;
       for (const i of ifs) {
@@ -3108,7 +3108,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }));
     this.configIfTrie.registerGreedy('mls qos cos', 'Default CoS applied to untrusted ingress traffic', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 0 || n > 7) return "% Invalid input detected at '^' marker.";
+      if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.defaultCos = n;
@@ -3117,7 +3117,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
     this.configIfTrie.registerGreedy('switchport priority extend cos', 'Remark the phone\'s downstream PC traffic to a fixed CoS', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 0 || n > 7) return "% Invalid input detected at '^' marker.";
+      if (isNaN(n) || n < 0 || n > 7) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(p => {
         const cfg = this.d().getSwitchportConfig(p);
         if (cfg) cfg.priorityExtend = { mode: 'cos', value: n };
@@ -3768,7 +3768,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const c = port.getCounters();
       rows.push({ port: this.abbreviateInterface(pn), bytesIn: c.bytesIn, framesIn: c.framesIn, bytesOut: c.bytesOut, framesOut: c.framesOut });
     }
-    if (name && rows.length === 0) return `% Invalid input detected at '^' marker.`;
+    if (name && rows.length === 0) return CISCO_ERRORS.INVALID_INPUT;
     // Largeurs pleines, blancs de séparation compris : elles reproduisent
     // au caractère près l'en-tête que cette commande écrivait déjà
     // (bords 4/24/38/50/64), qui lui était juste — seules les données
@@ -4663,7 +4663,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       const ports = this.d()._getPortsInternal();
       const nom = this.resolveInterfaceName(iface);
       const port = nom ? ports.get(nom) : undefined;
-      if (!port || !nom) return `% Invalid input detected at '^' marker.`;
+      if (!port || !nom) return CISCO_ERRORS.INVALID_INPUT;
       return ipInterfaceBlockFor(nom, port, ports);
     }
     return this.sviInterfaceBlock(parseInt(vlanIfMatch[1], 10));
@@ -4962,7 +4962,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     this.configIfTrie.registerGreedy('lacp rate', 'LACPDU rate', (args) => {
       const rate = (args[0] ?? '').toLowerCase();
-      if (rate !== 'fast' && rate !== 'normal') return '% Invalid input detected at \'^\' marker.';
+      if (rate !== 'fast' && rate !== 'normal') return CISCO_ERRORS.INVALID_INPUT;
       // The engine keeps one rate for the whole device, so this is not
       // per-interface the way IOS states it.
       agent().setFastRate(rate === 'fast');
@@ -5081,7 +5081,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return lines.join('\n');
     }
 
-    return '% Invalid input detected at \'^\' marker.';
+    return CISCO_ERRORS.INVALID_INPUT;
   }
 
   /**
@@ -5133,7 +5133,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     };
     this.configIfTrie.registerGreedy('dot1x port-control', '802.1X port control mode', (args) => {
       const mode = MODES[(args[0] ?? '').toLowerCase()];
-      if (!mode) return '% Invalid input detected at \'^\' marker.';
+      if (!mode) return CISCO_ERRORS.INVALID_INPUT;
       return this.applyToSelectedInterfaces(portName => {
         agent().setPortMode(portName, mode);
         return '';
@@ -5183,7 +5183,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (!rt) return '% Dot1x is not enabled on the specified interface';
       return this.dot1xPortBlock(rt).join('\n');
     }
-    return '% Invalid input detected at \'^\' marker.';
+    return CISCO_ERRORS.INVALID_INPUT;
   }
 
   private dot1xPortBlock(rt: import('@/network/dot1x/types').Dot1xPortRuntime): string[] {
