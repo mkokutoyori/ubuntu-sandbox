@@ -39,6 +39,7 @@ import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
 import { opensslCommand } from './crypto/OpenSsl';
 import { nginxCommand } from './net/Nginx';
+import { rsyslogdCommand } from './net/Rsyslogd';
 import { apachectlCommand } from './net/Apachectl';
 import {
   a2ensiteCommand, a2dissiteCommand, a2enmodCommand, a2dismodCommand,
@@ -157,6 +158,7 @@ export {
   curlCommand,
   opensslCommand,
   nginxCommand,
+  rsyslogdCommand,
   apachectlCommand,
   a2ensiteCommand,
   a2dissiteCommand,
@@ -292,6 +294,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   curlCommand,
   opensslCommand,
   nginxCommand,
+  rsyslogdCommand,
   apachectlCommand,
   a2ensiteCommand,
   a2dissiteCommand,

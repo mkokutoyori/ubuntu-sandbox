@@ -116,6 +116,20 @@ export function checkSshdCriticalFiles(probe: FileProbe): ConfigCheckResult {
  * différents. Ce tableau ne couvre que le premier ; le second est du
  * ressort de l'analyseur, qui seul peut lire le contenu.
  */
+/**
+ * rsyslog refuse de demarrer sans son fichier principal, et le message
+ * est le sien : `rsyslogd: error ... could not open config file`. Un
+ * `/etc/rsyslog.conf` VIDE, lui, est legal — le demon demarre sans
+ * regle et n'ecrit nulle part, ce qui est une panne differente et bien
+ * reelle (les logs disparaissent sans que rien n'echoue).
+ */
+export const RSYSLOG_CRITICAL_FILES: readonly CriticalRequirement[] = [
+  {
+    path: '/etc/rsyslog.conf',
+    onMissing: "rsyslogd: error: could not open config file '/etc/rsyslog.conf': No such file or directory",
+  },
+];
+
 export const NGINX_CRITICAL_FILES: readonly CriticalRequirement[] = [
   {
     path: '/etc/nginx/nginx.conf',
@@ -124,6 +138,12 @@ export const NGINX_CRITICAL_FILES: readonly CriticalRequirement[] = [
 ];
 
 /** Le fichier principal de nginx est-il là ? */
+/** Le pendant rsyslog de `checkNginxCriticalFiles`. */
+export function checkRsyslogCriticalFiles(probe: FileProbe): ConfigCheckResult {
+  const missing = firstMissingRequirement(probe, RSYSLOG_CRITICAL_FILES);
+  return missing ? { ok: false, error: missing } : { ok: true };
+}
+
 export function checkNginxCriticalFiles(probe: FileProbe): ConfigCheckResult {
   const missing = firstMissingRequirement(probe, NGINX_CRITICAL_FILES);
   return missing ? { ok: false, error: missing } : { ok: true };
@@ -169,6 +189,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   auditctl: '/sbin/auditctl', ausearch: '/sbin/ausearch', aureport: '/sbin/aureport',
   reboot: '/sbin/reboot', shutdown: '/sbin/shutdown', logger: '/usr/bin/logger',
   journalctl: '/bin/journalctl', dmesg: '/bin/dmesg', logrotate: '/usr/sbin/logrotate',
+  rsyslogd: '/usr/sbin/rsyslogd',
   // Les outils d'administration vivent dans `sbin` : `which lsmod`
   // doit répondre le même chemin que le `binaryPath` déclaré sur la
   // commande, sinon la machine se contredit sur l'emplacement.

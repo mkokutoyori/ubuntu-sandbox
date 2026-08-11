@@ -27,6 +27,9 @@ import type { UserAccountHost, ShellIdentityHost, FileEditorHost } from '../equi
 import type { PathActor } from './linux/VfsPath';
 import { findHostByAddress } from './linux/network/HostLookup';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
+import { LinuxRsyslogService } from './linux/syslog/LinuxRsyslogService';
+import { RSYSLOG_SEEDED_FILES } from './linux/syslog/RsyslogFiles';
+import { checkRsyslogCriticalFiles } from './linux/service/CriticalFiles';
 import { NtpAgent, type NtpHost } from '../ntp/NtpAgent';
 import { LinuxChronyService, CHRONY_CONF_PATH } from './linux/time/LinuxChronyService';
 import { CHRONY_KEYS_PATH, CHRONY_KEYS_DEBIAN } from './linux/time/ChronyKeys';
@@ -1180,6 +1183,7 @@ export abstract class LinuxMachine extends EndHost
 
     this.executor.registerServiceSocketServer('nginx', this.nginxService);
     this.executor.nginxService = this.nginxService;
+    this.installerRsyslog(vfs);
 
     this.publishNginxPorts();
 
@@ -1217,6 +1221,114 @@ export abstract class LinuxMachine extends EndHost
       // écoute qui n'existe plus.
       this.publishNginxPorts();
       this.executor.resyncServicePorts('nginx');
+    });
+  }
+
+  /**
+   * rsyslog en RECEPTEUR.
+   *
+   * Mesure : `rsyslogd` existe, `systemctl status rsyslog` repond
+   * `active`, `/var/log/syslog` se remplit — et `/etc/rsyslog.conf`
+   * N'EXISTE PAS, `/etc/rsyslog.d/` non plus, rien n'ecoute sur 514. Un
+   * routeur configure avec `logging host` posait donc de vrais
+   * datagrammes sur le fil que personne ne recevait : la
+   * centralisation, qui est le sujet meme d'un cours syslog, n'avait
+   * aucun support.
+   */
+  rsyslogService: LinuxRsyslogService | null = null;
+
+  private installerRsyslog(vfs: typeof this.executor.vfs): void {
+    for (const [chemin, contenu] of RSYSLOG_SEEDED_FILES) {
+      if (!vfs.exists(chemin)) vfs.writeFile(chemin, contenu, 0, 0, 0o022, true);
+    }
+    this.rsyslogService = new LinuxRsyslogService({
+      lireFichier: (p) => vfs.readFile(p) ?? null,
+      ecrireLigne: (p, l) => this.executor.logMgr.appendLine(p, l),
+      listerRepertoire: (p) => vfs.listDirectory(p)?.map((e) => e.name) ?? [],
+      // L'ecoute est REELLE : `udpBindAddress` pose la socket que `ss`
+      // lit ET le recepteur qui traite le datagramme. Inscrire l'une
+      // sans l'autre est exactement le defaut que ce lot referme.
+      ecouterUdp: (port, onDatagram) => {
+        // `udpBind` et non `udpBindAddress` : la livraison cherche
+        // d'abord un service lie a UNE adresse (`192.168.100.50:514`) et
+        // ne retombe sur la table par PORT qu'ensuite. Un rsyslog ecoute
+        // sur toutes les interfaces, donc c'est cette seconde table qui
+        // le concerne — lie a `0.0.0.0:514`, il apparaissait dans `ss` et
+        // ne recevait rien, la cle cherchee etant l'adresse de
+        // destination du datagramme.
+        this.udpBind(port, (d) => {
+          // Ce simulateur transporte des PDU STRUCTUREES et non des
+          // octets — convention de tout le depot. Un emetteur interne
+          // (`SyslogAgent`) pose donc un `SyslogPacket` et non une
+          // chaine ; on reconstruit la ligne RFC 3164 depuis ses champs
+          // plutot que d'exiger une serialisation qui n'existe nulle
+          // part. Une charge deja textuelle (un `logger` distant, un
+          // test) reste acceptee telle quelle.
+          const p = d.udp.payload as unknown;
+          let charge = '';
+          if (typeof p === 'string') charge = p;
+          else if (p && typeof p === 'object' && (p as { type?: string }).type === 'syslog') {
+            const s2 = p as { facility: number; severity: number; hostname: string;
+                              tag: string; message: string; timestamp: string };
+            charge = `<${s2.facility * 8 + s2.severity}>${s2.timestamp} `
+              + `${s2.hostname} ${s2.tag} ${s2.message}`;
+          }
+          if (charge) onDatagram(d.sourceIP.toString(), charge);
+        }, 'rsyslogd');
+        return () => this.udpClose(port);
+      },
+      hostname: () => this.getHostname(),
+      maintenant: () => Date.now(),
+    });
+    this.executor.registerServiceSocketServer('rsyslog', this.rsyslogService);
+    this.executor.rsyslogService = this.rsyslogService;
+    this.rsyslogService.recharger();
+
+    // La coherence entre l'ETAT DU SERVICE et l'ETAT DES FICHIERS : une
+    // configuration fautive REFUSE le demarrage et le rechargement au
+    // lieu de laisser une unite `active` derriere un demon qui n'a rien
+    // lu. C'est le meme contrat que nginx et sshd tiennent deja.
+    this.executor.serviceMgr.registerConfigCheck('rsyslog', () => {
+      const svc = this.rsyslogService;
+      if (!svc) return { ok: true };
+      const manquant = checkRsyslogCriticalFiles({
+        exists: (p) => this.executor.vfs.exists(p),
+        readFile: (p) => this.executor.vfs.readFile(p),
+      });
+      if (!manquant.ok) return { ok: false, error: manquant.error ?? 'rsyslogd: configuration error' };
+      const v = svc.verifierConfiguration();
+      if (v.verdict === 'ok') return { ok: true };
+      return { ok: false, error: v.erreur, verbatim: true };
+    });
+
+    // Demarrer, arreter et recharger OUVRENT et FERMENT les sockets pour
+    // de bon. Sans cela, `systemctl stop rsyslog` laisserait le port 514
+    // ouvert et la machine continuerait de recevoir apres l'arret.
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'rsyslog') return;
+      const svc = this.rsyslogService;
+      if (!svc) return;
+      if (event === 'stop') { svc.stopAll(); this.executor.resyncServicePorts('rsyslog'); return; }
+      svc.recharger();
+      this.publierPortsRsyslog();
+      this.executor.resyncServicePorts('rsyslog');
+    });
+    this.publierPortsRsyslog();
+  }
+
+  /**
+   * Declarer a la table des sockets les ports que la CONFIGURATION
+   * demande. La liste vient du fichier et non d'une constante : c'est ce
+   * qui fait qu'un `imudp` decommente puis recharge ouvre vraiment 514,
+   * et qu'un `imudp` recommente le referme.
+   */
+  private publierPortsRsyslog(): void {
+    const svc = this.rsyslogService;
+    if (!svc) return;
+    const ports = svc.listeningPorts();
+    this.executor.serviceMgr.registerServiceListener('rsyslog', {
+      processName: 'rsyslogd',
+      sockets: ports.map((port) => ({ port, protocol: 'udp' as const })),
     });
   }
 

@@ -410,6 +410,8 @@ export class LinuxCommandExecutor {
 
   /** Le nginx de cette machine, pour la commande `nginx` (docs/PRD-Nginx.md §P2). */
   nginxService: NginxControl | null = null;
+  /** Le recepteur rsyslog — voir `docs/PRD-Rsyslog.md`. */
+  rsyslogService: import('./syslog/LinuxRsyslogService').LinuxRsyslogService | null = null;
 
   /** L'agent NTP de la machine — le MEME moteur que Cisco et Huawei. */
   ntpAgent: (() => import('../../ntp/NtpAgent').NtpAgent) | null = null;

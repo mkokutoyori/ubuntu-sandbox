@@ -4620,6 +4620,57 @@ tous traites.
 
 ---
 
+## Lot SY1 — rsyslog : un vrai recepteur
+
+**PRD** : `PRD-Rsyslog.md` (dedie, comme demande).
+
+**La mesure de depart**, faite en cablant un routeur Cisco a un serveur
+Linux : `which rsyslogd` repond, `systemctl status rsyslog` dit
+`active (running)`, `/var/log/syslog` se remplit — et
+**`/etc/rsyslog.conf` N'EXISTE PAS**, `/etc/rsyslog.d/` non plus, **rien
+n'ecoute sur 514**. Pendant ce temps `show logging` sur le routeur
+comptait ses messages comme partis. De VRAIS datagrammes partaient sur le
+fil et personne ne les recevait : la centralisation, sujet meme d'un
+cours syslog, n'avait aucun support.
+
+Livre : les fichiers de Debian (modules **commentes**, comme sur une
+vraie machine — les decommenter EST l'exercice), un analyseur reel
+(`module`+`input`, forme historique `$ModLoad`/`$UDPServerRun`, regles,
+renvois, `$IncludeConfig`), une ecoute reelle via `ServiceSocketServer`,
+`rsyslogd -N1`, et **la coherence service/fichiers dans les deux sens** :
+configuration fautive → `systemctl restart` REFUSE et l'unite passe a
+`failed` ; `/etc/rsyslog.conf` supprime → demarrage impossible en nommant
+le fichier ; fichier VIDE → demarre et n'ecrit nulle part (panne
+differente, bien reelle) ; `systemctl stop` referme le port.
+
+Deux points ou une lecture naive se trompe et que la sonde pince :
+`.info` veut dire « info ET PLUS GRAVE » (les severites vont a l'envers),
+et `.none` EXCLUT — c'est ce qui separe `/var/log/syslog` de
+`auth.log`.
+
+**Defaut trouve en cablant, et instructif** : lie a `0.0.0.0:514` par
+`udpBindAddress`, le service apparaissait dans `ss` et **ne recevait
+rien** — la livraison cherche d'abord un service lie a UNE adresse et ne
+retombe sur la table par PORT qu'ensuite. C'etait exactement le defaut
+« affiche mais injoignable » que `ServiceSocketServer` existe pour
+empecher, reproduit une couche plus bas.
+
+**Fichiers touches** : `linux/syslog/RsyslogFiles.ts`,
+`RsyslogConfig.ts`, `LinuxRsyslogService.ts` (nouveaux),
+`linux/commands/net/Rsyslogd.ts` (nouveau), `linux/commands/index.ts`,
+`linux/service/CriticalFiles.ts`, `linux/LinuxCommandExecutor.ts`,
+`devices/LinuxMachine.ts`.
+
+**Mesures.** `rsyslog-recepteur-reel.test.ts` (19 cas) discrimine par
+`git stash` : **11 tombent** avant. 5 suites de services connexes vertes
+(77 cas). Typecheck 119, lint identique. **Restent ouverts et ecrits dans
+le PRD** : `imtcp` (analyse, n'ouvre rien), TLS/6514, les renvois
+`@@host` (analyses, rien ne reemet), `logrotate` sur ces fichiers, et
+cote Huawei `info-center loghost … level|source-ip` et
+`display logbuffer level`.
+
+---
+
 ## Lots antérieurs
 
 Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
@@ -4640,6 +4691,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
 | Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S3 livrés — chantier clos** |
+| rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 livré** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :
 pris et livré par le lot V6 ci-dessus. Reste ouvert et **à vous** :
