@@ -68,7 +68,7 @@ import {
   GetLocalGroupMemberCmdlet, RenameLocalGroupCmdlet,
 } from './UserCmdlets';
 import {
-  GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetNeighborCmdlet,
+  GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetIPInterfaceCmdlet, GetNetNeighborCmdlet,
   NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
   TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
@@ -356,6 +356,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   // ── Network (provider-backed, partial — see INetworkProvider) ─────────────
   registry.register(new GetNetAdapterCmdlet());
   registry.register(new GetNetIPAddressCmdlet());
+  registry.register(new GetNetIPInterfaceCmdlet());
   registry.register(new TestConnectionCmdlet());
   registry.register(new ResolveDnsNameCmdlet());
   registry.register(new InvokeWebRequestCmdlet());

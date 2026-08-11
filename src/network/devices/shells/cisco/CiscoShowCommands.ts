@@ -859,6 +859,9 @@ function interfaceConfigLines(
   if (router.isRIPEnabled() && !router.ripSplitHorizonOn(name)) {
     lines.push(' no ip split-horizon');
   }
+  if (port.getMTU() !== 1500) lines.push(` mtu ${port.getMTU()}`);
+  if (port.getBandwidthKbps() > 0) lines.push(` bandwidth ${port.getBandwidthKbps()}`);
+  if (port.hasExplicitDelayUs()) lines.push(` delay ${Math.round(port.getDelayUs() / 10)}`);
   if (!port.getIsUp()) lines.push(` shutdown`);
   // Le durcissement d'une interface se REJOUE : sans cette ligne, un
   // `ntp disable` posé sur un lien exterieur disparaissait a l'import
@@ -1272,16 +1275,25 @@ export function showInterfacesAll(router: Router): string {
 }
 
 /** `show interfaces description` — real status/protocol/description table. */
-export function showInterfacesDescription(router: Router): string {
+export function renderInterfacesDescription(
+  ports: ReadonlyMap<string, Port>,
+  describe: (name: string) => string,
+  nameOf: (name: string) => string = (n) => n,
+): string {
   const rows = ['Interface                      Status         Protocol Description'];
-  const ports = router._getPortsInternal();
   for (const [name, port] of ports) {
     const { status, protocol } = iosInterfaceStatus(port, name, ports);
-    const desc = router.getInterfaceDescription(name) || '';
     const shown = status === 'administratively down' ? 'admin down' : status;
-    rows.push(`${name.padEnd(31)}${shown.padEnd(15)}${protocol.padEnd(9)}${desc}`);
+    rows.push(`${nameOf(name).padEnd(31)}${shown.padEnd(15)}${protocol.padEnd(9)}${describe(name)}`);
   }
   return rows.join('\n');
+}
+
+export function showInterfacesDescription(router: Router): string {
+  return renderInterfacesDescription(
+    router._getPortsInternal(),
+    (n) => router.getInterfaceDescription(n) || '',
+  );
 }
 
 /**

@@ -289,16 +289,18 @@ export function cmdNetstat(
     ];
     const rows: string[] = [];
     if (ctx) {
-      for (const name of ctx.getInterfaceNames()) {
+      const noms = ctx.getInterfaceNames();
+      for (const name of noms.includes('lo') ? noms : [...noms, 'lo']) {
         const info = ctx.getInterfaceInfo(name);
         if (!info) continue;
         const mtu = String(info.mtu).padStart(7);
         const rx  = String(info.counters.framesIn).padStart(8);
         const tx  = String(info.counters.framesOut).padStart(9);
-        const flags = info.isUp ? (info.isConnected ? 'BMRU' : 'BMU') : 'BMU';
+        const flags = name === 'lo'
+          ? 'LRU'
+          : (info.isUp && info.isConnected ? 'BMRU' : 'BMU');
         rows.push(`${name.padEnd(11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
       }
-      rows.push(`lo        65536      128      0      0 0           128      0      0      0 LRU`);
     } else {
       rows.push('eth0      1500     1024      0      0 0           512      0      0      0 BMRU');
       rows.push('lo       65536      128      0      0 0           128      0      0      0 LRU');

@@ -31,7 +31,7 @@ function adapterToPSObject(a: NetworkAdapterInfo): Record<string, PSValue> {
     InterfaceDescription: a.displayName,
     ifIndex:      a.ifIndex,
     Status:       a.status,
-    MacAddress:   a.macAddress,
+    MacAddress:   a.macAddress.replace(/:/g, '-').toUpperCase(),
     LinkSpeed:    a.linkSpeed,
   };
 }
@@ -99,6 +99,35 @@ export class GetNetIPAddressCmdlet implements ICmdlet {
       ips = ips.filter(ip => ip.addressFamily.toLowerCase() === af);
     }
     return ips.map(ipToPSObject) as PSValue;
+  }
+}
+
+export class GetNetIPInterfaceCmdlet implements ICmdlet {
+  readonly name = 'get-netipinterface';
+  readonly displayName = 'Get-NetIPInterface';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const net = requireNetwork(ctx);
+    const familleDemandee = ctx.named['addressfamily']
+      ? psValueToString(ctx.named['addressfamily']).toLowerCase()
+      : undefined;
+    const familles = familleDemandee ? [familleDemandee] : ['ipv4', 'ipv6'];
+    const out: Record<string, PSValue>[] = [];
+    for (const a of net.getAdapters()) {
+      for (const famille of familles) {
+        out.push({
+          ifIndex: a.ifIndex,
+          InterfaceAlias: a.name,
+          AddressFamily: famille === 'ipv6' ? 'IPv6' : 'IPv4',
+          NlMtu: 1500,
+          InterfaceMetric: 25,
+          Dhcp: net.isDHCPConfigured(a.name) ? 'Enabled' : 'Disabled',
+          ConnectionState: a.status === 'Up' ? 'Connected' : 'Disconnected',
+        });
+      }
+    }
+    return out as PSValue;
   }
 }
 

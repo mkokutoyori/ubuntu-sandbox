@@ -23,6 +23,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
 import { renderDisplayDns } from './WinDnsCache';
 import { toDisplayName } from './WindowsInterfaceNaming';
@@ -192,13 +193,13 @@ function ipconfigAll(ctx: WinCommandContext): string {
       lines.push(`   Connection-specific DNS Suffix  . :`);
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
-      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
+      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
     } else {
       lines.push(`   Connection-specific DNS Suffix  . : ${ctx.getConnectionDnsSuffix(name)}`.trimEnd());
       lines.push(`   Description . . . . . . . . . . . : Intel(R) Ethernet Connection`);
       lines.push(`   Physical Address. . . . . . . . . : ${mac}`);
-      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${isDHCP ? 'Yes' : 'No'}`);
+      lines.push(`   DHCP Enabled. . . . . . . . . . . : ${dhcpEnabledFor(port, isDHCP) ? 'Yes' : 'No'}`);
       lines.push(`   Autoconfiguration Enabled . . . . : Yes`);
 
       if (global6) lines.push(`   IPv6 Address. . . . . . . . . . . : ${global6}(Preferred)`);

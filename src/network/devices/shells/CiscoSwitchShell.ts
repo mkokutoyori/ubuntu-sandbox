@@ -28,6 +28,7 @@ import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
   ipIntBriefRowsFromPorts, renderIpIntBrief, ipInterfaceBlockFor,
+  renderInterfacesDescription,
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
@@ -2403,29 +2404,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.privilegedTrie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
       const name = this.resolveInterfaceName(args.join(' '))
         ?? this.virtualInterfaceName(args.join(' ')) ?? args.join(' ');
-      const cfg = this.d().getSwitchportConfig(name);
-      const out = [`interface ${name}`];
-      if (cfg) {
-        if (cfg.mode === 'trunk') out.push(' switchport mode trunk');
-        else if (cfg.mode === 'dot1q-tunnel') out.push(' switchport mode dot1q-tunnel');
-        else if (cfg.explicitMode) out.push(' switchport mode access');
-        if (cfg.mode !== 'trunk' && cfg.accessVlan !== 1) {
-          out.push(` switchport access vlan ${cfg.accessVlan}`);
-        }
-        if (cfg.voiceVlan !== undefined) out.push(` switchport voice vlan ${cfg.voiceVlan}`);
-        for (const l of this.qosRunningConfigLines(cfg)) out.push(l);
-      }
-      for (const l of this.ifExtra.get(name) ?? []) out.push(` ${l}`);
-      for (const l of this.ifStp.get(name) ?? []) out.push(` ${l}`);
-      const port = this.d().getPort(name);
-      if (port) for (const l of this.renderPortSecurityLines(port)) out.push(` ${l}`);
-      const cdpA = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
-      if (cdpA) for (const l of cdpA.runningConfigInterfaceLines(name)) out.push(` ${l}`);
-      const lldpA = (this.d() as unknown as { getLldpAgent?: () => import('../../lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
-      if (lldpA) for (const l of lldpA.runningConfigInterfaceLines(name)) out.push(` ${l}`);
-      out.push('end');
-      return out.join('\n');
+      return this.blocConfigInterface(name);
     });
+
 
     this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
       return this.buildRunningConfig(this.d());
@@ -3247,6 +3228,25 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   // ─── Running Config Builder ───────────────────────────────────────
 
+  private blocConfigInterface(name: string): string {
+    const complet = this.buildRunningConfig(this.d()).split('\n');
+    const debut = complet.findIndex((l) => l.trim() === `interface ${name}`);
+    const corps: string[] = [`interface ${name}`];
+    if (debut >= 0) {
+      for (let i = debut + 1; i < complet.length; i++) {
+        const l = complet[i];
+        if (!/^\s/.test(l) || l.trim() === '!') break;
+        corps.push(l);
+      }
+    }
+    corps.push('end');
+    const octets = new TextEncoder().encode(corps.join('\n')).length;
+    return [
+      'Building configuration...', '', `Current configuration : ${octets} bytes`, '!',
+      ...corps,
+    ].join('\n');
+  }
+
   buildRunningConfig(sw: CiscoSwitch): string {
     const chiffre = sw.getServiceFlags?.().get('password-encryption') === true;
     const lines = [
@@ -3809,15 +3809,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
   private showInterfacesDescriptionTable(): string {
     const sw = this.d();
-    const rows = ['Interface                      Status         Protocol Description'];
-    for (const [name, port] of sw._getPortsInternal()) {
-      const up = port.getIsUp();
-      const status = up ? 'up' : 'admin down';
-      const proto = up && port.isConnected() ? 'up' : 'down';
-      const desc = sw.getInterfaceDescription(name) || '';
-      rows.push(`${this.abbreviateInterface(name).padEnd(31)}${status.padEnd(15)}${proto.padEnd(9)}${desc}`);
-    }
-    return rows.join('\n');
+    return renderInterfacesDescription(
+      sw._getPortsInternal(),
+      (n) => sw.getInterfaceDescription(n) || '',
+      (n) => this.abbreviateInterface(n),
+    );
   }
 
   private showInterfacesStatus(sw: CiscoSwitch, only?: string): string {

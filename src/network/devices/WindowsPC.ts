@@ -3676,21 +3676,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private cmdWmic(args: string[]): string {
-    if (args.length === 0) return 'wmic:root\\cli>';
-    const joined = args.join(' ').toLowerCase();
-    if (joined.includes('logicaldisk') && joined.includes('get name')) {
-      // Mirror real wmic — list every mounted drive, not just C:.
+    if (args.join(' ').toLowerCase().includes('logicaldisk')) {
       const drives = this.fs.listDrives();
-      return ['Name  ', ...drives.map(d => d.padEnd(6))].join('\n');
+      return ['Name  ', ...drives.map((d) => d.padEnd(6))].join('\n');
     }
-    if (joined.includes('os get caption')) {
-      const caption = this.getIdentity().os.prettyName;
-      return `Caption                              \n${caption.padEnd(38)}`;
-    }
-    if (joined.includes('cpu get name')) {
-      return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
-    }
-    return '';
+    return WinSys.cmdWmic(this.buildSystemContext(), args);
   }
 
   private cmdReg(args: string[]): string {

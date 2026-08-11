@@ -340,7 +340,7 @@ export function displayIpInterface(router: Router, ifName: string): string {
     `Line protocol current state : ${st.protocol.toUpperCase()}`
       + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
-    `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
+    `Broadcast address : ${ip && mask ? ip.broadcastAddress(mask).toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
     `Input bandwidth utilization  : 0%`,
     `Output bandwidth utilization : 0%`,

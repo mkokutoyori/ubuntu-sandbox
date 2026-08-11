@@ -26,6 +26,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
+import { dhcpEnabledFor } from './WinAdapterFacts';
 import { requireWindowsService } from './WinFeatureGate';
 import { IPAddress, SubnetMask, IPv6Address } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
@@ -654,8 +655,16 @@ function handleInterfaceIpShow(ctx: WinCommandContext, args: string[]): string {
   // args[1] is optional interface name (already unquoted by parseCommandLine)
   const ifFilter = args[1] ? args[1].trim() : undefined;
 
-  if (sub === 'config' || sub === 'addresses' || sub === 'address') {
+  if (sub === 'config') {
     return handleShowConfig(ctx, ifFilter);
+  }
+
+  if (sub === 'addresses' || sub === 'address') {
+    return handleShowAddresses(ctx, ifFilter);
+  }
+
+  if (sub === 'interfaces' || sub === 'interface') {
+    return handleShowIpInterfaces(ctx);
   }
 
   if (sub === 'dns' || sub === 'dnsservers') {
@@ -719,6 +728,49 @@ function renderDynamicPort(proto: string): string {
   ].join('\n');
 }
 
+function handleShowAddresses(ctx: NetshContext, ifFilter?: string): string {
+  const lines: string[] = [];
+  for (const [name, port] of ctx.ports) {
+    if (ifFilter) {
+      const resolvedFilter = resolveAdapterName(ifFilter, ctx.ports);
+      if (name !== resolvedFilter) continue;
+    }
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    const displayName = name.replace(/^eth/, 'Ethernet ');
+    lines.push(`Configuration for interface "${displayName}"`);
+    lines.push(`    DHCP enabled:                         ${dhcpEnabledFor(port, ctx.isDHCPConfigured(name)) ? 'Yes' : 'No'}`);
+    if (ip) {
+      lines.push(`    IP Address:                           ${ip}`);
+      lines.push(`    Subnet Prefix:                        ${ip}/${mask?.toCIDR() ?? 24} (mask ${mask ?? '255.255.255.0'})`);
+      for (const sec of port.getSecondaryIPs()) {
+        lines.push(`    IP Address:                           ${sec.ip}`);
+        lines.push(`    Subnet Prefix:                        ${sec.ip}/${sec.mask.toCIDR()} (mask ${sec.mask})`);
+      }
+    }
+    lines.push(`    InterfaceMetric:                      25`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function handleShowIpInterfaces(ctx: NetshContext): string {
+  const lines = ['', 'Idx     Met         MTU          State                Name',
+    '---  ----------  ----------  ------------  ---------------------------'];
+  let idx = 1;
+  for (const [name, port] of ctx.ports) {
+    const displayName = name.replace(/^eth/, 'Ethernet ');
+    const etat = port.isAdminDown() ? 'disabled' : (port.getIsUp() && port.hasCarrier() ? 'connected' : 'disconnected');
+    lines.push(
+      `${String(idx).padStart(3)}${String(25).padStart(12)}${String(port.getMTU()).padStart(12)}`
+      + `${etat.padStart(14)}  ${displayName}`,
+    );
+    idx++;
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
 function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
   const lines: string[] = [];
   for (const [name, port] of ctx.ports) {
@@ -729,9 +781,7 @@ function handleShowConfig(ctx: WinCommandContext, ifFilter?: string): string {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
     const displayName = name.replace(/^eth/, 'Ethernet ');
-    const isDHCP = ctx.isDHCPConfigured(name);
-    // Default state for unconfigured interfaces is DHCP
-    const dhcpEnabled = isDHCP || !ip;
+    const dhcpEnabled = dhcpEnabledFor(port, ctx.isDHCPConfigured(name));
 
     lines.push(`Configuration for interface "${displayName}"`);
     lines.push(`    DHCP enabled:                         ${dhcpEnabled ? 'Yes' : 'No'}`);

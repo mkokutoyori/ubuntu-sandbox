@@ -17,6 +17,10 @@ const CHASSIS_CODE: Record<ChassisType, string> = {
 
 export interface SysfsHooks {
   liveMac?: (iface: string) => string | null;
+  /** Interfaces the machine really carries — `/sys/class/net` lists them all. */
+  liveInterfaces?: () => string[];
+  /** MTU actually in force on the interface. */
+  liveMtu?: (iface: string) => number | null;
   /** Real link state of the interface — drives `carrier` and `operstate`. */
   liveLink?: (iface: string) => { carrier: boolean; operUp: boolean } | null;
 }
@@ -112,14 +116,19 @@ export class SysfsTree {
     const out: SysfsLeaf[] = [];
     const live = this.hooks.liveMac;
     const link = (iface: string) => this.hooks.liveLink?.(iface) ?? { carrier: true, operUp: true };
-    for (const a of this.hw.adapters) {
-      const base = `/sys/class/net/${a.name}`;
+    const vivantes = this.hooks.liveInterfaces?.() ?? [];
+    const noms = vivantes.length > 0
+      ? vivantes.filter((n) => n !== 'lo')
+      : this.hw.adapters.map((a) => a.name);
+    const profil = (nom: string) => this.hw.adapters.find((a) => a.name === nom);
+    for (const nom of noms) {
+      const base = `/sys/class/net/${nom}`;
       out.push(
-        { path: `${base}/address`, read: () => `${(live?.(a.name) ?? a.macAddress).toLowerCase()}\n` },
-        { path: `${base}/mtu`, read: () => '1500\n' },
-        { path: `${base}/operstate`, read: () => `${link(a.name).operUp ? 'up' : 'down'}\n` },
-        { path: `${base}/carrier`, read: () => `${link(a.name).carrier ? 1 : 0}\n` },
-        { path: `${base}/speed`, read: () => `${a.speedMbps}\n` },
+        { path: `${base}/address`, read: () => `${(live?.(nom) ?? profil(nom)?.macAddress ?? '00:00:00:00:00:00').toLowerCase()}\n` },
+        { path: `${base}/mtu`, read: () => `${this.hooks.liveMtu?.(nom) ?? 1500}\n` },
+        { path: `${base}/operstate`, read: () => `${link(nom).operUp ? 'up' : 'down'}\n` },
+        { path: `${base}/carrier`, read: () => `${link(nom).carrier ? 1 : 0}\n` },
+        { path: `${base}/speed`, read: () => `${profil(nom)?.speedMbps ?? 1000}\n` },
         { path: `${base}/type`, read: () => '1\n' },
         { path: `${base}/arp`, read: () => '1\n' },
         { path: `${base}/flags`, read: () => '0x1003\n' },

@@ -9,6 +9,7 @@
  */
 
 import type { Port } from '../../hardware/Port';
+import { dhcpEnabledFor } from './WinAdapterFacts';
 import type { ProcessSession } from './WindowsProcessManager';
 
 /** Minimal process-manager surface needed by `start`. */
@@ -124,7 +125,7 @@ export function cmdSysteminfo(ctx: WinSystemContext): string {
     const ip = port.getIPAddress();
     if (ip) {
       lines.push(`                                 Connection Name: ${displayName}`);
-      lines.push(`                                 DHCP Enabled:    ${ctx.isDHCPConfigured(name) ? 'Yes' : 'No'}`);
+      lines.push(`                                 DHCP Enabled:    ${dhcpEnabledFor(port, ctx.isDHCPConfigured(name)) ? 'Yes' : 'No'}`);
       lines.push(`                                 IP address(es)`);
       lines.push(`                                 [01]: ${ip}`);
     } else {
@@ -573,5 +574,31 @@ export function cmdWmic(ctx: WinSystemContext, args: string[]): string {
   if (joined.includes('cpu get name')) {
     return 'Name                                              \nIntel(R) Core(TM) i7 CPU @ 2.50GHz                ';
   }
+  if (joined.startsWith('nic ') || joined === 'nic') return wmicNic(ctx);
+  if (joined.startsWith('nicconfig')) return wmicNicConfig(ctx);
   return '';
+}
+
+function wmicNic(ctx: WinSystemContext): string {
+  const lignes = [`${'MACAddress'.padEnd(20)}${'Name'.padEnd(30)}NetEnabled`];
+  for (const [name, port] of ctx.ports) {
+    const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '';
+    const affiche = name.replace(/^eth/, 'Ethernet ');
+    lignes.push(`${mac.padEnd(20)}${affiche.padEnd(30)}${port.isAdminDown() ? 'FALSE' : 'TRUE'}`);
+  }
+  return lignes.join('\n');
+}
+
+function wmicNicConfig(ctx: WinSystemContext): string {
+  const lignes = [`${'IPAddress'.padEnd(24)}${'IPSubnet'.padEnd(20)}MACAddress`];
+  for (const [name, port] of ctx.ports) {
+    const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '';
+    const ip = port.getIPAddress();
+    const mask = port.getSubnetMask();
+    lignes.push(
+      `${(ip ? `{"${ip}"}` : '').padEnd(24)}${(mask ? `{"${mask}"}` : '').padEnd(20)}${mac}`,
+    );
+    void name;
+  }
+  return lignes.join('\n');
 }

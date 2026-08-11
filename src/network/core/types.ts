@@ -158,6 +158,11 @@ export class IPAddress {
     return new IPAddress(this.octets.map((o, i) => o & m[i]));
   }
 
+  broadcastAddress(mask: SubnetMask): IPAddress {
+    const m = mask.getOctets();
+    return new IPAddress(this.octets.map((o, i) => (o & m[i]) | (~m[i] & 0xff)));
+  }
+
   equals(other: IPAddress): boolean {
     return this.octets.every((o, i) => o === other.octets[i]);
   }

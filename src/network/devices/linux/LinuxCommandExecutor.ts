@@ -702,6 +702,8 @@ export class LinuxCommandExecutor {
   private registerSysfsFiles(): void {
     const tree = new SysfsTree(() => this.hardware, {
       liveMac: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.mac ?? null,
+      liveInterfaces: () => this.ipNetworkCtx?.getInterfaceNames() ?? [],
+      liveMtu: (iface) => this.ipNetworkCtx?.getInterfaceInfo(iface)?.mtu ?? null,
       liveLink: (iface) => {
         const info = this.ipNetworkCtx?.getInterfaceInfo(iface);
         if (!info) return null;
@@ -764,6 +766,29 @@ export class LinuxCommandExecutor {
   private registerNetProcFiles(): void {
     this.vfs.mkdirp('/proc/net', 0o755, 0, 0);
     this.vfs.registerGeneratedFile('/proc/net/arp', () => this.renderProcNetArp());
+    this.vfs.registerGeneratedFile('/proc/net/dev', () => this.renderProcNetDev());
+  }
+
+  private renderProcNetDev(): string {
+    const lignes = [
+      'Inter-|   Receive                                                |  Transmit',
+      ' face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed',
+    ];
+    const noms = this.ipNetworkCtx?.getInterfaceNames() ?? [];
+    for (const nom of noms.includes('lo') ? noms : [...noms, 'lo']) {
+      const info = this.ipNetworkCtx?.getInterfaceInfo(nom);
+      if (!info) continue;
+      const c = info.counters;
+      lignes.push(
+        `${(nom + ':').padStart(7)}${String(c.bytesIn).padStart(9)}`
+        + `${String(c.framesIn).padStart(8)}${String(c.errorsIn ?? 0).padStart(5)}`
+        + '    0    0     0          0         0'
+        + `${String(c.bytesOut).padStart(9)}${String(c.framesOut).padStart(8)}`
+        + `${String(c.errorsOut ?? 0).padStart(5)}`
+        + '    0    0     0       0          0',
+      );
+    }
+    return lignes.join('\n') + '\n';
   }
 
   private renderProcNetArp(): string {
@@ -1107,6 +1132,7 @@ export class LinuxCommandExecutor {
   /** Set the network context for ip command support */
   setIpNetworkContext(ctx: IpNetworkContext): void {
     this.ipNetworkCtx = ctx;
+    this.registerSysfsFiles();
   }
 
   /**

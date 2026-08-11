@@ -574,7 +574,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
           InterfaceIndex:   a.ifIndex,
           MACAddress:       a.macAddress,
           IPEnabled:        ips.length > 0,
-          DHCPEnabled:      net.isDHCPConfigured(a.name),
+          DHCPEnabled:      net.isDHCPConfigured(a.name) || ips.length === 0,
           IPAddress:        ips.map(ip => ip.ipAddress),
           IPSubnet:         ips.map(ip => SubnetMask.fromCIDR(ip.prefixLength).toString()),
           DefaultIPGateway: gateway ? [gateway] : [],

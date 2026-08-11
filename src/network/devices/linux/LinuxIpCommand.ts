@@ -437,7 +437,7 @@ export function executeIpCommand(
 
     case 'link':
     case 'l':
-      return ipLink(ctx, subArgs, outputOpts);
+      return brief ? ipLinkBrief(ctx, subArgs, color) : ipLink(ctx, subArgs, outputOpts);
 
     case 'route':
     case 'r':
@@ -756,6 +756,25 @@ function ipAddrBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): str
     lines.push(`${nameCol}${stateCol}${ipStr}`);
   }
 
+  return lines.join('\n');
+}
+
+function ipLinkBrief(ctx: IpNetworkContext, args: string[], c: IpColorizer): string {
+  const demande = args.find((a) => a !== 'show' && a !== 'list' && a !== 'dev');
+  const names = demande
+    ? [demande]
+    : ['lo', ...ctx.getInterfaceNames().filter((n) => n !== 'lo')];
+  const lines: string[] = [];
+  for (const name of names) {
+    const info = ctx.getInterfaceInfo(name);
+    if (!info) continue;
+    const { state } = formeLien(info);
+    const drapeaux = `<${computeIfaceFlags(info).join(',')}>`;
+    lines.push(
+      `${c.ifname(info.name.padEnd(16))}${c.operstate(state, state.padEnd(14))}`
+      + `${(info.mac ?? '').padEnd(18)}${drapeaux}`,
+    );
+  }
   return lines.join('\n');
 }
 
