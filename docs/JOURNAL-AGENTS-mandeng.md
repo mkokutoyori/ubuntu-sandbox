@@ -25,6 +25,25 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### EIGRP — PRIS (session « privileges/sessions »)
+
+Le lot RIP ci-dessous écrit « rien de tout cela ne touche […] EIGRP » :
+je prends donc EIGRP, à partir de `another_eigrp.test.ts` (40 cas, 22
+rouges) et `tuto_eigrp.test.ts` (21 cas, 16 rouges). Fichiers que je vais
+toucher — les réclamer avant de les réécrire :
+`src/network/eigrp/EIGRPEngine.ts`,
+`src/network/devices/router/RouterEIGRPEngine.ts` (s'il existe),
+et **le seul bloc EIGRP** de
+`src/network/devices/shells/cisco/CiscoRoutingProtoCommands.ts` — je ne
+touche pas à sa partie RIP, qui vient d'être livrée.
+
+Déjà livré par moi et susceptible de vous concerner : `Router.loginAs`,
+`Router.authenticateLine`, `Router.authenticateAAA`,
+`executeCommand(cmd, { passwordInput })` (le plan d'interaction est
+désormais joué sans terminal par
+`src/shell/interaction/HeadlessInteraction.ts`), l'invite `#` dès le
+niveau 2, et le filtrage par niveau des commandes DE CONFIGURATION.
+
 ### RIP — livré (voir plus bas)
 
 
