@@ -182,7 +182,16 @@ export function buildIpSlaConfigCommands(
     }
     const result = engine.schedule(id);
     return result.ok ? '' : (result.error ?? '% Schedule refused');
-  });
+  }, [
+    { keyword: 'after', description: 'Start the operation after a delay' },
+    { keyword: 'ageout', description: 'How long to keep the operation when it is inactive' },
+    { keyword: 'forever', description: 'Run the operation without a time limit' },
+    { keyword: 'life', description: 'How long the operation runs' },
+    { keyword: 'now', description: 'Start the operation immediately' },
+    { keyword: 'pending', description: 'Leave the operation pending' },
+    { keyword: 'recurring', description: 'Restart the operation every day' },
+    { keyword: 'start-time', description: 'When the operation starts' },
+  ]);
 
   configTrie.registerGreedy('no ip sla schedule', 'Unschedule an IP SLAs operation', (args) => {
     const id = positiveInt(args[0]);
@@ -223,7 +232,13 @@ export function buildIpSlaConfigCommands(
       if (!result.ok) return result.error ?? '% Schedule refused';
     }
     return '';
-  });
+  }, [
+    { keyword: 'ageout', description: 'How long to keep the operations when they are inactive' },
+    { keyword: 'forever', description: 'Run the operations without a time limit' },
+    { keyword: 'life', description: 'How long the operations run' },
+    { keyword: 'schedule-period', description: 'Period over which the operations are spread' },
+    { keyword: 'start-time', description: 'When the operations start' },
+  ]);
 
   configTrie.registerGreedy('ip sla restart', 'Restart an IP SLAs operation', (args) => {
     const id = positiveInt(args[0]);
@@ -320,7 +335,12 @@ function registerReactionCommands(configTrie: CommandTrie, ctx: IpSlaCommandCont
       }
     }
     return '';
-  });
+  }, [
+    { keyword: 'react', description: 'Element the reaction watches' },
+    { keyword: 'threshold-type', description: 'How the threshold is evaluated' },
+    { keyword: 'threshold-value', description: 'Rising and falling threshold values' },
+    { keyword: 'action-type', description: 'Action to take when the threshold is violated' },
+  ]);
 
   configTrie.registerGreedy('no ip sla reaction-configuration', 'Remove an IP SLAs reaction', (args) => {
     const operationId = positiveInt(args[0]);
@@ -376,7 +396,10 @@ function registerResponderCommands(configTrie: CommandTrie, ctx: IpSlaCommandCon
     responder.setEnabled(true);
     responder.openPermanentPort(protocol, port, address);
     return '';
-  });
+  }, [
+    { keyword: 'udp-echo', description: 'Open a permanent UDP echo port' },
+    { keyword: 'tcp-connect', description: 'Open a permanent TCP connect port' },
+  ]);
 
   configTrie.registerGreedy('no ip sla responder', 'Disable the IP SLAs Responder', (args) => {
     const responder = engineOf(ctx).getResponder();
