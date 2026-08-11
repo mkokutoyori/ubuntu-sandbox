@@ -75,6 +75,7 @@ import { CiscoHttpService } from './router/management/CiscoHttpService';
 import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/PortMirror';
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
+import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
 import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
@@ -2710,12 +2711,42 @@ export abstract class Switch extends Equipment {
     return this._aaaAuthenticator;
   }
 
+  /**
+   * Le registre de sessions nait AVEC le magasin d'identifiants, comme
+   * cote routeur : il s'abonne aux authentifications reussies, donc le
+   * construire paresseusement a la premiere lecture de `display users`
+   * lui ferait manquer toutes celles d'avant — la vue serait vide sur
+   * une machine ou quelqu'un est connecte.
+   */
   getCredentialStore(): NetworkOsCredentialStore {
     if (!this._credentialStore) {
+      this._sshSessionRegistry = new SshSessionRegistry({
+        deviceId: this.id, bus: this.getBus(),
+      });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
     }
     return this._credentialStore;
   }
+
+  /**
+   * Un commutateur tient ses sessions comme un routeur.
+   *
+   * Il n'en avait aucun registre, donc `show users` et `display users`
+   * ne pouvaient decrire personne : le premier retombait sur son texte
+   * de repli et le second etait une constante. Le magasin
+   * d'identifiants, lui, publiait deja ses authentifications sur le bus
+   * — le registre s'y abonne, comme cote routeur.
+   *
+   * Ce qui reste vrai et n'est pas contourne : `Switch` n'a pas de pile
+   * TCP, donc aucun serveur SSH ni telnet n'y ecoute. La seule session
+   * qu'un commutateur puisse ouvrir est donc celle de sa console, et
+   * c'est ce que la vue montrera.
+   */
+  getSshSessionRegistry(): SshSessionRegistry {
+    if (!this._sshSessionRegistry) this.getCredentialStore();
+    return this._sshSessionRegistry!;
+  }
+  private _sshSessionRegistry: SshSessionRegistry | null = null;
   /** @internal `username NAME [privilege N] [secret|password …]`. */
   _upsertCiscoUsername(name: string, kv: {
     privilege?: number; secret?: string; secretAlgo?: PasswordHashAlgorithm;

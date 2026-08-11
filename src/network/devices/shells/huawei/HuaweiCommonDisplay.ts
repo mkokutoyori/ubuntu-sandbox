@@ -82,14 +82,19 @@ export function displayMemoryUsage(now: Date = new Date()): string {
   ].join('\n');
 }
 
-/** `display users` — active management sessions (console only by default). */
-export function displayUsers(): string {
-  return [
-    '  User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag',
-    '+ 0    CON 0   00:00:00                              pass            no',
-    '',
-    'Wait     : Wait for the user to press ENTER.',
-  ].join('\n');
+/**
+ * `display users` — les sessions de gestion ouvertes.
+ *
+ * Ce texte etait une CONSTANTE : il decrivait toujours une console libre
+ * quel que soit qui etait connecte, et ne lisait aucun registre. Il lit
+ * desormais celui de l'equipement, le meme que le routeur, avec le meme
+ * rendu — deux textes possibles pour une seule question feraient douter
+ * de la machine.
+ */
+export function displayUsers(equipement?: {
+  getSshSessionRegistry?: () => { formatDisplayUsers: () => string };
+} | null): string {
+  return equipement?.getSshSessionRegistry?.().formatDisplayUsers() ?? '';
 }
 
 /** `display device` — chassis/board inventory (single-board S-series/AR). */

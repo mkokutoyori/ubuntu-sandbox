@@ -549,7 +549,9 @@ describe('§K — SshSessionRegistry tracks active VTY sessions reactively', () 
   test('formatDisplayUsers returns VRP-style listing', () => {
     store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
     const text = registry.formatDisplayUsers();
-    expect(text).toMatch(/UI\s+Delay/);
+    // VRP ecrit `User-Intf`, pas `UI` : ce cas encodait comme contrat un
+    // en-tete que le depot avait invente.
+    expect(text).toMatch(/User-Intf\s+Delay/);
     expect(text).toMatch(/SSH/);
     expect(text).toMatch(/admin/);
     expect(text).toMatch(/10\.0\.0\.1/);

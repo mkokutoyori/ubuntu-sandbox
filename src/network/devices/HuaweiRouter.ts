@@ -440,6 +440,9 @@ export class HuaweiRouter extends Router {
       const header = 'Logging buffer configuration and contents: enabled\nAllowed max buffer size : 1024\nActual buffer size : 1024\nChannel number : 4, Channel name : logbuffer\nDropped messages : 0\nOverwritten messages : 0\nCurrent messages : ' + audit.entries().length + '\n';
       return { output: `${header}${audit.format()}\n`, exitCode: 0 };
     }
+    // Le chemin SSH synchrone ne traverse pas le trie : la commande est
+    // interceptee ici comme ses voisines. Ce n'est PAS un second rendu —
+    // les deux routes appellent le meme `formatDisplayUsers`.
     if (/^display\s+users\s*$/i.test(cmd)) {
       return { output: `${this.getSshSessionRegistry().formatDisplayUsers()}\n`, exitCode: 0 };
     }

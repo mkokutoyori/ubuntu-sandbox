@@ -2230,7 +2230,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.register('display clock', 'Display system clock', () => displayClock());
     trie.register('display cpu-usage', 'Display CPU usage', () => displayCpuUsage());
     trie.register('display memory-usage', 'Display memory usage', () => displayMemoryUsage());
-    trie.register('display users', 'Display user sessions', () => displayUsers());
+    trie.register('display users', 'Display user sessions', () => displayUsers(this.swRef));
     trie.register('display device', 'Display device status', () =>
       this.swRef ? displayDevice(this.swRef.getHostname()) : '');
     trie.register('display history-command', 'Display command history', () =>

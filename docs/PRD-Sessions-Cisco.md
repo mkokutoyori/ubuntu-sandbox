@@ -407,3 +407,76 @@ défaut, autre sujet.
   trois choses distinctes ici, et une interface sans lien tombe.
 - **La table des licences** est une sortie de synthèse et non la
   transcription d'une version d'IOS précise.
+
+## Lot S6 — `display users` du commutateur, et un seul rendu pour VRP
+
+Suite directe de S5, qui avait laissé ce point ouvert et écrit.
+
+### La mesure
+
+`HuaweiCommonDisplay.displayUsers()` était une **constante**. Elle
+décrivait toujours une console libre, quel que soit qui était connecté,
+et ne lisait aucun registre. Le commutateur Cisco avait le même trou par
+un autre chemin : `registreSessions()` cherche `getSshSessionRegistry`,
+que `Switch` ne portait pas, donc `show users` retombait sur son texte de
+repli.
+
+Et **les deux rendus de `display users` du dépôt se contredisaient** —
+défaut que ce projet referme sans cesse, un second rendu possible d'une
+même question. Vérifié contre la documentation Huawei plutôt qu'écrit de
+mémoire, c'est le rendu du ROUTEUR qui avait trois inventions :
+
+| Ce que le dépôt écrivait | Ce que VRP écrit |
+|---|---|
+| `UI` | **`User-Intf`** |
+| une colonne `User` | une **ligne** `Username : admin` sous chaque entrée |
+| `AuthorcmdFlag` = `N` | `no` |
+
+La colonne `User` n'était pas qu'une faute de mise en page : le nom d'un
+utilisateur est de longueur libre, donc en faire une colonne oblige à le
+tronquer ou à décaler tout ce qui suit. VRP lui donne sa propre ligne
+pour cette raison.
+
+### Ce qui est livré
+
+- **`Switch` porte un `SshSessionRegistry`**, construit **avec** le
+  magasin d'identifiants et non paresseusement : le registre s'abonne aux
+  authentifications réussies, donc le créer à la première lecture de
+  `display users` lui ferait manquer toutes celles d'avant — la vue
+  serait vide sur une machine où quelqu'un est connecté.
+- **Un seul rendu**, `SshSessionRegistry.formatDisplayUsers`, passant par
+  `TextTable` et un layout déclaré dans `huaweiTableLayouts.ts`. La
+  constante disparaît ; les deux plateformes lisent la même fonction, et
+  un test pin que routeur et commutateur rendent le même en-tête.
+- **Le numéro d'interface utilisateur est un troisième espace de
+  numérotation**, distinct du rang de la ligne dans son type : la console
+  est l'interface 0, les vty commencent à **129**. Trois numérotations,
+  un seul champ affiché.
+- **Une console physique existe même sans personne dessus** — c'est ce
+  que décrit la ligne de repli — mais dès qu'une session est ouverte la
+  vue la LIT.
+
+Ce qui reste vrai et n'est pas contourné : `Switch` n'a pas de pile TCP,
+donc aucun serveur SSH ni telnet n'y écoute. La seule session qu'un
+commutateur puisse ouvrir est celle de sa console, et c'est ce que la vue
+montre.
+
+### Une limite mesurée, épinglée par test plutôt que tue
+
+`local-user` du commutateur Huawei range dans une carte **locale au
+shell** et remplace le mot de passe par `******` : il n'atteint jamais
+`NetworkOsCredentialStore`, donc aucun compte déclaré ainsi ne peut
+authentifier quoi que ce soit. C'est la même famille de défaut que celui
+qu'on vient de refermer, mais un autre sujet — le brancher ferait
+demander un mot de passe à la console d'un commutateur, ce qui dépasse
+une correction d'affichage. Un cas nommé `LIMITE` le pince, pour qu'il
+soit visible plutôt que silencieux.
+
+### Trouvé en corrigeant, et remis
+
+Retirer l'interception de `display users` dans `HuaweiRouter` — pour
+n'avoir qu'un chemin — a cassé le chemin SSH **synchrone**, qui ne
+traverse pas le trie. Elle est restaurée : ce n'est pas un second rendu,
+les deux routes appellent la même fonction. Et un cas existant encodait
+l'en-tête inventé `UI` comme contrat ; il est corrigé sur la valeur
+mesurée, pas contourné.

@@ -252,3 +252,54 @@ export function rendreArpSwitch(lignes: readonly LigneArp[]): string {
     `Total: ${lignes.length}        Dynamic: ${dyn}      Static: ${lignes.length - dyn}`,
   ].join('\n');
 }
+
+/** Une ligne de `display users` : une interface utilisateur occupee. */
+export interface LigneUsers {
+  readonly courante: boolean;
+  readonly interfaceUtilisateur: string;
+  readonly nomLigne: string;
+  readonly delai: string;
+  readonly type: string;
+  readonly adresse: string;
+  readonly authentification: string;
+  readonly autorisation: string;
+}
+
+/**
+ * `display users` — les largeurs sont celles de VRP.
+ *
+ * Deux faits de la vraie sortie que ce depot avait tous deux manques, et
+ * qui ne s'inventent pas : l'en-tete ecrit **`User-Intf`** et non `UI`,
+ * et le nom d'utilisateur n'est **pas une colonne** — VRP l'ecrit sur sa
+ * propre ligne, `Username : admin`, sous la ligne qu'il concerne. Un
+ * rendu qui en faisait une colonne devait donc soit la tronquer soit
+ * decaler tout ce qui suit.
+ *
+ * `AuthorcmdFlag` vaut `no` ou `yes` : la lettre `N` venait du champ
+ * homonyme d'une AUTRE sortie.
+ */
+export const COLONNES_USERS: ReadonlyArray<TableColumn<LigneUsers>> = [
+  { header: '  User-Intf', width: 13, value: (r) => `${r.courante ? '+' : ' '} ${r.interfaceUtilisateur} ${r.nomLigne}` },
+  { header: 'Delay', width: 9, value: (r) => r.delai },
+  { header: 'Type', width: 7, value: (r) => r.type },
+  { header: 'Network Address', width: 21, value: (r) => r.adresse },
+  { header: 'AuthenStatus', width: 16, value: (r) => r.authentification },
+  { header: 'AuthorcmdFlag', value: (r) => r.autorisation },
+];
+
+/**
+ * Le tableau, puis sous CHAQUE ligne son `Username :`. La legende finale
+ * est celle de VRP : elle explique le seul etat que la colonne `Delay`
+ * ne dit pas.
+ */
+export function rendreDisplayUsers(lignes: readonly LigneUsers[], noms: readonly string[]): string {
+  const table = renderTable(lignes, COLONNES_USERS, FIXED_TABLE);
+  const sortie: string[] = [table[0]];
+  table.slice(1).forEach((l, i) => {
+    sortie.push(l.trimEnd());
+    sortie.push(`  Username : ${noms[i] || 'Unspecified'}`);
+  });
+  sortie.push('');
+  sortie.push('Wait     : Wait for the user to press ENTER.');
+  return sortie.join('\n');
+}

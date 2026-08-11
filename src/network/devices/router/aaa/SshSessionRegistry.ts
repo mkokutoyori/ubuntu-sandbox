@@ -4,6 +4,7 @@ import { renderTable } from '../../shells/cli/TextTable';
 import {
   SHOW_USERS_HEADER, SHOW_USERS_COLUMNS, SHOW_USERS_STYLE,
 } from '../../shells/cisco/ciscoTableLayouts';
+import { rendreDisplayUsers } from '../../shells/huawei/huaweiTableLayouts';
 
 export type VtySessionState = 'active' | 'idle' | 'closed';
 
@@ -413,18 +414,50 @@ export class SshSessionRegistry {
     return [SHOW_USERS_HEADER, ...lignes].join('\n');
   }
 
+  /**
+   * Le NUMERO d'interface utilisateur de VRP, distinct du rang de la
+   * ligne dans son type : la console est l'interface 0, les vty
+   * commencent a 129. Deux espaces de numerotation, un seul champ
+   * affiche.
+   */
+  private interfaceUtilisateur(s: SshSessionRecord): number {
+    if (s.lineKind === 'con') return s.lineIndex;
+    if (s.lineKind === 'aux') return 1 + s.lineIndex;
+    return 129 + s.lineIndex;
+  }
+
+  private static readonly TYPE_VRP: Record<SessionTransport, string> = {
+    console: 'CON', aux: 'AUX', telnet: 'TEL', ssh: 'SSH',
+  };
+
+  /**
+   * `display users`. Une console PHYSIQUE existe meme sans personne
+   * dessus — c'est ce que decrit la ligne de repli — mais des qu'une
+   * session est ouverte la vue doit la LIRE plutot que d'affirmer un
+   * etat que rien ne mesure.
+   */
   formatDisplayUsers(now: number = this.now()): string {
-    const header = '  UI    Delay    Type     Network Address     AuthenStatus    AuthorcmdFlag   User';
-    if (this.active.size === 0) return `${header}\n+ 0     00:00:00 CON 0                        pass            N`;
-    const rows: string[] = [header];
-    for (const s of this.list(now)) {
-      const delay = secondsToHms(s.idleSeconds);
-      const type = s.transport === 'console' ? 'CON'
-        : s.transport === 'aux' ? 'AUX'
-        : s.transport === 'telnet' ? 'TEL' : 'SSH';
-      rows.push(`+ ${(129 + s.lineIndex).toString().padEnd(5, ' ')} ${delay} ${type.padEnd(8, ' ')} ${s.fromIp.padEnd(20, ' ')} pass            N               ${s.user}`);
+    const sessions = this.list(now);
+    if (sessions.length === 0) {
+      return rendreDisplayUsers([{
+        courante: true, interfaceUtilisateur: '0', nomLigne: 'CON 0',
+        delai: '00:00:00', type: '', adresse: '',
+        authentification: 'pass', autorisation: 'no',
+      }], ['']);
     }
-    return rows.join('\n');
+    return rendreDisplayUsers(
+      sessions.map((s) => ({
+        courante: s.id === this.courante,
+        interfaceUtilisateur: String(this.interfaceUtilisateur(s)),
+        nomLigne: `${s.lineKind === 'con' ? 'CON' : s.lineKind === 'aux' ? 'AUX' : 'VTY'} ${s.lineIndex}`,
+        delai: secondsToHms(s.idleSeconds),
+        type: s.lineKind === 'con' ? '' : SshSessionRegistry.TYPE_VRP[s.transport],
+        adresse: s.fromIp,
+        authentification: 'pass',
+        autorisation: 'no',
+      })),
+      sessions.map((s) => s.user),
+    );
   }
 }
 

@@ -4688,6 +4688,62 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S6 — `display users` du commutateur, et un seul rendu pour VRP
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S6 ». Suite directe de
+S5, qui avait laisse ce point ouvert et ecrit.
+
+`HuaweiCommonDisplay.displayUsers()` etait une CONSTANTE : elle decrivait
+toujours une console libre quel que soit qui etait connecte, et ne lisait
+aucun registre. Le commutateur Cisco avait le meme trou par un autre
+chemin — `registreSessions()` cherche `getSshSessionRegistry`, que
+`Switch` ne portait pas.
+
+**Et les deux rendus du depot se contredisaient.** Verifie contre la
+documentation Huawei plutot qu'ecrit de memoire, c'est celui du ROUTEUR
+qui avait trois inventions : `UI` au lieu de **`User-Intf`**, une COLONNE
+`User` la ou VRP ecrit une LIGNE `Username : admin` sous chaque entree,
+et `AuthorcmdFlag` rendu `N` au lieu de `no`. La colonne n'etait pas
+qu'une faute de mise en page : un nom d'utilisateur est de longueur
+libre, donc en faire une colonne oblige a le tronquer ou a decaler tout
+ce qui suit — VRP lui donne sa propre ligne pour cette raison.
+
+`Switch` porte desormais un `SshSessionRegistry`, construit AVEC le
+magasin d'identifiants et non paresseusement : le registre s'abonne aux
+authentifications reussies, donc le creer a la premiere lecture de
+`display users` lui ferait manquer toutes celles d'avant. Le rendu est
+unique (`formatDisplayUsers`, via `TextTable` et un layout de
+`huaweiTableLayouts.ts`), et un cas pin que routeur et commutateur
+rendent le meme en-tete. Le numero d'interface utilisateur est un
+TROISIEME espace de numerotation, distinct du rang dans le type : console
+= 0, vty a partir de **129**.
+
+**Limite mesuree, epinglee par test plutot que tue** : `local-user` du
+commutateur Huawei range dans une carte LOCALE AU SHELL et remplace le
+mot de passe par `******` — il n'atteint jamais le magasin, donc aucun
+compte declare ainsi n'authentifie quoi que ce soit. Meme famille, autre
+sujet : le brancher ferait demander un mot de passe a la console d'un
+commutateur.
+
+**Trouve en corrigeant, et remis** : retirer l'interception de `display
+users` dans `HuaweiRouter` pour n'avoir qu'un chemin a casse le chemin
+SSH SYNCHRONE, qui ne traverse pas le trie. Elle est restauree — ce n'est
+pas un second rendu, les deux routes appellent la meme fonction. Un cas
+existant encodait l'en-tete invente `UI` comme contrat ; corrige sur la
+valeur mesuree.
+
+**Fichiers touches** : `router/aaa/SshSessionRegistry.ts`,
+`shells/huawei/huaweiTableLayouts.ts`, `shells/huawei/HuaweiCommonDisplay.ts`,
+`devices/Switch.ts`, `shells/HuaweiSwitchShell.ts`,
+`shells/huawei/HuaweiDisplayCommands.ts`, `devices/HuaweiRouter.ts`.
+
+**Mesures.** `probe-display-users-commutateur.test.ts` (13 cas) discrimine
+par `git stash` : **9 tombent** avant correctif. 14 suites
+sessions/SSH/telnet/audit vertes (929 cas), 5 suites Huawei/commutateur
+(218). Typecheck 119, lint identique.
+
+---
+
 ## Lot S5 — la console n'est pas une VTY, et SSH ne parle pas pour elle
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S5 ».
@@ -4871,7 +4927,7 @@ Décrits dans leurs PRD : `PRD-Routage-Fidelite.md` §9 (R4), §10 (R2),
 | CLI Huawei VRP / FHRP | `PRD-CLI-Fidelite-VRP.md` | Audit + **V1 à V20 livrés — famille FHRP close** |
 | NTP (Cisco, Huawei, Linux, Windows, **commutateurs**) | `PRD-NTP-Tutoriel.md` | **N1 à N11 + V21 livrés** |
 | Accès / mots de passe Cisco (vérification, console) | `PRD-Acces-Mot-De-Passe-Cisco.md` | **A1 livré** |
-| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S5 livrés** — console/vty separees |
+| Sessions Cisco (lignes, délais, `send`, journal, tutoriel) | `PRD-Sessions-Cisco.md` | **S1 à S6 livrés** — console/vty separees, un seul rendu VRP |
 | rsyslog récepteur (Linux) | `PRD-Rsyslog.md` | **SY1 + SY2 livrés** — TCP/TLS/relais ouverts |
 
 **Le `debugging` Huawei (`HuaweiDebugService`) n'est plus disponible** :

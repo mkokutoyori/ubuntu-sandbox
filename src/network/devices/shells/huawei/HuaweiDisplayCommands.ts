@@ -1888,7 +1888,7 @@ export function registerDisplayCommands(
   });
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
-  trie.register('display users', 'Display user sessions', () => commonDisplayUsers());
+  trie.register('display users', 'Display user sessions', () => commonDisplayUsers(getRouter()));
   trie.register('display device', 'Display device status', () =>
     commonDisplayDevice(getRouter().getHostname(), AR2220_HARDWARE_PROFILE));
   trie.register('display alarm', 'Display alarm records', () => commonDisplayAlarm());
