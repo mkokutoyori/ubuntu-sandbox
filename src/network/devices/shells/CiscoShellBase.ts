@@ -519,6 +519,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.getActiveTrie().enumerateCommandPaths();
   }
 
+  derivedContinuationsInCurrentMode(): string[] {
+    return this.getActiveTrie().enumerateDerivedContinuations();
+  }
+
   undescribedContinuationsInCurrentMode(): string[] {
     return this.getActiveTrie().enumerateUndescribedContinuations();
   }
@@ -4530,64 +4534,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `username <name> [privilege N] [secret|password] <pwd>` — captures
     // the local-user database so the sshd dispatch can validate inbound
     // logins. Anything we don't parse is still accepted silently.
-    this.configTrie.registerGreedy('username', 'Configure a local user', (args) => {
-      const dev = this.d() as unknown as {
-        _upsertCiscoUsername?: (name: string, kv: {
-          privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-          autocommand?: string; nopassword?: boolean; description?: string;
-        }) => void;
-      };
-      const name = args[0];
-      if (!name || typeof dev._upsertCiscoUsername !== 'function') return '';
-      const kv: {
-        privilege?: number; secret?: string; secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-        autocommand?: string; nopassword?: boolean; description?: string;
-      } = {};
-      // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
-      // mot-cle etait accepte et JETE, si bien qu'un secret demande en
-      // scrypt etait range en MD5 -- la commande de durcissement rendait
-      // exactement l'inverse de ce qu'elle promet, en silence. Son
-      // homologue `enable algorithm-type` fonctionne depuis toujours :
-      // meme famille, deux comportements.
-      let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
-      for (let i = 1; i < args.length; i++) {
-        const tok = args[i];
-        if (tok === 'privilege' && /^\d+$/.test(args[i + 1] ?? '')) { kv.privilege = Number(args[++i]); continue; }
-        if (tok === 'algorithm-type') {
-          const nom = (args[i + 1] ?? '').toLowerCase();
-          if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
-            throw new CliInvalidInput({ token: args[i + 1] });
-          }
-          algoDemande = nom;
-          i++;
-          continue;
-        }
-        if (tok === 'nopassword') { kv.nopassword = true; continue; }
-        if (tok === 'autocommand') { kv.autocommand = args.slice(i + 1).join(' '); i = args.length; continue; }
-        if (tok === 'description') { kv.description = args.slice(i + 1).join(' '); i = args.length; continue; }
-        if (tok === 'secret' || tok === 'password') {
-          const isSecret = tok === 'secret';
-          const next = args[i + 1];
-          let algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = isSecret ? 'md5' : 'plain';
-          let value: string;
-          if (next === '0') { algo = 'plain'; value = args[i + 2] ?? ''; i += 2; }
-          else if (next === '5') { algo = 'md5'; value = args[i + 2] ?? ''; i += 2; }
-          else if (next === '7') { algo = 'type-7'; value = args[i + 2] ?? ''; i += 2; }
-          else if (next === '8') { algo = 'sha256'; value = args[i + 2] ?? ''; i += 2; }
-          else if (next === '9') { algo = 'scrypt'; value = args[i + 2] ?? ''; i += 2; }
-          else { value = next ?? ''; i++; }
-          kv.secret = value;
-          // Un chiffre explicite (`secret 5 $1$…`) decrit un condense
-          // DEJA calcule et l'emporte donc sur l'algorithme demande, qui
-          // ne porte que sur du clair a hacher.
-          const chiffreExplicite = ['0', '5', '7', '8', '9'].includes(next ?? '');
-          kv.secretAlgo = isSecret && algoDemande && !chiffreExplicite ? algoDemande : algo;
-          continue;
-        }
-      }
-      dev._upsertCiscoUsername(name, kv);
-      return '';
-    });
     this.configTrie.registerGreedy('crypto', 'Encryption module', (args, raw) => {
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `crypto ${args.join(' ')}`);

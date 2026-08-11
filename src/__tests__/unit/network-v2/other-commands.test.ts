@@ -888,7 +888,9 @@ describe('Cisco L2 Switch Command Suite', () => {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       const output = await sw.executeCommand('username operator privilege 1 password operator_pass');
-      expect(output.trim()).toBe('');
+      expect(output).toContain('WARNING: Command has been added to the configuration using a type 0');
+      expect(await sw.executeCommand('show running-config'))
+        .toContain('username operator privilege 1');
     });
 
     it('98. should block incoming VTY connection if password is not configured and login is active', async () => {

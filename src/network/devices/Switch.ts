@@ -3057,6 +3057,11 @@ export abstract class Switch extends Equipment {
       .commandPathsInCurrentMode?.() ?? [];
   }
 
+  cliDerivedContinuations(): string[] {
+    return (this.shell as unknown as { derivedContinuationsInCurrentMode?: () => string[] })
+      .derivedContinuationsInCurrentMode?.() ?? [];
+  }
+
   cliUndescribedContinuations(): string[] {
     return (this.shell as unknown as { undescribedContinuationsInCurrentMode?: () => string[] })
       .undescribedContinuationsInCurrentMode?.() ?? [];

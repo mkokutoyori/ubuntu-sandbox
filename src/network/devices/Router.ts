@@ -3004,6 +3004,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       .commandPathsInCurrentMode?.() ?? [];
   }
 
+  cliDerivedContinuations(): string[] {
+    return (this.shell as unknown as { derivedContinuationsInCurrentMode?: () => string[] })
+      .derivedContinuationsInCurrentMode?.() ?? [];
+  }
+
   cliUndescribedContinuations(): string[] {
     return (this.shell as unknown as { undescribedContinuationsInCurrentMode?: () => string[] })
       .undescribedContinuationsInCurrentMode?.() ?? [];

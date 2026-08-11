@@ -18,6 +18,7 @@ type Machine = CiscoSwitch | CiscoRouter;
 
 interface Device {
   cliCommandPaths(): string[];
+  cliDerivedContinuations(): string[];
   cliExecutablePaths(): string[];
   cliUndescribedContinuations(): string[];
   cliHelp(input: string): string;
@@ -28,12 +29,12 @@ interface Device {
 const PROBES = 'abcdefghijklmnopqrstuvwxyz0123456789*'.split('');
 
 const RECORDED_GAPS: Readonly<Record<string, {
-  unsuggested: number; uncompletable: number; undescribed: number;
+  unsuggested: number; uncompletable: number; undescribed: number; derived: number;
 }>> = {
-  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0 },
-  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0 },
-  'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0 },
-  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0 },
+  'switch/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 56 },
+  'switch/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 100 },
+  'routeur/privileged': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 72 },
+  'routeur/config': { unsuggested: 0, uncompletable: 0, undescribed: 0, derived: 101 },
 };
 
 const MODES: ReadonlyArray<{ name: string; enter: string[] }> = [
@@ -142,6 +143,16 @@ for (const [nom, fabrique] of PLATEFORMES) {
             + uncompletable.slice(0, 40).join('\n  '));
         }
         expect(uncompletable.length).toBeLessThanOrEqual(budget.uncompletable);
+      }, 120_000);
+
+      it(`au plus ${budget.derived} continuation(s) DÉRIVÉE(S) du texte source`, async () => {
+        const d = await inMode(fabrique, mode.enter);
+        const derives = d.cliDerivedContinuations();
+        if (derives.length > budget.derived) {
+          console.log(`[${cle}] dérivées (${derives.length}) :\n  `
+            + derives.slice(0, 40).join('\n  '));
+        }
+        expect(derives.length).toBeLessThanOrEqual(budget.derived);
       }, 120_000);
 
       it(`au plus ${budget.undescribed} continuation(s) que Tab accepte et que \`?\` tait`, async () => {

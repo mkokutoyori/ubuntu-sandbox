@@ -749,6 +749,21 @@ export class CommandTrie {
       || (node.hintSuggestions?.length ?? 0) > 0;
   }
 
+  enumerateDerivedContinuations(): string[] {
+    this.viderDeclarationsEnAttente();
+    const out: string[] = [];
+    const walk = (node: CommandNode, path: string[]): void => {
+      for (const auto of this.autoContinuations(node)) {
+        out.push([...path, auto.keyword].join(' '));
+      }
+      for (const child of node.children.values()) {
+        walk(child, [...path, child.keyword]);
+      }
+    };
+    walk(this.root, []);
+    return out;
+  }
+
   enumerateUndescribedContinuations(): string[] {
     this.viderDeclarationsEnAttente();
     const out: string[] = [];

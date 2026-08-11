@@ -28,6 +28,27 @@ const USERNAME_KEYWORDS_AVEC_ARG = new Set([
   'access-class', 'common-criteria-policy', 'mac', 'user-maxlinks',
 ]);
 
+export const USERNAME_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'access-class', description: 'Restrict access by access-class' },
+  { keyword: 'algorithm-type', description: 'Algorithm used to hash the password' },
+  { keyword: 'autocommand', description: 'Automatically issue a command after the user logs in' },
+  { keyword: 'common-criteria-policy', description: 'Password policy to apply to this user' },
+  { keyword: 'description', description: 'Description of the user' },
+  { keyword: 'dnis', description: 'Do not require password when obtained via DNIS' },
+  { keyword: 'hidden', description: 'Hidden user name' },
+  { keyword: 'mac', description: 'Specify a MAC address for this user' },
+  { keyword: 'nocallback-verify', description: 'Callback without requiring authentication' },
+  { keyword: 'noescape', description: 'Prevent the user from using an escape character' },
+  { keyword: 'nohangup', description: 'Do not disconnect after an automatic command' },
+  { keyword: 'nopassword', description: 'No password is required for this user' },
+  { keyword: 'one-time', description: 'Specify a one-time user name' },
+  { keyword: 'password', description: 'Specify the password for the user' },
+  { keyword: 'privilege', description: 'Set the privilege level for the user' },
+  { keyword: 'secret', description: 'Specify the secret for the user' },
+  { keyword: 'user-maxlinks', description: 'Limit the number of connections for this user' },
+  { keyword: 'view', description: 'Set the view attached to the user' },
+];
+
 /**
  * Ce que `aaa ?` peut légitimement proposer, et ce que le gestionnaire
  * accepte : une seule liste, donc l'aide et l'exécution ne peuvent pas
@@ -131,6 +152,108 @@ export function buildIdentityConfigCommands(
     }
     return '';
   });
+
+  trie.registerGreedy('username', 'Local user', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const name = args[0];
+    let privilege: number | undefined;
+    let secret: string | undefined;
+    let secretAlgo: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
+    let nopassword = false;
+    let description: string | undefined;
+    // Set only for forms where the operator typed a real cleartext password
+    // (type 0, or the bare/unqualified form) — never for a pre-computed
+    // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
+    // passwords min-length` does not (and cannot) validate.
+    let plaintextEntered: string | undefined;
+    // Real IOS: entering a type-0 (cleartext) password via `password`
+    // triggers a deprecation warning as the command's own output — never
+    // for `secret`, which real IOS always hashes on save.
+    let type0PasswordWarning = false;
+    // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
+    // mot-cle etait accepte et JETE, si bien qu'un secret demande en
+    // scrypt etait range en MD5 -- la commande de durcissement produisait
+    // exactement l'inverse de ce qu'elle promet, en silence. Son
+    // homologue `enable algorithm-type` fonctionne depuis toujours : meme
+    // famille, deux comportements.
+    let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
+    let vue: string | undefined;
+    for (let i = 1; i < args.length; i++) {
+      const t = args[i];
+      if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
+      else if (t === 'algorithm-type') {
+        const nom = (args[i + 1] ?? '').toLowerCase();
+        if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
+          throw new CliInvalidInput({ token: args[i + 1] });
+        }
+        algoDemande = nom; i++;
+      }
+      else if (t === 'view' && args[i + 1]) {
+        // `username X view NOC_VIEW` — la vue attachee au compte. Le
+        // mot-cle etait avale en silence par la boucle, donc le lien
+        // entre un compte et son role disparaissait de la
+        // configuration ; refuser une vue inexistante evite d'attacher
+        // un role qui n'a jamais ete decrit.
+        vue = args[i + 1]; i++;
+      }
+      else if (t === 'nopassword') { nopassword = true; }
+      else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
+      else if (t === 'secret') {
+        const next = args[i + 1];
+        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
+        if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
+        if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
+        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
+        if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
+        // Bare `secret <pwd>` is hashed (type 5) by real IOS, unless
+        // `algorithm-type` named another one. Un chiffre explicite
+        // (`secret 5|8|9`) decrit un condense DEJA calcule et sort plus
+        // haut : l'algorithme demande ne porte que sur du clair a hacher.
+        secret = args.slice(i + 1).join(' ');
+        secretAlgo = algoDemande ?? 'md5';
+        plaintextEntered = secret; break;
+      }
+      else if (t === 'password') {
+        const next = args[i + 1];
+        if (next === '0') {
+          secret = args.slice(i + 2).join(' '); secretAlgo = 'plain-password';
+          plaintextEntered = secret; type0PasswordWarning = true; break;
+        }
+        if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
+        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
+        plaintextEntered = secret; type0PasswordWarning = true; break;
+      }
+      else if (t === 'autocommand') { break; }
+      else if (USERNAME_KEYWORDS_AVEC_ARG.has(t.toLowerCase())) { i++; }
+      else if (!USERNAME_KEYWORDS.has(t.toLowerCase())) {
+        throw new CliInvalidInput({ token: t });
+      }
+    }
+    if (vue !== undefined && !sec().parserViews.has(vue)) {
+      return `%Error: View ${vue} is not present in the system`;
+    }
+    const minLength = sec().passwords.minLength;
+    if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
+      return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
+    }
+    const router = ctx.r() as unknown as {
+      _upsertCiscoUsername?: (n: string, kv: {
+        privilege?: number; secret?: string;
+        secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
+        nopassword?: boolean; description?: string; view?: string;
+      }) => void;
+    };
+    if (router._upsertCiscoUsername) {
+      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description, view: vue });
+    }
+    sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
+    if (type0PasswordWarning) {
+      return "WARNING: Command has been added to the configuration using a type 0\n"
+        + "password. However, type 0 passwords will soon be deprecated. Migrate\n"
+        + "to a supported password type";
+    }
+    return '';
+  }, USERNAME_CONTINUATIONS);
 
   trie.registerGreedy('radius', 'Radius configuration', (args) => {
     if (args[0] === 'server' && args[1]) {
@@ -425,107 +548,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   buildIdentityConfigCommands(trie, ctx);
 
-  trie.registerGreedy('username', 'Local user', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    let privilege: number | undefined;
-    let secret: string | undefined;
-    let secretAlgo: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7' = 'plain';
-    let nopassword = false;
-    let description: string | undefined;
-    // Set only for forms where the operator typed a real cleartext password
-    // (type 0, or the bare/unqualified form) — never for a pre-computed
-    // hash pasted in via `secret 5|8|9|4` / `password 7`, which `security
-    // passwords min-length` does not (and cannot) validate.
-    let plaintextEntered: string | undefined;
-    // Real IOS: entering a type-0 (cleartext) password via `password`
-    // triggers a deprecation warning as the command's own output — never
-    // for `secret`, which real IOS always hashes on save.
-    let type0PasswordWarning = false;
-    // `username X algorithm-type {md5|sha256|scrypt} secret <pwd>` : le
-    // mot-cle etait accepte et JETE, si bien qu'un secret demande en
-    // scrypt etait range en MD5 -- la commande de durcissement produisait
-    // exactement l'inverse de ce qu'elle promet, en silence. Son
-    // homologue `enable algorithm-type` fonctionne depuis toujours : meme
-    // famille, deux comportements.
-    let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
-    let vue: string | undefined;
-    for (let i = 1; i < args.length; i++) {
-      const t = args[i];
-      if (t === 'privilege' && args[i + 1]) { privilege = parseInt(args[i + 1], 10); i++; }
-      else if (t === 'algorithm-type') {
-        const nom = (args[i + 1] ?? '').toLowerCase();
-        if (nom !== 'md5' && nom !== 'sha256' && nom !== 'scrypt') {
-          throw new CliInvalidInput({ token: args[i + 1] });
-        }
-        algoDemande = nom; i++;
-      }
-      else if (t === 'view' && args[i + 1]) {
-        // `username X view NOC_VIEW` — la vue attachee au compte. Le
-        // mot-cle etait avale en silence par la boucle, donc le lien
-        // entre un compte et son role disparaissait de la
-        // configuration ; refuser une vue inexistante evite d'attacher
-        // un role qui n'a jamais ete decrit.
-        vue = args[i + 1]; i++;
-      }
-      else if (t === 'nopassword') { nopassword = true; }
-      else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
-      else if (t === 'secret') {
-        const next = args[i + 1];
-        if (next === '0') { secret = args.slice(i + 2).join(' '); secretAlgo = 'plain'; plaintextEntered = secret; break; }
-        if (next === '5') { secret = args.slice(i + 2).join(' '); secretAlgo = 'md5'; break; }
-        if (next === '8') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        if (next === '9') { secret = args.slice(i + 2).join(' '); secretAlgo = 'scrypt'; break; }
-        if (next === '4') { secret = args.slice(i + 2).join(' '); secretAlgo = 'sha256'; break; }
-        // Bare `secret <pwd>` is hashed (type 5) by real IOS, unless
-        // `algorithm-type` named another one. Un chiffre explicite
-        // (`secret 5|8|9`) decrit un condense DEJA calcule et sort plus
-        // haut : l'algorithme demande ne porte que sur du clair a hacher.
-        secret = args.slice(i + 1).join(' ');
-        secretAlgo = algoDemande ?? 'md5';
-        plaintextEntered = secret; break;
-      }
-      else if (t === 'password') {
-        const next = args[i + 1];
-        if (next === '0') {
-          secret = args.slice(i + 2).join(' '); secretAlgo = 'plain-password';
-          plaintextEntered = secret; type0PasswordWarning = true; break;
-        }
-        if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
-        secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
-        plaintextEntered = secret; type0PasswordWarning = true; break;
-      }
-      else if (t === 'autocommand') { break; }
-      else if (USERNAME_KEYWORDS_AVEC_ARG.has(t.toLowerCase())) { i++; }
-      else if (!USERNAME_KEYWORDS.has(t.toLowerCase())) {
-        throw new CliInvalidInput({ token: t });
-      }
-    }
-    if (vue !== undefined && !sec().parserViews.has(vue)) {
-      return `%Error: View ${vue} is not present in the system`;
-    }
-    const minLength = sec().passwords.minLength;
-    if (!nopassword && plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
-      return `Password too short - must be at least ${minLength} characters. Password configuration failed`;
-    }
-    const router = ctx.r() as unknown as {
-      _upsertCiscoUsername?: (n: string, kv: {
-        privilege?: number; secret?: string;
-        secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-        nopassword?: boolean; description?: string; view?: string;
-      }) => void;
-    };
-    if (router._upsertCiscoUsername) {
-      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description, view: vue });
-    }
-    sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
-    if (type0PasswordWarning) {
-      return "WARNING: Command has been added to the configuration using a type 0\n"
-        + "password. However, type 0 passwords will soon be deprecated. Migrate\n"
-        + "to a supported password type";
-    }
-    return '';
-  });
 
   trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
   trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
