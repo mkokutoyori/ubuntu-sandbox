@@ -79,6 +79,10 @@ export class RouterRIPEngine {
 
   isEnabled(): boolean { return this.engine.isRunning(); }
 
+  setScheduler(scheduler: import('@/events/Scheduler').IScheduler | null): void {
+    this.engine.setScheduler(scheduler);
+  }
+
   getConfig(): RIPConfig { return this.engine.getConfig(); }
 
   getRoutes(): ReturnType<RIPEngine['getRoutes']> {

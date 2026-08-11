@@ -1121,7 +1121,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('network 10.0.0.0');
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('224.0.0.9'))).toBe(true);
+      expect(logs.some(l => l.message.includes('224.0.0.9'))).toBe(true);
     });
 
     it('74. should verify broadcast address 255.255.255.255 is used for RIPv1', async () => {
@@ -1134,7 +1134,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       await r1.executeCommand('network 10.0.0.0');
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('255.255.255.255'))).toBe(true);
+      expect(logs.some(l => l.message.includes('255.255.255.255'))).toBe(true);
     });
 
     it('75. should display correct administrative distance 120 in show ip protocols', async () => {

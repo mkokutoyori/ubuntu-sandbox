@@ -37,7 +37,11 @@ async function lab(): Promise<CiscoRouter> {
   for (const c of ['enable', 'configure terminal',
     'interface GigabitEthernet0/0', 'ip address 10.0.12.1 255.255.255.0', 'no shutdown', 'exit',
     'interface Loopback0', 'ip address 1.1.1.1 255.255.255.255', 'exit',
-    'ip route 192.168.50.0 255.255.255.0 10.0.12.2', 'end']) {
+    'ip route 192.168.50.0 255.255.255.0 10.0.12.2',
+    // 172.16.5.0/24 est un SOUS-RÉSEAU de 172.16.0.0/16 : c'est lui qui
+    // fait paraître l'en-tête `is subnetted`, là où 192.168.50.0/24 EST
+    // son propre réseau par classe et n'en porte aucun.
+    'ip route 172.16.5.0 255.255.255.0 10.0.12.2', 'end']) {
     await r.executeCommand(c);
   }
   new Cable('c1').connect(r.getPort('GigabitEthernet0/0')!, peer.getPort('GigabitEthernet0/0')!);
@@ -97,8 +101,12 @@ describe('show ip route <protocole>', () => {
   it("conserve les en-têtes `is subnetted` qui structurent la sortie", async () => {
     const r = await lab();
     const out = await r.executeCommand('show ip route static');
-    expect(out).toMatch(/is subnetted/);
-    expect(out).toMatch(/S\s+192\.168\.50\.0\/24 \[1\/0\] via 10\.0\.12\.2/);
+    expect(out).toMatch(/172\.16\.0\.0\/16 is subnetted, 1 subnets/);
+    expect(out).toMatch(/S {8}172\.16\.5\.0\/24 \[1\/0\] via 10\.0\.12\.2/);
+    // Et une route qui EST son réseau par classe n'en porte pas :
+    // l'en-tête décrit un découpage, il ne décore pas la sortie.
+    expect(out).toMatch(/S {4}192\.168\.50\.0\/24 \[1\/0\] via 10\.0\.12\.2/);
+    expect(out).not.toMatch(/192\.168\.50\.0\/24 is subnetted/);
   }, 30_000);
 
   it("un préfixe précis garde son propre message d'absence", async () => {

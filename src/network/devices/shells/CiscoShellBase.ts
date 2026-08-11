@@ -122,6 +122,16 @@ import {
  * `tee` affiche EN PLUS la sortie, `redirect` et `append` seulement
  * ceci — c'est ce qui distingue les trois.
  */
+const EIGRP_DEBUG_SUBJECTS: Readonly<Record<string, string>> = {
+  packets: 'EIGRP Packets debugging is on\n'
+    + '    (UPDATE, REQUEST, QUERY, REPLY, HELLO, IPXSAP, PROBE, ACK, STUB, SIAQUERY, SIAREPLY)',
+  neighbors: 'EIGRP Neighbors debugging is on',
+  fsm: 'EIGRP FSM Events/Actions debugging is on',
+  transmit: 'EIGRP Transmission Events debugging is on',
+  notifications: 'EIGRP Event notifications debugging is on',
+  summary: 'EIGRP Summary Events debugging is on',
+};
+
 const PIPE_WRITE_BANNER = '!!';
 
 /** La taille d'historique d'IOS quand aucune ligne ne l'a fixee. */
@@ -3656,8 +3666,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
     this.privilegedTrie.registerGreedy('debug standby', 'Debug HSRP', (_args) =>
       debugSvc()?.enable('standby') ?? '');
-    this.privilegedTrie.registerGreedy('debug eigrp', 'Debug EIGRP', (_args) =>
-      debugSvc()?.enable('ip.eigrp') ?? '');
+    this.privilegedTrie.registerGreedy('debug eigrp', 'Debug EIGRP', (args) => {
+      const svc = debugSvc();
+      const sujet = (args[0] ?? '').toLowerCase();
+      const annonce = EIGRP_DEBUG_SUBJECTS[sujet];
+      if (sujet && !annonce) throw new CliInvalidInput({ token: args[0] });
+      svc?.enable('ip.eigrp');
+      return annonce ?? 'EIGRP debugging is on';
+    });
     this.privilegedTrie.registerGreedy('no debug standby', 'Disable HSRP debug', (_args) =>
       debugSvc()?.disable('standby') ?? '');
     this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>

@@ -46,6 +46,20 @@ export interface EigrpRouteTlv {
   readonly external: boolean;
 }
 
+export interface EigrpAuthTlv {
+  readonly type: 'md5';
+  readonly keyId: number;
+  readonly digest: string;
+}
+
+export interface EigrpStubTlv {
+  readonly connected: boolean;
+  readonly summary: boolean;
+  readonly staticRoutes: boolean;
+  readonly redistributed: boolean;
+  readonly receiveOnly: boolean;
+}
+
 /** Hello — neighbor discovery and adjacency parameter check (§5.3.4). */
 export interface EigrpHelloPacket {
   readonly type: 'eigrp';
@@ -54,6 +68,8 @@ export interface EigrpHelloPacket {
   readonly kValues: EigrpKValues;
   readonly holdTimeSec: number;
   readonly routerId?: string;
+  readonly auth?: EigrpAuthTlv;
+  readonly stub?: EigrpStubTlv;
 }
 
 /** Update — full topology advertisement with vector metrics (§5.3.2). */
@@ -62,6 +78,7 @@ export interface EigrpUpdatePacket {
   readonly opcode: 'update';
   readonly asn: number;
   readonly routes: readonly EigrpRouteTlv[];
+  readonly auth?: EigrpAuthTlv;
 }
 
 export type EigrpPacket = EigrpHelloPacket | EigrpUpdatePacket;

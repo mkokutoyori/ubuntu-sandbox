@@ -138,7 +138,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
       await r1.processTimers(2);
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('%DUAL-5-NBRCHANGE') && l.includes('is up: new adjacency'))).toBe(true);
+      expect(logs.some(l => l.message.includes('%DUAL-5-NBRCHANGE') && l.message.includes('is up: new adjacency'))).toBe(true);
     });
 
     it('1.3 Étape 3 : Vérifier la table des voisins avec "show ip eigrp neighbors"', async () => {
@@ -150,7 +150,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
@@ -171,7 +171,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
@@ -188,6 +188,9 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
     it('2.1 La métrique EIGRP par défaut utilise K1=1 (BW) et K3=1 (Delay)', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router eigrp 100');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip protocols');
 
       expect(show).toContain('K1=1, K2=0, K3=1, K4=0, K5=0');
@@ -202,14 +205,14 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
       await r1.processTimers(2);
 
       const routeAvant = await r1.executeCommand('show ip route 192.168.2.0');
-      const metricAvant = routeAvant.match(/\[90\/(\d+)\]/)?.[1];
+      const metricAvant = routeAvant.match(/Route metric is (\d+)/)?.[1];
 
       // Augmenter le délai sur l'interface Gig0/0 de R1
       await r1.executeCommand('configure terminal');
@@ -218,7 +221,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
       await r1.executeCommand('end');
 
       const routeApres = await r1.executeCommand('show ip route 192.168.2.0');
-      const metricApres = routeApres.match(/\[90\/(\d+)\]/)?.[1];
+      const metricApres = routeApres.match(/Route metric is (\d+)/)?.[1];
 
       expect(Number(metricApres)).toBeGreaterThan(Number(metricAvant));
     });
@@ -236,7 +239,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
@@ -359,7 +362,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
       await r1.processTimers(5);
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('not on common subnet'))).toBe(true);
+      expect(logs.some(l => l.message.includes('not on common subnet'))).toBe(true);
     });
   });
 
@@ -386,7 +389,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
 
       const route = await r1.executeCommand('show ip route 10.1.0.0');
       expect(route).toContain('Null0');
-      expect(route).toContain('Distance: 5');
+      expect(route).toContain('distance 5');
     });
   });
 
@@ -479,6 +482,9 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
     it('9.1 "show ip eigrp topology all-links" affiche tous les chemins connus, y compris ceux ne satisfaisant pas la Feasibility Condition', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router eigrp 100');
+      await r1.executeCommand('end');
       const topo = await r1.executeCommand('show ip eigrp topology all-links');
 
       expect(topo).toContain('EIGRP-IPv4 Topology Table');
@@ -505,7 +511,7 @@ describe('EIGRP Mode Tutoriel & TP Guidé', () => {
       await r1.executeCommand('enable');
       const debug = await r1.executeCommand('debug eigrp packets');
 
-      expect(debug).toContain('EIGRP Packet debugging is on');
+      expect(debug).toContain('EIGRP Packets debugging is on');
     });
   });
 });

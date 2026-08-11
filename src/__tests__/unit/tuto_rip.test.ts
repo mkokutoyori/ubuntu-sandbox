@@ -387,7 +387,7 @@ describe('Tutoriel RIP sur Cisco : From Zero to Hero', () => {
       await r3.processTimers(30);
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('16 hops') || l.includes('inaccessible'))).toBe(true);
+      expect(logs.some(l => l.message.includes('16 hops') || l.message.includes('inaccessible'))).toBe(true);
 
       // Apres holddown/flush, la route doit être retirée de R1
       await r1.processTimers(180);

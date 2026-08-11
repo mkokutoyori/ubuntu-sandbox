@@ -69,7 +69,19 @@ describe('Cisco EIGRP — config-driven real state (no engine ⇒ honest)', () =
     const nbr = await r.executeCommand('show ip eigrp neighbors');
     expect(nbr).not.toMatch(/Invalid input/);
     expect(nbr).toMatch(/AS\(100\)/);
-    expect(await r.executeCommand('show ip eigrp topology')).toContain('10.0.0.0');
+    // Aucune interface ne porte encore d'adresse : la table de topologie
+    // est VIDE, comme sur une vraie machine. Y faire figurer l'instruction
+    // `network` elle-même décrirait un préfixe que rien n'annonce.
+    const vide = await r.executeCommand('show ip eigrp topology');
+    expect(vide).toContain('EIGRP-IPv4 Topology Table for AS(100)/ID(1.1.1.1)');
+    expect(vide).not.toContain('P 10.0.0.0');
+
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/1');
+    await r.executeCommand('ip address 10.0.1.1 255.255.255.0');
+    await r.executeCommand('no shutdown');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show ip eigrp topology')).toContain('P 10.0.1.0/24');
   });
 });
 

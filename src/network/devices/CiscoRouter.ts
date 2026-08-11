@@ -597,7 +597,9 @@ export class CiscoRouter extends Router {
       return { output: `${filtered.join('\n')}\n`, exitCode: 0 };
     }
     if (/^show\s+\S/i.test(cmd)) {
-      const shell = (this as unknown as { shell?: { runShowCommandSync?: (d: unknown, c: string) => string } }).shell;
+      const shell = (this as unknown as {
+        shell?: { runShowCommandSync?: (d: unknown, c: string, niveau?: number) => string };
+      }).shell;
       let out: string | undefined;
       try {
         out = shell?.runShowCommandSync?.(this, cmd, niveauSsh);

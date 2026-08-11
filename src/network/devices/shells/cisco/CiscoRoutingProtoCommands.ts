@@ -19,6 +19,10 @@ import type { RoutingConfigRepository }
 import { parseRedistribute, upsertRedistribute }
   from '../../inspection/config/RoutingConfigRepository';
 import { showIpProtocols } from './CiscoShowCommands';
+import {
+  showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
+  showIpEigrpTopology, showIpEigrpInterfaces, eigrpProtocolBlock,
+} from './CiscoEigrpShow';
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
 
@@ -68,6 +72,21 @@ function requireProto(ctx: CiscoShellContext, keyword: string): void {
   if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
 }
 
+const STUB_OPTIONS = [
+  'connected', 'summary', 'static', 'redistributed', 'receive-only', 'leak-map',
+];
+
+export function enJoker(masque: string | undefined): string | undefined {
+  if (!masque || masque === 'mask') return undefined;
+  const o = masque.split('.').map(Number);
+  if (o.length !== 4 || o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+    return masque;
+  }
+  const contigu = /^1*0*$/.test(o.map((n) => n.toString(2).padStart(8, '0')).join(''));
+  if (!contigu || o[0] === 0) return masque;
+  return o.map((n) => 255 - n).join('.');
+}
+
 function pushOnce(list: string[], value: string): boolean {
   if (list.includes(value)) return false;
   list.push(value);
@@ -86,9 +105,9 @@ export function buildRoutingProtoConfig(
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
     if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput({ token: a[0] });
     const asn = parseInt(a[0], 10);
-    if (asn < 1 || asn > 65535) return '% Invalid AS number';
+    if (asn < 1 || asn > 65535) throw new CliInvalidInput({ token: a[0] });
     repo.ensureEigrp(asn);
     eigrpEng().enable({ asn });
     ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
@@ -148,10 +167,9 @@ export function buildRoutingProtoConfig(
     if (args.length < 1) return '% Incomplete command.';
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     if (proto === 'eigrp') {
-      if (pushOnce(eigrp().networks, args.join(' '))) {
-        eigrpEng().getConfig().networks.push({
-          network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
-        });
+      const joker = enJoker(args[1]);
+      if (pushOnce(eigrp().networks, [args[0], joker].filter(Boolean).join(' '))) {
+        eigrpEng().getConfig().networks.push({ network: args[0], wildcard: joker });
       }
     } else {
       const proc = bgp();
@@ -161,6 +179,26 @@ export function buildRoutingProtoConfig(
       bgpEng().getConfig().networks.push({ network: args[0], mask });
     }
     converge();
+    return '';
+  });
+
+  routerTrie.registerGreedy('no network', 'Stop advertising a network', (args) => {
+    const { proto } = curProto(ctx);
+    if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
+    if (proto === 'rip') {
+      repo.rip.networks = repo.rip.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+      return '';
+    }
+    if (proto === 'eigrp') {
+      const p = eigrp();
+      p.networks = p.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+      const ec = eigrpEng().getConfig();
+      ec.networks = ec.networks.filter((n) => n.network !== args[0]);
+      converge();
+      return '';
+    }
+    const proc = bgp();
+    if (proc) proc.networks = proc.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
     return '';
   });
 
@@ -197,8 +235,14 @@ export function buildRoutingProtoConfig(
       if (passive) { repo.rip.passive.add(ifName); ctx.r().ripSetPassiveInterface(ifName); }
       else { repo.rip.passive.delete(ifName); ctx.r().ripRemovePassiveInterface(ifName); }
     } else if (p === 'eigrp') {
-      if (passive) { eigrp().passive.add(ifName); eigrpEng().getConfig().passive.add(ifName); }
-      else { eigrp().passive.delete(ifName); eigrpEng().getConfig().passive.delete(ifName); }
+      if (passive) {
+        eigrp().passive.add(ifName);
+        eigrpEng().getConfig().passive.add(ifName);
+        eigrpEng().onInterfacePassive(ifName);
+      } else {
+        eigrp().passive.delete(ifName);
+        eigrpEng().getConfig().passive.delete(ifName);
+      }
       converge();
     }
   };
@@ -207,6 +251,7 @@ export function buildRoutingProtoConfig(
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = true;
+      else if (p === 'eigrp') eigrp().passiveDefault = true;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
       return '';
     }
@@ -220,6 +265,7 @@ export function buildRoutingProtoConfig(
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = false;
+      else if (p === 'eigrp') eigrp().passiveDefault = false;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, false);
       return '';
     }
@@ -249,6 +295,11 @@ export function buildRoutingProtoConfig(
       if (source && source !== 'eigrp') {
         eigrpEng().setRedistribution(source as 'static' | 'connected' | 'rip' | 'ospf' | 'bgp');
         converge();
+      }
+      if (!parsed.metric && eigrp().defaultMetric === undefined
+        && a[0].toLowerCase() !== 'connected') {
+        return '% Warning: Redistributing without default metric — '
+          + 'routes will not be advertised until a metric is set';
       }
     } else {
       const proc = bgp();
@@ -291,11 +342,14 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('default-metric', 'Set default metric', (a) => {
+    const m = parseInt(a[0], 10);
     if (curProto(ctx).proto === 'rip') {
-      const m = parseInt(a[0], 10);
       if (Number.isNaN(m)) return '% Invalid input detected.';
       repo.rip.defaultMetric = m;
       ctx.r().ripSetDefaultMetric(m);
+    } else if (curProto(ctx).proto === 'eigrp') {
+      if (Number.isNaN(m)) throw new CliInvalidInput({ token: a[0] });
+      eigrp().defaultMetric = m;
     }
     return '';
   });
@@ -442,17 +496,44 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('eigrp', 'EIGRP option', (a) => {
     if (a[0] === 'router-id') {
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!isValidIPv4(a[1])) throw new CliInvalidInput({ token: a[1] });
       eigrp().routerId = a[1];
       eigrpEng().getConfig().routerId = a[1];
-    } else if (a[0] === 'stub') {
-      eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+      return '';
+    }
+    if (a[0] === 'stub') {
+      const mots = a.slice(1).map((m) => m.toLowerCase());
+      const inconnu = mots.find((m) => !STUB_OPTIONS.includes(m));
+      if (inconnu) throw new CliInvalidInput({ token: inconnu });
+      const choisis = mots.length ? mots : ['connected', 'summary'];
+      eigrp().stub = choisis.join(' ');
+      eigrpEng().setStub({
+        connected: choisis.includes('connected'),
+        summary: choisis.includes('summary'),
+        staticRoutes: choisis.includes('static'),
+        redistributed: choisis.includes('redistributed'),
+        receiveOnly: choisis.includes('receive-only'),
+      });
+      return '';
+    }
+    throw new CliInvalidInput({ token: a[0] });
+  });
+  routerTrie.registerGreedy('no eigrp', 'Remove an EIGRP option', (a) => {
+    if (a[0] === 'stub') {
+      eigrp().stub = undefined;
+      eigrpEng().setStub(null);
+    } else if (a[0] === 'router-id') {
+      eigrp().routerId = undefined;
+      eigrpEng().getConfig().routerId = undefined;
     }
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
     const v = parseInt(a[0], 10);
     if (Number.isNaN(v) || v < 1 || v > 128) {
-      return '% Invalid variance value (1-128)';
+      throw new CliInvalidInput({ token: a[0] });
     }
     eigrp().variance = v;
     eigrpEng().getConfig().variance = v;
@@ -783,61 +864,28 @@ export function registerRoutingProtoShow(
     return out.join('\n');
   });
 
-  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', () => {
+  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', (a) => {
     const e = eigrpE();
-    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
+    if (!e.isEnabled()) return '';
     live();
-    const ns = e.getNeighbors();
-    const head = `EIGRP-IPv4 Neighbors for AS(${e.getConfig().asn})\n` +
-      'H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq';
-    // Un équipement ne commente pas ses sorties : IOS rend l'en-tête
-    // et rien d'autre quand il n'a aucun voisin.
-    if (!ns.length) return head;
-    return [head, ...ns.map((n, i) =>
-      `${i}   ${n.address.padEnd(16)}${n.iface.padEnd(12)}` +
-      `13   ${n.uptimeSec}s     1      200  0  ${i + 1}`)].join('\n');
+    return a[0]?.toLowerCase() === 'detail'
+      ? showIpEigrpNeighborsDetail(e)
+      : showIpEigrpNeighbors(e);
   });
-  trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', () => {
+  trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', (a) => {
     const e = eigrpE();
-    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
+    if (!e.isEnabled()) return '';
     live();
-    const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
-    const topo = e.getTopologyTable();
-    if (topo.size === 0) {
-      // No learned paths — show what this router really originates
-      // (real IOS lists connected, EIGRP-activated prefixes as P entries).
-      for (const pre of e.originatedPrefixes()) {
-        lines.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is 2816`);
-        lines.push(`        via Connected`);
-      }
-      for (const r of e.getContributedRoutes()) {
-        lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, FD is ${r.metric}`);
-        lines.push(`        via ${r.nextHop} (${r.metric}/${Math.max(0, r.metric - 256)}), ${r.iface}`);
-      }
-      if (lines.length === 1) {
-        // Pure config projection — no live interface matches a network
-        // statement yet, so show the configured statements themselves.
-        for (const stmt of e.getConfig().networks) {
-          lines.push(`P ${stmt.network}, 0 successors, FD is Inaccessible`);
-        }
-      }
-    } else {
-      for (const [prefix, entry] of topo) {
-        const totalSuccessors = 1 + entry.feasibleSuccessors.length;
-        lines.push(`P ${prefix}, ${totalSuccessors} successors, FD is ${entry.fd}`);
-        lines.push(`        via ${entry.successorNextHop} (${entry.fd}/${Math.max(0, entry.fd - 256)}), ${entry.successorIface}`);
-        for (const fs of entry.feasibleSuccessors) {
-          lines.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
-        }
-      }
-    }
-    return lines.join('\n');
+    return showIpEigrpTopology(e, a[0]?.toLowerCase() === 'all-links');
   });
-  trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', () => {
+  trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', (a) => {
     const e = eigrpE();
-    return e.isEnabled()
-      ? `EIGRP-IPv4 Interfaces for AS(${e.getConfig().asn})`
-      : '% EIGRP not running (no autonomous-system configured)';
+    if (!e.isEnabled()) return '';
+    live();
+    const detail = a[0]?.toLowerCase() === 'detail';
+    const nom = detail ? a[1] : a[0];
+    const iface = nom ? ctx.resolveInterfaceName(nom) ?? nom : undefined;
+    return showIpEigrpInterfaces(e, detail, iface);
   });
 
   trie.registerGreedy('show ip protocols vrf', 'Display routing protocols in a VRF', (a) => {
@@ -869,27 +917,7 @@ export function registerRoutingProtoShow(
       }
     }
     for (const p of repo.allEigrp()) {
-      out.push(`Routing Protocol is "eigrp ${p.asn}"`);
-      out.push('  Outgoing update filter list for all interfaces is not set');
-      out.push('  Incoming update filter list for all interfaces is not set');
-      out.push(`  EIGRP-IPv4 Protocol for AS(${p.asn})`);
-      out.push('    Metric weight K1=1, K2=0, K3=1, K4=0, K5=0');
-      if (p.routerId) out.push(`    Router-ID: ${p.routerId}`);
-      out.push('    Topology : 0 (base)');
-      out.push('      Active Timer: 3 min');
-      out.push('      Distance: internal 90 external 170');
-      out.push('      Maximum path: 4');
-      out.push('      Maximum hopcount 100');
-      out.push(`      Maximum metric variance ${eigrpE().getConfig().variance}`);
-      out.push('');
-      out.push('  Automatic Summarization: disabled');
-      out.push('  Maximum path: 4');
-      out.push('  Routing for Networks:');
-      for (const n of p.networks) out.push(`    ${n}`);
-      for (const r of p.redistribute) out.push(`  ${r}`);
-      out.push('  Routing Information Sources:');
-      out.push('    Gateway         Distance      Last Update');
-      out.push('  Distance: internal 90 external 170');
+      out.push(...eigrpProtocolBlock(p, eigrpE(), ctx.r()));
     }
     const b = repo.getBgp();
     if (b) {

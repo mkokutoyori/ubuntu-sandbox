@@ -252,6 +252,7 @@ export class VirtualTimeScheduler implements IScheduler {
 // ──────────────────────────────────────────────────────────────────────────
 
 let defaultSchedulerInstance: IScheduler | null = null;
+let defaultSchedulerGeneration = 0;
 
 export function getDefaultScheduler(): IScheduler {
   if (!defaultSchedulerInstance) {
@@ -260,6 +261,11 @@ export function getDefaultScheduler(): IScheduler {
   return defaultSchedulerInstance;
 }
 
+export function defaultSchedulerGeneration_(): number {
+  return defaultSchedulerGeneration;
+}
+
 export function __setDefaultScheduler(scheduler: IScheduler | null): void {
   defaultSchedulerInstance = scheduler;
+  defaultSchedulerGeneration++;
 }

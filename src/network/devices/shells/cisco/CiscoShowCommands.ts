@@ -251,6 +251,10 @@ export function renderIpRouteTable(
     const [baseText, parentPrefix] = key.split('/');
     const base = intToDotted(Number(baseText));
     const masks = new Set(bucket.map((entry) => entry.prefixLength));
+    if (bucket.every((entry) => entry.prefixLength === Number(parentPrefix))) {
+      for (const entry of bucket) lines.push(`${entry.code.padEnd(2)}   ${entry.text}`);
+      continue;
+    }
     lines.push(masks.size > 1
       ? `      ${base}/${parentPrefix} is variably subnetted, ${bucket.length} subnets, ${masks.size} masks`
       : `      ${base}/${parentPrefix} is subnetted, ${bucket.length} subnets`);
@@ -879,6 +883,14 @@ function interfaceConfigLines(
   }
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));
+  const proto = port as unknown as {
+    eigrpSummaries?: string[]; eigrpExtras?: string[];
+    ripSummaries?: string[]; ripAuth?: string[];
+  };
+  for (const l of proto.eigrpSummaries ?? []) lines.push(` ${l}`);
+  for (const l of proto.eigrpExtras ?? []) lines.push(` ${l}`);
+  for (const l of proto.ripSummaries ?? []) lines.push(` ${l}`);
+  for (const l of proto.ripAuth ?? []) lines.push(` ${l}`);
   const sec = (router as unknown as {
     [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
   })[Symbol.for('CiscoSecurityConfig')];

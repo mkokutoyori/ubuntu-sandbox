@@ -480,13 +480,17 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
       return "% Invalid input detected at '^' marker.";
     }
     port.setBandwidthKbps(n);
+    ctx.r().convergeDynamicRouting();
     return '';
   });
   trie.registerGreedy('delay', 'Set interface delay (10us)', (args) => {
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.setDelayUs(n * 10);
+    if (!/^\d+$/.test(args[0] ?? '')) throw new CliInvalidInput({ token: args[0] });
+    const n = parseInt(args[0], 10);
+    if (n < 1 || n > 16777215) throw new CliInvalidInput({ token: args[0] });
+    if (port) port.setDelayUs(n * 10);
+    ctx.r().convergeDynamicRouting();
     return '';
   });
   trie.registerGreedy('arp timeout', 'Set ARP timeout (seconds)', (args) => {
@@ -791,8 +795,24 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
   trie.registerGreedy('ip summary-address eigrp', 'Summarize EIGRP routes', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[1]) || !isValidIPv4(args[2])) {
+      throw new CliInvalidInput({ token: args[1] });
+    }
     const port = ctx.r().getPort(ifName) as any;
     if (port) (port.eigrpSummaries ??= []).push(raw ?? `ip summary-address eigrp ${args.join(' ')}`);
+    ctx.r().addSummaryDiscardRoute(new IPAddress(args[1]), new SubnetMask(args[2]));
+    return '';
+  });
+  trie.registerGreedy('no ip summary-address eigrp', 'Remove an EIGRP summary', (args) => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
+    const port = ctx.r().getPort(ifName) as unknown as { eigrpSummaries?: string[] } | undefined;
+    if (port?.eigrpSummaries) {
+      port.eigrpSummaries = port.eigrpSummaries
+        .filter((l) => l.split(/\s+/)[3] !== args[1]);
+    }
+    ctx.r().removeSummaryDiscardRoute(new IPAddress(args[1]), new SubnetMask(args[2]));
     return '';
   });
   trie.registerGreedy('ip bandwidth-percent eigrp', 'EIGRP bandwidth %', (args, raw) => {
@@ -827,14 +847,29 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
   trie.registerGreedy('ip authentication mode eigrp', 'EIGRP auth mode', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    const mode = (args[1] ?? '').toLowerCase();
+    if (mode !== 'md5' && mode !== 'hmac-sha-256') throw new CliInvalidInput({ token: args[1] });
     const port = ctx.r().getPort(ifName) as any;
     if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication mode eigrp ${args.join(' ')}`);
+    ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, { mode: 'md5' });
     return '';
   });
   trie.registerGreedy('ip authentication key-chain eigrp', 'EIGRP auth key-chain', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
     const port = ctx.r().getPort(ifName) as any;
     if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication key-chain eigrp ${args.join(' ')}`);
+    ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, { keyChain: args[1] });
+    return '';
+  });
+  trie.registerGreedy('no ip authentication mode eigrp', 'Clear EIGRP auth mode', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, null);
+    return '';
+  });
+  trie.registerGreedy('no ip authentication key-chain eigrp', 'Clear EIGRP auth key-chain', () => {
+    const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
+    ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, null);
     return '';
   });
   trie.registerGreedy('no ip split-horizon eigrp', 'Disable EIGRP split-horizon', (args, raw) => {

@@ -113,6 +113,8 @@ export interface EigrpProcess {
   /** `metric maximum-hops <n>` — diamètre au-delà duquel une route est inaccessible. */
   maximumHops?: number;
   autoSummary: boolean;
+  passiveDefault?: boolean;
+  defaultMetric?: number;
   stub?: string;
   named?: boolean;
   addressFamilies: string[];

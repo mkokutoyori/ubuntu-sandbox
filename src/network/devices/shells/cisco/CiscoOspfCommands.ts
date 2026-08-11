@@ -15,6 +15,7 @@ import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
+import { EIGRP_EXTERNAL_AD } from '../../../eigrp/EIGRPEngine';
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { iosShortInterfaceName, iosInterfaceStatus }
@@ -2650,9 +2651,11 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   const distance = bestDistance;
   const metric = bestMetric;
 
+  const eigrpAsn = router.getEIGRPEngine?.()?.getConfig().asn;
   const source = best.type === 'ospf' ? `ospf ${getOSPFProcessId(router)}`
     : best.type === 'default' ? 'static'
-      : best.type;
+      : best.type === 'eigrp' && eigrpAsn ? `eigrp ${eigrpAsn}`
+        : best.type;
 
   const lines = [`Routing entry for ${netStr}/${cidr}`];
 
@@ -2660,6 +2663,8 @@ function showIpRouteSpecific(router: Router, destIP: string): string {
   if (best.type === 'ospf') {
     const code = getOSPFRouteCode(router, netStr, cidr, best).replace('*', ' ').trim();
     header += `, type ${OSPF_ROUTE_TYPE_NAME[code] ?? 'intra area'}`;
+  } else if (best.type === 'eigrp') {
+    header += `, type ${distance === EIGRP_EXTERNAL_AD ? 'external' : 'internal'}`;
   } else if (best.type === 'connected') {
     header += ' (connected, via interface)';
   }

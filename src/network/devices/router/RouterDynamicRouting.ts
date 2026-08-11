@@ -12,6 +12,7 @@
  */
 import type { Port } from '../../hardware/Port';
 import type { IEventBus } from '@/events/EventBus';
+import type { IScheduler } from '@/events/Scheduler';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ETHERTYPE_IPV4, IP_PROTO_EIGRP, createIPv4Packet,
@@ -104,6 +105,11 @@ export class RouterDynamicRouting {
     // Same seam for EIGRP: a neighbour lost to its hold timer happens on
     // a timer, with nobody at the CLI, and must still reprogram the RIB.
     this.eigrp.setOnNeighborChange(() => this.reflectRib());
+  }
+
+  setScheduler(scheduler: IScheduler | null): void {
+    this.eigrp.setScheduler(scheduler);
+    this.bgp.setScheduler(scheduler);
   }
 
   // ── BGP wire transport (TCP/179) ───────────────────────────────────

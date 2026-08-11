@@ -281,7 +281,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
       await r1.processTimers(5);
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('K-value mismatch') || l.includes('Neighbor down'))).toBe(true);
+      expect(logs.some(l => l.message.includes('K-value mismatch') || l.message.includes('Neighbor down'))).toBe(true);
 
       const neighbors = await r1.executeCommand('show ip eigrp neighbors');
       expect(neighbors).not.toContain('10.0.12.2');
@@ -312,7 +312,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
@@ -332,7 +332,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
         await r.executeCommand('configure terminal');
         await r.executeCommand('router eigrp 100');
         await r.executeCommand('network 10.0.0.0');
-        await r.executeCommand('network 192.168.0.0');
+        await r.executeCommand('network 192.168.0.0 0.0.255.255');
         await r.executeCommand('end');
       }
 
@@ -387,7 +387,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
 
       const route = await r1.executeCommand('show ip route 172.16.0.0');
       expect(route).toContain('Null0');
-      expect(route).toContain('Distance: 5');
+      expect(route).toContain('distance 5');
     });
   });
 
@@ -480,6 +480,9 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
     it('25. should default variance multiplier to 1 (equal cost load balancing only)', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       await r1.executeCommand('enable');
+      await r1.executeCommand('configure terminal');
+      await r1.executeCommand('router eigrp 100');
+      await r1.executeCommand('end');
       const show = await r1.executeCommand('show ip protocols');
 
       expect(show).toContain('EIGRP maximum metric variance 1');
@@ -550,8 +553,9 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
       await r1.processTimers(5);
 
       const routeR2 = await r2.executeCommand('show ip route 172.16.0.0');
-      expect(routeR2).toContain('D EX');
-      expect(routeR2).toContain('Distance: 170');
+      expect(routeR2).toContain('Known via "eigrp 100"');
+      expect(routeR2).toContain('distance 170');
+      expect(routeR2).toContain('type external');
     });
   });
 
@@ -650,7 +654,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
       expect(res).toBe('');
 
       const logs = Logger.getLogs();
-      expect(logs.some(l => l.includes('Neighbor reset') || l.includes('clear neighbors'))).toBe(true);
+      expect(logs.some(l => l.message.includes('manually cleared'))).toBe(true);
     });
   });
 
@@ -660,7 +664,7 @@ describe('Cisco IOS EIGRP Protocol Unit Tests', () => {
     it('36. should reject router eigrp commands executed outside config mode', async () => {
       const r1 = new CiscoRouter('R1', 0, 0);
       const res = await r1.executeCommand('network 10.0.0.0');
-      expect(res).toContain('% Invalid input');
+      expect(res).toContain('% Unknown command or computer name');
     });
 
     it('37. should handle ambiguous command inputs in config-router mode', async () => {

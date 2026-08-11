@@ -70,7 +70,10 @@ import { SshHostKey } from '../protocols/ssh/SshHostKey';
 import { FtpServer } from '../ftp/FtpServer';
 import { RouterSftpFileSystem } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import type { SshExecTarget } from '../protocols/ssh/server/SshExecTarget';
-import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
+import {
+  getDefaultScheduler, __setDefaultScheduler, VirtualTimeScheduler,
+  type IScheduler,
+} from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { CiscoPingRow } from './shells/cisco/ciscoPing';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
@@ -505,6 +508,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       getBus: () => this.getBus(),
     });
     this.shell = this.createShell();
+    this.dynamicRouting.eigrp.setKeyResolver((chaine) => {
+      const cles = this.ipSlaKeyChains()?.getChain(chaine)?.keys;
+      if (!cles || cles.size === 0) return null;
+      const id = [...cles.keys()].sort((a, b) => a - b)[0];
+      const secret = cles.get(id)?.keyString;
+      return secret === undefined ? null : { id, secret };
+    });
     // Wire the logging buffer to this device's own bus up front — without
     // this, `show logging` stays empty for every domain event (OSPF, HSRP,
     // NAT debug, …) until something happens to call the internal
@@ -1548,6 +1558,27 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return true;
   }
 
+  addSummaryDiscardRoute(network: IPAddress, mask: SubnetMask): boolean {
+    const deja = this.routingTable.some((r) => r.iface === 'Null0'
+      && r.network.toString() === network.toString()
+      && r.mask.toString() === mask.toString());
+    if (deja) return false;
+    this.routingTable.push({
+      network, mask, nextHop: null, iface: 'Null0',
+      type: 'static', ad: 5, metric: 0, installedAt: Date.now(),
+    });
+    return true;
+  }
+
+  removeSummaryDiscardRoute(network: IPAddress, mask: SubnetMask): boolean {
+    const avant = this.routingTable.length;
+    this.routingTable = this.routingTable.filter((r) => !(r.iface === 'Null0'
+      && r.ad === 5
+      && r.network.toString() === network.toString()
+      && r.mask.toString() === mask.toString()));
+    return this.routingTable.length < avant;
+  }
+
   removeStaticRoute(network: IPAddress, mask: SubnetMask, nextHop?: IPAddress): boolean {
     const networkStr = network.toString();
     const maskStr = mask.toString();
@@ -1824,6 +1855,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getBGPEngine() { return this.dynamicRouting.bgp; }
   /** Recompute EIGRP/BGP adjacencies+routes from real topology. */
   convergeDynamicRouting() { this.dynamicRouting.converge(); }
+
+  async processTimers(seconds: number): Promise<void> {
+    const horloge = Router.horlogeDeSimulation();
+    this.convergeDynamicRouting();
+    if (this.isRIPEnabled()) this.ripEngine.setScheduler(null);
+    horloge.advance(Math.max(0, seconds) * 1000);
+    this.convergeDynamicRouting();
+  }
+
+  private static horlogeDeSimulation(): VirtualTimeScheduler {
+    const courant = getDefaultScheduler();
+    if (courant instanceof VirtualTimeScheduler) return courant;
+    const neuve = new VirtualTimeScheduler();
+    __setDefaultScheduler(neuve);
+    return neuve;
+  }
 
   /**
    * A powered-off router stops talking. EIGRP's Hello timer would

@@ -80,10 +80,14 @@ describe('Cisco router operational show (real state)', () => {
       expect(out, c).not.toMatch(/Invalid input/);
       expect(out, c).toMatch(/BGP not active/);
     }
+    // Sans processus EIGRP, IOS ne rend RIEN : ni tableau, ni message.
+    // La phrase « % EIGRP not running » qui figurait ici n'est d'aucune
+    // machine réelle — c'était un message inventé, donc un faux repère
+    // pour qui apprend à lire ces sorties.
     for (const c of ['show ip eigrp neighbors', 'show ip eigrp topology']) {
       const out = await r.executeCommand(c);
       expect(out, c).not.toMatch(/Invalid input/);
-      expect(out, c).toMatch(/EIGRP not running/);
+      expect(out.trim(), c).toBe('');
     }
   });
 });
