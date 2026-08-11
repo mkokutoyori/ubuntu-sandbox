@@ -1827,6 +1827,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   override powerOff(): void {
     this.dynamicRouting?.shutdownTimers();
+    this._sshSessionRegistry?.closeWhere(() => true, 'power-off');
     super.powerOff();
   }
 

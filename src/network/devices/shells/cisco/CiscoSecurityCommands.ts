@@ -19,6 +19,15 @@ import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
+const USERNAME_KEYWORDS = new Set([
+  'dnis', 'hidden', 'nocallback-verify', 'noescape', 'nohangup',
+  'nopassword', 'one-time',
+]);
+
+const USERNAME_KEYWORDS_AVEC_ARG = new Set([
+  'access-class', 'common-criteria-policy', 'mac', 'user-maxlinks',
+]);
+
 /**
  * Ce que `aaa ?` peut légitimement proposer, et ce que le gestionnaire
  * accepte : une seule liste, donc l'aide et l'exécution ne peuvent pas
@@ -485,6 +494,11 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
         if (next === '7') { secret = args.slice(i + 2).join(' '); secretAlgo = 'type-7'; break; }
         secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
         plaintextEntered = secret; type0PasswordWarning = true; break;
+      }
+      else if (t === 'autocommand') { break; }
+      else if (USERNAME_KEYWORDS_AVEC_ARG.has(t.toLowerCase())) { i++; }
+      else if (!USERNAME_KEYWORDS.has(t.toLowerCase())) {
+        throw new CliInvalidInput({ token: t });
       }
     }
     if (vue !== undefined && !sec().parserViews.has(vue)) {
