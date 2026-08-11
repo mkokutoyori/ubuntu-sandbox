@@ -3503,6 +3503,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return this._vtyIncomingPolicy.admit(transport, sourceIp);
   }
   /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
+  consoleLineCount(): number { return 1; }
+
   readonly hostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.hostsTable; }
 
@@ -4176,7 +4178,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       });
       for (const u of ['alice', 'bob', 'carl', 'dave']) {
         const acc = NetworkOsAccount.create({
-          name: u, privilege: 15, secret: u, passwordHashAlgorithm: 'md5',
+          name: u, privilege: 1, secret: u, passwordHashAlgorithm: 'md5',
         }).asFactoryDefault();
         this._credentialStore.upsert(acc);
       }

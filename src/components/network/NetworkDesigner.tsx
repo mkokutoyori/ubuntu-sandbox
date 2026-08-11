@@ -188,7 +188,6 @@ export function NetworkDesigner() {
   const handleOpenTerminal = useCallback((device: Equipment) => {
     if (!device.getIsPoweredOn()) return;
 
-    // Open a new session (multi-terminal per device is supported)
     const sessionId = manager.openTerminal(device);
     if (sessionId) {
       // Opening a terminal should surface it, even if the user was

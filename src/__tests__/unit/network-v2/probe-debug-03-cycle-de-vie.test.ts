@@ -112,7 +112,7 @@ describe('Scénario 2 — isolation par session', () => {
     r.powerOn();
 
     const a = manager.getSession(manager.openTerminal(r)!)!;
-    const b = manager.getSession(manager.openTerminal(r)!)!;
+    const b = manager.getSession(manager.openTerminal(r, 'vty')!)!;
     for (let i = 0; i < 40 && (a.isBooting || b.isBooting); i++) {
       await new Promise((res) => setTimeout(res, 50));
     }
@@ -146,7 +146,7 @@ describe('Scénario 2 — isolation par session', () => {
     expect(voit(b, /echo reply/), 'après terminal no monitor, B ne reçoit plus').toBe(false);
   }, LONG);
 
-  it('couper une session n\'affecte pas l\'autre', async () => {
+  it('couper la vty n\'affecte pas la console', async () => {
     const { a, b, type, voit, emettre } = await deuxSessions();
     await type(a, 'debug ip icmp');
     await type(b, 'terminal monitor');

@@ -114,8 +114,8 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
     expect(apresNoDebug).toBe(avecDebug);
   });
 
-  it('sessions are isolated — a second terminal without debug sees nothing', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — la vty sans debug ne voit rien', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(session2);
 

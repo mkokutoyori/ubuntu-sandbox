@@ -4688,6 +4688,46 @@ cote Huawei `info-center loghost … level|source-ip` et
 
 ---
 
+## Lot S9 — acces concurrents a la console, et niveau des comptes livres
+
+**PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».
+
+Dans l'interface, ouvrir un terminal EST un branchement sur le port
+console. `TerminalManager.openTerminal` empilait pourtant les sessions
+sans limite : deux onglets = deux consoles independantes, chacune avec
+son mode et son niveau, sur une machine qui n'a qu'une ligne `con 0` — et
+dont le registre refusait DEJA une seconde session console depuis S5.
+Les deux couches se contredisaient.
+
+Le second appel rend la session DEJA OUVERTE ; l'interface la
+de-minimise et la remonte, ce qu'elle faisait deja pour l'identifiant
+rendu. La regle est PORTEE PAR L'EQUIPEMENT et non devinee :
+`consoleLineCount()` vaut 1 sur `Router` et `Switch`. Un hote garde ses
+terminaux multiples — un PC a plusieurs consoles virtuelles.
+
+`openTerminal(device, 'vty')` ouvre une ligne VIRTUELLE : c'est ce qu'est
+reellement une seconde fenetre sur un routeur. Cela a corrige sept suites
+qui verifiaient une propriete JUSTE — deux sessions, une seule avec
+`terminal monitor`, une seule recoit — dans un laboratoire IMPOSSIBLE :
+deux cables console sur un chassis. Elles decrivent desormais une console
+et une vty, comme demande.
+
+**Comptes livres** : `alice`/`bob`/`carl`/`dave` atterrissaient sur `#` et
+`exit` fermait dans la foulee. La cause est le NIVEAU — provisionnes a 15,
+donc IOS ouvre en EXEC privilegie : le comportement etait correct pour ce
+niveau, mais le niveau ne l'etait pas. Un `username X secret Y` sans
+`privilege` vaut 1 sur une vraie machine. Ils sont a 1. Ce qui suit est le
+vrai IOS et ne change pas : `disable` redescend SANS fermer, `exit` quitte
+l'EXEC depuis `>` comme depuis `#`.
+
+**Mesures.** `probe-console-acces-concurrents.test.ts` (46 cas, cinq
+plateformes CLI + deux hotes) et
+`probe-comptes-provisionnes-niveau.test.ts` (17 cas) : **27 tombent**
+avant correctif. 14 suites SSH/sessions/debug vertes (701 cas). 7 cas e2e
+verts. Typecheck 119, lint identique.
+
+---
+
 ## Lot D1 — DNS sur Cisco, du client au serveur
 
 **PRD** : `PRD-DNS-Cisco.md`. **Perimetre pris** : tout le DNS cote

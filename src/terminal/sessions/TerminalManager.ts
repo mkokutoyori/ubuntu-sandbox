@@ -17,6 +17,16 @@
 import { Equipment } from '@/network';
 import { TerminalSession } from './TerminalSession';
 import { createSessionForDevice } from './sessionFactory';
+import { consolePortUnique } from '@/network/equipment/HostCapabilities';
+
+/**
+ * Par quelle ligne le terminal se branche. `console` est le port
+ * physique — un seul par chassis, d'ou la reservation. `vty` est une
+ * ligne virtuelle : c'est ce qu'est REELLEMENT une seconde fenetre sur
+ * un routeur, et les sessions y sont independantes comme sur une vraie
+ * machine.
+ */
+export type LigneTerminal = 'console' | 'vty';
 import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
 
 let nextSessionId = 1;
@@ -150,10 +160,18 @@ export class TerminalManager {
    * Open a new terminal for a device.  Returns the session ID.
    * Starts the session's init() (boot sequence, etc.) asynchronously.
    */
-  openTerminal(device: Equipment): string | null {
+  openTerminal(device: Equipment, ligne: LigneTerminal = 'console'): string | null {
     if (!device.getIsPoweredOn()) return null;
 
     const deviceId = device.getId();
+
+    if (ligne === 'console') {
+      const dejaLa = this.consoleDejaOuverte(device);
+      if (dejaLa) {
+        this.notify();
+        return dejaLa;
+      }
+    }
 
     const sessionId = `session-${nextSessionId++}`;
     const session = createSessionForDevice(device, sessionId);
@@ -176,6 +194,30 @@ export class TerminalManager {
 
     this.notify();
     return sessionId;
+  }
+
+  /**
+   * Ouvrir un terminal sur un equipement, c'est brancher un cable sur son
+   * port CONSOLE. Un chassis n'en a qu'un : deux onglets sur le meme
+   * routeur ne peuvent pas etre deux sessions independantes, avec chacune
+   * son mode, son niveau de privilege et son historique — la machine n'a
+   * qu'une ligne `con 0`, et `SshSessionRegistry` refuse d'ailleurs deja
+   * une seconde session console.
+   *
+   * Le second appel rend donc la session DEJA OUVERTE plutot que d'en
+   * fabriquer une seconde : l'interface ramene l'operateur devant la
+   * console qui existe. Un hote (Linux, Windows) garde ses terminaux
+   * multiples — un PC a plusieurs consoles virtuelles, et ce depot leur
+   * donne deja chacune son `cwd`, son environnement et son pts.
+   */
+  private consoleDejaOuverte(device: Equipment): string | null {
+    if (!consolePortUnique(device)) return null;
+    const ouvertes = this.deviceSessions.get(device.getId()) ?? [];
+    for (const id of ouvertes) {
+      const s = this.sessions.get(id);
+      if (s && !s.device.getId().startsWith('__')) return id;
+    }
+    return null;
   }
 
   /**

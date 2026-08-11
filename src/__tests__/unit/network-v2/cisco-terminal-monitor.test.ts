@@ -106,8 +106,8 @@ describe('Cisco terminal monitor — syslog event subscription streams into the 
     expect(session.lines.filter((l) => l.text.includes('%OSPF-5')).length).toBe(count);
   });
 
-  it('sessions are isolated — only the monitored terminal receives the stream', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — seule la ligne surveillee recoit le flux', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(session2);
 

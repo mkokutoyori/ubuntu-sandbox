@@ -134,8 +134,8 @@ describe('Cisco debug arp — event subscription streams ARP frames into the ter
     expect(session.lines.filter((l) => l.text.includes('IP ARP:')).length).toBe(count);
   });
 
-  it('sessions are isolated — a second terminal without debug sees nothing', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — la vty sans debug ne voit rien', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(session2);
 

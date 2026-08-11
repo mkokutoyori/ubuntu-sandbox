@@ -100,8 +100,8 @@ describe('Huawei VRP terminal monitor — syslog event subscription streams into
     expect(session.lines.filter((l) => /OSPF/.test(l.text) && l.text.includes('2.2.2.2')).length).toBe(count);
   });
 
-  it('two sessions are isolated — only the one with terminal monitor streams', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — seule la ligne avec terminal monitor recoit', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as HuaweiTerminalSession;
     await waitBoot(session2);
 

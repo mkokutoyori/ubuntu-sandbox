@@ -2750,6 +2750,8 @@ export abstract class Switch extends Equipment {
   }
   private _sshSessionRegistry: SshSessionRegistry | null = null;
 
+  consoleLineCount(): number { return 1; }
+
   private readonly dnsConfig = new CiscoDnsConfig();
   _getDnsConfig(): CiscoDnsConfig { return this.dnsConfig; }
   _syncDnsService(): void { /* un commutateur n'a pas de pile UDP a lier */ }

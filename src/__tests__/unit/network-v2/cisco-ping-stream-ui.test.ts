@@ -108,8 +108,8 @@ describe('Cisco IOS ping — real-time streaming through the async pipeline', ()
     expect(session.hasForegroundAsyncJob).toBe(false);
   });
 
-  it('two terminals on the same router each drive their own ping independently', async () => {
-    const sid2 = manager.openTerminal(r1)!;
+  it('la console et une vty pilotent chacune son propre ping', async () => {
+    const sid2 = manager.openTerminal(r1, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(session2);
 

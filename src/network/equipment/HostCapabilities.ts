@@ -63,3 +63,20 @@ export function isFileEditorHost(dev: unknown): dev is FileEditorHost {
     && hasFn(dev, 'readFileForEditor')
     && hasFn(dev, 'writeFileFromEditor');
 }
+
+/**
+ * Le nombre de ports CONSOLE physiques du chassis. Un routeur ou un
+ * commutateur en a exactement un ; un hote (Linux, Windows) a plusieurs
+ * consoles virtuelles et n'implemente pas cette capacite.
+ */
+export interface ConsolePortHost {
+  consoleLineCount(): number;
+}
+
+export function isConsolePortHost(dev: unknown): dev is ConsolePortHost {
+  return hasFn(dev, 'consoleLineCount');
+}
+
+export function consolePortUnique(dev: unknown): boolean {
+  return isConsolePortHost(dev) && dev.consoleLineCount() === 1;
+}

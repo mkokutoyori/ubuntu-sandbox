@@ -620,3 +620,54 @@ est supprimé.
 22 produit `%SSH-5-SSH2_SESSION`, côté Cisco **et** côté Huawei. Les deux
 sont corrigés sur la mesure : rien n'est journalisé à ce moment-là, ni sur
 IOS ni sur VRP.
+
+## Lot S9 — accès concurrents à la console, et le niveau des comptes livrés
+
+### Un châssis n'a qu'un port console
+
+Dans l'interface, ouvrir un terminal **est** un branchement sur le port
+console. `TerminalManager.openTerminal` empilait pourtant les sessions
+sans limite : deux onglets sur le même routeur donnaient deux consoles
+indépendantes, chacune avec son mode, son niveau de privilège et son
+historique, sur une machine qui n'a qu'une ligne `con 0` — et dont le
+registre de sessions refusait déjà, depuis le lot S5, une seconde session
+console. Les deux couches se contredisaient.
+
+Le second appel **rend la session déjà ouverte** : l'interface ramène
+l'opérateur devant la console qui existe (elle la dé-minimise et la met
+au premier plan, ce que `handleOpenTerminal` faisait déjà pour
+l'identifiant rendu). Fermer le terminal libère la console.
+
+La règle est portée par l'équipement, pas devinée : `consoleLineCount()`
+(capacité `ConsolePortHost`) vaut 1 sur `Router` et `Switch`, donc sur
+les cinq plateformes CLI. **Un hôte garde ses terminaux multiples** — un
+PC a plusieurs consoles virtuelles, et ce dépôt donne déjà à chacune son
+`cwd`, son environnement et son pts.
+
+### Une seconde fenêtre est une VTY
+
+`openTerminal(device, 'vty')` ouvre une ligne **virtuelle** : c'est ce
+qu'est réellement une seconde session sur un routeur, et elles restent
+indépendantes. La console reste unique même avec des vty ouvertes.
+
+Cela a corrigé sept suites qui vérifiaient une propriété **juste** — deux
+sessions, une seule avec `terminal monitor`, une seule reçoit le flux —
+dans un laboratoire **impossible** : deux câbles console sur un châssis.
+Elles décrivent désormais une console et une vty, ce que la propriété
+exige vraiment.
+
+### Les comptes livrés ouvrent en EXEC utilisateur
+
+Signalé : `alice`/`bob`/`carl`/`dave` atterrissaient directement sur `#`,
+et `exit` fermait la session dans la foulée. La cause est le niveau : ils
+étaient provisionnés à **15**, donc IOS ouvre en EXEC privilégié — le
+comportement était correct pour ce niveau, mais le niveau ne l'était pas.
+Un `username X secret Y` sans `privilege` vaut **1** sur une vraie
+machine, et c'est le parcours que le cours enseigne : `>` puis `enable`
+puis `#`.
+
+Ils sont provisionnés à 1. Ce qui suit est alors le vrai IOS et n'a pas
+changé : `enable` monte à `#`, `disable` redescend à `>` **sans fermer**
+la session, et `exit` depuis `>` comme depuis `#` libère la console —
+`exit` quitte l'EXEC, c'est `disable` qui change de niveau. Un compte
+déclaré `privilege 15` par l'opérateur ouvre toujours sur `#`.

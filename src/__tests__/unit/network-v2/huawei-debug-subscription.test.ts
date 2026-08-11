@@ -122,8 +122,8 @@ describe('Huawei VRP debugging ospf — event subscription streams into the term
     expect(session.hasBackgroundAsyncJobs).toBe(false);
   });
 
-  it('two sessions are isolated — only the one with terminal debugging streams', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — seule la ligne avec terminal debugging recoit', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as HuaweiTerminalSession;
     await waitBoot(session2);
 
