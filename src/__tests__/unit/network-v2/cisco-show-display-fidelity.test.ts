@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -59,16 +60,30 @@ describe('show ip policy', () => {
 });
 
 describe('show ip rip database', () => {
+  /** La base RIP décrit des ROUTES : sans lien actif, elle est vide. */
+  async function labCable(extra: readonly string[]): Promise<CiscoRouter> {
+    const pair = new CiscoRouter('R2');
+    const r = new CiscoRouter('R1');
+    r.powerOn?.();
+    new Cable('c-rip').connect(r.getPort('GigabitEthernet0/0')!, pair.getPort('GigabitEthernet0/0')!);
+    for (const c of ['enable', 'configure terminal',
+      'interface GigabitEthernet0/0', 'ip address 10.0.12.1 255.255.255.0', 'no shutdown',
+      ...extra, 'end']) {
+      await r.executeCommand(c);
+    }
+    return r;
+  }
+
   it("n'annonce pas auto-summary quand `no auto-summary` est configuré", async () => {
-    const r = await lab(['router rip', 'version 2', 'network 10.0.0.0', 'no auto-summary', 'exit']);
+    const r = await labCable(['router rip', 'version 2', 'network 10.0.0.0', 'no auto-summary', 'exit']);
     const out = await r.executeCommand('show ip rip database');
     // La vue contredisait la configuration affichée sur la même machine.
     expect(out).not.toContain('auto-summary');
-    expect(out).toContain('directly connected, via configured network');
+    expect(out).toContain('directly connected, GigabitEthernet0/0');
   }, 30_000);
 
   it("l'annonce quand auto-summary est actif", async () => {
-    const r = await lab(['router rip', 'version 2', 'network 10.0.0.0', 'exit']);
+    const r = await labCable(['router rip', 'version 2', 'network 10.0.0.0', 'exit']);
     expect(await r.executeCommand('show ip rip database')).toContain('auto-summary');
   }, 30_000);
 });

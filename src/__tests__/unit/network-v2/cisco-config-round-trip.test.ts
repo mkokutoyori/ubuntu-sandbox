@@ -90,6 +90,10 @@ function body(config: string): string[] {
     l.trim() !== ''
     && !l.startsWith('Building configuration')
     && !l.startsWith('Current configuration')
+    // Rejouer une configuration CHANGE la date du dernier changement,
+    // sur un vrai routeur comme ici : cette ligne dit QUAND, pas QUOI.
+    && !l.startsWith('! Last configuration change')
+    && !l.startsWith('! NVRAM config last updated')
     && !l.startsWith('hostname '));
 }
 

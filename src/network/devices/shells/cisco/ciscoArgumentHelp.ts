@@ -110,6 +110,27 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ] as const) {
     tries.privileged.describeArgs(cmd, [{ ...WORD('name', description), optional: true }]);
   }
+  tries.privileged.describeArgs('show ip eigrp topology', [
+    { ...ENUM('scope', 'Topology detail to display', [
+      ['all-links', 'Show all links in topology table'],
+    ]), optional: true },
+  ]);
+  tries.privileged.describeArgs('show ip eigrp neighbors', [
+    { ...ENUM('detail', 'Neighbour detail to display', [
+      ['detail', 'Show detailed peer information'],
+    ]), optional: true },
+  ]);
+  tries.privileged.describeArgs('show ip eigrp interfaces', [
+    { ...ENUM('detail', 'Interface detail to display', [
+      ['detail', 'Show detailed interface information'],
+    ]), optional: true },
+  ]);
+  tries.privileged.describeArgs('clear ip eigrp', [
+    { ...ENUM('target', 'What to clear', [
+      ['neighbors', 'Clear EIGRP neighbour adjacencies'],
+      ['traffic', 'Clear EIGRP traffic statistics'],
+    ]), optional: true },
+  ]);
   tries.privileged.describeArgs('show arp', [
     { ...IP('address', 'ARP entry address'), optional: true },
   ]);
@@ -399,10 +420,12 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.configExtNacl.describeArgs('evaluate', [WORD('name', 'Name of the reflexive access list')]);
 
   // ── Modes routeur ──
+  // `timers bgp` n'appartient qu'à BGP, et ce mode partage un seul arbre
+  // avec RIP : le proposer partout revenait à offrir sous `router rip` un
+  // mot que la même machine refuse ensuite.
   tries.configRouter.describeArgs('timers', [
     ENUM('family', 'Timer family to adjust', [
       ['basic', 'Basic routing timers'],
-      ['bgp', 'BGP timers'],
     ]),
   ]);
   tries.configRouter.describeArgs('router-id', [IP('router-id', 'Router identifier in IP address format')]);

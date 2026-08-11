@@ -1887,23 +1887,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   ripSetDefaultInformationOriginate(on: boolean) { this.ripEngine.setDefaultInformationOriginate(on); }
 
   /**
-   * Fast-forward THIS device's protocol timers by `seconds`, so a
-   * periodic update, a route expiry or a garbage collection can be
-   * observed without waiting for wall time. What the neighbours learn
-   * from it, they learn from the packets this device puts on the wire.
+   * Avance l'horloge de la simulation de `seconds`, pour observer une
+   * mise à jour périodique, l'expiration d'une route ou un ramassage
+   * sans attendre le temps réel. L'horloge est PARTAGÉE — le temps passe
+   * pour tout le monde — mais aucun équipement ne touche l'état d'un
+   * autre : ce que les voisins en apprennent leur vient des paquets que
+   * ce routeur met sur le fil.
    */
   async processTimers(seconds: number): Promise<void> {
     const ms = Math.max(0, seconds) * 1000;
-    const scheduler = getDefaultScheduler();
-    if (scheduler instanceof VirtualTimeScheduler) {
-      scheduler.advance(ms);
-      if (this.dynamicRouting?.hasActive()) this.convergeDynamicRouting();
-      return;
-    }
-    this.advanceProtocolTimers(ms);
-    if (!this.dynamicRouting?.hasActive()) return;
     this.convergeDynamicRouting();
     Router.horlogeDeSimulation().advance(ms);
+    this.advanceProtocolTimers(ms);
     this.convergeDynamicRouting();
   }
 

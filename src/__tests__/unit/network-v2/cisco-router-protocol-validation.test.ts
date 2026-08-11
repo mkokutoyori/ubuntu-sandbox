@@ -49,7 +49,10 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
     await r.executeCommand('router eigrp 100');
     expect(await r.executeCommand('redistribute bogus')).toContain(INVALID);
     expect(await r.executeCommand('redistribute')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('redistribute static')).toBe('');
+    // Depuis `6badd4617`, EIGRP prévient qu'une redistribution sans
+    // métrique par défaut n'annonce rien. La commande reste acceptée.
+    expect(await r.executeCommand('redistribute static'))
+      .toMatch(/^% Warning: Redistributing without default metric/);
   });
 
   it('rejects an invalid router-id for BGP', async () => {

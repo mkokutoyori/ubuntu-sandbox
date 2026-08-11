@@ -113,7 +113,7 @@ export function buildRoutingProtoConfig(
   const converge = () => ctx.r().convergeDynamicRouting();
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!/^\d+$/.test(a[0])) throw new CliInvalidInput({ token: a[0] });
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 65535) throw new CliInvalidInput({ token: a[0] });
@@ -131,7 +131,7 @@ export function buildRoutingProtoConfig(
     return '';
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
     const asn = parseInt(a[0], 10);
     if (asn < 1 || asn > 4294967295) return '% Invalid AS number';
@@ -160,10 +160,10 @@ export function buildRoutingProtoConfig(
   routerTrie.registerGreedy('network', 'Advertise a network', (args) => {
     const { proto } = curProto(ctx);
     if (proto === 'rip') {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       if (!ctx.r().isRIPEnabled()) return '% RIP is not enabled.';
       if (!isValidIPv4(args[0]) || !ripRoutableNetwork(args[0])) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       const net = new IPAddress(args[0]);
       const mask = classfulMask(net);
@@ -172,8 +172,8 @@ export function buildRoutingProtoConfig(
       pushOnce(repo.rip.networks, classful.toString());
       return '';
     }
-    if (args.length < 1) return '% Incomplete command.';
-    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
     if (proto === 'eigrp') {
       const joker = enJoker(args[1]);
       if (pushOnce(eigrp().networks, [args[0], joker].filter(Boolean).join(' '))) {
@@ -192,8 +192,8 @@ export function buildRoutingProtoConfig(
 
   routerTrie.registerGreedy('no network', 'Stop advertising a network', (args) => {
     const { proto } = curProto(ctx);
-    if (args.length < 1) return '% Incomplete command.';
-    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
     if (proto === 'rip') {
       const net = new IPAddress(args[0]);
       const classful = net.networkAddress(classfulMask(net)).toString();
@@ -268,7 +268,7 @@ export function buildRoutingProtoConfig(
     }
   };
   routerTrie.registerGreedy('passive-interface', 'Suppress updates', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = true;
@@ -282,7 +282,7 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = false;
@@ -300,14 +300,14 @@ export function buildRoutingProtoConfig(
     RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
   const REDIST_PROTOCOLS = ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
   routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a) => {
-    if (!a[0]) return '% Incomplete command.';
-    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return CISCO_ERRORS.INVALID_INPUT;
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
-      if (!source) return "% Invalid input detected at '^' marker.";
+      if (!source) return CISCO_ERRORS.INVALID_INPUT;
       ctx.r().ripSetRedistribution(source, parsed.metric?.[0]);
       upsertRedistribute(repo.rip.redistribute, parsed);
     } else if (p === 'eigrp') {
@@ -376,10 +376,10 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('distance', 'Administrative distance', (a) => {
     if (curProto(ctx).proto !== 'rip') return '';
-    if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) return CISCO_ERRORS.INVALID_INPUT;
     const n = parseInt(a[0], 10);
-    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
+    if (n < 1 || n > 255) return CISCO_ERRORS.INVALID_INPUT;
     repo.rip.distance = n;
     return '';
   });
@@ -387,12 +387,12 @@ export function buildRoutingProtoConfig(
     const line = raw ?? `timers ${a.join(' ')}`.trim();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
-      if (a[0]?.toLowerCase() !== 'basic') return "% Invalid input detected at '^' marker.";
+      if (a[0]?.toLowerCase() !== 'basic') return CISCO_ERRORS.INVALID_INPUT;
       const values = a.slice(1);
-      if (values.length < 4) return '% Incomplete command.';
-      if (values.length > 4) return "% Invalid input detected at '^' marker.";
+      if (values.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      if (values.length > 4) return CISCO_ERRORS.INVALID_INPUT;
       if (!values.every((v) => /^\d+$/.test(v) && Number(v) <= 4294967295)) {
-        return "% Invalid input detected at '^' marker.";
+        return CISCO_ERRORS.INVALID_INPUT;
       }
       const [update, invalid, holddown, flush] = values.map(Number);
       if (invalid <= update || flush <= invalid) return '% Invalid timers';
@@ -411,7 +411,7 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('no timers', 'Restore default timers', (a) => {
     if (curProto(ctx).proto !== 'rip') return '';
-    if ((a[0] ?? 'basic').toLowerCase() !== 'basic') return "% Invalid input detected at '^' marker.";
+    if ((a[0] ?? 'basic').toLowerCase() !== 'basic') return CISCO_ERRORS.INVALID_INPUT;
     repo.rip.timersBasic = undefined;
     ctx.r().ripConfigure({
       updateInterval: 30_000, routeTimeout: 180_000, gcTimeout: 60_000,
@@ -430,11 +430,11 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
     const p = curProto(ctx).proto;
-    if (a.length < 1) return '% Incomplete command.';
-    if (!/^\d+$/.test(a[0])) return "% Invalid input detected at '^' marker.";
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) return CISCO_ERRORS.INVALID_INPUT;
     const n = parseInt(a[0], 10);
-    if (p === 'rip' && (n < 1 || n > 16)) return "% Invalid input detected at '^' marker.";
-    if (n < 1 || n > 32) return "% Invalid input detected at '^' marker.";
+    if (p === 'rip' && (n < 1 || n > 16)) return CISCO_ERRORS.INVALID_INPUT;
+    if (n < 1 || n > 32) return CISCO_ERRORS.INVALID_INPUT;
     // Le plafond va au ROUTEUR, qui est la seule chose que le plan de
     // données consulte : sans cet appel, la valeur restait rangée dans
     // le magasin du protocole et ne bornait rien.
@@ -449,9 +449,9 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
     const { proto } = curProto(ctx);
-    if (!a[0]) return '% Incomplete command.';
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
     if (proto === 'rip') {
-      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
       repo.rip.neighbors.push(a[0]); return '';
     }
     if (proto === 'eigrp') {
@@ -467,11 +467,11 @@ export function buildRoutingProtoConfig(
     if (proto === 'bgp') {
       const b = bgp();
       if (!b) return '';
-      if (!a[1]) return '% Incomplete command.';
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
       if (a[1] === 'remote-as') {
-        if (!a[2]) return '% Incomplete command.';
+        if (!a[2]) return CISCO_ERRORS.INCOMPLETE;
         const as = parseInt(a[2], 10);
-        if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
+        if (Number.isNaN(as) || as < 1 || as > 4294967295) return CISCO_ERRORS.INVALID_INPUT;
       }
 
       // `neighbor <nom> peer-group` (sans argument) DÉCLARE un gabarit.
@@ -510,7 +510,7 @@ export function buildRoutingProtoConfig(
         return '';
       }
 
-      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
       // Rejoindre un groupe non déclaré est refusé, comme sur IOS :
       // sinon le voisin hériterait d'un gabarit qui n'existe pas.
       if (a[1] === 'peer-group' && a[2] && !repo.getBgpPeerGroup(a[2])) {
@@ -548,8 +548,8 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
-    if (!a[0]) return '% Incomplete command.';
-    if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
     const p = curProto(ctx).proto;
     if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
     else if (p === 'bgp') {

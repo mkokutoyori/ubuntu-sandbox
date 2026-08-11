@@ -47,7 +47,7 @@ describe('a debug that promises output produces it', () => {
     vi.useFakeTimers();
     try {
       const { a, b } = await pair();
-      expect(await a.executeCommand('debug ip rip')).toBe('RIP debugging is on');
+      expect(await a.executeCommand('debug ip rip')).toBe('RIP protocol debugging is on');
       const lignes: string[] = [];
       collecteDebug(debugOf(a), lignes);
       for (const d of [a, b]) {
