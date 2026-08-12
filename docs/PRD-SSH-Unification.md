@@ -429,16 +429,35 @@ pour les formes que la regex ne prend pas (options, mode exec).
 
 Ce chemin-là est filaire, donc le serveur y applique déjà son
 `MaxAuthTries` — c'est une bonne nouvelle, et c'est pourquoi le correctif
-de §6.1 ne s'y voit pas. **Mais deux choses y ont été MESURÉES et ne sont
-pas expliquées, et il vaut mieux les écrire que les taire :** avec
-`MaxAuthTries 1` sur la cible, le terminal redemande quand même le mot de
-passe une seconde fois ; et NI `Permission denied, please try again.` NI
-`Received disconnect … Too many authentication failures` n'apparaissent
-dans la transcription, quelle que soit la configuration. Un opérateur
-voit donc deux invites identiques et aucun message. Le pendant e2e de
-§6.1 a été retiré plutôt qu'affaibli jusqu'à passer : un test qui
-n'assure rien vaut moins que l'absence de test. Diagnostiquer ce chemin
-est un chantier à lui seul, et il commence par ces deux mesures.
+de §6.1 ne s'y voit pas. **Deux choses y avaient été mesurées sans être
+expliquées.** La première est corrigée, la seconde reste ouverte, et les
+deux sont écrites ici plutôt que tues.
+
+**Corrigé : la seconde invite n'expliquait rien.** Après un mauvais mot
+de passe, le terminal redemandait sans jamais écrire le
+`Permission denied, please try again.` d'OpenSSH — deux invites
+identiques, et aucune raison pour la seconde. Deux causes, silencieuses
+l'une comme l'autre par construction. `HopInteractionHandler`
+n'implémentait pas `showAuthFailure`, que `SshSession` appelle par une
+méthode OPTIONNELLE (`?.()`) : l'appel ne levait donc rien, il ne faisait
+rien. Et `pumpHopConnect` rendait `output: []` sur sa branche « invite »,
+jetant ce que le gestionnaire avait accumulé avant l'invite suivante —
+si bien que même une fois `showAuthFailure` écrit, la ligne aurait été
+perdue. Les deux vont ensemble. C'est un défaut de RENDU, donc il se
+prouve là où l'opérateur lit : `ssh-nested-auth-failure.spec.ts`,
+discriminé par `git stash` (le cas du refus tombe avant le correctif, la
+référence passe des deux côtés puisqu'elle vérifie une absence).
+
+**Ouvert : la coupure du serveur n'est toujours pas honorée ici.** Avec
+`MaxAuthTries 1` sur la cible, la transcription mesurée après correctif
+est désormais lisible — `password:` / `Permission denied, please try
+again.` / `password:` — mais elle montre bien une SECONDE invite, alors
+que le serveur a fermé la connexion après le premier échec.
+`SshSession.doAuthenticate` redemande jusqu'à `SSH_PASSWORD_PROMPTS` sans
+constater la coupure. Corriger cela touche la sémantique de reprise de
+`AuthChain`/`SshSession`, c'est-à-dire le chemin filaire que TOUS les
+clients partagent : c'est un chantier à lui seul, et il commence par
+cette mesure.
 
 **Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
 le dernier usage de `CrossVendorRemoteShell` en production, et il est

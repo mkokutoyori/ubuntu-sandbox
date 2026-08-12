@@ -156,6 +156,10 @@ class HopInteractionHandler implements ISshInteractionHandler {
     }
   }
 
+  showAuthFailure(_user: string, _host: string): void {
+    this.infoLines.push('Permission denied, please try again.');
+  }
+
   showWarning(message: string): void { this.infoLines.push(message); }
   showInfo(message: string): void { this.infoLines.push(message); }
   onConnected(_info: SshConnectionInfo): void { /* banner handled by composeSshLoginBanner instead */ }
@@ -719,7 +723,7 @@ export class SshInteractiveSubShell implements ISubShell {
 
     if (outcome.kind === 'prompt') {
       return {
-        output: [], exit: false, prompt: this.getPrompt(),
+        output: pending.interaction.drainInfoLines(), exit: false, prompt: this.getPrompt(),
         pendingInput: { kind: outcome.prompt.kind, promptText: outcome.prompt.promptText },
       };
     }
