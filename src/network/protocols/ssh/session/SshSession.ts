@@ -344,6 +344,7 @@ export class SshSession implements ISshSession {
           user: u,
           password,
         });
+        if (response.ended) attemptsLeft = 0;
         return response.ok === true;
       },
       checkPublicKey: () => false,
@@ -354,6 +355,7 @@ export class SshSession implements ISshSession {
           user: u,
           publicKey,
         });
+        if (response.ended) attemptsLeft = 0;
         return response.ok === true;
       },
       getAttemptsRemaining: () => attemptsLeft,
@@ -364,18 +366,18 @@ export class SshSession implements ISshSession {
   private requestServerAuth(
     conn: TcpConnection,
     payload: Record<string, unknown>,
-  ): Promise<{ ok: boolean }> {
+  ): Promise<{ ok: boolean; ended: boolean }> {
     return new Promise((resolve) => {
       let settled = false;
       const offData = conn.onData((data) => {
         if (settled) return;
         try {
-          const parsed = JSON.parse(data) as { ok?: boolean };
+          const parsed = JSON.parse(data) as { ok?: boolean; ended?: boolean };
           if (typeof parsed.ok === 'boolean') {
             settled = true;
             offData();
             offClose?.();
-            resolve({ ok: parsed.ok });
+            resolve({ ok: parsed.ok, ended: parsed.ended === true });
           }
         } catch {
           /* ignore */
@@ -385,7 +387,7 @@ export class SshSession implements ISshSession {
         if (settled) return;
         settled = true;
         offData();
-        resolve({ ok: false });
+        resolve({ ok: false, ended: true });
       });
       conn.write(JSON.stringify(payload));
     });

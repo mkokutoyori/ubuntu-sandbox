@@ -289,7 +289,7 @@ export class SshServerHandler {
         case 'auth': {
           const cap = this.ctx.config.maxAuthTries;
           if (authFailures >= cap) {
-            conn.write(JSON.stringify({ ok: false, error: 'too many authentication failures' }));
+            conn.write(JSON.stringify({ ok: false, ended: true, error: 'too many authentication failures' }));
             this.eventBus.emit({
               kind: 'auth_failure',
               user: (parsed.user as string | undefined) ?? '',
@@ -301,8 +301,8 @@ export class SshServerHandler {
             return;
           }
           void this.handleAuth(parsed, clientIp).then((result) => {
-            conn.write(JSON.stringify({ ok: result.ok }));
             if (result.ok) {
+              conn.write(JSON.stringify({ ok: true }));
               userCtx = result.userCtx;
               this.ctx.recordLogin(result.userCtx.username, clientIp);
               timers.clear(graceTimer);
@@ -311,6 +311,7 @@ export class SshServerHandler {
               return;
             }
             authFailures += 1;
+            conn.write(JSON.stringify({ ok: false, ended: authFailures >= cap }));
             if (authFailures >= cap) {
               this.eventBus.emit({
                 kind: 'auth_failure',

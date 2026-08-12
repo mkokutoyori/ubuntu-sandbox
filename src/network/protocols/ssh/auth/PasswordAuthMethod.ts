@@ -32,7 +32,7 @@ export class PasswordAuthMethod implements ISshAuthMethod {
         ? await ctx.checkPasswordAsync(user, password)
         : ctx.checkPassword(user, password);
       if (accepted) return ok(undefined);
-      attemptsLeft -= 1;
+      attemptsLeft = Math.min(attemptsLeft - 1, ctx.getAttemptsRemaining());
     }
     return err({ kind: 'AUTH_FAILED', user, attemptsLeft: 0 });
   }

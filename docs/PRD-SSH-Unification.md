@@ -448,16 +448,34 @@ prouve là où l'opérateur lit : `ssh-nested-auth-failure.spec.ts`,
 discriminé par `git stash` (le cas du refus tombe avant le correctif, la
 référence passe des deux côtés puisqu'elle vérifie une absence).
 
-**Ouvert : la coupure du serveur n'est toujours pas honorée ici.** Avec
-`MaxAuthTries 1` sur la cible, la transcription mesurée après correctif
-est désormais lisible — `password:` / `Permission denied, please try
-again.` / `password:` — mais elle montre bien une SECONDE invite, alors
-que le serveur a fermé la connexion après le premier échec.
-`SshSession.doAuthenticate` redemande jusqu'à `SSH_PASSWORD_PROMPTS` sans
-constater la coupure. Corriger cela touche la sémantique de reprise de
-`AuthChain`/`SshSession`, c'est-à-dire le chemin filaire que TOUS les
-clients partagent : c'est un chantier à lui seul, et il commence par
-cette mesure.
+**Corrigé à son tour : la coupure du serveur est honorée.** Avec
+`MaxAuthTries 1`, le client redemandait le mot de passe alors que le
+serveur avait fermé la connexion au premier échec — une invitation à
+taper dans une prise que plus personne n'écoute. Mesuré au niveau de la
+session filaire plutôt que du terminal, ce qui rend le compte exact :
+`MaxAuthTries 1` donnait TROIS invites, `MaxAuthTries 2` en donnait trois
+aussi, et deux `Permission denied, please try again.` annonçaient des
+invites qui n'auraient pas dû exister.
+
+Deux moitiés, et il fallait les deux. Le serveur fermait au bon moment
+mais ne le DISAIT pas : `requestServerAuth` ramenait un simple booléen,
+où un refus ordinaire et une porte close sont le même `ok: false`. Et
+`PasswordAuthMethod` lisait `ctx.getAttemptsRemaining()` une seule fois,
+avant sa boucle — un contexte même bien informé n'aurait plus été
+consulté. Distinguer sans redemander ne sert à rien, redemander sans
+distinguer non plus.
+
+La réponse du serveur porte donc un `ended`, posé au moment où il décide
+(après l'incrément, pas avant), le contexte met ses tentatives à zéro
+quand il le voit, et la boucle le relit à chaque tour. Aucune dépendance
+à l'ordre d'arrivée d'un événement de fermeture : le serveur énonce sa
+décision, le client l'applique. `ssh-client-stops-when-server-hangs-up.test.ts`
+(5 cas, 3 en échec authentique avant correctif) compte les invites plutôt
+que de lire une transcription, et garde la référence du bon mot de passe.
+
+C'est le chemin filaire que TOUS les clients interactifs partagent — le
+premier saut du terminal, `startNestedHop` et la jambe filaire de
+`sshLauncher` — donc le correctif vaut pour les trois d'un coup.
 
 **Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
 le dernier usage de `CrossVendorRemoteShell` en production, et il est
