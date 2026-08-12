@@ -137,6 +137,69 @@ session ne voit pas n'a pas de dialogue ; elle repart par le chemin
 ordinaire, qui la refuse comme les autres. Le filtre par NIVEAU était,
 lui, déjà correct : `reload` au niveau 1 était bien refusé.
 
+## 1bis. Le niveau 1 voyait dix-sept commandes de trop
+
+Vérification demandée : un utilisateur **provisionné** de niveau 1 —
+`alice`, `bob`, `carl` ou `dave`, que tout routeur Cisco de ce simulateur
+crée au démarrage, tous en privilège 1 — ne doit pouvoir faire que ce que
+le niveau 1 permet.
+
+Mesuré en ouvrant une console `login local`, en signant `alice/alice`,
+puis en tapant l'inventaire des deux catégories. Le niveau et l'invite
+étaient justes (`Current privilege level is 1`, invite `R1>`), les
+quatorze commandes d'EXEC utilisateur répondaient, et **dix-sept
+commandes d'EXEC privilégié répondaient aussi** :
+
+```
+show logging          → tout le tampon de journalisation
+show snmp community   → Community name: S3cr3tRO ... EN CLAIR
+show snmp host/group/user/view/engineID
+show processes / show memory / show controllers
+show parser view      → les vues d'autorisation déclarées
+show ip ssh / show ssh / show ip http server status
+show platform / show diag / show license
+clear history / clear ntp statistics
+```
+
+La plus grave est `show snmp community` : une communauté SNMP est un
+**identifiant**, et celle en écriture donne le contrôle de la machine par
+un autre canal. Un compte de niveau 1 la lisait en clair.
+
+### La cause : la règle était inversée
+
+`initializeCommands()` recopie tout le sous-arbre `show` de l'arbre
+privilégié dans l'arbre utilisateur, moins une liste d'exceptions :
+
+```ts
+this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW);
+```
+
+`PRIVILEGED_ONLY_SHOW` ne contenait que six entrées (`running-config`,
+`startup-config`, `tech-support`, `archive`, `debugging`, `debug`).
+Autrement dit : **toute commande `show` était de niveau 1 par défaut**, et
+seules six étaient réservées — l'inverse de la règle d'IOS, où le niveau 1
+est un sous-ensemble nommé.
+
+### Le correctif
+
+`shells/cisco/CiscoExecScope.ts` porte la liste, en un seul endroit, sous
+trois formes parce que l'arbre se prune à trois profondeurs :
+`PRIVILEGED_ONLY_SHOW_CHILDREN` (les enfants directs de `show`),
+`PRIVILEGED_ONLY_PATHS` (les chemins profonds — `show ip ssh`,
+`show ip http server status`, qu'on ne peut pas retirer en coupant `ip`
+sans perdre `show ip route`, qui est bien de niveau 1), et
+`PRIVILEGED_EXEC_ONLY` (les commandes hors `show`, comme `clear history`,
+filtrées à l'enregistrement par `scopedTrie`).
+
+**Défaut trouvé en corrigeant, et plus grave que le symptôme** :
+`copySubtreeChildrenInto` et `importMissingFrom` inséraient l'OBJET nœud
+de l'arbre source dans l'arbre cible. Les deux arbres partageaient donc
+des sous-arbres entiers, et retirer `ssh` de `show ip` côté utilisateur le
+retirait AUSSI du côté privilégié — le niveau 15 perdait la commande que
+le niveau 1 venait de se voir refuser. Les deux fonctions clonent
+désormais. Sans ce correctif, toute modification d'un arbre pouvait en
+muter un autre en silence.
+
 ## 2. Ce que la mesure a trouvé JUSTE
 
 Écrit ici parce qu'un audit qui ne liste que les défauts ne dit pas ce
@@ -191,6 +254,27 @@ laboratoires présentent maintenant le mot de passe par
 `{ passwordInput }`. Le mécanisme existait déjà et n'a pas eu besoin
 d'être inventé — la seule extension est que `executeCommandInVty` le
 transmet, ce qu'il ne faisait pas.
+
+## 4bis. Vérification du niveau 1
+
+`src/__tests__/unit/network-v2/niveau-1-ne-peut-que-le-permis.test.ts`,
+13 cas, routeur ET commutateur. Discriminé par restauration des six
+fichiers de production : **3 cas tombent avant correctif** — les deux
+« refusée toute commande d'EXEC privilégié » et « ne voit jamais la
+communauté SNMP ». Les autres passent des deux côtés : ce sont les cas
+d'EXEC utilisateur (qui doivent continuer de répondre) et les témoins.
+
+Deux constats notés plutôt que corrigés en passant :
+
+- **Un commutateur ne provisionne AUCUN compte** là où un routeur en crée
+  quatre (`Router.getCredentialStore()`). Le laboratoire déclare donc le
+  compte à la main sur commutateur ; la règle testée — le confinement —
+  est la même des deux côtés. Uniformiser la distribution des comptes est
+  un autre sujet, qui changerait la configuration rendue par tous les
+  commutateurs.
+- **`show tech-support` est refusée même au niveau 15 sur commutateur** :
+  elle figure dans la liste réservée depuis l'origine et n'est
+  enregistrée dans aucun arbre de cette plateforme. Antérieur à ce lot.
 
 ## 5. Limites assumées
 

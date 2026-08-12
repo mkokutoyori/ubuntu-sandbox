@@ -72,7 +72,7 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
       'ip ssh time-out 45',
       'ip ssh authentication-retries 2',
     ]);
-    const vue = await ios(r, ['show ip ssh']);
+    const vue = await ios(r, ['enable', 'show ip ssh']);
     expect(vue).toContain('SSH Enabled - version 2.0');
     expect(vue).toContain('Authentication timeout: 45 secs; Authentication retries: 2');
     expect(vue).toContain('Hostkey RSA key size is 2048 bits');
@@ -85,18 +85,20 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
    */
   it('sans configuration, la version annoncée est 1.99, pas 2.0', async () => {
     const r = new CiscoRouter('R1');
-    expect(await ios(r, ['show ip ssh'])).toContain('SSH Enabled - version 1.99');
+    expect(await ios(r, ['enable', 'show ip ssh'])).toContain('SSH Enabled - version 1.99');
   });
 
   it('la taille de clé n\'est annoncée que s\'il y a une clé', async () => {
     const r = new CiscoRouter('R1');
-    expect(await ios(r, ['show ip ssh'])).not.toContain('Hostkey RSA key size');
+    const vue = await ios(r, ['enable', 'show ip ssh']);
+    expect(vue).toContain('SSH Enabled');
+    expect(vue).not.toContain('Hostkey RSA key size');
   });
 
   it('`ip ssh dh min size` est lu par la même vue', async () => {
     const r = new CiscoRouter('R1');
     await config(r, ['ip ssh dh min size 2048']);
-    expect(await ios(r, ['show ip ssh']))
+    expect(await ios(r, ['enable', 'show ip ssh']))
       .toContain('Minimum expected Diffie Hellman key size : 2048 bits');
   });
 
@@ -112,7 +114,7 @@ describe('§12 : SSH durci — une seule configuration, deux vues d\'accord', ()
     expect(cfg).toContain('ip ssh server algorithm encryption aes256-ctr aes192-ctr aes128-ctr');
     expect(cfg).toContain('ip ssh server algorithm kex diffie-hellman-group14-sha1');
 
-    const vue = await ios(r, ['show ip ssh']);
+    const vue = await ios(r, ['enable', 'show ip ssh']);
     expect(vue).toContain('MAC Algorithms:hmac-sha2-256,hmac-sha2-512');
     expect(vue).toContain('KEX Algorithms:diffie-hellman-group14-sha1');
   });

@@ -2127,7 +2127,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showDHCPSnoopingBinding(this.d());
     });
 
-    registerLoggingShowCommands(this.userTrie, this.loggingCommandContext());
+    registerLoggingShowCommands(this.userTrie, this.loggingCommandContext(), 'user');
 
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
   }

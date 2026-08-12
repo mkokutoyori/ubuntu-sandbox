@@ -17,6 +17,7 @@
  *   config-crypto-map, config-ipsec-profile, config-ikev2-*
  */
 
+import type { ExecScope } from './cisco/CiscoExecScope';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
@@ -727,7 +728,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected registerDeviceCommands(): void {
     // ── User mode ──
-    this.registerShowCommands(this.userTrie);
+    this.registerShowCommands(this.userTrie, 'user');
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
@@ -921,7 +922,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Show Commands (Router-specific) ──────────────────────────────
 
-  private registerShowCommands(trie: CommandTrie): void {
+  private registerShowCommands(trie: CommandTrie, scope: ExecScope = 'privileged'): void {
     const getRouter = () => this.d();
     registerRoutingProtoShow(trie, this, this.routingCfg);
     registerHsrpShowCommands(trie, this, this.fhrp);
@@ -936,7 +937,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
-    registerLoggingShowCommands(trie, this.loggingCommandContext());
+    registerLoggingShowCommands(trie, this.loggingCommandContext(), scope);
 
 
     // `show tech-support` — real aggregation of the key show outputs.

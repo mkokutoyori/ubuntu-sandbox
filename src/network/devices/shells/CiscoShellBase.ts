@@ -93,6 +93,9 @@ import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/Cisco
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
+  scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS, type ExecScope,
+} from './cisco/CiscoExecScope';
+import {
   registerLoggingConfigCommands, registerLoggingShowCommands,
   registerSequenceNumbersCommand, registerLoggingClearCommands,
 } from './cisco/CiscoLoggingCommands';
@@ -158,11 +161,6 @@ const HELP_SYSTEM_TEXT = [
   '   and you want to know what arguments match the input',
   '   (e.g. \'show pr?\'.)',
 ].join('\n');
-
-const PRIVILEGED_ONLY_SHOW: ReadonlySet<string> = new Set([
-  'running-config', 'startup-config', 'tech-support', 'archive',
-  'debugging', 'debug',
-]);
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
@@ -939,6 +937,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
   }
 
+  private declaredModeLevel(mode?: string): number {
+    if (mode === undefined) return this.currentPrivilegeLevel;
+    return mode === 'user' ? this.currentPrivilegeLevel : 15;
+  }
+
   private commandVisibleTo(
     cmdPart: string, mode: string, ctx?: InteractionPlanContext,
   ): boolean {
@@ -958,7 +961,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (defaut === null) return true;
     return this.autorisation().authorize({
       principal: {
-        level: ctx?.level ?? this.currentPrivilegeLevel,
+        level: ctx?.level ?? this.declaredModeLevel(ctx?.mode),
         view: ctx?.view ?? this.activeParserView,
       },
       scope: scopeForMode(mode as typeof this.mode),
@@ -1602,8 +1605,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
     this.privilegedTrie.importMissingFrom(this.userTrie);
-    this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW);
-    this.userTrie.pruneSubtreeChildren('show', PRIVILEGED_ONLY_SHOW);
+    this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW_CHILDREN);
+    this.userTrie.pruneSubtreeChildren('show', PRIVILEGED_ONLY_SHOW_CHILDREN);
+    this.userTrie.prunePaths(PRIVILEGED_ONLY_PATHS);
     this.applyCanonicalDescriptions();
   }
 
@@ -2139,7 +2143,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const m = /^show\s+(\S+)/i.exec(cmdPart.trim());
     if (!m) return false;
     const sub = m[1].toLowerCase();
-    for (const k of PRIVILEGED_ONLY_SHOW) {
+    for (const k of PRIVILEGED_ONLY_SHOW_CHILDREN) {
       if (k.startsWith(sub) || sub.startsWith(k)) return true;
     }
     return false;
@@ -2951,7 +2955,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── Shared Command Registration ───────────────────────────────
 
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
-  private registerCommonShowCommands(trie: CommandTrie): void {
+  private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
+    const trie = scopedTrie(target, scope);
     trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
     trie.register('show users', 'Display active lines', () => showUsers(this.registreSessions()));
     // `show who` est le SYNONYME historique de `show users` sur IOS, et
@@ -3023,7 +3028,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash:', 'Display flash filesystem', () => this.fs().renderShowFlash());
-    this.registerFileSystemCommands(trie);
+    this.registerFileSystemCommands(target);
     trie.register('show platform', 'Display platform information', () => {
       const profile = this.getChassisProfile();
       return profile === 'router-isr2911'
@@ -3228,7 +3233,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       });
     });
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
-    registerCiscoDnsExecCommands(trie, this.dnsCommandContext());
+    registerCiscoDnsExecCommands(target, this.dnsCommandContext());
     trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>
       showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]));
     trie.registerGreedy('show ip vrf', 'Display VRFs', (args) => {
@@ -3486,7 +3491,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     }, [{ keyword: 'view', description: 'Enter a command-line interface view' }]);
 
-    this.registerCommonShowCommands(this.userTrie);
+    this.registerCommonShowCommands(this.userTrie, 'user');
     // ARP show commands (shared between router and switch)
     registerArpShowCommands(this.userTrie, () => this.d());
   }

@@ -25,6 +25,62 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Le niveau 1 voyait dix-sept commandes de trop — CORRIGÉ
+
+**À lire si vous touchez à l'arbre de commandes.** Vérification demandée
+par l'utilisateur : un compte provisionné de niveau 1 (`alice`, `bob`,
+`carl`, `dave` — tout routeur les crée, tous en privilège 1) ne doit
+pouvoir faire que ce que le niveau 1 permet.
+
+Le niveau, l'invite et l'EXEC utilisateur étaient justes. **Dix-sept
+commandes d'EXEC privilégié répondaient quand même**, dont
+`show snmp community`, qui imprime les communautés SNMP EN CLAIR — celle
+en écriture donne le contrôle de la machine par un autre canal.
+
+Cause : `initializeCommands()` recopie tout le sous-arbre `show` du
+privilégié vers l'utilisateur, moins une liste de six exceptions. La
+règle était donc INVERSÉE — tout `show` était de niveau 1 sauf six — là
+où IOS fait du niveau 1 un sous-ensemble nommé.
+
+Ce qui change pour vous :
+
+- **La liste vit dans `shells/cisco/CiscoExecScope.ts`**, en trois
+  formes parce que l'arbre se coupe à trois profondeurs : enfants directs
+  de `show`, chemins profonds (`show ip ssh` — on ne peut pas couper `ip`
+  sans perdre `show ip route`, légitimement niveau 1), et commandes hors
+  `show` filtrées à l'enregistrement (`scopedTrie`). **Si vous ajoutez une
+  commande d'EXEC privilégié, ajoutez-la là.**
+- **`copySubtreeChildrenInto` et `importMissingFrom` CLONENT désormais.**
+  Elles inséraient l'objet nœud de l'arbre source dans l'arbre cible :
+  les deux arbres partageaient des sous-arbres, et couper une branche
+  côté utilisateur la coupait aussi côté privilégié. C'est ce qui a fait
+  disparaître `show ip http server status` du niveau 15 pendant une
+  itération. Toute mutation d'un arbre pouvait en muter un autre en
+  silence.
+- **`InteractionPlanContext.level`** : un appelant qui déclare
+  `mode: 'privileged'` sans niveau est désormais compris comme niveau 15
+  (c'est ce que « privilégié » veut dire) au lieu de retomber sur l'état
+  vivant du shell. `CiscoIOSShellAdapter` transmet en plus le niveau réel
+  de sa vty.
+- Quatre cas de `tuto-acces-privileges-cisco` tapaient `show ip ssh`
+  **sans `enable`** ; ils passent maintenant par le mode privilégié,
+  comme un opérateur. Deux d'entre eux affirmaient une ABSENCE et
+  passaient donc pour la mauvaise raison.
+
+Constat noté, pas corrigé : **un commutateur ne provisionne aucun
+compte** là où un routeur en crée quatre. Uniformiser changerait la
+configuration rendue par tous les commutateurs — c'est votre appel.
+
+**Échec PRÉEXISTANT mesuré au passage, qui n'est pas de ce lot** :
+`unit/gui/mac-table-reactivity.test.tsx`, deux cas. Le commutateur
+n'apprend AUCUNE adresse pendant le ping. Daté en rejouant le fichier
+avec toutes mes modifications remisées : il échouait déjà. Le même
+laboratoire rejoué en environnement **node** apprend ses deux adresses et
+le ping répond — le fichier déclare `@vitest-environment jsdom`, et
+c'est la seule différence trouvée. Je ne suis pas allé plus loin : c'est
+votre zone (les hooks React) et le diagnostic vise l'environnement de
+test, pas la commutation.
+
 ### Les deux points laissés ouverts — FERMÉS
 
 **1. `Press RETURN to get started.` attend vraiment RETURN.** Après le

@@ -28,6 +28,7 @@
  * fait rien coûte plus cher qu'un refus.
  */
 
+import { scopedTrie, type ExecScope } from './CiscoExecScope';
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import {
@@ -366,7 +367,10 @@ export function registerSequenceNumbersCommand(trie: CommandTrie, ctx: LoggingCo
   trie.register('no service sequence-numbers', 'Stop stamping logger messages', set(false));
 }
 
-export function registerLoggingShowCommands(trie: CommandTrie, ctx: LoggingCommandContext): void {
+export function registerLoggingShowCommands(
+  target: CommandTrie, ctx: LoggingCommandContext, scope: ExecScope = 'privileged',
+): void {
+  const trie = scopedTrie(target, scope);
   trie.register('show logging', 'Show the contents of logging buffers', () => {
     ctx.beforeApply?.();
     const base = ctx.config().render();

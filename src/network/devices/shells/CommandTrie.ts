@@ -245,7 +245,9 @@ export class CommandTrie {
    */
   importMissingFrom(other: CommandTrie): void {
     for (const [kw, node] of other.root.children) {
-      if (!this.root.children.has(kw)) this.root.children.set(kw, node);
+      if (!this.root.children.has(kw)) {
+        this.root.children.set(kw, CommandTrie.cloneNode(node));
+      }
     }
   }
 
@@ -270,7 +272,7 @@ export class CommandTrie {
     for (const [k, node] of src.children) {
       if (deny.has(k)) continue;
       const existing = dst.children.get(k);
-      if (!existing) dst.children.set(k, node);
+      if (!existing) dst.children.set(k, CommandTrie.cloneNode(node));
       else CommandTrie.mergeNodeInto(node, existing);
     }
   }
@@ -288,6 +290,27 @@ export class CommandTrie {
     for (const k of deny) node.children.delete(k);
   }
 
+  prunePaths(paths: readonly string[]): void {
+    for (const path of paths) {
+      const words = path.toLowerCase().split(/\s+/).filter(Boolean);
+      if (words.length === 0) continue;
+      let node = this.root;
+      let missing = false;
+      for (const word of words.slice(0, -1)) {
+        const next = node.children.get(word);
+        if (!next) { missing = true; break; }
+        node = next;
+      }
+      if (!missing) node.children.delete(words[words.length - 1]);
+    }
+  }
+
+  private static cloneNode(src: CommandNode): CommandNode {
+    const copy: CommandNode = { ...src, children: new Map(), params: [...src.params] };
+    for (const [k, child] of src.children) copy.children.set(k, CommandTrie.cloneNode(child));
+    return copy;
+  }
+
   /** Fill the gaps of `dst` from `src`, never overwriting what `dst` defines. */
   private static mergeNodeInto(src: CommandNode, dst: CommandNode): void {
     if (!dst.action && src.action) {
@@ -299,7 +322,7 @@ export class CommandTrie {
     }
     for (const [k, child] of src.children) {
       const existing = dst.children.get(k);
-      if (!existing) dst.children.set(k, child);
+      if (!existing) dst.children.set(k, CommandTrie.cloneNode(child));
       else CommandTrie.mergeNodeInto(child, existing);
     }
   }

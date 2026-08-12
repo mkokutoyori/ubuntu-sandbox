@@ -90,7 +90,11 @@ export class CiscoIOSShellAdapter extends AbstractShell {
   private async tryStartInteractionPlan(line: string): Promise<ShellLineResult | null> {
     const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
     if (!isInteractionPlanner(shell)) return null;
-    const plan = shell.interactionPlanFor(line, { mode: this.currentMode(), device: this.device });
+    const plan = shell.interactionPlanFor(line, {
+      mode: this.currentMode(),
+      level: this.vty?.state.privilegeLevel,
+      device: this.device,
+    });
     if (!plan) return null;
     const runner = new InteractionPlanRunner(plan, (cmd) => this.execOnDevice(cmd));
     const first = await runner.start();
