@@ -90,6 +90,7 @@ import type { TimestampSpec } from '../inspection/config/LoggingConfig';
 import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
+import { registerLineExecCommands } from './cisco/CiscoLineCommands';
 import {
   registerLoggingConfigCommands, registerLoggingShowCommands,
   registerSequenceNumbersCommand, registerLoggingClearCommands,
@@ -99,6 +100,7 @@ import { encryptType7 as _encryptType7, md5Hex as _md5Hex } from '@/crypto';
 import { ciscoPasswordMatches } from './cisco/ciscoPasswordVerify';
 import {
   getManagementService, getSnmpService, getSnmpAgent, getNtpAgent, getHttpService,
+  getSessionRegistry,
 } from '../../equipment/RouterServiceCapabilities';
 import {
   HTTP_AUTH_METHODS, HTTP_MAX_CONNECTIONS_MIN, HTTP_MAX_CONNECTIONS_MAX,
@@ -680,6 +682,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const line = commandLine.trim();
     if (!line) return null;
 
+    if (!this.laSessionVoit(line)) return null;
+
     if (mode === 'user') {
       const um = this.userTrie.match(line);
       if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
@@ -852,14 +856,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   ): CommandInteractionPlan | null {
     const lvl = args[0] ? parseInt(args[0], 10) : 15;
     if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) return null;
-    const dev = deviceCtx as {
-      getEnableSecretForLevel?: (l: number) => { value: string; algo: string } | null;
-      getEnablePasswordForLevel?: (l: number) => { value: string; algo: string } | null;
-    } | undefined;
-    const porteDe = (n: number) => {
-      const s = dev?.getEnableSecretForLevel?.(n) ?? null;
-      return s ?? dev?.getEnablePasswordForLevel?.(n) ?? null;
-    };
     // Un palier SANS coffre a lui retombe sur celui du niveau 15.
     //
     // Sans ce repli, `enable 7` etait accorde SANS RIEN DEMANDER des lors
@@ -871,7 +867,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // documentation l'ecrit dans l'autre sens : « if users know the
     // password to a higher privilege level, they can use that password
     // to enable the higher privilege level ».
-    const gate = porteDe(lvl) ?? (lvl < 15 ? porteDe(15) : null);
+    const gate = this.enableGateFor(lvl, deviceCtx);
     /**
      * Le mot de passe tape correspond-il a la porte ?
      *
@@ -922,9 +918,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
               : { valid: false, errorMessage: '% Access denied', maxRetries: 2 };
           },
         },
-        { kind: 'run', run: async (rt) => { await rt.exec(`enable ${lvl}`); } },
+        {
+          kind: 'run',
+          run: async (rt) => {
+            this.authorizeEnable(lvl);
+            await rt.exec(`enable ${lvl}`);
+          },
+        },
       ],
     };
+  }
+
+  private enableGateFor(
+    lvl: number, deviceCtx?: unknown,
+  ): { value: string; algo: string } | null {
+    const dev = (deviceCtx ?? this.deviceRef ?? undefined) as {
+      getEnableSecretForLevel?: (l: number) => { value: string; algo: string } | null;
+      getEnablePasswordForLevel?: (l: number) => { value: string; algo: string } | null;
+    } | undefined;
+    const porteDe = (n: number) => {
+      const s = dev?.getEnableSecretForLevel?.(n) ?? null;
+      return s ?? dev?.getEnablePasswordForLevel?.(n) ?? null;
+    };
+    return porteDe(lvl) ?? (lvl < 15 ? porteDe(15) : null);
+  }
+
+  private enableAuthorizedLevel: number | null = null;
+
+  private authorizeEnable(lvl: number): void {
+    this.enableAuthorizedLevel = lvl;
+  }
+
+  private consumeEnableAuthorization(lvl: number): boolean {
+    const granted = this.enableAuthorizedLevel === lvl;
+    this.enableAuthorizedLevel = null;
+    return granted;
   }
 
   private eraseInteractionPlan(): CommandInteractionPlan {
@@ -1834,7 +1862,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!this.isConfigMode() || this.mode === 'config') return null;
     const result = this.configTrie.match(cmdPart);
     if (result.status === 'ok' && result.node?.action) {
-      return result.node.action(result.args, cmdPart);
+      try {
+        return result.node.action(result.args, cmdPart);
+      } catch (err) {
+        if (err instanceof CliInvalidInput) {
+          return renderCliDiagnostic('invalid', {
+            line: cmdPart,
+            tokenOffset: offsetForInvalidInput(cmdPart, result.matchedKeywords.length, err),
+          });
+        }
+        throw err;
+      }
     }
     return null;
   }
@@ -3383,14 +3421,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
-      // Authentication itself (real IOS "Password:" prompt against
-      // `enable secret` / `enable password level N`) happens BEFORE this
-      // handler runs, via interactionPlanFor()'s `enable` plan — this is
-      // only ever reached once the password has already been verified
-      // (or none was configured for the target level, matching real IOS's
-      // "no password set = no gate" behaviour). Direct, non-interactive
-      // callers (device.executeCommand('enable') in tests) go straight
-      // here too, which is correct: nothing could have prompted them.
+      if (this.enableGateFor(lvl) && !this.consumeEnableAuthorization(lvl)) {
+        return '% Access denied';
+      }
       this.currentPrivilegeLevel = lvl;
       this.mode = lvl === 15 ? 'privileged' : 'user';
       // `logging userinfo` : c'est ICI que la commande a un sens, et
@@ -3962,31 +3995,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'tty', description: 'Terminal controller' },
       { keyword: 'vty', description: 'Virtual terminal' },
     ]);
-    this.privilegedTrie.registerGreedy('clear line', 'Terminate a vty session', (args) => {
-      const dev = this.d() as unknown as {
-        getSshSessionRegistry?: () => {
-          closeWhere: (p: (s: { lineIndex: number }) => boolean, reason?: string) => number;
-        };
-      };
-      const registry = dev.getSshSessionRegistry?.();
-      const genre = args[0]?.toLowerCase();
-      const index = (genre === 'vty' || genre === 'console' || genre === 'con' || genre === 'aux')
-        ? Number.parseInt(args[1] ?? '', 10)
-        : Number.parseInt(args[0] ?? '', 10);
-      if (!Number.isInteger(index) || index < 0) return '% Incomplete command.';
-      // `% Not allowed to clear that line` est ce qu'IOS repond quand on
-      // demande a couper SA PROPRE ligne — pas quand la ligne est
-      // inoccupee. Les deux etaient confondus : une ligne vty libre
-      // recevait un refus, ce qui fait chercher un droit manquant la ou
-      // il n'y a simplement personne. Un `clear line` d'une ligne libre
-      // demande confirmation et ne coupe rien, comme sur une vraie
-      // machine.
-      if (genre === 'console' || genre === 'con' || (genre !== 'vty' && genre !== 'aux' && index === 0)) {
-        return '% Not allowed to clear that line';
-      }
-      const closed = registry?.closeWhere(s => s.lineIndex === index, 'admin') ?? 0;
-      return closed > 0 ? '[confirm]\n [OK]' : '[confirm]';
-    });
+    registerLineExecCommands(this.privilegedTrie, () => getSessionRegistry(this.d()));
     this.privilegedTrie.registerGreedy('sntp server', 'SNTP server (alias for ntp server)', (args) => {
       if (!args[0]) return '% Incomplete command.';
       const target = this.resolveNtpTarget(args[0]);
@@ -4691,6 +4700,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('clock set', 'Set system clock',
       (args) => this.applyClockSet(args));
     this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
+      const sub = (args[0] ?? '').toLowerCase();
+      if (sub !== 'calendar-valid') throw new CliInvalidInput({ argIndex: 0, token: args[0] ?? '' });
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
       return '';

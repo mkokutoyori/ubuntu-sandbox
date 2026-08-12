@@ -21,6 +21,8 @@
 
 let nextSessionSeq = 1;
 
+export type CliLineKind = 'con' | 'aux' | 'vty';
+
 /**
  * Structured snapshot of all mode-related fields. Keep this in sync with
  * the shell's snapshot/restore helpers — the fields enumerated here are
@@ -104,13 +106,26 @@ export interface CliShellSessionInit {
 export class CliShellSession {
   readonly id: string;
 
-  // ── Identity ────────────────────────────────────────────────────
-  /**
-   * vty line identifier (vty 0 / vty 1 / …). Real Cisco IOS allocates
-   * up to 5 lines by default; we don't enforce that cap here since
-   * the simulator is meant for teaching, not capacity-planning.
-   */
-  readonly lineId: string;
+  private _lineKind: CliLineKind | null = null;
+  private _lineIndex = 0;
+  private _lineRecordId: string | null = null;
+
+  get lineKind(): CliLineKind | null { return this._lineKind; }
+
+  get lineIndex(): number { return this._lineIndex; }
+
+  get lineRecordId(): string | null { return this._lineRecordId; }
+
+  get lineId(): string {
+    return this._lineKind === null ? this.id : `${this._lineKind} ${this._lineIndex}`;
+  }
+
+  assignLine(kind: CliLineKind, index: number, recordId: string | null = null): void {
+    this._lineKind = kind;
+    this._lineIndex = index;
+    this._lineRecordId = recordId;
+  }
+
   readonly openedAt: number = Date.now();
 
   // ── Mutable state — snapshot.ed by the shell on every exec ──────
@@ -120,8 +135,7 @@ export class CliShellSession {
   disposed: boolean = false;
 
   constructor(init: CliShellSessionInit) {
-    this.id = `vty-${nextSessionSeq++}`;
-    this.lineId = `vty ${nextSessionSeq - 1}`;
+    this.id = `cli-${nextSessionSeq++}`;
     this.state = {
       mode: init.initialMode,
       selectedInterface: null,

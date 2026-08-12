@@ -42,10 +42,11 @@ describe('un commutateur Huawei tient ses sessions', () => {
     expect(out, 'le nom de l\'operateur connecte').toContain('admin');
   }, 30_000);
 
-  it('une console libre reste decrite comme libre', async () => {
+  it('une console libre n\'est pas decrite comme occupee', async () => {
     const d = commutateurHuawei();
     const out = await d.executeCommand('display users');
-    expect(out).toContain('CON 0');
+    expect(out, 'l\'entete demeure').toContain('User-Intf');
+    expect(out, 'personne n\'est sur la ligne').not.toContain('CON 0');
     expect(out).not.toContain('Username : admin');
   }, 30_000);
 
@@ -144,11 +145,11 @@ describe('le commutateur Cisco tient les siennes aussi', () => {
     expect(out).toContain('con 0');
   }, 30_000);
 
-  it('sans session, `show users` decrit la console libre', async () => {
+  it('sans session, `show users` ne decrit personne', async () => {
     const d = new CiscoSwitch('SW1', 24, 0, 0);
     d.powerOn();
     const out = await d.executeCommand('show users');
-    expect(out).toContain('con 0');
     expect(out).toContain('Line       User');
+    expect(out, 'une console libre n\'est pas une session').not.toContain('con 0');
   }, 30_000);
 });

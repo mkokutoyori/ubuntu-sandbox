@@ -116,7 +116,8 @@ import {
   buildHuaweiVxlanInterfaceCommands, registerHuaweiVxlanDisplayCommands,
 } from './huawei/HuaweiVxlanCommands';
 import { collectListeningSockets } from '../router/management/SocketInventory';
-import { getVrrpAgent } from '../../equipment/RouterServiceCapabilities';
+import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
+import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
 
 function renderHuaweiTcpStatus(router: Router): string {
   const tcp = collectListeningSockets(router).filter((s) => s.protocol === 'tcp');
@@ -1559,6 +1560,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.terminalDebugging = false;
       return 'Info: Current terminal monitor is off.';
     });
+
+    registerUserInterfaceCommands(
+      t,
+      () => getSessionRegistry(this.r()),
+      () => getVtyLineConfig(this.r()),
+    );
 
     // save — persist configuration (Huawei equivalent of write memory).
     // Captures a REAL snapshot so `display saved-configuration` shows what

@@ -24,11 +24,13 @@
  *    l'escalade temporaire (monter à 15, puis REDESCENDRE) répondait au
  *    caret et laissait l'opérateur à 15 en croyant en être redescendu.
  *
- * Ce qui a été mesuré et trouvé JUSTE, donc laissé tel quel : la porte
- * `enable` demande et vérifie réellement le mot de passe sur le chemin
- * du terminal (dernier bloc). Le chemin scripté `executeCommand` ne
- * demande rien, et c'est assumé — rien ne pourrait répondre à une invite
- * là où personne ne tape.
+ * La porte `enable` demande et vérifie réellement le mot de passe sur le
+ * chemin du terminal (dernier bloc). Elle le vérifie AUSSI hors terminal
+ * depuis `attaques-securite-cisco.test.ts` : ce fichier a longtemps dit
+ * que le chemin scripté ne demandait rien et que c'était assumé, ce qui
+ * était une élévation de privilège sans mot de passe. Les laboratoires
+ * ci-dessous présentent donc le secret par `{ passwordInput }`, qui joue
+ * le vrai dialogue sans terminal.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -91,23 +93,23 @@ for (const [nom, fabrique] of PLATEFORMES) {
       const d = await roles(fabrique);
       // Niveau 15 de naissance : elle n'existe pas au niveau 1.
       expect(await d.executeCommand('show running-config')).toContain(REFUS);
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'Tech7' });
       expect(await d.executeCommand('show running-config')).toContain('Current configuration');
     }, 30_000);
 
     it('chaque palier ouvre exactement ce qui lui a été donné', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'Tech7' });
       expect(await d.executeCommand('configure terminal'), 'ct à 7').toContain(REFUS);
       expect(await d.executeCommand('reload'), 'reload à 7').toContain(REFUS);
 
-      await d.executeCommand('enable 10');
+      await d.executeCommand('enable 10', { passwordInput: 'Adm10' });
       expect(await d.executeCommand('show privilege')).toContain('level is 10');
       expect(await d.executeCommand('configure terminal'), 'ct à 10').toContain('Enter configuration');
       await d.executeCommand('end');
       expect(await d.executeCommand('reload'), 'reload à 10').toContain(REFUS);
 
-      await d.executeCommand('enable');
+      await d.executeCommand('enable', { passwordInput: 'Admin15' });
       expect(await d.executeCommand('show privilege')).toContain('level is 15');
       expect(await d.executeCommand('reload cancel'), 'reload à 15').toContain('Reload cancelled');
     }, 30_000);
@@ -123,7 +125,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
     it('une commande HISSÉE au niveau 7 disparaît du niveau 1', async () => {
       const d = await roles(fabrique);
       expect(await d.executeCommand('ping 10.0.0.1')).toContain(REFUS);
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'Tech7' });
       expect(await d.executeCommand('ping 10.0.0.1')).not.toContain(REFUS);
     }, 30_000);
 
@@ -134,7 +136,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
      */
     it('`end` depuis la configuration ne fait pas monter au niveau 15', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable 10');
+      await d.executeCommand('enable 10', { passwordInput: 'Adm10' });
       await d.executeCommand('configure terminal');
       await d.executeCommand('end');
       expect(await d.executeCommand('show privilege')).toContain('level is 10');
@@ -144,7 +146,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
 
     it('`exit` depuis la configuration non plus', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable 10');
+      await d.executeCommand('enable 10', { passwordInput: 'Adm10' });
       await d.executeCommand('configure terminal');
       await d.executeCommand('exit');
       expect(await d.executeCommand('reload')).toContain(REFUS);
@@ -170,7 +172,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
   describe(`${nom} — redescendre est une manœuvre à part entière`, () => {
     it('`disable <niveau>` ramène au palier demandé', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable');
+      await d.executeCommand('enable', { passwordInput: 'Admin15' });
       expect(await d.executeCommand('show privilege')).toContain('level is 15');
       await d.executeCommand('disable 7');
       expect(await d.executeCommand('show privilege')).toContain('level is 7');
@@ -179,7 +181,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
 
     it('`disable` nu ramène au niveau 1', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable');
+      await d.executeCommand('enable', { passwordInput: 'Admin15' });
       await d.executeCommand('disable');
       expect(await d.executeCommand('show privilege')).toContain('level is 1');
     }, 30_000);
@@ -191,7 +193,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
      */
     it('`disable` ne fait jamais monter', async () => {
       const d = await roles(fabrique);
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'Tech7' });
       expect(await d.executeCommand('disable 15')).toContain(REFUS);
       expect(await d.executeCommand('show privilege')).toContain('level is 7');
     }, 30_000);

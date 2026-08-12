@@ -35,6 +35,14 @@ import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnecti
 import { IPAddress } from '@/network/core/types';
 import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
+import type { CliLineKind } from '@/network/devices/shells/vty/CliShellSession';
+
+interface LineRegistryPort {
+  open(input: { user: string; privilege?: number; fromIp: string; transport?: string }):
+    { id: string; line: string; lineKind: CliLineKind; lineIndex: number } | null;
+  close(id: string, reason?: string): unknown;
+  subscribeClose(id: string, cb: (reason: string) => void): () => void;
+}
 
 /** Default pager page size — matches Cisco/Huawei `terminal length 24`. */
 const DEFAULT_PAGE_SIZE = 24;
@@ -143,9 +151,56 @@ export abstract class CLITerminalSession extends TerminalSession {
     return this.inputMode;
   }
 
+  // ── Line occupancy ──────────────────────────────────────────────
+
+  private lineRecordId: string | null = null;
+
+  private lineRegistry(): LineRegistryPort | null {
+    return (this.device as unknown as {
+      getSshSessionRegistry?: () => LineRegistryPort;
+    }).getSshSessionRegistry?.() ?? null;
+  }
+
+  private occupyLine(): void {
+    if (this.lineRecordId !== null || this.isRemoteChild) return;
+    const registry = this.lineRegistry();
+    if (!registry) return;
+    const record = registry.open({
+      user: '', privilege: 1, fromIp: '',
+      transport: this.onVtyLine() ? 'telnet' : 'console',
+    });
+    if (!record) return;
+    this.lineRecordId = record.id;
+    this.occupiedLineName = record.line;
+    this.onLineAssigned(record.lineKind, record.lineIndex, record.id);
+    const stopWatching = registry.subscribeClose(record.id, (reason) => {
+      this.lineRecordId = null;
+      if (reason === 'logout') return;
+      this.markDisconnected(reason, `[Connection to ${record.line} closed by remote host]`);
+    });
+    this.registerTearDown(() => {
+      stopWatching();
+      if (this.lineRecordId === null) return;
+      this.lineRegistry()?.close(this.lineRecordId, 'logout');
+      this.lineRecordId = null;
+    });
+  }
+
+  /** Overridden by vendors that can sit on a vty rather than the console. */
+  protected onVtyLine(): boolean { return false; }
+
+  /** Overridden by vendors carrying a per-line CLI state bag. */
+  protected onLineAssigned(_kind: CliLineKind, _index: number, _recordId: string): void { /* vendor hook */ }
+
+  private occupiedLineName: string | null = null;
+
+  /** The line this session occupies (`con 0`, `vty 2`, …), or null. */
+  occupiedLine(): string | null { return this.occupiedLineName; }
+
   // ── Boot sequence ───────────────────────────────────────────────
 
   async init(): Promise<void> {
+    this.occupyLine();
     // Real Cisco / Huawei: plugging a console to an already-running router
     // shows just the prompt, not the System Bootstrap banner. We only
     // replay the boot sequence on the FIRST session opened after a power

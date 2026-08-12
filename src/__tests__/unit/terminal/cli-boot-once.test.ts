@@ -51,7 +51,7 @@ describe('CLI boot banner replay policy', () => {
     const sid1 = manager.openTerminal(router)!;
     await flushBoot(manager.getSession(sid1) as CiscoTerminalSession);
 
-    const sid2 = manager.openTerminal(router)!;
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     // Second session must NOT have any boot-typed lines.
     expect(session2.isBooting).toBe(false);

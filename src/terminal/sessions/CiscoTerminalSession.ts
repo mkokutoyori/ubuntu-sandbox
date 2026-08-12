@@ -20,7 +20,7 @@ import {
   sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams, estUneAdresseLitterale,
   type CiscoPingRow, type ExtendedPingParams,
 } from '@/network/devices/shells/cisco/ciscoPing';
-import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import type { CliLineKind, CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
 import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
@@ -131,12 +131,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
     }).getSshSessionRegistry?.();
     if (!reg?.subscribeMessages) return;
     const ligne = this.numeroDeLigne();
-    // Brancher un terminal sur la console EST une utilisation de la
-    // ligne. Une vty se compte a l'ouverture de sa session, dans le
-    // registre ; la console n'a pas d'enregistrement, donc elle se
-    // compte ici — sans quoi `con 0` afficherait 0 sur une machine ou
-    // l'on vient precisement de taper.
-    if (!this.isVtyRemoteSession) reg.noteLineUse?.('con', ligne);
     const off = reg.subscribeMessages(ligne, (texte) => {
       for (const l of texte.split('\n')) this.addLine(l);
       this.notify();
@@ -144,19 +138,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
     this.registerTearDown(off);
   }
 
-  /**
-   * Le numero de ligne de CETTE session : 0 pour la console, son rang
-   * pour une vty.
-   *
-   * `CliShellSession` ne porte que `lineId` (« vty 3 ») ; deux endroits
-   * lisaient `this.vty?.lineIndex`, une propriete qui n'existe sur
-   * aucun objet — donc le jeton `$(line)` d'une banniere annoncait `0`
-   * sur toutes les lignes, y compris une vty.
-   */
   private numeroDeLigne(): number {
-    if (!this.isVtyRemoteSession) return 0;
-    const m = /(\d+)/.exec(this.vty?.lineId ?? '');
-    return m ? Number.parseInt(m[1], 10) : 0;
+    return this.vty?.lineKind === null ? 0 : (this.vty?.lineIndex ?? 0);
   }
 
   private maybeStartConsoleLogin(): void {
@@ -197,6 +180,15 @@ export class CiscoTerminalSession extends CLITerminalSession {
   protected override restartAuthGate(): void {
     this.maybeStartConsoleLogin();
   }
+
+  protected override onFlowComplete(): void {
+    super.onFlowComplete();
+    if (!this.lastFlowWasAuthGate) return;
+    if (this.authGatePassed) return;
+    this.maybeStartConsoleLogin();
+  }
+
+  private authGatePassed = false;
 
   /**
    * `login` seul : le mot de passe de la LIGNE, sans nom d'utilisateur.
@@ -243,6 +235,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
           // n'a pas de nom d'utilisateur, et `show users` doit le dire
           // plutot qu'inventer un compte.
           this.authenticatedUsername = null;
+          this.authGatePassed = true;
           const niveau = this.consoleLinePrivilegeOverride() ?? 1;
           if (this.vty) {
             this.vty.state.mode = niveau === 15 ? 'privileged' : 'user';
@@ -414,6 +407,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
         action: async (ctx) => {
           const username = ctx.values.get('console_login_account') ?? '';
           this.authenticatedUsername = username || null;
+          this.authGatePassed = true;
           const grantedPrivilege = ctx.values.get('console_login_privilege');
           // Real IOS: a `privilege level N` configured on the line
           // OVERRIDES the authenticated user's own account privilege
@@ -477,9 +471,16 @@ export class CiscoTerminalSession extends CLITerminalSession {
     this.isVtyRemoteSession = true;
   }
 
+  protected override onVtyLine(): boolean { return this.isVtyRemoteSession; }
+
+  protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
+    this.vty?.assignLine(kind, index, recordId);
+  }
+
   protected override prepareAsRemoteUser(user: string): void {
     this.isVtyRemoteSession = true;
     this.authenticatedUsername = user || null;
+    this.authGatePassed = true;
     if (this.vty) {
       // Real IOS: a `privilege level N` configured on the VTY line
       // OVERRIDES the authenticated user's own account privilege (same

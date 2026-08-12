@@ -12,7 +12,7 @@ import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './T
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
 import { Switch } from '@/network/devices/Switch';
-import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import type { CliLineKind, CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
 import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import type { AsyncJobHandle } from '@/terminal/async';
 import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
@@ -82,6 +82,10 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   }
 
   protected override sshInteractiveVerbs(): string[] { return ['ssh', 'stelnet']; }
+
+  protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
+    this.vty?.assignLine(kind, index, recordId);
+  }
 
   protected override prepareAsRemoteUser(_user: string): void {
     if (this.vty) {

@@ -3374,7 +3374,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * Sync swap-and-restore around the shared shell instance — async
    * commands are awaited inside the swap window.
    */
-  async executeCommandInVty(command: string, session: CliShellSession): Promise<string> {
+  async executeCommandInVty(
+    command: string, session: CliShellSession, answers?: HeadlessAnswers,
+  ): Promise<string> {
     const shell = this.shell as unknown as {
       snapshotVtyState?: () => import('./shells/vty/CliShellSession').VtySnapshot;
       applyVtyState?: (s: import('./shells/vty/CliShellSession').VtySnapshot) => void;
@@ -3383,15 +3385,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // hooks yet — degrade gracefully to the legacy shared-state path so
     // commands still work, even if isolation is not yet enforced there.
     if (!shell.snapshotVtyState || !shell.applyVtyState) {
-      return this.executeCommand(command);
+      return this.executeCommand(command, answers);
     }
     const run = async (): Promise<string> => {
       if (!this.isPoweredOn) return '% Device is powered off';
       if (session.disposed) return '';
       const baseline = shell.snapshotVtyState!();
       shell.applyVtyState!(session.state);
+      if (session.lineRecordId !== null) {
+        this.getSshSessionRegistry().setCurrentSession(session.lineRecordId);
+      }
       try {
-        const out = await this.executeCommand(command);
+        const out = await this.executeCommand(command, answers);
         session.state = shell.snapshotVtyState!();
         return out;
       } finally {

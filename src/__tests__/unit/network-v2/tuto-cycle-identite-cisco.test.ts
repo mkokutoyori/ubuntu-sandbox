@@ -149,7 +149,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
         'end', 'disable',
       ]);
       expect(await d.executeCommand('show privilege')).toContain('level is 1');
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'PasswordTechnicien2024!' });
       expect(await d.executeCommand('show privilege')).toContain('level is 7');
       expect(await d.executeCommand('show running-config')).toContain('Current configuration');
       expect(await d.executeCommand('configure terminal')).toContain('% Invalid input');
@@ -312,8 +312,14 @@ for (const [nom, fabrique] of PLATEFORMES) {
       // Une vty libre : IOS demande confirmation et ne coupe rien.
       expect(await d.executeCommand('clear line vty 0')).toContain('[confirm]');
       expect(await d.executeCommand('clear line vty 0')).not.toContain('Not allowed');
-      // La console est la ligne d'où l'on parle.
-      expect(await d.executeCommand('clear line console 0')).toContain('Not allowed to clear that line');
+      // La ligne d'où l'on parle est celle que le registre tient pour
+      // courante, et c'est elle — et elle seule — qu'IOS refuse de couper.
+      const registre = (d as unknown as {
+        getSshSessionRegistry(): { open(i: Record<string, unknown>): { id: string } | null };
+      }).getSshSessionRegistry();
+      registre.open({ user: 'jean-baptiste', fromIp: '', transport: 'console' });
+      expect(await d.executeCommand('clear line console 0'))
+        .toContain('Not allowed to clear current line');
     }, 30_000);
 
     it('promotion : changer le niveau d\'un compte le change vraiment', async () => {

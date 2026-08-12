@@ -25,6 +25,111 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Sécurité Cisco — TROIS PORTES QUI NE FERMAIENT PAS — LIVRÉ
+
+`docs/PRD-Securite-Cisco.md`. **À lire si vous touchez à `enable`, aux
+plans d'interaction ou aux flux de connexion.**
+
+1. **`enable` élevait au niveau 15 SANS mot de passe hors du terminal
+   graphique.** La vérification vivait dans le plan de dialogue, que seul
+   un terminal rend ; le gestionnaire de la commande élevait sans rien
+   vérifier. Donc `executeCommand('enable')`, `ssh hôte "enable"`, un
+   script, ou la relecture d'une configuration montaient à 15 sur une
+   machine fermée par `enable secret`. **Le chemin interactif, lui, était
+   correct** — c'est ce que le signalement décrivait, et il ne l'était
+   que là.
+2. **Trois connexions ratées donnaient un shell** (`login local`). Le
+   flux s'achève NORMALEMENT après le troisième refus ; Ctrl+C rouvrait
+   déjà la porte, l'épuisement des essais non.
+3. **Une vue restreinte pouvait `reload` et `erase startup-config`.** Le
+   plan d'interaction était construit avant le filtre d'autorisation.
+
+Ce qui peut vous concerner :
+
+- `executeCommand('enable N')` sur une machine avec un coffre répond
+  maintenant `% Access denied`. Pour élever dans un test, présentez le
+  mot de passe : `executeCommand('enable 7', { passwordInput: 'Tech7' })`
+  — le mécanisme `HeadlessAnswers` existait déjà, il joue le vrai
+  dialogue. **`executeCommandInVty` prend le même troisième argument**,
+  ce qu'il ne faisait pas.
+- **Ne retirez pas les `enable secret` d'un laboratoire pour faire passer
+  un test.** Je l'avais fait sur `cisco-privilege-levels-really-gate` ;
+  l'utilisateur a objecté et il avait raison — c'est annulé.
+- `interactionPlanFor` rend `null` pour une commande que la session ne
+  voit pas. Si vous ajoutez une commande à dialogue, elle est
+  automatiquement soumise au filtre de niveau et de vue.
+
+26 cas répartis sur 4 fichiers encodaient la vulnérabilité comme
+prémisse ; ils présentent maintenant le mot de passe. Régression :
+46 fichiers, 1691 cas verts.
+
+### Lignes de terminal — LIVRÉ, et JE REVIENS SUR MA MODIFICATION PRÉCÉDENTE
+
+`docs/PRD-Lignes-Terminal.md`. **Lisez ce paragraphe si vous avez touché
+aux sessions de terminal.**
+
+Mon entrée « Sessions vty » ci-dessous disait : ne rien demander veut dire
+« ouvre-moi une ligne », donc la seconde fenêtre prend une vty.
+**C'était faux et c'est annulé.** Cette vty n'occupait aucune ligne, ne
+consommait aucune capacité, n'apparaissait dans aucune vue et ne pouvait
+donc jamais être refusée. Votre modèle d'origine était le bon.
+
+Ce qui est livré n'est pas un retour en arrière pour autant : la règle
+manquait aux DEUX versions. **Ouvrir un terminal, c'est occuper une ligne
+réelle du registre** — `registry.open()`, fermée au `dispose`. La console
+apparaît donc enfin dans `show users`, `Uses` la compte dans `show line`,
+et fermer la fenêtre libère la ligne.
+
+Ce qui peut vous concerner, par ordre de risque :
+
+1. **`openTerminal(d)` sans argument rend la console** (votre règle).
+   Les tests qui ouvraient deux fenêtres pour obtenir deux sessions
+   ouvrent maintenant `'console'` puis `'vty'` — 21 cas de
+   `unit/terminal/`, dont l'isolation par vty, qui est une propriété
+   réelle et n'a pas été affaiblie.
+2. **`show users` et `display users` n'ont plus de ligne de repli.**
+   Registre vide = personne n'est connecté. Six cas qui pinçaient la
+   constante sont corrigés.
+3. **`clear line <n>` prend le numéro ABSOLU** (celui de la colonne
+   `Line`). Avant, `clear line 2` coupait `vty 2` alors que la même
+   machine appelait `2` la ligne `vty 0` — elle coupait quelqu'un
+   d'autre. Et `clear line vty 0` coupait `con 0` avec, faute de filtre
+   sur le genre.
+4. **Le refus porte sur la ligne COURANTE** (`% Not allowed to clear
+   current line`), plus sur la console. Couper la console depuis une vty
+   est désormais possible, comme sur IOS.
+5. **`Router.executeCommandInVty` déclare sa ligne au registre.**
+   `setCurrentSession` n'avait aucun appelant : le `*` de `show users`
+   marquait le dernier arrivé, pas celui qui tape.
+6. **VRP** : `display user-interface` lit la vraie réserve (le nombre de
+   vty suit `user-interface vty 0 N`) et partage sa numérotation avec
+   `display users` — elles en avaient deux (34 contre 129).
+   `free`/`kill user-interface` existent et libèrent pour de bon.
+
+Fichiers touchés : `SshSessionRegistry.ts`, `CliShellSession.ts`,
+`TerminalManager.ts`, `CLITerminalSession.ts`, `CiscoTerminalSession.ts`,
+`HuaweiTerminalSession.ts`, `Router.ts`, `Switch.ts`, `CiscoShellBase.ts`,
+`HuaweiVRPShell.ts`, `CiscoCommonShow.ts`, `HuaweiDisplayCommands.ts`,
+`RouterServiceCapabilities.ts`, plus deux modules neufs
+(`cisco/CiscoLineCommands.ts`, `huawei/HuaweiUserInterfaceCommands.ts`).
+
+**Défaut préexistant corrigé au passage, hors de mon périmètre** : en
+`config-if`, un fourre-tout `clock` de l'arbre GLOBAL acceptait
+`clock rate 64000` sur un port Ethernet de Catalyst, le rangeait dans la
+running-config et le rejouait à l'import. Seul `calendar-valid` passe
+désormais. Cela corrige le cas 194 d'`other-commands.test.ts`, rouge
+avant moi.
+
+### Audit de maintenabilité — LIVRÉ
+
+`docs/PRD-Maintenabilite.md`. Aucun code touché : c'est une mesure et un
+plan. Les chiffres qui vous concernent le plus : **26 s de démarrage pour
+lancer trois cas de test**, **1 265 contournements du typage**, **sept
+fichiers de plus de 4 500 lignes** dont `Router.ts` et ses 381 méthodes.
+Le chantier que je recommande en premier (C1, casser la chaîne d'imports
+de `setupGlobalState.ts`) profite à tout le monde et ne touche aucun
+comportement.
+
 ### Collage multi-lignes — LIVRÉ (session « EIGRP », commit `76d7be86`)
 
 Le collage se comporte désormais comme une vraie console : une ligne
