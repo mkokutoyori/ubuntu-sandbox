@@ -20,6 +20,7 @@ import {
   finalisePendingAuth,
   runSshExec,
   wireProbeFor,
+  SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -49,7 +50,6 @@ import { nextLineId } from '@/terminal/sessions/TerminalSession';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { RichOutputLine } from '@/terminal/core/types';
 
-const SSH_MAX_ATTEMPTS = 3;
 
 export interface LinuxBashShellOptions extends AbstractShellOptions {
   /**
@@ -281,7 +281,7 @@ export class LinuxBashShell extends AbstractShell {
         }
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
-      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
         return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
       }
       this.input.emit('Permission denied, please try again.');
@@ -339,7 +339,7 @@ export class LinuxBashShell extends AbstractShell {
         childShell: finalised.shell,
       };
     }
-    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
       return {

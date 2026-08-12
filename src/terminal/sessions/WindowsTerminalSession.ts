@@ -13,6 +13,7 @@
 
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
+import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
@@ -1100,7 +1101,7 @@ export class WindowsTerminalSession extends TerminalSession {
       }
       this.sshPasswordAttempts++;
       remote.recordSshLogin?.(pending.user, pending.sourceIp, pending.sourceHostname, false);
-      if (this.sshPasswordAttempts >= WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+      if (this.sshPasswordAttempts >= SSH_PASSWORD_PROMPTS) {
         this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
         this.pendingSshPush = null;
         this.sshPasswordAttempts = 0;
@@ -1136,7 +1137,6 @@ export class WindowsTerminalSession extends TerminalSession {
    * and surfaces as "Permission denied (publickey,password).".
    */
   private sshPasswordAttempts = 0;
-  private static readonly SSH_MAX_ATTEMPTS = 3;
 
   private async submitSshPassword(password: string): Promise<void> {
     const pending = this.pendingSshPush;
@@ -1155,7 +1155,7 @@ export class WindowsTerminalSession extends TerminalSession {
       remote.recordSshLogin?.(
         pending.user, pending.sourceIp, pending.sourceHostname, false,
       );
-      if (this.sshPasswordAttempts < WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+      if (this.sshPasswordAttempts < SSH_PASSWORD_PROMPTS) {
         this.addLine('Permission denied, please try again.');
         // Stay in password mode for the next attempt.
         this.notify();

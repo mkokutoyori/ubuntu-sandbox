@@ -164,6 +164,17 @@ export function readForceCommand(
   return effectiveSshdView(machine, user, sourceIp, sourceHost)?.forceCommand ?? null;
 }
 
+export function readMaxAuthTries(
+  machine: { executor?: { vfs?: { readFile: (p: string) => string | null }; userMgr?: { getUserGroups?: (u: string) => Array<{ name: string }> } } },
+  user: string,
+  sourceIp?: string,
+  sourceHost?: string,
+): number | null {
+  const view = effectiveSshdView(machine, user, sourceIp, sourceHost);
+  if (!view || !Number.isFinite(view.maxAuthTries) || view.maxAuthTries < 1) return null;
+  return view.maxAuthTries;
+}
+
 function effectiveSshdView(
   machineRef: unknown,
   user: string,

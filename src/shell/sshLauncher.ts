@@ -23,7 +23,8 @@ import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
-import { readForceCommand } from '@/network/devices/linux/network/LinuxSshClient';
+import { readForceCommand, readMaxAuthTries } from '@/network/devices/linux/network/LinuxSshClient';
+export { SSH_PASSWORD_PROMPTS } from '@/network/protocols/ssh/session/SshSession';
 import { transportLiveness, establishedSessionLiveness } from '@/network/protocols/ssh/sessionLiveness';
 
 /** Tokenise an ssh command line into flags, optional value, user/host, and remaining argv. */
@@ -367,6 +368,24 @@ export async function finalisePendingAuth(
   auth: PendingSshAuth,
   password: string,
 ): Promise<FinaliseAuthOutcome> {
+  const serverAuthTryCap = readMaxAuthTries(
+    auth.target as unknown as Parameters<typeof readMaxAuthTries>[0],
+    auth.user, auth.sourceIp, auth.sourceHostname,
+  );
+  const tooManyAuthFailures = (): FinaliseAuthOutcome | null => (
+    serverAuthTryCap !== null && auth.attempts >= serverAuthTryCap
+      ? {
+        kind: 'refused',
+        message: [
+          `Received disconnect from ${auth.host} port ${auth.port}:2: Too many authentication failures`,
+          `Disconnected from ${auth.host} port ${auth.port}`,
+        ].join('\n'),
+      }
+      : null
+  );
+  const alreadyDisconnected = tooManyAuthFailures();
+  if (alreadyDisconnected) return alreadyDisconnected;
+
   if (!verifyCredentials(auth.target, auth.user, password)) {
     auth.attempts++;
     // Best-effort: record the failure for auth.log realism -- this is also
@@ -383,6 +402,8 @@ export async function finalisePendingAuth(
         message: `% Blocking new login for ${blocker.remainingBlockSeconds()} secs (quota exceeded)`,
       };
     }
+    const disconnected = tooManyAuthFailures();
+    if (disconnected) return disconnected;
     return { kind: 'bad-password' };
   }
 

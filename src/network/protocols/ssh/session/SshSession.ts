@@ -58,6 +58,9 @@ interface ServerBanner {
   readonly preAuthBanner?: string;
 }
 
+
+export const SSH_PASSWORD_PROMPTS = 3;
+
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
   private conn: TcpConnection | null = null;
@@ -330,7 +333,7 @@ export class SshSession implements ISshSession {
     _user: string,
     _opts: SshConnectOptions,
   ): ISshAuthContext {
-    let attemptsLeft = 3;
+    let attemptsLeft = SSH_PASSWORD_PROMPTS;
     return {
       checkPassword: () => false,
       checkPasswordAsync: async (u, password) => {

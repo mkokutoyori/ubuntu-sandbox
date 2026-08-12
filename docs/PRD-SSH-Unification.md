@@ -352,29 +352,68 @@ que `openWireSshShell` sait déjà mener, et l'appel direct par un canal
 exec. Le chemin filaire existe et tourne juste à côté, dans le même
 fichier.
 
-### 6.1 La mesure du point 1
+### 6.1 La mesure du point 1 — et sa CORRECTION
 
-Le défaut annoncé par lecture a été confronté à la machine : six
-tentatives d'affilée avec un mauvais mot de passe, sur le chemin exact du
-terminal (`tryInterpretSshLaunch` puis `finalisePendingAuth`), contre un
-compte réel d'un serveur réellement câblé.
+Une première mesure, consignée ici, concluait « six refus, aucun
+blocage ». **Reprise depuis, elle est fausse**, et il vaut mieux le dire
+que coder contre un constat périmé. Ce que la machine répond aujourd'hui,
+sur le chemin exact du terminal (`tryInterpretSshLaunch` puis
+`finalisePendingAuth`), contre un compte réel d'un serveur réellement
+câblé :
 
-Résultat : **six refus, aucun blocage**. Les six échecs sont bien tracés
-dans l'`auth.log` de la cible — mais par `tryRecordSshLogin`, côté
-CLIENT. Le serveur, lui, n'en voit aucun : son `isClientBlocked` n'est
-jamais consulté, puisqu'aucune tentative ne lui parvient. Un client peut
-donc essayer autant de mots de passe qu'il veut par ce chemin, alors
-qu'une vraie session filaire l'aurait fait tomber sous la limitation du
-serveur.
+| ce qu'on essaie | ce qui se passe |
+| --- | --- |
+| six mauvais mots de passe | cinq refus, puis le sixième est refusé **au connect** (`Connection refused`) — le limiteur du serveur s'applique |
+| `AllowUsers bob`, puis `ssh alice` avec le BON mot de passe | refusé |
+| `DenyUsers alice`, bon mot de passe | refusé |
+| `PermitRootLogin no`, `ssh root` avec le bon mot de passe | refusé |
+| compte verrouillé (`usermod -L`), bon mot de passe | refusé |
+| mot de passe vide, `PermitEmptyPasswords no` par défaut | refusé |
 
-C'est exactement ce que la Phase 3 a retiré du client Linux, et ce qui
-reste ici.
+La raison de ce démenti est instructive et n'était pas visible par
+lecture. Le mot de passe JUSTE, lui, ouvre bel et bien une session
+filaire (`openWireSshShell`) : c'est elle qui applique
+`AllowUsers`/`DenyUsers`/`PermitRootLogin`, et son refus revient sous le
+même `bad-password`. Quant au limiteur fail2ban, il compte parce que la
+trace côté client (`tryRecordSshLogin`) appelle `recordSshLogin` sur
+l'objet cible, laquelle ÉMET `auth_failure` sur le bus du serveur. Le
+blocage est donc réel, mais obtenu par un raccourci en mémoire plutôt
+que par le fil.
 
-**Ce que le correctif devra préserver, et c'est le point délicat :** les
-six lignes d'`auth.log` viennent aujourd'hui du client. Faire décider la
-session filaire sans vérifier d'abord qui écrit ces lignes ferait soit
-disparaître la trace, soit la doubler. La mesure ci-dessus est le point
-de départ du correctif, pas le correctif.
+**Ce qui restait vraiment faux, et qui est corrigé.** La seule limite au
+nombre d'essais était la constante `3`, recopiée dans `LinuxBashShell`,
+`WindowsCmdShell`, `WindowsPowerShellShell`, `WindowsTerminalSession` et
+`SshSession`. Or `3` est le `NumberOfPasswordPrompts` du CLIENT — une
+règle qui n'a rien à voir avec le `MaxAuthTries` du SERVEUR, jamais
+consulté ici. Mesuré avec `MaxAuthTries 1` : deux mauvais mots de passe
+passaient sans conséquence, et le troisième essai — correct —
+**ouvrait la session**, sur une machine dont la configuration
+interdisait d'aller au-delà du premier échec.
+
+`finalisePendingAuth` lit désormais la règle du serveur
+(`readMaxAuthTries`, jumeau de `readForceCommand`, blocs `Match`
+compris) au lieu d'en appliquer une à lui, et rend la coupure avec les
+mots d'OpenSSH (`Received disconnect … Too many authentication failures`
+/ `Disconnected from …`). La vérification a lieu avant la présentation du
+mot de passe autant qu'après l'échec : une connexion tombée reste tombée,
+et un bon mot de passe présenté ensuite ne rattrape rien. Une cible sans
+`/etc/ssh/sshd_config` — routeur, machine Windows — ne se voit imposer
+aucune limite du serveur, parce qu'en inventer une serait pire que de
+n'en pas avoir. Les cinq copies de `3` sont devenues un seul
+`SSH_PASSWORD_PROMPTS`, déclaré dans la couche du PROTOCOLE (`SshSession`)
+et non dans celle du shell, pour que la session filaire n'ait pas à
+dépendre d'un terminal.
+
+`ssh-maxauthtries-interactive.test.ts` (10 cas, 8 en échec authentique
+avant le correctif) garde la référence du bon mot de passe dans le même
+laboratoire — sans elle, un labo mal monté et un refus correct seraient
+indiscernables — et compare explicitement les deux chemins : le filaire
+refusait déjà, l'interactif refuse maintenant.
+
+**Ce qui reste, après ce correctif.** Un mauvais mot de passe ne touche
+toujours pas le fil : il est vérifié localement, et c'est ce qui oblige à
+LIRE la configuration du serveur plutôt qu'à la laisser s'appliquer. Le
+point 2 (`runSshExec`) est intact.
 
 **Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
 le dernier usage de `CrossVendorRemoteShell` en production, et il est

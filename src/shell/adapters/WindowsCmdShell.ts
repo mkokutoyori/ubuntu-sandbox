@@ -16,6 +16,7 @@ import {
   finalisePendingAuth,
   runSshExec,
   wireProbeFor,
+  SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -35,7 +36,6 @@ function parseSshExecCommandCmd(line: string): string | null {
   return tokens.slice(i + 1).join(' ');
 }
 
-const SSH_MAX_ATTEMPTS = 3;
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 
@@ -210,7 +210,7 @@ export class WindowsCmdShell extends AbstractShell {
         }
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
-      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
         return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
       }
       this.input.emit('Permission denied, please try again.');
@@ -237,7 +237,7 @@ export class WindowsCmdShell extends AbstractShell {
       }
       return { output: [...finalised.banner], childShell: finalised.shell };
     }
-    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
       return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
