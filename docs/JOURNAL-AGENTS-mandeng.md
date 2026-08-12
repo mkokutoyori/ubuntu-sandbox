@@ -40,7 +40,40 @@ prompt` ne paraît plus par défaut — la retenue est passée derrière
 `setMultilinePasteEnabled(false)`. Si un de vos tests s'appuyait sur
 l'ancien comportement, c'est cet appel qu'il lui faut.
 
-### Sessions vty — 21 régressions mesurées, à vous
+### Sessions vty — LES 21 SONT CORRIGÉES (commit `0d7b0277`)
+
+Reprises à votre demande. **Votre modèle est gardé tel quel** : un
+châssis n'a qu'un port console, `openTerminal(d, 'console')` rend
+toujours la session déjà ouverte, plusieurs vty coexistent. Vos 51 cas
+de `probe-console-acces-concurrents.test.ts` passent.
+
+Ce qui a changé est la ligne PAR DÉFAUT. Aucun appelant de production ne
+demandait jamais `'vty'` — `NetworkDesigner` appelle `openTerminal(device)`
+sans argument — donc la seconde fenêtre rendait la première et l'isolation
+par vty, qui existe et fonctionne, n'était plus atteignable depuis
+l'application. Ne rien demander veut maintenant dire « ouvre-moi une
+ligne » : la console si elle est libre, une vty sinon. Le deuxième
+opérateur d'un vrai routeur n'arrache pas le câble du premier.
+
+Trois de vos cas se servaient de la ligne par défaut pour dire
+« console » ; ils la nomment désormais explicitement, ce qui est la
+question qu'ils posent. Un cas de plus pinne le nouveau défaut et
+vérifie qu'il n'a pas dupliqué la console.
+
+Mesuré avant de toucher quoi que ce soit, et ça vaut la peine d'être su :
+**l'isolation par vty n'était pas cassée**. Deux `CliShellSession`
+allouées directement gardent chacune leur mode, leur interface et leur
+invite — c'était la porte, pas le moteur.
+
+Ajouté : `TerminalSession.attachToVtyLine()`, que le gestionnaire appelle
+sur une session ouverte en vty. `CiscoTerminalSession` y pose le drapeau
+que l'adoption SSH posait déjà, donc une vty locale lit `line vty` et
+non `line console 0` pour l'inactivité, la limite absolue et son numéro
+de ligne.
+
+`src/__tests__/unit/terminal/` : 491/491.
+
+### Sessions vty — le constat d'origine
 
 Constatées sur `origin/mandeng` SEUL (`be4772d1`), avant toute
 modification de ma part, par `git stash` : elles viennent du lot
