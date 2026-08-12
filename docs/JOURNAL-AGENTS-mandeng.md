@@ -25,6 +25,37 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Les deux points laissés ouverts — FERMÉS
+
+**1. `Press RETURN to get started.` attend vraiment RETURN.** Après le
+démarrage, l'invite était déjà affichée : la ligne annonçait une attente
+qui n'existait pas. Le prompt reste vide jusqu'à la première frappe
+(`promptHiddenUntilFirstKey`), puis paraît. J'avais estimé le coût à
+« 385 assertions cassées » sans le mesurer ; mesuré, il est de **quatre
+cas**, parce que la frappe qui révèle l'invite est N'IMPORTE laquelle —
+la ligne est vivante, seule l'invite attend, ce qui est aussi le vrai
+comportement d'une console.
+
+Deux pièges rencontrés, dits ici parce qu'ils reviendront :
+- ma première version AVALAIT le RETURN quand `this.input` était vide.
+  Or `ssh-liveness-vendor-agnostic` remplit le tampon INTERNE
+  (`setInputBuf`) et non `input` : la commande était mangée et douze cas
+  tombaient. Plus rien n'est avalé — révéler l'invite suffit.
+- le drapeau doit aussi retomber à la fin d'un FLUX : avec `login local`
+  la session s'authentifie sans passer par `handleKey`, donc l'invite
+  serait restée cachée après une connexion réussie.
+
+**2. `faults/log-only-connections-we-accepted` — le TEST était périmé.**
+Il affirmait qu'une connexion TCP entrante acceptée laisse une ligne dans
+`show logging`. Les deux émetteurs Cisco ont été retirés depuis, et à
+raison : `223a6181` a supprimé `Connection from <pair> closed (<raison>)`
+et `4dd19ad6` la ligne `SSH2_SESSION` posée sur un accept TCP nu, tous
+deux sur la mesure qu'aucun IOS ne dit cela — une connexion TCP n'est ni
+une session SSH établie ni une authentification. Le cas épingle
+désormais ce SILENCE des deux côtés, avec un témoin qui vérifie que le
+laboratoire connecte vraiment. Le filtre `passive` dont ce fichier porte
+le nom reste vivant côté LINUX, où l'émetteur existe pour de bon.
+
 ### Premier contact avec un routeur neuf — LIVRÉ
 
 Signalé sur capture par l'utilisateur, et les trois défauts sont réels.

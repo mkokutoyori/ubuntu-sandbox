@@ -471,6 +471,9 @@ describe('Scénario 1 — connexion console : User Access Verification / Usernam
     const session = new CiscoTerminalSession('t1', sw);
     await session.init();
     await waitBoot(session);
+    // `Press RETURN to get started.` attend vraiment RETURN : tant que
+    // personne n'a frappé, une console n'affiche pas d'invite.
+    session.handleKey(key('Enter'));
     expect(session.getPrompt()).toBe('SW1>');
 
     await type(session, 'enable');

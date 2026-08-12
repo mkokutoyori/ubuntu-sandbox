@@ -14,14 +14,21 @@
  * host the same close was tagged `sshd`, a daemon that had accepted
  * nothing.
  *
- * Both halves matter and both are pinned here: the inbound line must
- * still appear (the filter must not silence real server logging), and
- * the outbound one must not.
+ * The second case used to assert the opposite half — that an accepted
+ * inbound connection still produced a line — and it went red when the
+ * Cisco emitters were removed as fabrications: `223a6181` dropped
+ * `Connection from <peer> closed (<reason>)` and `4dd19ad6` dropped the
+ * `SSH2_SESSION` line raised on a bare TCP accept, both on the measured
+ * ground that no IOS says either. A TCP connection is neither an
+ * established SSH session nor an authentication, and IOS logs nothing at
+ * that instant — what it logs is the SESSION, from
+ * `router.ssh.session.opened`. The case now pins that measured silence
+ * on BOTH sides, so re-introducing the invented wording fails here.
  *
- * The Linux half is exercised on a REAL machine — a real cable, a real
- * ssh login — in `sshd-speaks-with-one-voice.test.ts`, which checks the
- * whole chain the operator actually reads: the process table, the file
- * rsyslog writes, and the journal.
+ * The `passive` filter this file is named for stays live on the LINUX
+ * side (`PortActivityLogProjection`, which really does write
+ * `Accepted connection from …`), exercised on a real machine — a real
+ * cable, a real ssh login — in `sshd-speaks-with-one-voice.test.ts`.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -92,14 +99,16 @@ describe('a router logs inbound connections, never its own outbound ones', () =>
     expect(log).not.toContain('Connection from 10.0.0.1:23');
   });
 
-  it('an INBOUND connection is still logged — the filter silences nothing real', async () => {
+  it('a bare inbound TCP connection is logged by NEITHER side', async () => {
     const { client, target } = await twoRouters();
 
-    await client.getTcpStack().connect('10.0.0.1', 22);
+    const socket = await client.getTcpStack().connect('10.0.0.1', 22);
+    expect(socket, 'the lab must really connect, or this proves nothing').toBeTruthy();
 
-    // The server side of the very same connection: the target ACCEPTED
-    // it, so the target is where the line belongs.
-    const log = await target.executeCommand('show logging');
-    expect(log).toContain('10.0.0.2');
+    for (const [name, device] of [['target', target], ['client', client]] as const) {
+      const log = await device.executeCommand('show logging');
+      expect(log, `${name} invented a line for a bare TCP connection`)
+        .not.toMatch(/Connection from|connection from/);
+    }
   });
 });

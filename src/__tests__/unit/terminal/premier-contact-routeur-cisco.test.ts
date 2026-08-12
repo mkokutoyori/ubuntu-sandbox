@@ -59,6 +59,31 @@ describe('the boot transcript states nothing the machine did not do', () => {
   });
 });
 
+describe('`Press RETURN to get started.` really waits for RETURN', () => {
+  it('no prompt is drawn until the operator presses it', async () => {
+    const { session } = await bootedConsole();
+    expect(session.getPrompt()).toBe('');
+
+    session.handleKey(key('Enter'));
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(session.getPrompt()).toBe('Router1>');
+  });
+
+  it('that RETURN runs no command — it only brings the prompt up', async () => {
+    const { router, session } = await bootedConsole();
+    session.handleKey(key('Enter'));
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(screen(session)).not.toMatch(/% (Invalid|Incomplete|Unknown)/);
+    expect(await router.executeCommand('show privilege')).toContain('level is 1');
+  });
+
+  it('a command typed straight away still runs — the line is live, only the prompt waits', async () => {
+    const { session } = await bootedConsole();
+    await type(session, 'enable');
+    expect(session.getPrompt()).toBe('Router1#');
+  });
+});
+
 describe('leaving the console does not log a session nobody opened', () => {
   it('`exit` on an unauthenticated console logs no LOGOUT line', async () => {
     const { router, session } = await bootedConsole();

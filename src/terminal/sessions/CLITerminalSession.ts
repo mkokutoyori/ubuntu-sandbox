@@ -94,6 +94,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   getPrompt(): string {
     if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.telnetSubShell) return this.telnetSubShell.getPrompt();
+    if (this.promptHiddenUntilFirstKey) return '';
     return this.prompt;
   }
 
@@ -248,6 +249,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.inputMode = { type: 'normal' };
     this.device.markBootShown();
     this.updatePrompt();
+    if (this.bootEndsOnReturnNotice()) this.promptHiddenUntilFirstKey = true;
   }
 
   /** Fallback boot lines if device doesn't provide getBootSequence(). */
@@ -327,6 +329,18 @@ export abstract class CLITerminalSession extends TerminalSession {
   /** La console attend la frappe qui rouvre une session EXEC. */
   protected consoleAwaitingReturn = false;
 
+  protected promptHiddenUntilFirstKey = false;
+
+  protected bootEndsOnReturnNotice(): boolean {
+    return this.lines.some((l) => l.text === 'Press RETURN to get started.');
+  }
+
+  private revealPromptOnFirstKey(): void {
+    if (!this.promptHiddenUntilFirstKey) return;
+    this.promptHiddenUntilFirstKey = false;
+    this.updatePrompt();
+  }
+
   /** Rouvrir une session EXEC apres la frappe. */
   protected reopenConsoleExec(): void {
     this.updatePrompt();
@@ -354,6 +368,8 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected handleModeKey(e: KeyEvent): boolean {
+    this.revealPromptOnFirstKey();
+
     // La console est libre : toute frappe est absorbee, seule RETURN
     // rouvre une session — comme sur une vraie ligne console.
     if (this.consoleAwaitingReturn) {
@@ -787,6 +803,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   // ── Flow completion hook ────────────────────────────────────────
 
   protected override onFlowComplete(): void {
+    this.promptHiddenUntilFirstKey = false;
     this.updatePrompt();
   }
 
