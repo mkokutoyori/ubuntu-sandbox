@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-08-08T00:34:33.868Z
+Generated: 2026-08-12T15:25:15.491Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -462,16 +462,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [77/325] r1 R1# show ip cef
@@ -584,7 +579,13 @@ Total steps: 325
   S  ::/0 [1/0], via 2001:db8:1::2
 
 [92/325] r1 R1# show ipv6 route summary
-  % Route to summary
+  IPv6 routing table name is Default-IPv6-Routing-Table(0)
+  IPv6 routing table maximum-paths is 4
+  Route Source    Networks    Overhead    Memory (bytes)
+  connected       0           0           0
+  local           0           0           0
+  static          2           176         88
+  Total           2           176         88
 
 
 --- [93] § prefix-lists ---
@@ -1271,16 +1272,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [207/325] r1 R1# show ip route static
@@ -1352,16 +1348,12 @@ Total steps: 325
         172.31.0.0/16 is subnetted, 2 subnets
   S        172.31.15.0/24 [1/0] via 10.0.0.2
   S        172.31.31.0/24 [1/0] via 10.0.0.2
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [208/325] r1 R1# show ip route ospf
@@ -1467,16 +1459,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [212/325] r1 R1# show ip route vrf CUST
@@ -1622,16 +1609,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 0.0.0.0
 
@@ -1661,7 +1643,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX2126SKT5
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1671,17 +1653,17 @@ Total steps: 325
 [218/325] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 5344 bytes
+  Current configuration : 5411 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   track 1 ip sla 1 reachability
   track 2 interface GigabitEthernet0/1 line-protocol
@@ -1779,6 +1761,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
+  ! Last configuration change at 15:25:15 UTC Wed Aug 12 2026 by console
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -1857,7 +1840,7 @@ Total steps: 325
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -1998,16 +1981,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [223/325] r1 R1# show ip route summary
@@ -2059,10 +2037,10 @@ Total steps: 325
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
 
 [231/325] r1 R1# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [232/325] r1 R1# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [233/325] r1 R1# show ip bgp
   % BGP not active
@@ -2169,11 +2147,11 @@ Total steps: 325
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 14 messages logged, xml disabled,
+      Console logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 14 messages logged, xml disabled,
+      Monitor logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 14 messages logged, xml disabled,
+      Buffer logging:  level debugging, 13 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2182,25 +2160,24 @@ Total steps: 325
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 14 message lines logged
+      Trap logging: level informational, 13 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:33.862: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:33.862: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:33.865: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:33.865: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:33.866: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:33.884: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.891: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.899: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.905: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.909: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.917: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.919: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.927: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.932: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.486: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:15.486: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:15.488: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:15.488: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:15.501: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.509: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.519: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.525: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.531: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.548: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.550: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.566: %SYS-5-CONFIG_I: Configured from console by console
 
 [252/325] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2209,17 +2186,21 @@ Total steps: 325
   0 SNMP packets output
 
 [253/325] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F819.F916872B (00:34:33.973 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE270EDB.9E76C8B4 (15:25:15.619 UTC Wed Aug 12 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [254/325] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [255/325] r1 R1# show clock
-  *00:34:33.000 UTC Sat Aug 8 2026
+  *15:25:15.000 UTC Wed Aug 12 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2358,7 +2339,7 @@ Total steps: 325
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2390,25 +2371,22 @@ Total steps: 325
 
 [266/325] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       2 packets input, 128 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 266 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [267/325] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2450,7 +2428,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX2126SKT5
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2460,17 +2438,17 @@ Total steps: 325
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 5344 bytes
+  Current configuration : 5411 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   track 1 ip sla 1 reachability
   track 2 interface GigabitEthernet0/1 line-protocol
@@ -2568,6 +2546,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
+  ! Last configuration change at 15:25:15 UTC Wed Aug 12 2026 by console
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -2704,16 +2683,11 @@ Total steps: 325
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
-        192.168.50.0/24 is subnetted, 1 subnets
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-        192.168.51.0/24 is subnetted, 1 subnets
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-        192.168.52.0/24 is subnetted, 1 subnets
-  S        192.168.52.0/24 [1/0] is directly connected, Null0
-        192.168.53.0/24 is subnetted, 1 subnets
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-        192.168.99.0/24 is subnetted, 1 subnets
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.52.0/24 [1/0] is directly connected, Null0
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 0.0.0.0
   
@@ -2731,7 +2705,7 @@ Total steps: 325
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
+       2 packets input, 160 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
@@ -2855,11 +2829,11 @@ Total steps: 325
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 14 messages logged, xml disabled,
+      Console logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 14 messages logged, xml disabled,
+      Monitor logging: level debugging, 13 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 14 messages logged, xml disabled,
+      Buffer logging:  level debugging, 13 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2868,29 +2842,28 @@ Total steps: 325
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 14 message lines logged
+      Trap logging: level informational, 13 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:33.862: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:33.862: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:33.865: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:33.865: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:33.866: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:33.884: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.891: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.899: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.905: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.909: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.917: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.919: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.927: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:33.932: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.486: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:15.486: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:15.488: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:15.488: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:15.501: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.509: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.519: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.525: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.531: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.548: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.550: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.560: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:15.566: %SYS-5-CONFIG_I: Configured from console by console
 
 [269/325] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2126SKT5
 
 [270/325] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2911,6 +2884,7 @@ Total steps: 325
   Default domain is not set
   Name/address lookup uses static mappings
   Name servers are 255.255.255.255
+  
   Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
          temp - temporary, perm - permanent
          NA - Not Applicable None - Not defined
@@ -2918,18 +2892,19 @@ Total steps: 325
   Host                      Port  Flags      Age Type   Address(es)
 
 [275/325] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [276/325] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
-  *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 AUX               -    -    -    -      0     0   0/0       -
-       2    2 VTY               -    -    -    -      0     0   0/0       -
-       3    3 VTY               -    -    -    -      0     0   0/0       -
-       4    4 VTY               -    -    -    -      0     0   0/0       -
-       5    5 VTY               -    -    -    -      0     0   0/0       -
-       6    6 VTY               -    -    -    -      0     0   0/0       -
+     Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
+  *    0 CTY                 -    -    -    -     0      0       0/0    -
+       1 AUX                 -    -    -    -     0      0       0/0    -
+       2 VTY                 -    -    -    -     0      0       0/0    -
+       3 VTY                 -    -    -    -     0      0       0/0    -
+       4 VTY                 -    -    -    -     0      0       0/0    -
+       5 VTY                 -    -    -    -     0      0       0/0    -
+       6 VTY                 -    -    -    -     0      0       0/0    -
 
 [277/325] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -3066,6 +3041,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
+  ! Last configuration change at 15:25:15 UTC Wed Aug 12 2026 by console
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -3123,14 +3099,14 @@ Total steps: 325
 [282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 5344 bytes
+  Current configuration : 5411 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   track 1 ip sla 1 reachability
   track 2 interface GigabitEthernet0/1 line-protocol
   track 3 list boolean and
@@ -3304,10 +3280,10 @@ Total steps: 325
   S        172.30.30.0/24 [1/0] via 10.0.0.2
   S        172.31.15.0/24 [1/0] via 10.0.0.2
   S        172.31.31.0/24 [1/0] via 10.0.0.2
-  S        192.168.50.0/24 [1/0] via 10.0.0.2
-  S        192.168.51.0/24 [250/0] via 10.0.0.2
-  S        192.168.53.0/24 [1/0] via 10.0.0.2
-  S        192.168.99.0/24 [1/0] via 10.0.0.2
+  S    192.168.50.0/24 [1/0] via 10.0.0.2
+  S    192.168.51.0/24 [250/0] via 10.0.0.2
+  S    192.168.53.0/24 [1/0] via 10.0.0.2
+  S    192.168.99.0/24 [1/0] via 10.0.0.2
   S*    0.0.0.0/0 [1/0] via 10.0.0.2
 
 [284/325] r1 R1# show ip interface brief | exclude unassigned
@@ -3451,18 +3427,20 @@ Total steps: 325
     community-list     Define BGP community list
     default-network    Configure default-network
     dhcp               Dynamic Host Configuration Protocol
+    dns                Domain Name System
     domain             IP domain configuration
-    domain-lookup      Enable DNS lookups
-    domain-name        Set domain name
+    domain-list        Define a list of default domain names
+    domain-lookup      Enable IP Domain Name System hostname translation
+    domain-name        Define the default domain name
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
     gratuitous-arps    Enable gratuitous ARP
-    host               Configure a static host entry
+    host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
     multicast-routing  Enable IP multicast routing
-    name-server        Configure DNS name servers
+    name-server        Specify address of name server to use
     nat                Network Address Translation
     pim                Protocol Independent Multicast
     prefix-list        Build a prefix list
@@ -3482,6 +3460,7 @@ Total steps: 325
     rip    Enter RIP routing protocol configuration
 
 [321/325] r1 R1(config)# crypto ?
+    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -3491,40 +3470,43 @@ Total steps: 325
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
-    <cr>         
 
 [322/325] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    aaa            Disable AAA
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [323/325] r1 R1(config)# end
 <empty>
 
 [324/325] r1 R1# show running-config | count !
-  23
+  24
 
 [325/325] r1 R1# write memory
   Building configuration...

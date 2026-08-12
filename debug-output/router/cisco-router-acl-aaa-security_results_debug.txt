@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-08-10T19:33:30.184Z
+Generated: 2026-08-12T15:25:14.004Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -804,12 +804,14 @@ Total steps: 388
 <empty>
 
 [186/388] r1 R1(config)# crypto key generate rsa modulus 2048
-  The key modulus size is 2048 bits
+  The name for the keys will be: R1.lab.local
+  % The key modulus size is 2048 bits
   % Generating 2048 bit RSA keys, keys will be non-exportable...
   [OK] (elapsed time was 2 seconds)
 
 [187/388] r1 R1(config)# crypto key generate rsa general-keys modulus 4096 label SSH-KEY
-  The key modulus size is 4096 bits
+  The name for the keys will be: SSH-KEY
+  % The key modulus size is 4096 bits
   % Generating 4096 bit RSA keys, keys will be non-exportable...
   [OK] (elapsed time was 4 seconds)
 
@@ -898,46 +900,47 @@ Total steps: 388
   Hostkey RSA key size is 2048 bits
 
 [215/388] r1 R1# show ssh
-  No SSHv2 server connections running.
+  %No SSHv2 server connections running.
+  %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 19:33:30 UTC Aug 10 2026
+  % Key pair was generated at: 15:25:14 UTC Aug 12 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   1C3DD4D9FD4FA0CDA568AE6BA1F43D8B8027BDE83F6E67A8D9F2DC2C5906C45C
-    15C89959DCC7803D7598F1AFFD8AB8A7340F7D282AEEAB20F2B9A3209B6C1BC8
-    EC4730595FAE99459EE4A463C5B2580B7022D3E85577B8003C3744A4971EC63C
-    CFF959D9F6694575A60EBCA75F67B2E7FF73D8287FD1A2886452F6B85794C8F8
-    E0416BD9A999BF0D6BCB7A5B27405D1B69F393C869E3C528EE90371C0288402C
-    7CA84E39665F1B9D8B6B457F720EC937325124E89A423DA0341FF9F067652098
-    A649EB19C288910540D4E813EC0F771B3E98358807EAD300135BFF541CC0B58C
-    C4F40279E3DDE25597F9583707428AF78EA8DBA85B53DA888CBB110822C6C948
+   5CA9D1D24FD4EC3AC94560D024B4C918FB10ACE39579D5072FE1BAB75C48B48F
+    C48E3712CE0197B24BA888D4A15C2884978754E3761F160F0431C97B78F033A3
+    122129D20F4E6352831D06587BA76CB8F4E39A6386E222FF95353DBF5802523F
+    7136CA12E530AFFAE06CF95C310F41C478059D639D522877710237831195FF83
+    3B2A6DF2906102DAD164D7E028C261E8D0002A031092816720F2F8E7465E6ABF
+    77A68152D3F2F6522AD4840401F8295429714C233CEDF9CFFF0A97CBF9F3EEB3
+    92333A32DC588A527A801DA8E2F4C7681C1323C38900C8BFCC19342F805C06AF
+    19D6B892F3FA767A68C3C4CCABD379F47AB7D0E3B8491117EEA881D381CA5393
   
-  % Key pair was generated at: 19:33:30 UTC Aug 10 2026
+  % Key pair was generated at: 15:25:14 UTC Aug 12 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   F126A85D0BD206A1CFB850AFA1353CAF398512ECFD196D5CEAC9BA680CEF9EB8
-    02026A5D836CEE318B7D8BEB56A2249380A44A2C0AA598E4BE5E46E400ECDA9C
-    B1A00EDD4091D56958DEE1A7D6A2266F6EB853EC3691E9F4F236DDE0D19D1DD8
-    5ABF75DD489A45A9C76631E396AEB1C38CF5102C92AF06FCCF00957C5897009C
-    C672D55DE08E1F411230D29F7E85B01F4B59BECC31F09E3CD4A90B5857995AC8
-    E2C3353DBC596AD1035615BBF418BB63CEB747ECC7EE3B449B2713B4E1215ECC
-    BE7C5F9D637E0AA95525DB576AC638FFC9278B8CA3628674A13E8E90E5628408
-    B3EC347D9D67E4E966580373F0FAD653C0AC69AC6C8CFD7CCA2C25CC5D7828CC
-    125E3DDDD1995921F23F644F2060488FAF7F7AAC249EA95CDB460008B4E59B58
-    8126641DE943BDF163982FCBA9BAC2B3BE93AE2C83D3AEE46C3734C4B5DC77FC
-    8F1A9CDD22B007A9B0A845C76143F10F5B18E42C07AEBFB4BBF9A400E22AD9F8
-    01DEC81DDC04F1A9149D8643750C3D233EA6FCAC74ADDF3CCC5E63DC4DC3093C
-    A8691BDD19B589C1A139473FC0D8D53F36C2CB4C0D48D73CB5A265F8C5372728
-    BC7147BDDDE80811FE002A1BC3C7BE43E97FF46CD6E4CA4441FFA21432617A6C
-    1311661DBCFD54296CB10FF7136697DF23B7580C7845E174ECC2A9303764FA68
-    0C4906FD38CED429D094D7D339DCD1F39CABD62C9365A6FC445C4CAC14C767AC
+   92D5ACFE818EEAD636A3B63CCA28182431DDC88F7BF00E432DFE5B1B28FCACE3
+    1D602DBE9B54277E27A394386ED4115874B4468F1A34985B5EFB925747408D1F
+    0A50A0FEBA48406E6A3E9CB4D7896BF49C69A70F1A656D7BD0A1E4139EF9C0D3
+    4B32E6BE1C2A17563D0AAFB0EA23F0B8E57DCA0F98E97113AF2A666FC54CC08F
+    EFD46B1E955D7616A00AAF4C8761081403B027AFA0AEEDA3C2BFDB4BB214E213
+    7A8819FE08E3811ECD309168021D792877A29FCFEF11CFBB9E2E22A7EAF6A9AF
+    E723D35EF3B9DF8E1A3C36040613BFE45BDF126F195B117BE5A91C834F950C83
+    6265773E2494F21655557D20771B2E2832D75F8F1FA9649383BBDEFFDA77FAFF
+    C6EE057E262A3956F9DE309C60A8B14422B2FB0F7DA92C8316B3FBBB396EB4C3
+    5750A63EE0024F7EFC6C2E98278908B895ED990F4B068C9BF00B52F7CB0DC2FF
+    23B1397E8EADAD2E9AAD5714B46F9B14809F198F14D979BB3D23C4B3DE61CD73
+    EF9B9F3E4D3795D645378A10649779D8B1475C8FB6F93F531C36670F4A68386F
+    AABBAFDED6472CD6359F2E2C4F394A745A848A6FD8D0D8E31E95ABEBE363C9B3
+    D469C27EECBAC69E076B5BC895A76548057F224F220D0CFBBDC2134722E92B4F
+    E278081E4D27C84E4892A4E48295FC448B3A652F25A37FFB4E3ADD2374DBA463
+    EEA80FBECBA648D6C6063780A0499088B6AED20F2D359113E13FBF9FFEFFEA1F
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1194,7 +1197,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX6328VS8Q
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1204,7 +1207,7 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6911 bytes
+  Current configuration : 6907 bytes
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1237,10 +1240,10 @@ Total steps: 388
   ip domain-name lab.local
   !
   username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1354,7 +1357,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
+  ! Last configuration change at 15:25:14 UTC Wed Aug 12 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1569,10 +1572,10 @@ Total steps: 388
   % OSPF is not configured
 
 [294/388] r1 R1# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [295/388] r1 R1# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [296/388] r1 R1# show ip bgp
   % BGP not active
@@ -1852,21 +1855,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 10 19:33:30.166: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:30.167: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:30.170: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:30.171: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:30.200: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.204: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.207: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.211: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.221: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.225: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.227: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.233: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.241: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.244: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.246: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:13.999: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:13.999: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:14.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:14.001: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:14.015: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.018: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.023: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.026: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.032: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.033: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.037: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.043: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.047: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.049: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1878,7 +1881,7 @@ Total steps: 388
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE24A60A.50A3D70A (19:33:30.315 UTC Mon Aug 10 2026)
+  reference time is EE270EDA.18D4FDF3 (15:25:14.097 UTC Wed Aug 12 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1889,7 +1892,7 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *19:33:30.000 UTC Mon Aug 10 2026
+  *15:25:14.000 UTC Wed Aug 12 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2071,7 +2074,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX6328VS8Q
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2081,7 +2084,7 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6911 bytes
+  Current configuration : 6907 bytes
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2114,10 +2117,10 @@ Total steps: 388
   ip domain-name lab.local
   !
   username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2231,7 +2234,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
+  ! Last configuration change at 15:25:14 UTC Wed Aug 12 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2474,25 +2477,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 10 19:33:30.166: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:30.167: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:30.170: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:30.171: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:30.200: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.204: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.207: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.211: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.221: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.225: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.227: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.233: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.241: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.244: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:30.246: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:13.999: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:13.999: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 15:25:14.001: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:14.001: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 15:25:14.015: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.018: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.023: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.026: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.030: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.032: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.033: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.037: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.043: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.047: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 15:25:14.049: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX6328VS8Q
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2513,6 +2516,7 @@ Total steps: 388
   Default domain is lab.local
   Name/address lookup uses static mappings
   Name servers are 255.255.255.255
+  
   Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
          temp - temporary, perm - permanent
          NA - Not Applicable None - Not defined
@@ -2526,14 +2530,14 @@ Total steps: 388
   Hostkey RSA key size is 2048 bits
 
 [339/388] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
-  *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 AUX               -    -    -    -      0     0   0/0       -
-       2    2 VTY               -    -    -    -      0     0   0/0       -
-       3    3 VTY               -    -    -    -      0     0   0/0       -
-       4    4 VTY               -    -    -    -      0     0   0/0       -
-       5    5 VTY               -    -    -    -      0     0   0/0       -
-       6    6 VTY               -    -    -    -      0     0   0/0       -
+     Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
+  *    0 CTY                 -    -    -    -     0      0       0/0    -
+       1 AUX                 -    -    -    -     0      0       0/0    -
+       2 VTY                 -    -    -    -     0      0       0/0    -
+       3 VTY                 -    -    -    -     0      0       0/0    -
+       4 VTY                 -    -    -    -     0      0       0/0    -
+       5 VTY                 -    -    -    -     0      0       0/0    -
+       6 VTY                 -    -    -    -     0      0       0/0    -
 
 [340/388] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -2603,10 +2607,10 @@ Total steps: 388
   ip domain-name lab.local
   !
   username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
@@ -2720,7 +2724,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 19:33:30 UTC Mon Aug 10 2026 by console
+  ! Last configuration change at 15:25:14 UTC Wed Aug 12 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2793,7 +2797,7 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6911 bytes
+  Current configuration : 6907 bytes
   service password-encryption
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2818,10 +2822,10 @@ Total steps: 388
    server name TAC1
   ip domain-name lab.local
   username admin privilege 15 secret 5 $1$2544239d$rFgAT1mxjTMJKQtKQBWZt/
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
    zone-member security INSIDE
@@ -3121,18 +3125,20 @@ Total steps: 388
     community-list     Define BGP community list
     default-network    Configure default-network
     dhcp               Dynamic Host Configuration Protocol
+    dns                Domain Name System
     domain             IP domain configuration
-    domain-lookup      Enable DNS lookups
-    domain-name        Set domain name
+    domain-list        Define a list of default domain names
+    domain-lookup      Enable IP Domain Name System hostname translation
+    domain-name        Define the default domain name
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
     gratuitous-arps    Enable gratuitous ARP
-    host               Configure a static host entry
+    host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
     multicast-routing  Enable IP multicast routing
-    name-server        Configure DNS name servers
+    name-server        Specify address of name server to use
     nat                Network Address Translation
     pim                Protocol Independent Multicast
     prefix-list        Build a prefix list
@@ -3152,6 +3158,7 @@ Total steps: 388
     rip    Enter RIP routing protocol configuration
 
 [384/388] r1 R1(config)# crypto ?
+    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -3161,9 +3168,9 @@ Total steps: 388
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
-    <cr>         
 
 [385/388] r1 R1(config)# no ?
+    aaa            Disable AAA
     access-list    Remove an access list
     alias          Remove a command alias
     arp            Remove ARP entry

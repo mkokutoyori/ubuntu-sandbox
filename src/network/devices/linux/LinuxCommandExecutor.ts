@@ -1307,7 +1307,6 @@ export class LinuxCommandExecutor {
     }
 
     const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword);
-
     if (cmd === 'scp') {
       const localFs = new VfsSftpFileSystem(this.vfs, {
         uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
@@ -1380,10 +1379,13 @@ export class LinuxCommandExecutor {
       knownHostsPath: `${this.sshHomeDir()}/.ssh/known_hosts`,
       interactionHandler: new SilentSshInteractionHandler(password),
     });
-    const result = await session.connect(
-      SshConnectOptionsBuilder.create()
-        .host(host).user(user).port(22).strictHostKeyChecking('accept-new').build(),
-    );
+    const builder = SshConnectOptionsBuilder.create()
+      .host(host).user(user).port(22).strictHostKeyChecking('accept-new');
+    for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
+      const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
+      if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
+    }
+    const result = await session.connect(builder.build());
     if (!isOk(result)) { session.disconnect(); return null; }
     const channelResult = session.openSftpChannel();
     if (!isOk(channelResult)) { session.disconnect(); return null; }
