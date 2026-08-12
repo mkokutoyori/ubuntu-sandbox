@@ -520,6 +520,35 @@ d'une machine à l'autre » dépendants d'un mot de passe. C'est un choix
 pédagogique autant que technique, et il appartient à l'auteur du projet,
 pas à ce document.
 
+### 7.1 Le retrait du repli : tenté, mesuré, pas encore livrable
+
+La décision étant prise (refuser plutôt que copier en mémoire), le
+correctif produit tient en quelques lignes et fonctionne. Ce qui bloque
+n'est pas lui, c'est la migration des laboratoires, et la mesure vaut
+d'être écrite pour que la prochaine tentative ne reparte pas de zéro.
+
+**Ce qui a été appris en le faisant.** Le premier essai a fait tomber les
+`scp` authentifiés par CLÉ, ce qui n'était pas un problème de
+laboratoire : `tryOpenWireSftpFs` n'offrait aucune identité. C'est ce
+constat qui a produit le correctif déjà livré (les identités par défaut
+sont désormais offertes). Une fois celui-ci en place, il reste **23 cas
+dans 7 fichiers** qui copient sans le moindre justificatif.
+
+**Ce qui NE marche pas pour les migrer :** ensemencer une paire de clés
+dans les constructeurs de laboratoire. Mesuré deux fois, y compris avec
+un nom de clé (`id_ecdsa`) que personne d'autre ne gère : la seule
+PRÉSENCE d'un `authorized_keys` chez tout le monde casse §10, §12 et §16,
+c'est-à-dire les cas qui vérifient justement qu'une clé ne marche PAS
+avant `ssh-copy-id`, qu'un `IdentityFile` précis est choisi, et qu'un
+agent authentifie. On répare §15 en cassant ce qui teste la gestion des
+clés. Un ensemencement global est donc le mauvais outil, quel que soit le
+nom du fichier.
+
+**Ce qu'il faut à la place :** décider cas par cas quel justificatif
+chaque test doit porter — mot de passe via `sshpass`, clé posée
+localement pour ce cas-là, ou refus attendu. C'est un travail d'auteur,
+pas une passe mécanique, et il touche la pédagogie de chaque TP.
+
 Ce qui est acquis en attendant : le chemin filaire fonctionne réellement
 dès qu'un justificatif est fourni, et le repli est désormais NOMMÉ plutôt
 que découvert. Le chemin SYNCHRONE de `scp`/`sftp` (`dispatch()`, sans
