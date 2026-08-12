@@ -116,7 +116,7 @@ describe('un collage s\'interrompt', () => {
  */
 describe('collage coupé : un mot de passe est une ligne, et le reste ne s\'y ajoute pas', () => {
   it('un bloc collé dans une invite de mot de passe n\'en garde que la première ligne', async () => {
-    session.setMultilinePasteEnabled(false);
+    session.definirCollageMultiligne(false);
     await enInviteDeMotDePasse();
     await session.pasteText('secret\nrm -rf /\nautre chose\n');
     expect(session.getPasswordBuf()).toBe('secret');
@@ -124,7 +124,7 @@ describe('collage coupé : un mot de passe est une ligne, et le reste ne s\'y aj
   }, 30_000);
 
   it('et rien n\'est exécuté : le mot de passe ne soumet pas la suite', async () => {
-    session.setMultilinePasteEnabled(false);
+    session.definirCollageMultiligne(false);
     await enInviteDeMotDePasse();
     await session.pasteText('secret\necho FUITE\n');
     expect(texte()).not.toContain('FUITE');
@@ -176,7 +176,7 @@ describe('sous un sous-shell, le collage reste gouvernable', () => {
   }, 60_000);
 
   it('collage coupé, une invite de mot de passe DANS le sous-shell retient le bloc', async () => {
-    session.setMultilinePasteEnabled(false);
+    session.definirCollageMultiligne(false);
     const enfant = await avecSousShell();
     // Si l'hôte cessait de relayer le mode de son premier plan, le
     // collage soumettrait la suite du bloc dans l'invite masquée.

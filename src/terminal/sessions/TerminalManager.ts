@@ -175,7 +175,7 @@ export class TerminalManager {
     const sessionId = `session-${nextSessionId++}`;
     const session = createSessionForDevice(device, sessionId);
     if (!session) return null;
-    if (effective === 'vty') session.attachToVtyLine();
+    if (effective === 'vty') session.rattacherALigneVty();
 
     this.sessions.set(sessionId, session);
     const deviceSessions = this.deviceSessions.get(deviceId) || [];
@@ -196,29 +196,6 @@ export class TerminalManager {
     return sessionId;
   }
 
-  /**
-   * Ouvrir un terminal sur un equipement, c'est brancher un cable sur son
-   * port CONSOLE. Un chassis n'en a qu'un, et c'est vrai : la seconde
-   * fenetre ne peut pas etre une seconde console.
-   *
-   * Elle n'est pas pour autant la MEME session. Sur une vraie machine,
-   * le deuxieme operateur n'arrache pas le cable du premier : il entre
-   * par une ligne VIRTUELLE, une vty, qui a son propre mode, son propre
-   * niveau de privilege et son propre historique. Rendre la session deja
-   * ouverte supprimait cette possibilite de l'application — deux
-   * fenetres sur un routeur devenaient un seul terminal, et l'isolation
-   * par vty, qui existe et fonctionne, n'etait plus atteignable.
-   *
-   * Demander explicitement `console` rend donc la session deja ouverte —
-   * un chassis n'a qu'un port, et c'est la reponse juste a cette
-   * question-la. Ne rien demander, ce que fait l'interface, veut dire
-   * « ouvre-moi une ligne » : la console si elle est libre, une vty
-   * sinon.
-   *
-   * Un hote (Linux, Windows) n'a pas ce partage : un PC a plusieurs
-   * consoles virtuelles, chacune avec son `cwd`, son environnement et
-   * son pts.
-   */
   private consoleDejaOuverte(device: Equipment): string | null {
     if (!consolePortUnique(device)) return null;
     const ouvertes = this.deviceSessions.get(device.getId()) ?? [];

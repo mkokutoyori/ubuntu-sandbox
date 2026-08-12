@@ -66,6 +66,10 @@ const LINE_ID_WRAP = 2_000_000_000;
  */
 const PASTE_SLICE_MS = 12;
 
+const TOURS_INVITE_COLLAGE = 50;
+
+const TOURS_STABILISATION = 2;
+
 /**
  * Rendre la main à la boucle d'événements — vraiment. `await
  * Promise.resolve()` ne suffit pas : c'est une micro-tâche, et le
@@ -531,7 +535,7 @@ export abstract class TerminalSession {
 
   get isRemoteChild(): boolean { return this._parent !== null; }
 
-  attachToVtyLine(): void { /* vendor hook */ }
+  rattacherALigneVty(): void { /* vendor hook */ }
 
   protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
 
@@ -802,69 +806,78 @@ export abstract class TerminalSession {
 
   async pasteText(raw: string): Promise<void> {
     if (this.disposed) return;
-    const normalized = raw.replace(/\r\n?/g, '\n');
-    if (!normalized.includes('\n')) { this.insertText(normalized); return; }
-    if (!this._multilinePasteEnabled) { this.pasteWithoutExecuting(normalized); return; }
+    const normalise = raw.replace(/\r\n?/g, '\n');
+    if (!normalise.includes('\n')) { this.insertText(normalise); return; }
+    if (!this._collageMultiligne) { this.collerSansExecuter(normalise); return; }
 
-    const lines = normalized.split('\n');
-    const trailing = lines.pop() ?? '';
+    const lignes = normalise.split('\n');
+    const derniere = lignes.pop() ?? '';
     this._pasteAborted = false;
     this._pasteRunning = true;
     let tranche = Date.now();
     try {
-      for (let i = 0; i < lines.length; i++) {
+      for (let i = 0; i < lignes.length; i++) {
         if (this.disposed) return;
-        if (this._pasteAborted) { this.reportPasteAborted(lines.length - i); return; }
-        if (!this.acceptsPastedLine()) {
-          this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
+        if (this._pasteAborted) { this.signalerCollageInterrompu(lignes.length - i); return; }
+        if (!this.accepteUneLigneCollee()) {
+          this.insertText([lignes[i], ...lignes.slice(i + 1), derniere].join(' '));
           return;
         }
-        await this.submitPastedLine(lines[i]);
-        // Rendre la main au navigateur quand la tranche est épuisée.
-        // Sans cela, un collage n'obtenait AUCUN tour de boucle
-        // d'événements : `await` sur une promesse déjà résolue ne
-        // produit qu'une micro-tâche, et les micro-tâches s'exécutent
-        // jusqu'à épuisement avant le moindre rendu. L'onglet restait
-        // donc figé du début à la fin du collage — rien ne s'affichait
-        // au fur et à mesure, aucun clic ne passait, et le Ctrl-C
-        // censé l'interrompre n'était jamais lu.
+        await this.soumettreLigneCollee(lignes[i]);
         if (Date.now() - tranche >= PASTE_SLICE_MS) {
           await yieldToEventLoop();
           tranche = Date.now();
         }
       }
-      if (!this.disposed) this.insertText(trailing);
+      if (!this.disposed) this.insertText(derniere);
     } finally {
       this._pasteRunning = false;
     }
   }
 
-  private acceptsPastedLine(): boolean {
+  private accepteUneLigneCollee(): boolean {
     const mode = this.currentInputMode.type;
     return mode === 'normal' || mode === 'password'
       || mode === 'interactive-text' || mode === 'pager';
   }
 
-  private async submitPastedLine(ligne: string): Promise<void> {
+  private async soumettreLigneCollee(ligne: string): Promise<void> {
     if (this.currentInputMode.type === 'normal') {
       this.setInput(this.input + ligne);
-      const result = this.dispatchEnter();
-      if (result && typeof (result as { then?: unknown }).then === 'function') {
-        await result;
+      const resultat = this.dispatchEnter();
+      if (resultat && typeof (resultat as { then?: unknown }).then === 'function') {
+        await resultat;
       }
       return;
     }
+    const avant = this.signatureInvite();
     this.insertText(ligne);
     this.handleKey({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
-    await yieldToEventLoop();
+    await this.attendreQueLInviteAvance(avant);
   }
 
-  private pasteWithoutExecuting(normalized: string): void {
+  private signatureInvite(): string {
+    const mode = this.currentInputMode;
+    const texte = (mode as { promptText?: string }).promptText ?? '';
+    return `${mode.type}|${texte}`;
+  }
+
+  private async attendreQueLInviteAvance(avant: string): Promise<void> {
+    for (let i = 0; i < TOURS_INVITE_COLLAGE; i++) {
+      await yieldToEventLoop();
+      const maintenant = this.signatureInvite();
+      const surLaLigne = maintenant.startsWith('normal|');
+      if (!surLaLigne && maintenant !== avant) return;
+      if (surLaLigne && i >= TOURS_STABILISATION) return;
+    }
+  }
+
+  private collerSansExecuter(normalise: string): void {
     if (this.currentInputMode.type !== 'password') {
-      this.insertText(normalized);
+      this.insertText(normalise);
       return;
     }
-    const [premiere, ...reste] = normalized.split('\n');
+    const [premiere, ...reste] = normalise.split('\n');
     this.insertText(premiere);
     const ignorees = reste.filter((l) => l.trim() !== '').length;
     if (ignorees > 0) {
@@ -914,7 +927,7 @@ export abstract class TerminalSession {
     return null;
   }
 
-  private reportPasteAborted(restantes: number): void {
+  private signalerCollageInterrompu(restantes: number): void {
     this.setInput('');
     this.addLine(`% Paste aborted — ${restantes} line${restantes === 1 ? '' : 's'} not executed`);
   }
@@ -1768,21 +1781,21 @@ export abstract class TerminalSession {
     return this._ghostTextEnabled;
   }
 
-  private _multilinePasteEnabled = true;
+  private _collageMultiligne = true;
 
-  isMultilinePasteEnabled(): boolean {
-    return this._multilinePasteEnabled;
+  collageMultiligneActif(): boolean {
+    return this._collageMultiligne;
   }
 
-  setMultilinePasteEnabled(enabled: boolean): void {
-    if (this._multilinePasteEnabled === enabled) return;
-    this._multilinePasteEnabled = enabled;
+  definirCollageMultiligne(enabled: boolean): void {
+    if (this._collageMultiligne === enabled) return;
+    this._collageMultiligne = enabled;
     this.notify();
   }
 
-  toggleMultilinePaste(): boolean {
-    this.setMultilinePasteEnabled(!this._multilinePasteEnabled);
-    return this._multilinePasteEnabled;
+  basculerCollageMultiligne(): boolean {
+    this.definirCollageMultiligne(!this._collageMultiligne);
+    return this._collageMultiligne;
   }
 
   /**
