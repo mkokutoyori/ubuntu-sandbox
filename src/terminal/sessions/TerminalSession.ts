@@ -61,14 +61,14 @@ const LINE_ID_WRAP = 2_000_000_000;
  * Durée maximale pendant laquelle un collage garde la main avant de
  * rendre un tour au navigateur. Une trame à 60 Hz dure 16 ms : au-delà,
  * l'onglet cesse de peindre et de répondre. Découper par le TEMPS et
- * non par un nombre de lignes est ce qui garde le coût nul sur un petit
+ * non par un nombre de lines est ce qui garde le coût nul sur un petit
  * collage tout en bornant le gel sur un gros.
  */
 const PASTE_SLICE_MS = 12;
 
-const TOURS_INVITE_COLLAGE = 50;
+const PASTE_PROMPT_TURNS = 50;
 
-const TOURS_STABILISATION = 2;
+const PASTE_SETTLE_TURNS = 2;
 
 /**
  * Rendre la main à la boucle d'événements — vraiment. `await
@@ -535,7 +535,7 @@ export abstract class TerminalSession {
 
   get isRemoteChild(): boolean { return this._parent !== null; }
 
-  rattacherALigneVty(): void { /* vendor hook */ }
+  attachToVtyLine(): void { /* vendor hook */ }
 
   protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
 
@@ -806,83 +806,83 @@ export abstract class TerminalSession {
 
   async pasteText(raw: string): Promise<void> {
     if (this.disposed) return;
-    const normalise = raw.replace(/\r\n?/g, '\n');
-    if (!normalise.includes('\n')) { this.insertText(normalise); return; }
-    if (!this._collageMultiligne) { this.collerSansExecuter(normalise); return; }
+    const normalized = raw.replace(/\r\n?/g, '\n');
+    if (!normalized.includes('\n')) { this.insertText(normalized); return; }
+    if (!this._multilinePasteEnabled) { this.pasteWithoutExecuting(normalized); return; }
 
-    const lignes = normalise.split('\n');
-    const derniere = lignes.pop() ?? '';
+    const lines = normalized.split('\n');
+    const trailing = lines.pop() ?? '';
     this._pasteAborted = false;
     this._pasteRunning = true;
     let tranche = Date.now();
     try {
-      for (let i = 0; i < lignes.length; i++) {
+      for (let i = 0; i < lines.length; i++) {
         if (this.disposed) return;
-        if (this._pasteAborted) { this.signalerCollageInterrompu(lignes.length - i); return; }
-        if (!this.accepteUneLigneCollee()) {
-          this.insertText([lignes[i], ...lignes.slice(i + 1), derniere].join(' '));
+        if (this._pasteAborted) { this.reportPasteAborted(lines.length - i); return; }
+        if (!this.acceptsPastedLine()) {
+          this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
           return;
         }
-        await this.soumettreLigneCollee(lignes[i]);
+        await this.submitPastedLine(lines[i]);
         if (Date.now() - tranche >= PASTE_SLICE_MS) {
           await yieldToEventLoop();
           tranche = Date.now();
         }
       }
-      if (!this.disposed) this.insertText(derniere);
+      if (!this.disposed) this.insertText(trailing);
     } finally {
       this._pasteRunning = false;
     }
   }
 
-  private accepteUneLigneCollee(): boolean {
+  private acceptsPastedLine(): boolean {
     const mode = this.currentInputMode.type;
     return mode === 'normal' || mode === 'password'
       || mode === 'interactive-text' || mode === 'pager';
   }
 
-  private async soumettreLigneCollee(ligne: string): Promise<void> {
+  private async submitPastedLine(line: string): Promise<void> {
     if (this.currentInputMode.type === 'normal') {
-      this.setInput(this.input + ligne);
-      const resultat = this.dispatchEnter();
-      if (resultat && typeof (resultat as { then?: unknown }).then === 'function') {
-        await resultat;
+      this.setInput(this.input + line);
+      const result = this.dispatchEnter();
+      if (result && typeof (result as { then?: unknown }).then === 'function') {
+        await result;
       }
       return;
     }
-    const avant = this.signatureInvite();
-    this.insertText(ligne);
+    const before = this.promptSignature();
+    this.insertText(line);
     this.handleKey({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
-    await this.attendreQueLInviteAvance(avant);
+    await this.waitForPromptToAdvance(before);
   }
 
-  private signatureInvite(): string {
+  private promptSignature(): string {
     const mode = this.currentInputMode;
-    const texte = (mode as { promptText?: string }).promptText ?? '';
-    return `${mode.type}|${texte}`;
+    const text = (mode as { promptText?: string }).promptText ?? '';
+    return `${mode.type}|${text}`;
   }
 
-  private async attendreQueLInviteAvance(avant: string): Promise<void> {
-    for (let i = 0; i < TOURS_INVITE_COLLAGE; i++) {
+  private async waitForPromptToAdvance(before: string): Promise<void> {
+    for (let i = 0; i < PASTE_PROMPT_TURNS; i++) {
       await yieldToEventLoop();
-      const maintenant = this.signatureInvite();
-      const surLaLigne = maintenant.startsWith('normal|');
-      if (!surLaLigne && maintenant !== avant) return;
-      if (surLaLigne && i >= TOURS_STABILISATION) return;
+      const current = this.promptSignature();
+      const onCommandLine = current.startsWith('normal|');
+      if (!onCommandLine && current !== before) return;
+      if (onCommandLine && i >= PASTE_SETTLE_TURNS) return;
     }
   }
 
-  private collerSansExecuter(normalise: string): void {
+  private pasteWithoutExecuting(normalized: string): void {
     if (this.currentInputMode.type !== 'password') {
-      this.insertText(normalise);
+      this.insertText(normalized);
       return;
     }
-    const [premiere, ...reste] = normalise.split('\n');
-    this.insertText(premiere);
-    const ignorees = reste.filter((l) => l.trim() !== '').length;
-    if (ignorees > 0) {
+    const [first, ...rest] = normalized.split('\n');
+    this.insertText(first);
+    const ignored = rest.filter((l) => l.trim() !== '').length;
+    if (ignored > 0) {
       this.addLine('% Multi-line paste into a password prompt — '
-        + `${ignorees} further line${ignorees === 1 ? '' : 's'} ignored`);
+        + `${ignored} further line${ignored === 1 ? '' : 's'} ignored`);
     }
   }
 
@@ -927,7 +927,7 @@ export abstract class TerminalSession {
     return null;
   }
 
-  private signalerCollageInterrompu(restantes: number): void {
+  private reportPasteAborted(restantes: number): void {
     this.setInput('');
     this.addLine(`% Paste aborted — ${restantes} line${restantes === 1 ? '' : 's'} not executed`);
   }
@@ -1781,21 +1781,21 @@ export abstract class TerminalSession {
     return this._ghostTextEnabled;
   }
 
-  private _collageMultiligne = true;
+  private _multilinePasteEnabled = true;
 
-  collageMultiligneActif(): boolean {
-    return this._collageMultiligne;
+  isMultilinePasteEnabled(): boolean {
+    return this._multilinePasteEnabled;
   }
 
-  definirCollageMultiligne(enabled: boolean): void {
-    if (this._collageMultiligne === enabled) return;
-    this._collageMultiligne = enabled;
+  setMultilinePasteEnabled(enabled: boolean): void {
+    if (this._multilinePasteEnabled === enabled) return;
+    this._multilinePasteEnabled = enabled;
     this.notify();
   }
 
-  basculerCollageMultiligne(): boolean {
-    this.definirCollageMultiligne(!this._collageMultiligne);
-    return this._collageMultiligne;
+  toggleMultilinePaste(): boolean {
+    this.setMultilinePasteEnabled(!this._multilinePasteEnabled);
+    return this._multilinePasteEnabled;
   }
 
   /**

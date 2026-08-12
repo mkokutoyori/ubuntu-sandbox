@@ -1926,7 +1926,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   async processTimers(seconds: number): Promise<void> {
     const ms = Math.max(0, seconds) * 1000;
     this.convergeDynamicRouting();
-    Router.horlogeDeSimulation().advance(ms);
+    Router.simulationClock().advance(ms);
     this.advanceProtocolTimers(ms);
     this.convergeDynamicRouting();
   }
@@ -1935,12 +1935,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.ripEngine.advanceTime(ms);
   }
 
-  private static horlogeDeSimulation(): VirtualTimeScheduler {
-    const courant = getDefaultScheduler();
-    if (courant instanceof VirtualTimeScheduler) return courant;
-    const neuve = new VirtualTimeScheduler();
-    __setDefaultScheduler(neuve);
-    return neuve;
+  private static simulationClock(): VirtualTimeScheduler {
+    const current = getDefaultScheduler();
+    if (current instanceof VirtualTimeScheduler) return current;
+    const fresh = new VirtualTimeScheduler();
+    __setDefaultScheduler(fresh);
+    return fresh;
   }
 
   /** Real dynamic-routing engines (EIGRP/BGP) + topology adapter. */

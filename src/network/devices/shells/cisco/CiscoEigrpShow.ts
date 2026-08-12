@@ -1,26 +1,8 @@
-/**
- * Les vues EIGRP d'IOS, rendues d'après des sorties RÉELLES.
- *
- * Les largeurs de colonnes viennent de captures (`ntc-templates`,
- * jeux `show_ip_eigrp_neighbors` et `show_ip_eigrp_interfaces_detail`),
- * pas d'un exemple de documentation dont le HTML écrase les blancs —
- * c'est-à-dire l'information cherchée. Le défaut qu'elles ferment est
- * mesuré : la table des voisins collait le nom d'interface au temps de
- * garde (`GigabitEthernet0/013`), et la vue des interfaces ne rendait
- * que son en-tête, jamais une ligne.
- *
- * Deux lignes d'en-tête sont écrites telles quelles plutôt que
- * déclarées : sur la vraie machine, l'en-tête et les données de
- * `show ip eigrp interfaces` ne sont PAS alignés (les valeurs partent
- * deux caractères après leur intitulé), donc les déduire l'un de
- * l'autre reproduirait un alignement que le produit réel n'a pas. Elles
- * ne portent aucune donnée, il n'y a donc rien qui puisse dériver.
- */
 import { renderTable, FIXED_TABLE } from '../cli/TextTable';
 import type { EIGRPEngine } from '../../../eigrp/EIGRPEngine';
 import type { EigrpStubTlv } from '../../../eigrp/packets';
 
-interface RangeeVoisin {
+interface NeighborRow {
   h: number;
   address: string;
   iface: string;
@@ -31,30 +13,29 @@ interface RangeeVoisin {
   seq: number;
 }
 
-const COLONNES_VOISINS = [
-  { header: 'H', width: 4, value: (r: RangeeVoisin) => String(r.h) },
-  { header: 'Address', width: 24, value: (r: RangeeVoisin) => r.address },
-  { header: 'Interface', width: 23, value: (r: RangeeVoisin) => r.iface },
-  { header: 'Hold', width: 5, value: (r: RangeeVoisin) => String(r.hold).padStart(4) },
-  { header: 'Uptime', width: 9, value: (r: RangeeVoisin) => dureeIos(r.uptimeSec) },
-  { header: 'SRTT', width: 7, value: (r: RangeeVoisin) => String(r.srtt).padStart(4) },
-  { header: 'RTO', width: 5, value: (r: RangeeVoisin) => String(r.rto).padStart(3) },
+const NEIGHBOR_COLUMNS = [
+  { header: 'H', width: 4, value: (r: NeighborRow) => String(r.h) },
+  { header: 'Address', width: 24, value: (r: NeighborRow) => r.address },
+  { header: 'Interface', width: 23, value: (r: NeighborRow) => r.iface },
+  { header: 'Hold', width: 5, value: (r: NeighborRow) => String(r.hold).padStart(4) },
+  { header: 'Uptime', width: 9, value: (r: NeighborRow) => iosUptime(r.uptimeSec) },
+  { header: 'SRTT', width: 7, value: (r: NeighborRow) => String(r.srtt).padStart(4) },
+  { header: 'RTO', width: 5, value: (r: NeighborRow) => String(r.rto).padStart(3) },
   { header: 'Q', width: 3, value: () => '0' },
-  { header: 'Seq', value: (r: RangeeVoisin) => String(r.seq) },
+  { header: 'Seq', value: (r: NeighborRow) => String(r.seq) },
 ] as const;
 
-/** La seconde ligne d'en-tête, aux abscisses de la capture. */
-function poser(labels: ReadonlyArray<readonly [number, string]>): string {
+function placeAt(labels: ReadonlyArray<readonly [number, string]>): string {
   let out = '';
-  for (const [col, texte] of labels) {
-    out = out.padEnd(col) + texte;
+  for (const [col, text] of labels) {
+    out = out.padEnd(col) + text;
   }
   return out;
 }
 
-const UNITES_VOISINS = poser([[51, '(sec)'], [65, '(ms)'], [76, 'Cnt'], [80, 'Num']]);
+const NEIGHBOR_UNITS_ROW = placeAt([[51, '(sec)'], [65, '(ms)'], [76, 'Cnt'], [80, 'Num']]);
 
-export function dureeIos(sec: number): string {
+export function iosUptime(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
   if (s < 86400) {
     const h = Math.floor(s / 3600);
@@ -67,10 +48,10 @@ export function dureeIos(sec: number): string {
   return `${Math.floor(j / 7)}w${j % 7}d`;
 }
 
-function rangeesVoisins(e: EIGRPEngine): RangeeVoisin[] {
-  const vues = e.getNeighbors();
+function neighborRows(e: EIGRPEngine): NeighborRow[] {
+  const views = e.getNeighbors();
   const details = new Map(e.getNeighborDetails().map((d) => [`${d.ip}%${d.iface}`, d]));
-  return vues.map((v, i) => ({
+  return views.map((v, i) => ({
     h: i,
     address: v.address,
     iface: v.iface,
@@ -82,46 +63,45 @@ function rangeesVoisins(e: EIGRPEngine): RangeeVoisin[] {
   }));
 }
 
-function enTeteVoisins(asn: number): string[] {
+function neighborHeader(asn: number): string[] {
   return [`EIGRP-IPv4 Neighbors for AS(${asn})`];
 }
 
 export function showIpEigrpNeighbors(e: EIGRPEngine): string {
-  const rangees = rangeesVoisins(e);
-  const table = renderTable(rangees, COLONNES_VOISINS, FIXED_TABLE);
+  const rows = neighborRows(e);
+  const table = renderTable(rows, NEIGHBOR_COLUMNS, FIXED_TABLE);
   return [
-    ...enTeteVoisins(e.getConfig().asn),
-    table[0], UNITES_VOISINS, ...table.slice(1),
+    ...neighborHeader(e.getConfig().asn),
+    table[0], NEIGHBOR_UNITS_ROW, ...table.slice(1),
   ].join('\n');
 }
 
-/** `( CONNECTED SUMMARY )` — ce que le pair a réellement annoncé. */
-function optionsStub(s: EigrpStubTlv): string {
-  const mots: string[] = [];
-  if (s.connected) mots.push('CONNECTED');
-  if (s.staticRoutes) mots.push('STATIC');
-  if (s.summary) mots.push('SUMMARY');
-  if (s.redistributed) mots.push('REDISTRIBUTED');
-  if (s.receiveOnly) mots.push('RECEIVE-ONLY');
-  return mots.join(' ');
+function stubTlvOptions(s: EigrpStubTlv): string {
+  const words: string[] = [];
+  if (s.connected) words.push('CONNECTED');
+  if (s.staticRoutes) words.push('STATIC');
+  if (s.summary) words.push('SUMMARY');
+  if (s.redistributed) words.push('REDISTRIBUTED');
+  if (s.receiveOnly) words.push('RECEIVE-ONLY');
+  return words.join(' ');
 }
 
 export function showIpEigrpNeighborsDetail(e: EIGRPEngine): string {
-  const rangees = rangeesVoisins(e);
+  const rows = neighborRows(e);
   const details = new Map(e.getNeighborDetails().map((d) => [`${d.ip}%${d.iface}`, d]));
-  const table = renderTable(rangees, COLONNES_VOISINS, FIXED_TABLE);
+  const table = renderTable(rows, NEIGHBOR_COLUMNS, FIXED_TABLE);
   const out = [
-    ...enTeteVoisins(e.getConfig().asn),
-    table[0], UNITES_VOISINS,
+    ...neighborHeader(e.getConfig().asn),
+    table[0], NEIGHBOR_UNITS_ROW,
   ];
-  rangees.forEach((r, i) => {
+  rows.forEach((r, i) => {
     out.push(table[i + 1]);
     const d = details.get(`${r.address}%${r.iface}`);
     out.push('   Version 4.0/3.0, Retrans: 0, Retries: 0, Prefixes: '
       + String(e.getTopologyTable().size));
     out.push('   Topology-ids from peer - 0');
     if (d?.stub) {
-      out.push(`   Stub Peer Advertising ( ${optionsStub(d.stub)} ) Routes`);
+      out.push(`   Stub Peer Advertising ( ${stubTlvOptions(d.stub)} ) Routes`);
       out.push('   Suppressing queries');
     }
   });
@@ -129,7 +109,7 @@ export function showIpEigrpNeighborsDetail(e: EIGRPEngine): string {
 }
 
 
-interface RangeeInterface {
+interface InterfaceRow {
   iface: string;
   peers: number;
   helloSec: number;
@@ -142,9 +122,9 @@ interface RangeeInterface {
   updateSent: number;
 }
 
-const COLONNES_INTERFACES = [
-  { header: '', width: 23, value: (r: RangeeInterface) => r.iface },
-  { header: '', width: 9, value: (r: RangeeInterface) => String(r.peers) },
+const INTERFACE_COLUMNS = [
+  { header: '', width: 23, value: (r: InterfaceRow) => r.iface },
+  { header: '', width: 9, value: (r: InterfaceRow) => String(r.peers) },
   { header: '', width: 10, value: () => '0/0' },
   { header: '', width: 13, value: () => '0/0' },
   { header: '', width: 9, value: () => '0' },
@@ -153,12 +133,12 @@ const COLONNES_INTERFACES = [
   { header: '', value: () => '0' },
 ] as const;
 
-const ENTETE_INTERFACES_1 =
+const INTERFACE_HEADER_1 =
   '                              Xmit Queue   PeerQ        Mean   Pacing Time   Multicast    Pending';
-const ENTETE_INTERFACES_2 =
+const INTERFACE_HEADER_2 =
   'Interface              Peers  Un/Reliable  Un/Reliable  SRTT   Un/Reliable   Flow Timer   Routes';
 
-function rangeesInterfaces(e: EIGRPEngine): RangeeInterface[] {
+function interfaceRows(e: EIGRPEngine): InterfaceRow[] {
   return e.getInterfaceStates().map((s) => {
     const t = e.getInterfaceTraffic(s.iface);
     return { ...s, ...t };
@@ -166,17 +146,17 @@ function rangeesInterfaces(e: EIGRPEngine): RangeeInterface[] {
 }
 
 export function showIpEigrpInterfaces(e: EIGRPEngine, detail = false,
-  seulement?: string): string {
-  let rangees = rangeesInterfaces(e);
-  if (seulement) {
-    rangees = rangees.filter((r) => r.iface.toLowerCase() === seulement.toLowerCase());
+  only?: string): string {
+  let rows = interfaceRows(e);
+  if (only) {
+    rows = rows.filter((r) => r.iface.toLowerCase() === only.toLowerCase());
   }
-  const table = renderTable(rangees, COLONNES_INTERFACES, FIXED_TABLE);
+  const table = renderTable(rows, INTERFACE_COLUMNS, FIXED_TABLE);
   const out = [
     `EIGRP-IPv4 Interfaces for AS(${e.getConfig().asn})`,
-    ENTETE_INTERFACES_1, ENTETE_INTERFACES_2,
+    INTERFACE_HEADER_1, INTERFACE_HEADER_2,
   ];
-  rangees.forEach((r, i) => {
+  rows.forEach((r, i) => {
     out.push(table[i + 1]);
     if (!detail) return;
     out.push(`  Hello-interval is ${r.helloSec}, Hold-time is ${r.holdSec}`);
@@ -199,7 +179,7 @@ export function showIpEigrpInterfaces(e: EIGRPEngine, detail = false,
 }
 
 
-const CODES_TOPOLOGIE = [
+const TOPOLOGY_CODES = [
   'Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,',
   '       r - reply Status, s - sia Status',
   '',
@@ -207,47 +187,45 @@ const CODES_TOPOLOGIE = [
 
 export function showIpEigrpTopology(e: EIGRPEngine, allLinks = false): string {
   const c = e.getConfig();
-  const lignes = [
+  const lines = [
     `EIGRP-IPv4 Topology Table for AS(${c.asn})/ID(${e.effectiveRouterId()})`,
-    ...CODES_TOPOLOGIE,
+    ...TOPOLOGY_CODES,
   ];
   for (const pre of e.originatedPrefixes()) {
-    const fd = metriqueConnectee(pre.bandwidthKbps, pre.delayUsec);
-    lignes.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is ${fd}`);
-    lignes.push(pre.external
+    const fd = connectedMetric(pre.bandwidthKbps, pre.delayUsec);
+    lines.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is ${fd}`);
+    lines.push(pre.external
       ? '        via Redistributed'
       : `        via Connected, ${pre.iface ?? ''}`.trimEnd());
   }
-  for (const [prefixe, entree] of e.getTopologyTable()) {
-    const total = 1 + entree.feasibleSuccessors.length;
-    lignes.push(`P ${prefixe}, ${total} successors, FD is ${entree.fd}`);
-    lignes.push(`        via ${entree.successorNextHop} (${entree.fd}/`
-      + `${entree.successorRd}), ${entree.successorIface}`);
-    for (const fs of entree.feasibleSuccessors) {
-      lignes.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
+  for (const [prefix, entry] of e.getTopologyTable()) {
+    const total = 1 + entry.feasibleSuccessors.length;
+    lines.push(`P ${prefix}, ${total} successors, FD is ${entry.fd}`);
+    lines.push(`        via ${entry.successorNextHop} (${entry.fd}/`
+      + `${entry.successorRd}), ${entry.successorIface}`);
+    for (const fs of entry.feasibleSuccessors) {
+      lines.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
     }
     if (allLinks) {
-      for (const autre of entree.rejectedPaths) {
-        lignes.push(`        via ${autre.nextHop} (${autre.metric}/${autre.rd}), `
-          + `${autre.iface}`);
+      for (const other of entry.rejectedPaths) {
+        lines.push(`        via ${other.nextHop} (${other.metric}/${other.rd}), `
+          + `${other.iface}`);
       }
     }
   }
-  return lignes.join('\n');
+  return lines.join('\n');
 }
 
-function metriqueConnectee(bwKbps = 0, delayUsec = 0): number {
+function connectedMetric(bwKbps = 0, delayUsec = 0): number {
   const bw = bwKbps > 0 ? Math.floor(10000000 / bwKbps) : 0;
   return (bw + Math.floor(delayUsec / 10)) * 256;
 }
 
 
-/** Ce que `show ip protocols` a besoin de lire sur le routeur. */
 export interface EigrpProtocolHost {
   _getPortsInternal(): ReadonlyMap<string, unknown>;
 }
 
-/** Le processus tel que la configuration le décrit. */
 export interface EigrpProtocolProcess {
   asn: number;
   routerId?: string;
@@ -261,7 +239,7 @@ export interface EigrpProtocolProcess {
 }
 
 export function eigrpProtocolBlock(
-  p: EigrpProtocolProcess, e: EIGRPEngine, hote: EigrpProtocolHost,
+  p: EigrpProtocolProcess, e: EIGRPEngine, host: EigrpProtocolHost,
 ): string[] {
   const c = e.getConfig();
   const k = c.kValues;
@@ -279,7 +257,7 @@ export function eigrpProtocolBlock(
   const stub = e.getStub();
   if (stub) {
     out.push('    EIGRP stub-router feature is enabled');
-    out.push(`      Stub Options: ${optionsStubConfig(stub)}`);
+    out.push(`      Stub Options: ${stubConfigOptions(stub)}`);
   }
   out.push('    Topology : 0 (base)');
   out.push('      Active Timer: 3 min');
@@ -289,7 +267,7 @@ export function eigrpProtocolBlock(
   out.push(`      EIGRP maximum metric variance ${c.variance}`);
   for (const r of p.redistribute) out.push(`  Redistributing: ${r.protocol}`);
   out.push(`  Automatic summarization: ${p.autoSummary ? 'enabled' : 'disabled'}`);
-  const resumes = resumesConfigures(hote);
+  const resumes = configuredSummaries(host);
   if (resumes.length) {
     out.push('  Address Summarization:');
     for (const r of resumes) out.push(`    ${r}`);
@@ -304,7 +282,7 @@ export function eigrpProtocolBlock(
     for (const i of passives) out.push(`    ${i}`);
   }
   if (p.passiveDefault) {
-    const actives = [...hote._getPortsInternal().keys()]
+    const actives = [...host._getPortsInternal().keys()]
       .filter((n) => !p.passive.has(n)).sort();
     if (actives.length) {
       out.push('  Active Interface(s):');
@@ -315,42 +293,41 @@ export function eigrpProtocolBlock(
   out.push('    Gateway         Distance      Last Update');
   for (const n of e.getNeighbors()) {
     out.push(`    ${n.address.padEnd(16)}${String(90).padStart(4)}`
-      + `      ${dureeIos(n.uptimeSec)}`);
+      + `      ${iosUptime(n.uptimeSec)}`);
   }
   out.push('  Distance: internal 90 external 170');
   return out;
 }
 
-function optionsStubConfig(s: {
+function stubConfigOptions(s: {
   connected: boolean; summary: boolean; staticRoutes: boolean;
   redistributed: boolean; receiveOnly: boolean;
 }): string {
-  const mots: string[] = [];
-  if (s.receiveOnly) mots.push('Receive-Only');
-  if (s.connected) mots.push('Connected');
-  if (s.staticRoutes) mots.push('Static');
-  if (s.summary) mots.push('Summary');
-  if (s.redistributed) mots.push('Redistributed');
-  return mots.join(', ');
+  const words: string[] = [];
+  if (s.receiveOnly) words.push('Receive-Only');
+  if (s.connected) words.push('Connected');
+  if (s.staticRoutes) words.push('Static');
+  if (s.summary) words.push('Summary');
+  if (s.redistributed) words.push('Redistributed');
+  return words.join(', ');
 }
 
-/** `ip summary-address eigrp <as> <prefixe> <masque>` posés sur les ports. */
-function resumesConfigures(hote: EigrpProtocolHost): string[] {
+function configuredSummaries(host: EigrpProtocolHost): string[] {
   const out: string[] = [];
-  for (const [nom, brut] of hote._getPortsInternal()) {
-    const port = brut as { eigrpSummaries?: string[] };
-    for (const ligne of port.eigrpSummaries ?? []) {
-      const mots = ligne.trim().split(/\s+/);
-      const reseau = mots[3];
-      const masque = mots[4];
-      if (!reseau || !masque) continue;
-      out.push(`${reseau}/${cidrDeMasque(masque)} for ${nom}`);
+  for (const [name, raw] of host._getPortsInternal()) {
+    const port = raw as { eigrpSummaries?: string[] };
+    for (const line of port.eigrpSummaries ?? []) {
+      const words = line.trim().split(/\s+/);
+      const network = words[3];
+      const mask = words[4];
+      if (!network || !mask) continue;
+      out.push(`${network}/${cidrFromMask(mask)} for ${name}`);
     }
   }
   return out;
 }
 
-function cidrDeMasque(masque: string): number {
-  return masque.split('.')
+function cidrFromMask(mask: string): number {
+  return mask.split('.')
     .reduce((n, o) => n + ((Number(o) >>> 0).toString(2).match(/1/g)?.length ?? 0), 0);
 }

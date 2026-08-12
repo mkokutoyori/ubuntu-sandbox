@@ -76,14 +76,14 @@ const STUB_OPTIONS = [
   'connected', 'summary', 'static', 'redistributed', 'receive-only', 'leak-map',
 ];
 
-export function enJoker(masque: string | undefined): string | undefined {
-  if (!masque || masque === 'mask') return undefined;
-  const o = masque.split('.').map(Number);
+export function toWildcard(mask: string | undefined): string | undefined {
+  if (!mask || mask === 'mask') return undefined;
+  const o = mask.split('.').map(Number);
   if (o.length !== 4 || o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
-    return masque;
+    return mask;
   }
-  const contigu = /^1*0*$/.test(o.map((n) => n.toString(2).padStart(8, '0')).join(''));
-  if (!contigu || o[0] === 0) return masque;
+  const contiguous = /^1*0*$/.test(o.map((n) => n.toString(2).padStart(8, '0')).join(''));
+  if (!contiguous || o[0] === 0) return mask;
   return o.map((n) => 255 - n).join('.');
 }
 
@@ -175,9 +175,9 @@ export function buildRoutingProtoConfig(
     if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
     if (proto === 'eigrp') {
-      const joker = enJoker(args[1]);
-      if (pushOnce(eigrp().networks, [args[0], joker].filter(Boolean).join(' '))) {
-        eigrpEng().getConfig().networks.push({ network: args[0], wildcard: joker });
+      const wildcard = toWildcard(args[1]);
+      if (pushOnce(eigrp().networks, [args[0], wildcard].filter(Boolean).join(' '))) {
+        eigrpEng().getConfig().networks.push({ network: args[0], wildcard });
       }
     } else {
       const proc = bgp();
@@ -567,17 +567,17 @@ export function buildRoutingProtoConfig(
       return '';
     }
     if (a[0] === 'stub') {
-      const mots = a.slice(1).map((m) => m.toLowerCase());
-      const inconnu = mots.find((m) => !STUB_OPTIONS.includes(m));
-      if (inconnu) throw new CliInvalidInput({ token: inconnu });
-      const choisis = mots.length ? mots : ['connected', 'summary'];
-      eigrp().stub = choisis.join(' ');
+      const words = a.slice(1).map((m) => m.toLowerCase());
+      const unknown = words.find((m) => !STUB_OPTIONS.includes(m));
+      if (unknown) throw new CliInvalidInput({ token: unknown });
+      const chosen = words.length ? words : ['connected', 'summary'];
+      eigrp().stub = chosen.join(' ');
       eigrpEng().setStub({
-        connected: choisis.includes('connected'),
-        summary: choisis.includes('summary'),
-        staticRoutes: choisis.includes('static'),
-        redistributed: choisis.includes('redistributed'),
-        receiveOnly: choisis.includes('receive-only'),
+        connected: chosen.includes('connected'),
+        summary: chosen.includes('summary'),
+        staticRoutes: chosen.includes('static'),
+        redistributed: chosen.includes('redistributed'),
+        receiveOnly: chosen.includes('receive-only'),
       });
       return '';
     }

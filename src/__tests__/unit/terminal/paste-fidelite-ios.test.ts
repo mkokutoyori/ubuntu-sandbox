@@ -129,14 +129,14 @@ describe('le réglage retient le bloc quand on le coupe', () => {
   it('par défaut il est actif — c est ce que fait une vraie machine', async () => {
     const pc = new LinuxPC('pc', 'PC1', 0, 0);
     pc.powerOn();
-    expect(new LinuxTerminalSession('t', pc).collageMultiligneActif()).toBe(true);
+    expect(new LinuxTerminalSession('t', pc).isMultilinePasteEnabled()).toBe(true);
   });
 
   it('coupé, rien ne part et le bloc reste éditable sur une seule ligne', async () => {
     const pc = new LinuxPC('pc', 'PC1', 0, 0);
     pc.powerOn();
     const s = new LinuxTerminalSession('t', pc);
-    s.definirCollageMultiligne(false);
+    s.setMultilinePasteEnabled(false);
 
     await s.pasteText('echo alpha\necho beta\n');
     expect(texte(s)).not.toContain('alpha');
@@ -147,7 +147,7 @@ describe('le réglage retient le bloc quand on le coupe', () => {
     const pc = new LinuxPC('pc', 'PC1', 0, 0);
     pc.powerOn();
     const s = new LinuxTerminalSession('t', pc);
-    s.definirCollageMultiligne(false);
+    s.setMultilinePasteEnabled(false);
     s.setInput('su - root');
     await s.dispatchEnter();
     expect(s.currentInputMode.type).toBe('password');
@@ -162,8 +162,8 @@ describe('le réglage retient le bloc quand on le coupe', () => {
     const pc = new LinuxPC('pc', 'PC1', 0, 0);
     pc.powerOn();
     const s = new LinuxTerminalSession('t', pc);
-    expect(s.basculerCollageMultiligne()).toBe(false);
-    expect(s.collageMultiligneActif()).toBe(false);
-    expect(s.basculerCollageMultiligne()).toBe(true);
+    expect(s.toggleMultilinePaste()).toBe(false);
+    expect(s.isMultilinePasteEnabled()).toBe(false);
+    expect(s.toggleMultilinePaste()).toBe(true);
   });
 });

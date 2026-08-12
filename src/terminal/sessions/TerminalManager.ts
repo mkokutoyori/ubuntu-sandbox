@@ -165,17 +165,17 @@ export class TerminalManager {
 
     const deviceId = device.getId();
 
-    const consoleOccupee = this.consoleDejaOuverte(device);
+    const openConsole = this.consoleDejaOuverte(device);
     if (ligne === 'console') {
-      if (consoleOccupee) { this.notify(); return consoleOccupee; }
+      if (openConsole) { this.notify(); return openConsole; }
     }
     const effective: LigneTerminal =
-      ligne ?? (consoleOccupee ? 'vty' : 'console');
+      ligne ?? (openConsole ? 'vty' : 'console');
 
     const sessionId = `session-${nextSessionId++}`;
     const session = createSessionForDevice(device, sessionId);
     if (!session) return null;
-    if (effective === 'vty') session.rattacherALigneVty();
+    if (effective === 'vty') session.attachToVtyLine();
 
     this.sessions.set(sessionId, session);
     const deviceSessions = this.deviceSessions.get(deviceId) || [];

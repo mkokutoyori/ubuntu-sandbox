@@ -167,7 +167,7 @@ describe('le collage coupé ne touche à aucun flux', () => {
     await s.dispatchEnter();
     expect(s.currentInputMode.type).toBe('password');
 
-    s.definirCollageMultiligne(false);
+    s.setMultilinePasteEnabled(false);
     await s.pasteText('admin\necho FUITE\n');
     await tick();
 

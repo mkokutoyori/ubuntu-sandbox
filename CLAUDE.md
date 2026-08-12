@@ -192,6 +192,8 @@ Design/analysis documents accumulate at the repo root and under `docs/`: PRDs an
 
 ## Conventions worth knowing
 
+- **Code is written in English — always.** Identifiers, types, functions, constants, locals, test names: English, without exception, in every file. Some older code in this repository carries French identifiers; that is legacy, not a pattern to follow or extend. Do not rename it wholesale either — leave it where it is and write English in anything you add or touch.
+- **Do not write comments.** No inline `//` explanations, no new `/** */` blocks. Say it with the name instead: a function whose name states what it decides needs no sentence above it, and a comment that drifts from the code is worse than no comment. Existing comments stay; do not add to them. When behaviour that an existing comment describes changes, delete that comment rather than update it — the tests are the record.
 - Production builds set `esbuild.keepNames: true` and `build.minify: 'esbuild'` because the simulator dispatches on `instance.constructor.name` (e.g. `=== 'WindowsPC'`) to choose vendor-specific behavior — default minification would break this (see comment in `vite.config.ts`).
 - Reactive protocol engines (OSPF, IPSec, DHCP, BGP, routing) follow a consistent shape: `<Protocol>Engine.ts` + `types.ts` + `events.ts` + `observables.ts` + `actors/` built on `src/events/` primitives — follow this pattern when adding a new protocol.
 - `@typescript-eslint/no-unused-vars` is disabled project-wide in `eslint.config.js`.

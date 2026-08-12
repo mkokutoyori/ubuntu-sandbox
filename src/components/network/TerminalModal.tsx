@@ -209,18 +209,18 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         </button>
         <button
           data-testid="multiline-paste-toggle"
-          onClick={() => session.basculerCollageMultiligne()}
+          onClick={() => session.toggleMultilinePaste()}
           className={cn(
             "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
-            session.collageMultiligneActif() && "bg-amber-400/10"
+            session.isMultilinePasteEnabled() && "bg-amber-400/10"
           )}
-          title={session.collageMultiligneActif()
+          title={session.isMultilinePasteEnabled()
             ? 'Multi-line paste ON — a pasted block runs line by line, like a real console (click to hold it back)'
             : 'Multi-line paste OFF — a pasted block stays editable on the command line and runs nothing'}
         >
           <ClipboardPaste className={cn(
             "w-3 h-3",
-            session.collageMultiligneActif() ? "text-amber-400" : "text-white/40 hover:text-white/70"
+            session.isMultilinePasteEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
           )} />
         </button>
         <button

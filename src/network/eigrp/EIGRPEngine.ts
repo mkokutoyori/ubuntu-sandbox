@@ -213,13 +213,13 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     return this.schedulerOverride ?? getDefaultScheduler();
   }
 
-  private generationHorloge = defaultSchedulerGeneration_();
+  private schedulerGeneration = defaultSchedulerGeneration_();
 
-  private verifierHorloge(): void {
+  private checkSchedulerGeneration(): void {
     if (this.schedulerOverride) return;
     const g = defaultSchedulerGeneration_();
-    if (g === this.generationHorloge) return;
-    this.generationHorloge = g;
+    if (g === this.schedulerGeneration) return;
+    this.schedulerGeneration = g;
     this.helloTimers.clear();
     if (!this.isEnabled()) return;
     this.armHelloTimers();
@@ -263,12 +263,12 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
 
   effectiveRouterId(): string {
     if (this.config.routerId) return this.config.routerId;
-    const connectes = this.deviceCtx.connectedNetworks();
-    const plusHaute = (liste: ConnectedNetwork[]): string | undefined =>
-      liste.map((c) => String(c.localIp))
+    const connected = this.deviceCtx.connectedNetworks();
+    const highest = (list: ConnectedNetwork[]): string | undefined =>
+      list.map((c) => String(c.localIp))
         .sort((a, b) => toNum(b) - toNum(a))[0];
-    return plusHaute(connectes.filter((c) => /^Loopback/i.test(c.iface)))
-      ?? plusHaute(connectes)
+    return highest(connected.filter((c) => /^Loopback/i.test(c.iface)))
+      ?? highest(connected)
       ?? '0.0.0.0';
   }
 
@@ -304,13 +304,13 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     for (const n of this.wireNeighbors.values()) {
       this.timers.clear(n.holdTimer);
       Logger.info(this.deviceId, 'eigrp:neighbor-cleared',
-        this.nbrChange(n, 'is down: manually cleared'));
+        this.nbrChangeMessage(n, 'is down: manually cleared'));
     }
     this.wireNeighbors.clear();
     super.converge();
   }
 
-  private readonly ifaceStats = new Map<string, {
+  private readonly perInterfaceStats = new Map<string, {
     helloSent: number; updateSent: number;
     mcastSent: number; ucastSent: number;
   }>();
@@ -318,22 +318,22 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
   getInterfaceTraffic(iface: string): {
     helloSent: number; updateSent: number; mcastSent: number; ucastSent: number;
   } {
-    return this.ifaceStats.get(iface)
+    return this.perInterfaceStats.get(iface)
       ?? { helloSent: 0, updateSent: 0, mcastSent: 0, ucastSent: 0 };
   }
 
-  private compte(iface: string, quoi: 'hello' | 'update', destIp: string): void {
-    let s = this.ifaceStats.get(iface);
+  private countOnInterface(iface: string, what: 'hello' | 'update', destIp: string): void {
+    let s = this.perInterfaceStats.get(iface);
     if (!s) {
       s = { helloSent: 0, updateSent: 0, mcastSent: 0, ucastSent: 0 };
-      this.ifaceStats.set(iface, s);
+      this.perInterfaceStats.set(iface, s);
     }
-    if (quoi === 'hello') s.helloSent++; else s.updateSent++;
+    if (what === 'hello') s.helloSent++; else s.updateSent++;
     if (destIp === EIGRP_MULTICAST_IP) s.mcastSent++; else s.ucastSent++;
   }
 
   resetTraffic(): void {
-    this.ifaceStats.clear();
+    this.perInterfaceStats.clear();
     for (const k of Object.keys(this.traffic) as Array<keyof typeof this.traffic>) {
       this.traffic[k] = 0;
     }
@@ -464,12 +464,12 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     };
   }
 
-  private authAccepts(iface: string, recu: EigrpAuthTlv | undefined): boolean {
-    const attendu = this.authFor(iface);
-    const protege = this.ifaceAuth.get(iface)?.mode === 'md5';
-    if (!protege) return recu === undefined;
-    if (!recu || !attendu) return false;
-    return recu.keyId === attendu.keyId && recu.digest === attendu.digest;
+  private authAccepts(iface: string, received: EigrpAuthTlv | undefined): boolean {
+    const expected = this.authFor(iface);
+    const protected_ = this.ifaceAuth.get(iface)?.mode === 'md5';
+    if (!protected_) return received === undefined;
+    if (!received || !expected) return false;
+    return received.keyId === expected.keyId && received.digest === expected.digest;
   }
 
 
@@ -524,9 +524,9 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     };
   }
 
-  private nbrChange(n: { ip: string; iface: string }, suite: string): string {
+  private nbrChangeMessage(n: { ip: string; iface: string }, rest: string): string {
     return `%DUAL-5-NBRCHANGE: EIGRP-IPv4 ${this.config.asn}: `
-      + `Neighbor ${n.ip} (${n.iface}) ${suite}`;
+      + `Neighbor ${n.ip} (${n.iface}) ${rest}`;
   }
 
   private helloSecFor(iface?: string): number {
@@ -574,7 +574,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     if (!this.activeInterfaces().some((c) => c.iface === iface)) return;
     this.wire.send(iface, EIGRP_MULTICAST_IP, this.helloPacket(iface));
     this.traffic.helloSent++;
-    this.compte(iface, 'hello', EIGRP_MULTICAST_IP);
+    this.countOnInterface(iface, 'hello', EIGRP_MULTICAST_IP);
   }
 
   /**
@@ -595,7 +595,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     if (this.wireNeighbors.get(key) !== n) return;   // already replaced
     n.holdTimer = null;
     Logger.warn(this.deviceId, 'eigrp:hold-expired',
-      this.nbrChange(n, 'is down: holding time expired'));
+      this.nbrChangeMessage(n, 'is down: holding time expired'));
     this.dropNeighbor(n);
     this.recomputeAfterNeighborChange();
   }
@@ -610,7 +610,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     for (const n of [...this.wireNeighbors.values()]) {
       if (n.iface !== iface) continue;
       Logger.warn(this.deviceId, 'eigrp:iface-down',
-        this.nbrChange(n, 'is down: interface down'));
+        this.nbrChangeMessage(n, 'is down: interface down'));
       this.dropNeighbor(n);
       lost = true;
     }
@@ -625,7 +625,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (n.iface !== iface) continue;
       this.timers.clear(n.holdTimer);
       Logger.warn(this.deviceId, 'eigrp:iface-passive',
-        this.nbrChange(n, 'is down: interface passive'));
+        this.nbrChangeMessage(n, 'is down: interface passive'));
       this.dropNeighbor(n);
       perdu = true;
     }
@@ -653,7 +653,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * this very call — the round is self-sufficient.
    */
   override converge(): void {
-    this.verifierHorloge();
+    this.checkSchedulerGeneration();
     if (this.converging) return;
     if (!this.isEnabled() || !this.wire) { super.converge(); return; }
     this.converging = true;
@@ -662,7 +662,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       for (const c of this.activeInterfaces()) {
         this.wire.send(c.iface, EIGRP_MULTICAST_IP, this.helloPacket(c.iface));
         this.traffic.helloSent++;
-        this.compte(c.iface, 'hello', EIGRP_MULTICAST_IP);
+        this.countOnInterface(c.iface, 'hello', EIGRP_MULTICAST_IP);
       }
       super.converge();
     } finally {
@@ -677,7 +677,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * additionally skips routes through disconnected ports (Router FIB).
    */
   refreshFromCache(): void {
-    this.verifierHorloge();
+    this.checkSchedulerGeneration();
     if (this.converging) return;
     this.converging = true;
     this.cacheOnly = true;
@@ -737,7 +737,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    */
   processPacket(iface: string, srcIp: string, packet: EigrpPacket,
     multicast: boolean): void {
-    this.verifierHorloge();
+    this.checkSchedulerGeneration();
     if (!this.isEnabled() || !this.wire) return;
     // A different AS number is a different EIGRP process — the packet
     // is simply not for us (no adjacency, like real IOS).
@@ -748,11 +748,11 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     if (!this.authAccepts(iface, packet.auth)) {
       const stale = this.wireNeighbors.get(`${srcIp}%${iface}`);
       Logger.warn(this.deviceId, 'eigrp:auth-failure',
-        this.nbrChange({ ip: srcIp, iface }, 'is down: Auth failure'));
+        this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: Auth failure'));
       if (stale) { this.dropNeighbor(stale); this.recomputeAfterNeighborChange(); }
       return;
     }
-    if (!this.surLeMemeSousReseau(local, srcIp)) {
+    if (!this.onSameSubnet(local, srcIp)) {
       Logger.warn(this.deviceId, 'eigrp:not-common-subnet',
         `%DUAL-6-NBRINFO: EIGRP-IPv4 ${this.config.asn}: Neighbor ${srcIp} `
         + `not on common subnet for ${iface}`);
@@ -767,14 +767,14 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     }
   }
 
-  private surLeMemeSousReseau(local: ConnectedNetwork, srcIp: string): boolean {
-    const pair = toNum(srcIp);
-    const nous = toNum(String(local.localIp));
-    if (pair < 0 || nous < 0) return true;
+  private onSameSubnet(local: ConnectedNetwork, srcIp: string): boolean {
+    const peer = toNum(srcIp);
+    const us = toNum(String(local.localIp));
+    if (peer < 0 || us < 0) return true;
     const octets = local.mask.getOctets();
-    const masque = ((octets[0] << 24) | (octets[1] << 16)
+    const mask = ((octets[0] << 24) | (octets[1] << 16)
       | (octets[2] << 8) | octets[3]) >>> 0;
-    return ((pair & masque) >>> 0) === ((nous & masque) >>> 0);
+    return ((peer & mask) >>> 0) === ((us & mask) >>> 0);
   }
 
   private onHello(iface: string, srcIp: string, hello: EigrpHelloPacket,
@@ -786,7 +786,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       const leaving = this.wireNeighbors.get(`${srcIp}%${iface}`);
       if (leaving) {
         Logger.warn(this.deviceId, 'eigrp:goodbye',
-          this.nbrChange({ ip: srcIp, iface }, 'is down: Interface Goodbye received'));
+          this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: Interface Goodbye received'));
         this.dropNeighbor(leaving);
         this.recomputeAfterNeighborChange();
       }
@@ -809,12 +809,12 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         },
       });
       Logger.warn(this.deviceId, 'eigrp:k-mismatch',
-        this.nbrChange({ ip: srcIp, iface }, 'is down: K-value mismatch'));
+        this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: K-value mismatch'));
       const stale = this.wireNeighbors.get(`${srcIp}%${iface}`);
       if (stale) this.dropNeighbor(stale);
       // A real router keeps multicasting its own Hellos regardless —
       // answer so the peer can diagnose the mismatch on ITS side too.
-      if (multicast) { this.wire!.send(iface, srcIp, this.helloPacket(iface)); this.traffic.helloSent++; this.compte(iface, 'hello', srcIp); }
+      if (multicast) { this.wire!.send(iface, srcIp, this.helloPacket(iface)); this.traffic.helloSent++; this.countOnInterface(iface, 'hello', srcIp); }
       return;
     }
 
@@ -839,7 +839,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       this.wireNeighbors.set(key, fresh);
       this.rearmHoldTimer(fresh);
       Logger.info(this.deviceId, 'eigrp:neighbor-up',
-        this.nbrChange(fresh, 'is up: new adjacency'));
+        this.nbrChangeMessage(fresh, 'is up: new adjacency'));
       // An adjacency coming up is visible at once — `show ip eigrp
       // neighbors` on a real router lists a peer the moment its Hello
       // arrives, not after the next recompute happens to run. Guarded:
@@ -855,10 +855,10 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       this.converge();
       this.wire!.send(iface, srcIp, this.helloPacket(iface));
       this.traffic.helloSent++;
-      this.compte(iface, 'hello', srcIp);
+      this.countOnInterface(iface, 'hello', srcIp);
       this.wire!.send(iface, srcIp, this.buildUpdate(iface));
       this.traffic.updateSent++;
-      this.compte(iface, 'update', srcIp);
+      this.countOnInterface(iface, 'update', srcIp);
     }
   }
 
