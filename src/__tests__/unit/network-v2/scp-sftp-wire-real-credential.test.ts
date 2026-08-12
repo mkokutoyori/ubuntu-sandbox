@@ -10,15 +10,13 @@
  * SSH_FXP_* wire protocol for interactive `sftp` sessions.
  *
  * `sshpass -p <pw> scp|sftp ...` is the one place scp/sftp can offer a
- * REAL password (bare scp/sftp has no such mechanism and — per
- * `password-policy-ssh-scp-sftp-coherence.test.ts` — relies on
- * `verifyOfferedPassword`'s intentional "trust when nothing was
- * offered" convenience, which has no real credential to authenticate
- * with over the wire). When a real password IS offered, this test
- * proves the transfer now goes through a genuine authenticated
- * SshSession + SshSftpChannel (WireSftpFileSystem) — spying on
- * SshSftpChannel.prototype.sendRequest, the one method every real
- * SSH_FXP_* wire op funnels through.
+ * REAL password. When one IS offered, this test proves the transfer
+ * goes through a genuine authenticated SshSession + SshSftpChannel
+ * (WireSftpFileSystem) — spying on SshSftpChannel.prototype.sendRequest,
+ * the one method every real SSH_FXP_* wire op funnels through. When
+ * none is offered and the wire session cannot authenticate, the
+ * transfer is refused: the in-memory resolution no longer repairs a
+ * failed authentication.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resetCounters, MACAddress } from '@/network/core/types';
@@ -101,7 +99,7 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
     spy.mockRestore();
   });
 
-  it('plain scp (no sshpass) is unaffected — still the pre-existing behavior', async () => {
+  it('plain scp (no credential offered) is refused — no in-memory fallback', async () => {
     const spy = vi.spyOn(SshSftpChannel.prototype, 'sendRequest');
     await lan.pc1.executeCommand("echo 'plain path' > /home/user/plain.txt");
 
@@ -109,10 +107,10 @@ describe('scp/sftp go over the real wire when sshpass offers a real password', (
       `scp /home/user/plain.txt user@${PC2_IP}:/home/user/plain.txt`,
     );
 
-    expect(out).not.toMatch(/no route to host/);
+    expect(out).toMatch(/Permission denied/);
     expect(spy).not.toHaveBeenCalled();
-    const remoteContent = await lan.pc2.executeCommand('cat /home/user/plain.txt');
-    expect(remoteContent.trim()).toBe('plain path');
+    const exists = await lan.pc2.executeCommand('test -f /home/user/plain.txt && echo yes || echo no');
+    expect(exists.trim()).toBe('no');
 
     spy.mockRestore();
   });

@@ -568,6 +568,15 @@ export function buildIdentityConfigCommands(
     return '';
   }, IP_SSH_CONTINUATIONS);
 
+  trie.registerGreedy('ip scp server enable', 'Enable SCP server', () => {
+    sec().ssh.scpServerEnabled = true;
+    return '';
+  });
+  trie.registerGreedy('no ip scp server enable', 'Disable SCP server', () => {
+    sec().ssh.scpServerEnabled = false;
+    return '';
+  });
+
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {
     sec().servicePasswordEncryption = true;

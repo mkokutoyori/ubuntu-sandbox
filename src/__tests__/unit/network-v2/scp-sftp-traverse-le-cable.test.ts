@@ -97,29 +97,45 @@ describe('Phase 4 — scp/sftp passent par le câble', () => {
   }, 60_000);
 
   /**
-   * Ce cas affirmait le contraire — « aucune session réelle ne peut
-   * s'ouvrir », « le transfert continue par la résolution directe, comme
-   * avant Phase 4 » — et la mesure le dément : 25 trames traversent le
-   * câble. La raison est que le sshd de ce simulateur accorde la session
-   * quand RIEN n'est offert (`verifyOfferedPassword`), si bien que la
-   * session filaire s'ouvre pour de bon.
-   *
-   * Le repli existe toujours et reste utile, mais pour d'autres
-   * situations : pas de connecteur TCP injecté, ou une authentification
-   * qui échoue réellement. Il n'est pas le chemin du transfert sans clé.
+   * Le compte porte un mot de passe et le client n'en offre aucun : la
+   * session filaire ne s'ouvre pas, et le transfert est REFUSÉ plutôt
+   * que servi par la résolution directe. C'était le dernier endroit où
+   * un fichier pouvait arriver sans avoir voyagé — le repli mémoire ne
+   * répare plus une authentification qui a échoué.
    */
-  it('même sans clé ni mot de passe, le transfert passe par le câble', async () => {
+  it('sans clé ni mot de passe, le transfert est REFUSÉ', async () => {
     const { client, server, c1 } = await lab();
     await server.executeCommand('useradd -m -s /bin/bash bob');
+    await server.executeCommand('sh -c \'echo "bob:secret" | chpasswd\'');
     await client.executeCommand(`sh -c 'echo "sans clef" > /tmp/nokey.txt'`);
 
     const avant = frames(c1);
-    await client.executeCommand(`scp /tmp/nokey.txt bob@${SRV}:/home/bob/nokey.txt`);
+    const out = await client.executeCommand(`scp /tmp/nokey.txt bob@${SRV}:/home/bob/nokey.txt`);
     const apres = frames(c1);
 
-    expect(await server.executeCommand('cat /home/bob/nokey.txt')).toContain('sans clef');
-    // Ce que « le fichier est arrivé » ne dit pas : la copie directe le
-    // faisait arriver tout aussi bien, sans émettre une seule trame.
+    expect(out).toMatch(/Permission denied/);
+    expect(await server.executeCommand('cat /home/bob/nokey.txt')).toMatch(/No such file/);
+    // Le refus se prononce sur le fil : la tentative d'authentification
+    // a bien eu lieu, elle a seulement échoué.
+    expect(apres).toBeGreaterThan(avant);
+  }, 60_000);
+
+  /**
+   * Le même compte, le même transfert, avec le mot de passe : il passe.
+   * Sans ce témoin, le cas ci-dessus ne distinguerait pas « refusé
+   * parce que non authentifié » de « labo mal construit ».
+   */
+  it('avec le mot de passe, le même transfert aboutit par le câble', async () => {
+    const { client, server, c1 } = await lab();
+    await server.executeCommand('useradd -m -s /bin/bash bob');
+    await server.executeCommand('sh -c \'echo "bob:secret" | chpasswd\'');
+    await client.executeCommand(`sh -c 'echo "avec clef" > /tmp/withpw.txt'`);
+
+    const avant = frames(c1);
+    await client.executeCommand(`sshpass -p secret scp /tmp/withpw.txt bob@${SRV}:/home/bob/withpw.txt`);
+    const apres = frames(c1);
+
+    expect(await server.executeCommand('cat /home/bob/withpw.txt')).toContain('avec clef');
     expect(apres).toBeGreaterThan(avant);
   }, 60_000);
 });

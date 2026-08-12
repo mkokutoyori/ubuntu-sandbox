@@ -1198,7 +1198,7 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
       name: 'scp alice@host:/path local — succeeds when sshd is up',
       setup: (l) => { void l.pc2.executeCommand('echo hello > /tmp/file.txt'); },
       on: l => l.pc1,
-      cmd: 'scp alice@10.0.0.2:/tmp/file.txt /tmp/local.txt',
+      cmd: 'sshpass -p alice scp alice@10.0.0.2:/tmp/file.txt /tmp/local.txt',
       contains: [/file\.txt\s+100%|bytes transferred/i],
       excludes: [/Connection refused/],
     },
@@ -1212,7 +1212,7 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
     {
       name: 'sftp succeeds when sshd is up and shows interactive prompt',
       on: l => l.pc1,
-      cmd: 'sftp alice@10.0.0.2',
+      cmd: 'sshpass -p alice sftp alice@10.0.0.2',
       contains: [/Connected to 10\.0\.0\.2|sftp>/],
     },
     {
@@ -1243,7 +1243,7 @@ describe('§18 — scp / sftp / rsync gated on remote sshd', () => {
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.pc1,
-      cmd: 'scp -P 2222 /tmp/x alice@10.0.0.2:/tmp/',
+      cmd: 'sshpass -p alice scp -P 2222 /tmp/x alice@10.0.0.2:/tmp/',
       contains: [/bytes transferred|100%/i],
       excludes: [/Connection refused/],
     },

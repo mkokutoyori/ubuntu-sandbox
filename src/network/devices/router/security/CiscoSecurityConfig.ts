@@ -128,6 +128,7 @@ export interface SshConfig {
   macAlgorithms: string[];
   encryptionAlgorithms: string[];
   kexAlgorithms: string[];
+  scpServerEnabled: boolean;
 }
 
 export interface LoginControl {
@@ -390,7 +391,7 @@ export class CiscoSecurityConfig {
 
   ssh: SshConfig = {
     version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
-    macAlgorithms: [], encryptionAlgorithms: [], kexAlgorithms: [],
+    macAlgorithms: [], encryptionAlgorithms: [], kexAlgorithms: [], scpServerEnabled: false,
   };
   cryptoKeys: CryptoRsaKey[] = [];
   enableSecret?: string;
@@ -541,6 +542,7 @@ export class CiscoSecurityConfig {
     if (this.ssh.kexAlgorithms.length) {
       lines.push(`ip ssh server algorithm kex ${this.ssh.kexAlgorithms.join(' ')}`);
     }
+    if (this.ssh.scpServerEnabled) lines.push('ip scp server enable');
     for (const k of this.cryptoKeys) {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);

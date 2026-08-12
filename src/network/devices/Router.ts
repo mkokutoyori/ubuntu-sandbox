@@ -69,6 +69,7 @@ import type { TcpStream } from '../tcp/types';
 import { verifyUdpChecksum } from '../tcp/types';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
+import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
 import { TelnetServerHandler } from '../protocols/telnet/TelnetServerHandler';
 import { RouterTelnetServerContext } from '../protocols/telnet/RouterTelnetServerContext';
 import { SshHostKey } from '../protocols/ssh/SshHostKey';
@@ -996,6 +997,20 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!telnetWanted && telnetBound) this.tcpv2.closeListener(23);
   }
 
+  /**
+   * The synthetic file surface this router serves over a real SFTP
+   * channel. A vendor that exposes none (or whose SCP server is off)
+   * returns null, and the SSH server context refuses the transfer —
+   * the same source `resolveRemoteSftpFsFromDevice` reads, so the two
+   * cannot disagree about what a client can pull.
+   */
+  protected sshSftpFileSource(): RouterSftpSource | null {
+    const src = (this as unknown as {
+      getSftpFileSource?: () => RouterSftpSource | null;
+    }).getSftpFileSource?.();
+    return src ?? null;
+  }
+
   private _sshHostKeyCache: SshHostKey | null = null;
   private buildRouterSshServerHandler(): SshServerHandler {
     const credentials = this.getCredentialStore();
@@ -1012,6 +1027,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         },
       }),
       execTarget: () => this as unknown as SshExecTarget,
+      sftpSource: () => this.sshSftpFileSource(),
       execIdleTimeoutMs: () => this.resolveVtyIdleTimeoutMs(),
       banner: () => this.sshBannerText || null,
       aaaAuthenticate: (n, p) => this.authenticateViaAaa(n, p),

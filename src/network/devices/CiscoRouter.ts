@@ -504,7 +504,8 @@ export class CiscoRouter extends Router {
    * set. The scp adapter calls read() with a path; we return the
    * canonical text the user would see via `show running-config`.
    */
-  getSftpFileSource(): { read: (p: string) => string | null; list: () => readonly string[] } {
+  getSftpFileSource(): { read: (p: string) => string | null; list: () => readonly string[] } | null {
+    if (!getSecurityConfig(this).ssh.scpServerEnabled) return null;
     const knownFiles = ['running-config', 'startup-config'];
     return {
       read: (path: string) => {

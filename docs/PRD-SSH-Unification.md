@@ -554,3 +554,47 @@ dès qu'un justificatif est fourni, et le repli est désormais NOMMÉ plutôt
 que découvert. Le chemin SYNCHRONE de `scp`/`sftp` (`dispatch()`, sans
 `runSshTransportAsync`) n'essaie même pas le canal filaire — c'est la
 seconde moitié du même chantier.
+
+### 7.2 Le repli est retiré, et les laboratoires portent leur justificatif
+
+La migration annoncée au §7.1 est faite. Dès qu'un `tcpConnector` existe
+et que la session filaire n'aboutit pas, `runSshTransportAsync` répond
+`Permission denied (publickey,password).` au lieu de saisir le VFS
+distant. Une authentification échouée ne fait plus arriver de fichier.
+
+**Ce que la migration a révélé, et qui n'était pas une affaire de
+laboratoire.** Trois défauts de plateforme se cachaient derrière les cas
+qui refusaient de passer, chacun invisible tant que le repli réparait
+tout :
+
+- `tryOpenWireSftpFs` ouvrait toujours le port **22**. `scp -P 2222` était
+  accepté, la sonde partait bien sur 2222, et la session filaire allait
+  frapper à la mauvaise porte — le transfert ne pouvait qu'échouer. Le
+  port et les `-i` explicites de la ligne de commande sont maintenant
+  ceux de la session.
+- `RouterSshServerContext` recevait une dépendance `sftpSource` que
+  **personne ne remplissait**. `CiscoRouter.getSftpFileSource()` existait
+  et n'était lu que par la résolution en mémoire, si bien qu'un
+  `scp admin@routeur:running-config` sur le fil trouvait un système de
+  fichiers vide. `Router.sshSftpFileSource()` est le point unique que les
+  deux chemins lisent désormais.
+- `ip scp server enable` n'existait nulle part : la commande était avalée
+  sans rien changer, et le routeur servait sa configuration à quiconque,
+  activée ou non. Elle est maintenant réelle, elle figure dans la
+  configuration relue, et c'est elle qui décide si le routeur a un
+  système de fichiers à offrir.
+
+**Ce que la migration a corrigé dans les tests eux-mêmes.** Deux fiches
+d'identité étaient fausses et menaient l'auteur à des mots de passe qui
+n'ont jamais existé : le compte Windows par défaut est `User` / `user`,
+et le cast Linux standard donne à chaque utilisateur son propre nom pour
+mot de passe (`alice` / `alice`), pas `admin`. Un cas de §25 affirmait
+par ailleurs qu'un `mkdir` par lot atteignait la machine distante en
+cherchant `from-batch` dans la sortie de `ls -d /tmp/from-batch` — chaîne
+que le message d'erreur contient aussi, si bien que le cas passait sans
+rien distinguer.
+
+**Ce qui reste ouvert.** Le chemin SYNCHRONE (`dispatch()`) n'essaie
+toujours pas le canal filaire, donc un `sftp <<'EOF'` en document en
+ligne continue de résoudre en mémoire et n'est pas soumis au refus. C'est
+la seconde moitié du même chantier, inchangée.

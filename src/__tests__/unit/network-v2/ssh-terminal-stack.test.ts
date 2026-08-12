@@ -180,11 +180,11 @@ describe('SSH terminal — device.executeCommand stubs', () => {
   });
 
   it('sftp user@host now opens an SFTP prompt when sshd is up (Phase D-2)', async () => {
-    const out = await lan.pc1.executeCommand(`sftp user@${PC2_IP}`);
+    const out = await lan.pc1.executeCommand(`sshpass -p admin sftp user@${PC2_IP}`);
     expect(out).toMatch(/Connected to|sftp>/);
     // Stopping ssh on the remote makes it refuse.
     await lan.pc2.executeCommand('systemctl stop ssh');
-    const refused = await lan.pc1.executeCommand(`sftp user@${PC2_IP}`);
+    const refused = await lan.pc1.executeCommand(`sshpass -p admin sftp user@${PC2_IP}`);
     expect(refused).toMatch(/Connection refused/);
   });
 

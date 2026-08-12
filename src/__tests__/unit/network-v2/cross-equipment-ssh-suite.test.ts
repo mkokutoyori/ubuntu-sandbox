@@ -26,7 +26,7 @@
  *     ciscoR1=10.0.0.6 hwR1=10.0.0.8
  *     (ciscoS1, hwS1 are pure L2 switches — no L3 address)
  *   - Linux user: `alice` / `admin` (sudoer); fallback default `user` / `admin`.
- *   - Windows user: `User` / `Passw0rd!` (Administrator / `Passw0rd!`).
+ *   - Windows user: `User` / `user` — the account WindowsPC seeds.
  *   - Cisco / Huawei VTY user: `admin` / `Admin@123`.
  *   - Every section is its own describe block. test.each drives every
  *     section so adding cases is one row of data.
@@ -1096,7 +1096,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp pull from win1 onto linux1 reads cmd.exe-style path',
       setup: async (l) => {
         await l.win1.executeCommand('echo win-payload > C:\\Users\\User\\payload.txt');
-        await l.linux1.executeCommand('scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt');
+        await l.linux1.executeCommand("sshpass -p user scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt");
       },
       on: l => l.linux1, cmd: 'cat /tmp/win-payload.txt',
       contains: [/^win-payload$/m],
@@ -1122,7 +1122,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
         await l.ciscoR1.executeCommand('configure terminal');
         await l.ciscoR1.executeCommand('ip scp server enable');
         await l.ciscoR1.executeCommand('end');
-        await l.linux1.executeCommand('scp admin@10.0.0.6:running-config /tmp/running.txt');
+        await l.linux1.executeCommand("sshpass -p 'Admin@123' scp admin@10.0.0.6:running-config /tmp/running.txt");
       },
       on: l => l.linux1, cmd: 'grep hostname /tmp/running.txt',
       contains: [/hostname ciscoR1/i],
@@ -2430,7 +2430,7 @@ describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
       name: 'scp push: linux1 → win1 lands at the translated NTFS path',
       setup: async (l) => {
         await l.linux1.executeCommand('echo from-linux > /tmp/push.txt');
-        await l.linux1.executeCommand('scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt');
+        await l.linux1.executeCommand("sshpass -p user scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt");
       },
       on: l => l.win1, cmd: 'type C:\\Users\\User\\push.txt',
       contains: [/from-linux/],

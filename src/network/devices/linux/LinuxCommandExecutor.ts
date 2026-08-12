@@ -1249,18 +1249,12 @@ export class LinuxCommandExecutor {
    * (`WireSftpFileSystem`) instead of the direct VFS-to-VFS copy —
    * bytes actually cross `TcpSocket.send()`/`Port`/`Cable`.
    *
-   * Ce commentaire affirmait qu'un transfert SANS justificatif retombait
-   * sur le contournement direct. C'est faux, et la mesure le dit : le
-   * sshd de ce simulateur accorde la session quand RIEN n'est offert
-   * (`verifyOfferedPassword`), si bien qu'un `scp` sans clé ni mot de
-   * passe ouvre une vraie session et fait passer des trames — 25 sur le
-   * câble intermédiaire, comptées par
-   * `scp-sftp-traverse-le-cable.test.ts`.
-   *
-   * Le repli sur `resolveRemoteSftpFs`/`resolveRemoteSftpFsFromDevice`
-   * subsiste et sert encore, mais à d'autres situations : aucun
-   * `tcpConnector` injecté, connexion refusée, ou authentification qui
-   * échoue réellement.
+   * Quand un `tcpConnector` existe et que la session filaire n'aboutit
+   * pas, le transfert est REFUSÉ : le repli sur
+   * `resolveRemoteSftpFs`/`resolveRemoteSftpFsFromDevice` ne sert plus
+   * qu'aux contextes sans pile TCP injectée, où aucune session ne peut
+   * s'ouvrir. Réparer une authentification échouée par une copie
+   * mémoire ferait arriver un fichier qui n'a jamais voyagé.
    */
   async runSshTransportAsync(
     cmd: 'scp' | 'sftp',
@@ -1285,11 +1279,26 @@ export class LinuxCommandExecutor {
     const remoteUser = userMatch ? userMatch[1] : this.userMgr.currentUser;
 
     const probeArgs: string[] = [];
+    const identities: string[] = [];
+    let port = 22;
     const pIdx = args.indexOf('-P');
-    if (pIdx >= 0 && args[pIdx + 1]) probeArgs.push('-p', args[pIdx + 1]);
+    if (pIdx >= 0 && args[pIdx + 1]) {
+      probeArgs.push('-p', args[pIdx + 1]);
+      const parsed = Number(args[pIdx + 1]);
+      if (Number.isFinite(parsed) && parsed > 0) port = parsed;
+    }
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-o' && args[i + 1]) { probeArgs.push('-o', args[i + 1]); i++; }
-      else if (args[i] === '-i' && args[i + 1]) { probeArgs.push('-i', args[i + 1]); i++; }
+      if (args[i] === '-o' && args[i + 1]) {
+        probeArgs.push('-o', args[i + 1]);
+        const portOption = /^Port[=\s]+(\d+)$/i.exec(args[i + 1]);
+        if (portOption) port = Number(portOption[1]);
+        i++;
+      }
+      else if (args[i] === '-i' && args[i + 1]) {
+        probeArgs.push('-i', args[i + 1]);
+        identities.push(this.vfs.normalizePath(args[i + 1], this.cwd));
+        i++;
+      }
     }
     if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(`${remoteUser}@${hostPart}`, 'hostname');
@@ -1306,8 +1315,15 @@ export class LinuxCommandExecutor {
       return { output: `${cmd}: ${probe.output}`, exitCode: probe.exitCode };
     }
 
-    const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword);
+    const wireFs = await this.tryOpenWireSftpFs(hostPart, remoteUser, offeredPassword, port, identities);
+    const unauthenticated = (): { output: string; exitCode: number } | null => (
+      !wireFs && this.tcpConnector
+        ? { output: `${remoteUser}@${hostPart}: Permission denied (publickey,password).`, exitCode: 1 }
+        : null
+    );
     if (cmd === 'scp') {
+      const refused = unauthenticated();
+      if (refused) return refused;
       const localFs = new VfsSftpFileSystem(this.vfs, {
         uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, umask: 0o022,
       });
@@ -1331,6 +1347,8 @@ export class LinuxCommandExecutor {
       }
       stdin = body;
     }
+    const refusedSftp = unauthenticated();
+    if (refusedSftp) return refusedSftp;
     let remoteFs = wireFs;
     let found: ReturnType<typeof findHostByAddress> = null;
     if (!remoteFs) {
@@ -1366,7 +1384,7 @@ export class LinuxCommandExecutor {
    * back to the direct in-memory resolution.
    */
   private async tryOpenWireSftpFs(
-    host: string, user: string, password: string,
+    host: string, user: string, password: string, port = 22, identities: string[] = [],
   ): Promise<ISftpFileSystem | null> {
     if (!this.tcpConnector) return null;
     const connector = this.tcpConnector;
@@ -1380,10 +1398,13 @@ export class LinuxCommandExecutor {
       interactionHandler: new SilentSshInteractionHandler(password),
     });
     const builder = SshConnectOptionsBuilder.create()
-      .host(host).user(user).port(22).strictHostKeyChecking('accept-new');
-    for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
-      const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
-      if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
+      .host(host).user(user).port(port).strictHostKeyChecking('accept-new');
+    for (const path of identities) builder.addIdentityFile(path);
+    if (identities.length === 0) {
+      for (const candidate of ['id_ed25519', 'id_rsa', 'id_ecdsa']) {
+        const path = `${this.sshHomeDir()}/.ssh/${candidate}`;
+        if (this.vfs.readFile(path) !== null) builder.addIdentityFile(path);
+      }
     }
     const result = await session.connect(builder.build());
     if (!isOk(result)) { session.disconnect(); return null; }

@@ -1416,7 +1416,7 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
         await l.pc1.executeCommand('printf "pwd\\nbye\\n" > /tmp/batch.txt');
       },
       on: l => l.pc1,
-      cmd: 'sftp -b /tmp/batch.txt alice@10.0.0.2',
+      cmd: 'sshpass -p alice sftp -b /tmp/batch.txt alice@10.0.0.2',
       contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
     },
     {
@@ -1429,11 +1429,12 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
       name: 'sftp -b runs the verbs from the file (mkdir lands on remote)',
       setup: async (l) => {
         await l.pc1.executeCommand('printf "mkdir /tmp/from-batch\\nbye\\n" > /tmp/b2.txt');
-        await l.pc1.executeCommand('sftp -b /tmp/b2.txt alice@10.0.0.2');
+        await l.pc1.executeCommand('sshpass -p alice sftp -b /tmp/b2.txt alice@10.0.0.2');
       },
       on: l => l.pc2,
       cmd: 'ls -d /tmp/from-batch',
-      contains: ['from-batch'],
+      contains: [/^\/tmp\/from-batch$/m],
+      excludes: [/No such file/],
     },
   ];
 
