@@ -23,6 +23,7 @@ export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
  * otherwise reimplement ad hoc.
  */
 import { renderPasswordField } from '../../shells/cisco/ciscoPasswordRender';
+import { huaweiCipher } from '@/crypto/passwords/huawei';
 
 export function transportAdmet(reglage: VtyTransport, kind: 'ssh' | 'telnet'): boolean {
   return reglage === 'all' || reglage === kind;
@@ -322,6 +323,10 @@ export class VtyLineConfig {
     const lines: string[] = [`user-interface vty ${this.first}${this.first === this.last ? '' : ' ' + this.last}`];
     if (this.authenticationMode !== null) {
       lines.push(` authentication-mode ${this.authenticationMode}`);
+    }
+    if (this.privilege !== null) lines.push(` user privilege level ${this.privilege}`);
+    if (this.linePassword !== null) {
+      lines.push(` set authentication password cipher ${huaweiCipher(this.linePassword)}`);
     }
     if (this.idleTimeoutMinutes !== null || this.idleTimeoutSeconds !== null) {
       lines.push(` idle-timeout ${this.idleTimeoutMinutes ?? 0} ${this.idleTimeoutSeconds ?? 0}`);

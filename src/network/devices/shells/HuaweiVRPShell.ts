@@ -34,7 +34,7 @@ import {
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
-import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { huaweiIrreversibleCipher, huaweiCipher, huaweiDecipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
@@ -1288,6 +1288,41 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
           first: r.first, last: r.last, authenticationMode: mode,
         });
       }
+      return '';
+    });
+    /**
+     * `set authentication password [cipher|simple] <mdp>` : le mot de
+     * passe que reclame `authentication-mode password`. Il etait accepte
+     * et JETE, donc le mode s'affichait sans qu'aucun secret existe et la
+     * ligne accordait a n'importe qui. Le secret est range en clair et
+     * rendu chiffre, comme VRP le fait ; relu, il est dechiffre, sans
+     * quoi un aller-retour d'import ferait du chiffre le mot de passe.
+     */
+    t.registerGreedy('set authentication password', 'Set the line authentication password', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const forme = (args[0] ?? '').toLowerCase();
+      const brut = (forme === 'cipher' || forme === 'simple') ? args[1] : args[0];
+      if (!brut) return 'Error: Incomplete command found at \'^\' position.';
+      const clair = looksLikeReversibleCipher(brut) ? huaweiDecipher(brut) : brut;
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last, linePassword: clair,
+      });
+      return '';
+    });
+    /**
+     * `user privilege level <n>` : le niveau auquel la LIGNE ouvre la
+     * session, qui l'emporte sur celui du compte. Accepte et range nulle
+     * part, donc une vty ouverte au niveau 1 rendait tout de meme le
+     * niveau 15 du compte.
+     */
+    t.registerGreedy('user privilege', 'Set the privilege level of the user interface', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      if ((args[0] ?? '').toLowerCase() !== 'level') return 'Error: Unrecognized command found at \'^\' position.';
+      const niveau = Number.parseInt(args[1] ?? '', 10);
+      if (!Number.isFinite(niveau) || niveau < 0 || niveau > 15) {
+        return 'Error: Wrong parameter found at \'^\' position.';
+      }
+      this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, privilege: niveau });
       return '';
     });
     t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {

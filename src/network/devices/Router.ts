@@ -3208,7 +3208,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   protected methodeDeLigne(kind: 'console' | 'vty' | 'aux'): 'none' | 'password' | 'local' | 'aaa' {
-    if (kind === 'vty') return this.blocVtyCourant()?.login ?? 'none';
+    // Une seule regle : `resolveVtyLoginMode` connait `login` (IOS) ET
+    // `authentication-mode` (VRP). Cette methode-ci ne lisait que le
+    // premier, donc sur un routeur Huawei elle rendait toujours `none`
+    // et la ligne accordait a n'importe quel mot de passe.
+    if (kind === 'vty') return this.resolveVtyLoginMode();
     if (kind === 'aux') return 'none';
     return this.configurationDeConsole()?.login ?? 'none';
   }

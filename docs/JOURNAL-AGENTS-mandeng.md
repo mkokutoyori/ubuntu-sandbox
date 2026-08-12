@@ -4530,6 +4530,48 @@ deux imports morts, retires. Aucun test existant modifie.
 
 ---
 
+## Lot S15 — VRP : la ligne accordait a n'importe quel mot de passe
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S15. **Sonde** :
+`probe-privileges-vrp.test.ts` (15 cas), ecrite a l'aveugle.
+
+**Fichiers pris** : `shells/HuaweiVRPShell.ts`,
+`router/vty/VtyLineConfig.ts`, `devices/Router.ts`,
+`shells/cli/CliAuthorization.ts`.
+
+**Le trou** : `methodeDeLigne('vty')` — la fonction que consulte
+`authenticateLine` — lisait le champ `login`, qui est CELUI D'IOS. Sur un
+routeur Huawei il est toujours nul, donc elle repondait `none` et la
+ligne accordait a n'importe quel mot de passe : `authentication-mode aaa`
+comme `authentication-mode password` s'affichaient dans la configuration
+et ne gardaient rien. La regle etait ECRITE DEUX FOIS —
+`resolveVtyLoginMode()`, quinze lignes plus haut, connait les deux
+constructeurs et sert le dialogue telnet ; `methodeDeLigne` lui delegue
+desormais.
+
+**Deux commandes acceptees et jetees** : `set authentication password
+[cipher|simple] <mdp>` (le secret que reclame `authentication-mode
+password`, range nulle part, donc le mode etait inutilisable meme une
+fois lu) et `user privilege level <n>` (le niveau d'ouverture de la
+ligne, qui l'emporte sur celui du compte). Ni l'une ni l'autre ne
+figurait dans `display current-configuration`, alors que la
+documentation Huawei les montre dans son propre exemple ; elles y sont,
+donc elles survivent au rechargement.
+
+**Ce qui vous concerne** : `CommandLevelTable` est desormais generique
+sur l'espace de nommage (`CommandLevelTable<S extends string>`, defaut
+`AuthScope`) — les appels Cisco sont inchanges et gardent leur typage.
+`VtyLineConfig.renderHuawei()` rend deux lignes de plus.
+
+**Ce qui reste de la sonde, et que je traite dans le commit suivant** :
+`command-privilege level <n> view <vue> <commande>` n'existe pas du tout
+sur VRP ici, et VRP n'a aucun filtrage par niveau de commande.
+
+**Mesures.** 3 des 15 cas tombent avant correctif. Suites connexes
+vertes. Typecheck exactement a la base (279), lint identique.
+
+---
+
 ## Lot S14 — `transport input` est une directive de LIGNE
 
 **PRD** : `PRD-Sessions-Cisco.md`, lot S14. **Sonde** :

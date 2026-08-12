@@ -102,20 +102,20 @@ function couvre(cible: string, commande: string): boolean {
  * serialiseur de configuration et par l'aide — mais plus personne ne la
  * parcourt a la main : la regle de resolution vit ici, une fois.
  */
-export class CommandLevelTable {
+export class CommandLevelTable<S extends string = AuthScope> {
   constructor(private readonly rules: () => Map<string, number> | undefined) {}
 
-  private static key(scope: AuthScope, commande: string): string {
+  private static key(scope: string, commande: string): string {
     return `${scope} ${normalise(commande)}`;
   }
 
-  setLevel(scope: AuthScope, commande: string, level: number): void {
+  setLevel(scope: S, commande: string, level: number): void {
     const table = this.rules();
     if (table) table.set(CommandLevelTable.key(scope, commande), level);
   }
 
   /** Retire la regle et rend le niveau qu'elle portait, ou `undefined`. */
-  reset(scope: AuthScope, commande: string): number | undefined {
+  reset(scope: S, commande: string): number | undefined {
     const table = this.rules();
     if (!table) return undefined;
     const key = CommandLevelTable.key(scope, commande);

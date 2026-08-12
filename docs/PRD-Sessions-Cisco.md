@@ -1055,3 +1055,60 @@ telnet, SSH inter-équipements, AAA, rendu de configuration. Deux specs
 Playwright (`e2e/cisco-transport-input-par-ligne.spec.ts`) passent.
 Typecheck **exactement à la base** (279), lint identique fichier par
 fichier.
+
+## Lot S15 — VRP : la ligne accordait à n'importe quel mot de passe
+
+**Sonde** : `probe-privileges-vrp.test.ts` (15 cas), écrite **à
+l'aveugle**. Tout ce qui précède est du Cisco ; VRP ne copie pas IOS, et
+c'est précisément pour cela qu'il fallait le mesurer séparément. Chez
+Huawei il n'y a **pas de mot de passe d'activation** — le niveau est une
+propriété du COMPTE, acquise à l'ouverture de session et jamais élevée
+ensuite —, et un compte déclare en plus les **services** qu'il a le droit
+d'employer (`service-type`), ce que Cisco n'a pas.
+
+### Ce qui tenait déjà
+
+Le niveau du compte (`local-user … privilege level`), son rendu dans la
+configuration, le `service-type` (un compte `ftp` est bien refusé en SSH,
+bon mot de passe compris), l'absence de commande `enable`, le refus d'un
+compte bloqué par `state block`, `protocol inbound` par ligne (lot S14)
+et `acl … inbound` sont tous corrects.
+
+### Le trou : `authentication-mode` n'authentifiait personne
+
+`methodeDeLigne('vty')` — la fonction que consulte `authenticateLine` —
+lisait le champ `login`, qui est **celui d'IOS**. Sur un routeur Huawei
+il est toujours nul, donc elle répondait `none`, et **la ligne accordait
+à n'importe quel mot de passe** : `authentication-mode aaa` comme
+`authentication-mode password` s'affichaient dans la configuration et ne
+gardaient rien.
+
+Ce n'était pas une règle manquante mais une règle **écrite deux fois** :
+`resolveVtyLoginMode()`, à quinze lignes de là, connaît les deux
+constructeurs (`login` pour IOS, `authenticationMode` pour VRP) et sert
+le dialogue telnet. Deux lecteurs d'une même question qui ne répondent
+pas pareil — `methodeDeLigne` délègue désormais à l'autre, et il n'en
+reste qu'un.
+
+### Deux commandes acceptées et jetées
+
+- **`set authentication password [cipher|simple] <mdp>`** : le secret que
+  réclame `authentication-mode password` était **rangé nulle part**
+  (`(_args) => ''`). Le mode ne pouvait donc pas fonctionner même une
+  fois lu — il n'y avait aucun secret à comparer. Il est stocké en clair
+  et rendu chiffré, comme VRP le fait ; **relu, il est déchiffré**, sans
+  quoi un aller-retour d'import ferait du chiffre le mot de passe.
+- **`user privilege level <n>`** : le niveau auquel la LIGNE ouvre la
+  session, qui l'emporte sur celui du compte, était accepté et perdu — une
+  vty ouverte au niveau 1 rendait quand même le niveau 15 du compte.
+
+Aucune des deux ne figurait dans `display current-configuration`, alors
+que la documentation Huawei les montre l'une et l'autre dans son propre
+exemple de `user-interface vty` ; elles y sont maintenant, donc elles
+survivent au rechargement d'une topologie.
+
+**Mesures.** 15 cas, **3 tombent** avant correctif (`git stash` sur
+`src/network/`). Suites connexes vertes : AAA Cisco/Huawei, SSH
+inter-constructeurs, aller-retour de configuration VRP, vty, telnet.
+Typecheck **exactement à la base** (279), lint identique fichier par
+fichier.
