@@ -482,3 +482,46 @@ le dernier usage de `CrossVendorRemoteShell` en production, et il est
 légitime — il est CÔTÉ SERVEUR, où empiler cmd/PowerShell localement est
 précisément ce qu'un serveur doit faire. Le replier serait une erreur, pas
 un progrès.
+
+## 7. Phase 4 (SCP/SFTP) : ce que la mesure dit, et la décision qui reste
+
+Le canal SFTP filaire EXISTE et il est complet — `SshSftpChannel` parle un
+vrai protocole (`OPENDIR`/`READDIR`/`LSTAT`/`REALPATH`/`OPEN`/`READ`/
+`WRITE`…) et `WireSftpFileSystem` l'expose derrière `ISftpFileSystem`.
+`tryOpenWireSftpFs` l'ouvre. Rien de tout cela n'est à écrire.
+
+**Ce que la mesure montre malgré tout.** Un `scp` d'un fichier de 9 octets
+et un `scp` d'un fichier de 200 001 octets coûtent EXACTEMENT le même
+trafic : 25 trames, ~7 111 octets de charge utile dans les deux cas. Le
+fichier arrive pourtant à destination, intact. Le contenu ne traverse
+donc pas le câble — seule l'authentification le fait.
+
+Compter les trames sans faire varier la charge n'aurait rien montré : 25
+n'est pas zéro, et l'on aurait conclu « ça passe par le réseau ». C'est
+la comparaison 9 octets / 200 001 octets qui tranche, exactement comme
+pour le mode exec du §6.
+
+**La cause, isolée.** `tryOpenWireSftpFs` rend `WireSftpFileSystem` quand
+un mot de passe est fourni, et `null` quand il n'y en a pas — le serveur
+refuse un mot de passe vide, ce qui est correct. Or l'appelant retombe
+alors EN SILENCE sur `resolveRemoteSftpFsFromDevice`, qui saisit le VFS de
+la machine distante en mémoire. Un `scp` tapé sans justificatif ne
+contourne donc pas seulement le réseau : il contourne aussi
+l'authentification, et signale une réussite.
+
+**La décision qui reste, et elle n'est pas technique.** Le correctif
+évident — ne plus retomber en silence dès lors qu'un `tcpConnector`
+existe, et remonter le refus — est juste du point de vue de la fidélité :
+un vrai `scp` vers un compte protégé par mot de passe échoue avec
+`Permission denied`. Mais il change un comportement visible dans 27
+fichiers de tests qui font `executeCommand('scp …')` sans justificatif et
+en attendent la réussite, et il rendrait tous les TP « copier un fichier
+d'une machine à l'autre » dépendants d'un mot de passe. C'est un choix
+pédagogique autant que technique, et il appartient à l'auteur du projet,
+pas à ce document.
+
+Ce qui est acquis en attendant : le chemin filaire fonctionne réellement
+dès qu'un justificatif est fourni, et le repli est désormais NOMMÉ plutôt
+que découvert. Le chemin SYNCHRONE de `scp`/`sftp` (`dispatch()`, sans
+`runSshTransportAsync`) n'essaie même pas le canal filaire — c'est la
+seconde moitié du même chantier.
