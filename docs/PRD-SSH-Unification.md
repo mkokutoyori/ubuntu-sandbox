@@ -415,6 +415,31 @@ toujours pas le fil : il est vérifié localement, et c'est ce qui oblige à
 LIRE la configuration du serveur plutôt qu'à la laisser s'appliquer. Le
 point 2 (`runSshExec`) est intact.
 
+### 6.2 Un TROISIÈME chemin client, trouvé en cherchant le pendant e2e
+
+Écrire le test de bout en bout de §6.1 a buté sur un fait que ni le plan
+ni ce document ne mentionnaient : un `ssh [user@]host` NU tapé à
+l'intérieur d'une session distante n'atteint ni `sshLauncher` ni le
+`LinuxBashShell` de la machine distante. `SshInteractiveSubShell`
+l'intercepte (`startNestedHop`, la regex `/^ssh\s+(?:(\S+)@)?(\S+)$/`)
+et ouvre lui-même une `SshSession`. Il y a donc TROIS clients ssh
+interactifs et non deux : `LinuxTerminalSession.connectAndEnterSsh` pour
+le premier saut, `startNestedHop` pour les suivants, et `sshLauncher`
+pour les formes que la regex ne prend pas (options, mode exec).
+
+Ce chemin-là est filaire, donc le serveur y applique déjà son
+`MaxAuthTries` — c'est une bonne nouvelle, et c'est pourquoi le correctif
+de §6.1 ne s'y voit pas. **Mais deux choses y ont été MESURÉES et ne sont
+pas expliquées, et il vaut mieux les écrire que les taire :** avec
+`MaxAuthTries 1` sur la cible, le terminal redemande quand même le mot de
+passe une seconde fois ; et NI `Permission denied, please try again.` NI
+`Received disconnect … Too many authentication failures` n'apparaissent
+dans la transcription, quelle que soit la configuration. Un opérateur
+voit donc deux invites identiques et aucun message. Le pendant e2e de
+§6.1 a été retiré plutôt qu'affaibli jusqu'à passer : un test qui
+n'assure rien vaut moins que l'absence de test. Diagnostiquer ce chemin
+est un chantier à lui seul, et il commence par ces deux mesures.
+
 **Non traité ici, et volontairement :** `WindowsPC.createVtyShell()` est
 le dernier usage de `CrossVendorRemoteShell` en production, et il est
 légitime — il est CÔTÉ SERVEUR, où empiler cmd/PowerShell localement est
