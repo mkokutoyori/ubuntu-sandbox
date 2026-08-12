@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-08-mac-forwarding
-Generated: 2026-08-07T17:36:53.835Z
+Generated: 2026-08-12T20:25:10.204Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CAM table, static MACs, aging, clear variants, unicast flooding, MAC move, connectivity matrix
 Total steps: 346
@@ -81,48 +81,48 @@ Total steps: 346
 --- [8] § full connectivity matrix (VLAN 1, all pairs) ---
 [9/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.211 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.616 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=3.033 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.948 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.616/2.413/3.211/0.797 ms
+  rtt min/avg/max/mdev = 0.948/1.991/3.033/1.042 ms
 
 [10/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.960 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.376 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.672 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.838 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.960/1.168/1.376/0.208 ms
+  rtt min/avg/max/mdev = 0.672/0.755/0.838/0.083 ms
 
 [11/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.567 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.460 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.114 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.384 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.460/1.513/1.567/0.053 ms
+  rtt min/avg/max/mdev = 1.114/1.249/1.384/0.135 ms
 
 [12/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.904 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.055 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.800 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.124 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.904/0.979/1.055/0.075 ms
+  rtt min/avg/max/mdev = 0.800/0.962/1.124/0.162 ms
 
 [13/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=1.256 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.397 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.897 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.253 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.256/1.326/1.397/0.070 ms
+  rtt min/avg/max/mdev = 0.897/1.075/1.253/0.178 ms
 
 [14/346] w1 w1$ ping -n 2 192.168.1.11
   
@@ -155,7 +155,7 @@ Total steps: 346
   Ping statistics for 192.168.1.21:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [17/346] w1 w1$ ping -n 2 192.168.1.22
   
@@ -177,108 +177,108 @@ Total steps: 346
   Ping statistics for 192.168.1.23:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [19/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.438 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.632 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.500 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.666 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.438/0.535/0.632/0.097 ms
+  rtt min/avg/max/mdev = 0.500/0.583/0.666/0.083 ms
 
 [20/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.507 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.994 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.517 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.853 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.507/0.751/0.994/0.244 ms
+  rtt min/avg/max/mdev = 0.517/0.685/0.853/0.168 ms
 
 [21/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.224 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.310 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.607 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.128 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.224/1.267/1.310/0.043 ms
+  rtt min/avg/max/mdev = 0.607/0.868/1.128/0.261 ms
 
 [22/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.955 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.698 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.814 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.073 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.955/1.326/1.698/0.371 ms
+  rtt min/avg/max/mdev = 0.814/0.944/1.073/0.129 ms
 
 [23/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.721 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.060 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.598 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.069 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.721/0.890/1.060/0.169 ms
+  rtt min/avg/max/mdev = 0.598/0.833/1.069/0.236 ms
 
 [24/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.686 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.995 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=1.039 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.304 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.686/0.840/0.995/0.154 ms
+  rtt min/avg/max/mdev = 1.039/1.171/1.304/0.133 ms
 
 [25/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.593 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.391 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.587 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.922 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.593/0.992/1.391/0.399 ms
+  rtt min/avg/max/mdev = 0.587/0.754/0.922/0.167 ms
 
 [26/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.012 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=5.167 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.644 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.965 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.012/3.089/5.167/2.077 ms
+  rtt min/avg/max/mdev = 0.644/0.804/0.965/0.160 ms
 
 [27/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.632 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.368 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.400 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.665 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.632/1.000/1.368/0.368 ms
+  rtt min/avg/max/mdev = 0.400/0.533/0.665/0.132 ms
 
 [28/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.702 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.259 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.474 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.766 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.702/0.981/1.259/0.278 ms
+  rtt min/avg/max/mdev = 0.474/0.620/0.766/0.146 ms
 
 [29/346] w2 w2$ ping -n 2 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=2ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [30/346] w2 w2$ ping -n 2 192.168.1.12
   
@@ -294,13 +294,13 @@ Total steps: 346
 [31/346] w2 w2$ ping -n 2 192.168.1.13
   
   Pinging 192.168.1.13 with 32 bytes of data:
-  Reply from 192.168.1.13: bytes=32 time=11ms TTL=64
-  Reply from 192.168.1.13: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 11ms, Average = 6ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [32/346] w2 w2$ ping -n 2 192.168.1.21
   
@@ -326,48 +326,48 @@ Total steps: 346
 
 [34/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.586 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.795 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.478 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.320 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.586/1.190/1.795/0.604 ms
+  rtt min/avg/max/mdev = 0.478/0.899/1.320/0.421 ms
 
 [35/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.002 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.034 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.558 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.108 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.002/1.018/1.034/0.016 ms
+  rtt min/avg/max/mdev = 0.558/0.833/1.108/0.275 ms
 
 [36/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.204 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.344 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.620 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.103 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.204/1.274/1.344/0.070 ms
+  rtt min/avg/max/mdev = 0.620/0.862/1.103/0.242 ms
 
 [37/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.399 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.829 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.566 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.775 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.399/0.614/0.829/0.215 ms
+  rtt min/avg/max/mdev = 0.566/0.670/0.775/0.104 ms
 
 [38/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.464 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.673 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.507 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.952 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.464/0.569/0.673/0.104 ms
+  rtt min/avg/max/mdev = 0.507/0.729/0.952/0.222 ms
 
 
 --- [39] § MAC table populated by matrix ---
@@ -397,8 +397,18 @@ Total steps: 346
 
 [41/346] sw2 SW2> show mac address-table
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 6
 
 [42/346] core CORE> enable
 <empty>
@@ -570,12 +580,12 @@ Total steps: 346
 
 [70/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.050 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.724 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.793 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.771 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.724/0.887/1.050/0.163 ms
+  rtt min/avg/max/mdev = 0.771/0.782/0.793/0.011 ms
 
 [71/346] sw1 SW1# show mac address-table dynamic
   Mac Address Table
@@ -644,12 +654,12 @@ Total steps: 346
 
 [82/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.704 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=5.443 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.601 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.840 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.704/3.074/5.443/2.369 ms
+  rtt min/avg/max/mdev = 0.601/0.720/0.840/0.120 ms
 
 [83/346] sw1 SW1# show mac address-table
   Mac Address Table
@@ -676,215 +686,215 @@ Total steps: 346
 --- [84] § second connectivity matrix (re-learn) ---
 [85/346] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=1.263 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.985 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.848 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.762 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.263/1.624/1.985/0.361 ms
+  rtt min/avg/max/mdev = 0.762/0.805/0.848/0.043 ms
 
 [86/346] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.747 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.970 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.478 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.990 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.747/1.859/1.970/0.111 ms
+  rtt min/avg/max/mdev = 0.478/0.734/0.990/0.256 ms
 
 [87/346] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.944 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=7.921 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.905 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.628 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.944/5.432/7.921/2.488 ms
+  rtt min/avg/max/mdev = 0.905/1.266/1.628/0.361 ms
 
 [88/346] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=4.362 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=2.265 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.861 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.131 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.265/3.314/4.362/1.049 ms
+  rtt min/avg/max/mdev = 0.861/0.996/1.131/0.135 ms
 
 [89/346] l1 l1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=4.552 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=2.348 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.844 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.114 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.348/3.450/4.552/1.102 ms
+  rtt min/avg/max/mdev = 0.844/0.979/1.114/0.135 ms
 
 [90/346] w1 w1$ ping -n 2 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=2ms TTL=64
-  Reply from 192.168.1.11: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [91/346] w1 w1$ ping -n 2 192.168.1.13
   
   Pinging 192.168.1.13 with 32 bytes of data:
-  Reply from 192.168.1.13: bytes=32 time=1ms TTL=64
-  Reply from 192.168.1.13: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
+  Reply from 192.168.1.13: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [92/346] w1 w1$ ping -n 2 192.168.1.21
   
   Pinging 192.168.1.21 with 32 bytes of data:
+  Reply from 192.168.1.21: bytes=32 time=<1ms TTL=64
   Reply from 192.168.1.21: bytes=32 time=2ms TTL=64
-  Reply from 192.168.1.21: bytes=32 time=3ms TTL=64
   
   Ping statistics for 192.168.1.21:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 3ms, Average = 3ms
+      Minimum = 1ms, Maximum = 2ms, Average = 2ms
 
 [93/346] w1 w1$ ping -n 2 192.168.1.22
   
   Pinging 192.168.1.22 with 32 bytes of data:
   Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
-  Reply from 192.168.1.22: bytes=32 time=1ms TTL=128
+  Reply from 192.168.1.22: bytes=32 time=<1ms TTL=128
   
   Ping statistics for 192.168.1.22:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [94/346] w1 w1$ ping -n 2 192.168.1.23
   
   Pinging 192.168.1.23 with 32 bytes of data:
-  Reply from 192.168.1.23: bytes=32 time=2ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
   Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.23:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [95/346] srv1 srv1$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.320 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.743 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.314 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.159 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.320/0.531/0.743/0.212 ms
+  rtt min/avg/max/mdev = 0.314/0.736/1.159/0.423 ms
 
 [96/346] srv1 srv1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.352 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.675 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.847 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.907 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.352/0.513/0.675/0.161 ms
+  rtt min/avg/max/mdev = 0.847/0.877/0.907/0.030 ms
 
 [97/346] srv1 srv1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.858 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.896 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.880 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.108 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.858/0.877/0.896/0.019 ms
+  rtt min/avg/max/mdev = 0.880/0.994/1.108/0.114 ms
 
 [98/346] srv1 srv1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.660 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.966 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=2.310 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.873 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.660/0.813/0.966/0.153 ms
+  rtt min/avg/max/mdev = 0.873/1.591/2.310/0.719 ms
 
 [99/346] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=2.322 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.127 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.787 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.243 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.127/1.724/2.322/0.598 ms
+  rtt min/avg/max/mdev = 0.787/1.015/1.243/0.228 ms
 
 [100/346] l2 l2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.748 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.266 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.682 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.984 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.748/1.007/1.266/0.259 ms
+  rtt min/avg/max/mdev = 0.682/0.833/0.984/0.151 ms
 
 [101/346] l2 l2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.875 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.105 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.778 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.913 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.875/0.990/1.105/0.115 ms
+  rtt min/avg/max/mdev = 0.778/1.345/1.913/0.568 ms
 
 [102/346] l2 l2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.600 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.093 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.705 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=2.681 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.600/0.847/1.093/0.247 ms
+  rtt min/avg/max/mdev = 1.705/2.193/2.681/0.488 ms
 
 [103/346] l2 l2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.415 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.693 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.460 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.904 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.415/0.554/0.693/0.139 ms
+  rtt min/avg/max/mdev = 0.460/0.682/0.904/0.222 ms
 
 [104/346] l2 l2$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.514 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.752 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.486 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.733 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.514/0.633/0.752/0.119 ms
+  rtt min/avg/max/mdev = 0.486/0.609/0.733/0.123 ms
 
 [105/346] w2 w2$ ping -n 2 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
   Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
-  Reply from 192.168.1.11: bytes=32 time=6ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 6ms, Average = 4ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [106/346] w2 w2$ ping -n 2 192.168.1.12
   
   Pinging 192.168.1.12 with 32 bytes of data:
-  Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
+  Reply from 192.168.1.12: bytes=32 time=2ms TTL=128
   Reply from 192.168.1.12: bytes=32 time=<1ms TTL=128
   
   Ping statistics for 192.168.1.12:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 2ms, Average = 1ms
 
 [107/346] w2 w2$ ping -n 2 192.168.1.13
   
@@ -895,7 +905,7 @@ Total steps: 346
   Ping statistics for 192.168.1.13:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [108/346] w2 w2$ ping -n 2 192.168.1.21
   
@@ -911,58 +921,58 @@ Total steps: 346
 [109/346] w2 w2$ ping -n 2 192.168.1.23
   
   Pinging 192.168.1.23 with 32 bytes of data:
-  Reply from 192.168.1.23: bytes=32 time=2ms TTL=64
+  Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
   Reply from 192.168.1.23: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.23:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 2ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [110/346] srv2 srv2$ ping -c 2 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.639 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.097 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.471 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.985 ms
   
   --- 192.168.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.639/0.868/1.097/0.229 ms
+  rtt min/avg/max/mdev = 0.471/0.728/0.985/0.257 ms
 
 [111/346] srv2 srv2$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.613 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.396 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=0.880 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=1.662 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.613/1.005/1.396/0.392 ms
+  rtt min/avg/max/mdev = 0.880/1.271/1.662/0.391 ms
 
 [112/346] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.839 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.176 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.944 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.980 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.839/1.007/1.176/0.169 ms
+  rtt min/avg/max/mdev = 0.980/1.962/2.944/0.982 ms
 
 [113/346] srv2 srv2$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.407 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.825 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.558 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.808 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.407/0.616/0.825/0.209 ms
+  rtt min/avg/max/mdev = 0.558/0.683/0.808/0.125 ms
 
 [114/346] srv2 srv2$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=1.796 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.705 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.388 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.657 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.705/1.251/1.796/0.545 ms
+  rtt min/avg/max/mdev = 0.388/0.523/0.657/0.135 ms
 
 
 --- [115] § per-VLAN MAC inspection loop ---
@@ -1235,7 +1245,7 @@ Total steps: 346
 --- [150] § interface counters after traffic ---
 [151/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/1                4680            47        6792            80
+  Fa0/1               4992            51        7666            91
 
 [152/346] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
@@ -1250,17 +1260,17 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       47 packets input, 4680 bytes, 0 no buffer
+       51 packets input, 4992 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       80 packets output, 6792 bytes, 0 underruns
+       91 packets output, 7666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [153/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/2                4144            41        6958            82
+  Fa0/2               4144            41        8070            96
 
 [154/346] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
@@ -1279,13 +1289,13 @@ Total steps: 346
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       82 packets output, 6958 bytes, 0 underruns
+       96 packets output, 8070 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [155/346] sw1 SW1# show interfaces FastEthernet0/3 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/3                4552            45        7264            85
+  Fa0/3               4944            50        7984            94
 
 [156/346] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
@@ -1300,47 +1310,29 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       45 packets input, 4552 bytes, 0 no buffer
+       50 packets input, 4944 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       85 packets output, 7264 bytes, 0 underruns
+       94 packets output, 7984 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 
 --- [157] § host MAC/link verification ---
 [158/346] l1 l1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:50 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:51 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:4f <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:50 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:51 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:52 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [159/346] srv1 srv1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [160/346] w1 w1$ getmac
   Physical Address  Transport Name          
@@ -1377,212 +1369,227 @@ Total steps: 346
 --- [164] § interface counters loop (SW1 Fa0/1..0/23) ---
 [165/346] sw1 SW1# show interfaces FastEthernet0/1 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/1                4680            47        6792            80
+  Fa0/1               4992            51        7666            91
 
 [166/346] sw1 SW1# show interfaces FastEthernet0/2 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/2                4144            41        6958            82
+  Fa0/2               4144            41        8070            96
 
 [167/346] sw1 SW1# show interfaces FastEthernet0/3 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/3                4552            45        7264            85
+  Fa0/3               4944            50        7984            94
 
 [168/346] sw1 SW1# show interfaces FastEthernet0/4 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/4                   0             0           0             0
+  Fa0/4                  0             0           0             0
 
 [169/346] sw1 SW1# show interfaces FastEthernet0/5 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/5                   0             0           0             0
+  Fa0/5                  0             0           0             0
 
 [170/346] sw1 SW1# show interfaces FastEthernet0/6 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/6                   0             0           0             0
+  Fa0/6                  0             0           0             0
 
 [171/346] sw1 SW1# show interfaces FastEthernet0/7 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/7                   0             0           0             0
+  Fa0/7                  0             0           0             0
 
 [172/346] sw1 SW1# show interfaces FastEthernet0/8 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/8                   0             0           0             0
+  Fa0/8                  0             0           0             0
 
 [173/346] sw1 SW1# show interfaces FastEthernet0/9 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/9                   0             0           0             0
+  Fa0/9                  0             0           0             0
 
 [174/346] sw1 SW1# show interfaces FastEthernet0/10 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/10                  0             0           0             0
+  Fa0/10                 0             0           0             0
 
 [175/346] sw1 SW1# show interfaces FastEthernet0/11 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/11                  0             0           0             0
+  Fa0/11                 0             0           0             0
 
 [176/346] sw1 SW1# show interfaces FastEthernet0/12 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/12                  0             0           0             0
+  Fa0/12                 0             0           0             0
 
 [177/346] sw1 SW1# show interfaces FastEthernet0/13 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/13                  0             0           0             0
+  Fa0/13                 0             0           0             0
 
 [178/346] sw1 SW1# show interfaces FastEthernet0/14 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/14                  0             0           0             0
+  Fa0/14                 0             0           0             0
 
 [179/346] sw1 SW1# show interfaces FastEthernet0/15 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/15                  0             0           0             0
+  Fa0/15                 0             0           0             0
 
 [180/346] sw1 SW1# show interfaces FastEthernet0/16 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/16                  0             0           0             0
+  Fa0/16                 0             0           0             0
 
 [181/346] sw1 SW1# show interfaces FastEthernet0/17 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/17                  0             0           0             0
+  Fa0/17                 0             0           0             0
 
 [182/346] sw1 SW1# show interfaces FastEthernet0/18 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/18                  0             0           0             0
+  Fa0/18                 0             0           0             0
 
 [183/346] sw1 SW1# show interfaces FastEthernet0/19 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/19                  0             0           0             0
+  Fa0/19                 0             0           0             0
 
 [184/346] sw1 SW1# show interfaces FastEthernet0/20 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/20                  0             0           0             0
+  Fa0/20                 0             0           0             0
 
 [185/346] sw1 SW1# show interfaces FastEthernet0/21 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/21                  0             0           0             0
+  Fa0/21                 0             0           0             0
 
 [186/346] sw1 SW1# show interfaces FastEthernet0/22 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/22                  0             0           0             0
+  Fa0/22                 0             0           0             0
 
 [187/346] sw1 SW1# show interfaces FastEthernet0/23 counters
   Port            InOctets   InUcastPkts   OutOctets  OutUcastPkts
-  Fa0/23                  0             0           0             0
+  Fa0/23                 0             0           0             0
 
 
 --- [188] § per-interface MAC inspection loop (SW2) ---
 [189/346] sw2 SW2> show mac address-table interface FastEthernet0/1
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  
+  Total Mac Addresses for this criterion: 1
 
 [190/346] sw2 SW2> show mac address-table interface FastEthernet0/2
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
+  
+  Total Mac Addresses for this criterion: 1
 
 [191/346] sw2 SW2> show mac address-table interface FastEthernet0/3
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 1
 
 [192/346] sw2 SW2> show mac address-table interface FastEthernet0/4
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [193/346] sw2 SW2> show mac address-table interface FastEthernet0/5
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [194/346] sw2 SW2> show mac address-table interface FastEthernet0/6
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [195/346] sw2 SW2> show mac address-table interface FastEthernet0/7
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [196/346] sw2 SW2> show mac address-table interface FastEthernet0/8
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [197/346] sw2 SW2> show mac address-table interface FastEthernet0/9
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [198/346] sw2 SW2> show mac address-table interface FastEthernet0/10
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [199/346] sw2 SW2> show mac address-table interface FastEthernet0/11
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [200/346] sw2 SW2> show mac address-table interface FastEthernet0/12
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [201/346] sw2 SW2> show mac address-table interface FastEthernet0/13
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [202/346] sw2 SW2> show mac address-table interface FastEthernet0/14
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [203/346] sw2 SW2> show mac address-table interface FastEthernet0/15
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [204/346] sw2 SW2> show mac address-table interface FastEthernet0/16
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [205/346] sw2 SW2> show mac address-table interface FastEthernet0/17
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [206/346] sw2 SW2> show mac address-table interface FastEthernet0/18
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [207/346] sw2 SW2> show mac address-table interface FastEthernet0/19
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [208/346] sw2 SW2> show mac address-table interface FastEthernet0/20
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [209/346] sw2 SW2> show mac address-table interface FastEthernet0/21
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [210/346] sw2 SW2> show mac address-table interface FastEthernet0/22
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 [211/346] sw2 SW2> show mac address-table interface FastEthernet0/23
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 
 --- [212] § per-interface MAC inspection loop (CORE) ---
@@ -1704,7 +1711,6 @@ Total steps: 346
 
 --- [236] § extended static MAC entries (SW2) ---
 [236/346] sw2 SW2> configure terminal
-  ^
   % Invalid input detected at '^' marker.
 
 [237/346] sw2 SW2> mac address-table static 0000.beef.0001 vlan 1 interface FastEthernet0/1
@@ -1752,13 +1758,13 @@ Total steps: 346
 
 [248/346] sw2 SW2> show mac address-table static
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  No entries.
 
 
 --- [249] § full host inspection ---
 [250/346] l1 l1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1773,20 +1779,11 @@ Total steps: 346
   192.168.1.99 dev eth0  FAILED
 
 [252/346] l1 l1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:50 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:51 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:4f <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:50 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:51 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:52 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [253/346] w1 w1$ ipconfig /all
   Windows IP Configuration
@@ -1815,7 +1812,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-54
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -1824,7 +1821,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-55
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -1833,7 +1830,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-56
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -1856,7 +1853,7 @@ Total steps: 346
   02-00-00-00-00-56 Media disconnected      
 
 [256/346] srv1 srv1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1870,23 +1867,14 @@ Total steps: 346
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f STALE
 
 [258/346] srv1 srv1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [259/346] l2 l2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1900,20 +1888,11 @@ Total steps: 346
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f STALE
 
 [261/346] l2 l2$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:5b <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:5c <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:5d <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5e <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [262/346] w2 w2$ ipconfig /all
   Windows IP Configuration
@@ -1942,7 +1921,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-60
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -1951,7 +1930,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-61
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -1960,7 +1939,7 @@ Total steps: 346
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-62
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -1983,7 +1962,7 @@ Total steps: 346
   02-00-00-00-00-62 Media disconnected      
 
 [265/346] srv2 srv2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1997,20 +1976,11 @@ Total steps: 346
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f STALE
 
 [267/346] srv2 srv2$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:63 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:64 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:65 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:66 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:63 <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:64 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:65 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:66 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 
 --- [268] § final MAC state ---
@@ -2050,8 +2020,18 @@ Total steps: 346
 
 [271/346] sw2 SW2> show mac address-table
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
+  1       02:00:00:00:00:5b DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:5f DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:63 DYNAMIC     FastEthernet0/3
+  
+  Total Mac Addresses for this criterion: 6
 
 [272/346] core CORE# show mac address-table
   Mac Address Table
@@ -2071,7 +2051,10 @@ Total steps: 346
 [273/346] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 950 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
@@ -2133,8 +2116,6 @@ Total steps: 346
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
   end
 
 
@@ -2156,11 +2137,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       47 packets input, 4680 bytes, 0 no buffer
+       51 packets input, 4992 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       80 packets output, 6792 bytes, 0 underruns
+       91 packets output, 7666 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2181,7 +2162,7 @@ Total steps: 346
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       82 packets output, 6958 bytes, 0 underruns
+       96 packets output, 8070 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2198,11 +2179,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       45 packets input, 4552 bytes, 0 no buffer
+       50 packets input, 4944 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       85 packets output, 7264 bytes, 0 underruns
+       94 packets output, 7984 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2643,11 +2624,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       41 packets input, 4144 bytes, 0 no buffer
+       45 packets input, 4456 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       77 packets output, 6448 bytes, 0 underruns
+       88 packets output, 7322 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2668,7 +2649,7 @@ Total steps: 346
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       76 packets output, 6384 bytes, 0 underruns
+       90 packets output, 7496 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2685,11 +2666,11 @@ Total steps: 346
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       41 packets input, 4144 bytes, 0 no buffer
+       45 packets input, 4462 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       75 packets output, 6320 bytes, 0 underruns
+       85 packets output, 7114 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

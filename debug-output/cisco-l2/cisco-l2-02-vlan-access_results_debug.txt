@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-08-08T00:14:00.626Z
+Generated: 2026-08-12T20:25:34.872Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -622,34 +622,33 @@ Total steps: 360
   999  MGMT                             active    
 
 [172/360] sw1 SW1(config)# do show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    20         a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    30         a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    40         a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   50         auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   10         auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   20         auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   30         auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   40         auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   50         auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   10         auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   20         auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   30         auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   40         auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   50         auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   10         auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   20         auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   30         auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   40         auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   50         auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   10         auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   20         auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   30         auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   40         auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    20         a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    30         a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    40         a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   50           auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   10           auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   20           auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   30           auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   40           auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   50           auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   10           auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   20           auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   30           auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   40           auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   50           auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   10           auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   20           auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   30           auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   40           auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   50           auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   10           auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   20           auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   30           auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   40           auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 
 --- [173] § inter-switch trunks (carry all VLANs) ---
@@ -793,13 +792,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.794 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.307 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.104 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=3.309 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.360 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.583 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.104/1.735/2.794/0.753 ms
+  rtt min/avg/max/mdev = 1.360/2.084/3.309/0.871 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -810,13 +809,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.678 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.528 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=1.326 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.921 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.766 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=1.396 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.678/1.177/1.528/0.362 ms
+  rtt min/avg/max/mdev = 0.921/1.361/1.766/0.346 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -854,8 +853,9 @@ Total steps: 360
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
   10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
+  40      02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 8
+  Total Mac Addresses for this criterion: 9
 
 
 --- [219] § connectivity: different VLAN, same switch (must fail) ---
@@ -908,21 +908,21 @@ Total steps: 360
 [227/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=2ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.595 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.908 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=1.135 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.446 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.595/0.751/0.908/0.156 ms
+  rtt min/avg/max/mdev = 1.135/1.291/1.446/0.156 ms
 
 
 --- [229] § voice VLAN ---
@@ -1257,7 +1257,7 @@ Total steps: 360
 
 --- [274] § final host verification ---
 [275/360] l1 l1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1271,7 +1271,7 @@ Total steps: 360
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [277/360] l2 l2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1285,7 +1285,7 @@ Total steps: 360
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [279/360] srv1 srv1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1299,7 +1299,7 @@ Total steps: 360
   ? (192.168.1.22) at 02:00:00:00:00:5f [ether] on eth0
 
 [281/360] srv2 srv2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1387,75 +1387,19 @@ Total steps: 360
   10      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   20      02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
+  40      02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
   
-  Total Mac Addresses for this criterion: 8
+  Total Mac Addresses for this criterion: 9
 
 [287/360] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 2645 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
-  !
-  vlan 10
-   name VLAN_10
-  !
-  vlan 20
-   name VLAN_20
-  !
-  vlan 30
-   name VLAN_30
-  !
-  vlan 40
-   name VLAN_40
-  !
-  vlan 50
-   name VOICE
-  !
-  vlan 60
-   name VLAN_60
-  !
-  vlan 70
-   name VLAN_70
-  !
-  vlan 80
-   name VLAN_80
-  !
-  vlan 90
-   name VLAN_90
-  !
-  vlan 100
-   name VLAN_100
-  !
-  vlan 300
-   name VLAN0300
-  !
-  vlan 301
-   name VLAN0301
-  !
-  vlan 302
-   name VLAN0302
-  !
-  vlan 303
-   name VLAN0303
-  !
-  vlan 304
-   name VLAN0304
-  !
-  vlan 305
-   name VLAN0305
-  !
-  vlan 400
-   name VLAN0400
-  !
-  vlan 410
-   name VLAN0410
-  !
-  vlan 420
-   name VLAN0420
-  !
-  vlan 999
-   name MGMT
   !
   interface FastEthernet0/1
    switchport mode access
@@ -1562,8 +1506,66 @@ Total steps: 360
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  vlan 10
+   name VLAN_10
+  !
+  vlan 20
+   name VLAN_20
+  !
+  vlan 30
+   name VLAN_30
+  !
+  vlan 40
+   name VLAN_40
+  !
+  vlan 50
+   name VOICE
+  !
+  vlan 60
+   name VLAN_60
+  !
+  vlan 70
+   name VLAN_70
+  !
+  vlan 80
+   name VLAN_80
+  !
+  vlan 90
+   name VLAN_90
+  !
+  vlan 100
+   name VLAN_100
+  !
+  vlan 300
+   name VLAN0300
+  !
+  vlan 301
+   name VLAN0301
+  !
+  vlan 302
+   name VLAN0302
+  !
+  vlan 303
+   name VLAN0303
+  !
+  vlan 304
+   name VLAN0304
+  !
+  vlan 305
+   name VLAN0305
+  !
+  vlan 400
+   name VLAN0400
+  !
+  vlan 410
+   name VLAN0410
+  !
+  vlan 420
+   name VLAN0420
+  !
+  vlan 999
+   name MGMT
+  !
   end
 
 
@@ -1585,11 +1587,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       12 packets input, 1186 bytes, 0 no buffer
+       16 packets input, 1498 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       27 packets output, 2070 bytes, 0 underruns
+       33 packets output, 2558 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1610,7 +1612,7 @@ Total steps: 360
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       18 packets output, 1190 bytes, 0 underruns
+       23 packets output, 1612 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1627,11 +1629,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 382 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1024 bytes, 0 underruns
+       19 packets output, 1284 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2072,11 +2074,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       7 packets input, 676 bytes, 0 no buffer
+       11 packets input, 988 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       26 packets output, 1968 bytes, 0 underruns
+       32 packets output, 2456 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2097,7 +2099,7 @@ Total steps: 360
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       21 packets output, 1496 bytes, 0 underruns
+       26 packets output, 1918 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2114,11 +2116,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 382 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       16 packets output, 1024 bytes, 0 underruns
+       19 packets output, 1284 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

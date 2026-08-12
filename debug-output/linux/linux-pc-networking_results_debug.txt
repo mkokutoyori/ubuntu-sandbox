@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-08-10T22:08:05.002Z
+Generated: 2026-08-12T20:23:49.730Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -41,20 +41,11 @@ $ [2/302]> ip link show
       link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
 
 $ [3/302]> ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:01 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            DOWN          02:00:00:00:00:01 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth1            DOWN          02:00:00:00:00:02 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:03 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:04 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 $ [4/302]> ip -s link
   1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
@@ -1006,8 +997,7 @@ $ [159/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536        0      0      0 0                0      0      0      0 BMRU
-  lo        65536      128      0      0 0           128      0      0      0 LRU
+  lo           65536        0      0      0 0                0      0      0      0 LRU
 
 $ [160/302]> netstat -rn
   Kernel IP routing table
@@ -1055,18 +1045,18 @@ $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-08-10 22:08:08--  http://192.168.10.1
+  --2026-08-12 20:23:52--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-08-10 22:08:08--  http://192.168.10.1
+  --2026-08-12 20:23:52--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-08-10 22:08:08--  http://192.168.10.99
+  --2026-08-12 20:23:52--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1233,11 +1223,11 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
 <empty>
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 77 Aug 10 22:08 /tmp/id_rsa
-  -rw-r--r-- 1 user user 38 Aug 10 22:08 /tmp/id_rsa.pub
+  -rw------- 1 user user 77 Aug 12 20:24 /tmp/id_rsa
+  -rw-r--r-- 1 user user 38 Aug 12 20:24 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAaujw1d3pf5h user@linux-pc
+  ssh-rsa AAAAx0sh3r7r8ck user@linux-pc
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
 <empty>
@@ -1246,7 +1236,7 @@ $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
 <empty>
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-ed25519 AAAAyeb7wphtugn user@localhost
+  ssh-ed25519 AAAAhqx3170dqh user@localhost
 
 $ [224/302]> ssh -V
   usage: ssh [-options] destination [command]
@@ -1344,20 +1334,11 @@ $ [243/302]> ip route
 
 --- [244] § inventaire réseau consolidé ---
 $ [244/302]> ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:02 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:03 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:04 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            DOWN          02:00:00:aa:bb:cc <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth1            DOWN          02:00:00:00:00:02 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:03 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:04 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 $ [245/302]> ip -br addr
   lo              UNKNOWN       127.0.0.1/8
@@ -1373,7 +1354,13 @@ $ [247/302]> ss -tln | wc -l
   4
 
 $ [248/302]> cat /proc/net/dev | head
-  cat: /proc/net/dev: No such file or directory
+  Inter-|   Receive                                                |  Transmit
+   face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    eth0:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+      lo:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
 
 $ [249/302]> cat /proc/net/route | head
   cat: /proc/net/route: No such file or directory
@@ -1489,7 +1476,13 @@ $ [268/302]> ip -s link show eth0
           0       0      0       0       0       0
 
 $ [269/302]> cat /proc/net/dev
-  cat: /proc/net/dev: No such file or directory
+  Inter-|   Receive                                                |  Transmit
+   face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    eth0:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+    eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
+      lo:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
 
 $ [270/302]> ifconfig eth0 | grep -E "RX|TX"
           RX packets 0  bytes 0 (0.0 KiB)
@@ -1504,8 +1497,7 @@ $ [271/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536        0      0      0 0                0      0      0      0 BMRU
-  lo        65536      128      0      0 0           128      0      0      0 LRU
+  lo           65536        0      0      0 0                0      0      0      0 LRU
 
 $ [272/302]> ss -s
   Total: 5
@@ -1668,7 +1660,7 @@ $ [292/302]> cat /sys/class/net/eth0/operstate
   down
 
 $ [293/302]> ls /sys/class/net
-  eth0  lo
+  eth0  eth1  eth2  eth3  lo
 
 
 --- [294] § mal formées — fin de transcript ---

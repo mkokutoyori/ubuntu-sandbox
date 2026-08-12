@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-08-10T22:07:10.763Z
+Generated: 2026-08-12T20:23:38.009Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -505,7 +505,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  58
+  60
 
 
 --- [92] § sort — tri ---
@@ -1037,6 +1037,7 @@ $ [178/303]> ls /etc | grep conf | sort | head
   logrotate.conf
   nsswitch.conf
   resolv.conf
+  rsyslog.conf
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
         1 CERISE
@@ -1270,7 +1271,7 @@ $ [230/303]> pr -t fruits.txt
 $ [231/303]> pr -n fruits.txt
   
   
-  Mon Aug 10 2026  fruits.txt  Page 1
+  Wed Aug 12 2026  fruits.txt  Page 1
   
   
       1	banane
@@ -1320,6 +1321,7 @@ $ [236/303]> ls /etc/*.conf | xargs -n1 basename
   -n1 /etc/adduser.conf
   -n1 /etc/logrotate.conf
   -n1 /etc/nsswitch.conf
+  -n1 /etc/rsyslog.conf
 
 $ [237/303]> echo "1 2 3" | xargs -I{} echo "valeur={}"
   -I{} 1 2 3
@@ -1336,6 +1338,7 @@ $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
   wc /etc/adduser.conf
   wc /etc/logrotate.conf
   wc /etc/nsswitch.conf
+  wc /etc/rsyslog.conf
 
 $ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo
   -d  pomme banane

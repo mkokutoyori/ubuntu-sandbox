@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-08-10T19:33:58.593Z
+Generated: 2026-08-12T20:24:48.933Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -182,53 +182,33 @@ Total steps: 355
 <empty>
 
 [58/355] r1 R1# show ip rip database
-  10.1.0.0/8
-      [1] directly connected, via configured network
-  10.2.0.0/8
-      [1] directly connected, via configured network
-  10.3.0.0/8
-      [1] directly connected, via configured network
-  10.4.0.0/8
-      [1] directly connected, via configured network
-  10.5.0.0/8
-      [1] directly connected, via configured network
-  10.6.0.0/8
-      [1] directly connected, via configured network
-  192.168.1.0/24
-      [1] directly connected, via configured network
-  10.0.0.0/8
-      [1] directly connected, via configured network
+  192.168.1.0/24    directly connected, GigabitEthernet0/0
+  10.0.0.0/30    directly connected, GigabitEthernet0/1
 
 [59/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
     Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
     Passive Interface(s):
-      (default)
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    [object Object]
-    [object Object]
-    [object Object]
-    Distance: 120
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
 
 [60/355] r1 R1# show ip route rip
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
@@ -245,7 +225,7 @@ Total steps: 355
   
 
 [61/355] r1 R1# debug ip rip
-  RIP debugging is on
+  RIP protocol debugging is on
 
 [62/355] r1 R1# debug ip rip events
               ^
@@ -369,31 +349,62 @@ Total steps: 355
 
 [101/355] r1 R1# show ip eigrp neighbors
   EIGRP-IPv4 Neighbors for AS(100)
-  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  H   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq
+                                                     (sec)         (ms)       Cnt Num
 
 [102/355] r1 R1# show ip eigrp neighbors detail
   EIGRP-IPv4 Neighbors for AS(100)
-  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  H   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq
+                                                     (sec)         (ms)       Cnt Num
 
 [103/355] r1 R1# show ip eigrp topology
-  EIGRP-IPv4 Topology Table for AS(100)
+  EIGRP-IPv4 Topology Table for AS(100)/ID(1.1.1.1)
+  Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,
+         r - reply Status, s - sia Status
+  
   P 10.0.0.0/30, 1 successors, FD is 2816
-          via Connected
+          via Connected, GigabitEthernet0/1
+  P 172.16.0.0/16, 1 successors, FD is 0
+          via Redistributed
 
 [104/355] r1 R1# show ip eigrp topology all-links
-  EIGRP-IPv4 Topology Table for AS(100)
+  EIGRP-IPv4 Topology Table for AS(100)/ID(1.1.1.1)
+  Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,
+         r - reply Status, s - sia Status
+  
   P 10.0.0.0/30, 1 successors, FD is 2816
-          via Connected
+          via Connected, GigabitEthernet0/1
+  P 172.16.0.0/16, 1 successors, FD is 0
+          via Redistributed
 
 [105/355] r1 R1# show ip eigrp interfaces
   EIGRP-IPv4 Interfaces for AS(100)
+                                Xmit Queue   PeerQ        Mean   Pacing Time   Multicast    Pending
+  Interface              Peers  Un/Reliable  Un/Reliable  SRTT   Un/Reliable   Flow Timer   Routes
+  GigabitEthernet0/1     0        0/0       0/0          0        0/1          0             0
 
 [106/355] r1 R1# show ip eigrp interfaces detail
   EIGRP-IPv4 Interfaces for AS(100)
+                                Xmit Queue   PeerQ        Mean   Pacing Time   Multicast    Pending
+  Interface              Peers  Un/Reliable  Un/Reliable  SRTT   Un/Reliable   Flow Timer   Routes
+  GigabitEthernet0/1     0        0/0       0/0          0        0/1          0             0
+    Hello-interval is 5, Hold-time is 15
+    Split-horizon is enabled
+    Next xmit serial <none>
+    Packetized sent/expedited: 0/0
+    Hello's sent/expedited: 15/0
+    Un/reliable mcasts: 0/15  Un/reliable ucasts: 0/0
+    Mcast exceptions: 0  CR packets: 0  ACKs suppressed: 0
+    Retransmissions sent: 0  Out-of-sequence rcvd: 0
+    Topology-ids on interface - 0
+    Authentication mode is md5,  key-chain is "RIP-KEY"
+    Topologies advertised on this interface:  base
+    Topologies not advertised on this interface:
+  
 
 [107/355] r1 R1# show ip eigrp traffic
   IP-EIGRP Traffic Statistics for AS 100
-    Hellos sent/received: 14/0
+    Hellos sent/received: 17/0
     Updates sent/received: 0/0
     Queries sent/received: 0/0
     Replies sent/received: 0/0
@@ -426,49 +437,52 @@ Total steps: 355
 
 [110/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
     Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
     Passive Interface(s):
-      (default)
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    [object Object]
-    [object Object]
-    [object Object]
-    Distance: 120
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
   Routing Protocol is "eigrp 100"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
+    Default networks flagged in outgoing updates
+    Default networks accepted from incoming updates
     EIGRP-IPv4 Protocol for AS(100)
       Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
-      Router-ID: 1.1.1.1
+      NSF-aware route hold timer is 240
+      EIGRP Router-ID: 1.1.1.1
+      EIGRP stub-router feature is enabled
+        Stub Options: Connected, Summary
       Topology : 0 (base)
         Active Timer: 3 min
         Distance: internal 90 external 170
-        Maximum path: 4
-        Maximum hopcount 100
-        Maximum metric variance 4
-  
-    Automatic Summarization: disabled
-    Maximum path: 4
+        Maximum path: 6
+        Maximum hopcount 50
+        EIGRP maximum metric variance 4
+    Redistributing: connected
+    Redistributing: static
+    Redistributing: ospf
+    Automatic summarization: disabled
+    Address Summarization:
+      100/5 for GigabitEthernet0/1
+    Maximum path: 6
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -478,9 +492,8 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    [object Object]
-    [object Object]
-    [object Object]
+    Passive Interface(s):
+      GigabitEthernet0/0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: internal 90 external 170
@@ -489,7 +502,8 @@ Total steps: 355
 <empty>
 
 [112/355] r1 R1# debug eigrp packets
-  EIGRP debugging is on
+  EIGRP Packets debugging is on
+      (UPDATE, REQUEST, QUERY, REPLY, HELLO, IPXSAP, PROBE, ACK, STUB, SIAQUERY, SIAREPLY)
 
 [113/355] r1 R1# debug ip eigrp
   EIGRP debugging is on
@@ -805,7 +819,8 @@ Total steps: 355
 <empty>
 
 [207/355] r1 R1(config-router-af)# maximum-paths ibgp 4
-<empty>
+                                     ^
+  % Invalid input detected at '^' marker.
 
 [208/355] r1 R1(config-router-af)# exit-address-family
 <empty>
@@ -956,49 +971,52 @@ Total steps: 355
 
 [237/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
     Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
     Passive Interface(s):
-      (default)
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    [object Object]
-    [object Object]
-    [object Object]
-    Distance: 120
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
   Routing Protocol is "eigrp 100"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
+    Default networks flagged in outgoing updates
+    Default networks accepted from incoming updates
     EIGRP-IPv4 Protocol for AS(100)
       Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
-      Router-ID: 1.1.1.1
+      NSF-aware route hold timer is 240
+      EIGRP Router-ID: 1.1.1.1
+      EIGRP stub-router feature is enabled
+        Stub Options: Connected, Summary
       Topology : 0 (base)
         Active Timer: 3 min
         Distance: internal 90 external 170
-        Maximum path: 4
-        Maximum hopcount 100
-        Maximum metric variance 4
-  
-    Automatic Summarization: disabled
-    Maximum path: 4
+        Maximum path: 6
+        Maximum hopcount 50
+        EIGRP maximum metric variance 4
+    Redistributing: connected
+    Redistributing: static
+    Redistributing: ospf
+    Automatic summarization: disabled
+    Address Summarization:
+      100/5 for GigabitEthernet0/1
+    Maximum path: 6
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -1008,9 +1026,8 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    [object Object]
-    [object Object]
-    [object Object]
+    Passive Interface(s):
+      GigabitEthernet0/0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: internal 90 external 170
@@ -1079,7 +1096,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX5654K0DE
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1089,17 +1106,17 @@ Total steps: 355
 [248/355] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4591 bytes
+  Current configuration : 4784 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   key chain RIP-KEY
    key 1
@@ -1112,6 +1129,14 @@ Total steps: 355
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+   ip bandwidth-percent eigrp 100 50
+   ip hello-interval eigrp 100 5
+   ip hold-time eigrp 100 15
+   ip authentication mode eigrp 100 md5
+   ip authentication key-chain eigrp 100 RIP-KEY
+   no ip split-horizon eigrp 100
+   ip summary-address rip 10.0.0.0 255.0.0.0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1143,14 +1168,8 @@ Total steps: 355
   !
   router rip
    version 2
-   network 10.1.0.0
-   network 10.2.0.0
-   network 10.3.0.0
-   network 10.4.0.0
-   network 10.5.0.0
-   network 10.6.0.0
-   network 192.168.1.0
    network 10.0.0.0
+   network 192.168.1.0
    passive-interface GigabitEthernet0/0
    passive-interface GigabitEthernet0/2
    passive-interface GigabitEthernet0/3
@@ -1235,7 +1254,7 @@ Total steps: 355
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
-  ! Last configuration change at 19:33:58 UTC Mon Aug 10 2026 by console
+  ! Last configuration change at 20:24:49 UTC Wed Aug 12 2026 by console
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
@@ -1274,7 +1293,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 332 bytes, 0 underruns
+       5 packets output, 402 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -1294,7 +1313,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       90 packets output, 8990 bytes, 0 underruns
+       94 packets output, 9366 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1352,6 +1371,7 @@ Total steps: 355
         10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
   C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+  S    172.16.0.0/16 [5/0] is directly connected, Null0
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
@@ -1361,59 +1381,62 @@ Total steps: 355
   IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       2           2           0           304         720
-  static          0           0           0           0           0
+  static          1           1           0           152         360
   ospf            0           0           0           0           0
   eigrp           0           0           0           0           0
   bgp             0           0           0           0           0
   rip             0           0           0           0           0
   default         0           0           0           0           0
-  Total           2           2           0           304         720
+  Total           3           3           0           456         1080
 
 [254/355] r1 R1# show ip protocols
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
     Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
     Passive Interface(s):
-      (default)
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    [object Object]
-    [object Object]
-    [object Object]
-    Distance: 120
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
   Routing Protocol is "eigrp 100"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
+    Default networks flagged in outgoing updates
+    Default networks accepted from incoming updates
     EIGRP-IPv4 Protocol for AS(100)
       Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
-      Router-ID: 1.1.1.1
+      NSF-aware route hold timer is 240
+      EIGRP Router-ID: 1.1.1.1
+      EIGRP stub-router feature is enabled
+        Stub Options: Connected, Summary
       Topology : 0 (base)
         Active Timer: 3 min
         Distance: internal 90 external 170
-        Maximum path: 4
-        Maximum hopcount 100
-        Maximum metric variance 4
-  
-    Automatic Summarization: disabled
-    Maximum path: 4
+        Maximum path: 6
+        Maximum hopcount 50
+        EIGRP maximum metric variance 4
+    Redistributing: connected
+    Redistributing: static
+    Redistributing: ospf
+    Automatic summarization: disabled
+    Address Summarization:
+      100/5 for GigabitEthernet0/1
+    Maximum path: 6
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -1423,9 +1446,8 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    [object Object]
-    [object Object]
-    [object Object]
+    Passive Interface(s):
+      GigabitEthernet0/0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: internal 90 external 170
@@ -1460,12 +1482,18 @@ Total steps: 355
 
 [261/355] r1 R1# show ip eigrp neighbors
   EIGRP-IPv4 Neighbors for AS(100)
-  H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq
+  H   Address                 Interface              Hold Uptime   SRTT   RTO  Q  Seq
+                                                     (sec)         (ms)       Cnt Num
 
 [262/355] r1 R1# show ip eigrp topology
-  EIGRP-IPv4 Topology Table for AS(100)
+  EIGRP-IPv4 Topology Table for AS(100)/ID(1.1.1.1)
+  Codes: P - Passive, A - Active, U - Update, Q - Query, R - Reply,
+         r - reply Status, s - sia Status
+  
   P 10.0.0.0/30, 1 successors, FD is 2816
-          via Connected
+          via Connected, GigabitEthernet0/1
+  P 172.16.0.0/16, 1 successors, FD is 0
+          via Redistributed
 
 [263/355] r1 R1# show ip bgp
   BGP table version is 1, local router ID is 1.1.1.1
@@ -1486,22 +1514,8 @@ Total steps: 355
   10.0.0.1        4 0          0        0       0    0    0 0s       Established
 
 [265/355] r1 R1# show ip rip database
-  10.1.0.0/8
-      [1] directly connected, via configured network
-  10.2.0.0/8
-      [1] directly connected, via configured network
-  10.3.0.0/8
-      [1] directly connected, via configured network
-  10.4.0.0/8
-      [1] directly connected, via configured network
-  10.5.0.0/8
-      [1] directly connected, via configured network
-  10.6.0.0/8
-      [1] directly connected, via configured network
-  192.168.1.0/24
-      [1] directly connected, via configured network
-  10.0.0.0/8
-      [1] directly connected, via configured network
+  192.168.1.0/24    directly connected, GigabitEthernet0/0
+  10.0.0.0/30    directly connected, GigabitEthernet0/1
 
 [266/355] r1 R1# show ip nat translations
   Pro  Inside global          Inside local           Outside local          Outside global
@@ -1573,11 +1587,11 @@ Total steps: 355
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 11 messages logged, xml disabled,
+      Console logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 11 messages logged, xml disabled,
+      Monitor logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 11 messages logged, xml disabled,
+      Buffer logging:  level debugging, 10 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1586,22 +1600,21 @@ Total steps: 355
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 11 message lines logged
+      Trap logging: level informational, 10 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug 10 19:33:58.586: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:58.587: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:58.590: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:58.590: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:58.603: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.613: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.633: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.638: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.693: %SEC_LOGIN-5-LOGIN_SUCCESS: Login accepted: connection from 10.0.0.1:49154 accepted on port 179
-  *Aug 10 19:33:58.702: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Aug 10 19:33:58.716: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.927: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:24:48.928: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:24:48.929: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:24:48.929: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:24:48.944: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.957: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.975: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.985: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:49.027: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Aug 12 20:24:49.036: %SYS-5-CONFIG_I: Configured from console by console
 
 [282/355] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1613,7 +1626,7 @@ Total steps: 355
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE24A626.CBC6A7EF (19:33:58.796 UTC Mon Aug 10 2026)
+  reference time is EE275511.15810624 (20:24:49.084 UTC Wed Aug 12 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1624,7 +1637,7 @@ Total steps: 355
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [285/355] r1 R1# show clock
-  *19:33:58.000 UTC Mon Aug 10 2026
+  *20:24:49.000 UTC Wed Aug 12 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1671,7 +1684,6 @@ Total steps: 355
 
 [291/355] r1 R1# show users
       Line       User       Host(s)              Idle       Location
-  *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
@@ -1702,6 +1714,7 @@ Total steps: 355
   0.0.0.0/0            no route
   192.168.1.0/24       attached             GigabitEthernet0/0
   10.0.0.0/30          attached             GigabitEthernet0/1
+  172.16.0.0/16        attached             Null0
 
 [294/355] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1721,7 +1734,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 332 bytes, 0 underruns
+       5 packets output, 402 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1743,7 +1756,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       95 packets output, 9500 bytes, 0 underruns
+       99 packets output, 9876 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1806,7 +1819,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX5654K0DE
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1816,17 +1829,17 @@ Total steps: 355
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4591 bytes
+  Current configuration : 4784 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   key chain RIP-KEY
    key 1
@@ -1839,6 +1852,14 @@ Total steps: 355
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+   ip bandwidth-percent eigrp 100 50
+   ip hello-interval eigrp 100 5
+   ip hold-time eigrp 100 15
+   ip authentication mode eigrp 100 md5
+   ip authentication key-chain eigrp 100 RIP-KEY
+   no ip split-horizon eigrp 100
+   ip summary-address rip 10.0.0.0 255.0.0.0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1870,14 +1891,8 @@ Total steps: 355
   !
   router rip
    version 2
-   network 10.1.0.0
-   network 10.2.0.0
-   network 10.3.0.0
-   network 10.4.0.0
-   network 10.5.0.0
-   network 10.6.0.0
-   network 192.168.1.0
    network 10.0.0.0
+   network 192.168.1.0
    passive-interface GigabitEthernet0/0
    passive-interface GigabitEthernet0/2
    passive-interface GigabitEthernet0/3
@@ -1962,7 +1977,7 @@ Total steps: 355
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
-  ! Last configuration change at 19:33:58 UTC Mon Aug 10 2026 by console
+  ! Last configuration change at 20:24:49 UTC Wed Aug 12 2026 by console
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
@@ -1996,6 +2011,7 @@ Total steps: 355
         10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
   C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+  S    172.16.0.0/16 [5/0] is directly connected, Null0
         192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
@@ -2018,7 +2034,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       4 packets output, 332 bytes, 0 underruns
+       5 packets output, 402 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -2038,7 +2054,7 @@ Total steps: 355
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       95 packets output, 9500 bytes, 0 underruns
+       99 packets output, 9876 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2082,24 +2098,28 @@ Total steps: 355
   
   ------------------ show ip protocols ------------------
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
+    Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
+    Passive Interface(s):
+      GigabitEthernet0/0
+      GigabitEthernet0/2
+      GigabitEthernet0/3
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
   
   ------------------ show processes cpu ------------------
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -2146,11 +2166,11 @@ Total steps: 355
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 11 messages logged, xml disabled,
+      Console logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 11 messages logged, xml disabled,
+      Monitor logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 11 messages logged, xml disabled,
+      Buffer logging:  level debugging, 10 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2159,26 +2179,25 @@ Total steps: 355
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 11 message lines logged
+      Trap logging: level informational, 10 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug 10 19:33:58.586: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:58.587: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 10 19:33:58.590: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:58.590: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 10 19:33:58.603: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.613: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.633: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.638: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 10 19:33:58.693: %SEC_LOGIN-5-LOGIN_SUCCESS: Login accepted: connection from 10.0.0.1:49154 accepted on port 179
-  *Aug 10 19:33:58.702: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Aug 10 19:33:58.716: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.927: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:24:48.928: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:24:48.929: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:24:48.929: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:24:48.944: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.957: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.975: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:48.985: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:24:49.027: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Aug 12 20:24:49.036: %SYS-5-CONFIG_I: Configured from console by console
 
 [299/355] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX5654K0DE
 
 [300/355] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2199,6 +2218,7 @@ Total steps: 355
   Default domain is not set
   Name/address lookup uses static mappings
   Name servers are 255.255.255.255
+  
   Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
          temp - temporary, perm - permanent
          NA - Not Applicable None - Not defined
@@ -2211,14 +2231,14 @@ Total steps: 355
   Minimum expected Diffie Hellman key size : 1024 bits
 
 [306/355] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
-  *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 AUX               -    -    -    -      0     0   0/0       -
-       2    2 VTY               -    -    -    -      0     0   0/0       -
-       3    3 VTY               -    -    -    -      0     0   0/0       -
-       4    4 VTY               -    -    -    -      0     0   0/0       -
-       5    5 VTY               -    -    -    -      0     0   0/0       -
-       6    6 VTY               -    -    -    -      0     0   0/0       -
+     Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
+  *    0 CTY                 -    -    -    -     0      0       0/0    -
+       1 AUX                 -    -    -    -     0      0       0/0    -
+       2 VTY                 -    -    -    -     0      0       0/0    -
+       3 VTY                 -    -    -    -     0      0       0/0    -
+       4 VTY                 -    -    -    -     0      0       0/0    -
+       5 VTY                 -    -    -    -     0      0       0/0    -
+       6 VTY                 -    -    -    -     0      0       0/0    -
 
 [307/355] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -2253,6 +2273,14 @@ Total steps: 355
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+   ip bandwidth-percent eigrp 100 50
+   ip hello-interval eigrp 100 5
+   ip hold-time eigrp 100 15
+   ip authentication mode eigrp 100 md5
+   ip authentication key-chain eigrp 100 RIP-KEY
+   no ip split-horizon eigrp 100
+   ip summary-address rip 10.0.0.0 255.0.0.0
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2267,14 +2295,14 @@ Total steps: 355
 [312/355] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4591 bytes
+  Current configuration : 4784 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   key chain RIP-KEY
    key 1
     key-string secretrip
@@ -2284,6 +2312,14 @@ Total steps: 355
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
+   ip summary-address eigrp 100 172.16.0.0 255.255.0.0
+   ip bandwidth-percent eigrp 100 50
+   ip hello-interval eigrp 100 5
+   ip hold-time eigrp 100 15
+   ip authentication mode eigrp 100 md5
+   ip authentication key-chain eigrp 100 RIP-KEY
+   no ip split-horizon eigrp 100
+   ip summary-address rip 10.0.0.0 255.0.0.0
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3
@@ -2311,14 +2347,8 @@ Total steps: 355
    no auto-summary
   router rip
    version 2
-   network 10.1.0.0
-   network 10.2.0.0
-   network 10.3.0.0
-   network 10.4.0.0
-   network 10.5.0.0
-   network 10.6.0.0
-   network 192.168.1.0
    network 10.0.0.0
+   network 192.168.1.0
    passive-interface GigabitEthernet0/0
    passive-interface GigabitEthernet0/2
    passive-interface GigabitEthernet0/3
@@ -2518,49 +2548,52 @@ Total steps: 355
     Distance: (default is 110)
   
   Routing Protocol is "rip"
-    Version: 2
-    Update interval: 30s
-    Route timeout: 180s
-    Garbage collection: 120s
-    Split horizon: enabled
-    Poisoned reverse: enabled
-  
-    Advertised networks:
-      10.1.0.0/8
-      10.2.0.0/8
-      10.3.0.0/8
-      10.4.0.0/8
-      10.5.0.0/8
-      10.6.0.0/8
-      192.168.1.0/24
-      10.0.0.0/8
-  
-    RIP learned routes: 0
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Sending updates every 30 seconds, next due in 15 seconds
+    Invalid after 180 seconds, hold down 180, flushed after 240
+    Redistributing: rip, connected, static, ospf
+    Default version control: send version 2, receive version 2
+      Interface             Send  Recv  Triggered RIP  Key-chain
+      GigabitEthernet0/1    2     1 2                  RIP-KEY
     Automatic network summarization is not in effect
+    Maximum path: 6
+    Routing for Networks:
+      10.0.0.0
+      192.168.1.0
     Passive Interface(s):
-      (default)
       GigabitEthernet0/0
       GigabitEthernet0/2
       GigabitEthernet0/3
-    [object Object]
-    [object Object]
-    [object Object]
-    Distance: 120
+    Active Interface(s):
+      GigabitEthernet0/1
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 120)
   Routing Protocol is "eigrp 100"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
+    Default networks flagged in outgoing updates
+    Default networks accepted from incoming updates
     EIGRP-IPv4 Protocol for AS(100)
       Metric weight K1=1, K2=0, K3=1, K4=0, K5=0
-      Router-ID: 1.1.1.1
+      NSF-aware route hold timer is 240
+      EIGRP Router-ID: 1.1.1.1
+      EIGRP stub-router feature is enabled
+        Stub Options: Connected, Summary
       Topology : 0 (base)
         Active Timer: 3 min
         Distance: internal 90 external 170
-        Maximum path: 4
-        Maximum hopcount 100
-        Maximum metric variance 4
-  
-    Automatic Summarization: disabled
-    Maximum path: 4
+        Maximum path: 6
+        Maximum hopcount 50
+        EIGRP maximum metric variance 4
+    Redistributing: connected
+    Redistributing: static
+    Redistributing: ospf
+    Automatic summarization: disabled
+    Address Summarization:
+      100/5 for GigabitEthernet0/1
+    Maximum path: 6
     Routing for Networks:
       10.1.0.0 0.0.255.255
       10.2.0.0 0.0.255.255
@@ -2570,9 +2603,8 @@ Total steps: 355
       10.6.0.0 0.0.255.255
       192.168.1.0 0.0.0.255
       10.0.0.0 0.0.0.3
-    [object Object]
-    [object Object]
-    [object Object]
+    Passive Interface(s):
+      GigabitEthernet0/0
     Routing Information Sources:
       Gateway         Distance      Last Update
     Distance: internal 90 external 170
@@ -2623,24 +2655,27 @@ Total steps: 355
     community-list     Define BGP community list
     default-network    Configure default-network
     dhcp               Dynamic Host Configuration Protocol
+    dns                Domain Name System
     domain             IP domain configuration
-    domain-lookup      Enable DNS lookups
-    domain-name        Set domain name
+    domain-list        Define a list of default domain names
+    domain-lookup      Enable IP Domain Name System hostname translation
+    domain-name        Define the default domain name
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
     gratuitous-arps    Enable gratuitous ARP
-    host               Configure a static host entry
+    host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
     multicast-routing  Enable IP multicast routing
-    name-server        Configure DNS name servers
+    name-server        Specify address of name server to use
     nat                Network Address Translation
     pim                Protocol Independent Multicast
     prefix-list        Build a prefix list
     route              Establish static routes
     route-cache        Route cache
     routing            Enable IP routing
+    scp                
     sla                Configure an IP SLAs operation
     source-route       IP source-route
     ssh                SSH config
@@ -2654,6 +2689,7 @@ Total steps: 355
     rip    Enter RIP routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
+    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -2663,9 +2699,9 @@ Total steps: 355
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
-    <cr>         
 
 [352/355] r1 R1(config)# no ?
+    aaa            Disable AAA
     access-list    Remove an access list
     alias          Remove a command alias
     arp            Remove ARP entry

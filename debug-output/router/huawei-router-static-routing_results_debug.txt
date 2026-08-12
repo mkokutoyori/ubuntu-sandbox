@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-static-routing
-Generated: 2026-08-08T00:31:32.432Z
+Generated: 2026-08-12T20:26:08.483Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP static/default/IPv6, ip-prefix, route-policy, PBR, NQA
 Total steps: 300
@@ -14,25 +14,25 @@ Total steps: 300
 [2/300] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/300] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+[3/300] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[4/300] r1 [R1-GE0/0/0] undo shutdown
+[4/300] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/300] r1 [R1-GE0/0/0] quit
+[5/300] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/300] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/300] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/300] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/300] r1 [R1-GE0/0/1] undo shutdown
+[8/300] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/300] r1 [R1-GE0/0/1] quit
+[9/300] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/300] r1 [R1] return
@@ -894,10 +894,10 @@ Total steps: 300
 [173/300] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[174/300] r1 [R1-GE0/0/0] traffic-policy TP1 inbound
+[174/300] r1 [R1-GigabitEthernet0/0/0] traffic-policy TP1 inbound
 <empty>
 
-[175/300] r1 [R1-GE0/0/0] quit
+[175/300] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [176/300] r1 [R1] return
@@ -1218,6 +1218,8 @@ Total steps: 300
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -1230,12 +1232,12 @@ Total steps: 300
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
+  #
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
   ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
   ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
@@ -1287,18 +1289,17 @@ Total steps: 300
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   nqa test-instance admin test1
    test-type icmp
@@ -1329,25 +1330,25 @@ Total steps: 300
   GigabitEthernet0/0/3              unassigned           down       down
 
 [201/300] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -1468,10 +1469,10 @@ Total steps: 300
 [218/300] r1 <R1> display acl all
   Basic ACL 2000, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   Advanced ACL 3000, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   Total 2 ACL(s)
 
 [219/300] r1 <R1> display dhcp server statistics
@@ -1488,8 +1489,9 @@ Total steps: 300
   Info: No VRRP backup group is configured.
 
 [221/300] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [222/300] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -1517,14 +1519,22 @@ Total steps: 300
 [229/300] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 20:26:08.610  Aug 12 2026(EE275560.9C28F5C2)
 
 [230/300] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [231/300] r1 <R1> display clock
-  2026-08-08 00:31:32
-  Saturday
+  2026-08-12 20:26:08
+  Wednesday
   Time Zone(UTC) : UTC
 
 [232/300] r1 <R1> display lldp neighbor
@@ -1536,13 +1546,13 @@ Total steps: 300
 [234/300] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-08 00:31:32
+  CPU Usage Stat. Time : 2026-08-12 20:26:08
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [235/300] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-08 00:31:32
+  Memory utilization statistics at 2026-08-12 20:26:08
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1559,8 +1569,7 @@ Total steps: 300
   -------------------------------------------------------------------------------
 
 [237/300] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1584,10 +1593,10 @@ Total steps: 300
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-08 00:31:32 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-08 00:31:32 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-08 00:31:32 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-08 00:31:32 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-12 20:26:08 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-12 20:26:08 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-12 20:26:08 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-12 20:26:08 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [240/300] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1635,17 +1644,17 @@ Total steps: 300
 
 [246/300] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [247/300] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1655,9 +1664,9 @@ Total steps: 300
       Output: 0 packets, 0 bytes
 
 [248/300] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1665,6 +1674,8 @@ Total steps: 300
 [249/300] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1678,12 +1689,12 @@ Total steps: 300
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
+  #
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
   ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
   ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
@@ -1735,18 +1746,17 @@ Total steps: 300
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   nqa test-instance admin test1
    test-type icmp
@@ -1788,12 +1798,12 @@ Total steps: 300
 
 [255/300] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [256/300] r1 <R1> display port-security
   Error: Unrecognized command found at '^' position.
@@ -1818,12 +1828,12 @@ Total steps: 300
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
+  #
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
   ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
   ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
@@ -1875,18 +1885,17 @@ Total steps: 300
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   nqa test-instance admin test1
    test-type icmp
@@ -1899,6 +1908,7 @@ Total steps: 300
 
 [259/300] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
@@ -1908,9 +1918,9 @@ Total steps: 300
   interface GigabitEthernet0/0/3
    shutdown
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   acl number 3000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   ip route-static 172.17.1.0 255.255.255.0 10.0.0.2
   ip route-static 172.18.2.0 255.255.255.0 10.0.0.2
   ip route-static 172.19.3.0 255.255.255.0 10.0.0.2
@@ -1962,16 +1972,16 @@ Total steps: 300
   ip route-static 192.168.99.0 255.255.255.0 10.0.0.2 permanent
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
   nqa test-instance admin test1
    test-type icmp
@@ -2056,19 +2066,19 @@ Total steps: 300
 [283/300] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[284/300] r1 [Huawei-GE0/0/0] display this
+[284/300] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
 
-[285/300] r1 [Huawei-GE0/0/0] shutdown
+[285/300] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[286/300] r1 [Huawei-GE0/0/0] undo shutdown
+[286/300] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[287/300] r1 [Huawei-GE0/0/0] quit
+[287/300] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [288/300] r1 [Huawei] ospf 1
@@ -2078,19 +2088,6 @@ Total steps: 300
   #
   ospf 1
    router-id 192.168.1.1
-  aaa
-   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
-   local-user dave service-type ssh
   #
 
 [290/300] r1 [Huawei-ospf-1] quit
@@ -2111,8 +2108,13 @@ Total steps: 300
   Enter system view, return user view with return command.
 
 [295/300] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [296/300] r1 [Huawei] ip ?
     host           Configure a static host entry
@@ -2121,14 +2123,15 @@ Total steps: 300
     pool           Enter DHCP pool view
     route-static   Configure static route
     routing        Enable IP routing
-    routing-table  
+    routing-table  Routing table configuration
 
 [297/300] r1 [Huawei] undo ?
     acl            Delete Access Control List
     bfd            Disable BFD globally
     bgp            Remove BGP
     command-alias  Disable CLI alias
-    debugging      Disable debugging
+    debugging      Disable system debugging functions
+    dns            Domain Name System
     firewall       Firewall configuration
     ike            Internet Key Exchange
     ikev2          Internet Key Exchange version 2
@@ -2143,6 +2146,7 @@ Total steps: 300
     nat            Network Address Translation
     nqa            Network Quality Analysis
     nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
     route-policy   Remove a route-policy
@@ -2153,10 +2157,10 @@ Total steps: 300
     <cr>           
 
 [298/300] r1 [Huawei] acl ?
-    advanced  
-    basic     
-    ipv6      Internet Protocol version 6
-    name      Name
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
     <cr>      
 
 [299/300] r1 [Huawei] return

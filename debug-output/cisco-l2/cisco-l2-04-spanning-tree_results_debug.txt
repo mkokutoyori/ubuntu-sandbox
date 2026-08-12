@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-04-spanning-tree
-Generated: 2026-08-08T00:24:41.367Z
+Generated: 2026-08-12T20:25:46.362Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=PVST/RPVST/MST modes, root/priority, portfast/guards, MST region, topology change
 Total steps: 363
@@ -1501,29 +1501,20 @@ Total steps: 363
 <empty>
 
 [272/363] sw1 SW1(config-if)# shutdown
-  *00:24:41: STP: VLAN0001 Fa0/3 -> disabled
+  *20:25:46: STP: VLAN0001 Fa0/3 -> disabled
 
 [273/363] sw1 SW1(config-if)# no shutdown
-  *00:24:41: STP: VLAN0001 Fa0/3 -> forwarding
+  *20:25:46: STP: VLAN0001 Fa0/3 -> forwarding
 
 [274/363] sw1 SW1(config-if)# end
 <empty>
 
 [275/363] srv1 srv1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [276/363] sw1 SW1# show spanning-tree summary
   Switch is in mst mode
@@ -1599,28 +1590,28 @@ Total steps: 363
 
 --- [284] § host verification ---
 [285/363] l1 l1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
 [286/363] l2 l2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
 [287/363] srv1 srv1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
   eth3            DOWN          
 
 [288/363] srv2 srv2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1628,58 +1619,23 @@ Total steps: 363
 
 [289/363] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.473 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.928 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.773 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.160 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.928/1.701/2.473/0.772 ms
+  rtt min/avg/max/mdev = 1.160/1.966/2.773/0.807 ms
 
 [290/363] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 3832 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
-  vlan 10
-   name VLAN0010
-  !
-  vlan 20
-   name VLAN0020
-  !
-  vlan 30
-   name VLAN0030
-  !
-  vlan 40
-   name VLAN0040
-  !
-  vlan 50
-   name VLAN0050
-  !
-  vlan 60
-   name VLAN0060
-  !
-  vlan 70
-   name VLAN0070
-  !
-  vlan 80
-   name VLAN0080
-  !
-  vlan 90
-   name VLAN0090
-  !
-  vlan 100
-   name VLAN0100
-  !
-  spanning-tree vlan 1 priority 24576
-  spanning-tree portfast default
-  spanning-tree portfast bpduguard default
-  spanning-tree portfast bpdufilter default
-  spanning-tree loopguard default
-  spanning-tree uplinkfast
-  spanning-tree backbonefast
-  spanning-tree pathcost method long
   interface FastEthernet0/1
    spanning-tree portfast
    spanning-tree bpduguard enable
@@ -1822,8 +1778,45 @@ Total steps: 363
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  vlan 10
+   name VLAN0010
+  !
+  vlan 20
+   name VLAN0020
+  !
+  vlan 30
+   name VLAN0030
+  !
+  vlan 40
+   name VLAN0040
+  !
+  vlan 50
+   name VLAN0050
+  !
+  vlan 60
+   name VLAN0060
+  !
+  vlan 70
+   name VLAN0070
+  !
+  vlan 80
+   name VLAN0080
+  !
+  vlan 90
+   name VLAN0090
+  !
+  vlan 100
+   name VLAN0100
+  !
+  spanning-tree vlan 1 priority 24576
+  spanning-tree portfast default
+  spanning-tree portfast bpduguard default
+  spanning-tree portfast bpdufilter default
+  spanning-tree loopguard default
+  spanning-tree uplinkfast
+  spanning-tree backbonefast
+  spanning-tree pathcost method long
+  !
   end
 
 
@@ -1845,11 +1838,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 268 bytes, 0 no buffer
+       7 packets input, 580 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       29 packets output, 1932 bytes, 0 underruns
+       40 packets output, 2806 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1870,7 +1863,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       29 packets output, 1894 bytes, 0 underruns
+       42 packets output, 2904 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1887,11 +1880,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 268 bytes, 0 no buffer
+       8 packets input, 660 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       33 packets output, 2188 bytes, 0 underruns
+       42 packets output, 2908 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2332,11 +2325,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 376 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 704 bytes, 0 underruns
+       22 packets output, 1578 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2357,7 +2350,7 @@ Total steps: 363
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 640 bytes, 0 underruns
+       24 packets output, 1752 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2374,11 +2367,11 @@ Total steps: 363
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 382 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 576 bytes, 0 underruns
+       19 packets output, 1370 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

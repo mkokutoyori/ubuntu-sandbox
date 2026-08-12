@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-08-08T00:20:59.167Z
+Generated: 2026-08-12T20:25:52.136Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -732,12 +732,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.524 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.041 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=3.124 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.026 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.041/1.783/2.524/0.742 ms
+  rtt min/avg/max/mdev = 1.026/2.075/3.124/1.049 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -1800,7 +1800,7 @@ Total steps: 421
 
 --- [410] § host verification ---
 [411/421] l1 l1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1815,7 +1815,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [413/421] srv1 srv1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1830,7 +1830,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [415/421] l2 l2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1845,7 +1845,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [417/421] srv2 srv2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1898,20 +1898,15 @@ Total steps: 421
 [421/421] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 8138 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
-  arp access-list TRUST-HOSTS
-   permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
-  !
-  ip arp inspection vlan 1,10,20
-  ip arp inspection validate src-mac dst-mac ip
-  ip arp inspection filter TRUST-HOSTS vlan 1
-  errdisable recovery cause arp-inspection
-  errdisable recovery interval 60
-  errdisable recovery cause psecure-violation
-  errdisable recovery cause bpduguard
+  aaa new-model
+  aaa authentication dot1x default group radius
   !
   interface FastEthernet0/1
    switchport mode access
@@ -2153,6 +2148,15 @@ Total steps: 421
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  arp access-list TRUST-HOSTS
+   permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
+  !
+  ip arp inspection vlan 1,10,20
+  ip arp inspection validate src-mac dst-mac ip
+  ip arp inspection filter TRUST-HOSTS vlan 1
+  errdisable recovery cause arp-inspection
+  errdisable recovery interval 60
+  errdisable recovery cause psecure-violation
+  errdisable recovery cause bpduguard
+  !
   end

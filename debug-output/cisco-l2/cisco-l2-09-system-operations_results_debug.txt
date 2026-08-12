@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-08-08T00:17:44.617Z
+Generated: 2026-08-12T20:25:33.990Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -39,19 +39,39 @@ Total steps: 301
 
 [3/301] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1235X78Z
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC71408TTU
 
 [4/301] sw1 SW1# show boot
-  BOOT variable = 
-  CONFIG_FILE variable does not exist
-  BOOTLDR variable does not exist
-  Configuration register is 0x2102
+  BOOT path-list      : 
+  Config file         : flash:/config.text
+  Private Config file : flash:/private-config.text
+  Enable Break        : no
+  Manual Boot         : no
+  HELPER path-list    : 
+  Auto upgrade        : yes
+  Auto upgrade path   : 
+  NVRAM/Config file
+        buffer size:   131072
+  Timeout for Config
+            Download:    0 seconds
+  Config Download
+         via DHCP:       disabled (next boot: disabled)
 
 [5/301] sw1 SW1# show bootvar
-  BOOT variable = 
-  CONFIG_FILE variable does not exist
-  BOOTLDR variable does not exist
-  Configuration register is 0x2102
+  BOOT path-list      : 
+  Config file         : flash:/config.text
+  Private Config file : flash:/private-config.text
+  Enable Break        : no
+  Manual Boot         : no
+  HELPER path-list    : 
+  Auto upgrade        : yes
+  Auto upgrade path   : 
+  NVRAM/Config file
+        buffer size:   131072
+  Timeout for Config
+            Download:    0 seconds
+  Config Download
+         via DHCP:       disabled (next boot: disabled)
 
 [6/301] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -193,7 +213,7 @@ Total steps: 301
 [12/301] sw1 SW1# show platform
   Cisco Catalyst 2960
     PID: WS-C2960-24TT-L
-    S/N: FOC1234X56Y
+    S/N: FOC71408TTU
 
 [13/301] sw1 SW1# show module
        ^
@@ -278,12 +298,12 @@ Total steps: 301
 [30/301] sw1 SYS-SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 979 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SYS-SW1
-  !
-  vlan 100
-   name PERSIST
   !
   interface FastEthernet0/1
   !
@@ -343,26 +363,28 @@ Total steps: 301
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  vlan 100
+   name PERSIST
+  !
   end
 
 [31/301] sw1 SYS-SW1# copy running-config startup-config
   Destination filename [startup-config]?
+  Building configuration...
   [OK]
 
 [32/301] sw1 SYS-SW1# write memory
+  Building configuration...
   [OK]
 
 [33/301] sw1 SYS-SW1# show startup-config
-  Building configuration...
-  
-  Current configuration:
+  Using 981 out of 131064 bytes
+  !
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SYS-SW1
-  !
-  vlan 100
-   name PERSIST
   !
   interface FastEthernet0/1
   !
@@ -422,8 +444,9 @@ Total steps: 301
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  vlan 100
+   name PERSIST
+  !
   end
 
 [34/301] sw1 SYS-SW1# show running-config | include hostname
@@ -432,18 +455,16 @@ Total steps: 301
 
 --- [35] § config backup/restore via tftp ---
 [35/301] sw1 SYS-SW1# copy startup-config tftp:
-  [OK]
+  %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
 [36/301] sw1 SYS-SW1# copy running-config tftp:
-  Destination filename [tftp:]?
-  Writing tftp: ... [OK]
+  %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
 [37/301] sw1 SYS-SW1# copy tftp: running-config
-  Destination filename [running-config]?
-  [OK]
+  %Error: no remote host in the destination URL (write it as tftp://<address>/<filename>).
 
 [38/301] sw1 SYS-SW1# copy flash:config.text tftp:
-  [OK]
+  %Error opening flash:config.text (No such file or directory)
 
 
 --- [39] § archive / config replace ---
@@ -470,8 +491,10 @@ Total steps: 301
 
 [46/301] sw1 SYS-SW1# show archive
   The maximum archive configurations allowed is 5.
+  There are currently 0 archive configurations saved.
   No backups exist on archive path
-  Archive path: flash:archive/cfg
+   The next archive file will be named flash:archive/cfg-1
+   Archive #  Name
 
 [47/301] sw1 SYS-SW1# archive config
   Writing flash:archive/cfg-1
@@ -482,14 +505,14 @@ Total steps: 301
 <empty>
 
 [49/301] sw1 SYS-SW1# show clock
-  *00:17:44.000 UTC Sat Aug 8 2026
+  *20:25:34.000 UTC Wed Aug 12 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *00:17:44.000 UTC Sat Aug 8 2026
+  *20:25:34.000 UTC Wed Aug 12 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  00:17:44 UTC Sat Aug 8 2026
+  20:25:34 UTC Wed Aug 12 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -504,7 +527,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *00:17:44.000 UTC Sat Aug 8 2026
+  *20:25:34.000 UTC Wed Aug 12 2026
 
 
 --- [57] § boot system config ---
@@ -515,16 +538,27 @@ Total steps: 301
 <empty>
 
 [59/301] sw1 SYS-SW1(config)# config-register 0x2102
-<empty>
+  ^
+  % Invalid input detected at '^' marker.
 
 [60/301] sw1 SYS-SW1(config)# end
 <empty>
 
 [61/301] sw1 SYS-SW1# show boot
-  BOOT variable = flash:c2960-lanbasek9-mz.150-2.SE.bin
-  CONFIG_FILE variable does not exist
-  BOOTLDR variable does not exist
-  Configuration register is 0x2102
+  BOOT path-list      : flash:c2960-lanbasek9-mz.150-2.SE.bin
+  Config file         : flash:/config.text
+  Private Config file : flash:/private-config.text
+  Enable Break        : no
+  Manual Boot         : no
+  HELPER path-list    : 
+  Auto upgrade        : yes
+  Auto upgrade path   : 
+  NVRAM/Config file
+        buffer size:   131072
+  Timeout for Config
+            Download:    0 seconds
+  Config Download
+         via DHCP:       disabled (next boot: disabled)
 
 
 --- [62] § per-interface admin reset loop (Fa0/1..0/23) ---
@@ -811,34 +845,33 @@ Total steps: 301
 <empty>
 
 [156/301] sw1 SYS-SW1# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 
 --- [157] § per-interface description + counters loop ---
@@ -847,667 +880,667 @@ Total steps: 301
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [159/301] sw1 SYS-SW1# show interfaces FastEthernet0/2 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [160/301] sw1 SYS-SW1# show interfaces FastEthernet0/3 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [161/301] sw1 SYS-SW1# show interfaces FastEthernet0/4 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [162/301] sw1 SYS-SW1# show interfaces FastEthernet0/5 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [163/301] sw1 SYS-SW1# show interfaces FastEthernet0/6 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [164/301] sw1 SYS-SW1# show interfaces FastEthernet0/7 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [165/301] sw1 SYS-SW1# show interfaces FastEthernet0/8 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [166/301] sw1 SYS-SW1# show interfaces FastEthernet0/9 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [167/301] sw1 SYS-SW1# show interfaces FastEthernet0/10 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [168/301] sw1 SYS-SW1# show interfaces FastEthernet0/11 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [169/301] sw1 SYS-SW1# show interfaces FastEthernet0/12 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [170/301] sw1 SYS-SW1# show interfaces FastEthernet0/13 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [171/301] sw1 SYS-SW1# show interfaces FastEthernet0/14 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [172/301] sw1 SYS-SW1# show interfaces FastEthernet0/15 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [173/301] sw1 SYS-SW1# show interfaces FastEthernet0/16 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [174/301] sw1 SYS-SW1# show interfaces FastEthernet0/17 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [175/301] sw1 SYS-SW1# show interfaces FastEthernet0/18 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [176/301] sw1 SYS-SW1# show interfaces FastEthernet0/19 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [177/301] sw1 SYS-SW1# show interfaces FastEthernet0/20 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [178/301] sw1 SYS-SW1# show interfaces FastEthernet0/21 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [179/301] sw1 SYS-SW1# show interfaces FastEthernet0/22 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 [180/301] sw1 SYS-SW1# show interfaces FastEthernet0/23 description
   Interface                      Status         Protocol Description
   Fa0/1                          up             up       
   Fa0/2                          up             up       
   Fa0/3                          up             up       
-  Fa0/4                          up             down     
-  Fa0/5                          up             down     
-  Fa0/6                          up             down     
-  Fa0/7                          up             down     
-  Fa0/8                          up             down     
-  Fa0/9                          up             down     
-  Fa0/10                         up             down     
-  Fa0/11                         up             down     
-  Fa0/12                         up             down     
-  Fa0/13                         up             down     
-  Fa0/14                         up             down     
-  Fa0/15                         up             down     
-  Fa0/16                         up             down     
-  Fa0/17                         up             down     
-  Fa0/18                         up             down     
-  Fa0/19                         up             down     
-  Fa0/20                         up             down     
-  Fa0/21                         up             down     
-  Fa0/22                         up             down     
-  Fa0/23                         up             down     
-  Fa0/24                         up             down     
+  Fa0/4                          down           down     
+  Fa0/5                          down           down     
+  Fa0/6                          down           down     
+  Fa0/7                          down           down     
+  Fa0/8                          down           down     
+  Fa0/9                          down           down     
+  Fa0/10                         down           down     
+  Fa0/11                         down           down     
+  Fa0/12                         down           down     
+  Fa0/13                         down           down     
+  Fa0/14                         down           down     
+  Fa0/15                         down           down     
+  Fa0/16                         down           down     
+  Fa0/17                         down           down     
+  Fa0/18                         down           down     
+  Fa0/19                         down           down     
+  Fa0/20                         down           down     
+  Fa0/21                         down           down     
+  Fa0/22                         down           down     
+  Fa0/23                         down           down     
+  Fa0/24                         down           down     
   Gi0/1                          up             up       
-  Gi0/2                          up             down     
+  Gi0/2                          down           down     
 
 
 --- [181] § debug controls ---
@@ -1534,30 +1567,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.969 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.845 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.757 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.914 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.845/1.907/2.969/1.062 ms
+  rtt min/avg/max/mdev = 0.914/1.835/2.757/0.921 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.887 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.848 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.262 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.364 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.848/0.868/0.887/0.020 ms
+  rtt min/avg/max/mdev = 1.262/1.313/1.364/0.051 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.850 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.786 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.939 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.315 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.786/0.818/0.850/0.032 ms
+  rtt min/avg/max/mdev = 0.939/1.127/1.315/0.188 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1579,7 +1612,7 @@ Total steps: 301
   Reload scheduled in 1 minute
 
 [192/301] sw1 SYS-SW1# show reload
-  Reload scheduled in 1 minutes 0 seconds
+  Reload scheduled in 0 minutes 59 seconds
 
 [193/301] sw1 SYS-SW1# reload cancel
   Reload cancelled.
@@ -1593,36 +1626,18 @@ Total steps: 301
   System restarting...
 
 [196/301] l1 l1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:4f brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:50 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:51 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:52 brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:4f <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:50 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:51 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:52 <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [197/301] srv1 srv1$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:57 brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:58 brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:59 brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5a brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:57 <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:58 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:59 <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5a <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 [198/301] w1 w1$ ipconfig
   Windows IP Configuration
@@ -1684,12 +1699,12 @@ Total steps: 301
 [201/301] sw1 SYS-SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1000 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SYS-SW1
-  !
-  vlan 100
-   name PERSIST
   !
   interface FastEthernet0/1
   !
@@ -1748,13 +1763,14 @@ Total steps: 301
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
+  vlan 100
+   name PERSIST
   !
   archive
    path flash:archive/cfg
    maximum 5
    write-memory
+  !
   end
 
 [202/301] sw1 SYS-SW1# show vlan brief
@@ -1769,43 +1785,42 @@ Total steps: 301
   No entries.
 
 [204/301] sw1 SYS-SW1# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.510 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.569 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.787 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.968 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.510/0.540/0.569/0.029 ms
+  rtt min/avg/max/mdev = 0.787/0.877/0.968/0.090 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -1831,7 +1846,10 @@ Total steps: 301
 [211/301] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 971 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
@@ -1892,13 +1910,11 @@ Total steps: 301
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
-  !
   archive
    path flash:archive/cfg
    maximum 5
    write-memory
+  !
   end
 
 [212/301] sw1 SW1# show vlan brief
@@ -1940,34 +1956,33 @@ Total steps: 301
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/1, Gi0/2
 
 [216/301] sw1 SW1# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    1          a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    1          a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [217/301] sw1 SW1# show mac address-table count
   Mac Address Table
@@ -2007,7 +2022,7 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [220/301] sw1 SW1# show clock
-  *00:17:48.000 UTC Sat Aug 8 2026
+  *20:25:38.000 UTC Wed Aug 12 2026
 
 [221/301] sw1 SW1# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2065,39 +2080,42 @@ Total steps: 301
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
 
 [224/301] sw2 SW2> show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [225/301] sw2 SW2> show mac address-table count
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  Vlan    Mac Address Count
+  ------  -----------------
+  1             6
+  
+  Total Mac Addresses for this criterion: 6
 
 [226/301] sw2 SW2> show spanning-tree summary
   Switch is in pvst mode
@@ -2128,18 +2146,18 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [228/301] sw2 SW2> show clock
-  *00:17:48.000 UTC Sat Aug 8 2026
+  *20:25:38.000 UTC Wed Aug 12 2026
 
 [229/301] sw2 SW2> show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 24 messages logged, xml disabled,
+      Console logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 24 messages logged, xml disabled,
+      Monitor logging: level debugging, 10 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 24 messages logged, xml disabled,
+      Buffer logging:  level debugging, 10 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2148,35 +2166,21 @@ Total steps: 301
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 24 message lines logged
+      Trap logging: level informational, 10 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:17:44.592: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:17:44.592: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug  8 00:17:44.592: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:17:44.592: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.592: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:17:44.593: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug  8 00:17:44.593: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 role changed disabled -> designated
-  *Aug  8 00:17:44.593: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.593: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:17:44.593: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug  8 00:17:44.594: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 role changed disabled -> designated
-  *Aug  8 00:17:44.594: %SPANTREE-6-INFORMATIONAL: Port FastEthernet0/3 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.597: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:44.597: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:44.598: %CDP-6-INFORMATIONAL: Neighbor CORE (GigabitEthernet0/2) discovered on GigabitEthernet0/1
-  *Aug  8 00:17:44.598: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:17:44.598: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.599: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.599: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
-  *Aug  8 00:17:44.605: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  8 00:17:44.605: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:17:44.631: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:46.420: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:48.419: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
+  *Aug 12 20:25:33.950: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 12 20:25:33.950: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 12 20:25:33.951: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 12 20:25:33.952: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 12 20:25:33.953: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 12 20:25:33.953: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 12 20:25:33.957: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:33.957: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:33.959: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
+  *Aug 12 20:25:33.977: %SYS-5-CONFIG_I: Configured from console by console
 
 [230/301] core CORE> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -2210,39 +2214,42 @@ Total steps: 301
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24
 
 [232/301] core CORE> show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/2                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/3                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          connected    trunk      a-full  a-1000 1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/2                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/3                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        connected    trunk      a-full a-1000 1000BASE-T
 
 [233/301] core CORE> show mac address-table count
   Mac Address Table
-  --------------------------------
-  No entries
+  -------------------------------------------
+  Vlan    Mac Address Count
+  ------  -----------------
+  1             5
+  
+  Total Mac Addresses for this criterion: 5
 
 [234/301] core CORE> show spanning-tree summary
   Switch is in pvst mode
@@ -2273,18 +2280,18 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [236/301] core CORE> show clock
-  *00:17:48.000 UTC Sat Aug 8 2026
+  *20:25:38.000 UTC Wed Aug 12 2026
 
 [237/301] core CORE> show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 48 messages logged, xml disabled,
+      Console logging: level debugging, 21 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 48 messages logged, xml disabled,
+      Monitor logging: level debugging, 21 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 48 messages logged, xml disabled,
+      Buffer logging:  level debugging, 21 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2293,59 +2300,32 @@ Total steps: 301
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 48 message lines logged
+      Trap logging: level informational, 21 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:17:44.594: %CDP-6-INFORMATIONAL: Neighbor SW1 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:17:44.596: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.596: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.596: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
-  *Aug  8 00:17:44.597: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:44.597: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:44.597: %CDP-6-INFORMATIONAL: Neighbor SW2 (GigabitEthernet0/1) discovered on GigabitEthernet0/2
-  *Aug  8 00:17:44.598: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/2 role changed disabled -> designated
-  *Aug  8 00:17:44.598: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/2 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:44.598: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
-  *Aug  8 00:17:44.598: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Aug  8 00:17:44.605: %DTP-6-INFORMATIONAL: GigabitEthernet0/1: trunk negotiation mode access -> trunk
-  *Aug  8 00:17:44.606: %DTP-6-INFORMATIONAL: GigabitEthernet0/2: trunk negotiation mode access -> trunk
-  *Aug  8 00:17:44.606: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:17:44.630: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.634: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
-  *Aug  8 00:17:44.636: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.638: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.640: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.642: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:44.644: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:46.392: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:47.678: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:17:47.678: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:17:47.679: %CDP-5-NOTIFICATIONS: Neighbor SW1 expired on GigabitEthernet0/1
-  *Aug  8 00:17:47.679: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:17:47.679: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:47.679: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/2 role changed designated -> root
-  *Aug  8 00:17:47.679: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:1b (was 02:00:00:00:00:01), root port GigabitEthernet0/2
-  *Aug  8 00:17:47.679: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:35 (was 02:00:00:00:00:01), root port none
-  *Aug  8 00:17:47.680: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:47.680: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:47.682: %CDP-6-INFORMATIONAL: Neighbor SYS-SW1 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:17:48.393: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> root
-  *Aug  8 00:17:48.393: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/2 role changed root -> designated
-  *Aug  8 00:17:48.393: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
-  *Aug  8 00:17:48.393: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
-  *Aug  8 00:17:48.712: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:17:48.712: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:17:48.713: %CDP-5-NOTIFICATIONS: Neighbor SYS-SW1 expired on GigabitEthernet0/1
-  *Aug  8 00:17:48.713: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 role changed disabled -> designated
-  *Aug  8 00:17:48.713: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/1 VLAN 1 state ? -> forwarding
-  *Aug  8 00:17:48.713: %SPANTREE-6-INFORMATIONAL: Port GigabitEthernet0/2 role changed designated -> root
-  *Aug  8 00:17:48.713: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:1b (was 02:00:00:00:00:01), root port GigabitEthernet0/2
-  *Aug  8 00:17:48.713: %SPANTREE-5-NOTIFICATIONS: New root 02:00:00:00:00:35 (was 02:00:00:00:00:01), root port none
-  *Aug  8 00:17:48.714: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:48.714: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:17:48.715: %CDP-6-INFORMATIONAL: Neighbor SYS-SW1 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
+  *Aug 12 20:25:33.956: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
+  *Aug 12 20:25:33.956: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:33.956: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:33.958: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  *Aug 12 20:25:33.958: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  *Aug 12 20:25:33.978: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:34.020: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
+  *Aug 12 20:25:37.090: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:37.090: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:37.092: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:1b (was 02:00:00:00:00:01), root port GigabitEthernet0/2
+  *Aug 12 20:25:37.092: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:35 (was 02:00:00:00:00:01), root port none
+  *Aug 12 20:25:37.093: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:37.093: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:37.683: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:1b), root port GigabitEthernet0/1
+  *Aug 12 20:25:37.683: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:01 (was 02:00:00:00:00:35), root port GigabitEthernet0/1
+  *Aug 12 20:25:38.127: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:38.127: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:38.128: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:1b (was 02:00:00:00:00:01), root port GigabitEthernet0/2
+  *Aug 12 20:25:38.128: %SPANTREE-5-ROOTCHANGE: New root 02:00:00:00:00:35 (was 02:00:00:00:00:01), root port none
+  *Aug 12 20:25:38.130: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:38.130: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 
 --- [238] § host system inspection ---
@@ -2353,7 +2333,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   00:17:48 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:25:38 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2362,51 +2342,52 @@ Total steps: 301
 
 [242/301] l1 l1$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   57K   50G   1% /
+  /dev/sda1        50G   62K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    00:17       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    00:17       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    00:17       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    00:17       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    00:17       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    00:17       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    00:17       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    00:17       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    00:17       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    00:17       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    00:17       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    00:17       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    00:17       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    00:17       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    00:17       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    00:17       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    00:17       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    00:17       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1    9414   2302 ?        S    00:17       00:00 /usr/sbin/cron -f
-  root        25  0.0  0.1  205896   4448 ?        S    00:17       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        26  0.0  0.1   84501   4290 ?        S    00:17       00:00 /sbin/auditd
-  root        27  0.0  0.0    8129   1590 ?        S    00:17       00:00 /usr/sbin/atd -f
-  systemd+    28  0.0  0.2   93688   6591 ?        S    00:17       00:00 /lib/systemd/systemd-resolved
-  root        29  0.0  0.1   52080   5199 ?        S    00:17       00:00 /lib/systemd/systemd-journald
-  root        30  0.0  0.1   80778   3859 ?        S    00:17       00:00 /lib/systemd/systemd-logind
-  message+    31  0.0  0.1    9519   3505 ?        S    00:17       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        32  0.0  0.1   46522   4207 ?        S    00:17       00:00 /sbin/ifup -a --read-environment
-  root        33  0.0  0.1   87629   4847 ?        S    00:17       00:00 /lib/systemd/systemd-networkd
-  root        34  0.0  0.1   51446   4516 ?        S    00:17       00:00 /lib/ufw/ufw-init start quiet
-  root        35  0.0  0.1   47803   4288 ?        S    00:17       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        36  0.0  0.0    3166    256 ?        S    00:17       00:00 /lib/apparmor/apparmor.systemd reload
-  user        37  0.0  0.1   10240   4096 pts/0    S    00:17       00:00 -bash
-  user        38  0.0  0.1   12288   3072 pts/0    R    00:17       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    20:25       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    20:25       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    20:25       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    20:25       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    20:25       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    20:25       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    20:25       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    20:25       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    20:25       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    20:25       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    20:25       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    20:25       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    20:25       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    20:25       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    20:25       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    20:25       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    20:25       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    20:25       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    20:25       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    20:25       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    20:25       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    20:25       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    20:25       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    20:25       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    20:25       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    20:25       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    20:25       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    20:25       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    20:25       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    20:25       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    20:25       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    20:25       00:00 /lib/apparmor/apparmor.systemd reload
+  user        38  0.0  0.1   10240   4096 pts/0    S    20:25       00:00 -bash
+  user        39  0.0  0.1   12288   3072 pts/0    R    20:25       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2415,6 +2396,7 @@ Total steps: 301
     apt-daily-upgrade.service      loaded inactive dead     Daily apt upgrade and clean activities
     atd.service                    loaded active   running  Deferred execution scheduler
     auditd.service                 loaded active   running  Security Auditing Service
+    chrony.service                 loaded active   running  chrony, an NTP client/server
     cron.service                   loaded active   running  Regular background program processing daemon
     dbus.service                   loaded active   running  D-Bus System Message Bus
     e2scrub_all.service            loaded inactive dead     Online ext4 Metadata Check for All Filesystems
@@ -2438,14 +2420,14 @@ Total steps: 301
   ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
   SUB    = The low-level unit activation state, values depend on unit type.
   
-  23 loaded units listed. Pass --all to see loaded but inactive units, too.
+  24 loaded units listed. Pass --all to see loaded but inactive units, too.
   To show all installed unit files use 'systemctl list-unit-files'.
 
 [245/301] srv1 srv1$ uname -a
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   00:17:48 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:25:38 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2454,53 +2436,54 @@ Total steps: 301
 
 [248/301] srv1 srv1$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   58K   50G   1% /
+  /dev/sda1        50G   63K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    00:17       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    00:17       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    00:17       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    00:17       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    00:17       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    00:17       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    00:17       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    00:17       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    00:17       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    00:17       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    00:17       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    00:17       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    00:17       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    00:17       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    00:17       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    00:17       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    00:17       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    00:17       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1    9414   2302 ?        S    00:17       00:00 /usr/sbin/cron -f
-  root        25  0.0  0.1  205896   4448 ?        S    00:17       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        26  0.0  0.1   84501   4290 ?        S    00:17       00:00 /sbin/auditd
-  root        27  0.0  0.0    8129   1590 ?        S    00:17       00:00 /usr/sbin/atd -f
-  systemd+    28  0.0  0.2   93688   6591 ?        S    00:17       00:00 /lib/systemd/systemd-resolved
-  root        29  0.0  0.1   52080   5199 ?        S    00:17       00:00 /lib/systemd/systemd-journald
-  root        30  0.0  0.1   80778   3859 ?        S    00:17       00:00 /lib/systemd/systemd-logind
-  message+    31  0.0  0.1    9519   3505 ?        S    00:17       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        32  0.0  0.1   46522   4207 ?        S    00:17       00:00 /sbin/ifup -a --read-environment
-  root        33  0.0  0.1   87629   4847 ?        S    00:17       00:00 /lib/systemd/systemd-networkd
-  root        34  0.0  0.1   51446   4516 ?        S    00:17       00:00 /lib/ufw/ufw-init start quiet
-  root        35  0.0  0.1   47803   4288 ?        S    00:17       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        36  0.0  0.0    3166    256 ?        S    00:17       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      37  0.0  0.1   45552   4146 ?        S    00:17       00:00 /etc/init.d/init.ohasd run
-  freerad     38  0.0  0.1   43958   4047 ?        S    00:17       00:00 /usr/sbin/freeradius
-  root        39  0.0  0.1   10240   4096 pts/0    S    00:17       00:00 -bash
-  root        40  0.0  0.1   12288   3072 pts/0    R    00:17       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    20:25       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    20:25       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    20:25       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    20:25       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    20:25       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    20:25       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    20:25       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    20:25       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    20:25       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    20:25       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    20:25       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    20:25       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    20:25       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    20:25       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    20:25       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    20:25       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    20:25       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    20:25       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    20:25       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    20:25       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    20:25       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    20:25       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    20:25       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    20:25       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    20:25       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    20:25       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    20:25       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    20:25       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    20:25       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    20:25       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    20:25       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    20:25       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      38  0.0  0.1   45552   4146 ?        S    20:25       00:00 /etc/init.d/init.ohasd run
+  freerad     39  0.0  0.1   43958   4047 ?        S    20:25       00:00 /usr/sbin/freeradius
+  root        40  0.0  0.1   10240   4096 pts/0    S    20:25       00:00 -bash
+  root        41  0.0  0.1   12288   3072 pts/0    R    20:25       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2510,6 +2493,7 @@ Total steps: 301
     apt-daily-upgrade.service      loaded inactive dead     Daily apt upgrade and clean activities
     atd.service                    loaded active   running  Deferred execution scheduler
     auditd.service                 loaded active   running  Security Auditing Service
+    chrony.service                 loaded active   running  chrony, an NTP client/server
     cron.service                   loaded active   running  Regular background program processing daemon
     dbus.service                   loaded active   running  D-Bus System Message Bus
     e2scrub_all.service            loaded inactive dead     Online ext4 Metadata Check for All Filesystems
@@ -2538,7 +2522,7 @@ Total steps: 301
   ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
   SUB    = The low-level unit activation state, values depend on unit type.
   
-  29 loaded units listed. Pass --all to see loaded but inactive units, too.
+  30 loaded units listed. Pass --all to see loaded but inactive units, too.
   To show all installed unit files use 'systemctl list-unit-files'.
 
 [251/301] w1 w1$ systeminfo
@@ -2548,7 +2532,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/8/2026, 12:17:44 AM
+  System Boot Time:          8/12/2026, 8:25:33 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2825,7 +2809,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   00:17:48 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:25:38 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2834,51 +2818,52 @@ Total steps: 301
 
 [258/301] l2 l2$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   56K   50G   1% /
+  /dev/sda1        50G   61K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    00:17       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    00:17       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    00:17       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    00:17       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    00:17       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    00:17       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    00:17       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    00:17       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    00:17       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    00:17       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    00:17       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    00:17       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    00:17       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    00:17       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    00:17       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    00:17       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    00:17       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    00:17       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1    9414   2302 ?        S    00:17       00:00 /usr/sbin/cron -f
-  root        25  0.0  0.1  205896   4448 ?        S    00:17       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        26  0.0  0.1   84501   4290 ?        S    00:17       00:00 /sbin/auditd
-  root        27  0.0  0.0    8129   1590 ?        S    00:17       00:00 /usr/sbin/atd -f
-  systemd+    28  0.0  0.2   93688   6591 ?        S    00:17       00:00 /lib/systemd/systemd-resolved
-  root        29  0.0  0.1   52080   5199 ?        S    00:17       00:00 /lib/systemd/systemd-journald
-  root        30  0.0  0.1   80778   3859 ?        S    00:17       00:00 /lib/systemd/systemd-logind
-  message+    31  0.0  0.1    9519   3505 ?        S    00:17       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        32  0.0  0.1   46522   4207 ?        S    00:17       00:00 /sbin/ifup -a --read-environment
-  root        33  0.0  0.1   87629   4847 ?        S    00:17       00:00 /lib/systemd/systemd-networkd
-  root        34  0.0  0.1   51446   4516 ?        S    00:17       00:00 /lib/ufw/ufw-init start quiet
-  root        35  0.0  0.1   47803   4288 ?        S    00:17       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        36  0.0  0.0    3166    256 ?        S    00:17       00:00 /lib/apparmor/apparmor.systemd reload
-  user        37  0.0  0.1   10240   4096 pts/0    S    00:17       00:00 -bash
-  user        38  0.0  0.1   12288   3072 pts/0    R    00:17       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    20:25       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    20:25       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    20:25       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    20:25       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    20:25       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    20:25       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    20:25       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    20:25       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    20:25       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    20:25       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    20:25       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    20:25       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    20:25       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    20:25       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    20:25       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    20:25       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    20:25       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    20:25       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    20:25       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    20:25       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    20:25       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    20:25       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    20:25       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    20:25       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    20:25       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    20:25       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    20:25       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    20:25       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    20:25       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    20:25       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    20:25       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    20:25       00:00 /lib/apparmor/apparmor.systemd reload
+  user        38  0.0  0.1   10240   4096 pts/0    S    20:25       00:00 -bash
+  user        39  0.0  0.1   12288   3072 pts/0    R    20:25       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2887,6 +2872,7 @@ Total steps: 301
     apt-daily-upgrade.service      loaded inactive dead     Daily apt upgrade and clean activities
     atd.service                    loaded active   running  Deferred execution scheduler
     auditd.service                 loaded active   running  Security Auditing Service
+    chrony.service                 loaded active   running  chrony, an NTP client/server
     cron.service                   loaded active   running  Regular background program processing daemon
     dbus.service                   loaded active   running  D-Bus System Message Bus
     e2scrub_all.service            loaded inactive dead     Online ext4 Metadata Check for All Filesystems
@@ -2910,7 +2896,7 @@ Total steps: 301
   ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
   SUB    = The low-level unit activation state, values depend on unit type.
   
-  23 loaded units listed. Pass --all to see loaded but inactive units, too.
+  24 loaded units listed. Pass --all to see loaded but inactive units, too.
   To show all installed unit files use 'systemctl list-unit-files'.
 
 [261/301] w2 w2$ systeminfo
@@ -2920,7 +2906,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/8/2026, 12:17:44 AM
+  System Boot Time:          8/12/2026, 8:25:33 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3197,7 +3183,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   00:17:48 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   20:25:38 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -3206,53 +3192,54 @@ Total steps: 301
 
 [268/301] srv2 srv2$ df -h
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        50G   57K   50G   1% /
+  /dev/sda1        50G   62K   50G   1% /
   tmpfs           5.0M    4K  5.0M   1% /run/lock
   /dev/sda2       976M  145M  764M  16% /boot
   /dev/sdb1       100G   28G   68G  29% /u01
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    00:17       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    00:17       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    00:17       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    00:17       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    00:17       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    00:17       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    00:17       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    00:17       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    00:17       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    00:17       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    00:17       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    00:17       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    00:17       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    00:17       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    00:17       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    00:17       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    00:17       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    00:17       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    00:17       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    00:17       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1    9414   2302 ?        S    00:17       00:00 /usr/sbin/cron -f
-  root        25  0.0  0.1  205896   4448 ?        S    00:17       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        26  0.0  0.1   84501   4290 ?        S    00:17       00:00 /sbin/auditd
-  root        27  0.0  0.0    8129   1590 ?        S    00:17       00:00 /usr/sbin/atd -f
-  systemd+    28  0.0  0.2   93688   6591 ?        S    00:17       00:00 /lib/systemd/systemd-resolved
-  root        29  0.0  0.1   52080   5199 ?        S    00:17       00:00 /lib/systemd/systemd-journald
-  root        30  0.0  0.1   80778   3859 ?        S    00:17       00:00 /lib/systemd/systemd-logind
-  message+    31  0.0  0.1    9519   3505 ?        S    00:17       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        32  0.0  0.1   46522   4207 ?        S    00:17       00:00 /sbin/ifup -a --read-environment
-  root        33  0.0  0.1   87629   4847 ?        S    00:17       00:00 /lib/systemd/systemd-networkd
-  root        34  0.0  0.1   51446   4516 ?        S    00:17       00:00 /lib/ufw/ufw-init start quiet
-  root        35  0.0  0.1   47803   4288 ?        S    00:17       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        36  0.0  0.0    3166    256 ?        S    00:17       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      37  0.0  0.1   45552   4146 ?        S    00:17       00:00 /etc/init.d/init.ohasd run
-  freerad     38  0.0  0.1   43958   4047 ?        S    00:17       00:00 /usr/sbin/freeradius
-  root        39  0.0  0.1   10240   4096 pts/0    S    00:17       00:00 -bash
-  root        40  0.0  0.1   12288   3072 pts/0    R    00:17       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    20:25       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    20:25       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    20:25       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    20:25       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    20:25       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    20:25       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    20:25       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    20:25       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    20:25       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    20:25       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    20:25       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    20:25       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    20:25       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    20:25       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    20:25       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    20:25       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    20:25       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    20:25       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    20:25       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    20:25       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    20:25       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    20:25       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    20:25       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    20:25       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    20:25       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    20:25       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    20:25       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    20:25       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    20:25       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    20:25       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    20:25       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    20:25       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    20:25       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    20:25       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      38  0.0  0.1   45552   4146 ?        S    20:25       00:00 /etc/init.d/init.ohasd run
+  freerad     39  0.0  0.1   43958   4047 ?        S    20:25       00:00 /usr/sbin/freeradius
+  root        40  0.0  0.1   10240   4096 pts/0    S    20:25       00:00 -bash
+  root        41  0.0  0.1   12288   3072 pts/0    R    20:25       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -3262,6 +3249,7 @@ Total steps: 301
     apt-daily-upgrade.service      loaded inactive dead     Daily apt upgrade and clean activities
     atd.service                    loaded active   running  Deferred execution scheduler
     auditd.service                 loaded active   running  Security Auditing Service
+    chrony.service                 loaded active   running  chrony, an NTP client/server
     cron.service                   loaded active   running  Regular background program processing daemon
     dbus.service                   loaded active   running  D-Bus System Message Bus
     e2scrub_all.service            loaded inactive dead     Online ext4 Metadata Check for All Filesystems
@@ -3290,7 +3278,7 @@ Total steps: 301
   ACTIVE = The high-level unit activation state, i.e. generalization of SUB.
   SUB    = The low-level unit activation state, values depend on unit type.
   
-  29 loaded units listed. Pass --all to see loaded but inactive units, too.
+  30 loaded units listed. Pass --all to see loaded but inactive units, too.
   To show all installed unit files use 'systemctl list-unit-files'.
 
 
@@ -3319,10 +3307,20 @@ Total steps: 301
          131064      131059     nvram     rw   nvram:
 
 [275/301] sw2 SW2> show boot
-  BOOT variable = 
-  CONFIG_FILE variable does not exist
-  BOOTLDR variable does not exist
-  Configuration register is 0x2102
+  BOOT path-list      : 
+  Config file         : flash:/config.text
+  Private Config file : flash:/private-config.text
+  Enable Break        : no
+  Manual Boot         : no
+  HELPER path-list    : 
+  Auto upgrade        : yes
+  Auto upgrade path   : 
+  NVRAM/Config file
+        buffer size:   131072
+  Timeout for Config
+            Download:    0 seconds
+  Config Download
+         via DHCP:       disabled (next boot: disabled)
 
 [276/301] sw2 SW2> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -3355,7 +3353,7 @@ Total steps: 301
 
 [278/301] sw2 SW2> show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1235X78Z
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC9508FTL0
 
 [279/301] sw2 SW2> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -3392,10 +3390,20 @@ Total steps: 301
          131064      131059     nvram     rw   nvram:
 
 [284/301] core CORE> show boot
-  BOOT variable = 
-  CONFIG_FILE variable does not exist
-  BOOTLDR variable does not exist
-  Configuration register is 0x2102
+  BOOT path-list      : 
+  Config file         : flash:/config.text
+  Private Config file : flash:/private-config.text
+  Enable Break        : no
+  Manual Boot         : no
+  HELPER path-list    : 
+  Auto upgrade        : yes
+  Auto upgrade path   : 
+  NVRAM/Config file
+        buffer size:   131072
+  Timeout for Config
+            Download:    0 seconds
+  Config Download
+         via DHCP:       disabled (next boot: disabled)
 
 [285/301] core CORE> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -3428,7 +3436,7 @@ Total steps: 301
 
 [287/301] core CORE> show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC1235X78Z
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC2803PFY1
 
 [288/301] core CORE> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -3447,6 +3455,7 @@ Total steps: 301
 <empty>
 
 [291/301] sw2 SW2# write memory
+  Building configuration...
   [OK]
 
 [292/301] sw2 SW2# reload in 2
@@ -3472,40 +3481,31 @@ Total steps: 301
   1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
 
 [298/301] l2 l2$ ip -br link
-  1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UP mode DEFAULT group default
-      link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-  
-  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5b brd ff:ff:ff:ff:ff:ff
-  
-  3: eth1: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5c brd ff:ff:ff:ff:ff:ff
-  
-  4: eth2: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5d brd ff:ff:ff:ff:ff:ff
-  
-  5: eth3: <NO-CARRIER,BROADCAST,UP,MULTICAST> mtu 1500 qdisc fq_codel state DOWN mode DEFAULT group default qlen 1000
-      link/ether 02:00:00:00:00:5e brd ff:ff:ff:ff:ff:ff
+  lo              UNKNOWN       00:00:00:00:00:00 <LOOPBACK,UP,LOWER_UP>
+  eth0            UP            02:00:00:00:00:5b <BROADCAST,UP,MULTICAST,LOWER_UP>
+  eth1            DOWN          02:00:00:00:00:5c <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth2            DOWN          02:00:00:00:00:5d <NO-CARRIER,BROADCAST,UP,MULTICAST>
+  eth3            DOWN          02:00:00:00:00:5e <NO-CARRIER,BROADCAST,UP,MULTICAST>
 
 
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.488 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.907 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.365 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.308 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.907/1.197/1.488/0.291 ms
+  rtt min/avg/max/mdev = 1.308/1.336/1.365/0.029 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.754 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.666 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.887 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.232 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.666/0.710/0.754/0.044 ms
+  rtt min/avg/max/mdev = 0.887/1.060/1.232/0.173 ms
 
 [301/301] sw1 SW1# show mac address-table
   Mac Address Table

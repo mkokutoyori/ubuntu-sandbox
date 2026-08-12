@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-08-08T00:25:57.636Z
+Generated: 2026-08-12T20:25:30.722Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -557,38 +557,74 @@ Total steps: 340
 
 --- [163] § per-port-channel running-config loop ---
 [164/340] sw1 SW1# show running-config interface Port-channel1
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel1
   end
 
 [165/340] sw1 SW1# show running-config interface Port-channel2
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel2
   end
 
 [166/340] sw1 SW1# show running-config interface Port-channel3
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel3
   end
 
 [167/340] sw1 SW1# show running-config interface Port-channel4
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel4
   end
 
 [168/340] sw1 SW1# show running-config interface Port-channel5
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel5
   end
 
 [169/340] sw1 SW1# show running-config interface Port-channel6
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel6
   end
 
 [170/340] sw1 SW1# show running-config interface Port-channel7
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel7
   end
 
 [171/340] sw1 SW1# show running-config interface Port-channel8
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel8
   end
 
 [172/340] sw1 SW1# show running-config interface Port-channel9
+  Building configuration...
+  
+  Current configuration : 27 bytes
+  !
   interface Port-channel9
   end
 
@@ -769,34 +805,33 @@ Total steps: 340
   % PAgP is not implemented: this switch aggregates with LACP only.
 
 [188/340] sw1 SW1# show interfaces status
-  Port        Name               Status       Vlan       Duplex  Speed Type
-  ----------  -----------------  -----------  ---------  ------  ----- ----
-  Fa0/1                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/2                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/3                          connected    1          a-full  a-100  10/100BaseTX
-  Fa0/4                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/5                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/6                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/7                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/8                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/9                          notconnect   1          auto    auto   10/100BaseTX
-  Fa0/10                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/11                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/12                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/13                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/14                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/15                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/16                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/17                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/18                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/19                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/20                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/21                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/22                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/23                         notconnect   1          auto    auto   10/100BaseTX
-  Fa0/24                         notconnect   1          auto    auto   10/100BaseTX
-  Gi0/1                          connected    trunk      a-full  a-1000 1000BASE-T
-  Gi0/2                          notconnect   1          auto    auto   1000BASE-T
+  Port      Name               Status       Vlan       Duplex  Speed Type
+  Fa0/1                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/2                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/3                        connected    1          a-full  a-100 10/100BaseTX
+  Fa0/4                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/5                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/6                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/7                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/8                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/9                        notconnect   1            auto   auto 10/100BaseTX
+  Fa0/10                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/11                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/12                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/13                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/14                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/15                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/16                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/17                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/18                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/19                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/20                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/21                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/22                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/23                       notconnect   1            auto   auto 10/100BaseTX
+  Fa0/24                       notconnect   1            auto   auto 10/100BaseTX
+  Gi0/1                        connected    trunk      a-full a-1000 1000BASE-T
+  Gi0/2                        notconnect   1            auto   auto 1000BASE-T
 
 [189/340] sw1 SW1# show spanning-tree summary
   Switch is in pvst mode
@@ -993,101 +1028,183 @@ Total steps: 340
 
 --- [209] § per-interface running-config loop (Fa0/4..0/21) ---
 [210/340] sw1 SW1# show running-config interface FastEthernet0/4
+  Building configuration...
+  
+  Current configuration : 76 bytes
+  !
   interface FastEthernet0/4
    switchport mode access
    channel-protocol lacp
   end
 
 [211/340] sw1 SW1# show running-config interface FastEthernet0/5
+  Building configuration...
+  
+  Current configuration : 53 bytes
+  !
   interface FastEthernet0/5
    switchport mode access
   end
 
 [212/340] sw1 SW1# show running-config interface FastEthernet0/6
+  Building configuration...
+  
+  Current configuration : 105 bytes
+  !
   interface FastEthernet0/6
    switchport mode access
    channel-protocol lacp
+   channel-group 2 mode active
   end
 
 [213/340] sw1 SW1# show running-config interface FastEthernet0/7
+  Building configuration...
+  
+  Current configuration : 82 bytes
+  !
   interface FastEthernet0/7
    switchport mode access
+   channel-group 2 mode active
   end
 
 [214/340] sw1 SW1# show running-config interface FastEthernet0/8
+  Building configuration...
+  
+  Current configuration : 105 bytes
+  !
   interface FastEthernet0/8
    switchport mode access
    channel-protocol lacp
+   channel-group 3 mode active
   end
 
 [215/340] sw1 SW1# show running-config interface FastEthernet0/9
+  Building configuration...
+  
+  Current configuration : 82 bytes
+  !
   interface FastEthernet0/9
    switchport mode access
+   channel-group 3 mode active
   end
 
 [216/340] sw1 SW1# show running-config interface FastEthernet0/10
+  Building configuration...
+  
+  Current configuration : 106 bytes
+  !
   interface FastEthernet0/10
    switchport mode access
    channel-protocol lacp
+   channel-group 4 mode active
   end
 
 [217/340] sw1 SW1# show running-config interface FastEthernet0/11
+  Building configuration...
+  
+  Current configuration : 83 bytes
+  !
   interface FastEthernet0/11
    switchport mode access
+   channel-group 4 mode active
   end
 
 [218/340] sw1 SW1# show running-config interface FastEthernet0/12
+  Building configuration...
+  
+  Current configuration : 106 bytes
+  !
   interface FastEthernet0/12
    switchport mode access
    channel-protocol lacp
+   channel-group 5 mode active
   end
 
 [219/340] sw1 SW1# show running-config interface FastEthernet0/13
+  Building configuration...
+  
+  Current configuration : 83 bytes
+  !
   interface FastEthernet0/13
    switchport mode access
+   channel-group 5 mode active
   end
 
 [220/340] sw1 SW1# show running-config interface FastEthernet0/14
+  Building configuration...
+  
+  Current configuration : 77 bytes
+  !
   interface FastEthernet0/14
    switchport mode access
    channel-protocol pagp
   end
 
 [221/340] sw1 SW1# show running-config interface FastEthernet0/15
+  Building configuration...
+  
+  Current configuration : 54 bytes
+  !
   interface FastEthernet0/15
    switchport mode access
   end
 
 [222/340] sw1 SW1# show running-config interface FastEthernet0/16
+  Building configuration...
+  
+  Current configuration : 77 bytes
+  !
   interface FastEthernet0/16
    switchport mode access
    channel-protocol pagp
   end
 
 [223/340] sw1 SW1# show running-config interface FastEthernet0/17
+  Building configuration...
+  
+  Current configuration : 54 bytes
+  !
   interface FastEthernet0/17
    switchport mode access
   end
 
 [224/340] sw1 SW1# show running-config interface FastEthernet0/18
+  Building configuration...
+  
+  Current configuration : 77 bytes
+  !
   interface FastEthernet0/18
    switchport mode access
    channel-protocol pagp
   end
 
 [225/340] sw1 SW1# show running-config interface FastEthernet0/19
+  Building configuration...
+  
+  Current configuration : 54 bytes
+  !
   interface FastEthernet0/19
    switchport mode access
   end
 
 [226/340] sw1 SW1# show running-config interface FastEthernet0/20
+  Building configuration...
+  
+  Current configuration : 79 bytes
+  !
   interface FastEthernet0/20
    switchport mode access
+   channel-group 9 mode on
   end
 
 [227/340] sw1 SW1# show running-config interface FastEthernet0/21
+  Building configuration...
+  
+  Current configuration : 79 bytes
+  !
   interface FastEthernet0/21
    switchport mode access
+   channel-group 9 mode on
   end
 
 
@@ -1266,7 +1383,7 @@ Total steps: 340
 
 --- [256] § host verification ---
 [257/340] l1 l1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1301,7 +1418,7 @@ Total steps: 340
   	Link detected: yes
 
 [259/340] l2 l2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1336,7 +1453,7 @@ Total steps: 340
   	Link detected: yes
 
 [261/340] srv1 srv1$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1371,7 +1488,7 @@ Total steps: 340
   	Link detected: yes
 
 [263/340] srv2 srv2$ ip -br addr
-  lo              UP            127.0.0.1/8
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1433,17 +1550,20 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.834 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.861 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.745 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.862 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.861/1.848/2.834/0.987 ms
+  rtt min/avg/max/mdev = 0.862/1.804/2.745/0.942 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1878 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
@@ -1542,8 +1662,6 @@ Total steps: 340
    no ip address
    shutdown
   !
-  service timestamps debug datetime msec
-  service timestamps log datetime msec
   end
 
 
@@ -1565,11 +1683,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 268 bytes, 0 no buffer
+       7 packets input, 580 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       13 packets output, 908 bytes, 0 underruns
+       23 packets output, 1708 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1590,7 +1708,7 @@ Total steps: 340
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 640 bytes, 0 underruns
+       23 packets output, 1678 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1607,11 +1725,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       3 packets input, 268 bytes, 0 no buffer
+       7 packets input, 586 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 780 bytes, 0 underruns
+       20 packets output, 1500 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2052,11 +2170,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 376 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       11 packets output, 704 bytes, 0 underruns
+       21 packets output, 1504 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2077,7 +2195,7 @@ Total steps: 340
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 640 bytes, 0 underruns
+       23 packets output, 1678 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2094,11 +2212,11 @@ Total steps: 340
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       5 packets input, 382 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 576 bytes, 0 underruns
+       18 packets output, 1296 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-08-08T00:34:48.200Z
+Generated: 2026-08-12T20:25:57.318Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -824,37 +824,208 @@ Total steps: 343
     Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback2 is up, line protocol is up
     Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback3 is up, line protocol is up
     Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback4 is up, line protocol is up
     Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback5 is up, line protocol is up
     Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback6 is up, line protocol is up
     Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback7 is up, line protocol is up
     Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback8 is up, line protocol is up
     Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
@@ -1122,26 +1293,22 @@ Total steps: 343
 
 [196/343] r1 R1# show ip interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Description: ## LAN to L1 ##
-    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
-    MTU 1400 bytes, BW 100000 Kbit/sec, DLY 1000 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 00:10:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1400 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [197/343] r1 R1# show ipv6 interface GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
@@ -1153,7 +1320,7 @@ Total steps: 343
 [198/343] r1 R1# show interfaces GigabitEthernet0/0 accounting
   GigabitEthernet0/0
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           0           0           0           0
+                        IP          0           0           0           0
 
 [199/343] r1 R1# show interfaces GigabitEthernet0/0 switchport
                     ^
@@ -1164,8 +1331,8 @@ Total steps: 343
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
                  Processor          0           0           0           0
                Route cache          0           0           0           0
-        Distributed cache          0           0           0           0
-                    Total          0           0           0           0
+         Distributed cache          0           0           0           0
+                     Total          0           0           0           0
 
 [201/343] r1 R1# show controllers GigabitEthernet0/0
   GigabitEthernet0/0 -
@@ -1176,13 +1343,23 @@ Total steps: 343
 [202/343] r1 R1# show running-config interface GigabitEthernet0/0
   Building configuration...
   
-  Current configuration : 180 bytes
+  Current configuration : 370 bytes
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
+   ipv6 address 2001:db8:1::1/64
+   ipv6 address fe80::1 link-local
+   mtu 1400
+   bandwidth 100000
+   delay 100
    ip helper-address 10.0.0.2
+   no ip unreachables
+   no ip redirects
+   no ip proxy-arp
+   ip flow ingress
+   ip flow egress
   end
 
 [203/343] r1 R1# show interfaces GigabitEthernet0/1
@@ -1209,25 +1386,22 @@ Total steps: 343
 
 [204/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 256 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       5 packets output, 320 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [205/343] r1 R1# show ipv6 interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
@@ -1237,7 +1411,7 @@ Total steps: 343
 [206/343] r1 R1# show interfaces GigabitEthernet0/1 accounting
   GigabitEthernet0/1
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           4         256           5         320
+                        IP          4         256           5         320
 
 [207/343] r1 R1# show interfaces GigabitEthernet0/1 switchport
                     ^
@@ -1248,8 +1422,8 @@ Total steps: 343
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
                  Processor          4         256           5         320
                Route cache          0           0           0           0
-        Distributed cache          0           0           0           0
-                    Total          4         256           5         320
+         Distributed cache          0           0           0           0
+                     Total          4         256           5         320
 
 [209/343] r1 R1# show controllers GigabitEthernet0/1
   GigabitEthernet0/1 -
@@ -1304,9 +1478,22 @@ Total steps: 343
 
 [220/343] r1 R1# show ip interface Tunnel0
   Tunnel0 is up, line protocol is up
-    Hardware is Tunnel
     Internet address is 172.16.0.1/30
-    Tunnel protocol/transport GRE/IP
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [221/343] r1 R1# show ipv6 interface Tunnel0
   Tunnel0 is up, line protocol is up
@@ -1316,7 +1503,7 @@ Total steps: 343
 [222/343] r1 R1# show interfaces Tunnel0 accounting
   Tunnel0
                   Protocol    Pkts In    Chars In    Pkts Out   Chars Out
-                      IP           0           0           0           0
+                        IP          0           0           0           0
 
 [223/343] r1 R1# show interfaces Tunnel0 switchport
                     ^
@@ -1327,8 +1514,8 @@ Total steps: 343
             Switching path    Pkts In    Chars In    Pkts Out   Chars Out
                  Processor          0           0           0           0
                Route cache          0           0           0           0
-        Distributed cache          0           0           0           0
-                    Total          0           0           0           0
+         Distributed cache          0           0           0           0
+                     Total          0           0           0           0
 
 [225/343] r1 R1# show controllers Tunnel0
   Interface does not exist
@@ -1336,10 +1523,14 @@ Total steps: 343
 [226/343] r1 R1# show running-config interface Tunnel0
   Building configuration...
   
-  Current configuration : 63 bytes
+  Current configuration : 163 bytes
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+   tunnel key 1234
   end
 
 [227/343] r1 R1# show interfaces description
@@ -1524,7 +1715,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX29424GZ3
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1534,17 +1725,17 @@ Total steps: 343
 [236/343] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3208 bytes
+  Current configuration : 3676 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
@@ -1552,6 +1743,9 @@ Total steps: 343
    ip address 192.168.100.1 255.255.255.0 secondary
    ipv6 address 2001:db8:1::1/64
    ipv6 address fe80::1 link-local
+   mtu 1400
+   bandwidth 100000
+   delay 100
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -1571,37 +1765,64 @@ Total steps: 343
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface GigabitEthernet0/0.10
    encapsulation dot1q 10 native
@@ -1672,6 +1893,8 @@ Total steps: 343
   interface Tunnel2
    ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
+  !
+  ! Last configuration change at 20:25:57 UTC Wed Aug 12 2026 by console
   !
   end
 
@@ -1792,37 +2015,208 @@ Total steps: 343
     Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback2 is up, line protocol is up
     Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback3 is up, line protocol is up
     Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback4 is up, line protocol is up
     Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback5 is up, line protocol is up
     Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback6 is up, line protocol is up
     Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback7 is up, line protocol is up
     Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback8 is up, line protocol is up
     Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
@@ -2129,8 +2523,7 @@ Total steps: 343
         192.168.99.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
   L        192.168.99.1/32 is directly connected, GigabitEthernet0/0.999
-        192.168.100.0/24 is subnetted, 1 subnets
-  C        192.168.100.0/24 is directly connected, GigabitEthernet0/0
+  C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
 
 [241/343] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
@@ -2167,10 +2560,10 @@ Total steps: 343
   % OSPF is not configured
 
 [249/343] r1 R1# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [250/343] r1 R1# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [251/343] r1 R1# show ip bgp
   % BGP not active
@@ -2254,11 +2647,11 @@ Total steps: 343
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 21 messages logged, xml disabled,
+      Console logging: level debugging, 18 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 21 messages logged, xml disabled,
+      Monitor logging: level debugging, 18 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 21 messages logged, xml disabled,
+      Buffer logging:  level debugging, 18 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2267,32 +2660,29 @@ Total steps: 343
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 21 message lines logged
+      Trap logging: level informational, 18 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:48.192: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.193: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.197: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.197: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.198: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:48.213: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.216: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.220: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.224: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.225: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.225: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Aug  8 00:34:48.225: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Aug  8 00:34:48.226: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.227: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:34:48.227: %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
-  *Aug  8 00:34:48.227: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.228: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:48.228: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.312: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.313: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.314: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.314: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.340: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.343: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.355: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.360: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.361: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.361: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug 12 20:25:57.361: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug 12 20:25:57.362: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.362: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.363: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug 12 20:25:57.363: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:57.364: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.364: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.365: %SYS-5-CONFIG_I: Configured from console by console
 
 [270/343] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2301,17 +2691,21 @@ Total steps: 343
   0 SNMP packets output
 
 [271/343] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EE20F828.44189374 (00:34:48.266 UTC Sat Aug 8 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE275555.6C8B4395 (20:25:57.424 UTC Wed Aug 12 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [272/343] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [273/343] r1 R1# show clock
-  *00:34:48.000 UTC Sat Aug 8 2026
+  *20:25:57.000 UTC Wed Aug 12 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2358,7 +2752,6 @@ Total steps: 343
 
 [279/343] r1 R1# show users
       Line       User       Host(s)              Idle       Location
-  *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
@@ -2460,25 +2853,22 @@ Total steps: 343
 
 [284/343] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input 00:00:00, output 00:00:00, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 256 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       5 packets output, 320 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [285/343] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -2520,7 +2910,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1234567A
+  Processor board ID FTX29424GZ3
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2530,17 +2920,17 @@ Total steps: 343
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3208 bytes
+  Current configuration : 3676 bytes
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
   !
   hostname R1
   !
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   !
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
@@ -2548,6 +2938,9 @@ Total steps: 343
    ip address 192.168.100.1 255.255.255.0 secondary
    ipv6 address 2001:db8:1::1/64
    ipv6 address fe80::1 link-local
+   mtu 1400
+   bandwidth 100000
+   delay 100
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -2567,37 +2960,64 @@ Total steps: 343
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface GigabitEthernet0/0.10
    encapsulation dot1q 10 native
@@ -2668,6 +3088,8 @@ Total steps: 343
   interface Tunnel2
    ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
+  !
+  ! Last configuration change at 20:25:57 UTC Wed Aug 12 2026 by console
   !
   end
   
@@ -2766,8 +3188,7 @@ Total steps: 343
         192.168.99.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.99.0/24 is directly connected, GigabitEthernet0/0.999
   L        192.168.99.1/32 is directly connected, GigabitEthernet0/0.999
-        192.168.100.0/24 is subnetted, 1 subnets
-  C        192.168.100.0/24 is directly connected, GigabitEthernet0/0
+  C    192.168.100.0/24 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
@@ -2853,37 +3274,208 @@ Total steps: 343
     Description: LOOP-1
     Hardware is Loopback
     Internet address is 10.255.255.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback2 is up, line protocol is up
     Description: LOOP-2
     Hardware is Loopback
     Internet address is 10.255.255.2/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback3 is up, line protocol is up
     Description: LOOP-3
     Hardware is Loopback
     Internet address is 10.255.255.3/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback4 is up, line protocol is up
     Description: LOOP-4
     Hardware is Loopback
     Internet address is 10.255.255.4/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback5 is up, line protocol is up
     Description: LOOP-5
     Hardware is Loopback
     Internet address is 10.255.255.5/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback6 is up, line protocol is up
     Description: LOOP-6
     Hardware is Loopback
     Internet address is 10.255.255.6/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback7 is up, line protocol is up
     Description: LOOP-7
     Hardware is Loopback
     Internet address is 10.255.255.7/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback8 is up, line protocol is up
     Description: LOOP-8
     Hardware is Loopback
     Internet address is 10.255.255.8/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Loopback100 is up, line protocol is up
     Hardware is Loopback
     Internet address is 172.31.0.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   GigabitEthernet0/0.10 is up, line protocol is up
     Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
@@ -3174,11 +3766,11 @@ Total steps: 343
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 21 messages logged, xml disabled,
+      Console logging: level debugging, 18 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 21 messages logged, xml disabled,
+      Monitor logging: level debugging, 18 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 21 messages logged, xml disabled,
+      Buffer logging:  level debugging, 18 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -3187,36 +3779,33 @@ Total steps: 343
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 21 message lines logged
+      Trap logging: level informational, 18 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Aug  8 00:34:48.192: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.193: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.197: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.197: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.198: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:48.213: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.216: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.220: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.224: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.225: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug  8 00:34:48.225: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Aug  8 00:34:48.225: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Aug  8 00:34:48.226: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.226: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug  8 00:34:48.227: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug  8 00:34:48.227: %CDP-5-NOTIFICATIONS: Neighbor R2 expired on GigabitEthernet0/1
-  *Aug  8 00:34:48.227: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.227: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug  8 00:34:48.228: %CDP-6-INFORMATIONAL: Neighbor R2 (GigabitEthernet0/1) discovered on GigabitEthernet0/1
-  *Aug  8 00:34:48.228: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.312: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.313: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.314: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.314: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.340: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.343: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.355: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.360: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.361: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 12 20:25:57.361: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug 12 20:25:57.361: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug 12 20:25:57.362: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.362: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 20:25:57.363: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug 12 20:25:57.363: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 12 20:25:57.364: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.364: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 20:25:57.365: %SYS-5-CONFIG_I: Configured from console by console
 
 [287/343] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX29424GZ3
 
 [288/343] r1 R1# show environment
   Number of Critical alarms:  0
@@ -3237,6 +3826,7 @@ Total steps: 343
   Default domain is not set
   Name/address lookup uses static mappings
   Name servers are 255.255.255.255
+  
   Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
          temp - temporary, perm - permanent
          NA - Not Applicable None - Not defined
@@ -3244,18 +3834,19 @@ Total steps: 343
   Host                      Port  Flags      Age Type   Address(es)
 
 [293/343] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [294/343] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty AccO AccI  Uses  Noise Overruns  Int
-  *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 AUX               -    -    -    -      0     0   0/0       -
-       2    2 VTY               -    -    -    -      0     0   0/0       -
-       3    3 VTY               -    -    -    -      0     0   0/0       -
-       4    4 VTY               -    -    -    -      0     0   0/0       -
-       5    5 VTY               -    -    -    -      0     0   0/0       -
-       6    6 VTY               -    -    -    -      0     0   0/0       -
+     Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
+  *    0 CTY                 -    -    -    -     0      0       0/0    -
+       1 AUX                 -    -    -    -     0      0       0/0    -
+       2 VTY                 -    -    -    -     0      0       0/0    -
+       3 VTY                 -    -    -    -     0      0       0/0    -
+       4 VTY                 -    -    -    -     0      0       0/0    -
+       5 VTY                 -    -    -    -     0      0       0/0    -
+       6 VTY                 -    -    -    -     0      0       0/0    -
 
 [295/343] r1 R1# show terminal
   Line 0, Location: "", Type: ""
@@ -3287,6 +3878,9 @@ Total steps: 343
    ip address 192.168.100.1 255.255.255.0 secondary
    ipv6 address 2001:db8:1::1/64
    ipv6 address fe80::1 link-local
+   mtu 1400
+   bandwidth 100000
+   delay 100
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -3306,37 +3900,64 @@ Total steps: 343
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface GigabitEthernet0/0.10
    encapsulation dot1q 10 native
@@ -3415,20 +4036,23 @@ Total steps: 343
 [300/343] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3208 bytes
+  Current configuration : 3676 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
-  username alice privilege 15 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
-  username bob privilege 15 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
-  username carl privilege 15 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
-  username dave privilege 15 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   interface GigabitEthernet0/0
    description ## LAN to L1 ##
    ip address 192.168.1.1 255.255.255.0
    ip address 192.168.100.1 255.255.255.0 secondary
    ipv6 address 2001:db8:1::1/64
    ipv6 address fe80::1 link-local
+   mtu 1400
+   bandwidth 100000
+   delay 100
    ip helper-address 10.0.0.2
    no ip unreachables
    no ip redirects
@@ -3444,29 +4068,56 @@ Total steps: 343
   interface Loopback1
    description LOOP-1
    ip address 10.255.255.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback2
    description LOOP-2
    ip address 10.255.255.2 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback3
    description LOOP-3
    ip address 10.255.255.3 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback4
    description LOOP-4
    ip address 10.255.255.4 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback5
    description LOOP-5
    ip address 10.255.255.5 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback6
    description LOOP-6
    ip address 10.255.255.6 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback7
    description LOOP-7
    ip address 10.255.255.7 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback8
    description LOOP-8
    ip address 10.255.255.8 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface Loopback100
    ip address 172.31.0.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   interface GigabitEthernet0/0.10
    encapsulation dot1q 10 native
    ip address 192.168.1.1 255.255.255.0
@@ -3714,24 +4365,27 @@ Total steps: 343
     community-list     Define BGP community list
     default-network    Configure default-network
     dhcp               Dynamic Host Configuration Protocol
+    dns                Domain Name System
     domain             IP domain configuration
-    domain-lookup      Enable DNS lookups
-    domain-name        Set domain name
+    domain-list        Define a list of default domain names
+    domain-lookup      Enable IP Domain Name System hostname translation
+    domain-name        Define the default domain name
     finger             Enable finger service
     flow-cache         NetFlow cache timeout
     flow-export        Legacy NetFlow export
     gratuitous-arps    Enable gratuitous ARP
-    host               Configure a static host entry
+    host               Add a host to the host table
     http               Hypertext Transfer Protocol
     local              Local settings
     multicast-routing  Enable IP multicast routing
-    name-server        Configure DNS name servers
+    name-server        Specify address of name server to use
     nat                Network Address Translation
     pim                Protocol Independent Multicast
     prefix-list        Build a prefix list
     route              Establish static routes
     route-cache        Route cache
     routing            Enable IP routing
+    scp                
     sla                Configure an IP SLAs operation
     source-route       IP source-route
     ssh                SSH config
@@ -3745,6 +4399,7 @@ Total steps: 343
     rip    Enter RIP routing protocol configuration
 
 [339/343] r1 R1(config)# crypto ?
+    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -3754,40 +4409,43 @@ Total steps: 343
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
-    <cr>         
 
 [340/343] r1 R1(config)# no ?
-    access-list  Remove an access list
-    alias        Remove a command alias
-    arp          Remove ARP entry
-    banner       Remove a banner
-    boot         Boot Commands
-    cdp          CDP global configuration
-    crypto       Encryption and key management
-    enable       Modify enable password parameters
-    event        Embedded Event Manager
-    hostname     Reset hostname
-    interface    Remove a virtual interface
-    ip           Global IP configuration subcommands
-    ipv6         Global IPv6 configuration subcommands
-    key          Key management
-    line         Remove line configuration
-    lldp         LLDP global configuration
-    logging      Modify message logging facilities
-    ntp          Remove NTP config
-    privilege    Remove privilege command rule
-    route-map    Remove a route-map
-    router       Enable a routing protocol
-    service      Disable a service
-    sntp         Configure SNTP
-    track        Remove a tracked object
-    username     Remove a local user
+    aaa            Disable AAA
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            CDP global configuration
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           Global IPv6 configuration subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           LLDP global configuration
+    logging        Modify message logging facilities
+    ntp            Network Time Protocol
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [341/343] r1 R1(config)# end
 <empty>
 
 [342/343] r1 R1# show running-config | count !
-  34
+  35
 
 [343/343] r1 R1# write memory
   Building configuration...

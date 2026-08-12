@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-08-08T00:22:57.516Z
+Generated: 2026-08-12T20:25:19.972Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-08-08 00:22:57
-  Saturday
+  2026-08-12 20:25:19
+  Wednesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -43,8 +43,7 @@ Total steps: 304
   -------------------------------------------------------------------------------
 
 [5/304] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -59,13 +58,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-08 00:22:57
+  CPU Usage Stat. Time : 2026-08-12 20:25:19
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-08 00:22:57
+  Memory utilization statistics at 2026-08-12 20:25:19
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -73,6 +72,8 @@ Total steps: 304
 [9/304] r1 <R1> display current-configuration
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -88,18 +89,17 @@ Total steps: 304
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
 
 [10/304] r1 <R1> display saved-configuration
@@ -109,6 +109,8 @@ Total steps: 304
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -123,18 +125,17 @@ Total steps: 304
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
 
 [12/304] r1 <R1> display startup
@@ -166,25 +167,25 @@ Total steps: 304
   GigabitEthernet0/0/3              unassigned           down       down
 
 [14/304] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -193,11 +194,11 @@ Total steps: 304
 
 [15/304] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [16/304] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -302,7 +303,15 @@ Total steps: 304
 [35/304] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 20:25:20.074  Aug 12 2026(EE275530.12F1A9FB)
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -318,10 +327,10 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-12 20:25:19 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-12 20:25:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-12 20:25:19 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-12 20:25:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -378,12 +387,12 @@ Total steps: 304
 
 [47/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [48/304] r1 <R1> display port
   Error: Unrecognized command found at '^' position.
@@ -392,10 +401,10 @@ Total steps: 304
 
 [49/304] r1 <R1> display interface description
   Interface                     PHY     Protocol Description
-  GE0/0/0                       up      up       
-  GE0/0/1                       up      up       
-  GE0/0/2                       down    down     
-  GE0/0/3                       down    down     
+  GigabitEthernet0/0/0          up      up
+  GigabitEthernet0/0/1          up      up
+  GigabitEthernet0/0/2          down    down
+  GigabitEthernet0/0/3          down    down
 
 [50/304] r1 <R1> display health
   R1 system health:
@@ -452,12 +461,15 @@ Total steps: 304
     bgp            Configure BGP routing
     commit         Commit candidate configuration
     compare        Compare function
-    debugging      Enable debugging
+    debugging      Enable system debugging functions
     display        Display current system information
+    free           
     header         Configure login/shell banner
     ip             Internet Protocol
     isis           Configure IS-IS routing
+    kill           
     ping           Send ICMP echo messages
+    quit           Exit from current command view
     reboot         Reboot device
     reset          Reset operation
     rip            Configure RIP routing
@@ -486,7 +498,6 @@ Total steps: 304
     cpu-defend              CPU defend policy configuration
     cpu-usage               Display CPU usage
     current-configuration   Display running configuration
-    debug                   Display enabled debug flags
     debugging               Display active debugging flags
     device                  Display device status
     dhcp                    Display DHCP snooping
@@ -505,6 +516,7 @@ Total steps: 304
     history-command         Display CLI history
     hwtacacs-server         
     icmp                    Internet Control Message Protocol
+    icmpv6                  ICMPv6 information
     igmp                    Internet Group Management Protocol
     ike                     Internet Key Exchange
     ikev2                   Internet Key Exchange version 2
@@ -596,13 +608,13 @@ Total steps: 304
 [69/304] r1 [R1-CORE] interface GigabitEthernet0/0/0
 <empty>
 
-[70/304] r1 [R1-CORE-GE0/0/0] display this
+[70/304] r1 [R1-CORE-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[71/304] r1 [R1-CORE-GE0/0/0] quit
+[71/304] r1 [R1-CORE-GigabitEthernet0/0/0] quit
 <empty>
 
 [72/304] r1 [R1-CORE] interface LoopBack0
@@ -612,6 +624,8 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
 
 [74/304] r1 [R1-CORE-LoopBack0] quit
@@ -635,19 +649,6 @@ Total steps: 304
 [79/304] r1 [R1-CORE-ospf-1] display this
   #
   ospf 1
-  aaa
-   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
-   local-user dave service-type ssh
   #
 
 [80/304] r1 [R1-CORE-ospf-1] quit
@@ -672,6 +673,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -686,10 +689,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -697,18 +701,17 @@ Total steps: 304
   ospf 1
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   #
@@ -723,6 +726,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -737,10 +742,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -748,18 +754,17 @@ Total steps: 304
   ospf 1
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -773,48 +778,6 @@ Total steps: 304
 
 [91/304] r1 [R1-CORE-acl-basic-2000] display this
   #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  aaa
-   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
-  #
-  bgp 65000
-  isis 1
   #
 
 [92/304] r1 [R1-CORE-acl-basic-2000] quit
@@ -825,48 +788,6 @@ Total steps: 304
 
 [94/304] r1 [R1-CORE-acl-basic-MGMT] display this
   #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  aaa
-   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
-  #
-  bgp 65000
-  isis 1
   #
 
 [95/304] r1 [R1-CORE-acl-basic-MGMT] quit
@@ -888,50 +809,19 @@ Total steps: 304
 
 [100/304] r1 [R1-CORE-aaa] display this
   #
-  sysname R1-CORE
-  #
-  ip pool LAN
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
-  #
-  bgp 65000
-  isis 1
   #
 
 [101/304] r1 [R1-CORE-aaa] quit
@@ -944,6 +834,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -960,10 +852,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -971,18 +864,17 @@ Total steps: 304
   ospf 1
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -998,6 +890,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1014,10 +908,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1027,18 +922,17 @@ Total steps: 304
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1054,6 +948,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1070,10 +966,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1083,18 +980,17 @@ Total steps: 304
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1110,6 +1006,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1126,10 +1024,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1139,22 +1038,22 @@ Total steps: 304
   ike proposal 1
    authentication-algorithm sha
    dh group1
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1170,6 +1069,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1186,10 +1087,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1202,22 +1104,22 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1239,6 +1141,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1255,10 +1159,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1271,22 +1176,22 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1306,6 +1211,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1322,10 +1229,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1338,22 +1246,22 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1362,77 +1270,26 @@ Total steps: 304
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
-  Error: Wrong parameter found at '^' position.
+<empty>
 
-[125/304] r1 [R1-EDGE] dis th
-  #
-  sysname R1-EDGE
-  #
-  ip pool LAN
+[125/304] r1 [R1-EDGE-GigabitEthernet0/0/0] dis th
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-  ike proposal 1
-   authentication-algorithm sha
-   dh group1
-  #
-  ipsec proposal P1
-   encapsulation-mode tunnel
-  user-interface vty 0 4
-  #
-  aaa
-   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
-   local-user alice service-type ssh
-   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
-   local-user bob service-type ssh
-   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
-   local-user carl service-type ssh
-   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
-   local-user dave service-type ssh
-  #
-  #
-  bgp 65000
-  isis 1
-  #
-  undo info-center enable
-  #
 
-[126/304] r1 [R1-EDGE] q
+[126/304] r1 [R1-EDGE-GigabitEthernet0/0/0] q
 <empty>
 
-[127/304] r1 <R1-EDGE> return
+[127/304] r1 [R1-EDGE] return
 <empty>
 
 [128/304] r1 <R1-EDGE> dis cu
   #
   sysname R1-EDGE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1449,10 +1306,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -1465,22 +1323,22 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1493,18 +1351,18 @@ Total steps: 304
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 2
-  The number of interface that is DOWN in Physical is 4
-  The number of interface that is UP in Protocol is 2
-  The number of interface that is DOWN in Protocol is 4
+  The number of interface that is UP in Physical is 4
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 4
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
   GigabitEthernet0/0/2              unassigned           down       down
   GigabitEthernet0/0/3              unassigned           down       down
-  LoopBack0                         unassigned           down       down
-  Tunnel0/0/0                       unassigned           down       down
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 [130/304] r1 <R1-EDGE> dis ip rou
   Route Flags: R - relay, D - download to fib
@@ -1520,8 +1378,13 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [132/304] r1 [R1-EDGE] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [133/304] r1 [R1-EDGE] ip ?
     host           Configure a static host entry
@@ -1530,7 +1393,7 @@ Total steps: 304
     pool           Enter DHCP pool view
     route-static   Configure static route
     routing        Enable IP routing
-    routing-table  
+    routing-table  Routing table configuration
 
 [134/304] r1 [R1-EDGE] ospf ?
     <1-65535>  Process ID
@@ -1541,7 +1404,8 @@ Total steps: 304
     bfd            Disable BFD globally
     bgp            Remove BGP
     command-alias  Disable CLI alias
-    debugging      Disable debugging
+    debugging      Disable system debugging functions
+    dns            Domain Name System
     firewall       Firewall configuration
     ike            Internet Key Exchange
     ikev2          Internet Key Exchange version 2
@@ -1556,6 +1420,7 @@ Total steps: 304
     nat            Network Address Translation
     nqa            Network Quality Analysis
     nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
     route-policy   Remove a route-policy
@@ -1566,10 +1431,10 @@ Total steps: 304
     <cr>           
 
 [136/304] r1 [R1-EDGE] acl ?
-    advanced  
-    basic     
-    ipv6      Internet Protocol version 6
-    name      Name
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
     <cr>      
 
 [137/304] r1 [R1-EDGE] aaa ?
@@ -1584,8 +1449,8 @@ Total steps: 304
     <cr>    
 
 [140/304] r1 [R1-EDGE] rip ?
-    WORD  Enter RIP view or configure RIP
-    <cr>  
+    vpn-instance  VPN instance
+    <cr>          
 
 [141/304] r1 [R1-EDGE] bgp ?
     WORD  Configure BGP routing
@@ -1594,16 +1459,16 @@ Total steps: 304
 [142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
 <empty>
 
-[143/304] r1 [R1-EDGE-GE0/0/0] ip ?
+[143/304] r1 [R1-EDGE-GigabitEthernet0/0/0] ip ?
     address           Configure IP address
     forward-protocol  Protocols to forward
     helper-address    Set DHCP relay helper address
     urpf              Configure URPF mode
 
-[144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
+[144/304] r1 [R1-EDGE-GigabitEthernet0/0/0] ip address ?
     A.B.C.D  IP address
 
-[145/304] r1 [R1-EDGE-GE0/0/0] quit
+[145/304] r1 [R1-EDGE-GigabitEthernet0/0/0] quit
 <empty>
 
 [146/304] r1 [R1-EDGE] return
@@ -1665,19 +1530,19 @@ Total steps: 304
 [164/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[165/304] r1 [Huawei-GE0/0/0] description WAN-LINK
+[165/304] r1 [Huawei-GigabitEthernet0/0/0] description WAN-LINK
 <empty>
 
-[166/304] r1 [Huawei-GE0/0/0] undo description
+[166/304] r1 [Huawei-GigabitEthernet0/0/0] undo description
 <empty>
 
-[167/304] r1 [Huawei-GE0/0/0] shutdown
+[167/304] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[168/304] r1 [Huawei-GE0/0/0] undo shutdown
+[168/304] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[169/304] r1 [Huawei-GE0/0/0] quit
+[169/304] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [170/304] r1 [Huawei] return
@@ -1697,6 +1562,7 @@ Total steps: 304
 
 [172/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
+  dns resolve
   dhcp enable
   ip pool LAN
   interface GigabitEthernet0/0/0
@@ -1709,6 +1575,8 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
@@ -1723,16 +1591,16 @@ Total steps: 304
   user-interface vty 0 4
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
   bgp 65000
   isis 1
@@ -1753,6 +1621,8 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
@@ -1770,22 +1640,22 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1799,6 +1669,8 @@ Total steps: 304
 [175/304] r1 <Huawei> display ip interface brief | include up
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 [176/304] r1 <Huawei> display interface | include line protocol
 <empty>
@@ -1868,6 +1740,8 @@ Total steps: 304
   #
   sysname Huawei
   #
+  dns resolve
+  #
   dhcp enable
   #
   ip pool LAN
@@ -1886,6 +1760,8 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
@@ -1903,25 +1779,26 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -1970,6 +1847,8 @@ Total steps: 304
   #
   sysname R1
   #
+  dns resolve
+  #
   dhcp enable
   #
   ip pool LAN
@@ -1988,10 +1867,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -2004,25 +1884,26 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -2038,46 +1919,46 @@ Total steps: 304
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 2
-  The number of interface that is DOWN in Physical is 4
-  The number of interface that is UP in Protocol is 2
-  The number of interface that is DOWN in Protocol is 4
+  The number of interface that is UP in Physical is 4
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 4
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
   GigabitEthernet0/0/2              unassigned           down       down
   GigabitEthernet0/0/3              unassigned           down       down
-  LoopBack0                         unassigned           down       down
-  Tunnel0/0/0                       unassigned           down       down
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 [205/304] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack0 current state : UP
-  Line protocol current state : UP
+  Line protocol current state : UP (spoofing)
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
@@ -2210,8 +2091,9 @@ Total steps: 304
   Info: No VRRP backup group is configured.
 
 [225/304] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [226/304] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
@@ -2255,14 +2137,22 @@ Total steps: 304
 [233/304] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 20:25:21.322  Aug 12 2026(EE275531.526E978D)
 
 [234/304] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [235/304] r1 <R1> display clock
-  2026-08-08 00:22:58
-  Saturday
+  2026-08-12 20:25:21
+  Wednesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <R1> display lldp neighbor
@@ -2274,13 +2164,13 @@ Total steps: 304
 [238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-08 00:22:58
+  CPU Usage Stat. Time : 2026-08-12 20:25:21
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-08 00:22:58
+  Memory utilization statistics at 2026-08-12 20:25:21
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2297,8 +2187,7 @@ Total steps: 304
   -------------------------------------------------------------------------------
 
 [241/304] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -2321,18 +2210,16 @@ Total steps: 304
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 11
-  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-08 00:22:57 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-08 00:22:57 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-08 00:22:57 %01RIP/5/NOTIFICATIONS: RIP routing process started
-  2026-08-08 00:22:58 %01LLDP/6/INFORMATIONAL: LLDP enabled
-  2026-08-08 00:22:58 %01LLDP/6/INFORMATIONAL: LLDP disabled
-  2026-08-08 00:22:58 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-08 00:22:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-08 00:22:58 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-08 00:22:58 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  Current messages : 9
+  2026-08-12 20:25:19 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-12 20:25:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-12 20:25:19 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-12 20:25:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-12 20:25:21 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
+  2026-08-12 20:25:21 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-12 20:25:21 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-12 20:25:21 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-12 20:25:21 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2380,16 +2267,16 @@ Total steps: 304
 
 [250/304] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
-  LoopBack0                   down    down      0%    0%       0          0
-  Tunnel0/0/0                 down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
+  LoopBack0                   up    up           0%     0%          0          0
+  Tunnel0/0/0                 up    up           0%     0%          0          0
 
 [251/304] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
@@ -2402,7 +2289,7 @@ Total steps: 304
       Output: 0 packets, 0 bytes
 
 [252/304] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -2412,6 +2299,8 @@ Total steps: 304
 [253/304] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   dhcp enable
   #
@@ -2431,10 +2320,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -2447,25 +2337,26 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -2504,15 +2395,16 @@ Total steps: 304
 
 [259/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      15     15           A      -
+    130    VTY 1           -        -      15     15           A      -
+    131    VTY 2           -        -      15     15           A      -
+    132    VTY 3           -        -      15     15           A      -
+    133    VTY 4           -        -      15     15           A      -
   
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
@@ -2542,10 +2434,11 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
@@ -2558,25 +2451,26 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
-  #
   #
   bgp 65000
   isis 1
@@ -2586,6 +2480,7 @@ Total steps: 304
 
 [263/304] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   dhcp enable
   ip pool LAN
   interface GigabitEthernet0/0/0
@@ -2598,6 +2493,8 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
   rip 1
@@ -2610,20 +2507,21 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   aaa
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
   bgp 65000
   isis 1
@@ -2635,6 +2533,8 @@ Total steps: 304
 [265/304] r1 <R1> display ip interface brief | include up
   GigabitEthernet0/0/0              unassigned           up         up
   GigabitEthernet0/0/1              unassigned           up         up
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 
 --- [266] § regression: view nav + undo ---
@@ -2704,19 +2604,19 @@ Total steps: 304
 [287/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[288/304] r1 [Huawei-GE0/0/0] display this
+[288/304] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[289/304] r1 [Huawei-GE0/0/0] shutdown
+[289/304] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[290/304] r1 [Huawei-GE0/0/0] undo shutdown
+[290/304] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[291/304] r1 [Huawei-GE0/0/0] quit
+[291/304] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [292/304] r1 [Huawei] ospf 1
@@ -2745,8 +2645,13 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [299/304] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [300/304] r1 [Huawei] ip ?
     host           Configure a static host entry
@@ -2755,14 +2660,15 @@ Total steps: 304
     pool           Enter DHCP pool view
     route-static   Configure static route
     routing        Enable IP routing
-    routing-table  
+    routing-table  Routing table configuration
 
 [301/304] r1 [Huawei] undo ?
     acl            Delete Access Control List
     bfd            Disable BFD globally
     bgp            Remove BGP
     command-alias  Disable CLI alias
-    debugging      Disable debugging
+    debugging      Disable system debugging functions
+    dns            Domain Name System
     firewall       Firewall configuration
     ike            Internet Key Exchange
     ikev2          Internet Key Exchange version 2
@@ -2777,6 +2683,7 @@ Total steps: 304
     nat            Network Address Translation
     nqa            Network Quality Analysis
     nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
     route-policy   Remove a route-policy
@@ -2787,10 +2694,10 @@ Total steps: 304
     <cr>           
 
 [302/304] r1 [Huawei] acl ?
-    advanced  
-    basic     
-    ipv6      Internet Protocol version 6
-    name      Name
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
     <cr>      
 
 [303/304] r1 [Huawei] return

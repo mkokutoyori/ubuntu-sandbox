@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-08-08T00:30:37.758Z
+Generated: 2026-08-12T20:26:00.425Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -14,13 +14,13 @@ Total steps: 274
 [2/274] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[3/274] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[3/274] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[4/274] r1 [R1-GE0/0/1] undo shutdown
+[4/274] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[5/274] r1 [R1-GE0/0/1] quit
+[5/274] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [6/274] r1 [R1] return
@@ -118,52 +118,52 @@ Total steps: 274
 [36/274] r1 <R1> display acl 2000
   Basic ACL 2000, 21 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
 
 [37/274] r1 <R1> display acl all
   Basic ACL 2000, 21 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   Basic ACL 2001, 1 rule(s)
   ACL's step is 5
    rule 0 permit source 10.0.0.0 0.0.0.255
@@ -276,38 +276,38 @@ Total steps: 274
 [72/274] r1 <R1> display acl 3000
   Advanced ACL 3000, 26 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
 
 [73/274] r1 <R1> display acl name WAN-IN
   Advanced ACL WAN-IN, 2 rule(s)
   ACL's step is 5
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
 
 
 --- [74] § time-range / traffic-filter ---
@@ -332,13 +332,13 @@ Total steps: 274
 [80/274] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[81/274] r1 [R1-GE0/0/1] traffic-filter inbound acl 3000
+[81/274] r1 [R1-GigabitEthernet0/0/1] traffic-filter inbound acl 3000
 <empty>
 
-[82/274] r1 [R1-GE0/0/1] traffic-filter outbound acl 2000
+[82/274] r1 [R1-GigabitEthernet0/0/1] traffic-filter outbound acl 2000
 <empty>
 
-[83/274] r1 [R1-GE0/0/1] quit
+[83/274] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [84/274] r1 [R1] return
@@ -615,13 +615,13 @@ Total steps: 274
 [163/274] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[164/274] r1 [R1-GE0/0/1] ip urpf strict
+[164/274] r1 [R1-GigabitEthernet0/0/1] ip urpf strict
 <empty>
 
-[165/274] r1 [R1-GE0/0/1] undo ip urpf
+[165/274] r1 [R1-GigabitEthernet0/0/1] undo ip urpf
 <empty>
 
-[166/274] r1 [R1-GE0/0/1] quit
+[166/274] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [167/274] r1 [R1] return
@@ -661,6 +661,8 @@ Total steps: 274
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -675,86 +677,87 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   #
   acl number 2001
    rule 0 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
   #
   acl name WAN-IN advanced
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
   #
   acl number 3001
-   rule 0 permit
+   rule 5 permit
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    protocol inbound ssh
   #
   aaa
    local-user admin password irreversible-cipher I5lFF4A3ByJd/cl4X4fkOBNmL85LV7sTMye7zGJJUPbx31TcXXx+4w
    local-user admin privilege level 15
-   local-user admin service-type ssh
+   local-user admin service-type ssh terminal
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
    local-user oper password irreversible-cipher yLCbvhat7ClLCiOM8CtCWkChUw4N/UtzIbRlmTf94aHjIHymEN4toQ
    local-user oper privilege level 3
@@ -781,7 +784,6 @@ Total steps: 274
    hwtacacs-server authentication 10.0.0.3
    hwtacacs-server shared-key cipher TacKey123
   #
-  #
   stelnet server enable
   #
 
@@ -805,25 +807,25 @@ Total steps: 274
   GigabitEthernet0/0/3              unassigned           down       down
 
 [175/274] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -895,65 +897,65 @@ Total steps: 274
 [192/274] r1 <R1> display acl all
   Basic ACL 2000, 21 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   Basic ACL 2001, 1 rule(s)
   ACL's step is 5
    rule 0 permit source 10.0.0.0 0.0.0.255
   Advanced ACL 3000, 26 rule(s)
   ACL's step is 5
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
   Advanced ACL WAN-IN, 2 rule(s)
   ACL's step is 5
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
   Advanced ACL 3001, 1 rule(s)
   ACL's step is 5
-   rule 0 permit
+   rule 5 permit
   Total 5 ACL(s)
 
 [193/274] r1 <R1> display dhcp server statistics
@@ -970,8 +972,9 @@ Total steps: 274
   Info: No VRRP backup group is configured.
 
 [195/274] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [196/274] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -999,14 +1002,22 @@ Total steps: 274
 [203/274] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 20:26:00.553  Aug 12 2026(EE275558.8D916872)
 
 [204/274] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [205/274] r1 <R1> display clock
-  2026-08-08 00:30:37
-  Saturday
+  2026-08-12 20:26:00
+  Wednesday
   Time Zone(UTC) : UTC
 
 [206/274] r1 <R1> display lldp neighbor
@@ -1018,13 +1029,13 @@ Total steps: 274
 [208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-08 00:30:37
+  CPU Usage Stat. Time : 2026-08-12 20:26:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-08 00:30:37
+  Memory utilization statistics at 2026-08-12 20:26:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1041,8 +1052,7 @@ Total steps: 274
   -------------------------------------------------------------------------------
 
 [211/274] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1066,10 +1076,10 @@ Total steps: 274
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-08 00:30:37 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-08 00:30:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-08 00:30:37 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-08 00:30:37 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-12 20:26:00 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-12 20:26:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-12 20:26:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-12 20:26:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1117,14 +1127,14 @@ Total steps: 274
 
 [220/274] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [221/274] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
@@ -1137,7 +1147,7 @@ Total steps: 274
       Output: 0 packets, 0 bytes
 
 [222/274] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -1147,6 +1157,8 @@ Total steps: 274
 [223/274] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -1162,86 +1174,87 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   #
   acl number 2001
    rule 0 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
   #
   acl name WAN-IN advanced
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
   #
   acl number 3001
-   rule 0 permit
+   rule 5 permit
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    protocol inbound ssh
   #
   aaa
    local-user admin password irreversible-cipher I5lFF4A3ByJd/cl4X4fkOBNmL85LV7sTMye7zGJJUPbx31TcXXx+4w
    local-user admin privilege level 15
-   local-user admin service-type ssh
+   local-user admin service-type ssh terminal
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
    local-user oper password irreversible-cipher yLCbvhat7ClLCiOM8CtCWkChUw4N/UtzIbRlmTf94aHjIHymEN4toQ
    local-user oper privilege level 3
@@ -1267,7 +1280,6 @@ Total steps: 274
   hwtacacs-server template HT1
    hwtacacs-server authentication 10.0.0.3
    hwtacacs-server shared-key cipher TacKey123
-  #
   #
   stelnet server enable
   #
@@ -1303,15 +1315,16 @@ Total steps: 274
 
 [229/274] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      15     15           A      -
+    130    VTY 1           -        -      15     15           A      -
+    131    VTY 2           -        -      15     15           A      -
+    132    VTY 3           -        -      15     15           A      -
+    133    VTY 4           -        -      15     15           A      -
   
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    protocol inbound ssh
   #
 
@@ -1340,86 +1353,87 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   #
   acl number 2001
    rule 0 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
   #
   acl name WAN-IN advanced
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
   #
   acl number 3001
-   rule 0 permit
+   rule 5 permit
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    protocol inbound ssh
   #
   aaa
    local-user admin password irreversible-cipher I5lFF4A3ByJd/cl4X4fkOBNmL85LV7sTMye7zGJJUPbx31TcXXx+4w
    local-user admin privilege level 15
-   local-user admin service-type ssh
+   local-user admin service-type ssh terminal
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
    local-user oper password irreversible-cipher yLCbvhat7ClLCiOM8CtCWkChUw4N/UtzIbRlmTf94aHjIHymEN4toQ
    local-user oper privilege level 3
@@ -1446,12 +1460,12 @@ Total steps: 274
    hwtacacs-server authentication 10.0.0.3
    hwtacacs-server shared-key cipher TacKey123
   #
-  #
   stelnet server enable
   #
 
 [233/274] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -1463,79 +1477,80 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-   rule 5 permit source 192.168.2.0 0.0.0.255
-   rule 10 permit source 192.168.3.0 0.0.0.255
-   rule 15 permit source 192.168.4.0 0.0.0.255
-   rule 20 permit source 192.168.5.0 0.0.0.255
-   rule 25 permit source 192.168.6.0 0.0.0.255
-   rule 30 permit source 192.168.7.0 0.0.0.255
-   rule 35 permit source 192.168.8.0 0.0.0.255
-   rule 40 permit source 192.168.9.0 0.0.0.255
-   rule 45 permit source 192.168.10.0 0.0.0.255
-   rule 50 permit source 192.168.11.0 0.0.0.255
-   rule 55 permit source 192.168.12.0 0.0.0.255
-   rule 60 permit source 192.168.13.0 0.0.0.255
-   rule 65 permit source 192.168.14.0 0.0.0.255
-   rule 70 permit source 192.168.15.0 0.0.0.255
-   rule 75 permit source 192.168.16.0 0.0.0.255
-   rule 80 permit source 192.168.17.0 0.0.0.255
-   rule 85 permit source 192.168.18.0 0.0.0.255
-   rule 90 permit source 192.168.19.0 0.0.0.255
-   rule 95 permit source 192.168.20.0 0.0.0.255
-   rule 100 deny
+   rule 5 permit source 192.168.1.0 0.0.0.255
+   rule 10 permit source 192.168.2.0 0.0.0.255
+   rule 15 permit source 192.168.3.0 0.0.0.255
+   rule 20 permit source 192.168.4.0 0.0.0.255
+   rule 25 permit source 192.168.5.0 0.0.0.255
+   rule 30 permit source 192.168.6.0 0.0.0.255
+   rule 35 permit source 192.168.7.0 0.0.0.255
+   rule 40 permit source 192.168.8.0 0.0.0.255
+   rule 45 permit source 192.168.9.0 0.0.0.255
+   rule 50 permit source 192.168.10.0 0.0.0.255
+   rule 55 permit source 192.168.11.0 0.0.0.255
+   rule 60 permit source 192.168.12.0 0.0.0.255
+   rule 65 permit source 192.168.13.0 0.0.0.255
+   rule 70 permit source 192.168.14.0 0.0.0.255
+   rule 75 permit source 192.168.15.0 0.0.0.255
+   rule 80 permit source 192.168.16.0 0.0.0.255
+   rule 85 permit source 192.168.17.0 0.0.0.255
+   rule 90 permit source 192.168.18.0 0.0.0.255
+   rule 95 permit source 192.168.19.0 0.0.0.255
+   rule 100 permit source 192.168.20.0 0.0.0.255
+   rule 1000 deny
   acl number 2001
    rule 0 permit source 10.0.0.0 0.0.0.255
   acl number 3000
-   rule 0 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
-   rule 5 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
+   rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
+   rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
    rule 10 permit tcp source 192.168.2.0 0.0.0.255 destination-port eq 82
-   rule 15 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
-   rule 20 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
-   rule 25 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
-   rule 30 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
-   rule 35 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
-   rule 40 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
-   rule 45 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
-   rule 50 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
-   rule 55 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
-   rule 60 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
-   rule 65 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
-   rule 70 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
-   rule 75 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
-   rule 80 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
-   rule 85 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
-   rule 90 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
-   rule 95 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
-   rule 100 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
-   rule 105 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
-   rule 110 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
-   rule 115 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
-   rule 120 permit icmp
-   rule 125 deny
+   rule 11 permit udp destination 10.0.0.2 0.0.0.0 destination-port eq 53
+   rule 15 permit tcp source 192.168.3.0 0.0.0.255 destination-port eq 83
+   rule 16 permit udp destination 10.0.0.3 0.0.0.0 destination-port eq 53
+   rule 20 permit tcp source 192.168.4.0 0.0.0.255 destination-port eq 84
+   rule 21 permit udp destination 10.0.0.4 0.0.0.0 destination-port eq 53
+   rule 25 permit tcp source 192.168.5.0 0.0.0.255 destination-port eq 85
+   rule 26 permit udp destination 10.0.0.5 0.0.0.0 destination-port eq 53
+   rule 30 permit tcp source 192.168.6.0 0.0.0.255 destination-port eq 86
+   rule 31 permit udp destination 10.0.0.6 0.0.0.0 destination-port eq 53
+   rule 35 permit tcp source 192.168.7.0 0.0.0.255 destination-port eq 87
+   rule 36 permit udp destination 10.0.0.7 0.0.0.0 destination-port eq 53
+   rule 40 permit tcp source 192.168.8.0 0.0.0.255 destination-port eq 88
+   rule 41 permit udp destination 10.0.0.8 0.0.0.0 destination-port eq 53
+   rule 45 permit tcp source 192.168.9.0 0.0.0.255 destination-port eq 89
+   rule 46 permit udp destination 10.0.0.9 0.0.0.0 destination-port eq 53
+   rule 50 permit tcp source 192.168.10.0 0.0.0.255 destination-port eq 90
+   rule 51 permit udp destination 10.0.0.10 0.0.0.0 destination-port eq 53
+   rule 55 permit tcp source 192.168.11.0 0.0.0.255 destination-port eq 91
+   rule 56 permit udp destination 10.0.0.11 0.0.0.0 destination-port eq 53
+   rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
+   rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
+   rule 900 permit icmp
+   rule 1000 deny
   acl name WAN-IN advanced
-   rule 0 permit tcp destination-port eq 443
-   rule 5 deny
+   rule 5 permit tcp destination-port eq 443
+   rule 10 deny
   acl number 3001
-   rule 0 permit
+   rule 5 permit
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    protocol inbound ssh
   aaa
    local-user admin password irreversible-cipher I5lFF4A3ByJd/cl4X4fkOBNmL85LV7sTMye7zGJJUPbx31TcXXx+4w
    local-user admin privilege level 15
-   local-user admin service-type ssh
+   local-user admin service-type ssh terminal
    local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
-   local-user alice privilege level 15
+   local-user alice privilege level 1
    local-user alice service-type ssh
    local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
-   local-user bob privilege level 15
+   local-user bob privilege level 1
    local-user bob service-type ssh
    local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
-   local-user carl privilege level 15
+   local-user carl privilege level 1
    local-user carl service-type ssh
    local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
-   local-user dave privilege level 15
+   local-user dave privilege level 1
    local-user dave service-type ssh
    local-user oper password irreversible-cipher yLCbvhat7ClLCiOM8CtCWkChUw4N/UtzIbRlmTf94aHjIHymEN4toQ
    local-user oper privilege level 3
@@ -1635,19 +1650,19 @@ Total steps: 274
 [257/274] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[258/274] r1 [Huawei-GE0/0/0] display this
+[258/274] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[259/274] r1 [Huawei-GE0/0/0] shutdown
+[259/274] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[260/274] r1 [Huawei-GE0/0/0] undo shutdown
+[260/274] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[261/274] r1 [Huawei-GE0/0/0] quit
+[261/274] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [262/274] r1 [Huawei] ospf 1
@@ -1657,9 +1672,6 @@ Total steps: 274
   #
   ospf 1
    router-id 10.0.0.1
-  user-interface vty 0 4
-   authentication-mode aaa
-   protocol inbound ssh
   #
 
 [264/274] r1 [Huawei-ospf-1] quit
@@ -1680,8 +1692,13 @@ Total steps: 274
   Enter system view, return user view with return command.
 
 [269/274] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [270/274] r1 [Huawei] ip ?
     host           Configure a static host entry
@@ -1690,14 +1707,15 @@ Total steps: 274
     pool           Enter DHCP pool view
     route-static   Configure static route
     routing        Enable IP routing
-    routing-table  
+    routing-table  Routing table configuration
 
 [271/274] r1 [Huawei] undo ?
     acl            Delete Access Control List
     bfd            Disable BFD globally
     bgp            Remove BGP
     command-alias  Disable CLI alias
-    debugging      Disable debugging
+    debugging      Disable system debugging functions
+    dns            Domain Name System
     firewall       Firewall configuration
     ike            Internet Key Exchange
     ikev2          Internet Key Exchange version 2
@@ -1712,6 +1730,7 @@ Total steps: 274
     nat            Network Address Translation
     nqa            Network Quality Analysis
     nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
     route-policy   Remove a route-policy
@@ -1722,10 +1741,10 @@ Total steps: 274
     <cr>           
 
 [272/274] r1 [Huawei] acl ?
-    advanced  
-    basic     
-    ipv6      Internet Protocol version 6
-    name      Name
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
     <cr>      
 
 [273/274] r1 [Huawei] return
