@@ -122,9 +122,9 @@ async function buildXLan(): Promise<XLan> {
     for (const u of ['alice', 'bob', 'carol', 'admin']) {
       if (!um.getUser(u)) {
         um.useradd(u, { m: true, s: '/bin/bash' });
-        um.setPassword(u, 'admin');
         if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
       }
+      um.setPassword(u, 'admin');
     }
   }
 
@@ -1078,7 +1078,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp file from linux1 to linux2 lands with the same content',
       setup: async (l) => {
         await l.linux1.executeCommand('echo "hello from linux1" > /tmp/payload.txt');
-        await l.linux1.executeCommand('scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
       },
       on: l => l.linux2, cmd: 'cat /tmp/payload.txt',
       contains: [/^hello from linux1$/m],
@@ -1087,7 +1087,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp -p preserves mtime and mode',
       setup: async (l) => {
         await l.linux1.executeCommand('echo data > /tmp/keep.txt && chmod 640 /tmp/keep.txt');
-        await l.linux1.executeCommand('scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
+        await l.linux1.executeCommand('sshpass -p admin scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/keep.txt',
       contains: [/^640$/m],
@@ -2239,13 +2239,13 @@ describe('§34 — SCP error paths', () => {
   const rows: Row[] = [
     {
       name: 'missing source file fails with scp: prefix',
-      on: l => l.linux1, cmd: 'scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
       contains: [/^scp:/m],
     },
     {
       name: 'directory source without -r is refused',
       setup: async (l) => { await l.linux1.executeCommand('mkdir -p /tmp/dir1'); },
-      on: l => l.linux1, cmd: 'scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
       contains: [/not a regular file|^scp:/m],
     },
     {
@@ -2263,7 +2263,7 @@ describe('§34 — SCP error paths', () => {
       name: 'failed transfer leaves the remote VFS untouched',
       setup: async (l) => {
         await l.linux2.executeCommand('echo original > /tmp/keep');
-        await l.linux1.executeCommand('scp /tmp/missing alice@10.0.0.2:/tmp/keep');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/missing alice@10.0.0.2:/tmp/keep');
       },
       on: l => l.linux2, cmd: 'cat /tmp/keep',
       contains: [/^original$/m],
@@ -2290,7 +2290,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'scp -r flat dir between two Linux hosts',
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/box && echo A > /tmp/box/a && echo B > /tmp/box/b');
-        await l.linux1.executeCommand('scp -r /tmp/box alice@10.0.0.2:/tmp/box');
+        await l.linux1.executeCommand('sshpass -p admin scp -r /tmp/box alice@10.0.0.2:/tmp/box');
       },
       on: l => l.linux2, cmd: 'cat /tmp/box/a /tmp/box/b',
       contains: [/^A$/m, /^B$/m],
@@ -2299,7 +2299,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'scp -r nested tree preserves every file',
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/tree/inner && echo deep > /tmp/tree/inner/leaf && echo top > /tmp/tree/top');
-        await l.linux1.executeCommand('scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
+        await l.linux1.executeCommand('sshpass -p admin scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
       },
       on: l => l.linux2, cmd: 'cat /tmp/tree/top /tmp/tree/inner/leaf',
       contains: [/^top$/m, /^deep$/m],
@@ -2308,7 +2308,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'pull -r reads a tree from lxsrv1 back to linux1',
       setup: async (l) => {
         await l.lxsrv1.executeCommand('mkdir -p /tmp/pull && echo P1 > /tmp/pull/p1 && echo P2 > /tmp/pull/p2');
-        await l.linux1.executeCommand('scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
+        await l.linux1.executeCommand('sshpass -p admin scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
       },
       on: l => l.linux1, cmd: 'cat /tmp/pull/p1 /tmp/pull/p2',
       contains: [/^P1$/m, /^P2$/m],
@@ -2482,7 +2482,7 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'scp -p replicates mode 0600 on push',
       setup: async (l) => {
         await l.linux1.executeCommand('echo top > /tmp/top.secret && chmod 600 /tmp/top.secret');
-        await l.linux1.executeCommand('scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
+        await l.linux1.executeCommand('sshpass -p admin scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/top.secret',
       contains: [/^600$/m],
@@ -2491,7 +2491,7 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'scp without -p uses the default umask mode (664)',
       setup: async (l) => {
         await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
-        await l.linux1.executeCommand('scp /tmp/plain alice@10.0.0.2:/tmp/plain');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/plain alice@10.0.0.2:/tmp/plain');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',
       contains: [/^(644|664)$/m],
@@ -2500,8 +2500,8 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'repeated scp is idempotent (content stays identical)',
       setup: async (l) => {
         await l.linux1.executeCommand('echo same > /tmp/idem');
-        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
-        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/idem alice@10.0.0.2:/tmp/idem');
       },
       on: l => l.linux2, cmd: 'cat /tmp/idem',
       contains: [/^same$/m],
