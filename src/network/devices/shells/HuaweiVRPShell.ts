@@ -1305,10 +1305,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
       if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
-        const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
-        dev?._setVtyTransportInput?.(proto);
-        const r = this.selectedUiRange;
-        if (r) this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, transportInput: proto });
+        const dev = this.routerRef as unknown as {
+          _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+        };
+        dev?._setVtyTransportInput?.(proto, this.selectedUiRange ?? undefined);
       }
       return '';
     });
@@ -1317,11 +1317,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('undo', 'user-interface undo', (args) => {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
       const removed = (args[2] ?? '').toLowerCase();
-      const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.routerRef as unknown as {
+        _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+      };
       if (!dev?._setVtyTransportInput) return '';
-      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
-      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
-      else dev._setVtyTransportInput('none');
+      const plage = this.selectedUiRange ?? undefined;
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet', plage);
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh', plage);
+      else dev._setVtyTransportInput('none', plage);
       return '';
     });
   }

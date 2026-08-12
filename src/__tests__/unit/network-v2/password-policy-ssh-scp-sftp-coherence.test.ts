@@ -261,6 +261,7 @@ describe('§4 — Cisco per-account lockout is coherent across ssh and sftp', ()
     await r1.executeCommand('aaa new-model');
     await r1.executeCommand('aaa local authentication attempts max-fail 3');
     await r1.executeCommand('username admin privilege 15 secret Admin@123');
+    await r1.executeCommand('ip domain-name labo.local');
     await r1.executeCommand('crypto key generate rsa modulus 2048');
     await r1.executeCommand('line vty 0 4');
     await r1.executeCommand('login local');

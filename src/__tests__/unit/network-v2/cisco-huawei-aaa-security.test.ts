@@ -435,6 +435,7 @@ async function provisionCiscoSsh(r: CiscoRouter): Promise<void> {
   await r.executeCommand('enable');
   await r.executeCommand('configure terminal');
   await r.executeCommand('username admin privilege 15 secret Admin@123');
+  await r.executeCommand('ip domain-name labo.local');
   await r.executeCommand('crypto key generate rsa modulus 2048');
   await r.executeCommand('line vty 0 4');
   await r.executeCommand('login local');

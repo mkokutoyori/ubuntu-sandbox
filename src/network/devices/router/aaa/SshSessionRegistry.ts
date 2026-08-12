@@ -165,6 +165,15 @@ export class SshSessionRegistry {
     return this.allocateLine(kind) !== null;
   }
 
+  /**
+   * L'indice que prendrait la PROCHAINE session, ou `null` si la reserve
+   * est pleine — la ligne dont les directives (`transport input`,
+   * `access-class`, `login`) gouverneront cette session-la.
+   */
+  prochaineLigne(kind: LineKind = 'vty'): number | null {
+    return this.allocateLine(kind)?.index ?? null;
+  }
+
   setCurrentSession(id: string | null): void { this.courante = id; }
 
   currentSession(): string | null { return this.courante; }

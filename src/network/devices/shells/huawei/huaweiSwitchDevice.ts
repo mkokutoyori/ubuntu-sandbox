@@ -49,7 +49,7 @@ export interface HuaweiSwitchDevice extends Switch {
    * Le declarer optionnel dit la verite ; le cast le cachait, sous un
    * commentaire affirmant le contraire.
    */
-  _setVtyTransportInput?(t: VtyTransport): void;
+  _setVtyTransportInput?(t: VtyTransport, range?: { first: number; last: number }): void;
 }
 
 /**

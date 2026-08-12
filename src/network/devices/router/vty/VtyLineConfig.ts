@@ -24,6 +24,10 @@ export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
  */
 import { renderPasswordField } from '../../shells/cisco/ciscoPasswordRender';
 
+export function transportAdmet(reglage: VtyTransport, kind: 'ssh' | 'telnet'): boolean {
+  return reglage === 'all' || reglage === kind;
+}
+
 export class VtyLineRange {
   constructor(public readonly first: number, public readonly last: number) {
     if (last < first) throw new Error(`Invalid vty range: ${first} ${last}`);
@@ -307,6 +311,10 @@ export class VtyLineConfig {
    */
   requiresPasswordButUnset(): boolean {
     return this.login === 'password' && !this.linePassword;
+  }
+
+  admetTransport(kind: 'ssh' | 'telnet', defaut: VtyTransport = 'all'): boolean {
+    return transportAdmet(this.transportInput ?? defaut, kind);
   }
 
   /** Huawei VRP `display current-configuration` block for the user-interface. */

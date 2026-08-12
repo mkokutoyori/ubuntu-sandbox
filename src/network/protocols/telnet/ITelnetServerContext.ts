@@ -27,7 +27,7 @@ export type TelnetAuthPrompt = 'none' | 'password' | 'username-password';
 
 export interface TelnetAdmission {
   readonly accept: boolean;
-  readonly kind?: 'acl' | 'line-password' | 'no-line' | 'quiet-mode';
+  readonly kind?: 'acl' | 'line-password' | 'no-line' | 'quiet-mode' | 'transport';
   readonly reason?: string;
 }
 
