@@ -4843,6 +4843,43 @@ identique (13 problemes preexistants sur les fichiers touches).
 
 ---
 
+## Lot S11 — les privileges eprouves par une equipe entiere
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S10 pour les correctifs.
+**Sonde** : `probe-privileges-banque.test.ts` (31 cas).
+
+Le laboratoire est celui d'une banque, avec les cinq roles qu'on trouve
+vraiment dans une equipe reseau — responsable, chef d'equipe, officier
+du centre d'exploitation, stagiaire, prestataire — plus un commutateur
+d'acces. Chaque regle est mesuree DANS LES DEUX SENS : verifier qu'un
+administrateur peut tout faire ne prouve rien, ce qui se prouve c'est
+qu'un niveau inferieur est arrete, et a l'endroit exact ou IOS l'arrete.
+
+**Un defaut trouve, et c'est le meme motif que d'habitude** :
+`beginExecSession` ne vivait que sur `CiscoIOSShell`, donc sur le routeur
+seul. `Switch.loginAs` authentifiait correctement, lisait le bon niveau
+dans le magasin, appelait `beginExecSession?.()` — et l'appel optionnel
+ne trouvait rien. Un responsable declare au niveau 15 ouvrait au niveau 1
+sur un commutateur : toute la delegation par compte etait decorative sur
+cette plateforme. La methode est descendue dans `CiscoShellBase`, ou
+vivent deja les cinq champs qu'elle pose ; la copie du routeur est
+supprimee.
+
+**Deux attentes de ma sonde corrigees**, le produit ayant raison : en
+EXEC utilisateur, `username …` et `vlan 666` ne sont pas refuses au caret
+mais traites comme des NOMS D'HOTE a resoudre — c'est le comportement
+historique d'IOS. La propriete de securite est verifiee a cote : rien
+n'est cree.
+
+**Mesures.** 31 cas, **27 tombent** avant correctifs. Les quatre restants
+sont nommes dans l'en-tete du fichier, et deux d'entre eux passaient
+avant PARCE QUE la faille existait — `executeCommand('enable', {
+passwordInput })` accordait le niveau 15 sans lire le mot de passe, donc
+la configuration etait lisible et ses condenses verifiables. 78 suites
+connexes vertes (1145 cas). Lint identique.
+
+---
+
 ## Lot S9 — acces concurrents a la console, et niveau des comptes livres
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».

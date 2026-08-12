@@ -2446,6 +2446,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * commandes du precedent, y compris ce qu'il avait tape avant de se
    * faire refuser un mot de passe.
    */
+  /**
+   * Ouvrir une session EXEC au nom d'un compte, a SON niveau.
+   *
+   * Elle ne vivait que sur `CiscoIOSShell`, donc sur le routeur seul :
+   * `Switch.loginAs` authentifiait correctement, lisait le bon niveau
+   * dans le magasin, appelait `beginExecSession?.()` — et l'appel
+   * optionnel ne trouvait rien. Un responsable declare au niveau 15
+   * ouvrait donc au niveau 1 sur un commutateur, ce qui rendait TOUTE la
+   * delegation par compte decorative sur cette plateforme. Le niveau 15
+   * est deja en EXEC privilegie sur un vrai IOS ; en dessous on ouvre en
+   * EXEC utilisateur, et le niveau voyage avec le mode — poser l'un sans
+   * l'autre faisait se contredire `show privilege` et l'invite de la
+   * meme session.
+   */
+  beginExecSession(level: number, user?: string): void {
+    this.currentPrivilegeLevel = level;
+    this.mode = level >= 15 ? 'privileged' : 'user';
+    this.fsm.mode = this.mode;
+    if (user) this.configSessionLabel = user;
+    this.cmdHistory = [];
+    this.terminalHistorySize = this.tailleHistoriqueDeLigne();
+    this.terminalHistoryEnabled = this.terminalHistorySize > 0;
+  }
+
   protected fermerSessionExec(): string {
     this.terminalMonitor = false;
     this.currentPrivilegeLevel = 1;
