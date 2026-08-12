@@ -160,22 +160,22 @@ export class TerminalManager {
    * Open a new terminal for a device.  Returns the session ID.
    * Starts the session's init() (boot sequence, etc.) asynchronously.
    */
-  openTerminal(device: Equipment, ligne: LigneTerminal = 'console'): string | null {
+  openTerminal(device: Equipment, ligne?: LigneTerminal): string | null {
     if (!device.getIsPoweredOn()) return null;
 
     const deviceId = device.getId();
 
+    const consoleOccupee = this.consoleDejaOuverte(device);
     if (ligne === 'console') {
-      const dejaLa = this.consoleDejaOuverte(device);
-      if (dejaLa) {
-        this.notify();
-        return dejaLa;
-      }
+      if (consoleOccupee) { this.notify(); return consoleOccupee; }
     }
+    const effective: LigneTerminal =
+      ligne ?? (consoleOccupee ? 'vty' : 'console');
 
     const sessionId = `session-${nextSessionId++}`;
     const session = createSessionForDevice(device, sessionId);
     if (!session) return null;
+    if (effective === 'vty') session.attachToVtyLine();
 
     this.sessions.set(sessionId, session);
     const deviceSessions = this.deviceSessions.get(deviceId) || [];
@@ -198,17 +198,26 @@ export class TerminalManager {
 
   /**
    * Ouvrir un terminal sur un equipement, c'est brancher un cable sur son
-   * port CONSOLE. Un chassis n'en a qu'un : deux onglets sur le meme
-   * routeur ne peuvent pas etre deux sessions independantes, avec chacune
-   * son mode, son niveau de privilege et son historique — la machine n'a
-   * qu'une ligne `con 0`, et `SshSessionRegistry` refuse d'ailleurs deja
-   * une seconde session console.
+   * port CONSOLE. Un chassis n'en a qu'un, et c'est vrai : la seconde
+   * fenetre ne peut pas etre une seconde console.
    *
-   * Le second appel rend donc la session DEJA OUVERTE plutot que d'en
-   * fabriquer une seconde : l'interface ramene l'operateur devant la
-   * console qui existe. Un hote (Linux, Windows) garde ses terminaux
-   * multiples — un PC a plusieurs consoles virtuelles, et ce depot leur
-   * donne deja chacune son `cwd`, son environnement et son pts.
+   * Elle n'est pas pour autant la MEME session. Sur une vraie machine,
+   * le deuxieme operateur n'arrache pas le cable du premier : il entre
+   * par une ligne VIRTUELLE, une vty, qui a son propre mode, son propre
+   * niveau de privilege et son propre historique. Rendre la session deja
+   * ouverte supprimait cette possibilite de l'application — deux
+   * fenetres sur un routeur devenaient un seul terminal, et l'isolation
+   * par vty, qui existe et fonctionne, n'etait plus atteignable.
+   *
+   * Demander explicitement `console` rend donc la session deja ouverte —
+   * un chassis n'a qu'un port, et c'est la reponse juste a cette
+   * question-la. Ne rien demander, ce que fait l'interface, veut dire
+   * « ouvre-moi une ligne » : la console si elle est libre, une vty
+   * sinon.
+   *
+   * Un hote (Linux, Windows) n'a pas ce partage : un PC a plusieurs
+   * consoles virtuelles, chacune avec son `cwd`, son environnement et
+   * son pts.
    */
   private consoleDejaOuverte(device: Equipment): string | null {
     if (!consolePortUnique(device)) return null;

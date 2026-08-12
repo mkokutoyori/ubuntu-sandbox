@@ -46,8 +46,8 @@ describe('un equipement reseau n\'a qu\'un port console', () => {
   it.each(CLI)('%s : le second terminal REND le premier', (_nom, faire) => {
     const d = faire();
     const tm = getTerminalManager();
-    const a = tm.openTerminal(d);
-    const b = tm.openTerminal(d);
+    const a = tm.openTerminal(d, 'console');
+    const b = tm.openTerminal(d, 'console');
     expect(a).toBeTruthy();
     expect(b, 'une seule console, donc une seule session').toBe(a);
     expect(tm.getSessionsForDevice(d.getId())).toHaveLength(1);
@@ -56,9 +56,9 @@ describe('un equipement reseau n\'a qu\'un port console', () => {
   it.each(CLI)('%s : fermer le terminal libere la console', (_nom, faire) => {
     const d = faire();
     const tm = getTerminalManager();
-    const a = tm.openTerminal(d)!;
+    const a = tm.openTerminal(d, 'console')!;
     tm.closeTerminal(a);
-    const b = tm.openTerminal(d);
+    const b = tm.openTerminal(d, 'console');
     expect(b, 'la console est libre a nouveau').toBeTruthy();
     expect(b).not.toBe(a);
   });
@@ -77,8 +77,8 @@ describe('un equipement reseau n\'a qu\'un port console', () => {
   it.each(CLI)('%s : la session rendue est bien vivante', (_nom, faire) => {
     const d = faire();
     const tm = getTerminalManager();
-    const a = tm.openTerminal(d)!;
-    const b = tm.openTerminal(d)!;
+    const a = tm.openTerminal(d, 'console')!;
+    const b = tm.openTerminal(d, 'console')!;
     expect(tm.getSession(b), 'ce n\'est pas un identifiant fantome').toBeTruthy();
     expect(tm.getSession(b)).toBe(tm.getSession(a));
   });
@@ -155,4 +155,22 @@ describe('une seconde fenetre est une VTY, pas une seconde console', () => {
     const b = tm.openTerminal(d, 'vty');
     expect(a).not.toBe(b);
   });
+
+  /**
+   * Ne rien demander, c'est ce que fait l'interface quand on ouvre un
+   * terminal : la reponse juste n'est pas « la console ou rien » mais
+   * « une ligne ». Le second operateur d'un vrai routeur n'arrache pas
+   * le cable du premier, il entre par une vty.
+   */
+  it.each(CLI)('%s : sans ligne demandee, la seconde fenetre prend une vty',
+    (_nom, faire) => {
+      const d = faire();
+      const tm = getTerminalManager();
+      const a = tm.openTerminal(d);
+      const b = tm.openTerminal(d);
+      expect(b, 'la seconde fenetre a rendu la premiere').not.toBe(a);
+      expect(tm.getSessionsForDevice(d.getId())).toHaveLength(2);
+      // Et la console reste unique : c'est une vty qui s'est ouverte.
+      expect(tm.openTerminal(d, 'console'), 'la console a ete dupliquee').toBe(a);
+    });
 });

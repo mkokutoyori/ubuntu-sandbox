@@ -473,6 +473,10 @@ export class CiscoTerminalSession extends CLITerminalSession {
   // console" flag rather than relying on parent-attachment timing.
   private isVtyRemoteSession = false;
 
+  override attachToVtyLine(): void {
+    this.isVtyRemoteSession = true;
+  }
+
   protected override prepareAsRemoteUser(user: string): void {
     this.isVtyRemoteSession = true;
     this.authenticatedUsername = user || null;

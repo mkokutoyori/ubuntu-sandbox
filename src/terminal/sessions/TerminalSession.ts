@@ -531,6 +531,8 @@ export abstract class TerminalSession {
 
   get isRemoteChild(): boolean { return this._parent !== null; }
 
+  attachToVtyLine(): void { /* vendor hook */ }
+
   protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
 
   protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
