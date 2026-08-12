@@ -25,7 +25,6 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  runSshExec,
   wireProbeFor,
   SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
@@ -188,12 +187,15 @@ export class WindowsPowerShellShell extends AbstractShell {
       if (finalised.kind === 'refused') {
         return { output: finalised.message.split('\n') };
       }
-      if (finalised.kind === 'success') {
-        if (execCmd !== null) {
-          const lines = await runSshExec(auth, execCmd);
-          finalised.shell.dispose();
-          return { output: [...finalised.banner, ...lines] };
-        }
+      if (finalised.kind === 'exec') {
+        return { output: [...finalised.banner, ...finalised.lines] };
+      }
+      if (finalised.kind === 'exec') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: [...finalised.banner, ...finalised.lines] };
+    }
+    if (finalised.kind === 'success') {
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
       if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
@@ -216,11 +218,7 @@ export class WindowsPowerShellShell extends AbstractShell {
       const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
-      if (execCmd !== null) {
-        const lines = await runSshExec(auth, execCmd);
-        finalised.shell.dispose();
-        return { output: [...finalised.banner, ...lines] };
-      }
+
       return { output: [...finalised.banner], childShell: finalised.shell };
     }
     if (auth.attempts >= SSH_PASSWORD_PROMPTS) {

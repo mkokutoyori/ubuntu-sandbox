@@ -18,7 +18,6 @@ import { parseReadInvocation, performInteractiveRead } from '../input';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  runSshExec,
   wireProbeFor,
   SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
@@ -273,12 +272,15 @@ export class LinuxBashShell extends AbstractShell {
       if (finalised.kind === 'refused') {
         return { output: finalised.message.split('\n') };
       }
-      if (finalised.kind === 'success') {
-        if (execCmd !== null) {
-          const lines = await runSshExec(auth, execCmd);
-          finalised.shell.dispose();
-          return { output: [...finalised.banner, ...lines] };
-        }
+      if (finalised.kind === 'exec') {
+        return { output: [...finalised.banner, ...finalised.lines] };
+      }
+      if (finalised.kind === 'exec') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: [...finalised.banner, ...finalised.lines] };
+    }
+    if (finalised.kind === 'success') {
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
       if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
@@ -325,13 +327,7 @@ export class LinuxBashShell extends AbstractShell {
       const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
-      // Exec mode: run the one-shot command then dispose the freshly
-      // built shell — we never push it onto the stack.
-      if (execCmd !== null) {
-        const lines = await runSshExec(auth, execCmd);
-        finalised.shell.dispose();
-        return { output: [...finalised.banner, ...lines] };
-      }
+
       // Interactive login: hand the shell back as a child plus the
       // OpenSSH banner the host terminal will write before activating.
       return {

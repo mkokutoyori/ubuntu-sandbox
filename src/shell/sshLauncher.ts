@@ -19,7 +19,7 @@ import { isCredentialAuthenticator } from '@/network/equipment/HostCapabilities'
 import { findEquipmentByIp, findEquipmentByHostname } from './hostResolution';
 import { primaryShellKindFor } from './shellKind';
 import { WireRemoteShell } from './WireRemoteShell';
-import { openWireSshShell, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { openWireSshShell, openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
 import { SshInteractiveSubShell, findLinuxMachineByIp } from '@/terminal/subshells/SshInteractiveSubShell';
 import type { IShell, ShellLineResult } from './IShell';
 import { SshKnownHostsFile, type SshHostKeyType } from '@/network/protocols/ssh/SshKnownHostsFile';
@@ -128,6 +128,9 @@ export interface PendingSshAuth {
   /** Carried across the password round-trip so the established session
    *  can keep probing the very same wire it was opened on. */
   wireProbe?: SshLaunchOptions['wireProbe'];
+  /** Set for `ssh user@host cmd` — the command runs on the remote over
+   *  its own exec channel instead of an interactive shell. */
+  execCommand?: string;
 }
 
 export type SshLaunchInterpretation =
@@ -269,6 +272,7 @@ export async function tryInterpretSshLaunch(
         sourceUser: opts.defaultUser,
         sourceDevice: opts.sourceDevice,
         wireProbe: opts.wireProbe,
+        execCommand: parsed.command,
       },
     };
   }
@@ -308,6 +312,9 @@ export interface FinalisedAuth {
 
 export type FinaliseAuthOutcome =
   | ({ kind: 'success' } & FinalisedAuth)
+  /** `ssh user@host cmd` — the command already ran on the remote, over a
+   *  real exec channel. `lines` is what it wrote. */
+  | { kind: 'exec'; banner: string[]; lines: string[]; exitCode: number }
   | { kind: 'bad-password' }
   /** Password was right but the server refuses the session outright (host-key mismatch, ForceCommand=internal-sftp) — the caller must NOT re-prompt for a password. */
   | { kind: 'refused'; message: string };
@@ -450,6 +457,10 @@ export async function finalisePendingAuth(
     };
   }
 
+  if (auth.execCommand !== undefined) {
+    return runExecOverTheWire(auth, banner, password);
+  }
+
   // The credentials were accepted, so open the connection they belong to
   // and drive the remote over it. Its prompt, completion, sub-shells,
   // editors and challenges are answered by the server on this channel
@@ -507,6 +518,43 @@ export async function finalisePendingAuth(
     onClose: () => { if (session) registry?.close(session.id, 'logout'); },
   });
   return { kind: 'success', shell, banner };
+}
+
+async function runExecOverTheWire(
+  auth: PendingSshAuth,
+  banner: string[],
+  password: string,
+): Promise<FinaliseAuthOutcome> {
+  const outcome = await openWireSshConnection({
+    device: auth.sourceDevice!,
+    localUser: auth.sourceUser ?? auth.user,
+    user: auth.user,
+    host: auth.host,
+    port: auth.port,
+    io: silentConnectIo(),
+    password,
+    strict: 'no',
+  });
+  if (outcome.kind !== 'connected') {
+    if (outcome.kind === 'host-key-changed') return { kind: 'refused', message: HOST_KEY_CHANGED_MESSAGE };
+    if (outcome.kind === 'auth-failed') return { kind: 'bad-password' };
+    if (outcome.kind === 'cancelled') return { kind: 'refused', message: '' };
+    return { kind: 'refused', message: outcome.message };
+  }
+
+  const channel = outcome.session.openExecChannel(auth.execCommand ?? '');
+  if (!channel.ok) {
+    outcome.session.disconnect();
+    return { kind: 'refused', message: 'ssh: failed to open exec channel' };
+  }
+  try {
+    const result = await channel.value.execute();
+    const text = [result.stdout, result.stderr].filter((part) => part.length > 0).join('');
+    const lines = text.length === 0 ? [] : text.replace(/\n+$/, '').split('\n');
+    return { kind: 'exec', banner, lines, exitCode: result.exitCode };
+  } finally {
+    outcome.session.disconnect();
+  }
 }
 
 function firstConfiguredIp(dev: Equipment): string | undefined {
@@ -608,20 +656,6 @@ function verifyCredentials(
   return true;
 }
 
-/** Run `ssh user@host cmd args` exec mode after a successful auth. */
-export async function runSshExec(
-  auth: PendingSshAuth,
-  command: string,
-): Promise<string[]> {
-  const dev = auth.target as unknown as { executeCommand: (c: string) => Promise<string> };
-  try {
-    const out = await dev.executeCommand(command);
-    if (!out) return [];
-    return out.replace(/\n+$/, '').split('\n');
-  } catch (err) {
-    return [`ssh: exec failed: ${err instanceof Error ? err.message : String(err)}`];
-  }
-}
 
 // ─── Equipment lookup helpers (shared with the Oracle Net client) ────
 
