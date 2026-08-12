@@ -4919,6 +4919,35 @@ designes d'un coup a la premiere execution). 317 suites connexes vertes,
 
 ---
 
+## Lot S13 — l'autorisation eprouvee : evasion, escalade, concurrence
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S13. **Sonde** :
+`probe-privileges-evasion.test.ts` (21 cas), ecrite a l'aveugle contre le
+comportement d'un vrai IOS.
+
+**Ce qui tient, et c'etait le point a verifier** : la regle porte sur la
+commande RESOLUE et non sur le texte tape, donc `sh run`, `sho runn`, les
+majuscules, les espaces surnumeraires, `do <cmd>` et un ALIAS pose par un
+administrateur ne contournent rien. La concurrence tient aussi : deux vty
+a des niveaux differents ne se contaminent pas, et une regle posee par
+l'un vaut immediatement pour l'autre.
+
+**Deux trous fermes** : `enable <N>` etait accorde SANS RIEN DEMANDER des
+qu'aucun `enable secret level N` n'existait, meme sur une machine fermee
+par `enable secret` — n'importe quel niveau 1 montait au niveau 7 et
+recevait tout ce qu'on y avait delegue ; un palier sans coffre retombe
+desormais sur celui du 15. Et `loginAs` rendait `true` pour un compte
+SUPPRIME ou VERROUILLE, parce qu'il deleguait a `authenticateLine`, qui
+repond pour la LIGNE — une console sans `login` n'exige rien.
+
+**Ce qui vous concerne** : `Router.loginAs` verifie desormais le COMPTE
+avant la ligne, et compte l'echec (donc il alimente le verrouillage).
+
+**Mesures.** 3 des 21 cas tombent avant correctifs. 318 suites connexes
+vertes, 4628 cas. Typecheck exactement a la base (279), lint identique.
+
+---
+
 ## Lot S9 — acces concurrents a la console, et niveau des comptes livres
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».

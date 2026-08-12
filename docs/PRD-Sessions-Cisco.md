@@ -904,3 +904,59 @@ sonde mesure les deux.
 `probe-privileges-banque.test.ts` (31 cas) verts. 317 suites connexes
 vertes, 4607 cas. Typecheck **exactement à la base** (279), lint
 identique.
+
+---
+
+## Lot S13 — l'autorisation mise à l'épreuve : évasion, escalade, concurrence
+
+**Sonde** : `probe-privileges-evasion.test.ts` (21 cas), écrite **à
+l'aveugle**. Elle n'essaie pas d'utiliser la délégation correctement —
+c'est mesuré ailleurs — elle essaie de la **contourner**.
+
+### Ce qui tient déjà, et c'était le plus important à vérifier
+
+La règle porte sur la commande **résolue**, pas sur le texte tapé. Une
+autorisation qui filtrerait la chaîne littérale se contourne en trois
+secondes ; celle-ci résiste à `sh run`, `sho runn`, `sh ru`,
+`SHOW RUNNING-CONFIG`, aux espaces surnuméraires, à `do <cmd>` depuis la
+configuration, et à un **alias** posé par un administrateur puis appelé
+par un niveau 7. Tout est refusé, et une abréviation d'une commande
+*accordée* fonctionne — donc ce n'est pas un refus aveugle.
+
+La **concurrence** tient aussi : deux vty à des niveaux différents ne se
+contaminent pas, le sous-mode de l'une ne déplace pas l'autre, et une
+règle ou une vue posée par l'un vaut immédiatement pour l'autre — elle
+appartient à l'équipement, pas à la session.
+
+### Deux trous de sécurité fermés
+
+1. **`enable <N>` était accordé SANS RIEN DEMANDER** dès qu'aucun
+   `enable secret level N` n'existait — sur une machine pourtant fermée
+   par `enable secret`. N'importe quel visiteur de niveau 1 montait donc
+   au niveau 7 et recevait tout ce qu'on y avait délégué : la commande
+   `privilege exec level N` ne protégeait plus rien. Un palier sans
+   coffre à lui **retombe désormais sur celui du niveau 15**, ce qui est
+   la règle d'IOS — sa documentation l'écrit dans l'autre sens : « if
+   users know the password to a higher privilege level, they can use
+   that password to enable the higher privilege level ».
+2. **`loginAs` acceptait n'importe qui.** Il déléguait à
+   `authenticateLine`, qui répond pour la LIGNE : une console sans
+   `login` n'exige rien, donc elle accordait — et `loginAs` rendait
+   `true` pour un compte **supprimé**, **verrouillé**, ou qui n'a jamais
+   existé. Ouvrir une ligne et *devenir quelqu'un* sont deux questions
+   distinctes ; cette méthode pose la seconde et vérifie maintenant le
+   compte lui-même. L'échec est aussi **compté**, donc il alimente le
+   verrouillage.
+
+### Trois prémisses de la sonde corrigées, le produit ayant raison
+
+`description` n'existe pas en EXEC — IOS la prend pour un nom d'hôte ;
+`show clock` et `show ip interface brief` sont des commandes de **niveau
+1** sur un vrai IOS, donc de mauvais cobayes pour mesurer une délégation
+ou sa révocation. La révocation est désormais mesurée sur
+`show running-config`, née au niveau 15, descendue puis reprise —
+et elle disparaît de la session ouverte **immédiatement**.
+
+**Mesures.** 21 cas, **3 tombent** avant correctifs (les deux trous
+ci-dessus). 318 suites connexes vertes, 4628 cas. Typecheck **exactement
+à la base** (279), lint identique.

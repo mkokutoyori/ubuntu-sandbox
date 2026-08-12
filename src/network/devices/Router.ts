@@ -3091,6 +3091,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    */
   async loginAs(username: string, password: string): Promise<boolean> {
     if (!this.isPoweredOn) return false;
+    // `authenticateLine` repond pour la LIGNE : une console sans `login`
+    // n'exige rien, donc elle accordait — et `loginAs` rendait `true`
+    // pour un compte SUPPRIME, VERROUILLE, ou qui n'a jamais existe.
+    // Ce n'est pas la meme question : ouvrir une ligne et DEVENIR
+    // quelqu'un sont deux choses, et cette methode demande la seconde.
+    const identifie = this.getCredentialStore().authenticate(username, password)
+      || await this.authenticateViaAaa(username, password);
+    if (!identifie) {
+      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', Date.now());
+      return false;
+    }
     const verdict = await this.authenticateLine('console', { user: username, pass: password });
     if (!verdict) return false;
     const compte = this.getCredentialStore().lookup(username);

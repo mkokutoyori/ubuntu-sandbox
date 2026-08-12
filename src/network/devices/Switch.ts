@@ -3190,7 +3190,10 @@ export abstract class Switch extends Equipment {
 
   async loginAs(username: string, password: string): Promise<boolean> {
     if (!this.isPoweredOn) return false;
-    if (!this.getCredentialStore().authenticate(username, password)) return false;
+    if (!this.getCredentialStore().authenticate(username, password)) {
+      this.getCredentialStore().recordLoginFailure(username, '', 'bad password', Date.now());
+      return false;
+    }
     const compte = this.getCredentialStore().lookup(username);
     const niveau = compte?.privilege ?? 1;
     const shell = this.shell as unknown as {

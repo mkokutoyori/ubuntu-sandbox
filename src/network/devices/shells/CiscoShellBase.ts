@@ -856,9 +856,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getEnableSecretForLevel?: (l: number) => { value: string; algo: string } | null;
       getEnablePasswordForLevel?: (l: number) => { value: string; algo: string } | null;
     } | undefined;
-    const secret = dev?.getEnableSecretForLevel?.(lvl) ?? null;
-    const password = secret ? null : (dev?.getEnablePasswordForLevel?.(lvl) ?? null);
-    const gate = secret ?? password;
+    const porteDe = (n: number) => {
+      const s = dev?.getEnableSecretForLevel?.(n) ?? null;
+      return s ?? dev?.getEnablePasswordForLevel?.(n) ?? null;
+    };
+    // Un palier SANS coffre a lui retombe sur celui du niveau 15.
+    //
+    // Sans ce repli, `enable 7` etait accorde SANS RIEN DEMANDER des lors
+    // qu'aucun `enable secret level 7` n'existait — sur une machine
+    // pourtant fermee par `enable secret`. N'importe quel visiteur de
+    // niveau 1 montait donc au niveau 7 et recevait tout ce que
+    // l'operateur y avait delegue : la commande `privilege exec level N`
+    // ne protegeait plus rien. La regle d'IOS est l'inverse, et sa
+    // documentation l'ecrit dans l'autre sens : « if users know the
+    // password to a higher privilege level, they can use that password
+    // to enable the higher privilege level ».
+    const gate = porteDe(lvl) ?? (lvl < 15 ? porteDe(15) : null);
     /**
      * Le mot de passe tape correspond-il a la porte ?
      *
