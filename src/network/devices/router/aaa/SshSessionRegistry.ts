@@ -18,6 +18,20 @@ const LIGNE_DE: Record<SessionTransport, LineKind> = {
 
 const LIGNES_PHYSIQUES: Record<LineKind, number | null> = { con: 1, aux: 1, vty: null };
 
+export function absoluteLineNumber(kind: LineKind, index: number): number {
+  if (kind === 'con') return index;
+  if (kind === 'aux') return 1 + index;
+  return 2 + index;
+}
+
+export const VRP_VTY_FIRST_INDEX = 129;
+
+export function vrpUserInterfaceIndex(kind: LineKind, index: number): number {
+  if (kind === 'con') return index;
+  if (kind === 'aux') return 1 + index;
+  return VRP_VTY_FIRST_INDEX + index;
+}
+
 const PORT_DE: Record<SessionTransport, number> = { console: 0, aux: 0, ssh: 22, telnet: 23 };
 
 function transportDepuisSource(from: string, localPort?: number): SessionTransport {
@@ -276,6 +290,11 @@ export class SshSessionRegistry {
     this.closed.push(s);
     while (this.closed.length > this.historyLimit) this.closed.shift();
     const snap = this.snapshot(s, at);
+    const watcher = this.closeWatchers.get(id);
+    if (watcher) {
+      this.closeWatchers.delete(id);
+      watcher(reason);
+    }
     this.bus.publish({
       topic: 'router.ssh.session.closed',
       payload: { deviceId: this.deviceId, session: snap, reason },
@@ -307,6 +326,13 @@ export class SshSessionRegistry {
   };
 
   private onSessionClosed = () => { /* placeholder for external close hook */ };
+
+  private readonly closeWatchers: Map<string, (reason: string) => void> = new Map();
+
+  subscribeClose(id: string, cb: (reason: string) => void): () => void {
+    this.closeWatchers.set(id, cb);
+    return () => { this.closeWatchers.delete(id); };
+  }
 
   private readonly canaux: Map<number, Set<(texte: string) => void>> = new Map();
 
@@ -343,15 +369,19 @@ export class SshSessionRegistry {
   }
 
   private rangAbsolu(s: SshSessionRecord): number {
-    if (s.lineKind === 'con') return s.lineIndex;
-    if (s.lineKind === 'aux') return 1 + s.lineIndex;
-    return 1 + s.lineIndex;
+    return absoluteLineNumber(s.lineKind, s.lineIndex);
+  }
+
+  sessionOnAbsoluteLine(absolute: number): SshSessionRecord | null {
+    const now = this.now();
+    for (const s of this.active.values()) {
+      if (absoluteLineNumber(s.lineKind, s.lineIndex) === absolute) return this.snapshot(s, now);
+    }
+    return null;
   }
 
   formatShowUsers(now: number = this.now()): string {
-    if (this.active.size === 0) {
-      return `${SHOW_USERS_HEADER}\n*  0 con 0                idle                 00:00:00`;
-    }
+    if (this.active.size === 0) return SHOW_USERS_HEADER;
     const lignes = renderTable(
       this.list(now).map((s) => ({
         marker: s.id === this.courante ? '*' : ' ',
@@ -368,9 +398,7 @@ export class SshSessionRegistry {
   }
 
   private interfaceUtilisateur(s: SshSessionRecord): number {
-    if (s.lineKind === 'con') return s.lineIndex;
-    if (s.lineKind === 'aux') return 1 + s.lineIndex;
-    return 129 + s.lineIndex;
+    return vrpUserInterfaceIndex(s.lineKind, s.lineIndex);
   }
 
   private static readonly TYPE_VRP: Record<SessionTransport, string> = {
@@ -379,13 +407,7 @@ export class SshSessionRegistry {
 
   formatDisplayUsers(now: number = this.now()): string {
     const sessions = this.list(now);
-    if (sessions.length === 0) {
-      return rendreDisplayUsers([{
-        courante: true, interfaceUtilisateur: '0', nomLigne: 'CON 0',
-        delai: '00:00:00', type: '', adresse: '',
-        authentification: 'pass', autorisation: 'no',
-      }], ['']);
-    }
+    if (sessions.length === 0) return rendreDisplayUsers([], []);
     return rendreDisplayUsers(
       sessions.map((s) => ({
         courante: s.id === this.courante,

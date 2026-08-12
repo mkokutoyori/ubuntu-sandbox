@@ -158,19 +158,19 @@ describe('une seconde fenetre est une VTY, pas une seconde console', () => {
 
   /**
    * Ne rien demander, c'est ce que fait l'interface quand on ouvre un
-   * terminal : la reponse juste n'est pas « la console ou rien » mais
-   * « une ligne ». Le second operateur d'un vrai routeur n'arrache pas
-   * le cable du premier, il entre par une vty.
+   * terminal : elle branche un cable console. Ouvrir une vty est une
+   * connexion RESEAU — SSH ou telnet, depuis une autre machine, avec une
+   * adresse et une authentification — et l'interface graphique n'en
+   * fabrique pas une au motif qu'une fenetre existe deja
+   * (docs/PRD-Lignes-Terminal.md §2).
    */
-  it.each(CLI)('%s : sans ligne demandee, la seconde fenetre prend une vty',
+  it.each(CLI)('%s : sans ligne demandee, on branche la console',
     (_nom, faire) => {
       const d = faire();
       const tm = getTerminalManager();
       const a = tm.openTerminal(d);
       const b = tm.openTerminal(d);
-      expect(b, 'la seconde fenetre a rendu la premiere').not.toBe(a);
-      expect(tm.getSessionsForDevice(d.getId())).toHaveLength(2);
-      // Et la console reste unique : c'est une vty qui s'est ouverte.
-      expect(tm.openTerminal(d, 'console'), 'la console a ete dupliquee').toBe(a);
+      expect(b, 'un chassis n\'a qu\'un port console').toBe(a);
+      expect(tm.getSessionsForDevice(d.getId())).toHaveLength(1);
     });
 });

@@ -657,10 +657,6 @@ export class CiscoRouter extends Router {
       // et c'est le MEME rendu qui est lu, pas une seconde copie.
       this._getCiscoFileSystem('router-isr2911').renderConfigRegisterLine(),
       '',
-      '         --- System Configuration Dialog ---',
-      '',
-      'Would you like to enter the initial configuration dialog? [yes/no]: no',
-      '',
       'Press RETURN to get started.',
     ].join('\n');
   }

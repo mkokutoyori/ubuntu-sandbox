@@ -24,6 +24,8 @@ import type { VrrpAgent } from '../vrrp/VrrpAgent';
 import type { HuaweiRoutingExtras } from '../devices/router/routing/HuaweiRoutingExtras';
 import type { SwitchSecurityService } from '../devices/switch/SwitchSecurityService';
 import type { NetworkOsCredentialStore } from '../devices/router/aaa/NetworkOsCredentialStore';
+import type { SshSessionRegistry } from '../devices/router/aaa/SshSessionRegistry';
+import type { VtyLineConfigStore } from '../devices/router/vty/VtyLineConfigStore';
 
 export interface ManagementServiceHost { getManagementService(): RouterManagementService; }
 export interface CiscoHttpServiceHost { getHttpService(): CiscoHttpService; }
@@ -36,13 +38,16 @@ export interface VrrpAgentHost { getVrrpAgent(): VrrpAgent; }
 export interface HuaweiRoutingExtrasHost { getHuaweiRoutingExtras(): HuaweiRoutingExtras; }
 export interface SwitchSecurityServiceHost { getSecurityService(): SwitchSecurityService; }
 export interface CredentialStoreHost { getCredentialStore(): NetworkOsCredentialStore; }
+export interface SessionRegistryHost { getSshSessionRegistry(): SshSessionRegistry; }
+export interface VtyLineConfigHost { _getVtyLineConfig(): VtyLineConfigStore; }
 
 /** An `Equipment` that MAY expose any of the optional services above. */
 export type ServiceCapableDevice = Equipment & Partial<
   ManagementServiceHost & CiscoHttpServiceHost &
   SnmpServiceHost & SnmpAgentHost & NtpAgentHost &
   HsrpAgentHost & GlbpAgentHost & VrrpAgentHost &
-  HuaweiRoutingExtrasHost & SwitchSecurityServiceHost & CredentialStoreHost
+  HuaweiRoutingExtrasHost & SwitchSecurityServiceHost & CredentialStoreHost &
+  SessionRegistryHost & VtyLineConfigHost
 >;
 
 /** The one boundary in this file where the structural cast actually happens. */
@@ -73,3 +78,7 @@ export const getSwitchSecurityService = (dev: unknown): SwitchSecurityService | 
   call(dev, 'getSecurityService');
 export const getCredentialStore = (dev: unknown): NetworkOsCredentialStore | undefined =>
   call(dev, 'getCredentialStore');
+export const getSessionRegistry = (dev: unknown): SshSessionRegistry | undefined =>
+  call(dev, 'getSshSessionRegistry');
+export const getVtyLineConfig = (dev: unknown): VtyLineConfigStore | undefined =>
+  call(dev, '_getVtyLineConfig');

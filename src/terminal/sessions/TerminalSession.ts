@@ -1548,6 +1548,8 @@ export abstract class TerminalSession {
    */
   protected restartAuthGate(): void { /* pas de porte par defaut */ }
 
+  protected lastFlowWasAuthGate = false;
+
   /** Vrai quand la session est derriere une porte d'authentification. */
   protected isAuthGateActive(): boolean {
     return this.flowIsAuthGate && this.flowEngine !== null;
@@ -1622,7 +1624,9 @@ export abstract class TerminalSession {
     this.inputMode = { type: 'normal' };
     this.flowIsAuthGate = false;
     if (result.status === 'ok') {
+      this.lastFlowWasAuthGate = porte;
       this.onFlowComplete(result.ctx);
+      this.lastFlowWasAuthGate = false;
       this.notify();
       return;
     }
@@ -1654,11 +1658,15 @@ export abstract class TerminalSession {
 
     if (this.flowEngine.isComplete) {
       const ctx = this.flowEngine.getContext();
+      const porte = this.flowIsAuthGate;
       this.flowEngine = null;
       this._passwordBuf = '';
       this._inputBuf = '';
       this.inputMode = { type: 'normal' };
+      this.flowIsAuthGate = false;
+      this.lastFlowWasAuthGate = porte;
       this.onFlowComplete(ctx);
+      this.lastFlowWasAuthGate = false;
       this.notify();
     } else {
       // Map InputDirective to InputMode for the view

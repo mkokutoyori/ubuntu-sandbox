@@ -162,7 +162,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
     const a = r.openVtySession();
     const b = r.openVtySession();
 
-    await r.executeCommandInVty('enable', a);
+    await r.executeCommandInVty('enable', a, { passwordInput: 'Coffre15' });
     expect(await r.executeCommandInVty('show privilege', a))
       .toContain('Current privilege level is 15');
     expect(await r.executeCommandInVty('show privilege', b))
@@ -179,7 +179,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
     const r = await cible();
     const a = r.openVtySession();
     const b = r.openVtySession();
-    await r.executeCommandInVty('enable', a);
+    await r.executeCommandInVty('enable', a, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('configure terminal', a);
     await r.executeCommandInVty('interface GigabitEthernet0/0', a);
 
@@ -200,7 +200,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
     const r = await cible();
     const admin = r.openVtySession();
     const tech = r.openVtySession();
-    await r.executeCommandInVty('enable', tech);
+    await r.executeCommandInVty('enable', tech, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('disable 7', tech);
     expect(await r.executeCommandInVty('show privilege', tech))
       .toContain('Current privilege level is 7');
@@ -208,7 +208,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
     // cobaye. `show running-config` nait au niveau 15, elle.
     expect(await r.executeCommandInVty('show running-config', tech)).toContain(REFUS);
 
-    await r.executeCommandInVty('enable', admin);
+    await r.executeCommandInVty('enable', admin, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('configure terminal', admin);
     await r.executeCommandInVty('privilege exec level 7 show running-config', admin);
     await r.executeCommandInVty('end', admin);
@@ -223,7 +223,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
   it('une vue creee par l\'un est visible de l\'autre', async () => {
     const r = await cible();
     const admin = r.openVtySession();
-    await r.executeCommandInVty('enable', admin);
+    await r.executeCommandInVty('enable', admin, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('configure terminal', admin);
     await r.executeCommandInVty('parser view LECTURE', admin);
     await r.executeCommandInVty('secret Lect2026', admin);
@@ -231,7 +231,7 @@ describe('CONCURRENCE — deux operateurs, deux niveaux, une machine', () => {
     await r.executeCommandInVty('end', admin);
 
     const autre = r.openVtySession();
-    await r.executeCommandInVty('enable', autre);
+    await r.executeCommandInVty('enable', autre, { passwordInput: 'Coffre15' });
     expect(await r.executeCommandInVty('show parser view all', autre)).toContain('LECTURE');
 
     r.closeVtySession(admin);
@@ -243,13 +243,13 @@ describe('REVOCATION — retirer un droit a quelqu\'un de deja connecte', () => 
   it('la commande retiree disparait de la session ouverte, tout de suite', async () => {
     const r = await cible();
     const tech = r.openVtySession();
-    await r.executeCommandInVty('enable', tech);
+    await r.executeCommandInVty('enable', tech, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('disable 7', tech);
     // `show ip interface brief` nait au niveau 1 : la retirer du niveau 7
     // ne la retire de rien. On mesure sur une commande nee au niveau 15,
     // descendue puis reprise.
     const admin = r.openVtySession();
-    await r.executeCommandInVty('enable', admin);
+    await r.executeCommandInVty('enable', admin, { passwordInput: 'Coffre15' });
     await r.executeCommandInVty('configure terminal', admin);
     await r.executeCommandInVty('privilege exec level 7 show running-config', admin);
     await r.executeCommandInVty('end', admin);

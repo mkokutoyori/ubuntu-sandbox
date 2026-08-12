@@ -58,10 +58,10 @@ describe('the chassis a Cisco router claims is the one it has', () => {
     expect(banner).toContain('Technology Package License Information');
   });
 
-  it('the configuration dialog is announced with its question', async () => {
+  it('the boot text never answers a question on the operator behalf', async () => {
     const banner = (await priv()).getBootSequence();
-    expect(banner).toContain('--- System Configuration Dialog ---');
-    expect(banner).toContain('Would you like to enter the initial configuration dialog?');
+    expect(banner).not.toContain('Would you like to enter the initial configuration dialog?');
+    expect(banner.trimEnd().endsWith('Press RETURN to get started.')).toBe(true);
   });
 });
 

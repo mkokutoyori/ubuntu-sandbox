@@ -52,6 +52,8 @@ import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
+import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
+import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -1395,17 +1397,9 @@ export function registerDisplayCommands(
   });
 
   trie.register('display user-interface', 'Display user interface info', () => {
-    const vty = (getRouter() as unknown as { _getVtyLineConfig?: () => { renderAllHuawei: () => string[] } })._getVtyLineConfig?.();
-    const cfg = vty ? vty.renderAllHuawei() : [];
-    const lines = [
-      '  Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int',
-      '+ 0      CON 0           9600     -      0      0            N      -',
-      '  34     VTY 0           -        -      0      0            N      -',
-      '  35     VTY 1           -        -      0      0            N      -',
-      '  36     VTY 2           -        -      0      0            N      -',
-      '  37     VTY 3           -        -      0      0            N      -',
-      '  38     VTY 4           -        -      0      0            N      -',
-    ];
+    const store = getVtyLineConfig(getRouter());
+    const lines = [renderDisplayUserInterface(getSessionRegistry(getRouter()), store)];
+    const cfg = store ? store.renderAllHuawei() : [];
     if (cfg.length > 0) { lines.push(''); lines.push(...cfg); }
     return lines.join('\n');
   });

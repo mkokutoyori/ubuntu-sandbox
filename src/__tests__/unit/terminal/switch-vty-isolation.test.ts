@@ -36,10 +36,13 @@ describe('Cisco switch vty session isolation', () => {
     manager = new TerminalManager(bus);
     sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
     sw.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<CiscoTerminalSession> {
-    const sid = manager.openTerminal(sw)!;
+    const sid = manager.openTerminal(sw, opened++ === 0 ? 'console' : 'vty')!;
     const session = manager.getSession(sid) as CiscoTerminalSession;
     await waitBoot(session);
     return session;
@@ -114,10 +117,13 @@ describe('Huawei switch vty session isolation', () => {
     manager = new TerminalManager(bus);
     sw = new HuaweiSwitch('switch-huawei', 'SW1', 8);
     sw.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<HuaweiTerminalSession> {
-    const sid = manager.openTerminal(sw)!;
+    const sid = manager.openTerminal(sw, opened++ === 0 ? 'console' : 'vty')!;
     const session = manager.getSession(sid) as HuaweiTerminalSession;
     await waitBoot(session);
     return session;

@@ -91,7 +91,12 @@ for (const [nom, fabrique] of PLATEFORMES) {
 
     it('`show users` marque la session courante d\'une etoile', async () => {
       const d = await priv(fabrique());
-      expect(await d.executeCommand('show users')).toMatch(/^\*/m);
+      expect(await d.executeCommand('show users'),
+        'sans session, personne n\'est marque').not.toMatch(/^\s*\*/m);
+      (d as unknown as {
+        getSshSessionRegistry(): { open(i: Record<string, unknown>): unknown };
+      }).getSshSessionRegistry().open({ user: 'admin', fromIp: '10.0.0.9', transport: 'ssh' });
+      expect(await d.executeCommand('show users')).toMatch(/^\s*\*.*vty 0/m);
     }, 30_000);
 
     it('`show line` liste console, AUX et les vty, avec la colonne Modem', async () => {
@@ -299,9 +304,21 @@ for (const [nom, fabrique] of PLATEFORMES) {
       expect(await d.executeCommand('clear line vty 0')).toContain('[confirm]');
     }, 30_000);
 
-    it('`clear line 0` refuse — on ne coupe pas sa propre console', async () => {
+    it('`clear line` refuse la ligne courante, et elle seule', async () => {
       const d = await priv(fabrique());
-      expect(await d.executeCommand('clear line 0')).toContain('% Not allowed to clear that line');
+      const registre = (d as unknown as {
+        getSshSessionRegistry(): {
+          open(i: Record<string, unknown>): { id: string } | null;
+          currentSession(): string | null;
+        };
+      }).getSshSessionRegistry();
+      const courante = registre.open({ user: 'admin', fromIp: '10.0.0.9', transport: 'ssh' });
+      expect(registre.currentSession()).toBe(courante?.id);
+      expect(await d.executeCommand('clear line vty 0'))
+        .toContain('% Not allowed to clear current line');
+      expect(await d.executeCommand('clear line 0'),
+        'la console n\'est pas la ligne courante, on peut la couper').not
+        .toContain('% Not allowed');
     }, 30_000);
 
     it('`send` EXISTE — le mot ne part plus en resolution DNS', async () => {

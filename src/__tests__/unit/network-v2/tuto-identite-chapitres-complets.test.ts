@@ -119,6 +119,12 @@ for (const [nom, fabrique] of PLATEFORMES) {
     it('`show users`, `show who` et `show line` décrivent les lignes', async () => {
       const d = await allumee(fabrique);
       await d.executeCommand('enable');
+      // Être sur la console, c'est occuper la ligne : sans session, la
+      // table est vide et c'est ce qu'elle doit dire
+      // (docs/PRD-Lignes-Terminal.md §1.3).
+      (d as unknown as {
+        getSshSessionRegistry(): { open(i: Record<string, unknown>): unknown };
+      }).getSshSessionRegistry().open({ user: '', fromIp: '', transport: 'console' });
       const users = await d.executeCommand('show users');
       expect(users).toContain('Line');
       expect(users).toContain('con 0');
@@ -233,7 +239,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
     it('`show privilege` suit les paliers', async () => {
       const d = await roles();
       expect(await d.executeCommand('show privilege')).toContain('level is 1');
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'PasswordTechnicien2024!' });
       expect(await d.executeCommand('show privilege')).toContain('level is 7');
       await d.executeCommand('enable');
       expect(await d.executeCommand('show privilege')).toContain('level is 15');
@@ -241,7 +247,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
 
     it('le niveau 7 fait exactement ce que le chapitre annonce', async () => {
       const d = await roles();
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'PasswordTechnicien2024!' });
       expect(await d.executeCommand('show running-config')).toContain('Current configuration');
       expect(await d.executeCommand('configure terminal')).toContain(REFUS);
       expect(await d.executeCommand('reload')).toContain(REFUS);
@@ -477,7 +483,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       expect(await d.executeCommand('show running-config | include jean-baptiste'))
         .toContain('privilege 7');
       await d.executeCommand('disable');
-      await d.executeCommand('enable 7');
+      await d.executeCommand('enable 7', { passwordInput: 'T7' });
       expect(await d.executeCommand('show privilege')).toContain('level is 7');
       expect(await d.executeCommand('show running-config')).toContain('Current configuration');
       expect(await d.executeCommand('configure terminal')).toContain(REFUS);
@@ -498,7 +504,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       expect(bloc).not.toContain('privilege 7');
 
       await d.executeCommand('disable');
-      await d.executeCommand('enable 10');
+      await d.executeCommand('enable 10', { passwordInput: 'A10' });
       expect(await d.executeCommand('configure terminal')).toContain('Enter configuration');
       await d.executeCommand('end');
       expect(await d.executeCommand('write memory')).not.toContain(REFUS);
@@ -511,7 +517,7 @@ for (const [nom, fabrique] of PLATEFORMES) {
       await tape(d, ['enable', 'configure terminal',
         'privilege exec level 15 reload', 'enable secret level 10 A10',
         'logging userinfo', 'end', 'disable']);
-      await d.executeCommand('enable 10');
+      await d.executeCommand('enable 10', { passwordInput: 'A10' });
       await d.executeCommand('enable');
       expect(await d.executeCommand('show privilege')).toContain('level is 15');
       expect(await d.executeCommand('reload cancel')).toContain('Reload cancelled');
@@ -528,12 +534,15 @@ for (const [nom, fabrique] of PLATEFORMES) {
       const d = await allumee(fabrique);
       await tape(d, ['enable', 'configure terminal',
         'username jean-baptiste privilege 10 secret JB', 'end']);
+      (d as unknown as {
+        getSshSessionRegistry(): { open(i: Record<string, unknown>): unknown };
+      }).getSshSessionRegistry().open({ user: '', fromIp: '', transport: 'console' });
       expect(await d.executeCommand('show users')).toContain('con 0');
       // Une vty libre : IOS confirme et ne coupe rien.
       expect(await d.executeCommand('clear line vty 0')).toContain('[confirm]');
       // La console est la ligne d'où l'on parle.
       expect(await d.executeCommand('clear line console 0'))
-        .toContain('Not allowed to clear that line');
+        .toContain('Not allowed to clear current line');
       await tape(d, ['configure terminal', 'no username jean-baptiste', 'end']);
       expect(await d.executeCommand('show running-config | include jean-baptiste')).toBe('');
     }, 30_000);

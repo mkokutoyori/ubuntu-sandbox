@@ -93,6 +93,14 @@ export interface InteractionPlanContext {
   /** CLI mode for network equipment ('user' | 'privileged' | config modes…). */
   mode?: string;
   /**
+   * Privilege level of the CALLING session. The shell's own field is the
+   * baseline between two vty executions, not this session's — a plan
+   * built from it would judge visibility against the wrong principal.
+   */
+  level?: number;
+  /** Parser view the calling session is in, if any. */
+  view?: string | null;
+  /**
    * The live device instance, opaque at this vendor-neutral layer (cast by
    * the specific planner that knows its own device type). Needed by plans
    * that must read persistent device state (e.g. a configured enable

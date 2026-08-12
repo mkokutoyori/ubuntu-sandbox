@@ -109,12 +109,18 @@ describe('`Uses` compte vraiment les connexions par ligne', () => {
     expect(usesDansLeTableau(await d.executeCommand('show line'), 2)).toBe(2);
   }, 30_000);
 
+  /**
+   * Deux branchements SUCCESSIFS, pas simultanes : un chassis n'a qu'un
+   * port console, donc deux sessions a la fois seraient une seule ligne
+   * (docs/PRD-Lignes-Terminal.md §2). Le compteur, lui, est cumulatif.
+   */
   it('ouvrir une console compte pour `con 0`', async () => {
     const d = await routeur();
     for (let i = 0; i < 2; i++) {
       const s = new CiscoTerminalSession(`t${i}`, d as never);
       await s.init();
       for (let k = 0; k < 40 && s.isBooting; k++) await tick();
+      s.dispose();
     }
     expect(usesDansLeTableau(await d.executeCommand('show line'), 0)).toBe(2);
   }, 30_000);

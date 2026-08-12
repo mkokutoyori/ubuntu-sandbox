@@ -108,10 +108,7 @@ export function showUsers(registre?: {
   formatShowUsers: () => string;
 } | null): string {
   const entete = registre?.formatShowUsers()
-    ?? [
-      '    Line       User       Host(s)              Idle       Location',
-      '*  0 con 0                idle                 00:00:00',
-    ].join('\n');
+    ?? '    Line       User       Host(s)              Idle       Location';
   return [entete, '', '  Interface    User               Mode         Idle     Peer Address'].join('\n');
 }
 

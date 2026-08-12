@@ -31,6 +31,7 @@ import { Equipment } from '../equipment/Equipment';
 import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { Port } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
+import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
@@ -3253,18 +3254,23 @@ export abstract class Switch extends Equipment {
     };
   }
 
-  async executeCommandInVty(command: string, session: CliShellSession): Promise<string> {
+  async executeCommandInVty(
+    command: string, session: CliShellSession, answers?: HeadlessAnswers,
+  ): Promise<string> {
     const shell = this.vtyShellHooks();
     if (!shell.snapshotVtyState || !shell.applyVtyState) {
-      return this.executeCommand(command);
+      return this.executeCommand(command, answers);
     }
     const run = async (): Promise<string> => {
       if (!this.isPoweredOn) return '% Device is powered off';
       if (session.disposed) return '';
       const baseline = shell.snapshotVtyState!();
       shell.applyVtyState!(session.state);
+      if (session.lineRecordId !== null) {
+        getSessionRegistry(this)?.setCurrentSession(session.lineRecordId);
+      }
       try {
-        const out = await this.executeCommand(command);
+        const out = await this.executeCommand(command, answers);
         session.state = shell.snapshotVtyState!();
         return out;
       } finally {

@@ -86,7 +86,7 @@ describe('Huawei router `?` help follows the per-vty mode', () => {
     const sidA = manager.openTerminal(router)!;
     const a = manager.getSession(sidA) as HuaweiTerminalSession;
     await waitBoot(a);
-    const sidB = manager.openTerminal(router)!;
+    const sidB = manager.openTerminal(router, 'vty')!;
     const b = manager.getSession(sidB) as HuaweiTerminalSession;
     await waitBoot(b);
 

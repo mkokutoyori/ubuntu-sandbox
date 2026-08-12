@@ -70,11 +70,16 @@ describe('une deconnexion agit sur la machine', () => {
   it('`clear line` ferme la session, pas seulement l\'affichage', async () => {
     const d = await routeur();
     ouvrir(d, 'admin', '10.0.0.1');
-    expect(reg(d).list()).toHaveLength(1);
+    // On coupe la ligne d'un AUTRE : la derniere session ouverte est
+    // celle que la machine tient pour courante, et IOS refuse de couper
+    // la ligne courante (docs/PRD-Lignes-Terminal.md §2).
+    ouvrir(d, 'bob', '10.0.0.2');
+    expect(reg(d).list()).toHaveLength(2);
     expect(await d.executeCommand('show users')).toContain('10.0.0.1');
 
     await d.executeCommand('clear line vty 0');
-    expect(reg(d).list(), 'la session doit avoir disparu').toHaveLength(0);
+    expect(reg(d).list().map((s) => s.user), 'la session doit avoir disparu')
+      .toEqual(['bob']);
     expect(await d.executeCommand('show users'), 'et la vue doit suivre')
       .not.toContain('10.0.0.1');
   }, 30_000);
@@ -91,6 +96,7 @@ describe('une deconnexion agit sur la machine', () => {
   it('la deconnexion laisse une trace nominative', async () => {
     const d = await routeur('username admin privilege 15 secret Admin@2025');
     ouvrir(d, 'admin', '192.168.1.55');
+    ouvrir(d, 'bob', '10.0.0.2');
     await d.executeCommand('clear line vty 0');
     const j = await d.executeCommand('show logging');
     expect(j).toContain('%SYS-6-LOGOUT: User admin has exited tty session 0(192.168.1.55)');
@@ -178,8 +184,9 @@ describe('un changement de compte atteint la machine', () => {
     await d.executeCommand('end');
     expect(reg(d).list(), 'la session survit — il faut `clear line` pour la couper')
       .toHaveLength(1);
+    ouvrir(d, 'bob', '10.0.0.2');
     await d.executeCommand('clear line vty 0');
-    expect(reg(d).list()).toHaveLength(0);
+    expect(reg(d).list().map((s) => s.user)).toEqual(['bob']);
   }, 30_000);
 
   it('un changement de mot de passe ne coupe pas la session non plus', async () => {
