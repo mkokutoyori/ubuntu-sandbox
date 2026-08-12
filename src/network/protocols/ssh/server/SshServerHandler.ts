@@ -248,6 +248,15 @@ export class SshServerHandler {
         const fs = new PermissionCheckingFSDecorator(this.ctx.getFilesystem(userCtx), userCtx);
         session = new SftpWireSession({ vfs: fs, userCtx, rootPath: userCtx.homeDirectory });
         sftpWireSessions.set(channelId, session);
+        // A real sshd logs the subsystem request as the channel opens.
+        // This session is built on the first frame rather than by an
+        // `open_channel` message, so this is the only place that can say
+        // so — without it the REAL sftp channel was the unlogged one.
+        this.eventBus.emit({
+          kind: 'channel_opened',
+          user: userCtx.username,
+          channelType: 'sftp',
+        });
       }
       const reply = session.handle(pkt);
       conn.write(encodeSftpChannelFrame(channelId, encodeSftpWirePacket(reply)));

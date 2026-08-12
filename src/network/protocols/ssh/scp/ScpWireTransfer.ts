@@ -106,9 +106,11 @@ export class ScpWireTransfer {
     const dstPath = targetIsDir ? `${dstTargetOrDir.replace(/\/$/, '')}/${name}` : dstTargetOrDir;
     const write = this.destination.writeFile(dstPath, data.value);
     const ack: ScpAck = write.ok ? SCP_ACK.OK : SCP_ACK.FATAL;
-    const ackMessage = write.ok ? undefined : `scp: ${dstPath}: cannot write`;
-    this.record(line, ack, ackMessage, data.value.length);
-    if (ack !== SCP_ACK.OK) return this.fail(ackMessage!);
+    // The wire ack carries OpenSSH's own `scp: ` prefix; `fail()` takes the
+    // bare reason, since ScpSession is what renders the prefixed line.
+    const reason = `${dstPath}: cannot write`;
+    this.record(line, ack, write.ok ? undefined : `scp: ${reason}`, data.value.length);
+    if (ack !== SCP_ACK.OK) return this.fail(reason);
 
     if (this.preserve) this.destination.setPermissions(dstPath, stat.value.mode);
     this.filesTransferred += 1;
@@ -125,9 +127,9 @@ export class ScpWireTransfer {
     const childDir = targetIsDir ? `${dstTargetOrDir.replace(/\/$/, '')}/${name}` : dstTargetOrDir;
     this.destination.mkdir(childDir); // benign if it already exists (scp -r into an existing tree is fine)
     const ack: ScpAck = this.destination.getEntryType(childDir) === 'directory' ? SCP_ACK.OK : SCP_ACK.FATAL;
-    const ackMessage = ack === SCP_ACK.OK ? undefined : `scp: ${childDir}: cannot create directory`;
-    this.record(line, ack, ackMessage);
-    if (ack !== SCP_ACK.OK) return this.fail(ackMessage!);
+    const dirReason = `${childDir}: cannot create directory`;
+    this.record(line, ack, ack === SCP_ACK.OK ? undefined : `scp: ${dirReason}`);
+    if (ack !== SCP_ACK.OK) return this.fail(dirReason);
     if (this.preserve && stat.ok) this.destination.setPermissions(childDir, stat.value.mode);
 
     const entries = this.source.listDirectory(srcAbs);

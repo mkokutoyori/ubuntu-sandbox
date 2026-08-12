@@ -47,7 +47,7 @@ async function provisionChroot(server: LinuxServer): Promise<void> {
 }
 
 function sftpHere(dest: string, verbs: string[]): string {
-  return `sftp ${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
+  return `sshpass -p secret sftp ${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
 }
 
 describe('Scenario 8 — SFTP/SCP avec ChrootDirectory + ForceCommand internal-sftp', () => {
@@ -143,12 +143,12 @@ describe('Scenario 8 — SFTP/SCP avec ChrootDirectory + ForceCommand internal-s
     await provisionChroot(server);
     await client.executeCommand('echo "scp-payload" > /tmp/scp.txt');
     const blocked = await client.executeCommand(
-      'scp /tmp/scp.txt sftponly@10.0.0.2:/upload/scp.txt',
+      'sshpass -p secret scp /tmp/scp.txt sftponly@10.0.0.2:/upload/scp.txt',
       'secret\n',
     );
     expect(blocked).toMatch(/sftp connections only|Permission denied|denied|exec/i);
     const blocked2 = await client.executeCommand(
-      'scp /tmp/scp.txt sftponly@10.0.0.2:/etc/passwd',
+      'sshpass -p secret scp /tmp/scp.txt sftponly@10.0.0.2:/etc/passwd',
       'secret\n',
     );
     expect(blocked2).toMatch(/sftp connections only|Permission denied|denied|exec/i);

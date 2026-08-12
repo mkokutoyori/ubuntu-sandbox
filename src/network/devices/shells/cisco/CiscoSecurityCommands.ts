@@ -568,11 +568,18 @@ export function buildIdentityConfigCommands(
     return '';
   }, IP_SSH_CONTINUATIONS);
 
-  trie.registerGreedy('ip scp server enable', 'Enable SCP server', () => {
+  // Registered at `ip scp` rather than at the full path, the way `ip ssh`
+  // is: the trie describes each node it offers under `?`, and an
+  // intermediate node spelled out in the path carries no description.
+  const scpServerArgs = (args: string[]): boolean =>
+    args[0] === 'server' && args[1] === 'enable';
+  trie.registerGreedy('ip scp', 'SCP server config', (args) => {
+    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = true;
     return '';
   });
-  trie.registerGreedy('no ip scp server enable', 'Disable SCP server', () => {
+  trie.registerGreedy('no ip scp', 'Disable the SCP server', (args) => {
+    if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = false;
     return '';
   });

@@ -15,6 +15,7 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
+import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import {
@@ -334,7 +335,32 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
-    return new LinuxSftpFSAdapter(this.vfs, userCtx.uid, userCtx.gid);
+    const fs = new LinuxSftpFSAdapter(this.vfs, userCtx.uid, userCtx.gid);
+    const chroot = this.chrootDirectoryFor(userCtx.username);
+    return chroot ? new ChrootedSftpFileSystem(fs, chroot) : fs;
+  }
+
+  /**
+   * `ChrootDirectory` for this account, global or from the first matching
+   * `Match` block. A real sshd confines the session itself; here it was
+   * applied only by a client that resolved the remote VFS in memory, so
+   * the same account escaped its chroot the moment the transfer went
+   * over the wire.
+   */
+  private chrootDirectoryFor(user: string): string | null {
+    const cfg = this.effectiveSshdServerConfig();
+    const groups = (this.userManager.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    for (const block of cfg.matchBlocks) {
+      const applies = block.criteria.every((c: { keyword: string; value: string }) => {
+        if (c.keyword === 'User') return c.value === user || c.value === '*';
+        if (c.keyword === 'Group') return groups.includes(c.value);
+        return true;
+      });
+      if (!applies) continue;
+      const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
+      if (cd) return cd;
+    }
+    return cfg.chrootDirectory;
   }
 
   getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell {

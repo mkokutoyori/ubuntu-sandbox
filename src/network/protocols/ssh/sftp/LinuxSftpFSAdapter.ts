@@ -137,6 +137,20 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
       : err({ kind: 'IO_ERROR', message: `${path}: chown failed` });
   }
 
+  // ── ACLs ────────────────────────────────────────────────────────────
+  // `PermissionCheckingFSDecorator` asks its base for these, optionally.
+  // Only the client-side `VfsSftpFileSystem` answered, so a `setfacl`
+  // deny stopped a transfer resolved in memory and let the same one
+  // through over the wire — the server is where it has to be enforced.
+
+  checkAclAccess(path: string, user: string, groups: readonly string[], need: number): boolean | null {
+    return this.vfs.checkAclAccess?.(path, user, groups, need) ?? null;
+  }
+
+  hasAcl(path: string): boolean {
+    return this.vfs.hasAcl?.(path) ?? false;
+  }
+
   // ── symlinks (optional capability) ──────────────────────────────────
 
   createSymlink(linkPath: string, targetPath: string): Result<void> {

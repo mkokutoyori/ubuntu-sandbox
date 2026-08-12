@@ -1141,7 +1141,9 @@ export class LinuxCommandExecutor {
    * Mirrors real OpenSSH where these tools fail with the same
    * "Connection refused" / "Could not resolve hostname" as the parent.
    */
-  private runSshTransport(cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string): { output: string; exitCode: number } {
+  private runSshTransport(
+    cmd: 'scp' | 'sftp' | 'rsync', args: string[], stdinArg?: string, offeredPassword?: string,
+  ): { output: string; exitCode: number } {
     // Extract the destination spec: user@host[:path] (positional argv).
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -1175,7 +1177,9 @@ export class LinuxCommandExecutor {
     if (cmd === 'sftp') probeArgs.push('-s', 'sftp');
     probeArgs.push(probeTarget, 'hostname');
     // Probe via the same ssh client; if it returns Connection refused, propagate.
-    const probe = runSshClient({ ...this.buildSshClientOpts(probeArgs) });
+    const probe = runSshClient({
+      ...this.buildSshClientOpts(probeArgs, undefined, offeredPassword || undefined),
+    });
     if (probe.exitCode !== 0) {
       // scp prefixes with "scp:" / "rsync:" but reuses the ssh message body.
       const prefix = cmd === 'rsync' ? 'rsync: connection unexpectedly closed' : `${cmd}: `;
@@ -1190,7 +1194,7 @@ export class LinuxCommandExecutor {
       const session = new ScpSession({
         args,
         local: { fs: localFs, cwd: this.cwd },
-        resolveRemote: (host) => this.resolveRemoteSftpFs(host),
+        resolveRemote: (host) => this.resolveRemoteSftpFs(host, userMatch ? userMatch[1] : undefined),
       });
       return session.run();
     }
@@ -1256,10 +1260,36 @@ export class LinuxCommandExecutor {
    * s'ouvrir. Réparer une authentification échouée par une copie
    * mémoire ferait arriver un fichier qui n'a jamais voyagé.
    */
+  /**
+   * `scp`/`sftp` written inside a composite line — a here-doc, a pipeline,
+   * a `;` sequence — reaches the interpreter rather than the single-command
+   * fast path, and used to fall through to the synchronous dispatch, which
+   * never opens a session: the transfer resolved the remote VFS in memory
+   * and escaped the refusal a bare `scp` gets. Recognising the invocation
+   * here is what makes the two spellings answer the same thing.
+   */
+  private sshTransferInvocation(
+    argv: string[],
+  ): { cmd: 'scp' | 'sftp'; args: string[]; password: string } | null {
+    const isTransfer = (n: string): n is 'scp' | 'sftp' => n === 'scp' || n === 'sftp';
+    if (isTransfer(argv[0])) return { cmd: argv[0], args: argv.slice(1), password: '' };
+    if (argv[0] !== 'sshpass') return null;
+    let i = 1;
+    let password = '';
+    while (argv[i] === '-p' && argv[i + 1] !== undefined) {
+      password = argv[i + 1];
+      i += 2;
+    }
+    const wrapped = argv[i];
+    if (!isTransfer(wrapped)) return null;
+    return { cmd: wrapped, args: argv.slice(i + 1), password };
+  }
+
   async runSshTransportAsync(
     cmd: 'scp' | 'sftp',
     args: string[],
     offeredPassword: string,
+    stdinArg?: string,
   ): Promise<{ output: string; exitCode: number }> {
     const positional = args.filter(a => !a.startsWith('-'));
     const dest = positional.find(p => /[@:]/.test(p)) ?? positional[0];
@@ -1337,7 +1367,7 @@ export class LinuxCommandExecutor {
 
     // sftp
     const bIdx = args.indexOf('-b');
-    let stdin = '';
+    let stdin = stdinArg ?? '';
     if (bIdx >= 0) {
       const batchPath = args[bIdx + 1];
       if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
@@ -3026,6 +3056,10 @@ export class LinuxCommandExecutor {
         return this.runDirectScriptAsync(cmd0, rest).then(
           (r) => r ?? this.dispatchFromInterpreter(argv, env, background),
         );
+      }
+      const transfer = this.sshTransferInvocation(argv);
+      if (transfer) {
+        return this.runSshTransportAsync(transfer.cmd, transfer.args, transfer.password, stdin);
       }
     }
     return this.dispatchFromInterpreter(argv, env, background);
@@ -5019,8 +5053,12 @@ export class LinuxCommandExecutor {
           }
           break;
         }
+        if (args[i] === 'scp' || args[i] === 'sftp' || args[i] === 'rsync') {
+          return this.runSshTransport(
+            args[i] as 'scp' | 'sftp' | 'rsync', args.slice(i + 1), stdin, password);
+        }
         if (args[i] !== 'ssh') {
-          return { output: 'sshpass: only `sshpass -p <pw> ssh …` is supported in the simulator', exitCode: 1 };
+          return { output: 'sshpass: only `sshpass -p <pw> ssh|scp|sftp …` is supported in the simulator', exitCode: 1 };
         }
         const sshArgs = args.slice(i + 1);
         const sshpassResult = runSshClient(this.buildSshClientOpts(sshArgs, this._cmdEnv, password));

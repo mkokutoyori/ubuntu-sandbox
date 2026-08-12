@@ -598,3 +598,50 @@ rien distinguer.
 toujours pas le canal filaire, donc un `sftp <<'EOF'` en document en
 ligne continue de résoudre en mémoire et n'est pas soumis au refus. C'est
 la seconde moitié du même chantier, inchangée.
+
+### 7.3 Le document en ligne passe par la même session, et ce qu'il a révélé
+
+La seconde moitié annoncée au §7.2 est faite. `scp`/`sftp` écrits dans une
+ligne composée — un document en ligne, un `;`, un tube — atteignaient
+l'interpréteur puis le dispatch SYNCHRONE, qui n'ouvre aucune session :
+le transfert résolvait le VFS distant en mémoire et échappait au refus
+qu'un `scp` nu reçoit. `dispatchMaybeNetwork` reconnaît désormais
+`scp`/`sftp`/`sshpass -p … scp|sftp` et les route vers la vraie session,
+comme la Phase 2 l'avait fait pour les scripts.
+
+**Rendre ce chemin réel a montré cinq défauts que le raccourci mémoire
+masquait**, chacun mesuré avant d'être corrigé :
+
+- `LinuxSshServerContext.getFilesystem()` n'appliquait JAMAIS
+  `ChrootDirectory`. Le commentaire du client affirmait que « le chroot
+  que le sshd distant impose se produit déjà côté serveur » : c'était
+  faux, et un compte chrooté sortait de son chroot dès que le transfert
+  passait par le câble.
+- `LinuxSftpFSAdapter` n'offrait ni `checkAclAccess` ni `hasAcl`.
+  `PermissionCheckingFSDecorator` les demande de façon optionnelle et
+  seul l'adaptateur CLIENT répondait : un refus posé par `setfacl`
+  arrêtait une copie en mémoire et laissait passer la vraie.
+- La session SFTP filaire n'émettait pas `channel_opened`. C'est donc le
+  VRAI canal sftp qui manquait dans `auth.log`/`journalctl`, tandis que
+  le chemin mémoire écrivait la ligne à la main.
+- `runSshTransport` (synchrone) résolvait le distant sous l'utilisateur
+  LOCAL : `scp alice@hote:…` vérifiait les permissions au nom de qui se
+  trouvait au prompt.
+- `ScpWireTransfer` préfixait son échec, puis `ScpSession` le préfixait
+  encore : `scp: scp: /chemin: cannot write`.
+
+Et `sshpass -p … scp|sftp` était refusé net sur le chemin synchrone, si
+bien qu'une ligne composée n'avait aucun moyen d'offrir un justificatif.
+
+**La migration des labos** a fait passer la suite sftp de 143 échecs à 0,
+l'essentiel par son unique fabricant `sftp()`, qui porte maintenant le
+mot de passe du compte ; la règle est écrite (`passwordFor`) plutôt que
+dispersée. §26 en est exempté et le dit : une machine Windows n'a pas de
+`sshpass`, et son client est un autre chemin, qui résout toujours en
+mémoire.
+
+**Ce qui reste ouvert.** Le client sftp de Windows n'a pas été porté sur
+le fil. Et `scp`/`sftp` ne sont toujours pas des `LinuxCommand` dans leur
+propre fichier : ils vivent dans le `switch` synchrone, que
+`dispatchMaybeNetwork` court-circuite désormais — la conversion est un
+remaniement à part, pas un correctif de comportement.

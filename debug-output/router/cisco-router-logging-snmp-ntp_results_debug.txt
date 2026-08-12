@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-logging-snmp-ntp
-Generated: 2026-08-12T20:24:40.305Z
+Generated: 2026-08-12T22:12:16.090Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=syslog/SNMPv1-3/NTP/NetFlow/EEM/CDP-LLDP
 Total steps: 322
@@ -217,17 +217,17 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  *Aug 12 20:24:40.299: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 12 20:24:40.300: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 12 20:24:40.302: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 12 20:24:40.302: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 12 20:24:40.316: %SYS-5-CONFIG_I: Configured from console by console
-  000001: *Aug 12 20:24:40.324 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:notify syslog contenttype plaintext
-  000002: *Aug 12 20:24:40.330 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:hidekeys
-  000003: *Aug 12 20:24:40.332 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:path flash:archive-config
-  000004: *Aug 12 20:24:40.333 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:maximum 14
-  000005: *Aug 12 20:24:40.334 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:time-period 1440
-  000006: *Aug 12 20:24:40.335 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:write-memory
+  *Aug 12 22:12:16.085: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 22:12:16.085: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 12 22:12:16.087: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 22:12:16.087: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 12 22:12:16.099: %SYS-5-CONFIG_I: Configured from console by console
+  000001: *Aug 12 22:12:16.106 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:notify syslog contenttype plaintext
+  000002: *Aug 12 22:12:16.112 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:hidekeys
+  000003: *Aug 12 22:12:16.113 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:path flash:archive-config
+  000004: *Aug 12 22:12:16.114 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:maximum 14
+  000005: *Aug 12 22:12:16.114 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:time-period 1440
+  000006: *Aug 12 22:12:16.115 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:write-memory
 
 [53/322] r1 R1# show logging history
   Syslog History Table:1 maximum table entry,
@@ -237,7 +237,7 @@ Total steps: 322
     SNMP notifications enabled, severity emergencies or higher
    entry number 1 : LINK-3-UPDOWN
     Interface GigabitEthernet0/1, changed state to up
-   timestamp: 1786566280
+   timestamp: 1786572736
 
 [54/322] r1 R1# show archive
   The maximum archive configurations allowed is 14.
@@ -536,7 +536,7 @@ Total steps: 322
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE275508.66666666 (20:24:40.400 UTC Wed Aug 12 2026)
+  reference time is EE276E40.2B439581 (22:12:16.169 UTC Wed Aug 12 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 0.00 msec, peer dispersion is 0.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -553,7 +553,7 @@ Total steps: 322
 
 [126/322] r1 R1# show ntp associations detail
   10.0.0.21 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE275508.66A7EF9D (20:24:40.401 UTC Wed Aug 12 2026)
+  ref ID .INIT., time EE276E40.2B439581 (22:12:16.169 UTC Wed Aug 12 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
   root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
   delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
@@ -562,7 +562,7 @@ Total steps: 322
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
   10.0.0.22 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE275508.66A7EF9D (20:24:40.401 UTC Wed Aug 12 2026)
+  ref ID .INIT., time EE276E40.2B851EB8 (22:12:16.170 UTC Wed Aug 12 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
   root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
   delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
@@ -571,7 +571,7 @@ Total steps: 322
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
   10.0.0.23 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE275508.66A7EF9D (20:24:40.401 UTC Wed Aug 12 2026)
+  ref ID .INIT., time EE276E40.2B851EB8 (22:12:16.170 UTC Wed Aug 12 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
   root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
   delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
@@ -580,7 +580,7 @@ Total steps: 322
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
   10.0.0.30 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE275508.66A7EF9D (20:24:40.401 UTC Wed Aug 12 2026)
+  ref ID .INIT., time EE276E40.2B851EB8 (22:12:16.170 UTC Wed Aug 12 2026)
   our mode active, peer mode passive, our poll intvl 64, peer poll intvl 64
   root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
   delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
@@ -589,7 +589,7 @@ Total steps: 322
   filtoffset = 0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
   filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
   10.0.0.40 configured, unsynced, sane, valid, stratum 16
-  ref ID .INIT., time EE275508.66A7EF9D (20:24:40.401 UTC Wed Aug 12 2026)
+  ref ID .INIT., time EE276E40.2B851EB8 (22:12:16.170 UTC Wed Aug 12 2026)
   our mode client, peer mode server, our poll intvl 64, peer poll intvl 64
   root delay 0.00 msec, root disp 16000.00, reach 000, sync dist 16000.00
   delay 0.00 msec, offset 0.0000 msec, dispersion 16000.00
@@ -599,14 +599,14 @@ Total steps: 322
   filterror =  16000.00  16000.45  16000.90  16001.35  16001.80  16002.25  16002.70  16003.15
 
 [127/322] r1 R1# show clock
-  21:24:40.000 CET Wed Aug 12 2026
+  23:12:16.000 CET Wed Aug 12 2026
 
 [128/322] r1 R1# show clock detail
-  21:24:40.000 CET Wed Aug 12 2026
+  23:12:16.000 CET Wed Aug 12 2026
   Time source is NTP (LOCL)
 
 [129/322] r1 R1# show calendar
-  21:24:40 CET Wed Aug 12 2026
+  23:12:16 CET Wed Aug 12 2026
 
 
 --- [130] § NetFlow / Flexible NetFlow ---
@@ -1055,7 +1055,7 @@ Total steps: 322
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX90791N53
+  Processor board ID FTX3827QMKL
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1104,7 +1104,7 @@ Total steps: 322
   !
   access-list 10 permit 10.0.0.0 0.0.0.255
   !
-  ! Last configuration change at 20:24:40 UTC Wed Aug 12 2026 by console
+  ! Last configuration change at 22:12:16 UTC Wed Aug 12 2026 by console
   sntp server 10.0.0.40
   logging console warnings
   logging trap notifications
@@ -1523,104 +1523,104 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  000008: *Aug 12 20:24:40.361 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
-  000009: *Aug 12 20:24:40.362 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
-  000010: *Aug 12 20:24:40.363 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
-  000011: *Aug 12 20:24:40.365 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
-  000012: *Aug 12 20:24:40.365 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
-  000013: *Aug 12 20:24:40.366 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
-  000014: *Aug 12 20:24:40.366 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
-  000015: *Aug 12 20:24:40.367 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server ifindex persist
-  000016: *Aug 12 20:24:40.367 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server packetsize 1500
-  000017: *Aug 12 20:24:40.368 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server queue-length 50
-  000018: *Aug 12 20:24:40.368 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
-  000019: *Aug 12 20:24:40.369 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  000020: *Aug 12 20:24:40.369 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
-  000021: *Aug 12 20:24:40.370 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
-  000022: *Aug 12 20:24:40.370 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
-  000023: *Aug 12 20:24:40.371 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
-  000024: *Aug 12 20:24:40.371 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
-  000025: *Aug 12 20:24:40.372 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
-  000026: *Aug 12 20:24:40.373 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  000027: *Aug 12 20:24:40.373 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
-  000028: *Aug 12 20:24:40.377 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server source-interface traps Loopback0
-  000029: *Aug 12 20:24:40.377 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server system-shutdown
-  000030: *Aug 12 20:24:40.378 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server tftp-server-list 10
-  000032: *Aug 12 20:24:40.380 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
-  000033: *Aug 12 20:24:40.381 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
-  000034: *Aug 12 20:24:40.381 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
-  000035: *Aug 12 20:24:40.382 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  000036: *Aug 12 20:24:40.382 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
-  000037: *Aug 12 20:24:40.383 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
-  000038: *Aug 12 20:24:40.383 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
-  000039: *Aug 12 20:24:40.384 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
-  000040: *Aug 12 20:24:40.384 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  000041: *Aug 12 20:24:40.385 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
-  000042: *Aug 12 20:24:40.385 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
-  000044: *Aug 12 21:24:40.386 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
-  000045: *Aug 12 21:24:40.387 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  000046: *Aug 12 21:24:40.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
-  000047: *Aug 12 21:24:40.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
-  000048: *Aug 12 21:24:40.389 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 2 <removed> NtpKey456
-  000049: *Aug 12 21:24:40.389 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000050: *Aug 12 21:24:40.390 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000051: *Aug 12 21:24:40.393 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
-  000052: *Aug 12 21:24:40.394 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
-  000053: *Aug 12 21:24:40.395 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
-  000054: *Aug 12 21:24:40.396 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
-  000055:  Aug 12 21:24:40.396 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
-  000056:  Aug 12 21:24:40.397 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
-  000057:  Aug 12 21:24:40.397 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
-  000058:  Aug 12 21:24:40.398 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
-  000059:  Aug 12 21:24:40.398 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
-  000060:  Aug 12 21:24:40.399 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
-  000062:  Aug 12 21:24:40.402 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
-  000063:  Aug 12 21:24:40.403 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
-  000064:  Aug 12 21:24:40.403 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
-  000065:  Aug 12 21:24:40.404 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
-  000066:  Aug 12 21:24:40.405 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
-  000067:  Aug 12 21:24:40.405 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000068:  Aug 12 21:24:40.406 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
-  000069:  Aug 12 21:24:40.407 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
-  000070:  Aug 12 21:24:40.407 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
-  000071:  Aug 12 21:24:40.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
-  000072:  Aug 12 21:24:40.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
-  000073:  Aug 12 21:24:40.409 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
-  000074:  Aug 12 21:24:40.409 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
-  000075:  Aug 12 21:24:40.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
-  000076:  Aug 12 21:24:40.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
-  000077:  Aug 12 21:24:40.411 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
-  000078:  Aug 12 21:24:40.412 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
-  000079:  Aug 12 21:24:40.412 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
-  000080:  Aug 12 21:24:40.413 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
-  000081:  Aug 12 21:24:40.414 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
-  000082:  Aug 12 21:24:40.414 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
-  000083:  Aug 12 21:24:40.415 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
-  000084:  Aug 12 21:24:40.415 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
-  000085:  Aug 12 21:24:40.416 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000086:  Aug 12 21:24:40.417 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
-  000088:  Aug 12 21:24:40.419 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
-  000089:  Aug 12 21:24:40.419 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  000090:  Aug 12 21:24:40.420 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
-  000091:  Aug 12 21:24:40.421 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
-  000092:  Aug 12 21:24:40.422 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
-  000093:  Aug 12 21:24:40.422 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
-  000094:  Aug 12 21:24:40.423 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
-  000095:  Aug 12 21:24:40.424 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
-  000096:  Aug 12 21:24:40.424 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
-  000097:  Aug 12 21:24:40.425 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
-  000099:  Aug 12 21:24:40.426 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
-  000100:  Aug 12 21:24:40.428 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
-  000101:  Aug 12 21:24:40.429 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
-  000102:  Aug 12 21:24:40.429 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
-  000103:  Aug 12 21:24:40.432 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
-  000104:  Aug 12 21:24:40.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
-  000105:  Aug 12 21:24:40.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
-  000106:  Aug 12 21:24:40.434 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
-  000107:  Aug 12 21:24:40.434 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000108:  Aug 12 21:24:40.435 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
-  000109:  Aug 12 21:24:40.436 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
-  000110:  Aug 12 21:24:40.436 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
+  000008: *Aug 12 22:12:16.137 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
+  000009: *Aug 12 22:12:16.138 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
+  000010: *Aug 12 22:12:16.139 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
+  000011: *Aug 12 22:12:16.140 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
+  000012: *Aug 12 22:12:16.140 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
+  000013: *Aug 12 22:12:16.141 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
+  000014: *Aug 12 22:12:16.141 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
+  000015: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server ifindex persist
+  000016: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server packetsize 1500
+  000017: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server queue-length 50
+  000018: *Aug 12 22:12:16.143 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
+  000019: *Aug 12 22:12:16.143 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  000020: *Aug 12 22:12:16.144 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
+  000021: *Aug 12 22:12:16.144 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
+  000022: *Aug 12 22:12:16.148 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
+  000023: *Aug 12 22:12:16.149 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
+  000024: *Aug 12 22:12:16.149 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
+  000025: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
+  000026: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  000027: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
+  000028: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server source-interface traps Loopback0
+  000029: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server system-shutdown
+  000030: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server tftp-server-list 10
+  000032: *Aug 12 22:12:16.153 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
+  000033: *Aug 12 22:12:16.153 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
+  000034: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
+  000035: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  000036: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
+  000037: *Aug 12 22:12:16.155 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
+  000038: *Aug 12 22:12:16.155 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
+  000039: *Aug 12 22:12:16.156 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
+  000040: *Aug 12 22:12:16.156 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  000041: *Aug 12 22:12:16.157 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
+  000042: *Aug 12 22:12:16.157 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
+  000044: *Aug 12 23:12:16.158 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
+  000045: *Aug 12 23:12:16.158 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  000046: *Aug 12 23:12:16.159 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
+  000047: *Aug 12 23:12:16.159 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
+  000048: *Aug 12 23:12:16.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 2 <removed> NtpKey456
+  000049: *Aug 12 23:12:16.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000050: *Aug 12 23:12:16.161 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000051: *Aug 12 23:12:16.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
+  000052: *Aug 12 23:12:16.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
+  000053: *Aug 12 23:12:16.164 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
+  000054: *Aug 12 23:12:16.165 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
+  000055:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
+  000056:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
+  000057:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
+  000058:  Aug 12 23:12:16.167 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
+  000059:  Aug 12 23:12:16.167 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
+  000060:  Aug 12 23:12:16.168 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
+  000062:  Aug 12 23:12:16.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
+  000063:  Aug 12 23:12:16.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
+  000064:  Aug 12 23:12:16.172 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
+  000065:  Aug 12 23:12:16.172 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
+  000066:  Aug 12 23:12:16.173 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
+  000067:  Aug 12 23:12:16.173 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000068:  Aug 12 23:12:16.174 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
+  000069:  Aug 12 23:12:16.175 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
+  000070:  Aug 12 23:12:16.175 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
+  000071:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
+  000072:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
+  000073:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
+  000074:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
+  000075:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
+  000076:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
+  000077:  Aug 12 23:12:16.178 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
+  000078:  Aug 12 23:12:16.178 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
+  000079:  Aug 12 23:12:16.179 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
+  000080:  Aug 12 23:12:16.179 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
+  000081:  Aug 12 23:12:16.180 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
+  000082:  Aug 12 23:12:16.180 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
+  000083:  Aug 12 23:12:16.181 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
+  000084:  Aug 12 23:12:16.181 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
+  000085:  Aug 12 23:12:16.182 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000086:  Aug 12 23:12:16.183 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
+  000088:  Aug 12 23:12:16.185 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
+  000089:  Aug 12 23:12:16.185 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+  000090:  Aug 12 23:12:16.186 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
+  000091:  Aug 12 23:12:16.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
+  000092:  Aug 12 23:12:16.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
+  000093:  Aug 12 23:12:16.188 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
+  000094:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
+  000095:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
+  000096:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
+  000097:  Aug 12 23:12:16.190 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
+  000099:  Aug 12 23:12:16.191 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
+  000100:  Aug 12 23:12:16.192 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
+  000101:  Aug 12 23:12:16.193 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
+  000102:  Aug 12 23:12:16.193 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
+  000103:  Aug 12 23:12:16.195 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
+  000104:  Aug 12 23:12:16.196 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
+  000105:  Aug 12 23:12:16.197 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
+  000106:  Aug 12 23:12:16.197 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
+  000107:  Aug 12 23:12:16.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000108:  Aug 12 23:12:16.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
+  000109:  Aug 12 23:12:16.199 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
+  000110:  Aug 12 23:12:16.199 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
 
 [249/322] r1 R1# show snmp
   Chassis: R1-CHASSIS
@@ -1648,7 +1648,7 @@ Total steps: 322
   Clock is synchronized, stratum 3, reference is LOCL
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE275508.7DF3B645 (20:24:40.492 UTC Wed Aug 12 2026)
+  reference time is EE276E40.3EF9DB22 (22:12:16.246 UTC Wed Aug 12 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 0.00 msec, peer dispersion is 0.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1664,7 +1664,7 @@ Total steps: 322
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [252/322] r1 R1# show clock
-  21:24:40.000 CET Wed Aug 12 2026
+  23:12:16.000 CET Wed Aug 12 2026
 
 [253/322] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1846,7 +1846,7 @@ Total steps: 322
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX90791N53
+  Processor board ID FTX3827QMKL
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1895,7 +1895,7 @@ Total steps: 322
   !
   access-list 10 permit 10.0.0.0 0.0.0.255
   !
-  ! Last configuration change at 20:24:40 UTC Wed Aug 12 2026 by console
+  ! Last configuration change at 22:12:16 UTC Wed Aug 12 2026 by console
   sntp server 10.0.0.40
   logging console warnings
   logging trap notifications
@@ -2238,108 +2238,108 @@ Total steps: 322
   
   Log Buffer (64000 bytes):
   
-  000008: *Aug 12 20:24:40.361 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
-  000009: *Aug 12 20:24:40.362 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
-  000010: *Aug 12 20:24:40.363 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
-  000011: *Aug 12 20:24:40.365 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
-  000012: *Aug 12 20:24:40.365 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
-  000013: *Aug 12 20:24:40.366 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
-  000014: *Aug 12 20:24:40.366 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
-  000015: *Aug 12 20:24:40.367 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server ifindex persist
-  000016: *Aug 12 20:24:40.367 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server packetsize 1500
-  000017: *Aug 12 20:24:40.368 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server queue-length 50
-  000018: *Aug 12 20:24:40.368 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
-  000019: *Aug 12 20:24:40.369 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
-  000020: *Aug 12 20:24:40.369 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
-  000021: *Aug 12 20:24:40.370 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
-  000022: *Aug 12 20:24:40.370 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
-  000023: *Aug 12 20:24:40.371 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
-  000024: *Aug 12 20:24:40.371 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
-  000025: *Aug 12 20:24:40.372 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
-  000026: *Aug 12 20:24:40.373 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
-  000027: *Aug 12 20:24:40.373 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
-  000028: *Aug 12 20:24:40.377 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server source-interface traps Loopback0
-  000029: *Aug 12 20:24:40.377 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server system-shutdown
-  000030: *Aug 12 20:24:40.378 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server tftp-server-list 10
-  000032: *Aug 12 20:24:40.380 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
-  000033: *Aug 12 20:24:40.381 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
-  000034: *Aug 12 20:24:40.381 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
-  000035: *Aug 12 20:24:40.382 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
-  000036: *Aug 12 20:24:40.382 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
-  000037: *Aug 12 20:24:40.383 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
-  000038: *Aug 12 20:24:40.383 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
-  000039: *Aug 12 20:24:40.384 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
-  000040: *Aug 12 20:24:40.384 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
-  000041: *Aug 12 20:24:40.385 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
-  000042: *Aug 12 20:24:40.385 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
-  000044: *Aug 12 21:24:40.386 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
-  000045: *Aug 12 21:24:40.387 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
-  000046: *Aug 12 21:24:40.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
-  000047: *Aug 12 21:24:40.388 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
-  000048: *Aug 12 21:24:40.389 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 2 <removed> NtpKey456
-  000049: *Aug 12 21:24:40.389 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000050: *Aug 12 21:24:40.390 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
-  000051: *Aug 12 21:24:40.393 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
-  000052: *Aug 12 21:24:40.394 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
-  000053: *Aug 12 21:24:40.395 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
-  000054: *Aug 12 21:24:40.396 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
-  000055:  Aug 12 21:24:40.396 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
-  000056:  Aug 12 21:24:40.397 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
-  000057:  Aug 12 21:24:40.397 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
-  000058:  Aug 12 21:24:40.398 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
-  000059:  Aug 12 21:24:40.398 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
-  000060:  Aug 12 21:24:40.399 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
-  000062:  Aug 12 21:24:40.402 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
-  000063:  Aug 12 21:24:40.403 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
-  000064:  Aug 12 21:24:40.403 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
-  000065:  Aug 12 21:24:40.404 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
-  000066:  Aug 12 21:24:40.405 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
-  000067:  Aug 12 21:24:40.405 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000068:  Aug 12 21:24:40.406 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
-  000069:  Aug 12 21:24:40.407 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
-  000070:  Aug 12 21:24:40.407 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
-  000071:  Aug 12 21:24:40.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
-  000072:  Aug 12 21:24:40.408 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
-  000073:  Aug 12 21:24:40.409 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
-  000074:  Aug 12 21:24:40.409 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
-  000075:  Aug 12 21:24:40.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
-  000076:  Aug 12 21:24:40.410 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
-  000077:  Aug 12 21:24:40.411 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
-  000078:  Aug 12 21:24:40.412 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
-  000079:  Aug 12 21:24:40.412 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
-  000080:  Aug 12 21:24:40.413 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
-  000081:  Aug 12 21:24:40.414 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
-  000082:  Aug 12 21:24:40.414 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
-  000083:  Aug 12 21:24:40.415 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
-  000084:  Aug 12 21:24:40.415 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
-  000085:  Aug 12 21:24:40.416 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000086:  Aug 12 21:24:40.417 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
-  000088:  Aug 12 21:24:40.419 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
-  000089:  Aug 12 21:24:40.419 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
-  000090:  Aug 12 21:24:40.420 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
-  000091:  Aug 12 21:24:40.421 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
-  000092:  Aug 12 21:24:40.422 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
-  000093:  Aug 12 21:24:40.422 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
-  000094:  Aug 12 21:24:40.423 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
-  000095:  Aug 12 21:24:40.424 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
-  000096:  Aug 12 21:24:40.424 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
-  000097:  Aug 12 21:24:40.425 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
-  000099:  Aug 12 21:24:40.426 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
-  000100:  Aug 12 21:24:40.428 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
-  000101:  Aug 12 21:24:40.429 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
-  000102:  Aug 12 21:24:40.429 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
-  000103:  Aug 12 21:24:40.432 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
-  000104:  Aug 12 21:24:40.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
-  000105:  Aug 12 21:24:40.433 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
-  000106:  Aug 12 21:24:40.434 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
-  000107:  Aug 12 21:24:40.434 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
-  000108:  Aug 12 21:24:40.435 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
-  000109:  Aug 12 21:24:40.436 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
-  000110:  Aug 12 21:24:40.436 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
+  000008: *Aug 12 22:12:16.137 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community public RO
+  000009: *Aug 12 22:12:16.138 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community private RW
+  000010: *Aug 12 22:12:16.139 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server community ro-acl RO 10
+  000011: *Aug 12 22:12:16.140 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:access-list 10 permit 10.0.0.0 0.0.0.255
+  000012: *Aug 12 22:12:16.140 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server location DC1-Rack5
+  000013: *Aug 12 22:12:16.141 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server contact noc@lab.local
+  000014: *Aug 12 22:12:16.141 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server chassis-id R1-CHASSIS
+  000015: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server ifindex persist
+  000016: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server packetsize 1500
+  000017: *Aug 12 22:12:16.142 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server queue-length 50
+  000018: *Aug 12 22:12:16.143 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server trap-timeout 30
+  000019: *Aug 12 22:12:16.143 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps snmp authentication linkdown linkup coldstart warmstart
+  000020: *Aug 12 22:12:16.144 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps ospf
+  000021: *Aug 12 22:12:16.144 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps bgp
+  000022: *Aug 12 22:12:16.148 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps config
+  000023: *Aug 12 22:12:16.149 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps cpu threshold
+  000024: *Aug 12 22:12:16.149 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server enable traps envmon
+  000025: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.5 version 2c public
+  000026: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.6 version 2c private udp-port 162 ospf bgp
+  000027: *Aug 12 22:12:16.150 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.7 informs version 2c public
+  000028: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server source-interface traps Loopback0
+  000029: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server system-shutdown
+  000030: *Aug 12 22:12:16.151 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server tftp-server-list 10
+  000032: *Aug 12 22:12:16.153 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view ALL iso included
+  000033: *Aug 12 22:12:16.153 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server view LIMITED system included
+  000034: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RO v3 priv read ALL
+  000035: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-RW v3 priv read ALL write ALL notify ALL
+  000036: *Aug 12 22:12:16.154 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server group GRP-AUTH v3 auth read LIMITED
+  000037: *Aug 12 22:12:16.155 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user adminv3 GRP-RW v3 auth sha <removed> priv aes 256 <removed>
+  000038: *Aug 12 22:12:16.155 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user rouser GRP-RO v3 auth sha <removed>
+  000039: *Aug 12 22:12:16.156 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server user noauth GRP-AUTH v3
+  000040: *Aug 12 22:12:16.156 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server host 10.0.0.8 version 3 priv adminv3 cpu
+  000041: *Aug 12 22:12:16.157 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID local 800000090300DEADBEEF0001
+  000042: *Aug 12 22:12:16.157 UTC: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:snmp-server engineID remote 10.0.0.8 800000090300CAFEBABE0001
+  000044: *Aug 12 23:12:16.158 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock timezone CET 1 0
+  000045: *Aug 12 23:12:16.158 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:clock summer-time CEST recurring last Sun Mar 2:00 last Sun Oct 3:00
+  000046: *Aug 12 23:12:16.159 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authenticate
+  000047: *Aug 12 23:12:16.159 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 1 <removed> NtpKey123
+  000048: *Aug 12 23:12:16.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp authentication-key 2 <removed> NtpKey456
+  000049: *Aug 12 23:12:16.160 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000050: *Aug 12 23:12:16.161 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp trusted-key <removed>
+  000051: *Aug 12 23:12:16.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.21 key 1 <removed>
+  000052: *Aug 12 23:12:16.163 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.22 key 1 <removed>
+  000053: *Aug 12 23:12:16.164 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp server 10.0.0.23 key 1 <removed>
+  000054: *Aug 12 23:12:16.165 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp peer 10.0.0.30
+  000055:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp master 3
+  000056:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp source Loopback0
+  000057:  Aug 12 23:12:16.166 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp update-calendar
+  000058:  Aug 12 23:12:16.167 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group peer 10
+  000059:  Aug 12 23:12:16.167 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ntp access-group serve-only 10
+  000060:  Aug 12 23:12:16.168 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:sntp server 10.0.0.40
+  000062:  Aug 12 23:12:16.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export version 9
+  000063:  Aug 12 23:12:16.171 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export destination 10.0.0.50 9996
+  000064:  Aug 12 23:12:16.172 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-export source Loopback0
+  000065:  Aug 12 23:12:16.172 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout active 1
+  000066:  Aug 12 23:12:16.173 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow-cache timeout inactive 15
+  000067:  Aug 12 23:12:16.173 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000068:  Aug 12 23:12:16.174 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow ingress
+  000069:  Aug 12 23:12:16.175 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow egress
+  000070:  Aug 12 23:12:16.175 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip route-cache flow
+  000071:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow record FR1
+  000072:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 source address
+  000073:  Aug 12 23:12:16.176 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match ipv4 destination address
+  000074:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:match transport source-port
+  000075:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter bytes
+  000076:  Aug 12 23:12:16.177 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:collect counter packets
+  000077:  Aug 12 23:12:16.178 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow exporter FE1
+  000078:  Aug 12 23:12:16.178 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:destination 10.0.0.50
+  000079:  Aug 12 23:12:16.179 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:transport udp 2055
+  000080:  Aug 12 23:12:16.179 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:export-protocol netflow-v9
+  000081:  Aug 12 23:12:16.180 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:flow monitor FM1
+  000082:  Aug 12 23:12:16.180 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:record FR1
+  000083:  Aug 12 23:12:16.181 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:exporter FE1
+  000084:  Aug 12 23:12:16.181 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cache timeout active 60
+  000085:  Aug 12 23:12:16.182 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000086:  Aug 12 23:12:16.183 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:ip flow monitor FM1 input
+  000088:  Aug 12 23:12:16.185 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet IF-DOWN
+  000089:  Aug 12 23:12:16.185 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event syslog pattern "LINK-3-UPDOWN.*GigabitEthernet0/1"
+  000090:  Aug 12 23:12:16.186 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 syslog msg "WAN interface changed state"
+  000091:  Aug 12 23:12:16.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "enable"
+  000092:  Aug 12 23:12:16.187 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 3.0 cli command "show ip interface brief"
+  000093:  Aug 12 23:12:16.188 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager applet CRON-BACKUP
+  000094:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event timer cron cron-entry "0 2 * * *"
+  000095:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 1.0 cli command "enable"
+  000096:  Aug 12 23:12:16.189 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:action 2.0 cli command "copy running-config flash:nightly.cfg"
+  000097:  Aug 12 23:12:16.190 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:event manager environment _email noc@lab.local
+  000099:  Aug 12 23:12:16.191 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp run
+  000100:  Aug 12 23:12:16.192 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp timer 30
+  000101:  Aug 12 23:12:16.193 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp holdtime 120
+  000102:  Aug 12 23:12:16.193 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp advertise-v2
+  000103:  Aug 12 23:12:16.195 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp run
+  000104:  Aug 12 23:12:16.196 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp timer 30
+  000105:  Aug 12 23:12:16.197 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp holdtime 120
+  000106:  Aug 12 23:12:16.197 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp reinit 2
+  000107:  Aug 12 23:12:16.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:interface GigabitEthernet0/1
+  000108:  Aug 12 23:12:16.198 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:cdp enable
+  000109:  Aug 12 23:12:16.199 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp transmit
+  000110:  Aug 12 23:12:16.199 CET: %PARSER-5-CFGLOG_LOGGEDCMD: User:console logged command:lldp receive
 
 [266/322] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX90791N53
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3827QMKL
 
 [267/322] r1 R1# show environment
   Number of Critical alarms:  0

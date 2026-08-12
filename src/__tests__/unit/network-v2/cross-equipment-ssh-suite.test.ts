@@ -1106,11 +1106,11 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo roundtrip > /tmp/rt.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
         );
         await l.linux1.executeCommand('rm /tmp/rt.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
         );
       },
       on: l => l.linux1, cmd: 'cat /tmp/rt.txt',
@@ -2099,7 +2099,7 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
       name: 'sftp put then local cat sees the exact bytes',
       setup: async (l) => {
         await l.linux1.executeCommand('echo bridged > /tmp/x');
-        await l.linux1.executeCommand("sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
+        await l.linux1.executeCommand("sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
       },
       on: l => l.linux2, cmd: 'cat /tmp/x',
       contains: [/^bridged$/m],
@@ -2318,7 +2318,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/exitchk && echo x > /tmp/exitchk/x');
       },
-      on: l => l.linux1, cmd: 'scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
       contains: [/rc=0/],
     },
   ];
@@ -2345,11 +2345,11 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/run"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
         );
       },
       on: l => l.linux1,
-      cmd: "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+      cmd: "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
       contains: [/Remote working directory: \/var\/tmp\/run/],
     },
     {
@@ -2357,7 +2357,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo m > /tmp/m.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/box-sftp/m.txt',
@@ -2368,7 +2368,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo s > /tmp/s.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/s.txt',
@@ -2379,7 +2379,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo doomed > /tmp/zap && chown alice:alice /tmp/zap"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'ls /tmp/zap',
@@ -2390,7 +2390,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo moveme > /tmp/from && chown alice:alice /tmp/from"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/to',
@@ -2401,7 +2401,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo k > /tmp/k.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/k.txt',
@@ -2440,7 +2440,7 @@ describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo via-sftp > /tmp/sf.txt');
         await l.linux1.executeCommand(
-          "sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
+          "sshpass -p user sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
         );
       },
       on: l => l.win1, cmd: 'type C:\\Users\\User\\sf.txt',
@@ -2511,11 +2511,11 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo v1 > /tmp/over');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
         );
         await l.linux1.executeCommand('echo v2 > /tmp/over');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/over',
@@ -2544,7 +2544,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo r1 > /tmp/r1 && chown alice:alice /tmp/r1"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/r2',
@@ -2555,7 +2555,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /var/tmp/dst/cross',
@@ -2566,7 +2566,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo chained > /tmp/c.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /var/chain/final',
@@ -2577,7 +2577,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo gone > /tmp/gone && chown alice:alice /tmp/gone"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'ls /tmp/gone',
@@ -2588,7 +2588,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sh -c "echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/moved',

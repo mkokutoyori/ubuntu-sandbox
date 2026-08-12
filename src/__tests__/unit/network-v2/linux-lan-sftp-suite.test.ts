@@ -132,10 +132,35 @@ function assertRow(out: string, row: Row): void {
   }
 }
 
-/** Build a here-doc sftp invocation. */
-function sftp(dest: string, verbs: string[], opts: { flags?: string } = {}): string {
+const WINDOWS_HOSTS = new Set(['10.0.0.20', '10.0.0.21']);
+
+/**
+ * The password each account of this lab answers to. A here-doc now opens
+ * the same real session a bare `sftp` does, so every invocation has to
+ * carry one: the standard Linux cast gives a user their own name,
+ * `root` and the default `user` answer to `admin`, and a Windows box
+ * ships `User` / `user`.
+ */
+function passwordFor(user: string, host: string): string {
+  if (WINDOWS_HOSTS.has(host)) return 'user';
+  return user === 'root' || user === 'user' ? 'admin' : user;
+}
+
+/**
+ * Build a here-doc sftp invocation, carrying the account's password.
+ *
+ * `fromWindows` drops it: a Windows box ships no `sshpass`, and its own
+ * client (`WindowsSftpClient`) is a separate path that still resolves the
+ * remote in memory — §26 measures that client, not this one.
+ */
+function sftp(
+  dest: string, verbs: string[], opts: { flags?: string; fromWindows?: boolean } = {},
+): string {
   const flags = opts.flags ? `${opts.flags} ` : '';
-  return `sftp ${flags}${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
+  const user = /^([\w.-]+)@/.exec(dest)?.[1] ?? 'user';
+  const host = dest.replace(/^[\w.-]+@/, '').split(':')[0];
+  const auth = opts.fromWindows ? '' : `sshpass -p ${passwordFor(user, host)} `;
+  return `${auth}sftp ${flags}${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
 }
 
 // ─── Section 1 — SFTP happy path (PC↔PC, PC↔Server, Server↔Server, Linux→Windows) ──
@@ -818,19 +843,19 @@ describe('§13 — bye / quit / exit terminate the session', () => {
     {
       name: 'quit is an alias for bye',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nquit\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nquit\nEOF`,
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'exit is an alias for bye',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nexit\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nexit\nEOF`,
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'commands after bye are not executed',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/should-not-be-created\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/should-not-be-created\nEOF`,
       excludes: [/mkdir failed/, /should-not-be-created/],
     },
     {
@@ -1465,20 +1490,20 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
     {
       name: 'win1 → linux pc2: sftp alice@10.0.0.2 connects',
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.2/],
       excludes: [/not recognized|command not found/i],
     },
     {
       name: 'win1 → linux server: sftp alice@srv1 connects',
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      cmd: sftp('alice@10.0.0.10', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.10/],
     },
     {
       name: 'win1 → win2: cross-Windows sftp connects',
       on: l => l.win1,
-      cmd: sftp('User@10.0.0.21', ['pwd']),
+      cmd: sftp('User@10.0.0.21', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.21/],
     },
     {
@@ -1488,13 +1513,13 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222', fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'sftp from Windows to an unreachable IP fails gracefully',
       on: l => l.win1,
-      cmd: sftp('alice@192.0.2.99', ['pwd']),
+      cmd: sftp('alice@192.0.2.99', ['pwd'], { fromWindows: true }),
       contains: [/no route|Could not resolve|refused|timed out/i],
       excludes: [/Connected to/],
     },
@@ -1502,7 +1527,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → pc2 with sshd stopped: Connection refused',
       setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
       contains: [/Connection refused/],
     },
     {
@@ -1510,7 +1535,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       setup: async (l) => {
         await l.win1.executeCommand('echo from-win > C:\\Users\\User\\to-linux.txt');
         await l.win1.executeCommand(
-          sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt']),
+          sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt'], { fromWindows: true }),
         );
       },
       on: l => l.pc2,

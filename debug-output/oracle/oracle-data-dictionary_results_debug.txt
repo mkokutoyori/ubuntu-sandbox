@@ -1,6 +1,6 @@
 ============================================================
 Oracle debug transcript — oracle-data-dictionary
-Generated: 2026-08-12T20:23:04.334Z
+Generated: 2026-08-12T22:07:38.797Z
 Topology:  LinuxServer ora-dict — Oracle ORCL OPEN
 Total commands: 400
 ============================================================
@@ -1208,27 +1208,27 @@ SQL [111/400]> SELECT * FROM dba_objects WHERE owner = 'HR' ORDER BY object_type
   
   OWNER OBJECT_NAME       SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  HR    GET_EMPLOYEE_NAME                     1038                FUNCTION    12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    SYS_C010000                           1025           1025 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    SYS_C010001                           1026           1026 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    SYS_C010002                           1027           1027 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    SYS_C010004                           1028           1028 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    SYS_C010006                           1029           1029 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    SYS_C010008                           1030           1030 INDEX       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 4 N                
-  HR    ADD_EMPLOYEE                          1037                PROCEDURE   12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    DEPARTMENTS_SEQ                       1034                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    EMPLOYEES_SEQ                         1033                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    LOCATIONS_SEQ                         1035                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    COUNTRIES                             1002           1002 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    DEPARTMENTS                           1004           1004 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    EMPLOYEES                             1006           1006 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
+  HR    GET_EMPLOYEE_NAME                     1038                FUNCTION    12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    SYS_C010000                           1025           1025 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    SYS_C010001                           1026           1026 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    SYS_C010002                           1027           1027 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    SYS_C010004                           1028           1028 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    SYS_C010006                           1029           1029 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    SYS_C010008                           1030           1030 INDEX       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 4 N                
+  HR    ADD_EMPLOYEE                          1037                PROCEDURE   12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    DEPARTMENTS_SEQ                       1034                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    EMPLOYEES_SEQ                         1033                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    LOCATIONS_SEQ                         1035                SEQUENCE    12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    COUNTRIES                             1002           1002 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    DEPARTMENTS                           1004           1004 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    EMPLOYEES                             1006           1006 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
   
   OWNER OBJECT_NAME       SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  HR    JOBS                                  1005           1005 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    JOB_HISTORY                           1007           1007 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    LOCATIONS                             1003           1003 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
-  HR    REGIONS                               1001           1001 TABLE       12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 N                
+  HR    JOBS                                  1005           1005 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    JOB_HISTORY                           1007           1007 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    LOCATIONS                             1003           1003 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
+  HR    REGIONS                               1001           1001 TABLE       12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 N                
   
   18 rows selected.
 
@@ -1260,41 +1260,41 @@ SQL [116/400]> SELECT * FROM all_objects WHERE rownum < 30;
   
   OWNER OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                               100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                              101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                              102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                               103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$PARAMETER                             104                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SPPARAMETER                           105                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SYSTEM_PARAMETER                      106                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SGA                                   107                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SGASTAT                               108                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$TABLESPACE                            109                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$DATAFILE                              110                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$TEMPFILE                              111                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$LOG                                   112                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$LOGFILE                               113                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                               100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                              101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                              102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                               103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$PARAMETER                             104                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SPPARAMETER                           105                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SYSTEM_PARAMETER                      106                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SGA                                   107                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SGASTAT                               108                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$TABLESPACE                            109                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$DATAFILE                              110                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$TEMPFILE                              111                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$LOG                                   112                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$LOGFILE                               113                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   OWNER OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$LOG_HISTORY                           114                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$ARCHIVED_LOG                          115                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$PROCESS                               116                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$CONTROLFILE                           117                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$DIAG_INFO                             118                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$LOCK                                  119                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$LOCKED_OBJECT                         120                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$TRANSACTION                           121                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SQL                                   122                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SQLAREA                               123                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SQL_PLAN                              124                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SYSSTAT                               125                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SESSTAT                               126                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$OPEN_CURSOR                           127                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  SYS   V$LOG_HISTORY                           114                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$ARCHIVED_LOG                          115                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$PROCESS                               116                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$CONTROLFILE                           117                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$DIAG_INFO                             118                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$LOCK                                  119                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$LOCKED_OBJECT                         120                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$TRANSACTION                           121                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SQL                                   122                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SQLAREA                               123                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SQL_PLAN                              124                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SYSSTAT                               125                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SESSTAT                               126                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$OPEN_CURSOR                           127                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   OWNER OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$OPTION                                128                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  SYS   V$OPTION                                128                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   29 rows selected.
 
@@ -1302,41 +1302,41 @@ SQL [117/400]> SELECT * FROM user_objects WHERE rownum < 30;
   
   OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  V$VERSION                               100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$INSTANCE                              101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$DATABASE                              102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SESSION                               103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$PARAMETER                             104                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SPPARAMETER                           105                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SYSTEM_PARAMETER                      106                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SGA                                   107                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SGASTAT                               108                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$TABLESPACE                            109                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$DATAFILE                              110                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$TEMPFILE                              111                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$LOG                                   112                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$LOGFILE                               113                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  V$VERSION                               100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$INSTANCE                              101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$DATABASE                              102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SESSION                               103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$PARAMETER                             104                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SPPARAMETER                           105                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SYSTEM_PARAMETER                      106                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SGA                                   107                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SGASTAT                               108                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$TABLESPACE                            109                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$DATAFILE                              110                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$TEMPFILE                              111                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$LOG                                   112                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$LOGFILE                               113                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  V$LOG_HISTORY                           114                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$ARCHIVED_LOG                          115                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$PROCESS                               116                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$CONTROLFILE                           117                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$DIAG_INFO                             118                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$LOCK                                  119                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$LOCKED_OBJECT                         120                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$TRANSACTION                           121                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SQL                                   122                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SQLAREA                               123                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SQL_PLAN                              124                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SYSSTAT                               125                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$SESSTAT                               126                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  V$OPEN_CURSOR                           127                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  V$LOG_HISTORY                           114                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$ARCHIVED_LOG                          115                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$PROCESS                               116                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$CONTROLFILE                           117                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$DIAG_INFO                             118                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$LOCK                                  119                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$LOCKED_OBJECT                         120                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$TRANSACTION                           121                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SQL                                   122                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SQLAREA                               123                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SQL_PLAN                              124                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SYSSTAT                               125                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$SESSTAT                               126                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  V$OPEN_CURSOR                           127                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   OBJECT_NAME        SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ------------------ -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  V$OPTION                                128                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  V$OPTION                                128                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   29 rows selected.
 
@@ -1856,40 +1856,45 @@ SQL [156/400]> SELECT * FROM v$sql WHERE rownum < 30 ORDER BY elapsed_time DESC;
   
   SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  1bbre0pa3xqw0 INSERT INTO HR.REGIONS VALUES (1, 'Europe')                                               1         2439     1951           1          0              1 SYS                 2026-08-12T20:23:04
+  1bbre0pa3xqw0 INSERT INTO HR.REGIONS VALUES (1, 'Europe')                                               1         2127     1701           1          0              1 SYS                 2026-08-12T22:07:38
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         2212     1770           1          0              0 SYS                 2026-08-12T20:23:04
+         REGION_          1         1915     1532           1          0              0 SYS                 2026-08-12T22:07:38
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
+  0vbcgv9a3xqw0 INSERT INTO HR.COUNTRIES VALUES ('FR', 'France', 1)                                       1          730      584           1          0              1 SYS                 2026-08-12T22:07:38
+  13i4coqa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('DE', 'Germany', 1)                                      1          522      418           1          0              1 SYS                 2026-08-12T22:07:38
+  165abgna3xqw0 INSERT INTO HR.REGIONS VALUES (3, 'Asia')                                                 1          492      394           1          0              1 SYS                 2026-08-12T22:07:38
+  1rj844la3xqw0 INSERT INTO HR.REGIONS VALUES (2, 'Americas')                                             1          354      283           1          0              1 SYS                 2026-08-12T22:07:38
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          461      369           1          0              0 SYS                 2026-08-12T20:23:04
+                  1          299      239           1          0              0 SYS                 2026-08-12T22:07:38
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
                 TION_ID NUMBER(4)
        )                                                                                                                                                                       
-  1rj844la3xqw0 INSERT INTO HR.REGIONS VALUES (2, 'Americas')                                             1          395      316           1          0              1 SYS                 2026-08-12T20:23:04
-  1ogfneya3xqw0 INSERT INTO HR.COUNTRIES VALUES ('UK', 'United Kingdom', 1)                               1          374      299           1          0              1 SYS                 2026-08-12T20:23:04
-  165abgna3xqw0 INSERT INTO HR.REGIONS VALUES (3, 'Asia')                                                 1          299      240           1          0              1 SYS                 2026-08-12T20:23:04
-  1lrdndha3xqw0 INSERT INTO HR.REGIONS VALUES (4, 'Middle East and Africa')                               1          274      219           1          0              1 SYS                 2026-08-12T20:23:04
-  0vbcgv9a3xqw0 INSERT INTO HR.COUNTRIES VALUES ('FR', 'France', 1)                                       1          267      214           1          0              1 SYS                 2026-08-12T20:23:04
-  075thxta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CA', 'Canada', 2)                                       1          251      200           1          0              1 SYS                 2026-08-12T20:23:04
+  1ogfneya3xqw0 INSERT INTO HR.COUNTRIES VALUES ('UK', 'United Kingdom', 1)                               1          279      223           1          0              1 SYS                 2026-08-12T22:07:38
+  1lrdndha3xqw0 INSERT INTO HR.REGIONS VALUES (4, 'Middle East and Africa')                               1          237      190           1          0              1 SYS                 2026-08-12T22:07:38
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          243      194           1          0              0 SYS                 2026-08-12T20:23:04
+         COUNTR          1          206      165           1          0              0 SYS                 2026-08-12T22:07:38
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
-  132zflia3xqw0 INSERT INTO HR.LOCATIONS VALUES (1000, '1297 Via Cola di Rie', '00989', 'Roma',           1          235      188           1          0              1 SYS                 2026-08-12T20:23:04
+  132zflia3xqw0 INSERT INTO HR.LOCATIONS VALUES (1000, '1297 Via Cola di Rie', '00989', 'Roma',           1          185      148           1          0              1 SYS                 2026-08-12T22:07:38
                 NULL, 'IT')                                                                                                                                                                                    
-  13i4coqa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('DE', 'Germany', 1)                                      1          231      185           1          0              1 SYS                 2026-08-12T20:23:04
-  14tlwhua3xqw0 INSERT INTO HR.LOCATIONS VALUES (1500, '2011 Interiors Blvd', '99236', 'South Sa          1          224      179           1          0              1 SYS                 2026-08-12T20:23:04
-                n Francisco', 'California', 'US')                                                                                                                                                              
+  1xqamkba3xqw0 CREATE TABLE HR.JOBS (
+         JOB_ID VARCHAR2(10) PRIMARY KEY,
+         JOB_TITLE           1          183      146           1          0              0 SYS                 2026-08-12T22:07:38
+                VARCHAR2(35) NOT NULL,
+         MIN_SALARY NUMBER(6),
+         MAX_SALARY NUMBER(6)
+                                                                                                                 
+                     )                                                                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          219      176           1          0              0 SYS                 2026-08-12T20:23:04
+         STR          1          182      146           1          0              0 SYS                 2026-08-12T22:07:38
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -1898,12 +1903,9 @@ SQL [156/400]> SELECT * FROM v$sql WHERE rownum < 30 ORDER BY elapsed_time DESC;
          COUNTRY_ID CHAR(2)
                                                                                                                      
                  )                                                                                                                                                                                             
-  
-  SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
-  ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   13iiq67a3xqw0 CREATE TABLE HR.EMPLOYEES (
          EMPLOYEE_ID NUMBER(6) PRIMARY KEY,
-         FIR          1          205      164           1          0              0 SYS                 2026-08-12T20:23:04
+         FIR          1          180      144           1          0              0 SYS                 2026-08-12T22:07:38
                 ST_NAME VARCHAR2(20),
          LAST_NAME VARCHAR2(25) NOT NULL,
          EMAIL VARCH                                                                                                               
@@ -1919,44 +1921,42 @@ SQL [156/400]> SELECT * FROM v$sql WHERE rownum < 30 ORDER BY elapsed_time DESC;
          DEPARTMENT_ID NUMBER(                                                                                                               
                 4)
        )                                                                                                                                                                                      
-  1xqamkba3xqw0 CREATE TABLE HR.JOBS (
-         JOB_ID VARCHAR2(10) PRIMARY KEY,
-         JOB_TITLE           1          202      161           1          0              0 SYS                 2026-08-12T20:23:04
-                VARCHAR2(35) NOT NULL,
-         MIN_SALARY NUMBER(6),
-         MAX_SALARY NUMBER(6)
-                                                                                                                 
-                     )                                                                                                                                                                                         
-  0wcn17ca3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)                                        1          183      146           1          0              1 SYS                 2026-08-12T20:23:04
-  0lx34pna3xqw0 INSERT INTO HR.COUNTRIES VALUES ('US', 'United States of America', 2)                     1          158      126           1          0              1 SYS                 2026-08-12T20:23:04
-  07jxh36a3xqw0 INSERT INTO HR.COUNTRIES VALUES ('JP', 'Japan', 3)                                        1          145      116           1          0              1 SYS                 2026-08-12T20:23:04
-  1cmu11ea3xqw0 INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)                                        1          145      116           1          0              1 SYS                 2026-08-12T20:23:04
-  1ppp7cta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2)                                       1          136      109           1          0              1 SYS                 2026-08-12T20:23:04
-  19li9rga3xqw0 INSERT INTO HR.LOCATIONS VALUES (2400, '8204 Arthur St', NULL, 'London', NULL, '          1          125      100           1          0              1 SYS                 2026-08-12T20:23:04
-                UK')                                                                                                                                                                                           
+  
+  SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
+  ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
+  075thxta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CA', 'Canada', 2)                                       1          152      122           1          0              1 SYS                 2026-08-12T22:07:38
+  14tlwhua3xqw0 INSERT INTO HR.LOCATIONS VALUES (1500, '2011 Interiors Blvd', '99236', 'South Sa          1          142      113           1          0              1 SYS                 2026-08-12T22:07:38
+                n Francisco', 'California', 'US')                                                                                                                                                              
+  0lx34pna3xqw0 INSERT INTO HR.COUNTRIES VALUES ('US', 'United States of America', 2)                     1          140      112           1          0              1 SYS                 2026-08-12T22:07:38
+  07jxh36a3xqw0 INSERT INTO HR.COUNTRIES VALUES ('JP', 'Japan', 3)                                        1          132      106           1          0              1 SYS                 2026-08-12T22:07:38
+  0wcn17ca3xqw0 INSERT INTO HR.COUNTRIES VALUES ('CN', 'China', 3)                                        1          128      102           1          0              1 SYS                 2026-08-12T22:07:38
   09yjycba3xqw0 CREATE TABLE HR.JOB_HISTORY (
          EMPLOYEE_ID NUMBER(6) NOT NULL,
-         STAR          1          123       98           1          0              0 SYS                 2026-08-12T20:23:04
+         STAR          1          106       85           1          0              0 SYS                 2026-08-12T22:07:38
                 T_DATE DATE NOT NULL,
          END_DATE DATE NOT NULL,
          JOB_ID VARCHAR2(10)                                                                                                                
                 NOT NULL,
          DEPARTMENT_ID NUMBER(4)
        )                                                                                                                                                
-  0wptvesa3xqw0 INSERT INTO HR.LOCATIONS VALUES (1100, '93091 Calle della Testa', '10934', 'Veni          1          104       83           1          0              1 SYS                 2026-08-12T20:23:04
-                ce', NULL, 'IT')                                                                                                                                                                               
-  0bh8qrja3xqw0 INSERT INTO HR.LOCATIONS VALUES (1700, '2004 Charade Rd', '98199', 'Seattle', 'W          1           92       74           1          0              1 SYS                 2026-08-12T20:23:04
-                ashington', 'US')                                                                                                                                                                              
-  16hnhn1a3xqw0 INSERT INTO HR.LOCATIONS VALUES (1400, '2014 Jabberwocky Rd', '26192', 'Southlak          1           89       71           1          0              1 SYS                 2026-08-12T20:23:04
-                e', 'Texas', 'US')                                                                                                                                                                             
-  0e0st2xa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2)                                       1           82       66           1          0              1 SYS                 2026-08-12T20:23:04
-  1snp3bba3xqw0 INSERT INTO HR.LOCATIONS VALUES (1200, '2017 Shinjuku-ku', '1689', 'Tokyo', 'Tok          1           81       65           1          0              1 SYS                 2026-08-12T20:23:04
+  1ppp7cta3xqw0 INSERT INTO HR.COUNTRIES VALUES ('BR', 'Brazil', 2)                                       1          100       80           1          0              1 SYS                 2026-08-12T22:07:38
+  1snp3bba3xqw0 INSERT INTO HR.LOCATIONS VALUES (1200, '2017 Shinjuku-ku', '1689', 'Tokyo', 'Tok          1           92       73           1          0              1 SYS                 2026-08-12T22:07:38
                 yo Prefecture', 'JP')                                                                                                                                                                          
+  0wptvesa3xqw0 INSERT INTO HR.LOCATIONS VALUES (1100, '93091 Calle della Testa', '10934', 'Veni          1           80       64           1          0              1 SYS                 2026-08-12T22:07:38
+                ce', NULL, 'IT')                                                                                                                                                                               
+  1cmu11ea3xqw0 INSERT INTO HR.COUNTRIES VALUES ('IN', 'India', 3)                                        1           62       50           1          0              1 SYS                 2026-08-12T22:07:38
+  0bh8qrja3xqw0 INSERT INTO HR.LOCATIONS VALUES (1700, '2004 Charade Rd', '98199', 'Seattle', 'W          1           59       47           1          0              1 SYS                 2026-08-12T22:07:38
+                ashington', 'US')                                                                                                                                                                              
+  0e0st2xa3xqw0 INSERT INTO HR.COUNTRIES VALUES ('MX', 'Mexico', 2)                                       1           54       43           1          0              1 SYS                 2026-08-12T22:07:38
+  16hnhn1a3xqw0 INSERT INTO HR.LOCATIONS VALUES (1400, '2014 Jabberwocky Rd', '26192', 'Southlak          1           54       43           1          0              1 SYS                 2026-08-12T22:07:38
+                e', 'Texas', 'US')                                                                                                                                                                             
+  1fjuquca3xqw0 INSERT INTO HR.LOCATIONS VALUES (1800, '460 Bloor St. W.', 'ON M5S 1X8', 'Toront          1           53       42           1          0              1 SYS                 2026-08-12T22:07:38
+                o', 'Ontario', 'CA')                                                                                                                                                                           
   
   SQL_ID        SQL_TEXT                                                                         EXECUTIONS ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME FIRST_LOAD_TIME    
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
-  1fjuquca3xqw0 INSERT INTO HR.LOCATIONS VALUES (1800, '460 Bloor St. W.', 'ON M5S 1X8', 'Toront          1           81       65           1          0              1 SYS                 2026-08-12T20:23:04
-                o', 'Ontario', 'CA')                                                                                                                                                                           
+  19li9rga3xqw0 INSERT INTO HR.LOCATIONS VALUES (2400, '8204 Arthur St', NULL, 'London', NULL, '          1           46       37           1          0              1 SYS                 2026-08-12T22:07:38
+                UK')                                                                                                                                                                                           
   
   29 rows selected.
 
@@ -2006,41 +2006,41 @@ SQL [158/400]> SELECT * FROM v$sql_plan_statistics WHERE rownum < 30;
   
   SQL_ID        PLAN_HASH_VALUE CHILD_NUMBER OPERATION_ID EXECUTIONS LAST_OUTPUT_ROWS LAST_CR_BUFFER_GETS LAST_CU_BUFFER_GETS LAST_DISK_READS LAST_ELAPSED_TIME
   ------------- --------------- ------------ ------------ ---------- ---------------- ------------------- ------------------- --------------- -----------------
-  0jfss4xa3xqw0               0            0            0          1                0                   1                   0               0              2212
-  1p340y2a3xqw0               0            0            0          1                0                   1                   0               0               243
-  0438608a3xqw0               0            0            0          1                0                   1                   0               0               219
-  0jmvs97a3xqw0               0            0            0          1                0                   1                   0               0               461
-  1xqamkba3xqw0               0            0            0          1                0                   1                   0               0               202
-  13iiq67a3xqw0               0            0            0          1                0                   1                   0               0               205
-  09yjycba3xqw0               0            0            0          1                0                   1                   0               0               123
-  1bbre0pa3xqw0               0            0            0          1                1                   1                   0               0              2439
-  1rj844la3xqw0               0            0            0          1                1                   1                   0               0               395
-  165abgna3xqw0               0            0            0          1                1                   1                   0               0               299
-  1lrdndha3xqw0               0            0            0          1                1                   1                   0               0               274
-  0lx34pna3xqw0               0            0            0          1                1                   1                   0               0               158
-  075thxta3xqw0               0            0            0          1                1                   1                   0               0               251
-  1ogfneya3xqw0               0            0            0          1                1                   1                   0               0               374
+  0jfss4xa3xqw0               0            0            0          1                0                   1                   0               0              1915
+  1p340y2a3xqw0               0            0            0          1                0                   1                   0               0               206
+  0438608a3xqw0               0            0            0          1                0                   1                   0               0               182
+  0jmvs97a3xqw0               0            0            0          1                0                   1                   0               0               299
+  1xqamkba3xqw0               0            0            0          1                0                   1                   0               0               183
+  13iiq67a3xqw0               0            0            0          1                0                   1                   0               0               180
+  09yjycba3xqw0               0            0            0          1                0                   1                   0               0               106
+  1bbre0pa3xqw0               0            0            0          1                1                   1                   0               0              2127
+  1rj844la3xqw0               0            0            0          1                1                   1                   0               0               354
+  165abgna3xqw0               0            0            0          1                1                   1                   0               0               492
+  1lrdndha3xqw0               0            0            0          1                1                   1                   0               0               237
+  0lx34pna3xqw0               0            0            0          1                1                   1                   0               0               140
+  075thxta3xqw0               0            0            0          1                1                   1                   0               0               152
+  1ogfneya3xqw0               0            0            0          1                1                   1                   0               0               279
   
   SQL_ID        PLAN_HASH_VALUE CHILD_NUMBER OPERATION_ID EXECUTIONS LAST_OUTPUT_ROWS LAST_CR_BUFFER_GETS LAST_CU_BUFFER_GETS LAST_DISK_READS LAST_ELAPSED_TIME
   ------------- --------------- ------------ ------------ ---------- ---------------- ------------------- ------------------- --------------- -----------------
-  13i4coqa3xqw0               0            0            0          1                1                   1                   0               0               231
-  0vbcgv9a3xqw0               0            0            0          1                1                   1                   0               0               267
-  07jxh36a3xqw0               0            0            0          1                1                   1                   0               0               145
-  0wcn17ca3xqw0               0            0            0          1                1                   1                   0               0               183
-  1cmu11ea3xqw0               0            0            0          1                1                   1                   0               0               145
-  1ppp7cta3xqw0               0            0            0          1                1                   1                   0               0               136
-  0e0st2xa3xqw0               0            0            0          1                1                   1                   0               0                82
-  132zflia3xqw0               0            0            0          1                1                   1                   0               0               235
-  0wptvesa3xqw0               0            0            0          1                1                   1                   0               0               104
-  1snp3bba3xqw0               0            0            0          1                1                   1                   0               0                81
-  16hnhn1a3xqw0               0            0            0          1                1                   1                   0               0                89
-  14tlwhua3xqw0               0            0            0          1                1                   1                   0               0               224
-  0bh8qrja3xqw0               0            0            0          1                1                   1                   0               0                92
-  1fjuquca3xqw0               0            0            0          1                1                   1                   0               0                81
+  13i4coqa3xqw0               0            0            0          1                1                   1                   0               0               522
+  0vbcgv9a3xqw0               0            0            0          1                1                   1                   0               0               730
+  07jxh36a3xqw0               0            0            0          1                1                   1                   0               0               132
+  0wcn17ca3xqw0               0            0            0          1                1                   1                   0               0               128
+  1cmu11ea3xqw0               0            0            0          1                1                   1                   0               0                62
+  1ppp7cta3xqw0               0            0            0          1                1                   1                   0               0               100
+  0e0st2xa3xqw0               0            0            0          1                1                   1                   0               0                54
+  132zflia3xqw0               0            0            0          1                1                   1                   0               0               185
+  0wptvesa3xqw0               0            0            0          1                1                   1                   0               0                80
+  1snp3bba3xqw0               0            0            0          1                1                   1                   0               0                92
+  16hnhn1a3xqw0               0            0            0          1                1                   1                   0               0                54
+  14tlwhua3xqw0               0            0            0          1                1                   1                   0               0               142
+  0bh8qrja3xqw0               0            0            0          1                1                   1                   0               0                59
+  1fjuquca3xqw0               0            0            0          1                1                   1                   0               0                53
   
   SQL_ID        PLAN_HASH_VALUE CHILD_NUMBER OPERATION_ID EXECUTIONS LAST_OUTPUT_ROWS LAST_CR_BUFFER_GETS LAST_CU_BUFFER_GETS LAST_DISK_READS LAST_ELAPSED_TIME
   ------------- --------------- ------------ ------------ ---------- ---------------- ------------------- ------------------- --------------- -----------------
-  19li9rga3xqw0               0            0            0          1                1                   1                   0               0               125
+  19li9rga3xqw0               0            0            0          1                1                   1                   0               0                46
   
   29 rows selected.
 
@@ -2048,41 +2048,41 @@ SQL [159/400]> SELECT * FROM v$sqlstats WHERE rownum < 30 ORDER BY elapsed_time 
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  1bbre0pa3xqw0               0           1          1       1         2439     1951           1          0              1 SYS                 12-AUG-26       
-  0jfss4xa3xqw0               0           1          1       1         2212     1770           1          0              0 SYS                 12-AUG-26       
-  0jmvs97a3xqw0               0           1          1       1          461      369           1          0              0 SYS                 12-AUG-26       
-  1rj844la3xqw0               0           1          1       1          395      316           1          0              1 SYS                 12-AUG-26       
-  1ogfneya3xqw0               0           1          1       1          374      299           1          0              1 SYS                 12-AUG-26       
-  165abgna3xqw0               0           1          1       1          299      240           1          0              1 SYS                 12-AUG-26       
-  1lrdndha3xqw0               0           1          1       1          274      219           1          0              1 SYS                 12-AUG-26       
-  0vbcgv9a3xqw0               0           1          1       1          267      214           1          0              1 SYS                 12-AUG-26       
-  075thxta3xqw0               0           1          1       1          251      200           1          0              1 SYS                 12-AUG-26       
-  1p340y2a3xqw0               0           1          1       1          243      194           1          0              0 SYS                 12-AUG-26       
-  132zflia3xqw0               0           1          1       1          235      188           1          0              1 SYS                 12-AUG-26       
-  13i4coqa3xqw0               0           1          1       1          231      185           1          0              1 SYS                 12-AUG-26       
-  14tlwhua3xqw0               0           1          1       1          224      179           1          0              1 SYS                 12-AUG-26       
-  0438608a3xqw0               0           1          1       1          219      176           1          0              0 SYS                 12-AUG-26       
+  1bbre0pa3xqw0               0           1          1       1         2127     1701           1          0              1 SYS                 12-AUG-26       
+  0jfss4xa3xqw0               0           1          1       1         1915     1532           1          0              0 SYS                 12-AUG-26       
+  0vbcgv9a3xqw0               0           1          1       1          730      584           1          0              1 SYS                 12-AUG-26       
+  13i4coqa3xqw0               0           1          1       1          522      418           1          0              1 SYS                 12-AUG-26       
+  165abgna3xqw0               0           1          1       1          492      394           1          0              1 SYS                 12-AUG-26       
+  1rj844la3xqw0               0           1          1       1          354      283           1          0              1 SYS                 12-AUG-26       
+  0jmvs97a3xqw0               0           1          1       1          299      239           1          0              0 SYS                 12-AUG-26       
+  1ogfneya3xqw0               0           1          1       1          279      223           1          0              1 SYS                 12-AUG-26       
+  1lrdndha3xqw0               0           1          1       1          237      190           1          0              1 SYS                 12-AUG-26       
+  1p340y2a3xqw0               0           1          1       1          206      165           1          0              0 SYS                 12-AUG-26       
+  132zflia3xqw0               0           1          1       1          185      148           1          0              1 SYS                 12-AUG-26       
+  1xqamkba3xqw0               0           1          1       1          183      146           1          0              0 SYS                 12-AUG-26       
+  0438608a3xqw0               0           1          1       1          182      146           1          0              0 SYS                 12-AUG-26       
+  13iiq67a3xqw0               0           1          1       1          180      144           1          0              0 SYS                 12-AUG-26       
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  13iiq67a3xqw0               0           1          1       1          205      164           1          0              0 SYS                 12-AUG-26       
-  1xqamkba3xqw0               0           1          1       1          202      161           1          0              0 SYS                 12-AUG-26       
-  0wcn17ca3xqw0               0           1          1       1          183      146           1          0              1 SYS                 12-AUG-26       
-  0lx34pna3xqw0               0           1          1       1          158      126           1          0              1 SYS                 12-AUG-26       
-  07jxh36a3xqw0               0           1          1       1          145      116           1          0              1 SYS                 12-AUG-26       
-  1cmu11ea3xqw0               0           1          1       1          145      116           1          0              1 SYS                 12-AUG-26       
-  1ppp7cta3xqw0               0           1          1       1          136      109           1          0              1 SYS                 12-AUG-26       
-  19li9rga3xqw0               0           1          1       1          125      100           1          0              1 SYS                 12-AUG-26       
-  09yjycba3xqw0               0           1          1       1          123       98           1          0              0 SYS                 12-AUG-26       
-  0wptvesa3xqw0               0           1          1       1          104       83           1          0              1 SYS                 12-AUG-26       
-  0bh8qrja3xqw0               0           1          1       1           92       74           1          0              1 SYS                 12-AUG-26       
-  16hnhn1a3xqw0               0           1          1       1           89       71           1          0              1 SYS                 12-AUG-26       
-  0e0st2xa3xqw0               0           1          1       1           82       66           1          0              1 SYS                 12-AUG-26       
-  1snp3bba3xqw0               0           1          1       1           81       65           1          0              1 SYS                 12-AUG-26       
+  075thxta3xqw0               0           1          1       1          152      122           1          0              1 SYS                 12-AUG-26       
+  14tlwhua3xqw0               0           1          1       1          142      113           1          0              1 SYS                 12-AUG-26       
+  0lx34pna3xqw0               0           1          1       1          140      112           1          0              1 SYS                 12-AUG-26       
+  07jxh36a3xqw0               0           1          1       1          132      106           1          0              1 SYS                 12-AUG-26       
+  0wcn17ca3xqw0               0           1          1       1          128      102           1          0              1 SYS                 12-AUG-26       
+  09yjycba3xqw0               0           1          1       1          106       85           1          0              0 SYS                 12-AUG-26       
+  1ppp7cta3xqw0               0           1          1       1          100       80           1          0              1 SYS                 12-AUG-26       
+  1snp3bba3xqw0               0           1          1       1           92       73           1          0              1 SYS                 12-AUG-26       
+  0wptvesa3xqw0               0           1          1       1           80       64           1          0              1 SYS                 12-AUG-26       
+  1cmu11ea3xqw0               0           1          1       1           62       50           1          0              1 SYS                 12-AUG-26       
+  0bh8qrja3xqw0               0           1          1       1           59       47           1          0              1 SYS                 12-AUG-26       
+  0e0st2xa3xqw0               0           1          1       1           54       43           1          0              1 SYS                 12-AUG-26       
+  16hnhn1a3xqw0               0           1          1       1           54       43           1          0              1 SYS                 12-AUG-26       
+  1fjuquca3xqw0               0           1          1       1           53       42           1          0              1 SYS                 12-AUG-26       
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  1fjuquca3xqw0               0           1          1       1           81       65           1          0              1 SYS                 12-AUG-26       
+  19li9rga3xqw0               0           1          1       1           46       37           1          0              1 SYS                 12-AUG-26       
   
   29 rows selected.
 
@@ -2806,7 +2806,7 @@ SQL [183/400]> SELECT * FROM gv$session;
         1 0000000000000002   2       1      0 000000007F00FA40     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 2       localhost       0 pts/0    oracle@localhost (SMON) BACKGROUND                          0                                                                                                                               0             0              0               0             0 12-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer                            6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
         1 0000000000000003   3       1      0 000000007F00FA80     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 3       localhost       0 pts/0    oracle@localhost (DBW0) BACKGROUND                          0                                                                                                                               0             0              0               0             0 12-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer                            6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
         1 0000000000000004   4       1      0 000000007F00FAC0     0 SYS            0 2147483644                ACTIVE DEDICATED       0 SYS        oracle 4       localhost       0 pts/0    oracle@localhost (LGWR) BACKGROUND                          0                                                                                                                               0             0              0               0             0 12-AUG-26             0 NO           NONE          NONE            NO          SYS_GROUP               DISABLED    ENABLED     ENABLED        0 pmon timer                            6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
-        1 0000000000000008   8   37489      8 000000007F00FCC0     8 SYS            3 2147483644                ACTIVE DEDICATED       8 SYS        root   8       linux-server    0 pts/0    sqlplus@linux-server    USER                                0                                                                                                                               0             0              0               0             0 12-AUG-26             0 NO           NONE          NONE            NO          DEFAULT_CONSUMER_GROUP  DISABLED    ENABLED     ENABLED        0 SQL*Net message from client           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
+        1 0000000000000008   8   15892      8 000000007F00FCC0     8 SYS            3 2147483644                ACTIVE DEDICATED       8 SYS        root   8       linux-server    0 pts/0    sqlplus@linux-server    USER                                0                                                                                                                               0             0              0               0             0 12-AUG-26             0 NO           NONE          NONE            NO          DEFAULT_CONSUMER_GROUP  DISABLED    ENABLED     ENABLED        0 SQL*Net message from client           6 Idle               0               0 WAITING NO HOLDER                                DISABLED  orcl              1
   
   5 rows selected.
 
@@ -4733,7 +4733,7 @@ SQL [207/400]> SELECT * FROM v$database;
   
         DBID NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  1243945917 ORCL 12-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000316            1000001
+  2669353058 ORCL 12-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000316            1000001
   
   1 row selected.
 
@@ -4767,7 +4767,7 @@ SQL [211/400]> SELECT * FROM v$database WHERE rownum < 5;
   
         DBID NAME CREATED   LOG_MODE     OPEN_MODE  DATABASE_ROLE PLATFORM_NAME    CONTROLFILE_TYPE CONTROLFILE_CREATED CONTROLFILE_SEQUENCE# CONTROLFILE_CHANGE# CONTROLFILE_TIME SUPPLEMENTAL_LOG_DATA_MIN SUPPLEMENTAL_LOG_DATA_PK SUPPLEMENTAL_LOG_DATA_UI SUPPLEMENTAL_LOG_DATA_FK SUPPLEMENTAL_LOG_DATA_ALL FORCE_LOGGING FLASHBACK_ON CURRENT_SCN CHECKPOINT_CHANGE#
   ---------- ---- --------- ------------ ---------- ------------- ---------------- ---------------- ------------------- --------------------- ------------------- ---------------- ------------------------- ------------------------ ------------------------ ------------------------ ------------------------- ------------- ------------ ----------- ------------------
-  1243945917 ORCL 12-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000316            1000001
+  2669353058 ORCL 12-AUG-26 NOARCHIVELOG READ WRITE PRIMARY       Linux x86 64-bit CURRENT          01-JAN-26                               1             1000001 12-AUG-26        NO                        NO                       NO                       NO                       NO                        NO            NO               1000316            1000001
   
   1 row selected.
 
@@ -5094,18 +5094,18 @@ SQL [240/400]> SELECT * FROM v$sql WHERE rownum < 5;
   ------------- -------------------------------------------------------------------------------- ---------- ------------ -------- ----------- ---------- -------------- ------------------- -------------------
   0jfss4xa3xqw0 CREATE TABLE HR.REGIONS (
          REGION_ID NUMBER(2) PRIMARY KEY,
-         REGION_          1         2212     1770           1          0              0 SYS                 2026-08-12T20:23:04
+         REGION_          1         1915     1532           1          0              0 SYS                 2026-08-12T22:07:38
                 NAME VARCHAR2(25)
        )                                                                                                                                                                       
   1p340y2a3xqw0 CREATE TABLE HR.COUNTRIES (
          COUNTRY_ID CHAR(2) PRIMARY KEY,
-         COUNTR          1          243      194           1          0              0 SYS                 2026-08-12T20:23:04
+         COUNTR          1          206      165           1          0              0 SYS                 2026-08-12T22:07:38
                 Y_NAME VARCHAR2(40),
          REGION_ID NUMBER(2)
        )                                                                                                                                         
   0438608a3xqw0 CREATE TABLE HR.LOCATIONS (
          LOCATION_ID NUMBER(4) PRIMARY KEY,
-         STR          1          219      176           1          0              0 SYS                 2026-08-12T20:23:04
+         STR          1          182      146           1          0              0 SYS                 2026-08-12T22:07:38
                 EET_ADDRESS VARCHAR2(40),
          POSTAL_CODE VARCHAR2(12),
          CITY VARCHAR2(                                                                                                               
@@ -5116,7 +5116,7 @@ SQL [240/400]> SELECT * FROM v$sql WHERE rownum < 5;
                  )                                                                                                                                                                                             
   0jmvs97a3xqw0 CREATE TABLE HR.DEPARTMENTS (
          DEPARTMENT_ID NUMBER(4) PRIMARY KEY,
-                  1          461      369           1          0              0 SYS                 2026-08-12T20:23:04
+                  1          299      239           1          0              0 SYS                 2026-08-12T22:07:38
                  DEPARTMENT_NAME VARCHAR2(30) NOT NULL,
          MANAGER_ID NUMBER(6),
          LOCA                                                                                                               
@@ -5129,10 +5129,10 @@ SQL [241/400]> SELECT * FROM v$sqlstats WHERE rownum < 5;
   
   SQL_ID        PLAN_HASH_VALUE PARSE_CALLS EXECUTIONS FETCHES ELAPSED_TIME CPU_TIME BUFFER_GETS DISK_READS ROWS_PROCESSED PARSING_SCHEMA_NAME LAST_ACTIVE_TIME
   ------------- --------------- ----------- ---------- ------- ------------ -------- ----------- ---------- -------------- ------------------- ----------------
-  0jfss4xa3xqw0               0           1          1       1         2212     1770           1          0              0 SYS                 12-AUG-26       
-  1p340y2a3xqw0               0           1          1       1          243      194           1          0              0 SYS                 12-AUG-26       
-  0438608a3xqw0               0           1          1       1          219      176           1          0              0 SYS                 12-AUG-26       
-  0jmvs97a3xqw0               0           1          1       1          461      369           1          0              0 SYS                 12-AUG-26       
+  0jfss4xa3xqw0               0           1          1       1         1915     1532           1          0              0 SYS                 12-AUG-26       
+  1p340y2a3xqw0               0           1          1       1          206      165           1          0              0 SYS                 12-AUG-26       
+  0438608a3xqw0               0           1          1       1          182      146           1          0              0 SYS                 12-AUG-26       
+  0jmvs97a3xqw0               0           1          1       1          299      239           1          0              0 SYS                 12-AUG-26       
   
   4 rows selected.
 
@@ -5484,10 +5484,10 @@ SQL [285/400]> SELECT * FROM v$services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   CREATION_DATE            CREATION_DATE_HASH
   ---------- -------------- -------------- ------------------------ ------------------
-           1 ORCL           ORCL           2026-08-12T20:23:04.176Z         -140210960
-           2 SYS$USERS      SYS$USERS      2026-08-12T20:23:04.172Z         -140210964
-           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-12T20:23:04.172Z         -140210964
-           4 ORCLPDB1       ORCLPDB1       2026-08-12T20:23:04.172Z         -140210964
+           1 ORCL           ORCL           2026-08-12T22:07:38.675Z         -133936461
+           2 SYS$USERS      SYS$USERS      2026-08-12T22:07:38.672Z         -133936464
+           3 SYS$BACKGROUND SYS$BACKGROUND 2026-08-12T22:07:38.672Z         -133936464
+           4 ORCLPDB1       ORCLPDB1       2026-08-12T22:07:38.672Z         -133936464
   
   4 rows selected.
 
@@ -5495,10 +5495,10 @@ SQL [286/400]> SELECT * FROM v$active_services WHERE rownum < 5;
   
   SERVICE_ID NAME           NETWORK_NAME   SID  CREATION_DATE           
   ---------- -------------- -------------- ---- ------------------------
-           1 ORCL           ORCL           ORCL 2026-08-12T20:23:04.176Z
-           2 SYS$USERS      SYS$USERS      ORCL 2026-08-12T20:23:04.172Z
-           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-12T20:23:04.172Z
-           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-12T20:23:04.172Z
+           1 ORCL           ORCL           ORCL 2026-08-12T22:07:38.675Z
+           2 SYS$USERS      SYS$USERS      ORCL 2026-08-12T22:07:38.672Z
+           3 SYS$BACKGROUND SYS$BACKGROUND ORCL 2026-08-12T22:07:38.672Z
+           4 ORCLPDB1       ORCLPDB1       ORCL 2026-08-12T22:07:38.672Z
   
   4 rows selected.
 
@@ -5545,10 +5545,10 @@ SQL [291/400]> SELECT * FROM v$sess_time_model WHERE rownum < 5;
   
   SID    STAT_ID STAT_NAME                VALUE
   --- ---------- ----------------------- ------
-  100 3649082374 DB time                 288654
-  100 3712030189 DB CPU                  230924
-  100 1561673735 background elapsed time  72163
-  100 4157170894 background cpu time      57731
+  100 3649082374 DB time                 221630
+  100 3712030189 DB CPU                  177317
+  100 1561673735 background elapsed time  55407
+  100 4157170894 background cpu time      44329
   
   4 rows selected.
 
@@ -5641,10 +5641,10 @@ SQL [301/400]> SELECT * FROM dba_objects WHERE rownum < 5;
   
   OWNER OBJECT_NAME SUBOBJECT_NAME OBJECT_ID DATA_OBJECT_ID OBJECT_TYPE CREATED   LAST_DDL_TIME TIMESTAMP           STATUS TEMPORARY GENERATED SECONDARY NAMESPACE ORACLE_MAINTAINED
   ----- ----------- -------------- --------- -------------- ----------- --------- ------------- ------------------- ------ --------- --------- --------- --------- -----------------
-  SYS   V$VERSION                        100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$INSTANCE                       101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$DATABASE                       102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
-  SYS   V$SESSION                        103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:20:23:04 VALID  N         N         N                 1 Y                
+  SYS   V$VERSION                        100                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$INSTANCE                       101                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$DATABASE                       102                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
+  SYS   V$SESSION                        103                VIEW        12-AUG-26 12-AUG-26     2026-08-12:22:07:38 VALID  N         N         N                 1 Y                
   
   4 rows selected.
 
@@ -5953,10 +5953,10 @@ SQL [335/400]> SELECT * FROM dba_alert_history WHERE rownum < 5;
   
   SEQUENCE_ID REASON_ID SEVERITY CREATION_TIME RESOLUTION_TIME MESSAGE                                                          
   ----------- --------- -------- ------------- --------------- -----------------------------------------------------------------
-            1 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 20:23:04: Starting ORACLE instance (normal)           
-            2 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 20:23:04: Database mounted                            
-            3 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 20:23:04: Completed checkpoint up to RBA, SCN: 1000001
-            4 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 20:23:04: Database opened                             
+            1 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 22:07:38: Starting ORACLE instance (normal)           
+            2 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 22:07:38: Database mounted                            
+            3 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 22:07:38: Completed checkpoint up to RBA, SCN: 1000001
+            4 Info      NORMAL   12-AUG-26     12-AUG-26       2026-08-12 22:07:38: Database opened                             
   
   4 rows selected.
 
@@ -5994,10 +5994,10 @@ SQL [339/400]> SELECT * FROM dba_hist_sysstat WHERE rownum < 5;
   
   SNAP_ID       DBID INSTANCE_NUMBER STAT_ID STAT_NAME                 VALUE
   ------- ---------- --------------- ------- ------------------------- -----
-        1 1243945917               1       0 logons cumulative             1
-        1 1243945917               1       1 logons current                1
-        1 1243945917               1       2 opened cursors cumulative   645
-        1 1243945917               1       3 opened cursors current      547
+        1 2669353058               1       0 logons cumulative             1
+        1 2669353058               1       1 logons current                1
+        1 2669353058               1       2 opened cursors cumulative   645
+        1 2669353058               1       3 opened cursors current      547
   
   4 rows selected.
 
@@ -6005,10 +6005,10 @@ SQL [340/400]> SELECT * FROM dba_hist_sqlstat WHERE rownum < 5;
   
   SNAP_ID SQL_ID        PLAN_HASH_VALUE EXECUTIONS_DELTA ELAPSED_TIME_DELTA CPU_TIME_DELTA BUFFER_GETS_DELTA DISK_READS_DELTA ROWS_PROCESSED_DELTA
   ------- ------------- --------------- ---------------- ------------------ -------------- ----------------- ---------------- --------------------
-        1 001vskua3xqw0               0                1                 58             47                 1                0                    1
-        1 1oeolgha3xqw0               0                1                 74             59                 1                0                    1
-        1 0e91j2la3xqw0               0                1                 50             40                 1                0                    1
-        1 073lqg0a3xqw0               0                1                 80             64                 1                0                    1
+        1 001vskua3xqw0               0                1                 39             31                 1                0                    1
+        1 1oeolgha3xqw0               0                1                 67             54                 1                0                    1
+        1 0e91j2la3xqw0               0                1                 41             33                 1                0                    1
+        1 073lqg0a3xqw0               0                1                140            112                 1                0                    1
   
   4 rows selected.
 
@@ -6403,7 +6403,7 @@ SQL [397/400]> SELECT systimestamp FROM dual;
   
   SYSTIMESTAMP            
   ------------------------
-  2026-08-12T20:23:04.850Z
+  2026-08-12T22:07:39.183Z
   
   1 row selected.
 
