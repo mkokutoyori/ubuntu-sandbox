@@ -25,6 +25,43 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Premier contact avec un routeur neuf — LIVRÉ
+
+Signalé sur capture par l'utilisateur, et les trois défauts sont réels.
+
+1. **Le texte de démarrage posait une question ET y répondait** :
+   `Would you like to enter the initial configuration dialog? [yes/no]: no`
+   était du texte constant. Ces deux lignes sont retirées ; le démarrage
+   se termine sur le registre de configuration puis
+   `Press RETURN to get started.`, ce qu'imprime une vraie machine qui
+   n'offre pas le dialogue.
+2. **`setup` n'existait pas** — le mot partait en résolution DNS. Il
+   ouvre maintenant le VRAI dialogue (`cisco/CiscoSetupDialog.ts`) :
+   `Continue with configuration dialog?`, les paramètres globaux, une
+   passe par interface RÉELLE du châssis, le script généré et le menu
+   `[0]/[1]/[2]`. Ce qu'il collecte est appliqué par `rt.exec` — les
+   vraies commandes, pas un second chemin de configuration.
+3. **`%SYS-6-LOGOUT: User unknown ... 0(0.0.0.0)` à chaque `exit`** —
+   c'était MA régression du lot précédent : la console est devenue une
+   vraie session enregistrée, donc son `close` a commencé à produire ce
+   message, qui n'a de sens que pour une session AUTHENTIFIÉE. Il n'est
+   plus émis quand personne n'est identifié, et l'adresse n'est plus
+   inventée.
+
+Ce qui peut vous concerner :
+
+- **`InteractionPlanContext` porte `level` et `view`.** Le filtre
+  d'autorisation que j'avais branché dans `interactionPlanFor` lisait
+  l'état VIVANT du shell, qui n'est pas celui de la session sur une vty
+  (l'état est restauré entre deux exécutions). Il lit désormais le
+  contexte. Si vous ajoutez un vendeur, fournissez `level`.
+- `commandVisibleTo` emprunte `ctx.device` quand `deviceRef` est nul :
+  `interactionPlanFor` s'exécute HORS `execute`, donc le registre de vues
+  répondait vide et une vue ne filtrait rien.
+- Le MAC `02:00:00:…` n'est PAS changé : c'est une adresse
+  localement administrée, et `MACAddress.reserve()` s'en sert pour
+  distinguer une adresse générée d'une adresse posée à la main.
+
 ### Sécurité Cisco — TROIS PORTES QUI NE FERMAIENT PAS — LIVRÉ
 
 `docs/PRD-Securite-Cisco.md`. **À lire si vous touchez à `enable`, aux

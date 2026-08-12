@@ -91,6 +91,7 @@ import { isPathReachable } from '../linux/network/HostLookup';
 import { OutgoingSessionRegistry, renderSessions } from './OutgoingSessionRegistry';
 import { registerArchiveExecCommands, archiveOnWriteMemory } from './cisco/CiscoArchiveCommands';
 import { registerLineExecCommands } from './cisco/CiscoLineCommands';
+import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
   registerLoggingConfigCommands, registerLoggingShowCommands,
   registerSequenceNumbersCommand, registerLoggingClearCommands,
@@ -682,7 +683,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const line = commandLine.trim();
     if (!line) return null;
 
-    if (!this.laSessionVoit(line)) return null;
+    if (!this.commandVisibleTo(line, mode, ctx)) return null;
 
     if (mode === 'user') {
       const um = this.userTrie.match(line);
@@ -713,6 +714,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (m.status !== 'ok' || !m.node) return null;
     const path = m.matchedKeywords.join(' ').toLowerCase();
 
+    if (path === 'setup') {
+      const target = (ctx?.device ?? this.deviceRef) as unknown as {
+        getHostname?: () => string;
+      } | null;
+      return setupInteractionPlan({
+        hostname: target?.getHostname?.() ?? 'Router',
+        interfaceNames: this.setupConfigurableInterfaces(ctx?.device),
+      });
+    }
     if (path === 'erase startup-config' || path === 'write erase' || path === 'erase nvram:') {
       return this.eraseInteractionPlan();
     }
@@ -927,6 +937,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         },
       ],
     };
+  }
+
+  private commandVisibleTo(
+    cmdPart: string, mode: string, ctx?: InteractionPlanContext,
+  ): boolean {
+    const borrowed = this.deviceRef === null && ctx?.device !== undefined;
+    if (borrowed) this.deviceRef = ctx!.device as TDevice;
+    try {
+      return this.commandVisibleToNow(cmdPart, mode, ctx);
+    } finally {
+      if (borrowed) this.deviceRef = null;
+    }
+  }
+
+  private commandVisibleToNow(
+    cmdPart: string, mode: string, ctx?: InteractionPlanContext,
+  ): boolean {
+    const defaut = this.niveauParDefautDe(cmdPart);
+    if (defaut === null) return true;
+    return this.autorisation().authorize({
+      principal: {
+        level: ctx?.level ?? this.currentPrivilegeLevel,
+        view: ctx?.view ?? this.activeParserView,
+      },
+      scope: scopeForMode(mode as typeof this.mode),
+      command: cmdPart,
+      defaultLevel: defaut,
+    }) === 'run';
+  }
+
+  protected setupConfigurableInterfaces(deviceCtx?: unknown): string[] {
+    const dev = (deviceCtx ?? this.deviceRef) as unknown as {
+      getPorts?: () => Array<{ getName(): string }>;
+    } | null;
+    return (dev?.getPorts?.() ?? []).map((p) => p.getName());
   }
 
   private enableGateFor(
@@ -3469,6 +3514,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.describeNode('copy', 'Copy a file');
 
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+    this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
     // `archive config` / `show archive` — enregistrées ici, donc pour le
     // routeur ET le switch, parce qu'un Catalyst connaît cette famille

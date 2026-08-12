@@ -757,6 +757,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
   protected override interactionPlanContext() {
     return {
       mode: this.vty?.state.mode ?? 'user',
+      level: this.vty?.state.privilegeLevel,
       device: this.device,
       onVtyLine: this.isVtyRemoteSession,
     };

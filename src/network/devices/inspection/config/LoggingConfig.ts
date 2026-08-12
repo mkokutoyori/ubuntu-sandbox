@@ -1259,9 +1259,11 @@ export class LoggingConfig {
             + ` for user '${s?.user ?? ''}' using crypto cipher '${s?.cipher ?? 'aes256-ctr'}',`
             + ` hmac '${s?.hmac ?? 'hmac-sha2-256'}' closed`, true, 'SSH2_CLOSE');
         }
-        this.append('informational', 'sys',
-          `User ${s?.user || 'unknown'} has exited tty session`
-          + ` ${s?.lineIndex ?? 0}(${s?.fromIp || '0.0.0.0'})`, true, 'LOGOUT');
+        if (s?.user) {
+          this.append('informational', 'sys',
+            `User ${s.user} has exited tty session`
+            + ` ${s.lineIndex ?? 0}(${s.fromIp ?? ''})`, true, 'LOGOUT');
+        }
       }),
       bus.subscribeWhere('stp.root-guard.changed', isOurs, (e) => {
         const p = e.payload as unknown as { port?: string; state?: string };
