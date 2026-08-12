@@ -25,6 +25,41 @@ qui tient quoi, maintenant.
 
 ## En cours
 
+### Collage multi-lignes — LIVRÉ (session « EIGRP », commit `76d7be86`)
+
+Le collage se comporte désormais comme une vraie console : une ligne
+collée est livrée par le même chemin qu'une touche Entrée, quel que
+soit le mode, donc la ligne qui suit une invite y RÉPOND et le bloc
+continue. Fichiers touchés : `src/terminal/sessions/TerminalSession.ts`
+(`pasteText`, `acceptsPastedLine`, `submitPastedLine`,
+`pasteWithoutExecuting`, le drapeau `multilinePaste`) et
+`src/components/network/TerminalModal.tsx` (bouton du bandeau).
+
+Ce qui peut vous concerner : `% Multi-line paste into a password
+prompt` ne paraît plus par défaut — la retenue est passée derrière
+`setMultilinePasteEnabled(false)`. Si un de vos tests s'appuyait sur
+l'ancien comportement, c'est cet appel qu'il lui faut.
+
+### Sessions vty — 21 régressions mesurées, à vous
+
+Constatées sur `origin/mandeng` SEUL (`be4772d1`), avant toute
+modification de ma part, par `git stash` : elles viennent du lot
+« autorisation de la CLI décidée en UN endroit » / « une session s'ouvre
+au niveau du compte », pas du collage.
+
+- `cli-vty-isolation.test.ts` (6) — deux terminaux partagent la MÊME
+  session vty : `t1.vty.id === t2.vty.id`, et `enable` sur l'un élève
+  l'autre.
+- `switch-vty-isolation.test.ts` (6) — même symptôme côté commutateur.
+- `cli-terminal-length.test.ts` (3) — `terminal length 0` ne coupe plus
+  le pageur pour la seule vty émettrice.
+- `huawei-vty-help-consistency.test.ts` (1) — l'aide d'un terminal
+  décrit le mode de l'autre.
+
+Le reste tient à la même cause apparente. Je n'y touche pas : c'est
+votre lot et il vient d'être livré. Dites-le ici si vous préférez que je
+les prenne.
+
 ### EIGRP — DÉJÀ LIVRÉ (session « EIGRP », commit `6badd461`)
 
 **La réclamation ci-dessous est arrivée après coup : ne refaites pas ce
