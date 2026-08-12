@@ -107,8 +107,16 @@ describe('un collage s\'interrompt', () => {
   }, 60_000);
 });
 
-describe('un mot de passe est une ligne, et le reste ne s\'y ajoute pas', () => {
+/**
+ * La retenue est désormais un RÉGLAGE, et non le comportement par
+ * défaut : un vrai terminal livre le bloc entier, invite comprise, et
+ * c'est ce que fait le simulateur quand on ne lui demande rien (voir
+ * `paste-fidelite-ios.test.ts`). Ces cas décrivent donc ce que le
+ * réglage coupé garantit — c'est là que la protection a déménagé.
+ */
+describe('collage coupé : un mot de passe est une ligne, et le reste ne s\'y ajoute pas', () => {
   it('un bloc collé dans une invite de mot de passe n\'en garde que la première ligne', async () => {
+    session.setMultilinePasteEnabled(false);
     await enInviteDeMotDePasse();
     await session.pasteText('secret\nrm -rf /\nautre chose\n');
     expect(session.getPasswordBuf()).toBe('secret');
@@ -116,12 +124,13 @@ describe('un mot de passe est une ligne, et le reste ne s\'y ajoute pas', () => 
   }, 30_000);
 
   it('et rien n\'est exécuté : le mot de passe ne soumet pas la suite', async () => {
+    session.setMultilinePasteEnabled(false);
     await enInviteDeMotDePasse();
     await session.pasteText('secret\necho FUITE\n');
     expect(texte()).not.toContain('FUITE');
   }, 30_000);
 
-  it('une seule ligne collée reste silencieuse', async () => {
+  it('une seule ligne collée reste silencieuse, réglage ou pas', async () => {
     await enInviteDeMotDePasse();
     await session.pasteText('secret');
     expect(session.getPasswordBuf()).toBe('secret');
@@ -166,7 +175,8 @@ describe('sous un sous-shell, le collage reste gouvernable', () => {
     expect(session.isPasteRunning()).toBe(false);
   }, 60_000);
 
-  it('une invite de mot de passe DANS le sous-shell arrête le collage', async () => {
+  it('collage coupé, une invite de mot de passe DANS le sous-shell retient le bloc', async () => {
+    session.setMultilinePasteEnabled(false);
     const enfant = await avecSousShell();
     // Si l'hôte cessait de relayer le mode de son premier plan, le
     // collage soumettrait la suite du bloc dans l'invite masquée.
@@ -181,5 +191,22 @@ describe('sous un sous-shell, le collage reste gouvernable', () => {
     expect(enfant.getPasswordBuf()).toBe('secret');
     expect(texte(), 'la suite du bloc a été exécutée depuis une invite masquée')
       .not.toContain('FUITE');
+  }, 30_000);
+
+  it('collage actif, le mot de passe du sous-shell est livré et la suite passe', async () => {
+    const enfant = await avecSousShell();
+    enfant.setInput('su - root');
+    await enfant.dispatchEnter();
+    expect(enfant.currentInputMode.type).toBe('password');
+
+    // Ce que fait une vraie console : la ligne suivante répond à
+    // l'invite, et le bloc continue derrière. Le mot de passe est le
+    // VRAI — avec un mauvais, `su` redemande, et l'invite resterait
+    // ouverte pour une raison qui ne prouverait rien de la livraison.
+    await session.pasteText('admin\necho SUITE\n');
+    expect(enfant.getPasswordBuf()).toBe('');
+    expect(session.currentInputMode.type,
+      'l invite est restée ouverte : le mot de passe n a pas été livré').toBe('normal');
+    expect(texte()).toContain('SUITE');
   }, 30_000);
 });

@@ -798,38 +798,12 @@ export abstract class TerminalSession {
     }
   }
 
-  /**
-   * Paste (possibly multi-line) clipboard text. In the normal command
-   * line, every newline-terminated line is executed in turn — waiting
-   * for each to finish before the next — and the final unterminated line
-   * stays editable in the prompt, matching how a real terminal handles a
-   * pasted block of commands. Any special input mode (password, prompt,
-   * pager, editor, disconnected) never auto-executes: the text is
-   * flattened into the active buffer so a paste can't silently submit
-   * hidden input.
-   */
   async pasteText(raw: string): Promise<void> {
     if (this.disposed) return;
     const normalized = raw.replace(/\r\n?/g, '\n');
-    // Un mot de passe est UNE ligne. Aplatir un bloc collé par erreur
-    // dans le buffer secret en faisait un mot de passe de quatre cents
-    // lignes, sans que rien ne le montre — l'écho est masqué. On ne
-    // garde que la première ligne, et on le DIT : ni corruption
-    // silencieuse, ni exécution silencieuse de la suite.
-    if (this.currentInputMode.type === 'password' && normalized.includes('\n')) {
-      const [premiere, ...reste] = normalized.split('\n');
-      this.insertText(premiere);
-      const ignorees = reste.filter((l) => l.trim() !== '').length;
-      if (ignorees > 0) {
-        this.addLine('% Multi-line paste into a password prompt — '
-          + `${ignorees} further line${ignorees === 1 ? '' : 's'} ignored`);
-      }
-      return;
-    }
-    if (!normalized.includes('\n') || this.currentInputMode.type !== 'normal') {
-      this.insertText(normalized);
-      return;
-    }
+    if (!normalized.includes('\n')) { this.insertText(normalized); return; }
+    if (!this._multilinePasteEnabled) { this.pasteWithoutExecuting(normalized); return; }
+
     const lines = normalized.split('\n');
     const trailing = lines.pop() ?? '';
     this._pasteAborted = false;
@@ -839,15 +813,11 @@ export abstract class TerminalSession {
       for (let i = 0; i < lines.length; i++) {
         if (this.disposed) return;
         if (this._pasteAborted) { this.reportPasteAborted(lines.length - i); return; }
-        // A previously executed line may have opened a prompt (e.g. `ssh`
-        // asking for a password) or a pager: stop auto-executing and hand
-        // the remainder to the active buffer instead of blindly submitting.
-        if (this.currentInputMode.type !== 'normal') {
+        if (!this.acceptsPastedLine()) {
           this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
           return;
         }
-        this.setInput(this.input + lines[i]);
-        await this.submitPastedLine();
+        await this.submitPastedLine(lines[i]);
         // Rendre la main au navigateur quand la tranche est épuisée.
         // Sans cela, un collage n'obtenait AUCUN tour de boucle
         // d'événements : `await` sur une promesse déjà résolue ne
@@ -861,13 +831,43 @@ export abstract class TerminalSession {
           tranche = Date.now();
         }
       }
-      if (!this.disposed && this.currentInputMode.type === 'normal') {
-        this.setInput(this.input + trailing);
-      } else {
-        this.insertText(trailing);
-      }
+      if (!this.disposed) this.insertText(trailing);
     } finally {
       this._pasteRunning = false;
+    }
+  }
+
+  private acceptsPastedLine(): boolean {
+    const mode = this.currentInputMode.type;
+    return mode === 'normal' || mode === 'password'
+      || mode === 'interactive-text' || mode === 'pager';
+  }
+
+  private async submitPastedLine(ligne: string): Promise<void> {
+    if (this.currentInputMode.type === 'normal') {
+      this.setInput(this.input + ligne);
+      const result = this.dispatchEnter();
+      if (result && typeof (result as { then?: unknown }).then === 'function') {
+        await result;
+      }
+      return;
+    }
+    this.insertText(ligne);
+    this.handleKey({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
+    await yieldToEventLoop();
+  }
+
+  private pasteWithoutExecuting(normalized: string): void {
+    if (this.currentInputMode.type !== 'password') {
+      this.insertText(normalized);
+      return;
+    }
+    const [premiere, ...reste] = normalized.split('\n');
+    this.insertText(premiere);
+    const ignorees = reste.filter((l) => l.trim() !== '').length;
+    if (ignorees > 0) {
+      this.addLine('% Multi-line paste into a password prompt — '
+        + `${ignorees} further line${ignorees === 1 ? '' : 's'} ignored`);
     }
   }
 
@@ -915,14 +915,6 @@ export abstract class TerminalSession {
   private reportPasteAborted(restantes: number): void {
     this.setInput('');
     this.addLine(`% Paste aborted — ${restantes} line${restantes === 1 ? '' : 's'} not executed`);
-  }
-
-  /** Submit the current line and await its execution (paste serialisation). */
-  private async submitPastedLine(): Promise<void> {
-    const result = this.dispatchEnter();
-    if (result && typeof (result as { then?: unknown }).then === 'function') {
-      await result;
-    }
   }
 
   getPasswordBuf(): string {
@@ -1772,6 +1764,23 @@ export abstract class TerminalSession {
   toggleGhostText(): boolean {
     this.setGhostTextEnabled(!this._ghostTextEnabled);
     return this._ghostTextEnabled;
+  }
+
+  private _multilinePasteEnabled = true;
+
+  isMultilinePasteEnabled(): boolean {
+    return this._multilinePasteEnabled;
+  }
+
+  setMultilinePasteEnabled(enabled: boolean): void {
+    if (this._multilinePasteEnabled === enabled) return;
+    this._multilinePasteEnabled = enabled;
+    this.notify();
+  }
+
+  toggleMultilinePaste(): boolean {
+    this.setMultilinePasteEnabled(!this._multilinePasteEnabled);
+    return this._multilinePasteEnabled;
   }
 
   /**

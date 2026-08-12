@@ -10,7 +10,9 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb } from 'lucide-react';
+import {
+  X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb, ClipboardPaste,
+} from 'lucide-react';
 import { Equipment, isFullyImplemented } from '@/network';
 import { TerminalView, useTerminalSession } from '@/components/terminal/TerminalView';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
@@ -203,6 +205,22 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           <Lightbulb className={cn(
             "w-3 h-3",
             session.isGhostTextEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
+          )} />
+        </button>
+        <button
+          data-testid="multiline-paste-toggle"
+          onClick={() => session.toggleMultilinePaste()}
+          className={cn(
+            "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
+            session.isMultilinePasteEnabled() && "bg-amber-400/10"
+          )}
+          title={session.isMultilinePasteEnabled()
+            ? 'Multi-line paste ON — a pasted block runs line by line, like a real console (click to hold it back)'
+            : 'Multi-line paste OFF — a pasted block stays editable on the command line and runs nothing'}
+        >
+          <ClipboardPaste className={cn(
+            "w-3 h-3",
+            session.isMultilinePasteEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
           )} />
         </button>
         <button
