@@ -41,6 +41,7 @@ import type { CredentialAuthenticator } from '../equipment/HostCapabilities';
 import { deviceClockSource, SEVERITY_NAMES } from './inspection/config/LoggingConfig';
 import type { IEventBus } from '@/events/EventBus';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
+import type { VtyLineConfig } from './router/vty/VtyLineConfig';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
@@ -902,8 +903,23 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * `authentication-mode password|aaa|none`; the store keeps both, and
    * the telnet dialog needs one answer.
    */
+  /**
+   * Le bloc `line vty` qui gouverne la session en cours d'ouverture.
+   * Toutes ces directives — `login`, `password`, `exec-timeout`,
+   * `privilege level` — sont des directives de LIGNE, et six lecteurs
+   * prenaient le PREMIER bloc declare : sur une machine ou `line vty 0 4`
+   * et `line vty 5 15` different, ils repondaient tous pour la premiere
+   * plage quelle que soit la ligne prise. Le repli sur le premier bloc
+   * subsiste pour une ligne qu'aucun bloc ne couvre.
+   */
+  private blocVtyCourant(): VtyLineConfig | undefined {
+    const idx = this.getSshSessionRegistry().prochaineLigne();
+    const parLigne = idx == null ? undefined : this.vtyLineConfig.blocPourLigne(idx);
+    return parLigne ?? this.vtyLineConfig.all()[0];
+  }
+
   private resolveVtyLoginMode(): 'none' | 'local' | 'aaa' | 'password' {
-    const block = this.vtyLineConfig.all()[0];
+    const block = this.blocVtyCourant();
     if (!block) return 'none';
     if (block.login) return block.login;
     if (block.authenticationMode === 'aaa') return 'aaa';
@@ -919,7 +935,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       hostname: () => this.hostname,
       loginMode: () => this.resolveVtyLoginMode(),
       linePassword: () => {
-        const l = this.vtyLineConfig.all()[0];
+        const l = this.blocVtyCourant();
         return l?.linePassword ? { value: l.linePassword, algo: l.linePasswordAlgo } : null;
       },
       authHeader: () => this.getVtyAuthHeader(),
@@ -950,15 +966,28 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return new TelnetServerHandler(ctx);
   }
 
+  /**
+   * `transport input` est une directive de LIGNE, donc l'ecoute suit la
+   * reunion des lignes : le serveur reste ouvert tant qu'une vty admet
+   * le protocole. Le reglage d'equipement ne sert que de defaut pour les
+   * lignes qui n'en declarent pas — sans quoi `line vty 5 15 / transport
+   * input none`, la configuration de durcissement la plus courante,
+   * fermait le protocole aux vty 0 a 4 qui l'autorisent.
+   */
+  transportAdmisSurUneVty(kind: 'ssh' | 'telnet'): boolean {
+    return this.vtyLineConfig.admetQuelquePart(kind, this.vtyTransportInput);
+  }
+
   private telnetAllowedByTransport(): boolean {
-    return this.vtyTransportInput === 'all' || this.vtyTransportInput === 'telnet';
+    return this.transportAdmisSurUneVty('telnet');
   }
 
   private syncSshListener(): void {
     const sshBound = this.tcpv2.listListeners().some(l => l.localPort === 22);
     // Keys are part of "is the server up", not a separate switch: IOS
     // refuses to listen without them.
-    const shouldListen = this.sshServerEnabled && this.hasSshHostKeys();
+    const shouldListen = this.sshServerEnabled && this.hasSshHostKeys()
+      && this.transportAdmisSurUneVty('ssh');
     if (shouldListen && !sshBound) this.bindSshListener();
     if (!shouldListen && sshBound) this.tcpv2.closeListener(22);
     const telnetWanted = this.telnetAllowedByTransport();
@@ -1306,7 +1335,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * (both fields zero) disables it, as does an unconfigured line here.
    */
   private resolveVtyIdleTimeoutMs(): number | null {
-    const block = this.vtyLineConfig.all()[0];
+    const block = this.blocVtyCourant();
     if (!block) return null;
     const { execTimeoutMinutes: min, execTimeoutSeconds: sec } = block;
     if (min == null && sec == null) return null;
@@ -1320,8 +1349,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * own level; with none configured the account's level applies. Without
    * a login name there is nothing to look up, so the line starts at 1.
    */
-  private resolveVtyExecLevel(user?: string): number {
-    const lineLevel = this.vtyLineConfig.all()[0]?.privilege;
+  resolveVtyExecLevel(user?: string): number {
+    const lineLevel = this.blocVtyCourant()?.privilege;
     if (lineLevel != null) return lineLevel;
     if (user === undefined) return 1;
     return this.getCredentialStore().lookup(user)?.privilege ?? 1;
@@ -3179,13 +3208,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   protected methodeDeLigne(kind: 'console' | 'vty' | 'aux'): 'none' | 'password' | 'local' | 'aaa' {
-    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.login ?? 'none';
+    // Une seule regle : `resolveVtyLoginMode` connait `login` (IOS) ET
+    // `authentication-mode` (VRP). Cette methode-ci ne lisait que le
+    // premier, donc sur un routeur Huawei elle rendait toujours `none`
+    // et la ligne accordait a n'importe quel mot de passe.
+    if (kind === 'vty') return this.resolveVtyLoginMode();
     if (kind === 'aux') return 'none';
     return this.configurationDeConsole()?.login ?? 'none';
   }
 
   protected motDePasseDeLigne(kind: 'console' | 'vty' | 'aux'): string | null {
-    if (kind === 'vty') return this.vtyLineConfig.all()[0]?.linePassword ?? null;
+    if (kind === 'vty') return this.blocVtyCourant()?.linePassword ?? null;
     if (kind === 'aux') return null;
     return this.configurationDeConsole()?.password ?? null;
   }
@@ -3728,6 +3761,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
           .find((ip): ip is string => !!ip) ?? null,
         hasFreeLine: () => this.getSshSessionRegistry().hasFreeLine(),
         loginBlocker: () => this.getLoginBlocker(),
+        ligneCandidate: () => this.getSshSessionRegistry().prochaineLigne(),
+        transportParDefaut: () => this.vtyTransportInput,
         quietModeAccessClass: () => {
           const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
             Symbol.for('CiscoSecurityConfig')
@@ -4650,10 +4685,13 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       eventBus: this.getBus(),
     });
   }
-  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
-    this.vtyTransportInput = t;
-    this.sshServerEnabled = (t === 'all' || t === 'ssh');
-    if (this._sshHost) this._sshHost.setSshActive(this.sshServerEnabled);
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }): void {
+    if (range) {
+      this.vtyLineConfig.upsert({ first: range.first, last: range.last, transportInput: t });
+    } else {
+      this.vtyTransportInput = t;
+    }
+    if (this._sshHost) this._sshHost.setSshActive(this.isSshActive());
     this.syncSshListener();
   }
 
@@ -4663,7 +4701,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * (`CiscoShellBase.remoteAcceptsTelnet`).
    */
   _getVtyTransportInput(): 'ssh' | 'telnet' | 'all' | 'none' {
-    return this.vtyTransportInput;
+    const ssh = this.transportAdmisSurUneVty('ssh');
+    const telnet = this.transportAdmisSurUneVty('telnet');
+    if (ssh && telnet) return 'all';
+    if (ssh) return 'ssh';
+    if (telnet) return 'telnet';
+    return 'none';
   }
 
   /**
@@ -4692,7 +4735,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** SshExecTarget. */
   getSshHostname(): string { return this.hostname; }
-  isSshActive(): boolean { return this.sshServerEnabled && this.hasSshHostKeys(); }
+  isSshActive(): boolean {
+    return this.sshServerEnabled && this.hasSshHostKeys() && this.transportAdmisSurUneVty('ssh');
+  }
   sshdAcceptsLogin(user: string): { ok: boolean; reason?: string } {
     return this.getSshHost().acceptsLogin(user);
   }

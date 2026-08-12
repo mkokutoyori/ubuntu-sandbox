@@ -23,6 +23,11 @@ export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
  * otherwise reimplement ad hoc.
  */
 import { renderPasswordField } from '../../shells/cisco/ciscoPasswordRender';
+import { huaweiCipher } from '@/crypto/passwords/huawei';
+
+export function transportAdmet(reglage: VtyTransport, kind: 'ssh' | 'telnet'): boolean {
+  return reglage === 'all' || reglage === kind;
+}
 
 export class VtyLineRange {
   constructor(public readonly first: number, public readonly last: number) {
@@ -309,11 +314,19 @@ export class VtyLineConfig {
     return this.login === 'password' && !this.linePassword;
   }
 
+  admetTransport(kind: 'ssh' | 'telnet', defaut: VtyTransport = 'all'): boolean {
+    return transportAdmet(this.transportInput ?? defaut, kind);
+  }
+
   /** Huawei VRP `display current-configuration` block for the user-interface. */
   renderHuawei(): string[] {
     const lines: string[] = [`user-interface vty ${this.first}${this.first === this.last ? '' : ' ' + this.last}`];
     if (this.authenticationMode !== null) {
       lines.push(` authentication-mode ${this.authenticationMode}`);
+    }
+    if (this.privilege !== null) lines.push(` user privilege level ${this.privilege}`);
+    if (this.linePassword !== null) {
+      lines.push(` set authentication password cipher ${huaweiCipher(this.linePassword)}`);
     }
     if (this.idleTimeoutMinutes !== null || this.idleTimeoutSeconds !== null) {
       lines.push(` idle-timeout ${this.idleTimeoutMinutes ?? 0} ${this.idleTimeoutSeconds ?? 0}`);

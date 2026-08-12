@@ -113,6 +113,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private dhcpPoolTrie = new CommandTrie();
   private selectedPool: string | null = null;
   private uiLabel = '';
+  private selectedUiRange: { first: number; last: number } | null = null;
   private selectedAcl: string | null = null;
   private acls = new Map<string, {
     key: string; type: 'basic' | 'adv'; rules: string[];
@@ -885,6 +886,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const first = args[1] ?? '0';
       const last = args[2];
       this.uiLabel = `${type}${first}${last ? `-${last}` : ''}`;
+      const premier = Number(first);
+      this.selectedUiRange = type === 'vty' && Number.isFinite(premier)
+        ? { first: premier, last: Number(last ?? first) }
+        : null;
       this.mode = 'user-interface';
       return '';
     });
@@ -1783,7 +1788,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const dev = this.swRef;
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
       if (dev?._setVtyTransportInput && ['ssh', 'telnet', 'all', 'none'].includes(proto)) {
-        dev._setVtyTransportInput(proto);
+        dev._setVtyTransportInput(proto, this.selectedUiRange ?? undefined);
       }
       return '';
     });
@@ -1794,9 +1799,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const dev = this.swRef;
       const removed = (args[2] ?? '').toLowerCase();
       if (!dev?._setVtyTransportInput) return '';
-      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
-      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
-      else dev._setVtyTransportInput('none');
+      const plage = this.selectedUiRange ?? undefined;
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet', plage);
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh', plage);
+      else dev._setVtyTransportInput('none', plage);
       return '';
     });
     t.register('display this', 'Display user-interface configuration', () =>

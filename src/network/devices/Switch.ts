@@ -2697,11 +2697,23 @@ export abstract class Switch extends Equipment {
    * configuration qui est conservee, pas un serveur qui demarre.
    */
   private vtyTransportInput: 'ssh' | 'telnet' | 'all' | 'none' = 'all';
-  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none'): void {
+  _setVtyTransportInput(t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }): void {
+    if (range) {
+      this._vtyLineConfig.upsert({ first: range.first, last: range.last, transportInput: t });
+      return;
+    }
     this.vtyTransportInput = t;
   }
+  transportAdmisSurUneVty(kind: 'ssh' | 'telnet'): boolean {
+    return this._vtyLineConfig.admetQuelquePart(kind, this.vtyTransportInput);
+  }
   _getVtyTransportInput(): 'ssh' | 'telnet' | 'all' | 'none' {
-    return this.vtyTransportInput;
+    const ssh = this.transportAdmisSurUneVty('ssh');
+    const telnet = this.transportAdmisSurUneVty('telnet');
+    if (ssh && telnet) return 'all';
+    if (ssh) return 'ssh';
+    if (telnet) return 'telnet';
+    return 'none';
   }
 
   private _aaaAuthenticator: AaaAuthenticator | null = null;

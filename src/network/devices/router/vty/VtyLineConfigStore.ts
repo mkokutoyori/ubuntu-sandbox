@@ -11,7 +11,7 @@
  * typing `line vty 0 4` then later `line vty 5 15`.
  */
 
-import { VtyLineConfig, type VtyLineConfigInit } from './VtyLineConfig';
+import { VtyLineConfig, transportAdmet, type VtyLineConfigInit, type VtyTransport } from './VtyLineConfig';
 
 export class VtyLineConfigStore {
   private readonly byKey = new Map<string, VtyLineConfig>();
@@ -49,13 +49,46 @@ export class VtyLineConfigStore {
    * configured line mandates a line password (`login`) that has not been set —
    * IOS then answers "Password required, but none set" and closes the session.
    */
-  incomingVerdict(): { accept: boolean; reason: string } {
-    for (const line of this.byKey.values()) {
+  incomingVerdict(ligne?: number | null): { accept: boolean; reason: string } {
+    const bloc = ligne == null ? undefined : this.blocPourLigne(ligne);
+    const candidats = bloc ? [bloc] : (ligne == null ? Array.from(this.byKey.values()) : []);
+    for (const line of candidats) {
       if (line.requiresPasswordButUnset()) {
         return { accept: false, reason: 'Password required, but none set' };
       }
     }
     return { accept: true, reason: '' };
+  }
+
+  /**
+   * Le bloc qui gouverne la ligne d'indice donne. `transport input`,
+   * `access-class` et `login` sont des directives de LIGNE : une session
+   * qui se pose sur la vty 0 obeit au bloc qui contient 0, et pas a ce
+   * qu'un autre bloc declare pour d'autres lignes.
+   */
+  blocPourLigne(index: number): VtyLineConfig | undefined {
+    for (const bloc of this.byKey.values()) {
+      if (index >= bloc.first && index <= bloc.last) return bloc;
+    }
+    return undefined;
+  }
+
+  /**
+   * Un protocole est-il admis par AU MOINS une ligne ? C'est la question
+   * que pose l'ecoute : le serveur reste ouvert tant qu'une vty accepte
+   * le protocole, meme si une autre le refuse.
+   */
+  admetQuelquePart(kind: 'ssh' | 'telnet', defaut: VtyTransport = 'all'): boolean {
+    if (Array.from(this.byKey.values()).some(b => b.admetTransport(kind, defaut))) return true;
+    return this.aUneLigneSansBloc() && transportAdmet(defaut, kind);
+  }
+
+  private aUneLigneSansBloc(): boolean {
+    const capacite = this.lineCapacity();
+    for (let i = 0; i < capacite; i++) {
+      if (!this.blocPourLigne(i)) return true;
+    }
+    return false;
   }
 
   /** Used by show-config renderers: returns the lines for every block in order. */

@@ -34,7 +34,7 @@ import {
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
-import { huaweiIrreversibleCipher, huaweiCipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { huaweiIrreversibleCipher, huaweiCipher, huaweiDecipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
@@ -1290,6 +1290,41 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+    /**
+     * `set authentication password [cipher|simple] <mdp>` : le mot de
+     * passe que reclame `authentication-mode password`. Il etait accepte
+     * et JETE, donc le mode s'affichait sans qu'aucun secret existe et la
+     * ligne accordait a n'importe qui. Le secret est range en clair et
+     * rendu chiffre, comme VRP le fait ; relu, il est dechiffre, sans
+     * quoi un aller-retour d'import ferait du chiffre le mot de passe.
+     */
+    t.registerGreedy('set authentication password', 'Set the line authentication password', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const forme = (args[0] ?? '').toLowerCase();
+      const brut = (forme === 'cipher' || forme === 'simple') ? args[1] : args[0];
+      if (!brut) return 'Error: Incomplete command found at \'^\' position.';
+      const clair = looksLikeReversibleCipher(brut) ? huaweiDecipher(brut) : brut;
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last, linePassword: clair,
+      });
+      return '';
+    });
+    /**
+     * `user privilege level <n>` : le niveau auquel la LIGNE ouvre la
+     * session, qui l'emporte sur celui du compte. Accepte et range nulle
+     * part, donc une vty ouverte au niveau 1 rendait tout de meme le
+     * niveau 15 du compte.
+     */
+    t.registerGreedy('user privilege', 'Set the privilege level of the user interface', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      if ((args[0] ?? '').toLowerCase() !== 'level') return 'Error: Unrecognized command found at \'^\' position.';
+      const niveau = Number.parseInt(args[1] ?? '', 10);
+      if (!Number.isFinite(niveau) || niveau < 0 || niveau > 15) {
+        return 'Error: Wrong parameter found at \'^\' position.';
+      }
+      this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, privilege: niveau });
+      return '';
+    });
     t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {
       const r = this.selectedUiRange; if (!r) return '';
       const dir = (args[1] ?? 'inbound').toLowerCase();
@@ -1305,10 +1340,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
       if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
-        const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
-        dev?._setVtyTransportInput?.(proto);
-        const r = this.selectedUiRange;
-        if (r) this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, transportInput: proto });
+        const dev = this.routerRef as unknown as {
+          _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+        };
+        dev?._setVtyTransportInput?.(proto, this.selectedUiRange ?? undefined);
       }
       return '';
     });
@@ -1317,11 +1352,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('undo', 'user-interface undo', (args) => {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
       const removed = (args[2] ?? '').toLowerCase();
-      const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.routerRef as unknown as {
+        _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+      };
       if (!dev?._setVtyTransportInput) return '';
-      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
-      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
-      else dev._setVtyTransportInput('none');
+      const plage = this.selectedUiRange ?? undefined;
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet', plage);
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh', plage);
+      else dev._setVtyTransportInput('none', plage);
       return '';
     });
   }

@@ -508,11 +508,12 @@ export class HuaweiRouter extends Router {
       // the permitted protocols (not just when 'all' is set), so the
       // grep-style assertions in operations notebooks keep working.
       if (this.sshServerEnabled) lines.push('stelnet server enable');
-      if (this.vtyTransportInput === 'all' || this.vtyTransportInput === 'ssh') {
+      const admis = this._getVtyTransportInput();
+      if (admis === 'all' || admis === 'ssh') {
         lines.push('protocol inbound ssh');
-      } else if (this.vtyTransportInput === 'telnet') {
+      } else if (admis === 'telnet') {
         lines.push('protocol inbound telnet');
-      } else if (this.vtyTransportInput === 'none') {
+      } else {
         lines.push('protocol inbound none');
       }
       const out = lines.join('\n');

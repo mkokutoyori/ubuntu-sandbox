@@ -4565,6 +4565,97 @@ deux imports morts, retires. Aucun test existant modifie.
 
 ---
 
+## Lot S15 — VRP : la ligne accordait a n'importe quel mot de passe
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S15. **Sonde** :
+`probe-privileges-vrp.test.ts` (15 cas), ecrite a l'aveugle.
+
+**Fichiers pris** : `shells/HuaweiVRPShell.ts`,
+`router/vty/VtyLineConfig.ts`, `devices/Router.ts`,
+`shells/cli/CliAuthorization.ts`.
+
+**Le trou** : `methodeDeLigne('vty')` — la fonction que consulte
+`authenticateLine` — lisait le champ `login`, qui est CELUI D'IOS. Sur un
+routeur Huawei il est toujours nul, donc elle repondait `none` et la
+ligne accordait a n'importe quel mot de passe : `authentication-mode aaa`
+comme `authentication-mode password` s'affichaient dans la configuration
+et ne gardaient rien. La regle etait ECRITE DEUX FOIS —
+`resolveVtyLoginMode()`, quinze lignes plus haut, connait les deux
+constructeurs et sert le dialogue telnet ; `methodeDeLigne` lui delegue
+desormais.
+
+**Deux commandes acceptees et jetees** : `set authentication password
+[cipher|simple] <mdp>` (le secret que reclame `authentication-mode
+password`, range nulle part, donc le mode etait inutilisable meme une
+fois lu) et `user privilege level <n>` (le niveau d'ouverture de la
+ligne, qui l'emporte sur celui du compte). Ni l'une ni l'autre ne
+figurait dans `display current-configuration`, alors que la
+documentation Huawei les montre dans son propre exemple ; elles y sont,
+donc elles survivent au rechargement.
+
+**Ce qui vous concerne** : `CommandLevelTable` est desormais generique
+sur l'espace de nommage (`CommandLevelTable<S extends string>`, defaut
+`AuthScope`) — les appels Cisco sont inchanges et gardent leur typage.
+`VtyLineConfig.renderHuawei()` rend deux lignes de plus.
+
+**Ce qui reste de la sonde, et que je traite dans le commit suivant** :
+`command-privilege level <n> view <vue> <commande>` n'existe pas du tout
+sur VRP ici, et VRP n'a aucun filtrage par niveau de commande.
+
+**Mesures.** 3 des 15 cas tombent avant correctif. Suites connexes
+vertes. Typecheck exactement a la base (279), lint identique.
+
+---
+
+## Lot S14 — `transport input` est une directive de LIGNE
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S14. **Sonde** :
+`probe-privileges-porte-reseau.test.ts` (24 cas), ecrite a l'aveugle.
+
+**Fichiers pris** (revendiques ici avant reecriture) :
+`router/vty/VtyIncomingPolicy.ts`, `router/vty/VtyLineConfig.ts`,
+`router/vty/VtyLineConfigStore.ts`, `router/aaa/SshSessionRegistry.ts`,
+`devices/Router.ts`, `devices/Switch.ts`, `devices/HuaweiRouter.ts`,
+`shells/CiscoShellBase.ts`, `shells/HuaweiVRPShell.ts`,
+`shells/HuaweiSwitchShell.ts`, `shells/huawei/huaweiSwitchDevice.ts`,
+`protocols/telnet/ITelnetServerContext.ts`.
+
+**Le defaut** : `vtyAdmissionVerdict` — le point de decision unique lu
+par le serveur SSH comme par le serveur telnet — ne consultait pas le
+transport. Derriere, `transport input` etait range a DEUX endroits : un
+champ d'equipement (dernier ecrit gagne, il ouvre et ferme les ecoutes 22
+et 23) et un bloc par plage de lignes (lu par le seul rendu de la
+configuration). Or la commande est PAR LIGNE sur un vrai IOS, donc
+`line vty 0 4 / transport input ssh` suivi de
+`line vty 5 15 / transport input none` — le durcissement le plus courant
+de tous — fermait SSH pour toute la machine et mettait l'administrateur
+dehors.
+
+**Deux faits pour une variable** : `_setVtyTransportInput` ecrivait aussi
+`sshServerEnabled`, qui est l'interrupteur du serveur. Un
+`transport input ssh` ressuscitait donc un serveur SSH SANS CLE — mesure,
+l'ecoute 22 etait bien fermee et `CrossVendorSshHost` acceptait quand
+meme. Deux fixtures vivaient dessus (`crypto key generate rsa` refusee
+faute d'`ip domain-name`, connexion reussie tout de meme) : corrigees.
+
+**Ce qui vous concerne** : `VtyIncomingPolicy.admit()` prend deux
+dependances de plus (`ligneCandidate`, `transportParDefaut`) et
+`VtyAdmissionVerdict` gagne le genre `'transport'` ;
+`VtyLineConfigStore.incomingVerdict()` prend un indice de ligne
+facultatif ; `SshSessionRegistry.prochaineLigne()` est nouvelle ;
+`_setVtyTransportInput` prend une plage facultative ;
+`_getVtyTransportInput()` est desormais DERIVE de la reunion des lignes.
+Six lecteurs qui prenaient `vtyLineConfig.all()[0]` passent par
+`blocVtyCourant()`.
+
+**Mesures.** 6 des 24 cas tombent avant correctif (`git stash` sur
+`src/network/`). Suites connexes vertes : lignes, privileges, vty,
+telnet, SSH inter-equipements, AAA, rendu de configuration. Deux specs
+Playwright (`e2e/cisco-transport-input-par-ligne.spec.ts`). Typecheck
+exactement a la base (279), lint identique fichier par fichier.
+
+---
+
 ## Lot A1 — vérifier un mot de passe, et libérer la console
 
 **PRD** : `PRD-Acces-Mot-De-Passe-Cisco.md`. Deux bugs signalés depuis

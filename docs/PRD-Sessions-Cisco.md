@@ -960,3 +960,155 @@ et elle disparaît de la session ouverte **immédiatement**.
 **Mesures.** 21 cas, **3 tombent** avant correctifs (les deux trous
 ci-dessus). 318 suites connexes vertes, 4628 cas. Typecheck **exactement
 à la base** (279), lint identique.
+
+## Lot S14 — `transport input` est une directive de LIGNE, pas d'équipement
+
+**Sonde** : `probe-privileges-porte-reseau.test.ts` (24 cas), écrite **à
+l'aveugle**. Tout ce que les lots précédents ont mesuré entre par la
+**console** — c'est-à-dire par la porte qu'il faut déjà être devant la
+machine pour franchir. La vty est l'autre porte, celle qui est exposée,
+et elle a ses contrôles à elle, qui s'appliquent **dans un ordre** : le
+transport d'abord (quel protocole est admis), puis la liste d'accès
+(quelle source), puis l'authentification (qui), puis le niveau
+d'ouverture (quoi). Un contrôle qui s'applique dans le mauvais ordre ne
+protège rien : une ACL consultée après l'authentification laisse un
+inconnu essayer des mots de passe.
+
+### Ce que la mesure a trouvé
+
+`vtyAdmissionVerdict` — le point de décision unique, lu par le serveur
+SSH (`isClientBlocked`) comme par le serveur telnet (`admit`) — **ne
+consultait pas le transport du tout**. Les quatre étages annoncés
+n'étaient donc que trois, et le premier manquait.
+
+La cause tenait plus loin que cet oubli, et c'est elle qui rendait la
+chose dangereuse : **`transport input` était rangé à DEUX endroits**, un
+champ d'équipement (`Router.vtyTransportInput`, dernier écrit gagne, qui
+ouvre et ferme les écoutes 22 et 23) et un bloc par plage de lignes
+(`VtyLineConfig.transportInput`, lu par le seul rendu de la
+configuration). Sur un vrai IOS la commande est **par ligne** — la
+documentation Cisco donne elle-même l'exemple de trois plages réglées
+différemment. La conséquence était la configuration de durcissement la
+plus courante de toutes :
+
+```
+line vty 0 4
+ transport input ssh
+line vty 5 15
+ transport input none
+```
+
+Le second `transport input` écrasait le premier, l'écoute SSH se fermait
+pour toute la machine, et l'administrateur se retrouvait **dehors** — en
+ayant tapé exactement ce que les guides de durcissement recommandent.
+Dans l'autre ordre, le durcissement ne durcissait rien.
+
+Et le champ d'équipement portait **deux faits pour une variable** :
+`_setVtyTransportInput` écrivait aussi `sshServerEnabled`, qui est
+l'interrupteur du serveur (`undo stelnet server enable` côté VRP). Un
+`transport input ssh` **ressuscitait donc un serveur SSH sans clé** :
+mesuré, `hasSshHostKeys()` répondait `false`, l'écoute 22 était
+correctement fermée, et `CrossVendorSshHost` acceptait quand même la
+session — deux réponses à « SSH est-il ouvert ? » sur la même machine au
+même instant. Deux fixtures vivaient sur ce défaut sans le savoir
+(`crypto key generate rsa` y était refusée faute d'`ip domain-name`, et
+la connexion réussissait tout de même) ; elles font maintenant la vraie
+mise en service.
+
+### La ligne devient l'unité
+
+`SshSessionRegistry.prochaineLigne()` rend l'indice que prendrait la
+session suivante — la plus basse libre, comme sur un vrai IOS — et
+`VtyLineConfigStore.blocPourLigne()` le bloc qui la gouverne. À partir de
+là :
+
+- **`VtyIncomingPolicy.admit()`** commence par le transport de **cette**
+  ligne, puis le mode silencieux, puis l'ACL de cette ligne, puis la
+  réserve, puis le mot de passe de cette ligne. Une ligne qu'aucun bloc
+  ne couvre prend le réglage d'équipement, qui n'est plus la vérité mais
+  le défaut.
+- **L'écoute suit la réunion des lignes** (`admetQuelquePart`) : le
+  serveur reste ouvert tant qu'une vty admet le protocole. C'est ce qui
+  fait tenir la configuration ci-dessus.
+- **`_getVtyTransportInput()` est dérivé** de cette même réunion, de
+  sorte que le pair qui demande « accepterais-tu mon telnet ? » et
+  l'écoute locale ne peuvent plus se contredire.
+- **`sshServerEnabled` ne décrit plus que le serveur**, et `isSshActive()`
+  demeure la conjonction des trois faits : serveur armé, clé présente,
+  transport admis.
+
+**Six lecteurs prenaient le PREMIER bloc déclaré** (`all()[0]`) pour
+répondre sur `login`, `password`, `exec-timeout` et `privilege level` :
+`blocVtyCourant()` les remplace tous, avec repli sur le premier bloc pour
+une ligne qu'aucun n'couvre — sans quoi une machine dont les deux plages
+diffèrent répondait toujours pour la première.
+
+Le correctif porte sur les **quatre plateformes** : `Switch` reçoit la
+même plage par ligne (sa configuration est rendue et rejouée à l'import,
+même sans pile TCP derrière), et les quatre points d'entrée `protocol
+inbound` / `undo protocol inbound` de VRP — routeur et commutateur —
+transmettent la plage de `user-interface` sélectionnée.
+
+**Mesures.** 24 cas, **6 tombent** avant correctif (`git stash` sur
+`src/network/`). Suites connexes vertes : lignes, privilèges, vty,
+telnet, SSH inter-équipements, AAA, rendu de configuration. Deux specs
+Playwright (`e2e/cisco-transport-input-par-ligne.spec.ts`) passent.
+Typecheck **exactement à la base** (279), lint identique fichier par
+fichier.
+
+## Lot S15 — VRP : la ligne accordait à n'importe quel mot de passe
+
+**Sonde** : `probe-privileges-vrp.test.ts` (15 cas), écrite **à
+l'aveugle**. Tout ce qui précède est du Cisco ; VRP ne copie pas IOS, et
+c'est précisément pour cela qu'il fallait le mesurer séparément. Chez
+Huawei il n'y a **pas de mot de passe d'activation** — le niveau est une
+propriété du COMPTE, acquise à l'ouverture de session et jamais élevée
+ensuite —, et un compte déclare en plus les **services** qu'il a le droit
+d'employer (`service-type`), ce que Cisco n'a pas.
+
+### Ce qui tenait déjà
+
+Le niveau du compte (`local-user … privilege level`), son rendu dans la
+configuration, le `service-type` (un compte `ftp` est bien refusé en SSH,
+bon mot de passe compris), l'absence de commande `enable`, le refus d'un
+compte bloqué par `state block`, `protocol inbound` par ligne (lot S14)
+et `acl … inbound` sont tous corrects.
+
+### Le trou : `authentication-mode` n'authentifiait personne
+
+`methodeDeLigne('vty')` — la fonction que consulte `authenticateLine` —
+lisait le champ `login`, qui est **celui d'IOS**. Sur un routeur Huawei
+il est toujours nul, donc elle répondait `none`, et **la ligne accordait
+à n'importe quel mot de passe** : `authentication-mode aaa` comme
+`authentication-mode password` s'affichaient dans la configuration et ne
+gardaient rien.
+
+Ce n'était pas une règle manquante mais une règle **écrite deux fois** :
+`resolveVtyLoginMode()`, à quinze lignes de là, connaît les deux
+constructeurs (`login` pour IOS, `authenticationMode` pour VRP) et sert
+le dialogue telnet. Deux lecteurs d'une même question qui ne répondent
+pas pareil — `methodeDeLigne` délègue désormais à l'autre, et il n'en
+reste qu'un.
+
+### Deux commandes acceptées et jetées
+
+- **`set authentication password [cipher|simple] <mdp>`** : le secret que
+  réclame `authentication-mode password` était **rangé nulle part**
+  (`(_args) => ''`). Le mode ne pouvait donc pas fonctionner même une
+  fois lu — il n'y avait aucun secret à comparer. Il est stocké en clair
+  et rendu chiffré, comme VRP le fait ; **relu, il est déchiffré**, sans
+  quoi un aller-retour d'import ferait du chiffre le mot de passe.
+- **`user privilege level <n>`** : le niveau auquel la LIGNE ouvre la
+  session, qui l'emporte sur celui du compte, était accepté et perdu — une
+  vty ouverte au niveau 1 rendait quand même le niveau 15 du compte.
+
+Aucune des deux ne figurait dans `display current-configuration`, alors
+que la documentation Huawei les montre l'une et l'autre dans son propre
+exemple de `user-interface vty` ; elles y sont maintenant, donc elles
+survivent au rechargement d'une topologie.
+
+**Mesures.** 15 cas, **3 tombent** avant correctif (`git stash` sur
+`src/network/`). Suites connexes vertes : AAA Cisco/Huawei, SSH
+inter-constructeurs, aller-retour de configuration VRP, vty, telnet.
+Typecheck **exactement à la base** (279), lint identique fichier par
+fichier.

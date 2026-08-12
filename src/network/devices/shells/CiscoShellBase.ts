@@ -5246,8 +5246,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // don't recognise is accepted silently, matching real IOS.
     this.configLineTrie.registerGreedy('transport', 'transport input/output', (args) => {
       const dev = this.d() as unknown as {
-        _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void;
-        _getVtyLineConfig?: () => { upsert: (p: object) => void };
+        _setVtyTransportInput?: (
+          t: 'ssh' | 'telnet' | 'all' | 'none',
+          range?: { first: number; last: number },
+        ) => void;
       };
       const dir = args[0]?.toLowerCase();
       if (!dir) return CISCO_ERRORS.INCOMPLETE;
@@ -5267,9 +5269,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '';
       }
       if (typeof dev._setVtyTransportInput === 'function') {
-        dev._setVtyTransportInput(proto);
-        const range = this.selectedVtyRange;
-        if (range) dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, transportInput: proto });
+        dev._setVtyTransportInput(proto, this.selectedVtyRange ?? undefined);
       }
       return '';
     });
