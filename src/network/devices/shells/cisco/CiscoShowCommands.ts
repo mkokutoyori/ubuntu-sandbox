@@ -562,6 +562,18 @@ export function showRunningConfig(router: Router): string {
     }
   }
 
+  // Les vues AVANT les comptes : `username X view NOC` refuse une vue
+  // inconnue, donc une configuration qui nommerait la vue apres le
+  // compte ne pourrait pas etre rejouee — et c'est ce que l'import
+  // d'une topologie fait de cette configuration.
+  const viewLines = (router as unknown as {
+    [s: symbol]: { parserViewLines?: () => string[] } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')]?.parserViewLines?.() ?? [];
+  if (viewLines.length > 0) {
+    lines.push('!');
+    lines.push(...viewLines);
+  }
+
   // Local AAA users (`username NAME privilege N secret …`).
   const listUsers = (router as unknown as {
     _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;

@@ -108,6 +108,10 @@ import { runTestAaaGroup } from '../router/aaa/TestAaaGroup';
 import type { AaaAuthenticator } from '../router/aaa/AaaAuthenticator';
 import type { TftpEndpoint } from '@/network/tftp/types';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
+import {
+  CliAuthorization, CommandLevelTable, ParserViewRegistry, scopeForMode,
+  type CliPrincipal,
+} from './cli/CliAuthorization';
 import type {
   CommandInteractionPlan,
   InteractionPlanContext,
@@ -1791,53 +1795,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── Trie Matching ──────────────────────────────────────────────
 
   /**
-   * Major mode-entering verbs that real IOS accepts from *any* config
-   * sub-mode: typing `line vty 0 4` while in `config-if` implicitly leaves
-   * the interface sub-mode and enters line configuration. Used as a
-   * fallback when the active sub-mode trie does not recognise the command.
-   */
-  /**
-   * Global config verbs that pop out of a sub-mode when pasted there —
-   * IOS accepts any level-0 command from a sub-config mode and switches
-   * context implicitly (this is what makes pasting a full show
-   * running-config work even though the `!` separators don't `exit`).
-   */
-  private static readonly COMMON_GLOBAL_NAV = [
-    'interface', 'line', 'router', 'ip', 'hostname', 'banner',
-    'username', 'access-list', 'vlan', 'service', 'no',
-  ];
-
-  private static readonly GLOBAL_NAV_BY_MODE: Record<string, string[]> = {
-    'config-if': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-subif': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-line': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-view': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-router': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-router-af': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-router-ospf': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-router-ospfv3': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-vlan': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-vrf': ['*'],
-    'config-route-map': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-std-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-ext-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
-    'config-ipv6-nacl': CiscoShellBase.COMMON_GLOBAL_NAV,
-  };
-
-  /**
-   * Reproduce IOS's "global commands work from a sub-config mode" behaviour:
-   * when a sub-config mode (config-if, config-line, config-vlan, …) cannot
-   * resolve a command but it is a global navigation verb, dispatch it
-   * against the global config trie — whose action switches `this.mode`.
-   * Returns null when no fallback applies.
+   * Une commande GLOBALE tapee depuis un sous-mode de configuration
+   * s'applique et change de contexte — c'est la regle d'IOS, et c'est ce
+   * qui rend une configuration rendue REJOUABLE : elle ne contient aucun
+   * `exit`, seulement des `!`.
+   *
+   * Il y avait ici une table de sous-modes, chacun avec une liste de
+   * onze verbes autorises. Elle etait REDONDANTE — cette fonction n'est
+   * consultee que dans la branche `'invalid'`, une fois que l'arbre du
+   * sous-mode a renonce, et elle rejoue la commande contre l'arbre
+   * global, qui refuse tout seul ce qu'il ne connait pas. Son seul effet
+   * etait d'ecarter des commandes globales valides : `privilege …`,
+   * `parser view …` et `archive` etaient refusees des qu'une interface
+   * avait ete configuree avant elles, et les sous-modes absents de la
+   * table (`config-archive` et les siens) ne retombaient nulle part —
+   * une seule ligne `archive` dans la configuration bloquait donc TOUT
+   * le reste du rejeu.
+   *
+   * Ce n'est pas de l'ergonomie : l'import d'une topologie rejoue cette
+   * configuration, et elle place les blocs `interface` avant la
+   * delegation par niveau et les vues d'analyseur. Les unes comme les
+   * autres etaient perdues a chaque aller-retour, en silence.
    */
   protected tryGlobalConfigNavigation(cmdPart: string): string | null {
     if (!this.isConfigMode() || this.mode === 'config') return null;
-    const heads = CiscoShellBase.GLOBAL_NAV_BY_MODE[this.mode];
-    if (!heads) return null;
-    const head = cmdPart.trim().split(/\s+/)[0]?.toLowerCase();
-    if (!head) return null;
-    if (!heads.includes('*') && !heads.some(k => k.startsWith(head))) return null;
     const result = this.configTrie.match(cmdPart);
     if (result.status === 'ok' && result.node?.action) {
       return result.node.action(result.args, cmdPart);
@@ -1894,35 +1875,68 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return getSecurityConfig(this.d()).parserViews.get(this.selectedParserView);
   }
 
-  /**
-   * La porte d'une vue CLI : une commande exec passe-t-elle ?
-   *
-   * La difference avec les niveaux de privilege est le tout du
-   * mecanisme : un niveau AJOUTE des commandes au socle du niveau 1, une
-   * vue REMPLACE l'arbre visible. Hors d'une vue (le cas courant, et le
-   * seul jusqu'ici), cette fonction rend `true` sans rien consulter.
-   *
-   * Trois commandes passent toujours, et ce n'est pas une commodite :
-   * sans elles on ne pourrait plus ni quitter la vue, ni savoir dans
-   * laquelle on est — une vue dont on ne peut pas sortir n'est plus un
-   * role, c'est une souriciere.
-   */
-  private readonly VUE_TOUJOURS_PERMIS = ['exit', 'end', 'logout', 'disable', 'enable', 'show parser view'];
+  private _autorisation: CliAuthorization | null = null;
 
-  protected commandeAutoriseeParLaVue(cmdPart: string): boolean {
-    if (this.activeParserView === null) return true;
-    const vue = getSecurityConfig(this.d()).parserViews.get(this.activeParserView);
-    if (!vue) return true;
-    const ligne = cmdPart.trim().toLowerCase();
-    if (this.VUE_TOUJOURS_PERMIS.some((c) => ligne === c || ligne.startsWith(c + ' '))) return true;
-    // `exclude` l'emporte : il sert precisement a retirer une commande
-    // d'un prefixe qu'on vient d'inclure.
-    if (vue.execExclude.some((c) => ligne === c || ligne.startsWith(c + ' '))) return false;
-    return vue.execInclude.some((c) => ligne === c || ligne.startsWith(c + ' ')
-      // Un prefixe inclus autorise ce qui le complete (`show ip` couvre
-      // `show ip route`), et une commande incluse plus longue que ce qui
-      // est tape reste invisible : c'est l'arbre d'IOS, pas une egalite.
-      || c.startsWith(ligne + ' '));
+  /**
+   * L'autorisation est reconstruite par shell mais lit les tables de
+   * l'EQUIPEMENT : une regle posee sur la console vaut pour une session
+   * SSH ouverte ensuite, ce qui ne serait pas le cas si elle vivait ici.
+   */
+  protected autorisation(): CliAuthorization {
+    if (!this._autorisation) {
+      this._autorisation = new CliAuthorization(
+        new CommandLevelTable(() => {
+          const dev = this.deviceRef as unknown as {
+            _ciscoPrivilegeRules?: Map<string, number>;
+          } | null;
+          if (!dev) return undefined;
+          return (dev._ciscoPrivilegeRules ??= new Map());
+        }),
+        new ParserViewRegistry(() => {
+          if (!this.deviceRef) return new Map();
+          return getSecurityConfig(this.d()).parserViews;
+        }),
+      );
+    }
+    return this._autorisation;
+  }
+
+  protected mandataire(): CliPrincipal {
+    return { level: this.currentPrivilegeLevel, view: this.activeParserView };
+  }
+
+  /**
+   * Le niveau d'une commande QUAND l'operateur n'a rien deplace.
+   *
+   * C'est la seule chose que l'autorisation ne peut pas savoir seule, et
+   * elle etait jusqu'ici IMPLICITE — encodee dans « quel arbre porte la
+   * commande ». L'ecrire rend la regle unique : une commande de l'arbre
+   * utilisateur nait au niveau 1, tout le reste au niveau 15, et c'est
+   * exactement ce que dit IOS.
+   */
+  protected niveauParDefautDe(cmdPart: string): number | null {
+    const connue = (trie: CommandTrie): boolean => {
+      const r = trie.match(cmdPart);
+      return r.status === 'ok' || r.status === 'incomplete' || r.status === 'ambiguous';
+    };
+    if (this.mode === 'user' || this.mode === 'privileged') {
+      if (connue(this.userTrie)) return 1;
+      return connue(this.privilegedTrie) ? 15 : null;
+    }
+    if (connue(this.getActiveTrie()) || connue(this.configTrie)) return 15;
+    return null;
+  }
+
+  /** La session voit-elle cette commande ? Une seule regle, deja ecrite. */
+  protected laSessionVoit(cmdPart: string): boolean {
+    const defaut = this.niveauParDefautDe(cmdPart);
+    if (defaut === null) return true;
+    return this.autorisation().authorize({
+      principal: this.mandataire(),
+      scope: scopeForMode(this.mode),
+      command: cmdPart,
+      defaultLevel: defaut,
+    }) === 'run';
   }
 
   /**
@@ -2000,84 +2014,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return '';
   }
 
-  private static readonly ESPACE_DE_REGLE: Record<string, string> = {
-    'config': 'configure',
-    'config-if': 'interface',
-    'config-subif': 'interface',
-    'config-line': 'line',
-  };
-
-  private static readonly CONFIG_TOUJOURS_PERMIS = ['exit', 'end', 'do', 'show'];
-
   /**
-   * En configuration, un niveau intermediaire ne voit QUE ce qu'on lui a
-   * donne — toutes les commandes de configuration naissent au niveau 15.
-   *
-   * C'est le piege classique de la delegation : `privilege exec level 7
-   * configure terminal` ouvre la PORTE et rien d'autre, il faut encore
-   * `privilege configure level 7 <commande>` pour chaque commande a
-   * l'interieur. Le filtre n'existait que pour l'EXEC, si bien qu'un
-   * technicien de niveau 7 admis en configuration y faisait tout, `router
-   * ospf` compris : la moitie de la delegation etait sans effet.
-   *
-   * `exit` et `end` restent toujours permis — un mode dont on ne peut
-   * pas sortir n'est plus une restriction mais une souriciere.
+   * Executer une commande contre l'arbre PRIVILEGIE depuis une session
+   * en mode utilisateur. Ce n'est plus une decision d'autorisation —
+   * elle est deja prise — mais un choix d'ARBRE : une commande descendue
+   * au niveau 7 doit se comporter exactement comme au niveau 15, donc
+   * passer par l'analyseur qui la porte vraiment.
    */
-  protected commandeDeConfigurationAccordee(cmdPart: string): boolean {
-    if (this.currentPrivilegeLevel >= 15) return true;
-    const espace = CiscoShellBase.ESPACE_DE_REGLE[this.mode];
-    if (!espace) return true;
-    const lower = cmdPart.trim().toLowerCase();
-    const tete = lower.split(/\s+/)[0] ?? '';
-    if (CiscoShellBase.CONFIG_TOUJOURS_PERMIS.includes(tete)) return true;
-    const cible = lower.startsWith('no ') ? lower.slice(3).trim() : lower;
-    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })
-      ._ciscoPrivilegeRules;
-    if (!rules || rules.size === 0) return false;
-    for (const [key, niveau] of rules) {
-      if (!key.startsWith(espace + ' ')) continue;
-      if (niveau > this.currentPrivilegeLevel) continue;
-      const commande = key.slice(espace.length + 1);
-      if (cible === commande || cible.startsWith(commande + ' ')) return true;
-    }
-    return false;
-  }
-
-  protected commandeHisseeAuDessusDuNiveau(cmdPart: string): boolean {
-    if (this.currentPrivilegeLevel >= 15) return false;
-    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
-    if (!rules || rules.size === 0) return false;
-    const lower = cmdPart.trim().toLowerCase();
-    let meilleur: { longueur: number; niveau: number } | null = null;
-    for (const [key, level] of rules) {
-      if (!key.startsWith('exec ')) continue;
-      const cible = key.slice(5);
-      if (lower !== cible && !lower.startsWith(cible + ' ')) continue;
-      if (!meilleur || cible.length > meilleur.longueur) {
-        meilleur = { longueur: cible.length, niveau: level };
-      }
-    }
-    return meilleur !== null && meilleur.niveau > this.currentPrivilegeLevel;
-  }
-
-  private tryGrantedPrivilegeCommand(cmdPart: string): string | null {
-    if (this.mode !== 'user' || this.currentPrivilegeLevel <= 1 || this.currentPrivilegeLevel >= 15) return null;
-    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules;
-    if (!rules || rules.size === 0) return null;
-    const lower = cmdPart.trim().toLowerCase();
-    let matched = false;
-    for (const [key, level] of rules) {
-      if (!key.startsWith('exec ')) continue;
-      if (level > this.currentPrivilegeLevel) continue;
-      const target = key.slice(5);
-      if (lower === target || lower.startsWith(target + ' ')) { matched = true; break; }
-    }
-    if (!matched) return null;
-    const privResult = this.privilegedTrie.match(cmdPart);
-    if (privResult.status === 'ok') {
-      return privResult.node?.action ? privResult.node.action(privResult.args, cmdPart) : '';
-    }
-    return null;
+  private executeSurTriePrivilegie(cmdPart: string): string | null {
+    const resultat = this.privilegedTrie.match(cmdPart);
+    if (resultat.status !== 'ok' || !resultat.node?.action) return null;
+    return resultat.node.action(resultat.args, cmdPart);
   }
 
   /**
@@ -2174,36 +2121,39 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected executeOnTrie(cmdPart: string): string {
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
-    // Une commande HISSEE au-dessus du niveau de la session n'existe
-    // plus pour elle. Le mecanisme n'agissait que dans un sens : il
-    // AJOUTAIT au socle du niveau 1 les commandes privilegiees
-    // accordees, et ne retirait jamais celles qu'on avait montees.
-    // `privilege exec level 7 ping` etait donc accepte, rendu dans la
-    // configuration, et `ping` restait disponible au niveau 1 — la
-    // moitie du chapitre « qui a le droit de faire quoi » ne faisait
-    // rien. La verification vient AVANT l'octroi, sinon une commande a
-    // la fois hissee et accordee dependrait de l'ordre de la table.
-    if ((this.mode === 'user' || this.mode === 'privileged')
-      && this.commandeHisseeAuDessusDuNiveau(cmdPart)) {
-      return CISCO_ERRORS.INVALID_INPUT;
-    }
-    if (this.mode === 'user' && this.currentPrivilegeLevel > 1 && this.currentPrivilegeLevel < 15) {
-      const granted = this.tryGrantedPrivilegeCommand(cmdPart);
-      if (granted !== null) return granted;
-      if (this.isPrivilegedOnlyShowCommand(cmdPart)) return CISCO_ERRORS.INVALID_INPUT;
-    }
-
-    // Une vue active remplace l'arbre visible : ce qu'elle n'inclut pas
-    // repond comme une commande qui n'existe pas, ce qui est exactement
-    // ce que fait IOS -- une commande hors de votre vue n'est pas
-    // "refusee", elle est absente.
-    if ((this.mode === 'user' || this.mode === 'privileged')
-      && !this.commandeAutoriseeParLaVue(cmdPart)) {
+    // UNE seule question, posee a UN seul endroit : cette session
+    // voit-elle cette commande ? Cinq predicats y repondaient a la
+    // suite, chacun relisant la table des regles a sa facon ; leur ordre
+    // d'appel etait la vraie specification, et deux modes entiers
+    // (configuration, vues en configuration) n'etaient consultes par
+    // aucun. `CliAuthorization` porte la regle, et l'aide comme la
+    // completion posent desormais la meme.
+    // Une commande que ce mode ne connait dans AUCUN arbre n'est pas
+    // jugee par le niveau : elle est inconnue, et IOS la traite alors
+    // comme un nom d'hote a joindre. La confondre avec un refus ferait
+    // repondre le caret la ou une vraie machine tente une resolution.
+    const defaut = this.niveauParDefautDe(cmdPart);
+    if (defaut !== null && this.autorisation().authorize({
+      principal: this.mandataire(),
+      scope: scopeForMode(this.mode),
+      command: cmdPart,
+      defaultLevel: defaut,
+    }) === 'absent') {
       return CISCO_ERRORS.INVALID_INPUT;
     }
 
-    if (this.isConfigMode() && !this.commandeDeConfigurationAccordee(cmdPart)) {
-      return CISCO_ERRORS.INVALID_INPUT;
+    // Une commande DESCENDUE jusqu'a une session en mode utilisateur vit
+    // dans l'arbre privilegie : c'est le seul qui porte son analyse et
+    // son comportement complets. L'autorisation a deja tranche ; il ne
+    // reste ici qu'un choix d'arbre.
+    if (this.mode === 'user' && defaut !== null && this.autorisation().estAccordee({
+      principal: this.mandataire(),
+      scope: 'exec',
+      command: cmdPart,
+      defaultLevel: defaut,
+    })) {
+      const accordee = this.executeSurTriePrivilegie(cmdPart);
+      if (accordee !== null) return accordee;
     }
 
     const trie = this.getActiveTrie();
@@ -2460,10 +2410,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * l'autre faisait se contredire `show privilege` et l'invite de la
    * meme session.
    */
-  beginExecSession(level: number, user?: string): void {
+  beginExecSession(level: number, user?: string, view?: string | null): void {
     this.currentPrivilegeLevel = level;
     this.mode = level >= 15 ? 'privileged' : 'user';
     this.fsm.mode = this.mode;
+    // `username X view NOC` attache un ROLE au compte : la session doit
+    // s'ouvrir DANS cette vue. Le champ etait range sur le compte, rendu
+    // dans la configuration, et lu par personne a la connexion — le lien
+    // entre un compte et son role n'existait donc qu'a l'ecrit.
+    this.activeParserView = view ?? null;
     if (user) this.configSessionLabel = user;
     this.cmdHistory = [];
     this.terminalHistorySize = this.tailleHistoriqueDeLigne();
@@ -2771,7 +2726,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (!device) return true;
         const precedent = this.deviceRef;
         this.deviceRef = device;
-        try { return !this.commandeHisseeAuDessusDuNiveau(ligne); }
+        try { return this.laSessionVoit(ligne); }
         finally { this.deviceRef = precedent; }
       };
       const completions = trie.getCompletions(input)
@@ -2818,7 +2773,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.deviceRef = device;
       try {
         const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
-          .filter((c) => !this.commandeHisseeAuDessusDuNiveau(c));
+          .filter((c) => this.laSessionVoit(c));
         const prefixe = input.trim().toLowerCase();
         for (const { cible } of this.reglesExecAccordees()) {
           if (cible.startsWith(prefixe) && !base.includes(cible)) base.push(cible);
@@ -4563,13 +4518,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return '%Currently in view mode. Please exit to root view first';
       }
       const nom = args[0];
-      if (!sec.parserViews.has(nom)) {
-        sec.parserViews.set(nom, { name: nom, execInclude: [], execExclude: [] });
+      // `parser view <nom> superview` : le mot-cle etait accepte et JETE,
+      // donc la vue naissait ordinaire ET VIDE — un compte qui la portait
+      // ne voyait rien du tout, ce qui est pire qu'un refus.
+      const superview = (args[1] ?? '').toLowerCase() === 'superview';
+      if (args[1] !== undefined && !superview) throw new CliInvalidInput({ token: args[1] });
+      const existante = sec.parserViews.get(nom);
+      if (!existante) {
+        sec.parserViews.set(nom, {
+          name: nom, execInclude: [], execExclude: [],
+          superview: superview || undefined, members: superview ? [] : undefined,
+        });
+      } else if (superview && !existante.superview) {
+        return '%View is already defined as a normal view';
       }
       this.selectedParserView = nom;
       this.mode = 'config-view';
       return '';
-    });
+    }, [{ keyword: 'superview', description: 'Define this view as a superview' }]);
     this.configTrie.registerGreedy('no parser view', 'Remove a CLI view', (args) => {
       if (args.length === 0) throw new CliIncomplete();
       getSecurityConfig(this.d()).parserViews.delete(args[0]);
@@ -4726,15 +4692,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // min-length` validates — a pasted hash (5/7/8/9) is exempt, same as
       // `username ... secret` (CiscoSecurityCommands.ts).
       let plaintextEntered: string | undefined;
-      if (args[0] === '0') { algo = 'plain'; secret = args.slice(1).join(' '); plaintextEntered = secret; }
-      else if (args[0] === '5') { algo = 'md5'; secret = args.slice(1).join(' '); }
-      else if (args[0] === '7') { algo = 'type-7'; secret = args.slice(1).join(' '); }
-      else if (args[0] === '8') { algo = 'sha256'; secret = args.slice(1).join(' '); }
-      else if (args[0] === '9') { algo = 'scrypt'; secret = args.slice(1).join(' '); }
-      else if (args[0] === 'level' && /^\d+$/.test(args[1] ?? '')) {
-        level = parseInt(args[1], 10);
-        secret = args.slice(2).join(' '); plaintextEntered = secret;
-      } else { secret = args.join(' '); plaintextEntered = secret; }
+      // La grammaire d'IOS est `enable secret [level N] [{0|5|7|8|9}]
+      // <chaine>`, et les deux parties sont INDEPENDANTES. Elles etaient
+      // traitees comme exclusives : apres `level N`, le chiffre
+      // d'algorithme etait avale DANS le secret. La forme rendue par la
+      // machine — `enable secret level 12 5 $1$…` — n'etait donc pas
+      // relisible par elle-meme, et le coffre du palier disparaissait a
+      // l'import d'une topologie, sans rien dire.
+      let reste = args;
+      if (reste[0]?.toLowerCase() === 'level' && /^\d+$/.test(reste[1] ?? '')) {
+        level = parseInt(reste[1], 10);
+        reste = reste.slice(2);
+      }
+      const chiffres: Record<string, 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'> = {
+        '0': 'plain', '5': 'md5', '7': 'type-7', '8': 'sha256', '9': 'scrypt',
+      };
+      const nomme = chiffres[reste[0] ?? ''];
+      // `enable secret 5` sans rien apres : le chiffre EST le type, donc
+      // il ne reste aucun secret — IOS repond incomplet plutot que de
+      // ranger « 5 » comme mot de passe en clair.
+      if (nomme !== undefined && reste.length === 1) return '% Incomplete command.';
+      if (nomme !== undefined && reste.length > 1) {
+        algo = nomme;
+        secret = reste.slice(1).join(' ');
+        // Seul le clair est soumis a `security passwords min-length` : un
+        // condense colle est exempt, comme pour `username … secret`.
+        if (nomme === 'plain') plaintextEntered = secret;
+      } else {
+        secret = reste.join(' ');
+        plaintextEntered = secret;
+      }
       if (secret === '') return '% Incomplete command.';
       const minLength = getSecurityConfig(this.d()).passwords.minLength;
       if (plaintextEntered !== undefined && minLength && plaintextEntered.length < minLength) {
@@ -5133,6 +5120,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
+    /**
+     * `view <nom>` sous une superview : ajouter une vue MEMBRE. La
+     * commande etait refusee, donc une superview restait vide quoi qu'on
+     * y mette. Une superview ne porte pas de commandes a elle et une vue
+     * ordinaire n'a pas de membres : melanger les deux produirait un
+     * objet qu'IOS ne connait pas.
+     */
+    this.configViewTrie.registerGreedy('view', 'Add a member view to this superview', (args) => {
+      if (args.length < 1) throw new CliIncomplete();
+      const vue = this.vueEnCours();
+      if (!vue) return '';
+      if (!vue.superview) return '%View is not a superview';
+      const nom = args[0];
+      const sec = getSecurityConfig(this.d());
+      const membre = sec.parserViews.get(nom);
+      if (!membre) return `%Error: View ${nom} is not present in the system`;
+      if (membre.superview) return '%A superview cannot be a member of another superview';
+      (vue.members ??= []);
+      if (!vue.members.includes(nom)) vue.members.push(nom);
+      return '';
+    });
+
     this.configViewTrie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
       // `commands exec {include|exclude} <commande>`
       if (args.length < 3) throw new CliIncomplete();

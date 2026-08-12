@@ -806,3 +806,101 @@ quatre, et c'est la mesure qui l'a établi :
   Le cas console est désormais la moitié qui compte : une console fermée
   par le mode silencieux enfermerait l'opérateur dehors, ce que ce
   mécanisme existe précisément pour éviter.
+
+---
+
+## Lot S12 — refonte du système d'autorisation de la CLI
+
+**Demande** : « il faut penser comme un ingénieur, il faut résoudre le
+problème une bonne fois pour toutes, s'il faut faire une refonte du
+système de gestion des accès, pas juste des patchs cosmétiques ».
+Déclencheur : `probe-privileges-multinationale.test.ts`, écrite **à
+l'aveugle** contre ce qu'un vrai IOS fait, qui a désigné huit trous d'un
+coup.
+
+### Le diagnostic
+
+L'autorisation était prise par **cinq prédicats** appelés à la suite dans
+`executeOnTrie` : `commandeHisseeAuDessusDuNiveau`,
+`tryGrantedPrivilegeCommand`, `commandeDeConfigurationAccordee`,
+`isPrivilegedOnlyShowCommand`, `commandeAutoriseeParLaVue`. Chacun
+relisait la table des règles à sa façon et refaisait son propre filtrage
+de préfixe ; **leur ordre d'appel était la vraie spécification**.
+
+Les trois premiers disaient en réalité **la même chose** —
+`niveau_effectif(commande) ≤ niveau_session` — et ne différaient que par
+le **niveau par défaut** de la commande, qui était *implicite* : encodé
+dans « quel trie porte la commande ». Le rendre explicite les réunit en
+une règle unique.
+
+`src/network/devices/shells/cli/CliAuthorization.ts` porte désormais :
+
+- **`CommandLevelTable`** — les défauts d'IOS plus les déplacements de
+  `privilege`, avec la résolution « la règle la plus longue gagne » écrite
+  **une fois** ;
+- **`ParserViewRegistry`** — les vues, y compris **composées** ;
+- **`CliAuthorization.authorize()`** — le point d'entrée unique, que
+  l'exécution, l'aide et la complétion appellent tous. Ils ne peuvent
+  donc plus se contredire, ce qui était le défaut de fond : une commande
+  refusée à l'exécution continuait d'être proposée par `?`.
+
+Le verdict est un type à deux valeurs, `run` | **`absent`** — parce
+qu'une commande hors de portée n'est pas *refusée* sur IOS, elle
+**n'existe pas** pour cette session, et le message est celui d'une
+commande inconnue. Le type existe pour qu'on ne puisse plus l'oublier.
+
+### Ce que la refonte a fermé, et qui n'était pas fermable avant
+
+1. **La configuration ne se rejouait pas.** `tryGlobalConfigNavigation`
+   n'acceptait que onze verbes depuis un sous-mode, alors qu'elle n'est
+   consultée qu'après l'échec de l'arbre du sous-mode et rejoue ensuite
+   contre l'arbre global — qui refuse tout seul ce qu'il ne connaît pas.
+   La liste n'écartait donc que des commandes **valides** : `privilege …`,
+   `parser view …` et `archive` étaient refusées dès qu'une interface
+   avait été configurée avant elles, et une seule ligne `archive`
+   bloquait **tout le reste** du rejeu. L'import d'une topologie perdait
+   ainsi toute la délégation et toutes les vues, en silence.
+2. **`parser view` n'était classée nulle part** dans l'ordonnanceur de
+   blocs, donc rendue *après* les comptes — or `username X view NOC`
+   refuse une vue inconnue. La machine produisait une configuration
+   qu'elle ne savait pas relire.
+3. **`enable secret [level N] {0|5|7|8|9} <chaîne>`** : les deux moitiés
+   de la grammaire étaient traitées comme exclusives, donc après
+   `level N` le chiffre d'algorithme était avalé **dans** le secret. Le
+   coffre d'un palier disparaissait à chaque aller-retour.
+4. **Les superviews** (`parser view X superview`) étaient acceptées et le
+   mot-clé jeté : la vue naissait ordinaire et **vide**, `view <nom>`
+   était refusée à l'intérieur, et un compte qui la portait ne voyait
+   rien. Pire qu'un refus.
+5. **`username X view Y`** était rangée, rendue, et **lue par personne** à
+   la connexion : le lien entre un compte et son rôle n'existait qu'à
+   l'écrit. `AccountSnapshot` perdait le champ en chemin.
+6. **Le verrou de compte ne verrouillait rien.** `aaa local
+   authentication attempts max-fail` posait `locked`, `show aaa local
+   user lockout` l'affichait — et `NetworkOsAccount.authenticate` ne le
+   consultait pas : après trois échecs, le bon mot de passe ouvrait
+   toujours. Le mécanisme entier ne protégeait rien pendant que la vue
+   affirmait le contraire.
+7. **`enable secret` en configuration échappait au niveau**, parce que
+   `enable` figurait dans la liste des verbes toujours joignables — liste
+   qui n'a de sens qu'en EXEC. Un chef d'équipe de niveau 10 pouvait
+   changer le secret d'activation de la machine.
+
+### Ce que la sonde a appris et qui n'est pas un défaut
+
+Les niveaux forment un **ordre total** : un niveau supérieur hérite de
+tout ce qu'on a donné aux inférieurs. « Un auditeur qui lit tout sans que
+les opérateurs puissent lire ce qu'il lit » est donc **impossible** à
+décrire avec des niveaux seuls — et c'est exactement la raison d'être des
+vues. Les deux cas sont épinglés côte à côte dans la sonde.
+
+De même, le **mode silencieux** de `login block-for` porte sur la
+**ligne** (il laisse la console, chemin de retour) tandis que le
+**verrou** porte sur le **compte** (il vaut partout, console comprise).
+Confondre les deux coûte cher le jour où l'on est enfermé dehors ; la
+sonde mesure les deux.
+
+**Mesures.** `probe-privileges-multinationale.test.ts` (33 cas) et
+`probe-privileges-banque.test.ts` (31 cas) verts. 317 suites connexes
+vertes, 4607 cas. Typecheck **exactement à la base** (279), lint
+identique.

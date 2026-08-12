@@ -349,6 +349,17 @@ export interface ParserView {
   execInclude: string[];
   /** `commands exec exclude <cmd>` — retirees d'un prefixe inclus. */
   execExclude: string[];
+  /**
+   * `parser view <nom> superview` — une vue COMPOSEE ne porte aucune
+   * commande a elle : elle reunit celles des vues qu'on lui ajoute par
+   * `view <nom>`. C'est ainsi qu'IOS decrit un role recoupant plusieurs
+   * metiers sans dupliquer leurs listes. Le mot-cle etait accepte et
+   * JETE, donc la vue naissait ordinaire ET VIDE, et le compte qui la
+   * portait ne voyait rien du tout — pire qu'un refus.
+   */
+  superview?: boolean;
+  /** Les vues membres, dans l'ordre d'ajout. */
+  members?: string[];
 }
 
 /**
@@ -458,20 +469,40 @@ export class CiscoSecurityConfig {
     return tr;
   }
 
-  asRunningConfigLines(): string[] {
+  /**
+   * Les vues, rendues SEULES et AVANT tout le reste.
+   *
+   * `username X view NOC` refuse une vue qui n'existe pas — c'est la
+   * bonne regle, elle empeche d'attacher un role jamais decrit — mais
+   * les lignes `username` sont rendues bien avant ce bloc-ci. La
+   * configuration produite par la machine etait donc INREJOUABLE :
+   * a l'import d'une topologie le compte perdait sa vue, en silence.
+   * Le commentaire qui vivait ici affirmait deja que « les vues viennent
+   * en tete » — c'etait vrai DANS ce bloc, et faux dans la configuration
+   * entiere.
+   *
+   * Les vues MEMBRES precedent les composees, pour la meme raison : une
+   * superview relue ne peut ajouter que des vues qui existent deja.
+   */
+  parserViewLines(): string[] {
     const lines: string[] = [];
-    // Les vues viennent en tete : IOS les ecrit avant les lignes AAA qui
-    // s'y referent, et une configuration relue doit pouvoir rejouer
-    // `username X view NOC` apres que la vue existe.
-    for (const v of this.parserViews.values()) {
-      lines.push(`parser view ${v.name}`);
+    const vues = [...this.parserViews.values()]
+      .sort((a, b) => Number(a.superview ?? false) - Number(b.superview ?? false));
+    for (const v of vues) {
+      lines.push(`parser view ${v.name}${v.superview ? ' superview' : ''}`);
       if (v.secret !== undefined) {
         lines.push(` secret ${renderViewSecret(v)}`);
       }
+      for (const m of v.members ?? []) lines.push(` view ${m}`);
       for (const c of v.execInclude) lines.push(` commands exec include ${c}`);
       for (const c of v.execExclude) lines.push(` commands exec exclude ${c}`);
       lines.push('!');
     }
+    return lines;
+  }
+
+  asRunningConfigLines(): string[] {
+    const lines: string[] = [];
     if (this.aaaNewModel) {
       lines.push('aaa new-model');
       for (const m of this.aaaMethods) {

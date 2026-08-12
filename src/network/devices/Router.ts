@@ -3093,11 +3093,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!this.isPoweredOn) return false;
     const verdict = await this.authenticateLine('console', { user: username, pass: password });
     if (!verdict) return false;
-    const niveau = this.getCredentialStore().lookup(username)?.privilege ?? 1;
+    const compte = this.getCredentialStore().lookup(username);
+    const niveau = compte?.privilege ?? 1;
     const shell = this.shell as unknown as {
-      beginExecSession?: (lvl: number, u?: string) => void;
+      beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
     };
-    shell.beginExecSession?.(niveau, username);
+    shell.beginExecSession?.(niveau, username, compte?.view ?? null);
     const registre = this.getSshSessionRegistry();
     const ouverte = registre.sessionSurLigne('con');
     if (ouverte) registre.noterAuthentification(ouverte.id, username, niveau);

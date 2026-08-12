@@ -75,13 +75,25 @@ describe('Cisco IOS Security: Privilege Levels, RBAC & AAA Architecture', () => 
       expect(res).toContain('Current privilege level is 1');
     });
 
+    /**
+     * Le niveau 0 ne porte que CINQ commandes — `disable`, `enable`,
+     * `exit`, `help`, `logout` — et `show privilege` n'en fait pas
+     * partie : elle nait au niveau 1. On ne peut donc pas lire son
+     * niveau depuis le niveau 0, et c'est justement ce qui en fait un
+     * mode « minimal ». Ce qui s'observe, c'est l'invite, le refus de
+     * tout le reste, et le retour par `enable`.
+     */
     it('1.4 Should support Level 0 emergency/minimal mode transition', async () => {
       const r = createTestRouter();
       await r.executeCommand('enable');
       await r.executeCommand('disable 0');
 
-      const res = await r.executeCommand('show privilege');
-      expect(res).toContain('Current privilege level is 0');
+      expect(r.getPrompt()).toBe('R1>');
+      expect(await r.executeCommand('show privilege')).toContain('% Invalid input');
+      expect(await r.executeCommand('show version')).toContain('% Invalid input');
+
+      await r.executeCommand('enable');
+      expect(await r.executeCommand('show privilege')).toContain('Current privilege level is 15');
     });
   });
 

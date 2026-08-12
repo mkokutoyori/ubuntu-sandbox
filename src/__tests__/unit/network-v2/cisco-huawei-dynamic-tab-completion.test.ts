@@ -51,9 +51,13 @@ describe('Dynamic Tab candidates — Cisco (PRD item 2)', () => {
     const candidates = sw.cliTabCandidates('interface FastEthernet0/3');
     expect(candidates).toEqual(['interface FastEthernet0/3']);
     const s = new CiscoTerminalSession('t1', sw) as unknown as CliSessionHandle & {
-      vty: { state: { mode: string } } | null;
+      vty: { state: { mode: string; privilegeLevel: number } } | null;
     };
-    if (s.vty) s.vty.state.mode = 'config';
+    // Le MODE et le NIVEAU vont ensemble : on ne peut pas etre en
+    // configuration au niveau 1 sur une vraie machine, et la completion
+    // interroge desormais la meme autorisation que l'execution — poser
+    // l'un sans l'autre decrit une session qui ne peut pas exister.
+    if (s.vty) { s.vty.state.mode = 'config'; s.vty.state.privilegeLevel = 15; }
     s.input = 'interface FastEthernet0/3';
     s.onTab();
     expect(s.input).toBe('interface FastEthernet0/3 ');

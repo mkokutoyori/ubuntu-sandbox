@@ -11,6 +11,16 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
   { rank: 5, test: /^aaa\b/ },
   { rank: 6, test: /^clock\b/ },
   { rank: 7, test: /^ip (domain-name|domain name|name-server)\b/ },
+  /**
+   * Les vues AVANT les comptes, et ce demi-rang n'est pas cosmetique :
+   * `username X view NOC` refuse une vue inconnue — la bonne regle, elle
+   * empeche d'attacher un role jamais decrit. `parser view` n'etait
+   * classee nulle part, donc elle tombait au rang des non-classees
+   * (19.5), c'est-a-dire APRES les comptes : la configuration que la
+   * machine produisait ne pouvait pas etre relue par elle-meme, et
+   * l'import d'une topologie perdait la vue du compte sans rien dire.
+   */
+  { rank: 7.5, test: /^parser view\b/ },
   { rank: 8, test: /^username\b/ },
   { rank: 9, test: /^key chain\b/ },
   { rank: 10, test: /^ip dhcp\b/ },

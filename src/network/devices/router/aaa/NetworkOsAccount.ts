@@ -323,6 +323,14 @@ export class NetworkOsAccount {
    * porte pas le clair, et c'est bien son role.
    */
   authenticate(password: string): boolean {
+    // Un compte VERROUILLE n'authentifie plus, et un compte desactive non
+    // plus. Les deux drapeaux existaient, etaient poses au bon moment par
+    // `aaa local authentication attempts max-fail`, rendus par `show aaa
+    // local user lockout` — et consultes par PERSONNE : apres trois
+    // echecs le compte etait marque verrouille et le bon mot de passe
+    // continuait de l'ouvrir. Le mecanisme entier ne protegeait rien, et
+    // la vue affirmait le contraire.
+    if (this.locked || this.disabled) return false;
     if (!this.secret) return false;
     if (this.passwordHashAlgorithm === 'irreversible-cipher') {
       return looksLikeIrreversibleCipher(this.secret)

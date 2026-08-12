@@ -3191,11 +3191,12 @@ export abstract class Switch extends Equipment {
   async loginAs(username: string, password: string): Promise<boolean> {
     if (!this.isPoweredOn) return false;
     if (!this.getCredentialStore().authenticate(username, password)) return false;
-    const niveau = this.getCredentialStore().lookup(username)?.privilege ?? 1;
+    const compte = this.getCredentialStore().lookup(username);
+    const niveau = compte?.privilege ?? 1;
     const shell = this.shell as unknown as {
-      beginExecSession?: (lvl: number, u?: string) => void;
+      beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
     };
-    shell.beginExecSession?.(niveau, username);
+    shell.beginExecSession?.(niveau, username, compte?.view ?? null);
     return true;
   }
 

@@ -4880,6 +4880,45 @@ connexes vertes (1145 cas). Lint identique.
 
 ---
 
+## Lot S12 — l'autorisation de la CLI, refondue
+
+**PRD** : `PRD-Sessions-Cisco.md`, lot S12. **Fichier neuf** :
+`src/network/devices/shells/cli/CliAuthorization.ts` — reclamez-le avant
+de le reecrire.
+
+CINQ predicats decidaient qui voit quoi, appeles a la suite dans
+`executeOnTrie`, chacun relisant la table des regles a sa facon : leur
+ORDRE D'APPEL etait la vraie specification. Les trois premiers disaient
+la meme chose — `niveau_effectif(commande) <= niveau_session` — et ne
+differaient que par le niveau PAR DEFAUT de la commande, qui etait
+implicite (encode dans « quel trie la porte »). Le rendre explicite les
+reunit en une regle unique. L'execution, l'aide et la completion posent
+desormais la MEME question, donc ne peuvent plus se contredire.
+
+**Ce que la refonte a ferme et qui ne l'etait pas** : la configuration
+rendue ne se rejouait pas (la retombee vers l'arbre global n'acceptait
+que onze verbes, et une seule ligne `archive` bloquait tout le reste du
+rejeu — donc l'import d'une topologie perdait la delegation et les vues,
+en silence) ; `parser view` etait rendue APRES les comptes qui s'y
+referent ; `enable secret level N 5 <condense>` rangeait le chiffre dans
+le secret ; les superviews etaient acceptees et vides ; `username X view
+Y` n'etait lue par personne a la connexion ; le verrou de compte
+n'empechait pas l'authentification ; et `enable secret` en configuration
+echappait au niveau.
+
+**Ce qui vous concerne** : `CiscoShellBase.beginExecSession(level, user,
+vue?)` prend un troisieme argument ; `AccountSnapshot` porte `view?` ;
+`ParserView` porte `superview?`/`members?` ; l'ordonnanceur de blocs
+(`ciscoConfigSerializer`) classe `parser view` au rang 7.5.
+
+**Mesures.** Deux sondes d'organisation reelle, ecrites A L'AVEUGLE
+contre le comportement d'un vrai IOS : `probe-privileges-banque` (31 cas,
+27 tombent avant) et `probe-privileges-multinationale` (33 cas, 8 trous
+designes d'un coup a la premiere execution). 317 suites connexes vertes,
+4607 cas. Typecheck exactement a la base (279), lint identique.
+
+---
+
 ## Lot S9 — acces concurrents a la console, et niveau des comptes livres
 
 **PRD** : `PRD-Sessions-Cisco.md`, section « Lot S9 ».
