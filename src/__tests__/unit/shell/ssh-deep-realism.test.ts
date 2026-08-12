@@ -100,7 +100,7 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
   test('§D01 — scp file from local to remote, verify on remote', async () => {
     const { linuxA, linuxSrv } = await buildLan();
     await linuxA.executeCommand('echo "payload" > /tmp/file.txt');
-    const out = await linuxA.executeCommand('scp /tmp/file.txt alice@10.0.0.3:/tmp/copied.txt');
+    const out = await linuxA.executeCommand('sshpass -p alice scp /tmp/file.txt alice@10.0.0.3:/tmp/copied.txt');
     expect(out).toMatch(/100%|bytes/);
     const remote = await linuxSrv.executeCommand('cat /tmp/copied.txt');
     expect(remote).toMatch(/payload/);
@@ -109,14 +109,14 @@ describe('SSH realism deep dive — file transfer, env, identity, batch', () => 
   test('§D02 — scp file FROM remote TO local', async () => {
     const { linuxA, linuxSrv } = await buildLan();
     await linuxSrv.executeCommand('echo "from-server" > /tmp/srvfile.txt');
-    await linuxA.executeCommand('scp alice@10.0.0.3:/tmp/srvfile.txt /tmp/local.txt');
+    await linuxA.executeCommand('sshpass -p alice scp alice@10.0.0.3:/tmp/srvfile.txt /tmp/local.txt');
     const local = await linuxA.executeCommand('cat /tmp/local.txt');
     expect(local).toMatch(/from-server/);
   });
 
   test('§D03 — scp with non-existent remote file errors out', async () => {
     const { linuxA } = await buildLan();
-    const out = await linuxA.executeCommand('scp alice@10.0.0.3:/tmp/nope-xyz.txt /tmp/x.txt');
+    const out = await linuxA.executeCommand('sshpass -p alice scp alice@10.0.0.3:/tmp/nope-xyz.txt /tmp/x.txt');
     expect(out).toMatch(/No such file|not found|does not exist/i);
   });
 
