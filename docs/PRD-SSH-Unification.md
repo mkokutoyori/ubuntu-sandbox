@@ -675,3 +675,31 @@ maintenant celui qui existe, et le test le dit dans son propre code.
 trafic suive la taille, et — témoin indispensable — que la commande
 tourne bien sur la machine DISTANTE (`hostname` répond `SRV-DISTANT`),
 sans quoi « ça a voyagé » ne dirait pas OÙ la commande s'est exécutée.
+
+## 9. Le client sftp de Windows obéit au compte nommé
+
+`runWindowsSftpClient` calculait `remoteUser`, s'en servait pour la sonde
+d'authentification, puis résolvait le système de fichiers distant en
+l'ignorant : `uid 0, gid 0`, et sans le `PermissionCheckingFSDecorator`
+que le client Linux applique. `sftp bob@hôte` depuis Windows parcourait
+donc le distant en root. Mesuré : `bob` lisait un `/root/coffre.txt` en
+`chmod 600 root:root`.
+
+Trouvé dans le même passage : **`sftp -b <fichier>` se connectait et
+n'exécutait rien**. Le fichier de lot n'était jamais lu — seul
+`opts.stdin` alimentait la session — si bien qu'un lot contenant `pwd`
+ne produisait aucune ligne `Remote working directory:`.
+
+**La discrimination a demandé deux passes, et c'est elle qui a évité une
+conclusion fausse.** En révoquant les deux correctifs ensemble, le cas
+« bob ne lit pas le coffre » passait quand même : le `get` n'aboutissait
+pas du tout, faute de `-b`. Un vert qui ne prouvait rien. Il a fallu ne
+révoquer que la moitié « privilèges », `-b` restant réparé, pour voir le
+trou apparaître.
+
+Note de méthode, pour la prochaine sonde Windows : `cmd.exe` n'a pas de
+document en ligne. `sftp hôte <<'EOF'` y part en morceaux selon les
+verbes, et le test « passe » sans avoir rien transféré. La forme honnête
+d'un lot sur Windows est `-b <fichier>`, celle que la vraie `sftp.exe`
+documente — et c'est en l'utilisant qu'on découvre qu'elle ne marchait
+pas.
