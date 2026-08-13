@@ -645,3 +645,33 @@ le fil. Et `scp`/`sftp` ne sont toujours pas des `LinuxCommand` dans leur
 propre fichier : ils vivent dans le `switch` synchrone, que
 `dispatchMaybeNetwork` court-circuite désormais — la conversion est un
 remaniement à part, pas un correctif de comportement.
+
+## 8. Phase 5 : déjà faite, et désormais mesurée
+
+Le plan de la refonte porte encore la Phase 5 — « migrer la session
+interactive vers le canal shell réel » — comme un chantier à mener. Elle
+ne l'est plus : `LinuxTerminalSession.connectAndEnterSsh` ouvre un
+`session.openShellChannel()` et pousse un `SshInteractiveSubShell`, pour
+tous les vendeurs. Le commentaire du code le disait ; rien ne le
+vérifiait, et cette session a passé assez de temps à démentir des
+commentaires pour ne pas croire celui-là sur parole.
+
+**La mesure.** Deux `cat` dans la MÊME session établie, sur deux fichiers
+de tailles très différentes, avec le compteur du câble intermédiaire pris
+avant et après chacun : **6 octets coûtent 4 trames, 4 000 octets en
+coûtent 8**. Le trafic suit la charge utile, donc le contenu traverse
+vraiment. Un simple total non nul n'aurait rien prouvé — l'ouverture de
+session en émet déjà beaucoup — et c'est la comparaison qui tranche,
+comme au §6 pour le mode exec et au §7 pour scp.
+
+**Un piège rencontré en route, qui vaut d'être écrit.** La première
+version comptait des OCTETS : `CableStats` n'a pas de compteur d'octets,
+seulement `framesTransmitted`. Lire un champ absent rendait `0` des deux
+côtés, et « 0 contre 0 » ressemblait à la preuve que rien ne passait —
+une conclusion fausse tirée d'une sonde cassée. Le compteur lu est
+maintenant celui qui existe, et le test le dit dans son propre code.
+
+`session-interactive-sur-le-cable.test.ts` fixe les deux moitiés : que le
+trafic suive la taille, et — témoin indispensable — que la commande
+tourne bien sur la machine DISTANTE (`hostname` répond `SRV-DISTANT`),
+sans quoi « ça a voyagé » ne dirait pas OÙ la commande s'est exécutée.
