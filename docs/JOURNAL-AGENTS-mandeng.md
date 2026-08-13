@@ -6134,3 +6134,24 @@ desormais sur une ligne d'horloge, qu'aucune banniere ne produit.
 Discrimine dans les deux sens : gate restaure, les 2 premiers cas
 tombent ; gate retreci a `input` seul (le bug livre), le cas
 `setInputBuf` tombe.
+
+### Rectification : un test figeait bien l'ancien format de MAC
+
+J'ai ecrit plus haut « aucun test existant ne figeait les anciens
+formats, verifie avant de changer ». **C'etait faux.**
+`probe-rapport-transcript-restants.test.ts` §15 le figeait, et ma
+verification ne pouvait pas le voir : j'avais cherche le LITTERAL
+`02:00:00:00:00:01`, alors que ce cas derive l'adresse a l'execution
+(`getMAC().toString()`). Une assertion calculee est invisible a une
+recherche de chaine.
+
+Le cas mesure l'IDENTITE — la banniere montre le premier port de CETTE
+machine, pas une adresse d'usine partagee — et cette intention est
+juste ; seule la convention change. Il compare desormais avec
+`toCiscoString()`, et verifie EN PLUS que la forme a deux-points n'y est
+plus, pour que la question du format soit posee elle aussi.
+
+Verification refaite autrement : tous les consommateurs de
+`getBootSequence()` ont ete relus et executes
+(`cisco-chassis-identity`, `cisco-switch-l3-referential`,
+`cisco-switch-diagnostics-report`), 46 cas verts.
