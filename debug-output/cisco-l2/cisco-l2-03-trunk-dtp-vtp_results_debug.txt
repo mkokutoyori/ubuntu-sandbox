@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-08-12T22:12:18.895Z
+Generated: 2026-08-13T08:12:54.671Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 357
@@ -1233,13 +1233,13 @@ Total steps: 357
 
 [185/357] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.794 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.249 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.040 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=3.236 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.514 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.260 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.040/1.694/2.794/0.782 ms
+  rtt min/avg/max/mdev = 1.260/2.004/3.236/0.878 ms
 
 [186/357] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
@@ -1257,7 +1257,7 @@ Total steps: 357
   VTP Pruning Mode                : Enabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0035
-  Configuration last modified by 0.0.0.0 at 8-12-26 22:12:18
+  Configuration last modified by 0.0.0.0 at 8-13-26 08:12:54
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
@@ -1330,7 +1330,7 @@ Total steps: 357
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
   Device ID                       : 0200.0000.0001
-  Configuration last modified by 0.0.0.0 at 8-12-26 22:12:18
+  Configuration last modified by 0.0.0.0 at 8-13-26 08:12:54
   Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
