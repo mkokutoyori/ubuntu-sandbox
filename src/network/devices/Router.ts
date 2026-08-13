@@ -3307,7 +3307,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
-    return this.shell.tabComplete(input);
+    return this.shell.tabComplete(input, this);
   }
 
   override getCompletions(partial: string): string[] {

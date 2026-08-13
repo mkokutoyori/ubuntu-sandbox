@@ -3132,7 +3132,7 @@ export abstract class Switch extends Equipment {
 
   /** Get CLI tab completion for the given input (used by terminal UI) */
   cliTabComplete(input: string): string | null {
-    return this.shell.tabComplete(input);
+    return this.shell.tabComplete(input, this);
   }
 
   /** All full-line Tab candidates (static keywords + live device values). */

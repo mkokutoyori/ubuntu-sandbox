@@ -32,6 +32,15 @@ export function renderSecretField(value: string, algo: SecretAlgo, scope = ''): 
   const preHashed = cryptPrefixType(value);
   if (preHashed !== null) return `${preHashed} ${value}`;
   switch (algo) {
+    // Le chiffre `0` d'un `secret` decrit la SAISIE, pas le stockage : un
+    // `secret` est irreversible par definition, et IOS rend
+    // `enable secret 0 cisco` en `enable secret 5 $1$…`. Le ranger comme
+    // un algorithme faisait ressortir le mot de passe en clair dans la
+    // configuration — pour les trois commandes de la famille, et dans le
+    // meme fichier ou la forme nue etait hachee. La famille REVERSIBLE
+    // (`password`) a son propre rendu, ou le clair est legitime tant que
+    // `service password-encryption` n'est pas pose.
+    case 'plain':
     case 'md5':
       return `5 ${md5Crypt(value, deriveCryptSalt(value, scope))}`;
     case 'sha256':
