@@ -284,6 +284,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.mode = 'user';
     this.fsm.mode = 'user';
     this.currentPrivilegeLevel = 1;
+    this.activeParserView = null;
   }
 
   protected attachLoggingToDevice(device: TDevice): void {
@@ -974,7 +975,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return this.autorisation().authorize({
       principal: {
         level: ctx?.level ?? this.declaredModeLevel(ctx?.mode),
-        view: ctx?.view ?? this.activeParserView,
+        // `??` confondrait une vue RACINE explicitement transmise
+        // (`null`) avec une absence de contexte, et retomberait alors
+        // sur la vue du shell — donc sur celle d'une autre session.
+        view: ctx && 'view' in ctx ? (ctx.view ?? null) : this.activeParserView,
       },
       scope: scopeForMode(mode as typeof this.mode),
       command: cmdPart,
@@ -2632,6 +2636,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected fermerSessionExec(): string {
     this.terminalMonitor = false;
     this.currentPrivilegeLevel = 1;
+    // La vue est un ROLE porte par la session, pas par la machine :
+    // la laisser en place enfermait l'operateur suivant dans le role du
+    // precedent, sans qu'il puisse meme demander lequel.
+    this.activeParserView = null;
     this.mode = 'user';
     this.fsm.mode = 'user';
     this.cmdHistory = [];

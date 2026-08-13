@@ -291,6 +291,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       terminalMonitorExplicit: this.terminalMonitorExplicit,
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
+      activeParserView: this.activeParserView,
       historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
@@ -299,6 +300,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CLIMode;
     this.currentPrivilegeLevel = s.privilegeLevel;
+    this.activeParserView = s.activeParserView ?? null;
     this.selectedInterface = s.selectedInterface;
     this.selectedInterfaceRange = [...s.selectedInterfaceRange];
     this.selectedVlan = s.selectedVlan;

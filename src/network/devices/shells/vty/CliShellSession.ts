@@ -85,6 +85,17 @@ export interface VtySnapshot {
   terminalDebugging: boolean;
   /** Privilege level 0–15. 15 = enable. 1 = user. */
   privilegeLevel: number;
+  /**
+   * La vue d'analyseur active, ou `null` a la racine (Cisco CLI Views).
+   *
+   * Elle vivait sur le SHELL, que toutes les sessions partagent : une
+   * vue survivait donc a la deconnexion de celui qui l'avait ouverte —
+   * la console suivante etait enfermee dans le role du precedent et ne
+   * pouvait meme pas demander lequel. Meme defaut que `terminal
+   * monitor`, meme correctif : ce qui est per-session voyage avec la
+   * session.
+   */
+  activeParserView: string | null;
   /** `terminal history size N` — bounded ring length. */
   historySize: number;
   /** `show history` buffer. */
@@ -169,6 +180,7 @@ export class CliShellSession {
       terminalMonitorExplicit: false,
       terminalDebugging: false,
       privilegeLevel: 1,
+      activeParserView: null,
       historySize: 10,
       cmdHistory: [],
     };

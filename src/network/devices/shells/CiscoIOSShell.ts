@@ -454,6 +454,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       // purely to satisfy the shared VtySnapshot shape.
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
+      activeParserView: this.activeParserView,
       historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
@@ -463,6 +464,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CiscoShellMode;
     this.currentPrivilegeLevel = s.privilegeLevel;
+    this.activeParserView = s.activeParserView ?? null;
     this.selectedInterface = s.selectedInterface;
     this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
     this.selectedTrack = s.selectedTrack;

@@ -988,3 +988,53 @@ clair en mémoire** et n'est haché qu'au rendu — c'est déjà le cas de la
 forme nue depuis toujours, et changer le modèle de stockage est un autre
 chantier. Ce qui fuyait, et qui est refermé, c'est la **configuration**,
 c'est-à-dire ce qui s'affiche, s'enregistre et se rejoue.
+
+---
+
+## Étape 5 — une vue appartient à la session, pas à la machine (C7)
+
+**Fichiers** — `shells/vty/CliShellSession.ts`, `CiscoIOSShell.ts`,
+`CiscoSwitchShell.ts`, `CiscoShellBase.ts`,
+`terminal/sessions/CiscoTerminalSession.ts` ;
+`src/__tests__/unit/network-v2/cisco-view-is-per-session.test.ts` (neuf, 6 cas).
+
+**Rouge — 5 échecs sur 5** au premier jet (le 6ᵉ cas est né du défaut
+trouvé en chemin, ci-dessous).
+
+**Vert** — 6/6, puis **41 fichiers / 1 429 cas** connexes.
+
+**Le correctif.** `activeParserView` entre dans `VtySnapshot`, donc
+`snapshotVtyState()` l'enregistre et `applyVtyState()` le restaure, sur
+les deux plateformes. `fermerSessionExec()` et
+`reinitialiserSessionApresRedemarrage()` le remettent à `null` — la
+première laissait la console **enfermée dans le rôle de l'opérateur
+précédent**, sans qu'elle puisse même demander lequel.
+
+**Le sens compte dans les deux directions**, et une seule des deux aurait
+paru suffisante : une vue qui **survit** confine quelqu'un qui n'a rien
+demandé ; une vue qui **fuit** vers une autre session lui donne un rôle
+qu'elle n'a pas présenté. Les six cas couvrent les deux.
+
+**Un défaut trouvé en rendant la vue per-session, et corrigé avec elle.**
+`InteractionPlanContext.view` était **déclaré et rempli par personne** —
+le motif « écrit, lu par personne » pris à l'envers. Tant que la vue
+était globale au shell, l'oubli ne se voyait pas : le planificateur
+lisait la bonne valeur par accident. Dès que la vue voyage avec sa
+session, une commande **absente de la vue ouvrait quand même son
+dialogue** : `reload` demandait confirmation à un opérateur qui n'a pas
+le droit de recharger. `CiscoTerminalSession` transmet désormais la vue
+de sa session, comme il transmettait déjà son niveau.
+
+**Et le repli devait changer avec lui.** `ctx?.view ?? this.activeParserView`
+confondait une vue **racine transmise explicitement** (`null`) avec une
+**absence de contexte**, et retombait alors sur la vue du shell —
+c'est-à-dire sur celle d'une autre session. Le test d'appartenance
+(`'view' in ctx`) distingue les deux.
+
+**Une leçon de méthode, notée parce qu'elle a failli coûter cher.** La
+non-régression a signalé un cas de `attaques-securite-cisco.test.ts`. La
+reproduction rapide que j'en ai faite échouait **identiquement avant mes
+changements** : elle ne reproduisait pas le laboratoire du test, et
+conclure dessus aurait envoyé chercher une régression inexistante dans le
+rendu des mots de passe. C'est la comparaison avec l'état d'avant, et
+non la reproduction seule, qui a tranché.

@@ -758,6 +758,12 @@ export class CiscoTerminalSession extends CLITerminalSession {
     return {
       mode: this.vty?.state.mode ?? 'user',
       level: this.vty?.state.privilegeLevel,
+      // La vue de CETTE session. Le champ existait dans le contexte et
+      // n'etait rempli par personne : le planificateur jugeait donc la
+      // visibilite sur la vue du SHELL, qui n'est plus celle de la
+      // session depuis qu'une vue voyage avec elle. Sans cela, une
+      // commande absente de la vue ouvrait quand meme son dialogue.
+      view: this.vty?.state.activeParserView ?? null,
       device: this.device,
       onVtyLine: this.isVtyRemoteSession,
     };
