@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-08-13T09:41:24.338Z
+Generated: 2026-08-13T12:48:24.206Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303

@@ -37,6 +37,8 @@ import { namedCheckzoneCommand } from './dns/NamedCheckzone';
 import { rndcCommand } from './dns/Rndc';
 import { nmapCommand } from './net/Nmap';
 import { curlCommand } from './net/Curl';
+import { scpCommand } from './net/Scp';
+import { sftpCommand } from './net/Sftp';
 import { opensslCommand } from './crypto/OpenSsl';
 import { nginxCommand } from './net/Nginx';
 import { rsyslogdCommand } from './net/Rsyslogd';
@@ -157,6 +159,8 @@ export {
   applyIptablesNatHook,
   nmapCommand,
   curlCommand,
+  scpCommand,
+  sftpCommand,
   opensslCommand,
   nginxCommand,
   rsyslogdCommand,
@@ -295,6 +299,8 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   dhclientCommand,
   nmapCommand,
   curlCommand,
+  scpCommand,
+  sftpCommand,
   opensslCommand,
   nginxCommand,
   rsyslogdCommand,
