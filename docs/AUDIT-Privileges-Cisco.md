@@ -871,3 +871,63 @@ est en place pour l'absorber, mais la migration est un pas séparé et sans
 rapport avec la canonicalisation. La **promotion des commandes parentes**
 (M3) et le mot-clé **`all`** (M6) restent entiers : ce sont des règles
 d'IOS sur l'*écriture* des règles, pas sur leur lecture.
+
+---
+
+## Étape 3 — le secret d'une vue est vérifié (C2, C3, C4)
+
+*Le défaut le plus grave de l'audit : `ParserView.secret` était écrit par
+sa commande, rendu dans la configuration, et lu par personne.*
+
+**Fichiers** — `CiscoShellBase.ts` ;
+`src/__tests__/unit/network-v2/cisco-view-password.test.ts` (neuf, 10 cas) ;
+`tuto-cli-views-cisco.test.ts` (corrigé).
+
+**Rouge — 5 échecs sur 10.** Les 5 cas verts des deux côtés sont nommés :
+2 sont les **limites assumées** (pas de secret sur la vue, pas de secret
+d'activation) qui doivent passer des deux côtés ; 1 est le refus d'une
+vue inexistante, déjà correct ; et 2 — « le bon secret ouvre la vue » et
+« un secret rangé en condensé se vérifie » — passaient avant correctif
+**parce que tout ouvrait la vue**. Ces deux-là ne prouvaient rien seuls :
+ce sont les trois cas de refus qui portent la démonstration.
+
+**Vert** — 10/10, puis 34 fichiers / 1 135 cas connexes.
+
+**Le mécanisme.** `porteDeVue(nom)` rend ce qui garde l'entrée : le
+`secret` de la vue nommée, ou — pour la vue **racine**, qui confère le
+niveau 15 — le secret d'activation. `enableViewInteractionPlan` est
+calqué sur celui d'`enable` : trois essais sur une même invocation,
+`% Access denied` tant qu'IOS redemande, `% Bad secrets` quand il
+renonce. `entrerDansUneVue` **consomme** l'autorisation, exactement comme
+`enable` consomme la sienne — sans quoi le plan afficherait une invite
+que le gestionnaire ignorerait.
+
+**Le branchement se fait aux DEUX portes**, et c'était nécessaire :
+`enable view` en mode utilisateur tombait dans le plan d'`enable`, où
+`parseInt('view')` donne `NaN`, donc aucun plan, donc aucune
+vérification ; en mode privilégié aucun cas ne le reconnaissait. Une
+seule des deux aurait laissé l'autre ouverte.
+
+**Une décision qui méritait d'être écrite : sans secret, la porte reste
+ouverte.** C'est la même règle qu'`enable` sur une machine sans
+`enable secret`, et l'inverse ferait d'une vue sans secret une
+**souricière** sur toute topologie déjà enregistrée. La propriété
+anti-souricière que le mécanisme revendique est donc préservée telle
+quelle : ce qui change, c'est qu'elle ne s'applique plus *malgré* un
+secret configuré.
+
+**Trois tests avaient figé le défaut comme contrat** — l'audit l'avait
+annoncé (G6), et c'est ce qui s'est produit : ils entraient dans une vue
+protégée sans présenter son secret. Ils ont été **corrigés, pas
+contournés** : un helper `entrerVue` présente le secret, et chaque cas
+vérifie désormais la **vue courante** avant d'éprouver quoi que ce soit —
+un `enable view` refusé laisse la session à la racine, où tout
+fonctionne, donc l'assertion suivante ne veut rien dire sans ce contrôle.
+C'est aussi ce qui rend enfin probant le quatrième cas, que l'en-tête du
+fichier signalait lui-même comme passant pour la mauvaise raison.
+
+**Portée.** Le secret de vue est toujours rendu **en clair** quand il a
+été saisi sous la forme `secret 0 <pw>` (**C6**) : la porte le vérifie
+désormais, mais la configuration le divulgue. C'est l'étape suivante.
+Cisco impose par ailleurs qu'une vue ait un secret **avant** de pouvoir
+recevoir des commandes ; ce refus n'est pas encore implémenté.

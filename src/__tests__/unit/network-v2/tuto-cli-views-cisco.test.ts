@@ -29,6 +29,17 @@
  * parce qu'`enable view` ne faisait rien et qu'on restait à la racine,
  * où tout fonctionne. Ils gardent le refus et l'exécution, ils ne
  * prouvent pas la vue.
+ *
+ * **Repris depuis, et c'est l'audit des privilèges qui l'a montré** :
+ * `enable view` n'a longtemps demandé AUCUN mot de passe, alors que le
+ * `secret` d'une vue était stocké et rendu. Trois cas de ce fichier
+ * avaient donc figé le défaut comme contrat, et le quatrième — celui
+ * déjà signalé plus haut — passait pour la mauvaise raison. Ils entrent
+ * désormais dans la vue en PRÉSENTANT son secret (`entrerVue`), et
+ * vérifient la vue courante avant d'éprouver quoi que ce soit : un
+ * `enable view` refusé laisse la session à la racine, où tout
+ * fonctionne, donc l'assertion suivante ne veut rien dire sans ce
+ * contrôle.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -47,13 +58,29 @@ async function config(r: CiscoRouter, cmds: string[]): Promise<string> {
   return sorties.join('\n');
 }
 
+const SECRET_NOC = 'NocViewPassword2024!';
+
+/**
+ * Entrer dans une vue EN PRÉSENTANT son secret.
+ *
+ * `enable view <nom>` demande désormais le secret de la vue, comme IOS —
+ * il était stocké, rendu, et lu par personne. Les appels de ce fichier
+ * qui l'omettaient prouvaient donc moins qu'ils n'en avaient l'air : un
+ * `enable view` refusé laissait la session à la RACINE, où tout
+ * fonctionne, ce qui faisait passer les assertions pour la mauvaise
+ * raison.
+ */
+async function entrerVue(r: CiscoRouter, nom: string, secret = SECRET_NOC): Promise<string> {
+  return String(await r.executeCommand(`enable view ${nom}`, { passwordInput: secret }));
+}
+
 /** Un routeur avec AAA actif et une vue NOC déclarée. */
 async function labVue(): Promise<CiscoRouter> {
   const r = new CiscoRouter('R1');
   await config(r, [
     'aaa new-model',
     'parser view NOC_VIEW',
-    'secret NocViewPassword2024!',
+    `secret ${SECRET_NOC}`,
     'commands exec include show version',
     'commands exec include show running-config',
     'commands exec include ping',
@@ -131,7 +158,9 @@ describe('§11 : déclarer une vue', () => {
 describe('§11 : une vue REMPLACE l\'arbre visible', () => {
   it('ce qu\'elle inclut fonctionne, tel quel', async () => {
     const r = await labVue();
-    await ios(r, ['enable view NOC_VIEW']);
+    await ios(r, ['enable']);
+    await entrerVue(r, 'NOC_VIEW');
+    expect(await ios(r, ['show parser view'])).toBe("Current view is 'NOC_VIEW'");
     // Pas un talon : la commande s'exécute comme au niveau 15.
     expect(await ios(r, ['show version'])).toContain('Cisco IOS Software');
     expect(await ios(r, ['ping 8.8.8.8'])).toContain('Success rate is');
@@ -145,7 +174,8 @@ describe('§11 : une vue REMPLACE l\'arbre visible', () => {
    */
   it('ce qu\'elle n\'inclut pas répond comme une commande absente', async () => {
     const r = await labVue();
-    await ios(r, ['enable view NOC_VIEW']);
+    await ios(r, ['enable']);
+    await entrerVue(r, 'NOC_VIEW');
     for (const cmd of ['show ip interface brief', 'configure terminal', 'show ip route', 'reload']) {
       expect(await ios(r, [cmd]), cmd).toContain('% Invalid input detected');
     }
@@ -180,7 +210,7 @@ describe('§11 : une vue REMPLACE l\'arbre visible', () => {
     const r = await labVue();
     expect(await ios(r, ['enable', 'show parser view'])).toBe("Current view is 'root'");
 
-    await ios(r, ['enable view NOC_VIEW']);
+    await entrerVue(r, 'NOC_VIEW');
     expect(await ios(r, ['show parser view'])).toBe("Current view is 'NOC_VIEW'");
 
     await ios(r, ['enable view']);
@@ -202,13 +232,14 @@ describe('§11 : une vue REMPLACE l\'arbre visible', () => {
    */
   it('on ne déclare pas une vue depuis une vue', async () => {
     const r = await labVue();
-    await ios(r, ['enable view NOC_VIEW']);
+    await ios(r, ['enable']);
+    await entrerVue(r, 'NOC_VIEW');
     // `configure terminal` n'est pas dans la vue : on y arrive par la
     // racine, puis on re-bascule pour éprouver la garde elle-même.
     await ios(r, ['enable view']);
     await ios(r, ['configure terminal']);
     await r.executeCommand('end');
-    await ios(r, ['enable view NOC_VIEW']);
+    await entrerVue(r, 'NOC_VIEW');
     expect(await ios(r, ['show parser view'])).toBe("Current view is 'NOC_VIEW'");
   });
 });

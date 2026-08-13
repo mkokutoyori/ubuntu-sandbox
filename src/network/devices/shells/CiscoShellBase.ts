@@ -687,6 +687,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mode === 'user') {
       const um = this.userTrie.match(line);
       if (um.status === 'ok' && um.node?.action && um.matchedKeywords[0]?.toLowerCase() === 'enable') {
+        // `enable view [<nom>]` a sa propre porte : le secret de la vue,
+        // ou le secret d'activation pour la racine. Le laisser tomber
+        // dans le plan d'`enable` faisait echouer `parseInt('view')`,
+        // donc aucun plan, donc aucune verification.
+        if (um.args[0]?.toLowerCase() === 'view') {
+          return this.enableViewInteractionPlan(um.args.slice(1), ctx?.device);
+        }
         return this.enableInteractionPlan(um.args, ctx?.device, ctx?.onVtyLine === true);
       }
       return null;
@@ -712,6 +719,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const m = this.privilegedTrie.match(line);
     if (m.status !== 'ok' || !m.node) return null;
     const path = m.matchedKeywords.join(' ').toLowerCase();
+
+    if (path === 'enable view') {
+      return this.enableViewInteractionPlan(m.args, ctx?.device);
+    }
 
     if (path === 'setup') {
       const target = (ctx?.device ?? this.deviceRef) as unknown as {
@@ -1954,20 +1965,100 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected entrerDansUneVue(args: string[]): string {
     const sec = getSecurityConfig(this.d());
-    if (args.length === 0) {
-      this.activeParserView = null;
-      this.mode = 'privileged';
-      this.currentPrivilegeLevel = 15;
-      return '';
-    }
-    const nom = args[0];
-    if (!sec.parserViews.has(nom)) {
+    const nom = args.length === 0 ? null : args[0];
+    if (nom !== null && !sec.parserViews.has(nom)) {
       return `%Error: View ${nom} is not present in the system`;
+    }
+    if (this.porteDeVue(nom) && !this.consommerAutorisationDeVue(nom)) {
+      return '% Access denied';
     }
     this.activeParserView = nom;
     this.mode = 'privileged';
     this.currentPrivilegeLevel = 15;
     return '';
+  }
+
+  /**
+   * Ce qui garde l'entree dans une vue : le secret de la vue nommee, ou
+   * — pour la vue RACINE, qui confere le niveau 15 — le secret
+   * d'activation.
+   *
+   * `ParserView.secret` etait ecrit par sa commande, rendu dans la
+   * configuration, et lu par personne : depuis n'importe quelle vue
+   * restreinte, `enable view` seul rendait la racine et le niveau 15
+   * sans rien demander, et `enable view AUTRE` sautait d'une vue a
+   * l'autre. Un compte porteur d'une vue etait donc, en pratique, un
+   * compte de niveau 15.
+   *
+   * `null` veut dire « aucune porte » : la vue s'ouvre alors sans rien
+   * demander, exactement comme `enable` sur une machine sans `enable
+   * secret`. L'inverse ferait d'une vue sans secret une souriciere sur
+   * toute topologie deja enregistree.
+   */
+  private porteDeVue(nom: string | null): { value: string; algo: string } | null {
+    if (nom === null) return this.enableGateFor(15);
+    const vue = getSecurityConfig(this.d()).parserViews.get(nom);
+    if (!vue || vue.secret === undefined || vue.secret === '') return null;
+    return { value: vue.secret, algo: vue.secretAlgo ?? 'md5' };
+  }
+
+  private vueAutorisee: string | null | undefined = undefined;
+
+  private autoriserVue(nom: string | null): void {
+    this.vueAutorisee = nom;
+  }
+
+  private consommerAutorisationDeVue(nom: string | null): boolean {
+    const accorde = this.vueAutorisee === nom;
+    this.vueAutorisee = undefined;
+    return accorde;
+  }
+
+  /**
+   * Le dialogue d'`enable view [<nom>]`, calque sur celui d'`enable` :
+   * trois essais sur une meme invocation, `% Access denied` tant qu'IOS
+   * redemande, `% Bad secrets` quand il renonce.
+   *
+   * Rend `null` quand il n'y a rien a demander — vue inexistante (le
+   * gestionnaire produit alors le message d'IOS) ou aucune porte — de
+   * sorte que le cas courant ne traverse aucune logique nouvelle.
+   */
+  private enableViewInteractionPlan(
+    args: string[], deviceCtx?: unknown,
+  ): CommandInteractionPlan | null {
+    const emprunte = this.deviceRef === null && deviceCtx !== undefined;
+    if (emprunte) this.deviceRef = deviceCtx as TDevice;
+    try {
+      const nom = args.length === 0 ? null : args[0];
+      if (nom !== null && !getSecurityConfig(this.d()).parserViews.has(nom)) return null;
+      const gate = this.porteDeVue(nom);
+      if (!gate) return null;
+      let essais = 0;
+      return {
+        steps: [
+          {
+            kind: 'password',
+            prompt: 'Password: ',
+            validate: (value) => {
+              if (ciscoPasswordMatches(value, gate.value, gate.algo)) return { valid: true };
+              essais += 1;
+              return essais >= 3
+                ? { valid: false, errorMessage: '% Bad secrets', maxRetries: 2 }
+                : { valid: false, errorMessage: '% Access denied', maxRetries: 2 };
+            },
+          },
+          {
+            kind: 'run',
+            run: async (rt) => {
+              this.autoriserVue(nom);
+              await rt.exec(nom === null ? 'enable view' : `enable view ${nom}`);
+            },
+          },
+        ],
+      };
+    } finally {
+      if (emprunte) this.deviceRef = null;
+    }
   }
 
   /** La vue que `parser view <nom>` est en train de declarer. */
