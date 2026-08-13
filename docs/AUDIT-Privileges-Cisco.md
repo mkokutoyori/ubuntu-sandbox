@@ -931,3 +931,60 @@ fichier signalait lui-même comme passant pour la mauvaise raison.
 désormais, mais la configuration le divulgue. C'est l'étape suivante.
 Cisco impose par ailleurs qu'une vue ait un secret **avant** de pouvoir
 recevoir des commandes ; ce refus n'est pas encore implémenté.
+
+---
+
+## Étape 4 — un `secret` saisi en type 0 est rendu haché (C6, et sa famille)
+
+*L'audit avait nommé C6 sur les vues. La mesure faite pour le corriger a
+montré que le défaut était **familial**, et le correctif tient en une
+ligne — au bon endroit.*
+
+**Fichiers** — `cisco/ciscoPasswordRender.ts` (une ligne) ;
+`src/__tests__/unit/network-v2/cisco-secret-type0-hashed.test.ts` (neuf,
+12 cas) ; `cisco-password-render.test.ts` et
+`cisco-password-encryption.test.ts` (corrigés).
+
+**Ce que la mesure a ajouté au constat.** Le chiffre `0` était rangé
+comme un **algorithme** (`plain`) par les **trois** commandes de la
+famille — `enable secret`, `enable secret level N`, `username … secret`
+et le `secret` d'une vue — alors qu'il décrit le format de ce qu'on
+**tape**. Un `secret` est irréversible par définition : IOS rend
+`enable secret 0 cisco` en `enable secret 5 $1$…`. Le défaut n'était donc
+pas propre aux vues, et le corriger sur les seules vues aurait laissé la
+même fuite sur les deux commandes les plus tapées du chapitre.
+
+**Rouge — 5 échecs sur 12**, soit exactement les cinq sorties
+d'équipement (vue, `enable secret 0`, `enable secret level N 0`,
+`username … secret 0`, et le commutateur). Les 7 verts des deux côtés
+sont les cas de non-régression de la famille **réversible** et les
+formes déjà correctes (condensé collé, forme nue).
+
+**Vert** — 12/12, puis **39 fichiers / 1 189 cas** connexes, dont toute
+la famille des mots de passe (`cisco-password-render`,
+`cisco-password-encryption`, `cisco-enable-password`,
+`cisco-accounts-one-referential`, `probe-acces-mot-de-passe-et-console`).
+
+**Pourquoi une seule ligne suffit.** `renderSecretField` et
+`renderPasswordField` sont déjà **proprement séparés** : le premier ne
+sert que les `secret` (irréversibles), le second la famille `password`
+(réversible, où le clair reste légitime tant que
+`service password-encryption` n'est pas posé). Vérifié appelant par
+appelant avant de toucher quoi que ce soit. Le correctif consiste donc à
+faire tomber `'plain'` dans la branche `md5` du **seul** rendu concerné,
+et il vaut du même coup pour les quatre commandes et les deux
+plateformes. Un correctif par commande aurait été quatre fois plus long
+et aurait pu diverger.
+
+**Deux tests figeaient l'ancien comportement**, et ils sont corrigés
+plutôt que contournés — même motif que G6 à l'étape 3.
+`cisco-password-render` affirmait le rendu verbatim, donc la fuite
+elle-même. `cisco-password-encryption` avait un objet **légitime** —
+l'étiquette `secret` et non `password` — qu'il vérifie toujours ; seule
+son assertion figeait en plus la valeur en clair.
+
+**Limite assumée, écrite plutôt que tue.** Le secret reste stocké **en
+clair en mémoire** et n'est haché qu'au rendu — c'est déjà le cas de la
+forme nue depuis toujours, et changer le modèle de stockage est un autre
+chantier. Ce qui fuyait, et qui est refermé, c'est la **configuration**,
+c'est-à-dire ce qui s'affiche, s'enregistre et se rejoue.

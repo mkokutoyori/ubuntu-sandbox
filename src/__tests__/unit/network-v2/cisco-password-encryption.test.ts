@@ -180,12 +180,18 @@ describe("Scénario 4 — username secret vs username password : étiquette corr
     expect(rc).not.toContain('username operateur privilege 1 secret 7 120A00170803192E');
   });
 
-  it("'username X secret 0 ...' (type 0 explicite via secret) reste étiqueté secret, pas password", async () => {
+  // L'objet de ce cas est l'ÉTIQUETTE — `secret` et non `password` —
+  // et il reste vérifié. Ce qu'il fixait en plus, et qui était le
+  // défaut, c'est la valeur en clair : le type 0 d'un `secret` décrit la
+  // SAISIE, pas le stockage, et IOS rend un secret haché quelle que soit
+  // la forme d'entrée.
+  it("'username X secret 0 ...' reste étiqueté secret, pas password, et sort haché", async () => {
     const r = await cfg(new CiscoRouter('R1', 0, 0));
     await r.executeCommand('username lecture secret 0 Read@2025');
     await r.executeCommand('end');
     const rc = await r.executeCommand('show running-config');
-    expect(rc).toContain('username lecture privilege 1 secret 0 Read@2025');
+    expect(rc).toMatch(/^username lecture privilege 1 secret 5 \$1\$/m);
+    expect(rc).not.toContain('Read@2025');
   });
 });
 
