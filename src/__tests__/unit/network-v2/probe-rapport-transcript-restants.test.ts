@@ -205,8 +205,13 @@ describe('§15 — deux routeurs ne sont pas jumeaux', () => {
 
   it('l\'adresse MAC de base est celle du premier port de la machine', async () => {
     const d = await routeur();
-    const mac = d.getPorts()[0].getMAC().toString();
+    // Ce que ce cas mesure est l'IDENTITE — la bannière montre le premier
+    // port de CETTE machine, pas une adresse d'usine partagée. La
+    // convention, elle, est celle d'IOS : trois groupes pointés, comme
+    // `show version` et le commutateur les écrivent déjà.
+    const mac = d.getPorts()[0].getMAC().toCiscoString();
     expect(d.getBootSequence()).toContain(mac);
+    expect(d.getBootSequence()).not.toContain(d.getPorts()[0].getMAC().toString());
   }, 30_000);
 });
 
