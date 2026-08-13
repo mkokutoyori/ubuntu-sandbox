@@ -577,12 +577,12 @@ export function buildIdentityConfigCommands(
     if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = true;
     return '';
-  });
+  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
   trie.registerGreedy('no ip scp', 'Disable the SCP server', (args) => {
     if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = false;
     return '';
-  });
+  }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
 
 
   trie.registerGreedy('service password-encryption', 'Enable password encryption', () => {

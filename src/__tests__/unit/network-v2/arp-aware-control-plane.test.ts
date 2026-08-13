@@ -139,7 +139,8 @@ describe('ARP-aware control-plane sends (audit #26)', () => {
     const udpFrames = captureUdpFrames(bus);
 
     router.getSyslogAgent().addServer('10.0.0.2');
-    Logger.info(router.id, 'sys:restart', 'Configuration changed by console');
+    router.getSyslogAgent().sendImmediate('notification', '%SYS-5-RESTART',
+      'Configuration changed by console');
 
     expect(arpTargets).toContain('10.0.0.2');
     const syslogFrames = udpFrames.get(UDP_PORT_SYSLOG) ?? [];
