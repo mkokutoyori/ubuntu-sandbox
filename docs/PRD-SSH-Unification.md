@@ -703,3 +703,35 @@ verbes, et le test « passe » sans avoir rien transféré. La forme honnête
 d'un lot sur Windows est `-b <fichier>`, celle que la vraie `sftp.exe`
 documente — et c'est en l'utilisant qu'on découvre qu'elle ne marchait
 pas.
+
+## 10. Les deux replis synchrones assumés sont migrés
+
+Deux limites étaient jusqu'ici assumées par écrit plutôt que corrigées.
+
+**`sudo <forme-script>` restait sur le dispatch synchrone.** La Phase 2 s'y
+était arrêtée pour ne pas court-circuiter la politique sudoers, qui vit
+dans ce dispatch. Le trou était plus large que « pas attendu » : le
+chemin synchrone ne sert pas les commandes du registre, si bien que
+`sudo bash script.sh` répondait `ping: command not found` là où
+`bash script.sh` réussissait. `dispatchMaybeNetwork` route désormais ces
+formes vers leur jumeau asynchrone en REPRODUISANT le contrôle sudoers —
+`authorizeSudo`, `writeSudoAuditLine`, les mêmes messages que le registre
+— root posé puis restauré en `finally`. Un compte hors sudoers est
+refusé et le script ne tourne pas : c'est le cas qui garde le correctif
+d'être une porte dérobée.
+
+**Le repli synchrone de `scp`/`sftp` est supprimé.** Il n'a pas été retiré
+sur une intuition : une sonde `throw` posée dans ce `case` n'a été
+atteinte par AUCUN des 30 642 cas de la suite complète. Le repli était
+mort, et ce qu'il faisait de son vivant était la copie de VFS à VFS qui
+ne traverse pas le câble. Les deux commandes suivent maintenant la règle
+des autres commandes asynchrones (`ping`, `curl`) : hors du pont, le
+registre les déclare introuvables (`result instanceof Promise` →
+`return null`) au lieu d'en servir une version infidèle. `rsync` reste,
+faute de jumeau asynchrone.
+
+Deux pièges de méthode rencontrés, écrits pour la prochaine fois : le
+patch mis à l'abri pendant la sonde contenait le `throw`, qui est revenu
+avec lui à la réapplication ; et le run instrumenté a réécrit les 73
+transcripts `debug-output/`, qui décrivaient alors une exécution où `scp`
+levait une exception.

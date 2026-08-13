@@ -1261,6 +1261,48 @@ export class LinuxCommandExecutor {
    * mémoire ferait arriver un fichier qui n'a jamais voyagé.
    */
   /**
+   * Run a script form under `sudo`: the sudoers verdict first, in the
+   * same words the registry runner uses, then the async twin with the
+   * user switched to root and restored whatever happens. Without this,
+   * `sudo bash script.sh` stayed on the synchronous dispatch and a
+   * network command inside the file answered `command not found`.
+   */
+  private async runScriptElevated(
+    effective: string[],
+    run: () => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const line = ['sudo', ...effective].join(' ');
+    const auth = this.authorizeSudo(effective[0], effective.slice(1), 'root');
+    if (auth.reason === 'not-in-sudoers' || auth.reason === 'unknown-target-user') {
+      this.writeSudoAuditLine('not-in-sudoers', auth, line);
+      return {
+        output: `${auth.invokingUser} is not in the sudoers file. This incident will be reported.`,
+        exitCode: 1,
+      };
+    }
+    if (auth.reason === 'command-not-allowed') {
+      this.writeSudoAuditLine('command-not-allowed', auth, line);
+      return {
+        output: `Sorry, user ${auth.invokingUser} is not allowed to execute '${effective.join(' ')}' as ${auth.runasUser} on ${auth.hostname}.`,
+        exitCode: 1,
+      };
+    }
+    this.writeSudoAuditLine('success', auth, line);
+    const um = this.userMgr;
+    const saved = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
+    um.currentUser = 'root';
+    um.currentUid = 0;
+    um.currentGid = 0;
+    try {
+      return await run()!;
+    } finally {
+      um.currentUser = saved.user;
+      um.currentUid = saved.uid;
+      um.currentGid = saved.gid;
+    }
+  }
+
+  /**
    * `sshpass -p <pw> scp|sftp …` — the wrapper is not a command of its
    * own: it hands its password to the one it wraps. `scp` and `sftp`
    * written alone are registry commands, which the runner above has
@@ -3041,19 +3083,27 @@ export class LinuxCommandExecutor {
     // takes the pre-existing synchronous path (a known, narrower residual
     // gap) rather than risk bypassing sudoers enforcement.
     if (!background && argv.length > 0) {
-      const cmd0 = argv[0];
-      const rest = argv.slice(1);
-      if (cmd0 === 'bash' || cmd0 === 'sh') {
-        return this.runBashOrShAsync(cmd0, rest);
-      }
-      if (cmd0 === 'run-parts') {
-        return this.handleRunPartsAsync(rest);
-      }
-      if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
-        return this.runDirectScriptAsync(cmd0, rest).then(
-          (r) => r ?? this.dispatchFromInterpreter(argv, env, background),
-        );
-      }
+      const viaSudo = argv[0] === 'sudo';
+      const effective = viaSudo ? argv.slice(1) : argv;
+      const cmd0 = effective[0] ?? '';
+      const rest = effective.slice(1);
+      const scriptForm = (): Promise<{ output: string; exitCode: number; stderr?: string }> | null => {
+        if (cmd0 === 'bash' || cmd0 === 'sh') return this.runBashOrShAsync(cmd0, rest);
+        if (cmd0 === 'run-parts') return this.handleRunPartsAsync(rest);
+        if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
+          return this.runDirectScriptAsync(cmd0, rest).then(
+            (r) => r ?? this.dispatchFromInterpreter(effective, env, background),
+          );
+        }
+        return null;
+      };
+      const pending = scriptForm();
+      // `sudo <forme-script>` passe par le MÊME contrôle sudoers que les
+      // commandes du registre, puis rejoint le jumeau asynchrone sous le
+      // compte élevé. La Phase 2 s'arrêtait devant `sudo` pour ne pas
+      // court-circuiter la politique ; la reproduire ici l'applique au
+      // lieu de la contourner.
+      if (pending) return viaSudo ? this.runScriptElevated(effective, scriptForm) : pending;
       const transfer = this.sshTransferInvocation(argv);
       if (transfer) {
         return this.runSshTransportAsync(transfer.cmd, transfer.args, transfer.password, stdin);
@@ -5030,8 +5080,14 @@ export class LinuxCommandExecutor {
       case 'zcat': return cmdGzip(this.archiveCtx(), args, 'zcat');
       case 'zip': return cmdZip(this.archiveCtx(), args);
       case 'unzip': return cmdUnzip(this.archiveCtx(), args);
-      case 'scp':
-      case 'sftp':
+      // `scp`/`sftp` ne sont plus ici : ce sont des commandes du registre,
+      // servies par le pont asynchrone, donc par une vraie session. Une
+      // sonde `throw` posée dans ce `case` n'a été atteinte par AUCUN des
+      // 30 642 cas de la suite — le repli était mort, et il rendait une
+      // copie de VFS à VFS qui ne traversait pas le câble. Elles suivent
+      // désormais la règle des autres commandes asynchrones (`ping`,
+      // `curl`) : hors du pont, le registre les déclare introuvables au
+      // lieu d'en servir une version infidèle.
       case 'rsync': {
         return this.runSshTransport(cmd, args, stdin);
       }
