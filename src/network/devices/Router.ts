@@ -1365,6 +1365,22 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * own level; with none configured the account's level applies. Without
    * a login name there is nothing to look up, so the line starts at 1.
    */
+  /**
+   * Le niveau auquel une session s'ouvre sur la CONSOLE.
+   *
+   * Meme regle que `resolveVtyExecLevel`, et c'est le point : le niveau
+   * de la LIGNE remplace celui du compte — vers le haut comme vers le
+   * bas — et `loginAs` ne lisait que le compte. La regle vivait donc
+   * dans le terminal graphique et nulle part ailleurs, si bien qu'une
+   * session SSH, telnet ou scriptee ouvrait au mauvais niveau.
+   */
+  resolveConsoleExecLevel(user?: string): number {
+    const lineLevel = this.getConsoleLinePrivilege();
+    if (lineLevel != null) return lineLevel;
+    if (user === undefined) return 1;
+    return this.getCredentialStore().lookup(user)?.privilege ?? 1;
+  }
+
   resolveVtyExecLevel(user?: string): number {
     const lineLevel = this.blocVtyCourant()?.privilege;
     if (lineLevel != null) return lineLevel;
@@ -3203,7 +3219,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return false;
     }
     const compte = this.getCredentialStore().lookup(username);
-    const niveau = exec.privilegeLevel ?? compte?.privilege ?? 1;
+    // La precedence qu'IOS documente : AAA > ligne > compte. Le niveau de
+    // la ligne est un REMPLACEMENT et non un plancher, donc il vaut aussi
+    // quand il est INFERIEUR a celui du compte.
+    const niveau = exec.privilegeLevel ?? this.resolveConsoleExecLevel(username);
     const shell = this.shell as unknown as {
       beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
     };

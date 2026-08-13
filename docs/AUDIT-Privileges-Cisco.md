@@ -1218,3 +1218,55 @@ simplement injoignable. Et `config-commands`, `network` et
 personne — ce sont trois services distincts, chacun avec son propre point
 d'application, et les traiter ici aurait été les traiter sans les
 mesurer.
+
+---
+
+## Étape 9 — le niveau de la ligne s'applique par toutes les portes (M1, M2)
+
+**Fichiers** — `equipment/Equipment.ts`, `CiscoShellBase.ts`, `Router.ts` ;
+`src/__tests__/unit/network-v2/cisco-line-privilege-level.test.ts`
+(neuf, 8 cas).
+
+**Rouge — 6 échecs sur 8.** Les 2 verts des deux côtés sont les cas où le
+compte donnait déjà la bonne réponse : « sans réglage de ligne, le compte
+décide » (non-régression) et `no privilege level`, qui rend la main à ce
+même compte.
+
+**Vert** — 8/8, puis **45 fichiers / 1 465 cas** connexes, plus **4
+fichiers / 419 cas** de sessions (SSH, console concurrente, mots de
+passe) que ce changement traverse. `tsc` : 322 avant, 322 après.
+
+**Les deux défauts se tenaient, et il fallait les traiter ensemble.**
+M1 — la règle était appliquée par **une porte sur deux** :
+`CiscoTerminalSession` la lisait correctement, `Router.loginAs` lisait le
+compte et ignorait la ligne. M2 — le réglage de la console vivait sur le
+**shell**, alors que celui des vty vit sur l'équipement ; or
+`createVtyShell()` construit un shell neuf par session, donc
+`line console 0 / privilege level 15` tapé depuis une session SSH se
+rangeait sur le shell de cette session et disparaissait avec elle.
+Corriger M1 seul aurait fait lire à `loginAs` une valeur qui n'était pas
+toujours là.
+
+**Le réglage vit désormais sur `Equipment`**, comme les secrets
+d'activation par palier, et le shell n'y accède que par un accesseur
+unique — aucun shell ne peut plus en garder une copie à lui. Deux cas
+l'éprouvent en tapant la commande depuis une session vty qu'on jette
+ensuite.
+
+**Une seule règle de précédence, écrite une fois.**
+`resolveConsoleExecLevel` est le jumeau exact de `resolveVtyExecLevel`,
+qui existait déjà et était correct : AAA > ligne > compte. Le niveau de
+la ligne est un **remplacement**, pas un plancher — il vaut aussi quand
+il est **inférieur** à celui du compte, et un seul cas de test l'aurait
+laissé passer.
+
+**Ce que la mesure a confirmé plutôt que supposé** : le côté **vty** de
+M1 était déjà correct (`resolveVtyExecLevel` lisait bien le bloc de
+ligne). Seule la console manquait, et seulement sur le chemin scripté.
+Le dire évite de réécrire ce qui marchait.
+
+**Portée.** Le reste du bloc `line console 0` — mot de passe, `login`,
+`exec-timeout`, historique — vit toujours sur le shell. Le déplacer
+entier est la suite naturelle de cette étape, mais aucun de ces champs
+n'a aujourd'hui de conséquence de sécurité comparable, et les déplacer
+sans lecteur qui les réclame serait un remaniement sans mesure.

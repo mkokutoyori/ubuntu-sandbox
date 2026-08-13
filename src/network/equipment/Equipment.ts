@@ -45,6 +45,23 @@ export abstract class Equipment {
     this._enablePassword = value === '' ? null : { value, algo };
   }
 
+  /**
+   * `line console 0` / `privilege level N` — le niveau auquel une
+   * session ouverte sur la console commence.
+   *
+   * Il vit sur l'EQUIPEMENT et non sur le shell, comme celui des vty :
+   * `createVtyShell()` construit un shell neuf par session, si bien que
+   * le reglage tape depuis une session SSH se rangeait sur le shell de
+   * cette session et disparaissait avec elle — la console n'en savait
+   * rien.
+   */
+  private _consoleLinePrivilege: number | null = null;
+
+  getConsoleLinePrivilege(): number | null { return this._consoleLinePrivilege; }
+  _setConsoleLinePrivilege(level: number | null): void {
+    this._consoleLinePrivilege = level;
+  }
+
   // Per-level `enable secret level N` / `enable password level N` (N != 15
   // — level 15 always uses the fields above, matching real IOS where the
   // bare/unqualified form and `level 15` are the same thing).

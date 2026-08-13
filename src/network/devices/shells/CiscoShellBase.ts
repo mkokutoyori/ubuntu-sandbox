@@ -386,7 +386,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * ce qui est precisement le cas dangereux.
    */
   protected consoleLineLoginAuthList: string | null = null;
-  protected consoleLinePrivilegeLevel: number | null = null;
+  /**
+   * Le niveau de la ligne console vit sur l'EQUIPEMENT : ces deux
+   * accesseurs sont la seule voie, pour qu'aucun shell ne puisse en
+   * garder une copie a lui.
+   */
+  protected consolePrivilegeLevel(): number | null;
+  protected consolePrivilegeLevel(level: number | null): void;
+  protected consolePrivilegeLevel(level?: number | null): number | null | void {
+    const dev = this.deviceRef as unknown as {
+      getConsoleLinePrivilege?: () => number | null;
+      _setConsoleLinePrivilege?: (l: number | null) => void;
+    } | null;
+    if (level === undefined) return dev?.getConsoleLinePrivilege?.() ?? null;
+    dev?._setConsoleLinePrivilege?.(level);
+  }
   protected consoleLineExecTimeoutMin: number | null = null;
   protected consoleLineExecTimeoutSec: number = 0;
   protected consoleLineLoggingSynchronous: boolean = false;
@@ -444,7 +458,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     historyEnabled: boolean;
   } | null {
     if (this.consoleLinePassword == null && this.consoleLineLogin == null
-      && this.consoleLinePrivilegeLevel == null && this.consoleLineExecTimeoutMin == null
+      && this.consolePrivilegeLevel() == null && this.consoleLineExecTimeoutMin == null
       && !this.consoleLineLoggingSynchronous
       && this.consoleLineHistorySize == null && this.consoleLineHistoryEnabled) return null;
     return {
@@ -453,7 +467,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       passwordEncrypted: this.consoleLinePasswordEncrypted,
       login: this.consoleLineLogin,
       loginAuthList: this.consoleLineLoginAuthList,
-      privilegeLevel: this.consoleLinePrivilegeLevel,
+      privilegeLevel: this.consolePrivilegeLevel(),
       execTimeoutMin: this.consoleLineExecTimeoutMin,
       execTimeoutSec: this.consoleLineExecTimeoutSec,
       loggingSynchronous: this.consoleLineLoggingSynchronous,
@@ -5192,7 +5206,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
               return CISCO_ERRORS.INVALID_INPUT;
             }
-            this.consoleLinePrivilegeLevel = lvl;
+            this.consolePrivilegeLevel(lvl);
             return '';
           }
           if (kw === 'history') {
@@ -5224,7 +5238,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
               return '';
             }
             if (sub === 'password') { this.consoleLinePassword = null; return ''; }
-            if (sub === 'privilege') { this.consoleLinePrivilegeLevel = null; return ''; }
+            if (sub === 'privilege') { this.consolePrivilegeLevel(null); return ''; }
             if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
           }
           return '';
