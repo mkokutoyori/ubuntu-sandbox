@@ -732,3 +732,63 @@ est bloqué en accès direct depuis cet environnement) :
 
 Documents internes lus : `docs/PRD-Acces-Privileges-Cisco.md`,
 `docs/PRD-Acces-Mot-De-Passe-Cisco.md`, `CLAUDE.md`.
+
+---
+
+# 10. Carnet de bord des correctifs
+
+Tenu au fil de l'eau, une entrée par étape. Chaque étape est livrée en
+TDD — le test d'abord, rouge vérifié, puis le code — et poussée seule sur
+`mandeng`. La non-régression est mesurée sur les **fonctionnalités
+connexes** (CLI, privilèges, vues, AAA), pas à l'échelle du dépôt.
+
+Convention de lecture : **Rouge** = ce que le test refusait avant le
+code ; **Vert** = ce qu'il vérifie après ; **Portée** = ce qui reste
+ouvert et pourquoi.
+
+---
+
+## Étape 1 — `CommandCanonicalizer` : `sh ver` et `show version` sont la même commande
+
+*Traite la racine de C1, M12 et de la fuite du `?`. Aucun câblage encore :
+le module est posé et éprouvé seul, avant d'être branché.*
+
+**Fichiers** — `src/network/devices/shells/cli/CommandCanonicalizer.ts` (neuf),
+`src/__tests__/unit/network-v2/cli-command-canonicalizer.test.ts` (neuf, 13 cas).
+
+**Rouge** — le module n'existait pas ; le fichier de test ne se chargeait
+même pas.
+
+**Vert** — 13/13. `sh ver` → `show version`, `sh run` →
+`show running-config`, `SHOW VERSION` → `show version` (la casse vient de
+l'**arbre**, pas de la saisie), `pin 10.0.0.1` → `ping 10.0.0.1`.
+
+**Quatre décisions, chacune parce que l'inverse était possible :**
+
+- **Une abréviation ambiguë rend `null`, pas un candidat.** `show c` avec
+  `show clock` et `show cdp` déclarés n'est pas une commande ; la résoudre
+  arbitrairement ferait porter une décision d'autorisation sur une
+  commande que l'opérateur n'a pas désignée. C'est la seule réponse qui
+  ne devine pas.
+- **Les arguments sont conservés tels quels.** Une règle de niveau est un
+  **préfixe** — `privilege exec level 5 ping` couvre `ping 10.0.0.1` —
+  donc les effacer changerait la portée de toutes les règles existantes.
+  Seuls les mots-clés sont canonicalisés.
+- **Une commande incomplète se canonicalise** (`sh` → `show`). L'aide
+  juge des lignes incomplètes par construction : sans cela le filtre de
+  `?` resterait aveugle, ce qui est précisément le défaut mesuré au §2.1.
+- **La source des arbres est un port** (`CanonicalisationSource`), pas une
+  référence au shell. Le module est ainsi éprouvable sur des arbres
+  jouets, et réutilisable pour VRP — dont la CLI abrège aussi — sans rien
+  y changer.
+
+**Vision long terme.** Ce module est délibérément plus général que le
+besoin d'aujourd'hui : il prend un `AuthScope` et une liste d'arbres,
+alors que le premier câblage n'aura besoin que de l'espace `exec`. C'est
+ce qui permettra, sans réécriture, de canonicaliser les règles
+`privilege configure|interface|line` (M4/M5), les inclusions de vues
+(M8/M7) et l'autorisation AAA par commande (C8), qui ont toutes le même
+besoin.
+
+**Portée** — aucun appelant de production à ce stade : `sh ver` contourne
+toujours les niveaux. C'est l'objet de l'étape 2.
