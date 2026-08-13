@@ -1261,18 +1261,15 @@ export class LinuxCommandExecutor {
    * mémoire ferait arriver un fichier qui n'a jamais voyagé.
    */
   /**
-   * `scp`/`sftp` written inside a composite line — a here-doc, a pipeline,
-   * a `;` sequence — reaches the interpreter rather than the single-command
-   * fast path, and used to fall through to the synchronous dispatch, which
-   * never opens a session: the transfer resolved the remote VFS in memory
-   * and escaped the refusal a bare `scp` gets. Recognising the invocation
-   * here is what makes the two spellings answer the same thing.
+   * `sshpass -p <pw> scp|sftp …` — the wrapper is not a command of its
+   * own: it hands its password to the one it wraps. `scp` and `sftp`
+   * written alone are registry commands, which the runner above has
+   * already served, so this is the only invocation left to recognise.
    */
   private sshTransferInvocation(
     argv: string[],
   ): { cmd: 'scp' | 'sftp'; args: string[]; password: string } | null {
     const isTransfer = (n: string): n is 'scp' | 'sftp' => n === 'scp' || n === 'sftp';
-    if (isTransfer(argv[0])) return { cmd: argv[0], args: argv.slice(1), password: '' };
     if (argv[0] !== 'sshpass') return null;
     let i = 1;
     let password = '';

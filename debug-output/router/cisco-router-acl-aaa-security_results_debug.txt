@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-08-13T12:21:06.480Z
+Generated: 2026-08-13T13:08:33.479Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -904,43 +904,43 @@ Total steps: 388
   %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 12:21:06 UTC Aug 13 2026
+  % Key pair was generated at: 13:08:33 UTC Aug 13 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   DC5F1FF42871FB0405BA5F16DD3F7E1E704FAA85065F3B118E62DC312614F7E9
-    939AD3F42D5B359C2137EC529DC78502A2A193C5C1148199179E15BD4C0EDE55
-    CE3B157449E00DCCE6146A1ED76DBBDE7AC44585AB605BA92500D4B9EDBCC2B9
-    C4C82474A1D37F84C9D4E25AF2170EB2416DA9C56F0A1E3104DB1945CB031525
-    3381371414EF5C0435A2E126AFCBCB6E2A72C2A5077AADF1A96545618310FDF9
-    80C4D934325E539CB5093282B24F32B2584766055EF475B99EDC4F0D6BBB8AA5
-    4CFF20D4965EDBAC03290C6EF0D7D98E7967E9E537FA506900EE76290DCE52C9
-    D7EA4DF497C92024311978CAE4BB2A22687C3845997D67B1683DBAD590E25C55
+   FAB5CEA560280289BE41D077B570CC3707F3F43413516F04E46685300BC0AB00
+    B43B26A585593F99792DC1B3AE951F9B1EDD0174BAB9740CA625A2BCA8CFFE14
+    54D00C257F71BB1199B3A37F841F8F07E361D7346973793C426745B817AC95F0
+    693CBF25C266E27115987FBBD37EFDFB8A785F749AC1C7C4D8CC38245ECAE924
+    3526E9A5B5402E894CB01687C362908772379054C805B4E4B958FC40E88220B0
+    E20DA3C5E72E1BB92A31FFE36A2E53EB63F84BB4858AE9ECE4649DEC295B63C4
+    9DDD0365374617D1BEBF71CF37435677ABB6E794242D4E1CDB1D5D08F88D8600
+    55CF48857759631190EF762B92CDA8CBE19B4DF4D6E4CE24F4B60394F881C014
   
-  % Key pair was generated at: 12:21:06 UTC Aug 13 2026
+  % Key pair was generated at: 13:08:33 UTC Aug 13 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
-   E8083CF00989CFB0C67E85523661E37AACE47601B2266BDDF6D0F675929285BD
-    7D055370F20A8898B77B7A9649E65E160C7547413C756CD56A76CA7974EAC4D1
-    5FE0E7704AAB14389F1EB55AB8B979FA7A55A60124352835C37EF3FDC2E3A39D
-    B4A318F0F85FD9D01E26559E02331456D719B2410F2D103D2B739301E482FD61
-    23DB3E10885FCB30F952D1628683A4AA44883821C5C9521D8E22E9A52BF8BCAD
-    9B67C2B03E871B98C3680AC6210DD4C698F34381DDEC9E95AF040DC9E96D3541
-    4404DCD03E6686B86F1E21AA9BF40E2A8CC8F4616827AD75FF5B1F6D8CB9758D
-    80ECAC70A731F3D0F0C5360E628BAE06CA8F6AC171F570FDAB043E91DF24D8D1
-    576087B09227D4B0462FBDF22DEAABDADDA106816FFD965D9BEC951578B46ADD
-    4E66D630883822D863046B368B24D1F60B500FC166D40F95E2EF2119F2E9A331
-    AF55A23026E40B7893695DFAA8299D9ADF18A68164043AF57BFE029D068110BD
-    FDB50BB0F43F7AD0FF9CB63E10C589F6690EEAC1F3A11BBDE82359A128282641
-    53B5FC906E0C1830280A3E028367D50A210128E144CD849D99DCE84541EFC9CD
-    DBA9A570A7A27DD8C5735B660DC530A6A7526C01A3CBC9551362C46945A2BBA1
-    A3438B504B34C5F82E5E7E4A37E299CAA15FD5210852C8358E380E0DA5970AAD
-    7FC67F3020965CD01A4D76AE5F0A0BA6C3C08341A1A9047D193D0CB1213BA9B1
+   537A9E792A0D0AEDA31CB60BB15E202B649BA38847D9E4C8AAFD3FCC7FCA85FC
+    AE6E1AF9D575D85DD3AC314F84E44147C3D11AC82FAF664078783EC0BC9D1368
+    ABFF69F967CDFF6561E11C03CC4C26AB089C29885030D12026F41844243C93DC
+    93EE4B792407D99591FE6C47D4586787E58EE5C8680439A8F3D802588A750C98
+    3D1D15799B73A12DA43861FB400497BB6A1A59681E0EFA4892277ABCBAF699CC
+    5E94AFD927FE6BBD335F651FEF2929D7406DA288470330C02A9375907EC33038
+    F0F104B9FE656F251ADA3FB3E3A89DBB16146B282D1CA4200AF5B2F4CFA61B2C
+    F37FD419837E6E75A619E7D7D5C91797526EC9488F2FA9A8D12368E856B583A8
+    E73173F96AD3742D47009D6BDFC67DCB9C3BC6C84C0B1988AB0E152C056B3E5C
+    FF9CCC393ADCB2DDD48CC86FF24C9667F77881C823A98F4036D4ABE071683108
+    646BC6F99BCCF42550D332E36665FDCB0DFEA4484AAB2560123EED24A3D8087C
+    D67A2439787A6015F872D2E795B918A7C5FC4448CE8E2EA8E5900EF8BAB184F8
+    0AC639F9E6599A6DD8FBE85B14B2C55B355CD7E8A7E53F08EF7C3B1C5038A22C
+    50AA4859A6A834FD53D18BBF6FF26777E90CC10835DD24404A7142309EF58258
+    BE73E939C431AA6560EB8613A0D3155BD7D8A9A8BFD15AE06BC033543609BC4C
+    31BF2C990D9AB4B56B29CE77650346379BDFA7C8B984D2286A0A1D0848DC0008
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1197,7 +1197,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8997MZ7B
+  Processor board ID FTX2445X6N8
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1357,7 +1357,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 12:21:06 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 13:08:33 UTC Thu Aug 13 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -1855,21 +1855,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 12:21:06.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 12:21:06.475: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 12:21:06.476: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 12:21:06.476: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 12:21:06.491: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.495: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.500: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.503: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.510: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.512: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.516: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.525: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.528: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.531: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 13:08:33.475: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 13:08:33.477: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 13:08:33.477: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 13:08:33.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.493: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.496: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.500: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.502: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.504: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.506: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.511: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.517: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.520: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.526: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1881,7 +1881,7 @@ Total steps: 388
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE283532.93333333 (12:21:06.575 UTC Thu Aug 13 2026)
+  reference time is EE284051.91A9FBE7 (13:08:33.569 UTC Thu Aug 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1892,7 +1892,7 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *12:21:06.000 UTC Thu Aug 13 2026
+  *13:08:33.000 UTC Thu Aug 13 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2073,7 +2073,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX8997MZ7B
+  Processor board ID FTX2445X6N8
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2233,7 +2233,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 12:21:06 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 13:08:33 UTC Thu Aug 13 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
@@ -2476,25 +2476,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 12:21:06.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 12:21:06.475: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 12:21:06.476: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 12:21:06.476: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 12:21:06.491: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.495: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.500: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.503: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.507: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.510: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.512: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.516: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.525: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.528: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 12:21:06.531: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 13:08:33.475: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 13:08:33.477: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 13:08:33.477: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 13:08:33.489: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.493: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.496: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.500: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.502: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.504: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.506: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.511: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.517: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.520: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 13:08:33.526: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX8997MZ7B
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2445X6N8
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2723,7 +2723,7 @@ Total steps: 388
    permit ospf any any
    permit tcp any any eq 179
   !
-  ! Last configuration change at 12:21:06 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 13:08:33 UTC Thu Aug 13 2026 by console
   security passwords min-length 10
   login block-for 120 attempts 3 within 60
   login quiet-mode access-class MGMT
