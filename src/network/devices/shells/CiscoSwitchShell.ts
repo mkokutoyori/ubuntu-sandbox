@@ -15,6 +15,7 @@
  */
 
 import { CiscoShellBase } from './CiscoShellBase';
+import { privilegeConfigLines } from './cli/CliAuthorization';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
@@ -3489,6 +3490,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // acceptee puis perdue a l'enregistrement.
     const httpLines = sw.getHttpService().runningConfigLines();
     if (httpLines.length > 0) lines.push(...httpLines);
+
+    const reglesPriv = privilegeConfigLines(
+      (sw as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules,
+    );
+    if (reglesPriv.length > 0) lines.push(...reglesPriv);
 
     const unhandled = (sw as unknown as { getUnhandledConfigLines?: () => readonly string[] }).getUnhandledConfigLines?.() ?? [];
     if (unhandled.length > 0) {

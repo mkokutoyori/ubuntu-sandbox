@@ -792,3 +792,82 @@ besoin.
 
 **Portée** — aucun appelant de production à ce stade : `sh ver` contourne
 toujours les niveaux. C'est l'objet de l'étape 2.
+
+---
+
+## Étape 2 — l'autorisation décide sur la forme canonique (C1, M4, M5, M12, G3)
+
+*La plus grosse étape du chantier : elle referme le défaut de tête et,
+avec lui, trois de ses conséquences.*
+
+**Fichiers** — `cli/CliAuthorization.ts`, `cli/CommandCanonicalizer.ts`,
+`CiscoShellBase.ts`, `cisco/CiscoShowCommands.ts`, `CiscoSwitchShell.ts`,
+`Router.ts`, `Switch.ts` ;
+`src/__tests__/unit/network-v2/cisco-privilege-abbreviation.test.ts` (neuf, 18 cas).
+
+**Rouge — discrimination mesurée : 12 échecs sur 18.** Les 6 cas verts
+des deux côtés sont nommés ici plutôt que laissés à découvrir : 2 sont
+les cas de **non-régression** (machine sans aucune règle), dont c'est
+l'objet même ; 2 sont les cas de vue sur `sh ver`, qui échouaient déjà
+dans le bon sens (une vue refusait l'abréviation de ce qu'elle inclut —
+inutilisable, mais pas dangereux) ; 2 sont le cas d'abréviation ambiguë,
+qui ne prouvait rien du mécanisme.
+
+**Vert** — 18/18, puis **33 fichiers / 1 125 cas** de non-régression sur
+les fonctionnalités connexes (privilèges, vues, AAA, aide, complétion,
+hygiène du trie, tutoriels d'accès), tous verts. `tsc` : **296 erreurs
+avant, 296 après** — aucune ajoutée (le dépôt en porte déjà 296, hors
+sujet ici).
+
+**Ce que le correctif fait, dans l'ordre où il fallait le faire :**
+
+1. **`CliAuthorization` reçoit un canonicaliseur** et l'applique dans
+   `authorize()` **et** `estAccordee()`. Une seule méthode privée,
+   `forme()`, décide quelle chaîne toutes les autres regardent — c'est
+   la propriété qui manquait, pas le filtre.
+2. **La source d'arbres reflète exactement `niveauParDefautDe`.**
+   `arbresDe(scope)` rend `[userTrie, privilegedTrie]` pour `exec`, dans
+   **le même ordre** que la résolution du niveau par défaut. Si les deux
+   lisaient des arbres différents, ils pourraient décider de deux
+   commandes différentes pour une même frappe — la classe de défaut
+   qu'on referme. `interface` et `line` nomment désormais leur propre
+   arbre, parce que `privilege interface level 5 shutdown` se tape en
+   configuration globale, où cet arbre n'est pas actif.
+3. **Les trois écrivains passent par une seule dérivation de clé.**
+   `setCommandLevel` / `resetCommandLevel` sur `CliAuthorization`
+   canonicalisent puis délèguent. `privilege`, `no privilege` et
+   `privilege reset` écrivaient la `Map` à la main avec trois
+   dérivations, dont deux minusculaient et une non : **M4 et M5 tombent
+   ensemble**, parce qu'ils étaient le même défaut vu de deux endroits.
+   Au passage, `no privilege` valide enfin son mode et refuse une ligne
+   incomplète.
+4. **Les règles sont rendues depuis la table qui décide**
+   (`privilegeConfigLines`), plus depuis le fourre-tout des « lignes non
+   traitées » — **G3**. Deux magasins pour un fait, dont un seul décidait
+   et l'autre s'affichait : c'est ce qui laissait
+   `privilege exec level 5 Reload` paraître dans la configuration sans
+   avoir le moindre effet. La configuration étant **rejouée à l'import
+   d'une topologie**, la divergence était persistante. Un seul rendu,
+   partagé par le routeur et le commutateur.
+5. **`tabComplete` filtre** (**M12**). `tabCandidates` filtrait déjà : la
+   *liste* des candidats respectait le niveau et la complétion d'un
+   candidat *unique* le contournait. Deux portes sur la même question,
+   une seule gardée.
+6. **Le filtre de l'aide juge la bonne ligne.** Il concaténait l'entrée
+   brute au mot-clé proposé : `show ver?` produisait `show ver version`,
+   que nul arbre ne connaît, donc **non jugé, donc proposé** — alors que
+   son exécution était refusée. Le mot partiel en cours de frappe est
+   maintenant *remplacé*, pas complété.
+
+**Une décision qui méritait d'être écrite.** Le canonicaliseur est
+**optionnel** dans le constructeur de `CliAuthorization`. Ce n'est pas
+une facilité : c'est ce qui garde le module éprouvable seul, sans arbre,
+et ce qui rend son absence explicitement équivalente au comportement
+d'avant plutôt que silencieusement dangereuse.
+
+**Portée — ce qui reste ouvert, et pourquoi.** `reglesExecAccordees()`
+(G2) duplique toujours `grantedAtOrBelow()` ; la méthode `reglesAccordees`
+est en place pour l'absorber, mais la migration est un pas séparé et sans
+rapport avec la canonicalisation. La **promotion des commandes parentes**
+(M3) et le mot-clé **`all`** (M6) restent entiers : ce sont des règles
+d'IOS sur l'*écriture* des règles, pas sur leur lecture.

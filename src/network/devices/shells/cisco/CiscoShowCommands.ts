@@ -7,6 +7,7 @@
 
 import type { Router } from '../../Router';
 import { ntpConfigLines } from './ciscoNtpConfig';
+import { privilegeConfigLines } from '../cli/CliAuthorization';
 import type { Port } from '../../../hardware/Port';
 import { IPAddress, SubnetMask, RIP_METRIC_INFINITY } from '../../../core/types';
 import { runningConfigACL, runningConfigInterfaceACL } from './CiscoAclCommands';
@@ -659,6 +660,11 @@ export function showRunningConfig(router: Router): string {
     const httpLines = httpSvc.runningConfigLines();
     if (httpLines.length > 0) lines.push(...httpLines);
   }
+
+  const reglesPriv = privilegeConfigLines(
+    (router as unknown as { _ciscoPrivilegeRules?: Map<string, number> })._ciscoPrivilegeRules,
+  );
+  if (reglesPriv.length > 0) lines.push(...reglesPriv);
 
   const unhandled = router.getUnhandledConfigLines();
   if (unhandled.length > 0) {

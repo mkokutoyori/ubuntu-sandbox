@@ -116,8 +116,9 @@ import type { TftpEndpoint } from '@/network/tftp/types';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import {
   CliAuthorization, CommandLevelTable, ParserViewRegistry, scopeForMode,
-  type CliPrincipal,
+  type CliPrincipal, type AuthScope, AUTH_SCOPES,
 } from './cli/CliAuthorization';
+import { CommandCanonicalizer } from './cli/CommandCanonicalizer';
 import type {
   CommandInteractionPlan,
   InteractionPlanContext,
@@ -1996,9 +1997,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (!this.deviceRef) return new Map();
           return getSecurityConfig(this.d()).parserViews;
         }),
+        new CommandCanonicalizer({ triesFor: (scope) => this.arbresDe(scope) }),
       );
     }
     return this._autorisation;
+  }
+
+  /**
+   * Les arbres consultes pour resoudre une abreviation, dans le MEME
+   * ordre que `niveauParDefautDe` consulte les siens.
+   *
+   * L'ordre n'est pas un detail : si la canonicalisation et le niveau
+   * par defaut lisaient deux arbres differents, ils pourraient decider
+   * de deux commandes differentes pour une meme frappe — c'est
+   * exactement la classe de defaut que ce chantier referme.
+   */
+  private arbresDe(scope: AuthScope): readonly CommandTrie[] {
+    if (scope === 'exec') return [this.userTrie, this.privilegedTrie];
+    // Les espaces `interface` et `line` nomment un arbre que le mode
+    // COURANT n'est pas : `privilege interface level 5 shutdown` se tape
+    // en configuration globale. Les nommer explicitement est ce qui
+    // permet de canonicaliser une regle depuis le mode ou on l'ecrit.
+    if (scope === 'interface') return [this.configIfTrie, this.configTrie];
+    if (scope === 'line') return [this.configLineTrie, this.configTrie];
+    return [this.configTrie, this.getActiveTrie()];
   }
 
   protected mandataire(): CliPrincipal {
@@ -2100,17 +2122,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * de la topologie, la configuration rendue etant rejouee a l'import.
    */
   protected reinitialiserNiveauDeCommande(mode: string, commande: string): string {
-    const cible = commande.trim().toLowerCase();
-    if (cible.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    const router = this.d() as unknown as {
-      _ciscoPrivilegeRules?: Map<string, number>;
-      _removeUnhandledConfigLine?: (l: string) => void;
-    };
-    const key = `${mode} ${cible}`;
-    const niveau = router._ciscoPrivilegeRules?.get(key);
-    if (niveau === undefined) return '';
-    router._ciscoPrivilegeRules?.delete(key);
-    router._removeUnhandledConfigLine?.(`privilege ${mode} level ${niveau} ${commande.trim()}`);
+    if (commande.trim().length === 0) return CISCO_ERRORS.INCOMPLETE;
+    this.autorisation().resetCommandLevel(mode as AuthScope, commande);
     return '';
   }
 
@@ -2829,8 +2842,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         try { return this.laSessionVoit(ligne); }
         finally { this.deviceRef = precedent; }
       };
+      // La ligne a JUGER remplace le mot partiel en cours de frappe par
+      // le mot-cle propose ; la concatener a l'entree brute donnait
+      // `show ver version` pour `show ver?`, une ligne qu'aucun arbre ne
+      // connait — donc non jugee, donc proposee, alors que son execution
+      // etait refusee.
+      const brut = input.trim();
+      const surMotPartiel = brut.length > 0 && !input.endsWith(' ');
+      const base = surMotPartiel ? brut.slice(0, brut.lastIndexOf(' ') + 1).trim() : brut;
       const completions = trie.getCompletions(input)
-        .filter((c) => filtreNiveau(`${input.trim()} ${c.keyword}`.trim()));
+        .filter((c) => filtreNiveau(`${base} ${c.keyword}`.trim()));
       for (const c of this.completionsAccordeesParNiveau(input, device)) {
         if (!completions.some((x) => x.keyword.toLowerCase() === c.keyword.toLowerCase())) {
           completions.push(c);
@@ -2858,9 +2879,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
   }
 
-  tabComplete(input: string): string | null {
+  /**
+   * La tabulation ne complete pas ce que l'execution refuserait.
+   *
+   * `tabCandidates` filtrait deja, `tabComplete` non : la LISTE des
+   * candidats respectait le niveau, et la completion d'un candidat
+   * UNIQUE le contournait. Deux portes sur la meme question, une seule
+   * gardee.
+   *
+   * `device` est optionnel parce que la CLI appelle parfois cette
+   * methode sans equipement sous la main ; sans lui on ne peut rien
+   * juger, et on rend alors la completion telle quelle plutot que de
+   * refuser ce qu'on n'a pas su lire.
+   */
+  tabComplete(input: string, device?: TDevice): string | null {
     const trie = this.getActiveTrie();
-    return trie.tabComplete(input);
+    const complete = trie.tabComplete(input);
+    if (complete === null || !device) return complete;
+    const precedent = this.deviceRef;
+    this.deviceRef = device;
+    try {
+      return this.laSessionVoit(complete.trim()) ? complete : null;
+    } finally {
+      this.deviceRef = precedent;
+    }
   }
 
   tabCandidates(input: string, device: TDevice): string[] {
@@ -4551,7 +4593,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
       if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
       const mode = args[0]?.toLowerCase();
-      if (!['exec', 'configure', 'interface', 'line'].includes(mode ?? '')) {
+      if (!AUTH_SCOPES.includes(mode as AuthScope)) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
       if (args[1]?.toLowerCase() === 'reset') {
@@ -4565,11 +4607,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return CISCO_ERRORS.INVALID_INPUT;
       }
       if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
-      const router = this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> };
-      const key = `${mode} ${args.slice(3).join(' ')}`;
-      (router._ciscoPrivilegeRules ??= new Map()).set(key, lvl);
-      const recorder = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      recorder._recordUnhandledConfigLine?.(raw ?? `privilege ${args.join(' ')}`);
+      // La regle N'EST PAS enregistree comme « ligne non traitee » : elle
+      // est rendue depuis la table qui decide (`privilegeConfigLines`).
+      // Deux magasins pour un fait, c'est ce qui laissait une regle
+      // paraitre dans la configuration sans avoir le moindre effet.
+      void raw;
+      this.autorisation().setCommandLevel(
+        mode as AuthScope, args.slice(3).join(' '), lvl,
+      );
       return '';
     });
     /**
@@ -4621,14 +4666,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
       const mode = args[0]?.toLowerCase();
+      if (!AUTH_SCOPES.includes(mode as AuthScope)) return CISCO_ERRORS.INVALID_INPUT;
       if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
-      const router = this.d() as unknown as {
-        _ciscoPrivilegeRules?: Map<string, number>;
-        _removeUnhandledConfigLine?: (pattern: string) => void;
-      };
-      const key = `${mode} ${args.slice(3).join(' ')}`;
-      router._ciscoPrivilegeRules?.delete(key);
-      router._removeUnhandledConfigLine?.(`privilege ${args.join(' ')}`);
+      if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      this.autorisation().resetCommandLevel(mode as AuthScope, args.slice(3).join(' '));
       return '';
     });
 

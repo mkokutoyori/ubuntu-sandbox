@@ -34,12 +34,17 @@
  * reunit en une regle unique.
  */
 
+import type { CommandCanonicalizer } from './CommandCanonicalizer';
+
 /**
  * L'espace de nommage d'une regle de niveau : c'est le mot que
  * l'operateur ecrit dans `privilege <mode> level <n> <commande>`. IOS en
  * accepte d'autres, mais ces quatre sont ceux que cette CLI expose.
  */
 export type AuthScope = 'exec' | 'configure' | 'interface' | 'line';
+
+/** Les quatre espaces, dans l'ordre ou `privilege ?` les propose. */
+export const AUTH_SCOPES: readonly AuthScope[] = ['exec', 'configure', 'interface', 'line'];
 
 /** Ce qu'est une session, du point de vue de l'autorisation. */
 export interface CliPrincipal {
@@ -168,6 +173,31 @@ export class CommandLevelTable<S extends string = AuthScope> {
 }
 
 /**
+ * Les lignes `privilege …` de la configuration, lues sur la table qui
+ * DECIDE.
+ *
+ * Elles etaient rendues depuis le fourre-tout des « lignes de
+ * configuration non traitees », c'est-a-dire un SECOND magasin, tenu a
+ * jour par des chaines brutes. Les deux pouvaient donc diverger, et
+ * divergeaient : une regle posee `privilege exec level 5 Reload` etait
+ * rendue et sans effet. La configuration etant REJOUEE a l'import d'une
+ * topologie, la divergence etait persistante.
+ *
+ * L'ordre est celui d'insertion, comme partout ailleurs dans ce depot :
+ * une configuration doit reproduire ce que l'operateur a tape.
+ */
+export function privilegeConfigLines(rules: Map<string, number> | undefined): string[] {
+  if (!rules || rules.size === 0) return [];
+  const lines: string[] = [];
+  for (const [key, niveau] of rules) {
+    const sep = key.indexOf(' ');
+    if (sep <= 0) continue;
+    lines.push(`privilege ${key.slice(0, sep)} level ${niveau} ${key.slice(sep + 1)}`);
+  }
+  return lines;
+}
+
+/**
  * Les vues, y compris COMPOSEES.
  *
  * Une superview ne porte aucune commande a elle : elle reunit les vues
@@ -240,13 +270,35 @@ export interface AuthorizeInput {
  * continuait d'etre proposee par `?`.
  */
 export class CliAuthorization {
+  /**
+   * `canonicalizer` est optionnel pour que les appelants qui n'ont pas
+   * d'arbre sous la main — les tests unitaires de ce module — restent
+   * possibles ; en production il est toujours fourni, et son absence
+   * fait retomber sur la comparaison litterale d'avant.
+   */
   constructor(
     readonly levels: CommandLevelTable,
     readonly views: ParserViewRegistry,
+    private readonly canonicalizer?: CommandCanonicalizer,
   ) {}
 
+  /**
+   * La forme sur laquelle TOUTE decision se prend.
+   *
+   * `sh ver` et `show version` sont la meme commande, et les comparer
+   * litteralement rendait le mecanisme des niveaux contournable en
+   * tapant trois lettres de moins. IOS resout l'abreviation avant
+   * d'autoriser ; c'est ce que fait cette ligne, et elle est la seule de
+   * la classe a decider quelle chaine les autres regardent.
+   */
+  private forme(scope: AuthScope, command: string): string {
+    return this.canonicalizer
+      ? this.canonicalizer.canonicalOrSelf(scope, command)
+      : normalise(command);
+  }
+
   authorize(input: AuthorizeInput): AuthVerdict {
-    const commande = normalise(input.command);
+    const commande = this.forme(input.scope, input.command);
     if (SORTIES.some((c) => couvre(c, commande))) return 'run';
     if (input.scope === 'exec' && TOUJOURS_EN_EXEC.some((c) => couvre(c, commande))) return 'run';
 
@@ -261,10 +313,34 @@ export class CliAuthorization {
 
   /** L'operateur a-t-il DESCENDU cette commande jusqu'a la session ? */
   estAccordee(input: AuthorizeInput): boolean {
-    const commande = normalise(input.command);
+    const commande = this.forme(input.scope, input.command);
     if (input.principal.view !== null) return false;
     const niveau = this.levels.levelOf(input.scope, commande, input.defaultLevel);
     return niveau <= input.principal.level && niveau < input.defaultLevel;
+  }
+
+  /**
+   * Poser le niveau d'une commande, sous sa forme CANONIQUE.
+   *
+   * Les trois ecrivains — `privilege`, `no privilege`, `privilege reset`
+   * — ecrivaient la `Map` a la main, chacun avec sa propre derivation de
+   * cle : deux d'entre elles minusculaient, la troisieme non, si bien
+   * qu'une regle posee `privilege exec level 5 Reload` etait rendue dans
+   * la configuration et que `privilege exec reset Reload` ne la trouvait
+   * pas. Les faire passer ici est ce qui rend la cle unique.
+   */
+  setCommandLevel(scope: AuthScope, command: string, level: number): void {
+    this.levels.setLevel(scope, this.forme(scope, command), level);
+  }
+
+  /** Retire la regle et rend le niveau qu'elle portait, ou `undefined`. */
+  resetCommandLevel(scope: AuthScope, command: string): number | undefined {
+    return this.levels.reset(scope, this.forme(scope, command));
+  }
+
+  /** Les regles d'un espace dont le niveau est atteignable par la session. */
+  reglesAccordees(scope: AuthScope, level: number): Array<{ commande: string; niveau: number }> {
+    return this.levels.grantedAtOrBelow(scope, level);
   }
 }
 
