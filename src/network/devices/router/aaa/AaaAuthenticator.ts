@@ -101,6 +101,74 @@ export class AaaAuthenticator {
    * a fully exhausted chain — resolves to 'allowed'.
    */
   /**
+   * `aaa authorization exec {default|<liste>} <methodes>` — a-t-on droit
+   * a un shell, et a quel niveau ?
+   *
+   * C'est la commande par laquelle un serveur TACACS+ attribue le niveau
+   * de privilege a l'OUVERTURE de session. Elle etait acceptee par
+   * l'analyseur, rangee dans les methodes AAA, rendue dans la
+   * configuration — et aucune methode ne la lisait : la moitie
+   * « autorisation » du chapitre AAA etait decorative.
+   *
+   * `privilegeLevel` a `null` veut dire « la methode n'en designe
+   * aucun », et l'appelant retombe alors sur la regle qu'il appliquait
+   * deja (ligne, puis compte). Seul un groupe qui repond avec
+   * `priv-lvl` impose le sien.
+   *
+   * Chaine epuisee sans verdict : on ACCORDE, comme le fait
+   * `authorizeCommand` — c'est la convention de ce module, et refuser
+   * fermerait une machine dont le serveur est simplement injoignable.
+   */
+  async authorizeExec(username: string): Promise<{ allowed: boolean; privilegeLevel: number | null }> {
+    const sec = getSecurityConfig(this.router);
+    if (!sec.aaaNewModel) return { allowed: true, privilegeLevel: null };
+    const entries = sec.aaaMethods.filter(
+      (m) => m.phase === 'authorization' && m.service === 'exec');
+    if (entries.length === 0) return { allowed: true, privilegeLevel: null };
+    for (const entry of entries) {
+      for (const [i, token] of entry.methods.entries()) {
+        if (token === 'group') continue;
+        if (entry.methods[i - 1] === 'group') {
+          const verdict = await this.tryGroupExec(sec, token, username);
+          if (verdict.status === 'accept') {
+            return { allowed: true, privilegeLevel: verdict.privLvl };
+          }
+          if (verdict.status === 'reject') return { allowed: false, privilegeLevel: null };
+          continue;
+        }
+        // `local` ne designe pas de niveau ici : c'est l'appelant qui lit
+        // le compte, et il le lisait deja. `if-authenticated` et `none`
+        // accordent sans rien designer non plus.
+        if (token === 'local' || token === 'local-case'
+          || token === 'if-authenticated' || token === 'none') {
+          return { allowed: true, privilegeLevel: null };
+        }
+      }
+    }
+    return { allowed: true, privilegeLevel: null };
+  }
+
+  private async tryGroupExec(
+    sec: CiscoSecurityConfig, groupName: string, username: string,
+  ): Promise<{ status: MethodVerdict; privLvl: number | null }> {
+    const group = sec.aaaGroups.get(groupName);
+    if (!group || group.kind !== 'tacacs+') return { status: 'continue', privLvl: null };
+    const client = tacacsClientOf(this.router);
+    if (!client) return { status: 'continue', privLvl: null };
+    for (const memberName of group.members) {
+      const server = sec.tacacsServers.get(memberName);
+      if (!server || !server.address) continue;
+      this.syncTacacsServer(client, server);
+      const reply = await client.authorizeShell(username, server.address);
+      if (reply.status === 'pass-add' || reply.status === 'pass-repl') {
+        return { status: 'accept', privLvl: reply.privLvl };
+      }
+      if (reply.status === 'fail') return { status: 'reject', privLvl: null };
+    }
+    return { status: 'continue', privLvl: null };
+  }
+
+  /**
    * Une liste `aaa authorization commands <niveau>` gouverne-t-elle ce
    * niveau ?
    *

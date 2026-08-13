@@ -1161,3 +1161,60 @@ serveur TACACS+ attribue le niveau de privilège à l'ouverture de session
 — reste **acceptée, stockée, rendue et consultée par personne**, de même
 que `config-commands`, `network` et `reverse-access`. C'est la moitié
 restante de C8, et l'étape suivante.
+
+---
+
+## Étape 8 — `aaa authorization exec` décide vraiment (C8, seconde moitié)
+
+*C8 est désormais fermé en entier.*
+
+**Fichiers** — `tacacs/TacacsServerAgent.ts`, `tacacs/TacacsClientAgent.ts`,
+`router/aaa/AaaAuthenticator.ts`, `Router.ts` ;
+`src/__tests__/unit/network-v2/cisco-aaa-authorization-exec.test.ts`
+(neuf, 9 cas).
+
+**Rouge — 2 échecs sur 8** au premier jet, et ce chiffre est le bon
+signal plutôt qu'un chiffre faible : les 6 autres passaient parce que le
+niveau du compte local *se trouvait être* la bonne réponse. Seuls les
+deux cas qui prouvent le mécanisme — le niveau **venu du serveur**, et le
+**refus** — pouvaient discriminer.
+
+**Vert** — 9/9, puis **45 fichiers / 1 465 cas** connexes. `tsc` : 320,
+soit une de moins qu'avant l'étape.
+
+**La commande était acceptée, stockée, rendue, et lue par personne.**
+`CiscoSecurityCommands` connaît le mot-clé `exec` depuis toujours ; c'est
+`AaaAuthenticator` qui n'exposait aucune méthode correspondante. La
+moitié « autorisation » du chapitre AAA était donc décorative.
+
+**Le niveau voyage vraiment sur le fil.** `priv-lvl` n'est pas déduit
+localement : le serveur le met dans les **attributs de la réponse
+d'autorisation**, là où un vrai serveur TACACS+ le met, et le client le
+lit. `authorizeShell` envoie `service=shell` **sans** `cmd`, ce qui est
+exactement ce qui distingue « ai-je droit à un shell, et à quel niveau ? »
+de « ai-je droit à cette commande ? » — les deux requêtes existent
+maintenant côte à côte et ne peuvent pas se confondre.
+
+**Mon test se trompait, pas le code — et la règle qu'il ratait est la
+plus importante du chapitre.** J'avais écrit qu'avec `group GRP local` et
+un serveur qui **refuse**, `local` prendrait le relais. C'est l'inverse :
+sur IOS un **refus** est définitif et la méthode suivante n'est *pas*
+tentée ; seule une **injoignabilité** fait passer à la suivante. La même
+règle vaut pour l'authentification, et l'inverse ferait de `local` un
+contournement de toute décision du serveur. Le laboratoire distingue donc
+désormais explicitement « le serveur ne connaît pas ce compte » de « le
+serveur ne répond pas », et deux cas séparés fixent les deux issues.
+
+**Un refus refuse la session, il ne la dégrade pas.** Retomber sur le
+niveau du compte local aurait rendu la commande inoffensive tout en ayant
+l'air de fonctionner — précisément la classe de défaut que ce chantier
+referme.
+
+**Limite assumée, écrite plutôt que tue.** Une chaîne **épuisée sans
+verdict** (aucune méthode n'a répondu) accorde, par cohérence avec
+`authorizeCommand` ; refuser fermerait une machine dont le serveur est
+simplement injoignable. Et `config-commands`, `network` et
+`reverse-access` restent acceptés, stockés, rendus et consultés par
+personne — ce sont trois services distincts, chacun avec son propre point
+d'application, et les traiter ici aurait été les traiter sans les
+mesurer.

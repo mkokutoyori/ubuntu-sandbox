@@ -3193,8 +3193,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
     const verdict = await this.authenticateLine('console', { user: username, pass: password });
     if (!verdict) return false;
+    // `aaa authorization exec` decide si ce compte obtient un shell, et a
+    // quel niveau. Un REFUS refuse la session — il ne la degrade pas vers
+    // le niveau du compte local, ce qui reviendrait a ignorer la
+    // commande.
+    const exec = await this.getAaaAuthenticator().authorizeExec(username);
+    if (!exec.allowed) {
+      this.getCredentialStore().recordLoginFailure(username, '', 'exec authorization failed', Date.now());
+      return false;
+    }
     const compte = this.getCredentialStore().lookup(username);
-    const niveau = compte?.privilege ?? 1;
+    const niveau = exec.privilegeLevel ?? compte?.privilege ?? 1;
     const shell = this.shell as unknown as {
       beginExecSession?: (lvl: number, u?: string, vue?: string | null) => void;
     };

@@ -161,9 +161,18 @@ export class TacacsServerAgent {
       if (!user) status = 'fail';
       else if (cmd === null || user.permittedCommands.size === 0 || user.permittedCommands.has(cmd)) status = 'pass-add';
       else status = 'fail';
+      // Une autorisation d'EXEC (`service=shell` sans `cmd`) rapporte le
+      // niveau de privilege du compte dans `priv-lvl`, comme le fait un
+      // vrai serveur TACACS+ : c'est par cet attribut, et non par la
+      // reponse d'authentification, qu'IOS ouvre une session au niveau
+      // decide par le serveur.
+      const args = status === 'fail' || cmd !== null || !user
+        ? [] : [`priv-lvl=${user.privLvl}`];
       const body: TacacsBody = {
         type: 'tacacs-author-reply',
-        status, args: [], serverMsg: status === 'fail' ? 'Command denied' : '', data: '',
+        status, args,
+        serverMsg: status === 'fail' ? (cmd === null ? 'Authorization failed' : 'Command denied') : '',
+        data: '',
       };
       return this.wrap(request.header, 2, body);
     }
