@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-08-13T09:29:24.579Z
+Generated: 2026-08-13T10:01:59.513Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1715,7 +1715,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX41234FJ9
+  Processor board ID FTX85871Y52
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1894,7 +1894,7 @@ Total steps: 343
    ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   !
-  ! Last configuration change at 09:29:24 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 10:01:59 UTC Thu Aug 13 2026 by console
   !
   end
 
@@ -2665,24 +2665,24 @@ Total steps: 343
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 09:29:24.574: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.575: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.576: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.577: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.596: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.598: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.602: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.607: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.607: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.608: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Aug 13 09:29:24.608: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Aug 13 09:29:24.609: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.609: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.610: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug 13 09:29:24.610: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug 13 09:29:24.611: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.611: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.611: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.508: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.509: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.510: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.510: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.530: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.532: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.536: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.542: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.543: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.544: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug 13 10:01:59.544: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug 13 10:01:59.545: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.546: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug 13 10:01:59.546: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 13 10:01:59.547: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.547: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.548: %SYS-5-CONFIG_I: Configured from console by console
 
 [270/343] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2694,7 +2694,7 @@ Total steps: 343
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE280CF4.AE978D4F (09:29:24.682 UTC Thu Aug 13 2026)
+  reference time is EE281497.974BC6A7 (10:01:59.591 UTC Thu Aug 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2705,7 +2705,7 @@ Total steps: 343
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [273/343] r1 R1# show clock
-  *09:29:24.000 UTC Thu Aug 13 2026
+  *10:01:59.000 UTC Thu Aug 13 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2910,7 +2910,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX41234FJ9
+  Processor board ID FTX85871Y52
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -3089,7 +3089,7 @@ Total steps: 343
    ipv6 address 2001:db8:ffff::1/64
    tunnel mode ipv6ip
   !
-  ! Last configuration change at 09:29:24 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 10:01:59 UTC Thu Aug 13 2026 by console
   !
   end
   
@@ -3784,28 +3784,28 @@ Total steps: 343
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 09:29:24.574: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.575: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.576: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.577: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.596: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.598: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.602: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.607: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.607: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 09:29:24.608: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Aug 13 09:29:24.608: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Aug 13 09:29:24.609: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.609: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:29:24.610: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Aug 13 09:29:24.610: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Aug 13 09:29:24.611: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.611: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:29:24.611: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.508: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.509: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.510: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.510: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.530: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.532: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.536: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.542: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.543: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 13 10:01:59.544: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Aug 13 10:01:59.544: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Aug 13 10:01:59.545: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 10:01:59.546: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Aug 13 10:01:59.546: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Aug 13 10:01:59.547: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.547: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 10:01:59.548: %SYS-5-CONFIG_I: Configured from console by console
 
 [287/343] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX41234FJ9
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX85871Y52
 
 [288/343] r1 R1# show environment
   Number of Critical alarms:  0

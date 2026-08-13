@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-09-system-operations
-Generated: 2026-08-13T08:13:19.911Z
+Generated: 2026-08-13T10:02:27.416Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=file system, config persistence/backup, archive, clock, boot, reload/erase lifecycle + host reactions
 Total steps: 301
@@ -39,7 +39,7 @@ Total steps: 301
 
 [3/301] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC5777BPZ5
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC2881BD2Q
 
 [4/301] sw1 SW1# show boot
   BOOT path-list      : 
@@ -213,7 +213,7 @@ Total steps: 301
 [12/301] sw1 SW1# show platform
   Cisco Catalyst 2960
     PID: WS-C2960-24TT-L
-    S/N: FOC5777BPZ5
+    S/N: FOC2881BD2Q
 
 [13/301] sw1 SW1# show module
        ^
@@ -505,14 +505,14 @@ Total steps: 301
 <empty>
 
 [49/301] sw1 SYS-SW1# show clock
-  *08:13:19.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
 
 [50/301] sw1 SYS-SW1# show clock detail
-  *08:13:19.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
   Time source is No time source
 
 [51/301] sw1 SYS-SW1# show calendar
-  08:13:19 UTC Thu Aug 13 2026
+  10:02:27 UTC Thu Aug 13 2026
 
 [52/301] sw1 SYS-SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -527,7 +527,7 @@ Total steps: 301
 <empty>
 
 [56/301] sw1 SYS-SW1# show clock
-  *08:13:19.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
 
 
 --- [57] § boot system config ---
@@ -1567,30 +1567,30 @@ Total steps: 301
 --- [187] § pre-reload connectivity ---
 [187/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.620 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.941 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.711 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.631 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.941/1.780/2.620/0.840 ms
+  rtt min/avg/max/mdev = 0.631/1.671/2.711/1.040 ms
 
 [188/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.945 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.103 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.735 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.742 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.945/1.024/1.103/0.079 ms
+  rtt min/avg/max/mdev = 0.735/0.738/0.742/0.003 ms
 
 [189/301] srv1 srv1$ ping -c 2 192.168.1.23
   PING 192.168.1.23 (192.168.1.23) 56(84) bytes of data.
-  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=1.055 ms
-  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=1.133 ms
+  64 bytes from 192.168.1.23: icmp_seq=1 ttl=64 time=0.718 ms
+  64 bytes from 192.168.1.23: icmp_seq=2 ttl=64 time=0.483 ms
   
   --- 192.168.1.23 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.055/1.094/1.133/0.039 ms
+  rtt min/avg/max/mdev = 0.483/0.600/0.718/0.118 ms
 
 [190/301] sw1 SYS-SW1# show mac address-table
   Mac Address Table
@@ -1612,7 +1612,7 @@ Total steps: 301
   Reload scheduled in 1 minute
 
 [192/301] sw1 SYS-SW1# show reload
-  Reload scheduled in 1 minutes 0 seconds
+  Reload scheduled in 0 minutes 59 seconds
 
 [193/301] sw1 SYS-SW1# reload cancel
   Reload cancelled.
@@ -1815,12 +1815,12 @@ Total steps: 301
 
 [205/301] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.752 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.930 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.633 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.271 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.752/0.841/0.930/0.089 ms
+  rtt min/avg/max/mdev = 0.271/0.452/0.633/0.181 ms
 
 
 --- [206] § erase + reload to factory ---
@@ -2022,7 +2022,7 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [220/301] sw1 SW1# show clock
-  *08:13:24.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
 
 [221/301] sw1 SW1# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2146,7 +2146,7 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [228/301] sw2 SW2> show clock
-  *08:13:24.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
 
 [229/301] sw2 SW2> show logging
   % Invalid input detected at '^' marker.
@@ -2249,7 +2249,7 @@ Total steps: 301
    240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [236/301] core CORE> show clock
-  *08:13:24.000 UTC Thu Aug 13 2026
+  *10:02:27.000 UTC Thu Aug 13 2026
 
 [237/301] core CORE> show logging
   % Invalid input detected at '^' marker.
@@ -2260,7 +2260,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [240/301] l1 l1$ uptime
-   08:13:24 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:02:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [241/301] l1 l1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2276,45 +2276,45 @@ Total steps: 301
 
 [243/301] l1 l1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    08:13       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    08:13       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    08:13       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    08:13       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    08:13       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    08:13       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    08:13       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    08:13       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    08:13       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    08:13       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    08:13       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    08:13       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    08:13       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    08:13       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    08:13       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    08:13       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    08:13       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    08:13       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1   45643   4152 ?        S    08:13       00:00 /usr/sbin/chronyd -F 1
-  root        25  0.0  0.1    9414   2302 ?        S    08:13       00:00 /usr/sbin/cron -f
-  root        26  0.0  0.1  205896   4448 ?        S    08:13       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        27  0.0  0.1   84501   4290 ?        S    08:13       00:00 /sbin/auditd
-  root        28  0.0  0.0    8129   1590 ?        S    08:13       00:00 /usr/sbin/atd -f
-  systemd+    29  0.0  0.2   93688   6591 ?        S    08:13       00:00 /lib/systemd/systemd-resolved
-  root        30  0.0  0.1   52080   5199 ?        S    08:13       00:00 /lib/systemd/systemd-journald
-  root        31  0.0  0.1   80778   3859 ?        S    08:13       00:00 /lib/systemd/systemd-logind
-  message+    32  0.0  0.1    9519   3505 ?        S    08:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        33  0.0  0.1   46522   4207 ?        S    08:13       00:00 /sbin/ifup -a --read-environment
-  root        34  0.0  0.1   87629   4847 ?        S    08:13       00:00 /lib/systemd/systemd-networkd
-  root        35  0.0  0.1   51446   4516 ?        S    08:13       00:00 /lib/ufw/ufw-init start quiet
-  root        36  0.0  0.1   47803   4288 ?        S    08:13       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        37  0.0  0.0    3166    256 ?        S    08:13       00:00 /lib/apparmor/apparmor.systemd reload
-  user        38  0.0  0.1   10240   4096 pts/0    S    08:13       00:00 -bash
-  user        39  0.0  0.1   12288   3072 pts/0    R    08:13       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    10:02       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    10:02       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    10:02       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    10:02       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    10:02       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    10:02       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    10:02       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    10:02       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    10:02       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    10:02       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    10:02       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    10:02       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    10:02       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    10:02       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    10:02       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    10:02       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    10:02       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    10:02       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    10:02       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    10:02       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    10:02       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    10:02       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    10:02       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    10:02       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    10:02       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    10:02       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    10:02       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    10:02       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    10:02       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    10:02       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    10:02       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    10:02       00:00 /lib/apparmor/apparmor.systemd reload
+  user        38  0.0  0.1   10240   4096 pts/0    S    10:02       00:00 -bash
+  user        39  0.0  0.1   12288   3072 pts/0    R    10:02       00:00 ps
 
 [244/301] l1 l1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2354,7 +2354,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [246/301] srv1 srv1$ uptime
-   08:13:24 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:02:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [247/301] srv1 srv1$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2370,47 +2370,47 @@ Total steps: 301
 
 [249/301] srv1 srv1$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    08:13       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    08:13       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    08:13       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    08:13       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    08:13       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    08:13       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    08:13       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    08:13       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    08:13       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    08:13       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    08:13       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    08:13       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    08:13       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    08:13       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    08:13       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    08:13       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    08:13       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    08:13       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1   45643   4152 ?        S    08:13       00:00 /usr/sbin/chronyd -F 1
-  root        25  0.0  0.1    9414   2302 ?        S    08:13       00:00 /usr/sbin/cron -f
-  root        26  0.0  0.1  205896   4448 ?        S    08:13       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        27  0.0  0.1   84501   4290 ?        S    08:13       00:00 /sbin/auditd
-  root        28  0.0  0.0    8129   1590 ?        S    08:13       00:00 /usr/sbin/atd -f
-  systemd+    29  0.0  0.2   93688   6591 ?        S    08:13       00:00 /lib/systemd/systemd-resolved
-  root        30  0.0  0.1   52080   5199 ?        S    08:13       00:00 /lib/systemd/systemd-journald
-  root        31  0.0  0.1   80778   3859 ?        S    08:13       00:00 /lib/systemd/systemd-logind
-  message+    32  0.0  0.1    9519   3505 ?        S    08:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        33  0.0  0.1   46522   4207 ?        S    08:13       00:00 /sbin/ifup -a --read-environment
-  root        34  0.0  0.1   87629   4847 ?        S    08:13       00:00 /lib/systemd/systemd-networkd
-  root        35  0.0  0.1   51446   4516 ?        S    08:13       00:00 /lib/ufw/ufw-init start quiet
-  root        36  0.0  0.1   47803   4288 ?        S    08:13       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        37  0.0  0.0    3166    256 ?        S    08:13       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      38  0.0  0.1   45552   4146 ?        S    08:13       00:00 /etc/init.d/init.ohasd run
-  freerad     39  0.0  0.1   43958   4047 ?        S    08:13       00:00 /usr/sbin/freeradius
-  root        40  0.0  0.1   10240   4096 pts/0    S    08:13       00:00 -bash
-  root        41  0.0  0.1   12288   3072 pts/0    R    08:13       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    10:02       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    10:02       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    10:02       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    10:02       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    10:02       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    10:02       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    10:02       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    10:02       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    10:02       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    10:02       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    10:02       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    10:02       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    10:02       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    10:02       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    10:02       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    10:02       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    10:02       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    10:02       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    10:02       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    10:02       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    10:02       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    10:02       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    10:02       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    10:02       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    10:02       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    10:02       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    10:02       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    10:02       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    10:02       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    10:02       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    10:02       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    10:02       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      38  0.0  0.1   45552   4146 ?        S    10:02       00:00 /etc/init.d/init.ohasd run
+  freerad     39  0.0  0.1   43958   4047 ?        S    10:02       00:00 /usr/sbin/freeradius
+  root        40  0.0  0.1   10240   4096 pts/0    S    10:02       00:00 -bash
+  root        41  0.0  0.1   12288   3072 pts/0    R    10:02       00:00 ps
 
 [250/301] srv1 srv1$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2459,7 +2459,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/13/2026, 8:13:19 AM
+  System Boot Time:          8/13/2026, 10:02:27 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -2736,7 +2736,7 @@ Total steps: 301
   Linux linux-pc 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [256/301] l2 l2$ uptime
-   08:13:24 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:02:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/301] l2 l2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -2752,45 +2752,45 @@ Total steps: 301
 
 [259/301] l2 l2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    08:13       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    08:13       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    08:13       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    08:13       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    08:13       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    08:13       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    08:13       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    08:13       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    08:13       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    08:13       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    08:13       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    08:13       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    08:13       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    08:13       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    08:13       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    08:13       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    08:13       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    08:13       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1   45643   4152 ?        S    08:13       00:00 /usr/sbin/chronyd -F 1
-  root        25  0.0  0.1    9414   2302 ?        S    08:13       00:00 /usr/sbin/cron -f
-  root        26  0.0  0.1  205896   4448 ?        S    08:13       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        27  0.0  0.1   84501   4290 ?        S    08:13       00:00 /sbin/auditd
-  root        28  0.0  0.0    8129   1590 ?        S    08:13       00:00 /usr/sbin/atd -f
-  systemd+    29  0.0  0.2   93688   6591 ?        S    08:13       00:00 /lib/systemd/systemd-resolved
-  root        30  0.0  0.1   52080   5199 ?        S    08:13       00:00 /lib/systemd/systemd-journald
-  root        31  0.0  0.1   80778   3859 ?        S    08:13       00:00 /lib/systemd/systemd-logind
-  message+    32  0.0  0.1    9519   3505 ?        S    08:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        33  0.0  0.1   46522   4207 ?        S    08:13       00:00 /sbin/ifup -a --read-environment
-  root        34  0.0  0.1   87629   4847 ?        S    08:13       00:00 /lib/systemd/systemd-networkd
-  root        35  0.0  0.1   51446   4516 ?        S    08:13       00:00 /lib/ufw/ufw-init start quiet
-  root        36  0.0  0.1   47803   4288 ?        S    08:13       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        37  0.0  0.0    3166    256 ?        S    08:13       00:00 /lib/apparmor/apparmor.systemd reload
-  user        38  0.0  0.1   10240   4096 pts/0    S    08:13       00:00 -bash
-  user        39  0.0  0.1   12288   3072 pts/0    R    08:13       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    10:02       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    10:02       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    10:02       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    10:02       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    10:02       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    10:02       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    10:02       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    10:02       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    10:02       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    10:02       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    10:02       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    10:02       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    10:02       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    10:02       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    10:02       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    10:02       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    10:02       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    10:02       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    10:02       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    10:02       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    10:02       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    10:02       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    10:02       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    10:02       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    10:02       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    10:02       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    10:02       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    10:02       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    10:02       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    10:02       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    10:02       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    10:02       00:00 /lib/apparmor/apparmor.systemd reload
+  user        38  0.0  0.1   10240   4096 pts/0    S    10:02       00:00 -bash
+  user        39  0.0  0.1   12288   3072 pts/0    R    10:02       00:00 ps
 
 [260/301] l2 l2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -2833,7 +2833,7 @@ Total steps: 301
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/13/2026, 8:13:19 AM
+  System Boot Time:          8/13/2026, 10:02:27 AM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3110,7 +3110,7 @@ Total steps: 301
   Linux linux-server 5.15.0-130-generic #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
 
 [266/301] srv2 srv2$ uptime
-   08:13:24 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   10:02:27 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [267/301] srv2 srv2$ free -m
                  total        used        free      shared  buff/cache   available
@@ -3126,47 +3126,47 @@ Total steps: 301
 
 [269/301] srv2 srv2$ ps aux
   USER     PID   %CPU %MEM VSZ     RSS    TTY      STAT START    TIME     COMMAND
-  root         1  0.0  0.3  169000  13000 ?        S    08:13       00:00 /sbin/init
-  root         2  0.0  0.0       0      0 ?        S    08:13       00:00 [kthreadd]
-  root         3  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_gp]
-  root         4  0.0  0.0       0      0 ?        S    08:13       00:00 [rcu_par_gp]
-  root         5  0.0  0.0       0      0 ?        I    08:13       00:00 [slub_flushwq]
-  root         6  0.0  0.0       0      0 ?        S    08:13       00:00 [netns]
-  root         7  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:0-events]
-  root         8  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/0:1-events]
-  root         9  0.0  0.0       0      0 ?        I    08:13       00:00 [kworker/1:0-events]
-  root        10  0.0  0.0       0      0 ?        I    08:13       00:00 [mm_percpu_wq]
-  root        11  0.0  0.0       0      0 ?        S    08:13       00:00 [ksoftirqd/0]
-  root        12  0.0  0.0       0      0 ?        S    08:13       00:00 [migration/0]
-  root        13  0.0  0.0       0      0 ?        S    08:13       00:00 [cpuhp/0]
-  root        14  0.0  0.0       0      0 ?        S    08:13       00:00 [kdevtmpfs]
-  root        15  0.0  0.0       0      0 ?        S    08:13       00:00 [kauditd]
-  root        16  0.0  0.0       0      0 ?        S    08:13       00:00 [khungtaskd]
-  root        17  0.0  0.0       0      0 ?        S    08:13       00:00 [oom_reaper]
-  root        18  0.0  0.0       0      0 ?        I    08:13       00:00 [writeback]
-  root        19  0.0  0.0       0      0 ?        S    08:13       00:00 [kcompactd0]
-  root        20  0.0  0.0       0      0 ?        S    08:13       00:00 [kswapd0]
-  root        21  0.0  0.0       0      0 ?        S    08:13       00:00 [jbd2/sda1-8]
-  root        22  0.0  0.1   44083   4054 ?        S    08:13       00:00 /usr/sbin/sshd -D
-  root        23  0.0  0.1   47246   4253 ?        S    08:13       00:00 /usr/bin/fail2ban-server -xf start
-  root        24  0.0  0.1   45643   4152 ?        S    08:13       00:00 /usr/sbin/chronyd -F 1
-  root        25  0.0  0.1    9414   2302 ?        S    08:13       00:00 /usr/sbin/cron -f
-  root        26  0.0  0.1  205896   4448 ?        S    08:13       00:00 /usr/sbin/rsyslogd -n -iNONE
-  root        27  0.0  0.1   84501   4290 ?        S    08:13       00:00 /sbin/auditd
-  root        28  0.0  0.0    8129   1590 ?        S    08:13       00:00 /usr/sbin/atd -f
-  systemd+    29  0.0  0.2   93688   6591 ?        S    08:13       00:00 /lib/systemd/systemd-resolved
-  root        30  0.0  0.1   52080   5199 ?        S    08:13       00:00 /lib/systemd/systemd-journald
-  root        31  0.0  0.1   80778   3859 ?        S    08:13       00:00 /lib/systemd/systemd-logind
-  message+    32  0.0  0.1    9519   3505 ?        S    08:13       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
-  root        33  0.0  0.1   46522   4207 ?        S    08:13       00:00 /sbin/ifup -a --read-environment
-  root        34  0.0  0.1   87629   4847 ?        S    08:13       00:00 /lib/systemd/systemd-networkd
-  root        35  0.0  0.1   51446   4516 ?        S    08:13       00:00 /lib/ufw/ufw-init start quiet
-  root        36  0.0  0.1   47803   4288 ?        S    08:13       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
-  root        37  0.0  0.0    3166    256 ?        S    08:13       00:00 /lib/apparmor/apparmor.systemd reload
-  oracle      38  0.0  0.1   45552   4146 ?        S    08:13       00:00 /etc/init.d/init.ohasd run
-  freerad     39  0.0  0.1   43958   4047 ?        S    08:13       00:00 /usr/sbin/freeradius
-  root        40  0.0  0.1   10240   4096 pts/0    S    08:13       00:00 -bash
-  root        41  0.0  0.1   12288   3072 pts/0    R    08:13       00:00 ps
+  root         1  0.0  0.3  169000  13000 ?        S    10:02       00:00 /sbin/init
+  root         2  0.0  0.0       0      0 ?        S    10:02       00:00 [kthreadd]
+  root         3  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_gp]
+  root         4  0.0  0.0       0      0 ?        S    10:02       00:00 [rcu_par_gp]
+  root         5  0.0  0.0       0      0 ?        I    10:02       00:00 [slub_flushwq]
+  root         6  0.0  0.0       0      0 ?        S    10:02       00:00 [netns]
+  root         7  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:0-events]
+  root         8  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/0:1-events]
+  root         9  0.0  0.0       0      0 ?        I    10:02       00:00 [kworker/1:0-events]
+  root        10  0.0  0.0       0      0 ?        I    10:02       00:00 [mm_percpu_wq]
+  root        11  0.0  0.0       0      0 ?        S    10:02       00:00 [ksoftirqd/0]
+  root        12  0.0  0.0       0      0 ?        S    10:02       00:00 [migration/0]
+  root        13  0.0  0.0       0      0 ?        S    10:02       00:00 [cpuhp/0]
+  root        14  0.0  0.0       0      0 ?        S    10:02       00:00 [kdevtmpfs]
+  root        15  0.0  0.0       0      0 ?        S    10:02       00:00 [kauditd]
+  root        16  0.0  0.0       0      0 ?        S    10:02       00:00 [khungtaskd]
+  root        17  0.0  0.0       0      0 ?        S    10:02       00:00 [oom_reaper]
+  root        18  0.0  0.0       0      0 ?        I    10:02       00:00 [writeback]
+  root        19  0.0  0.0       0      0 ?        S    10:02       00:00 [kcompactd0]
+  root        20  0.0  0.0       0      0 ?        S    10:02       00:00 [kswapd0]
+  root        21  0.0  0.0       0      0 ?        S    10:02       00:00 [jbd2/sda1-8]
+  root        22  0.0  0.1   44083   4054 ?        S    10:02       00:00 /usr/sbin/sshd -D
+  root        23  0.0  0.1   47246   4253 ?        S    10:02       00:00 /usr/bin/fail2ban-server -xf start
+  root        24  0.0  0.1   45643   4152 ?        S    10:02       00:00 /usr/sbin/chronyd -F 1
+  root        25  0.0  0.1    9414   2302 ?        S    10:02       00:00 /usr/sbin/cron -f
+  root        26  0.0  0.1  205896   4448 ?        S    10:02       00:00 /usr/sbin/rsyslogd -n -iNONE
+  root        27  0.0  0.1   84501   4290 ?        S    10:02       00:00 /sbin/auditd
+  root        28  0.0  0.0    8129   1590 ?        S    10:02       00:00 /usr/sbin/atd -f
+  systemd+    29  0.0  0.2   93688   6591 ?        S    10:02       00:00 /lib/systemd/systemd-resolved
+  root        30  0.0  0.1   52080   5199 ?        S    10:02       00:00 /lib/systemd/systemd-journald
+  root        31  0.0  0.1   80778   3859 ?        S    10:02       00:00 /lib/systemd/systemd-logind
+  message+    32  0.0  0.1    9519   3505 ?        S    10:02       00:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  root        33  0.0  0.1   46522   4207 ?        S    10:02       00:00 /sbin/ifup -a --read-environment
+  root        34  0.0  0.1   87629   4847 ?        S    10:02       00:00 /lib/systemd/systemd-networkd
+  root        35  0.0  0.1   51446   4516 ?        S    10:02       00:00 /lib/ufw/ufw-init start quiet
+  root        36  0.0  0.1   47803   4288 ?        S    10:02       00:00 /usr/share/netfilter-persistent/netfilter-persistent start
+  root        37  0.0  0.0    3166    256 ?        S    10:02       00:00 /lib/apparmor/apparmor.systemd reload
+  oracle      38  0.0  0.1   45552   4146 ?        S    10:02       00:00 /etc/init.d/init.ohasd run
+  freerad     39  0.0  0.1   43958   4047 ?        S    10:02       00:00 /usr/sbin/freeradius
+  root        40  0.0  0.1   10240   4096 pts/0    S    10:02       00:00 -bash
+  root        41  0.0  0.1   12288   3072 pts/0    R    10:02       00:00 ps
 
 [270/301] srv2 srv2$ systemctl list-units --type=service
     UNIT                          LOAD   ACTIVE SUB     DESCRIPTION
@@ -3280,7 +3280,7 @@ Total steps: 301
 
 [278/301] sw2 SW2> show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC2941WWX0
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC9849ZL35
 
 [279/301] sw2 SW2> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -3363,7 +3363,7 @@ Total steps: 301
 
 [287/301] core CORE> show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC4370F7D1
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC9906WB6S
 
 [288/301] core CORE> show processes memory
   Processor Pool Total: 0 Used: 0 Free: 0
@@ -3418,21 +3418,21 @@ Total steps: 301
 --- [299] § final connectivity check ---
 [299/301] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.339 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.904 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=1.070 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.629 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.339/1.622/1.904/0.282 ms
+  rtt min/avg/max/mdev = 0.629/0.850/1.070/0.221 ms
 
 [300/301] srv2 srv2$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.430 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=1.372 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.818 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.580 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.372/1.401/1.430/0.029 ms
+  rtt min/avg/max/mdev = 0.580/0.699/0.818/0.119 ms
 
 [301/301] sw1 SW1# show mac address-table
   Mac Address Table

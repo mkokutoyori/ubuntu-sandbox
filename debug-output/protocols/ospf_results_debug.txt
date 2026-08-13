@@ -646,97 +646,97 @@ Total steps: 400
 --- [99] § OSPF — matrice de joignabilité (routage dynamique) ---
 [99/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.488 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.819 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.231 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.776 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.819/1.153/1.488/0.335 ms
+  rtt min/avg/max/mdev = 0.776/1.003/1.231/0.227 ms
 
 [100/400] lhq lhq$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.840 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.710 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.830 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=1.032 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.710/0.775/0.840/0.065 ms
+  rtt min/avg/max/mdev = 0.830/0.931/1.032/0.101 ms
 
 [101/400] lhq lhq$ ping -c 2 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.751 ms
-  64 bytes from 10.2.2.11: icmp_seq=2 ttl=62 time=0.699 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.649 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=62 time=0.820 ms
   
   --- 10.2.2.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.699/0.725/0.751/0.026 ms
+  rtt min/avg/max/mdev = 0.649/0.735/0.820/0.085 ms
 
 [102/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.788 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.522 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.732 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.500 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.522/0.655/0.788/0.133 ms
+  rtt min/avg/max/mdev = 0.500/0.616/0.732/0.116 ms
 
 [103/400] ldc ldc$ ping -c 2 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=3.068 ms
-  64 bytes from 10.2.2.11: icmp_seq=2 ttl=61 time=0.693 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.663 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=61 time=0.736 ms
   
   --- 10.2.2.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.693/1.880/3.068/1.188 ms
+  rtt min/avg/max/mdev = 0.663/0.699/0.736/0.037 ms
 
 [104/400] lbr lbr$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.642 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.838 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.559 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.541 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.642/0.740/0.838/0.098 ms
+  rtt min/avg/max/mdev = 0.541/0.550/0.559/0.009 ms
 
 [105/400] lbr lbr$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.696 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=61 time=0.687 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.573 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=61 time=0.661 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.687/0.691/0.696/0.005 ms
+  rtt min/avg/max/mdev = 0.573/0.617/0.661/0.044 ms
 
 [106/400] srvdc srvdc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=3.717 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=1.045 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.535 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.484 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.045/2.381/3.717/1.336 ms
+  rtt min/avg/max/mdev = 0.484/0.509/0.535/0.025 ms
 
 [107/400] whq whq$ ping -n 2 10.3.3.10
   
   Pinging 10.3.3.10 with 32 bytes of data:
-  Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.3.3.10: bytes=32 time=1ms TTL=62
   Reply from 10.3.3.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.3.3.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 1ms, Average = 1ms
 
 [108/400] wbr wbr$ ping -n 2 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
-  Reply from 10.1.1.10: bytes=32 time=3ms TTL=62
+  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 3ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [109/400] rhq R-HQ# traceroute 10.2.2.11
   Type escape sequence to abort.
@@ -744,13 +744,13 @@ Total steps: 400
   VRF info: (vrf in name/id, vrf out name/id)
   
     1 172.16.12.2  1 msec 0 msec 0 msec
-    2 10.2.2.11  0 msec 0 msec 0 msec
+    2 10.2.2.11  0 msec 0 msec 1 msec
 
 [110/400] ldc ldc$ traceroute -n -m 6 10.2.2.11
-   1  10.3.3.1  0.696  0.411  0.360
-   2  172.16.13.1  0.434  0.638  0.529
-   3  172.16.12.2  0.718  0.551  0.539
-   4  10.2.2.11  0.761  0.640  0.555
+   1  10.3.3.1  0.561  0.410  0.273
+   2  172.16.13.1  0.467  0.375  0.561
+   3  172.16.12.2  0.530  0.509  0.433
+   4  10.2.2.11  0.651  0.545  0.602
 
 
 --- [111] § OSPF — coût & métriques ---
@@ -1026,12 +1026,12 @@ Total steps: 400
 
 [175/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.977 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.624 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.587 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.533 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.624/0.800/0.977/0.176 ms
+  rtt min/avg/max/mdev = 0.533/1.060/1.587/0.527 ms
 
 
 --- [176] § OSPF — authentification MD5 (Cisco HQ-DC) ---
@@ -1084,12 +1084,12 @@ Total steps: 400
 
 [190/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.880 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.562 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.646 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.507 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.562/0.721/0.880/0.159 ms
+  rtt min/avg/max/mdev = 0.507/0.577/0.646/0.069 ms
 
 
 --- [191] § OSPF — authentification (Huawei HQ-BR) ---
@@ -1299,11 +1299,11 @@ Total steps: 400
 --- [242] § OSPF — convergence sur panne de lien (HQ-DC) ---
 [242/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.232 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.898 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.232/1.232/1.232/0.000 ms
+  rtt min/avg/max/mdev = 0.898/0.898/0.898/0.000 ms
 
 [243/400] rhq R-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1355,12 +1355,12 @@ Total steps: 400
 
 [256/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.882 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.549 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.669 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.572 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.549/0.716/0.882/0.167 ms
+  rtt min/avg/max/mdev = 0.572/0.621/0.669/0.049 ms
 
 
 --- [257] § OSPF — reset des compteurs & vérification ---
@@ -1387,21 +1387,21 @@ Total steps: 400
 
 [262/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.714 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.621 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.572 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.620 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.621/0.668/0.714/0.046 ms
+  rtt min/avg/max/mdev = 0.572/0.596/0.620/0.024 ms
 
 [263/400] lhq lhq$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.614 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=1.713 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.685 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.485 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.614/1.164/1.713/0.550 ms
+  rtt min/avg/max/mdev = 0.485/0.585/0.685/0.100 ms
 
 
 --- [264] § OSPF — statistiques, SPF & process ---
@@ -1741,11 +1741,11 @@ Total steps: 400
 
 [294/400] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.695 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.614 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.695/0.695/0.695/0.000 ms
+  rtt min/avg/max/mdev = 0.614/0.614/0.614/0.000 ms
 
 [295/400] lbr lbr$ ip route show default
   10.2.2.0/24 dev eth0 proto kernel scope link src 10.2.2.11 metric 0
@@ -1753,11 +1753,11 @@ Total steps: 400
 
 [296/400] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=0.614 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=0.513 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.614/0.614/0.614/0.000 ms
+  rtt min/avg/max/mdev = 0.513/0.513/0.513/0.000 ms
 
 [297/400] ldc ldc$ ip route show default
   10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.11 metric 0
@@ -1765,11 +1765,11 @@ Total steps: 400
 
 [298/400] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.322 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.266 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.322/0.322/0.322/0.000 ms
+  rtt min/avg/max/mdev = 0.266/0.266/0.266/0.000 ms
 
 [299/400] srvdc srvdc$ ip route show default
   10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.10 metric 0
@@ -1777,11 +1777,11 @@ Total steps: 400
 
 [300/400] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.338 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=4.345 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.338/0.338/0.338/0.000 ms
+  rtt min/avg/max/mdev = 4.345/4.345/4.345/0.000 ms
 
 [301/400] whq whq$ route print
   ===========================================================================
@@ -1811,8 +1811,8 @@ Total steps: 400
   Tracing route to 10.1.1.10 over a maximum of 6 hops:
   
      1    <1 ms    <1 ms    <1 ms    10.2.2.1
-     2    <1 ms    1 ms     <1 ms    172.16.12.1
-     3    1 ms     1 ms     4 ms     10.1.1.10
+     2    <1 ms    <1 ms    <1 ms    172.16.12.1
+     3    1 ms     2 ms     <1 ms    10.1.1.10
   
   Trace complete.
 
@@ -2152,187 +2152,187 @@ Total steps: 400
 --- [333] § OSPF — matrice de joignabilité complète post-features ---
 [333/400] lhq lhq$ ping -c 1 10.3.3.11
   PING 10.3.3.11 (10.3.3.11) 56(84) bytes of data.
-  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=4.085 ms
+  64 bytes from 10.3.3.11: icmp_seq=1 ttl=62 time=1.570 ms
   
   --- 10.3.3.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 4.085/4.085/4.085/0.000 ms
+  rtt min/avg/max/mdev = 1.570/1.570/1.570/0.000 ms
 
 [334/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=1.815 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.283 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.815/1.815/1.815/0.000 ms
+  rtt min/avg/max/mdev = 0.283/0.283/0.283/0.000 ms
 
 [335/400] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.526 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.452 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.526/0.526/0.526/0.000 ms
+  rtt min/avg/max/mdev = 0.452/0.452/0.452/0.000 ms
 
 [336/400] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=1.992 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=253 time=0.415 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.992/1.992/1.992/0.000 ms
+  rtt min/avg/max/mdev = 0.415/0.415/0.415/0.000 ms
 
 [337/400] lhq lhq$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.767 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.497 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.767/0.767/0.767/0.000 ms
+  rtt min/avg/max/mdev = 0.497/0.497/0.497/0.000 ms
 
 [338/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.856 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.632 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.856/1.856/1.856/0.000 ms
+  rtt min/avg/max/mdev = 0.632/0.632/0.632/0.000 ms
 
 [339/400] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=3.127 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.490 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 3.127/3.127/3.127/0.000 ms
+  rtt min/avg/max/mdev = 0.490/0.490/0.490/0.000 ms
 
 [340/400] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.310 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.235 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.310/0.310/0.310/0.000 ms
+  rtt min/avg/max/mdev = 0.235/0.235/0.235/0.000 ms
 
 [341/400] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=12.702 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=252 time=0.439 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 12.702/12.702/12.702/0.000 ms
+  rtt min/avg/max/mdev = 0.439/0.439/0.439/0.000 ms
 
 [342/400] lbr lbr$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.468 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.564 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.468/1.468/1.468/0.000 ms
+  rtt min/avg/max/mdev = 0.564/0.564/0.564/0.000 ms
 
 [343/400] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.305 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.191 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.305/0.305/0.305/0.000 ms
+  rtt min/avg/max/mdev = 0.191/0.191/0.191/0.000 ms
 
 [344/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=8.197 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.974 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 8.197/8.197/8.197/0.000 ms
+  rtt min/avg/max/mdev = 0.974/0.974/0.974/0.000 ms
 
 [345/400] ldc ldc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.538 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.430 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.538/0.538/0.538/0.000 ms
+  rtt min/avg/max/mdev = 0.430/0.430/0.430/0.000 ms
 
 [346/400] ldc ldc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.528 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.503 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.528/0.528/0.528/0.000 ms
+  rtt min/avg/max/mdev = 0.503/0.503/0.503/0.000 ms
 
 [347/400] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.246 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.228 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.246/0.246/0.246/0.000 ms
+  rtt min/avg/max/mdev = 0.228/0.228/0.228/0.000 ms
 
 [348/400] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.554 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.467 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.554/0.554/0.554/0.000 ms
+  rtt min/avg/max/mdev = 0.467/0.467/0.467/0.000 ms
 
 [349/400] ldc ldc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.758 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.620 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.758/0.758/0.758/0.000 ms
+  rtt min/avg/max/mdev = 0.620/0.620/0.620/0.000 ms
 
 [350/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.423 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.214 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.423/0.423/0.423/0.000 ms
+  rtt min/avg/max/mdev = 0.214/0.214/0.214/0.000 ms
 
 [351/400] srvdc srvdc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.373 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.363 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.373/0.373/0.373/0.000 ms
+  rtt min/avg/max/mdev = 0.363/0.363/0.363/0.000 ms
 
 [352/400] srvdc srvdc$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.526 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=252 time=0.449 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.526/0.526/0.526/0.000 ms
+  rtt min/avg/max/mdev = 0.449/0.449/0.449/0.000 ms
 
 [353/400] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.233 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.202 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.233/0.233/0.233/0.000 ms
+  rtt min/avg/max/mdev = 0.202/0.202/0.202/0.000 ms
 
 [354/400] srvdc srvdc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=1.147 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.466 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.147/1.147/1.147/0.000 ms
+  rtt min/avg/max/mdev = 0.466/0.466/0.466/0.000 ms
 
 [355/400] srvdc srvdc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.761 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.663 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.761/0.761/0.761/0.000 ms
+  rtt min/avg/max/mdev = 0.663/0.663/0.663/0.000 ms
 
 
 --- [356] § OSPF — protocoles & résumé routage ---
@@ -2525,35 +2525,35 @@ Total steps: 400
 
 [384/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.244 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=0.974 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.244/1.244/1.244/0.000 ms
+  rtt min/avg/max/mdev = 0.974/0.974/0.974/0.000 ms
 
 [385/400] ldc ldc$ ping -c 1 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.884 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.573 ms
   
   --- 10.2.2.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.884/0.884/0.884/0.000 ms
+  rtt min/avg/max/mdev = 0.573/0.573/0.573/0.000 ms
 
 [386/400] lbr lbr$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.593 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.527 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.593/0.593/0.593/0.000 ms
+  rtt min/avg/max/mdev = 0.527/0.527/0.527/0.000 ms
 
 [387/400] srvdc srvdc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.762 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=125 time=0.664 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.762/0.762/0.762/0.000 ms
+  rtt min/avg/max/mdev = 0.664/0.664/0.664/0.000 ms
 
 [388/400] whq whq$ ping -n 1 10.2.2.11
   
@@ -2713,91 +2713,91 @@ Total steps: 400
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/0 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 0.5405840000021271ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 0.5711580000001959ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/1 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.02541199999905075ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.02253599999994549ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.03589300000021467ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.02194500000041444ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.09927400000015041ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.09338100000013583ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 2 routes, runtime 0.09128200000122888ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 2 routes, runtime 0.08290499999975509ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 4 routes, runtime 0.20415499999944586ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 4 routes, runtime 0.057967000000644475ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 4 routes, runtime 0.219597999999678ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.03582599999936065ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.030849000002490357ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 11), 4 routes, runtime 0.03898299999855226ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 12), 4 routes, runtime 0.03956999999718391ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 13), 4 routes, runtime 0.04021699999793782ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 14), 4 routes, runtime 0.03020000000105938ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 15), 4 routes, runtime 0.02912800000194693ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 16), 4 routes, runtime 0.028298999997787178ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 17), 4 routes, runtime 0.029277000001457054ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 18), 4 routes, runtime 0.027810999999928754ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 19), 4 routes, runtime 0.056612000000313856ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 20), 4 routes, runtime 0.05222900000080699ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 21), 4 routes, runtime 0.05430100000012317ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 22), 4 routes, runtime 0.0826889999989362ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 23), 4 routes, runtime 0.050042999999277527ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 24), 4 routes, runtime 0.06501600000046892ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 25), 4 routes, runtime 0.04531700000006822ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 26), 4 routes, runtime 0.04085099999792874ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 27), 4 routes, runtime 0.02925899999900139ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 28), 4 routes, runtime 0.02928800000154297ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 29), 4 routes, runtime 0.054717999999411404ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 30), 4 routes, runtime 0.04640099999960512ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 31), 4 routes, runtime 0.03308900000047288ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 32), 4 routes, runtime 0.028549000002385583ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 33), 4 routes, runtime 0.028460999998060288ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 34), 4 routes, runtime 0.028900000001158332ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 35), 4 routes, runtime 0.07785700000022189ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 36), 4 routes, runtime 0.049245000001974404ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 37), 4 routes, runtime 0.041420000001380686ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 4 routes, runtime 0.1754040000000714ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 4 routes, runtime 0.042369000000235246ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 4 routes, runtime 0.08695699999998396ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.0531700000001365ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.03140099999973245ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 11), 4 routes, runtime 0.03792299999986426ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 12), 4 routes, runtime 0.03810599999997066ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 13), 4 routes, runtime 0.03852699999970355ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 14), 4 routes, runtime 0.029575000000022555ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 15), 4 routes, runtime 0.029685999999855994ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 16), 4 routes, runtime 0.027009999999791034ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 17), 4 routes, runtime 0.028224000000136584ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 18), 4 routes, runtime 0.027990000000045256ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 19), 4 routes, runtime 0.03909199999998236ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 20), 4 routes, runtime 0.04003800000009505ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 21), 4 routes, runtime 0.07263600000032966ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 22), 4 routes, runtime 0.03867600000012317ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 23), 4 routes, runtime 0.038016999999854306ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 24), 4 routes, runtime 0.036127000000306ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 25), 4 routes, runtime 0.03588000000036118ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 26), 4 routes, runtime 0.025399000000106753ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 27), 4 routes, runtime 0.025754999999662687ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 28), 4 routes, runtime 0.026832999999896856ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 29), 4 routes, runtime 0.03629499999988184ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 30), 4 routes, runtime 0.03813399999989997ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 31), 4 routes, runtime 0.028694999999970605ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 32), 4 routes, runtime 0.03374000000030719ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 33), 4 routes, runtime 0.02876299999979892ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 34), 4 routes, runtime 0.028103999999984808ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 35), 4 routes, runtime 0.04694900000004054ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 36), 4 routes, runtime 0.04934000000002925ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 37), 4 routes, runtime 0.04378899999983332ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 38), 4 routes, runtime 0.050694000001385575ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 39), 4 routes, runtime 0.06070499999987078ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 40), 4 routes, runtime 0.04921499999909429ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 38), 4 routes, runtime 0.04013699999995879ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 39), 4 routes, runtime 0.04520199999979013ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 40), 4 routes, runtime 0.040318000000297616ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from DR to PointToPoint
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 41), 4 routes, runtime 0.1534910000009404ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 41), 4 routes, runtime 0.14640100000042366ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from PointToPoint to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 42), 4 routes, runtime 0.04320299999744748ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 42), 4 routes, runtime 0.046441999999842665ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 43), 4 routes, runtime 0.05274999999892316ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 43), 4 routes, runtime 0.046291000000110216ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 44), 2 routes, runtime 0.03669900000022608ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 44), 2 routes, runtime 0.02606900000000678ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 45), 2 routes, runtime 0.023857000000134576ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 45), 2 routes, runtime 0.02347799999961353ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from dead interval mismatch to Mismatched dead parameters from 172.16.13.2: received 40, configured 20
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from dead interval mismatch to Mismatched dead parameters from 172.16.13.2: received 40, configured 20
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from dead interval mismatch to Mismatched dead parameters from 172.16.13.2: received 40, configured 20
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 46), 2 routes, runtime 0.025935999998182524ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 46), 2 routes, runtime 0.025406000000202766ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 47), 4 routes, runtime 0.04323099999965052ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 47), 4 routes, runtime 0.04245200000013938ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 48), 4 routes, runtime 0.039209000002301764ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 48), 4 routes, runtime 0.04085499999973763ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
@@ -2806,9 +2806,9 @@ Total steps: 400
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 4 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 49), 4 routes, runtime 0.04059100000085891ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 50), 4 routes, runtime 0.040435000002617016ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 51), 4 routes, runtime 0.032080999997560866ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 49), 4 routes, runtime 0.043756000000030326ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 50), 4 routes, runtime 0.03985099999999875ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 51), 4 routes, runtime 0.030623999999988882ms
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Full to Down, KillNbr
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Full -> Down, event KillNbr
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Full to Down, KillNbr
@@ -2825,90 +2825,90 @@ Total steps: 400
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 52), 4 routes, runtime 0.05062099999850034ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 53), 4 routes, runtime 0.04525399999693036ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 52), 4 routes, runtime 0.055821999999807304ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 53), 4 routes, runtime 0.047290999999859196ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 54), 4 routes, runtime 0.0319180000005872ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 55), 4 routes, runtime 0.20606499999848893ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 56), 4 routes, runtime 0.0576470000014524ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 57), 4 routes, runtime 0.17613400000118418ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 58), 4 routes, runtime 0.07426800000030198ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 54), 4 routes, runtime 0.03094599999985803ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 55), 4 routes, runtime 0.18721800000002986ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 56), 4 routes, runtime 0.05078000000003158ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 57), 4 routes, runtime 0.11566899999979796ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 58), 4 routes, runtime 0.06158199999981662ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 59), 4 routes, runtime 0.05349399999977322ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 60), 5 routes, runtime 0.03853700000036042ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 61), 5 routes, runtime 0.047918999996909406ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 59), 4 routes, runtime 0.041775000000143336ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 60), 5 routes, runtime 0.03724400000010064ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 61), 5 routes, runtime 0.03735800000004019ms
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Full to Down, KillNbr
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Full -> Down, event KillNbr
   *Jun  6 08:00:00.000: %LINK-5-CHANGED: Interface GigabitEthernet0/2, changed state to administratively down
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 62), 3 routes, runtime 0.05170200000065961ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 63), 3 routes, runtime 0.03676599999744212ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 64), 3 routes, runtime 0.04204299999764771ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 62), 3 routes, runtime 0.12462000000004991ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 63), 3 routes, runtime 0.035737000000153785ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 64), 3 routes, runtime 0.032977999999729946ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 65), 5 routes, runtime 0.08945500000118045ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 65), 5 routes, runtime 0.050917999999910535ms
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 66), 5 routes, runtime 0.04018599999835715ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 66), 5 routes, runtime 0.047752999999829626ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 67), 5 routes, runtime 0.05349500000011176ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 68), 5 routes, runtime 0.05334899999797926ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 69), 5 routes, runtime 0.06813999999940279ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 70), 5 routes, runtime 0.05952099999922211ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 71), 5 routes, runtime 0.03717500000129803ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 72), 5 routes, runtime 0.039566999999806285ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 73), 5 routes, runtime 0.04671299999972689ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 74), 5 routes, runtime 0.04713800000172341ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 75), 5 routes, runtime 0.04669099999955506ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 76), 5 routes, runtime 0.047607000000425614ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 77), 5 routes, runtime 0.05021200000192039ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 78), 5 routes, runtime 0.04586099999869475ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 79), 5 routes, runtime 0.03658699999868986ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 80), 5 routes, runtime 0.04142399999909685ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 81), 5 routes, runtime 0.0405559999999241ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 82), 5 routes, runtime 0.03934300000037183ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 83), 5 routes, runtime 0.03796599999986938ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 84), 5 routes, runtime 0.03999699999985751ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 85), 5 routes, runtime 0.04105699999854551ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 86), 5 routes, runtime 0.047694000000774395ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 87), 5 routes, runtime 0.042332000000897096ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 88), 5 routes, runtime 0.04069399999934831ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 89), 5 routes, runtime 0.04232100000081118ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 90), 5 routes, runtime 0.04125500000009197ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 91), 5 routes, runtime 0.05292600000029779ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 92), 5 routes, runtime 0.05065600000307313ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 93), 5 routes, runtime 0.04143800000019837ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 94), 5 routes, runtime 0.06486299999960465ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 95), 5 routes, runtime 0.033637000000453554ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 96), 5 routes, runtime 0.03002299999934621ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 97), 5 routes, runtime 0.02921700000297278ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 98), 5 routes, runtime 0.03090900000097463ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 99), 5 routes, runtime 0.028070000000298023ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 100), 5 routes, runtime 0.028215000002091983ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 101), 5 routes, runtime 0.026760999997350154ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 102), 5 routes, runtime 0.02716800000052899ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 103), 5 routes, runtime 0.04757400000016787ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 104), 5 routes, runtime 0.040444999998726416ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 105), 5 routes, runtime 0.03868499999953201ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 106), 5 routes, runtime 0.03880299999946146ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 107), 5 routes, runtime 0.054744000000937376ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 108), 5 routes, runtime 0.03103499999997439ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 109), 5 routes, runtime 0.030098999999609077ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 110), 5 routes, runtime 0.04058599999916623ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 111), 5 routes, runtime 0.037478999998711515ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 112), 5 routes, runtime 0.036714000001666136ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 113), 5 routes, runtime 0.05758599999899161ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 114), 5 routes, runtime 0.033240000000660075ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 115), 5 routes, runtime 0.045010999998339685ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 67), 5 routes, runtime 0.04605500000025131ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 68), 5 routes, runtime 0.045886000000336935ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 69), 5 routes, runtime 0.04712900000004083ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 70), 5 routes, runtime 0.044421000000056665ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 71), 5 routes, runtime 0.03324499999962427ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 72), 5 routes, runtime 0.04242500000009386ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 73), 5 routes, runtime 0.05464799999981551ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 74), 5 routes, runtime 0.05117000000018379ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 75), 5 routes, runtime 0.0524159999999938ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 76), 5 routes, runtime 0.05135199999995166ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 77), 5 routes, runtime 0.05727699999988545ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 78), 5 routes, runtime 2.8808180000000903ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 79), 5 routes, runtime 0.03586300000006304ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 80), 5 routes, runtime 0.03864999999996144ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 81), 5 routes, runtime 0.036454000000048836ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 82), 5 routes, runtime 0.037366000000019994ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 83), 5 routes, runtime 0.03886899999997695ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 84), 5 routes, runtime 0.04337600000008024ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 85), 5 routes, runtime 0.034341999999924155ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 86), 5 routes, runtime 0.04430199999978868ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 87), 5 routes, runtime 0.040041000000201166ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 88), 5 routes, runtime 0.03951499999993757ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 89), 5 routes, runtime 0.038594000000102824ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 90), 5 routes, runtime 0.03836300000011761ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 91), 5 routes, runtime 0.05093699999997625ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 92), 5 routes, runtime 0.04182700000001205ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 93), 5 routes, runtime 0.03969999999981155ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 94), 5 routes, runtime 0.029118999999809603ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 95), 5 routes, runtime 0.03079200000001947ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 96), 5 routes, runtime 0.03063400000019101ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 97), 5 routes, runtime 0.027358999999705702ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 98), 5 routes, runtime 0.03889800000024479ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 99), 5 routes, runtime 0.02677399999993213ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 100), 5 routes, runtime 0.025623999999879743ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 101), 5 routes, runtime 0.027212999999846943ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 102), 5 routes, runtime 0.02684799999997267ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 103), 5 routes, runtime 0.04010100000004968ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 104), 5 routes, runtime 0.0409429999999702ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 105), 5 routes, runtime 0.04120499999999083ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 106), 5 routes, runtime 0.037850000000162254ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 107), 5 routes, runtime 0.047027000000070984ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 108), 5 routes, runtime 0.03339200000027631ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 109), 5 routes, runtime 0.02841100000023289ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 110), 5 routes, runtime 0.03767500000003565ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 111), 5 routes, runtime 0.038493000000016764ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 112), 5 routes, runtime 0.03472300000021278ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 113), 5 routes, runtime 0.04938799999990806ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 114), 5 routes, runtime 0.035613999999895896ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 115), 5 routes, runtime 0.04026299999986804ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 116), 5 routes, runtime 0.039360999999189517ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 117), 5 routes, runtime 0.02616200000193203ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 116), 5 routes, runtime 0.039958000000297034ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 117), 5 routes, runtime 0.027303999999730877ms
 
 [400/400] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled

@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-02-vlan-access
-Generated: 2026-08-13T08:13:20.234Z
+Generated: 2026-08-13T10:02:29.298Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=VLAN lifecycle/ranges, access ports, inter-switch trunks, VLAN isolation, voice VLAN
 Total steps: 360
@@ -792,13 +792,13 @@ Total steps: 360
 --- [213] § connectivity: same VLAN across switches ---
 [213/360] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=3.289 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=1.546 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.316 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=7.564 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.827 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.675 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.316/2.050/3.289/0.881 ms
+  rtt min/avg/max/mdev = 0.675/3.022/7.564/3.212 ms
 
 [214/360] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
@@ -809,13 +809,13 @@ Total steps: 360
 
 [215/360] l2 l2$ ping -c 3 192.168.1.11
   PING 192.168.1.11 (192.168.1.11) 56(84) bytes of data.
-  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.937 ms
-  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=1.543 ms
-  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=1.356 ms
+  64 bytes from 192.168.1.11: icmp_seq=1 ttl=64 time=0.670 ms
+  64 bytes from 192.168.1.11: icmp_seq=2 ttl=64 time=0.625 ms
+  64 bytes from 192.168.1.11: icmp_seq=3 ttl=64 time=0.571 ms
   
   --- 192.168.1.11 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.937/1.279/1.543/0.253 ms
+  rtt min/avg/max/mdev = 0.571/0.622/0.670/0.040 ms
 
 [216/360] sw1 SW1# show mac address-table vlan 10
   Mac Address Table
@@ -853,9 +853,8 @@ Total steps: 360
   1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
   10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
   10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
-  40      02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
   
-  Total Mac Addresses for this criterion: 9
+  Total Mac Addresses for this criterion: 8
 
 
 --- [219] § connectivity: different VLAN, same switch (must fail) ---
@@ -908,7 +907,7 @@ Total steps: 360
 [227/360] w2 w2$ ping -n 1 192.168.1.11
   
   Pinging 192.168.1.11 with 32 bytes of data:
-  Reply from 192.168.1.11: bytes=32 time=1ms TTL=64
+  Reply from 192.168.1.11: bytes=32 time=<1ms TTL=64
   
   Ping statistics for 192.168.1.11:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
@@ -917,12 +916,12 @@ Total steps: 360
 
 [228/360] l1 l1$ ping -c 2 192.168.1.22
   PING 192.168.1.22 (192.168.1.22) 56(84) bytes of data.
-  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.597 ms
-  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=1.473 ms
+  64 bytes from 192.168.1.22: icmp_seq=1 ttl=128 time=0.505 ms
+  64 bytes from 192.168.1.22: icmp_seq=2 ttl=128 time=0.479 ms
   
   --- 192.168.1.22 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.597/1.035/1.473/0.438 ms
+  rtt min/avg/max/mdev = 0.479/0.492/0.505/0.013 ms
 
 
 --- [229] § voice VLAN ---
@@ -1387,9 +1386,8 @@ Total steps: 360
   10      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
   20      02:00:00:00:00:53 DYNAMIC     FastEthernet0/2
   20      02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/1
-  40      02:00:00:00:00:57 DYNAMIC     FastEthernet0/3
   
-  Total Mac Addresses for this criterion: 9
+  Total Mac Addresses for this criterion: 8
 
 [287/360] sw1 SW1# show running-config
   Building configuration...
@@ -1587,11 +1585,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       16 packets input, 1498 bytes, 0 no buffer
+       14 packets input, 1346 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       33 packets output, 2558 bytes, 0 underruns
+       24 packets output, 1958 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1612,7 +1610,7 @@ Total steps: 360
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       23 packets output, 1612 bytes, 0 underruns
+       16 packets output, 1164 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1629,11 +1627,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
+       3 packets input, 226 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       19 packets output, 1284 bytes, 0 underruns
+       12 packets output, 836 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2074,11 +2072,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       11 packets input, 988 bytes, 0 no buffer
+       9 packets input, 836 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       32 packets output, 2456 bytes, 0 underruns
+       23 packets output, 1856 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2099,7 +2097,7 @@ Total steps: 360
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       26 packets output, 1918 bytes, 0 underruns
+       19 packets output, 1470 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -2116,11 +2114,11 @@ Total steps: 360
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       5 packets input, 382 bytes, 0 no buffer
+       3 packets input, 226 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       19 packets output, 1284 bytes, 0 underruns
+       12 packets output, 836 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 

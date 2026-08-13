@@ -32,9 +32,17 @@ describe('Win32_NetworkAdapter', () => {
     const name = (await run(shell, 'Get-CimInstance -ClassName Win32_NetworkAdapter | Select-Object -ExpandProperty Name')).trim();
     expect(name).toContain('Ethernet');
 
+    // The two views name the same adapters, and each spells the address
+    // its own way — that is Windows, not a divergence to fix: WMI
+    // documents `Win32_NetworkAdapter.MACAddress` colon-separated
+    // (`00:0D:56:2A:53:0B`) while the NetAdapter cmdlets render hyphens.
+    // Asserting one string against the other encoded a format neither
+    // side actually uses; what has to agree is the address itself.
     const mac = (await run(shell, 'Get-CimInstance -ClassName Win32_NetworkAdapter | Select-Object -ExpandProperty MACAddress')).trim();
     const fromGetNetAdapter = (await run(shell, 'Get-NetAdapter | Select-Object -ExpandProperty MacAddress')).trim();
-    expect(mac).toBe(fromGetNetAdapter);
+    expect(mac).toMatch(/^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/im);
+    expect(fromGetNetAdapter).toMatch(/^(?:[0-9A-F]{2}-){5}[0-9A-F]{2}$/im);
+    expect(mac.replace(/:/g, '-')).toBe(fromGetNetAdapter);
   });
 
   it('gwmi alias resolves the same class', async () => {
