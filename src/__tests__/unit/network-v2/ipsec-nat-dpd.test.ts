@@ -34,6 +34,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 // ─── Helper : topologie NAT-T ───────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ describe('IPSec – NAT Traversal (NAT-T)', () => {
     const { r1, r2, pc1, pc2 } = await buildNATTopology();
 
     // PC2 initie (derrière le NAT) → R2 envoie IKE vers R1
-    const pingOut = await pc2.executeCommand('ping -c 4 192.168.1.10');
+    const pingOut = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(pingOut).toContain('4 received');
     expect(pingOut).toContain('0% packet loss');
 
@@ -287,7 +288,7 @@ describe('IPSec – NAT Traversal (NAT-T)', () => {
   it('5.02 – should switch from UDP 500 to UDP 4500 after NAT detection', async () => {
     const { r1, r2, pc1 } = await buildNATTopology();
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.2.10');
 
     // Avant NAT-T (pendant IKE_SA_INIT) → port 500
     // Après NAT-T détecté → port 4500 pour ESP et pour IKE_AUTH
@@ -306,7 +307,7 @@ describe('IPSec – NAT Traversal (NAT-T)', () => {
   it('5.03 – should send NAT-T keepalive packets on UDP 4500 to maintain NAT mapping', async () => {
     const { r1, r2, pc1 } = await buildNATTopology();
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.2.10');
 
     // Vérification que le keepalive NAT-T est configuré (20 secondes)
     const showIsakmp = await r1.executeCommand('show crypto isakmp');
@@ -326,7 +327,7 @@ describe('IPSec – Dead Peer Detection (DPD)', () => {
     const { r1, r2, pc1, cableWAN } = await buildDPDTopology(10, 3, 'periodic');
 
     // Établissement du tunnel
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
 
     // Vérification que les SAs sont présentes
     const saAvant = await r1.executeCommand('show crypto isakmp sa');
@@ -341,7 +342,7 @@ describe('IPSec – Dead Peer Detection (DPD)', () => {
     cableWAN.disconnect();
 
     // Vérification que R2 est inaccessible
-    const pingApres = await pc1.executeCommand('ping -c 1 192.168.2.10');
+    const pingApres = await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.2.10');
     expect(pingApres).toContain('100% packet loss');
 
     // Après l'expiration DPD (10s × 3 tentatives = 30s + marge),
@@ -358,7 +359,7 @@ describe('IPSec – Dead Peer Detection (DPD)', () => {
   it('5.05 – DPD on-demand should only probe when outbound traffic fails', async () => {
     const { r1, r2, pc1, cableWAN } = await buildDPDTopology(10, 3, 'on-demand');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.2.10');
 
     // Vérification de la configuration on-demand
     const ikeConfig = await r1.executeCommand('show crypto isakmp');
@@ -369,7 +370,7 @@ describe('IPSec – Dead Peer Detection (DPD)', () => {
 
     // Pas de traffic → pas de DPD probe encore (on-demand)
     // Un ping va déclencher le DPD
-    await pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.2.10');
 
     // Après le DPD on-demand, les SAs doivent être effacées
     const saApres = await r1.executeCommand('show crypto isakmp sa');
@@ -381,20 +382,20 @@ describe('IPSec – Dead Peer Detection (DPD)', () => {
     const { r1, r2, pc1, pc2, cableWAN } = await buildDPDTopology(10, 3, 'periodic');
 
     // Établissement initial
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     const saAvant = await r1.executeCommand('show crypto isakmp sa');
     expect(saAvant).toContain('QM_IDLE');
 
     // Déconnexion (peer mort)
     cableWAN.disconnect();
-    await pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.2.10');
 
     // Reconnexion du câble (peer de retour)
     const newCable = new Cable('wan-new');
     newCable.connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/1')!);
 
     // Le premier trafic intéressant doit déclencher la re-négociation
-    const pingRecovery = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingRecovery = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(pingRecovery).toContain('3 received');
     expect(pingRecovery).toContain('0% packet loss');
 

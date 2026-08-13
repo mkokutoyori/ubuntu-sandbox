@@ -19,6 +19,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 const GW_INSIDE = '192.168.10.254';
 const GW_OUTSIDE = '203.0.113.1';
@@ -86,7 +87,7 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
   describe('inventaire complet via show ip nat statistics', () => {
     it('expose Total/Static/Dynamic translations, interfaces Outside/Inside et Hits/Misses — toutes les données que le script d\'audit parse', async () => {
       const { pc1, router } = await buildLab();
-      await pc1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pc1, `ping -c 1 ${OUTSIDE_IP}`);
 
       const out = await router.executeCommand('show ip nat statistics');
       expect(out).toMatch(/Total active translations:\s*2\s*\(1 static,\s*1 dynamic/);
@@ -100,7 +101,7 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
 
     it('affiche Peak translations (charge maximale observée)', async () => {
       const { pc1, router } = await buildLab();
-      await pc1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pc1, `ping -c 1 ${OUTSIDE_IP}`);
       const out = await router.executeCommand('show ip nat statistics');
       expect(out).toMatch(/Peak translations:\s*\d+/);
     });
@@ -139,7 +140,7 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
       await router.executeCommand('ip nat inside source list ACL-INEXISTANTE interface GigabitEthernet0/1 overload');
       await router.executeCommand('end');
 
-      await pc1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pc1, `ping -c 1 ${OUTSIDE_IP}`);
       const translations = await router.executeCommand('show ip nat translations');
       expect(translations).not.toContain('192.168.10.10:');
     });
@@ -148,7 +149,7 @@ describe('Scénario 15 (Cisco) — rapport d\'audit NAT complet', () => {
   describe('signal de santé principal : Misses', () => {
     it('Misses reste à 0 sur une configuration NAT correcte malgré du trafic réel', async () => {
       const { pc1, router } = await buildLab();
-      await pc1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pc1, `ping -c 3 ${OUTSIDE_IP}`);
 
       const out = await router.executeCommand('show ip nat statistics');
       expect(out).toMatch(/Misses:\s*0/);

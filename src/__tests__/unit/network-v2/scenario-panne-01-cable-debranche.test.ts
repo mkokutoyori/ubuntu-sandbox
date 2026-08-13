@@ -16,6 +16,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock, isPingStep } from '../../support/fastPing';
 
 describe('Scénario 1 — câble débranché sur un poste Linux', () => {
   let sw: CiscoSwitch;
@@ -34,7 +35,9 @@ describe('Scénario 1 — câble débranché sur un poste Linux', () => {
     await installLinkCheck();
   });
 
-  const run = (cmd: string): Promise<string> => pc.executeCommand(cmd);
+  const run = (cmd: string): Promise<string> => (isPingStep(cmd)
+    ? pingOnSimulatedClock(pc, cmd)
+    : Promise.resolve(pc.executeCommand(cmd)));
   const swRun = (cmd: string): Promise<string> => sw.executeCommand(cmd);
 
   /**

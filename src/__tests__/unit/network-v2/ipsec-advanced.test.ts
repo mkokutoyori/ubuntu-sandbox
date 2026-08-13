@@ -18,6 +18,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 // ─── Helper : configuration IPSec complète sur un routeur ───────────────────
 
@@ -228,12 +229,12 @@ describe('IPSec – Dynamic Crypto Map (Hub accepte peers inconnus)', () => {
     await pcSpk2.executeCommand('sudo ip route add default via 192.168.20.1');
 
     // ── Spoke1 initie vers Hub ────────────────────────────────────────────
-    const ping1 = await pcSpk1.executeCommand('ping -c 3 10.1.0.10');
+    const ping1 = await pingOnSimulatedClock(pcSpk1, 'ping -c 3 10.1.0.10');
     expect(ping1).toContain('3 received');
     expect(ping1).toContain('0% packet loss');
 
     // ── Spoke2 initie vers Hub ────────────────────────────────────────────
-    const ping2 = await pcSpk2.executeCommand('ping -c 3 10.1.0.10');
+    const ping2 = await pingOnSimulatedClock(pcSpk2, 'ping -c 3 10.1.0.10');
     expect(ping2).toContain('3 received');
     expect(ping2).toContain('0% packet loss');
 
@@ -342,8 +343,8 @@ describe('IPSec – Multiple Peers et Failover', () => {
     await pcS2.executeCommand('sudo ip route add default via 192.168.20.1');
 
     // Trafic depuis chaque spoke vers le hub
-    await pcS1.executeCommand('ping -c 3 10.1.0.1');
-    await pcS2.executeCommand('ping -c 3 10.1.0.1');
+    await pingOnSimulatedClock(pcS1, 'ping -c 3 10.1.0.1');
+    await pingOnSimulatedClock(pcS2, 'ping -c 3 10.1.0.1');
 
     // Deux SAs IKE distinctes sur le hub
     const ikeHub = await hub.executeCommand('show crypto isakmp sa');
@@ -442,7 +443,7 @@ describe('IPSec – Multiple Peers et Failover', () => {
     await pc3.executeCommand('sudo ip route add default via 192.168.2.1');
 
     // Tunnel avec peer primaire (R2)
-    const pingPrimaire = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingPrimaire = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(pingPrimaire).toContain('3 received');
 
     const ikeAvant = await r1.executeCommand('show crypto isakmp sa');
@@ -456,7 +457,7 @@ describe('IPSec – Multiple Peers et Failover', () => {
     await r1.executeCommand('clear crypto session remote 10.0.12.2');
 
     // Le trafic doit basculer sur le backup (R3)
-    const pingBackup = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingBackup = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(pingBackup).toContain('3 received');
 
     const ikeApres = await r1.executeCommand('show crypto isakmp sa');
@@ -571,7 +572,7 @@ describe('IPSec – GRE over IPSec (Tunnel Protection)', () => {
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
     // Ping à travers le tunnel GRE protégé par IPSec
-    const ping = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const ping = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(ping).toContain('3 received');
     expect(ping).toContain('0% packet loss');
 
@@ -621,7 +622,7 @@ describe('IPSec – Maintenance et Opérations', () => {
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
     // Établissement du tunnel
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     const ikeAvant = await r1.executeCommand('show crypto isakmp sa');
     expect(ikeAvant).toContain('QM_IDLE');
     const ipsecAvant = await r1.executeCommand('show crypto ipsec sa');
@@ -639,7 +640,7 @@ describe('IPSec – Maintenance et Opérations', () => {
     expect(ipsecApres).not.toContain('#pkts encaps:');
 
     // Re-établissement automatique via nouveau trafic intéressant
-    const pingPost = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingPost = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(pingPost).toContain('3 received');
     expect(pingPost).toContain('0% packet loss');
 
@@ -671,7 +672,7 @@ describe('IPSec – Maintenance et Opérations', () => {
     await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
 
     const sessionOut = await r1.executeCommand('show crypto session');
     // Interface on which the session is established

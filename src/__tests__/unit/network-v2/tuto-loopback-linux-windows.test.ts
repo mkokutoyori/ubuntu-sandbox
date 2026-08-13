@@ -40,6 +40,7 @@
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 async function sh(pc: LinuxPC, cmd: string): Promise<string> {
   return String(await pc.executeCommand(cmd));
@@ -220,7 +221,7 @@ describe('Linux : le module dummy', () => {
 describe('Windows : la boucle et ses routes', () => {
   it('`ping 127.0.0.1` répond', async () => {
     const pc = new WindowsPC('windows-pc', 'WS1');
-    const out = String(await pc.executeCommand('ping 127.0.0.1'));
+    const out = String(await pingOnSimulatedClock(pc, 'ping 127.0.0.1'));
     expect(out).toContain('Reply from 127.0.0.1');
     expect(out).toContain('Lost = 0 (0% loss)');
   });

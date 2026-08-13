@@ -43,6 +43,7 @@ import { Logger } from '@/network/core/Logger';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { DomainEventTopic } from '@/events/types';
 import type { Port } from '@/network/hardware/Port';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 type EventRow = {
   timestamp: number;
@@ -167,10 +168,10 @@ async function runIncidentTimeline(
   espProbe: EspProbe,
 ): Promise<Timeline> {
   const phase1 = Date.now();
-  await pc2.executeCommand('ping -c 1 192.168.1.10');
+  await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
 
   const phase2 = Date.now();
-  await pc2.executeCommand('ping -c 2 192.168.1.10');
+  await pingOnSimulatedClock(pc2, 'ping -c 2 192.168.1.10');
 
   const phase3Start = Date.now();
   const r1WanPort = r1.getPort('GigabitEthernet0/1') as Port;
@@ -191,14 +192,14 @@ async function runIncidentTimeline(
   await r1.executeCommand('interface GigabitEthernet0/1');
   await r1.executeCommand('shutdown');
   await r1.executeCommand('end');
-  await pc1.executeCommand('ping -c 1 -W 1 192.168.2.10');
+  await pingOnSimulatedClock(pc1, 'ping -c 1 -W 1 192.168.2.10');
 
   const phase5 = Date.now();
   await r1.executeCommand('configure terminal');
   await r1.executeCommand('interface GigabitEthernet0/1');
   await r1.executeCommand('no shutdown');
   await r1.executeCommand('end');
-  await pc2.executeCommand('ping -c 3 192.168.1.10');
+  await pingOnSimulatedClock(pc2, 'ping -c 3 192.168.1.10');
 
   void r2;
   return { phase1, phase2, phase3Start, phase3End, phase4, phase5, replayedFrame };

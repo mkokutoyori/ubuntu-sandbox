@@ -21,6 +21,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -201,7 +202,7 @@ describe('Group 2: Routing & TTL', () => {
       c4.connect(sw2.getPort('FastEthernet0/2')!, pcB.getPort('eth0')!);
 
       // Ping from A to B
-      const results = await pcA.executeCommand('ping -c 1 10.0.2.2');
+      const results = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.2.2');
 
       // Should succeed with TTL=63 (64 - 1 hop)
       expect(results).toContain('64 bytes from 10.0.2.2');
@@ -253,7 +254,7 @@ describe('Group 2: Routing & TTL', () => {
       pcA.getPort('eth0')!.configureIP(new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
       // No default gateway set → 10.0.0.1 is unreachable
 
-      const results = await pcA.executeCommand('ping -c 1 10.0.0.1');
+      const results = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.0.1');
       expect(results).toContain('Network is unreachable');
     });
   });
@@ -280,7 +281,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       const c2 = new Cable('c2');
       c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
-      const output = await pc1.executeCommand('ping -c 2 192.168.1.20');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.1.20');
 
       expect(output).toContain('64 bytes from 192.168.1.20');
       expect(output).toContain('icmp_seq=1');
@@ -326,7 +327,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       const c3 = new Cable('c3');
       c3.connect(r2.getPort('GigabitEthernet0/1')!, pcB.getPort('eth0')!);
 
-      const output = await pcA.executeCommand('ping -c 1 10.0.3.2');
+      const output = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.3.2');
 
       // TTL should be 62 (64 - 2 hops)
       expect(output).toContain('64 bytes from 10.0.3.2');
@@ -356,7 +357,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       c2.connect(router.getPort('GigabitEthernet0/1')!, linPC.getPort('eth0')!);
 
       // Ping from Windows → Linux (through router)
-      const output = await winPC.executeCommand('ping -n 1 10.0.2.2');
+      const output = await pingOnSimulatedClock(winPC, 'ping -n 1 10.0.2.2');
 
       expect(output).toContain('Reply from 10.0.2.2');
       // Linux replies with TTL=64, decremented by 1 through router = 63
@@ -413,7 +414,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       const c1 = new Cable('c1');
       c1.connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
 
-      const output = await pc.executeCommand('ping -c 1 10.0.1.1');
+      const output = await pingOnSimulatedClock(pc, 'ping -c 1 10.0.1.1');
       expect(output).toContain('64 bytes from 10.0.1.1');
       // Router uses TTL=255
       expect(output).toContain('ttl=255');

@@ -14,6 +14,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -102,7 +103,7 @@ describe('NAT on an IPsec path is detected from the IKE exchange itself', () => 
     const { r1, r2, pc2 } = await natTunnel();
     makeRegistryUnusable();
 
-    await pc2.executeCommand('ping -c 2 192.168.1.10');
+    await pingOnSimulatedClock(pc2, 'ping -c 2 192.168.1.10');
     const detailR1 = await r1.executeCommand('show crypto isakmp sa detail');
     const detailR2 = await r2.executeCommand('show crypto isakmp sa detail');
     expect(
@@ -116,7 +117,7 @@ describe('NAT on an IPsec path is detected from the IKE exchange itself', () => 
     const { pc2 } = await natTunnel();
     makeRegistryUnusable();
 
-    const out = await pc2.executeCommand('ping -c 4 192.168.1.10');
+    const out = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(out).toContain('4 received');
   }, 40000);
 });

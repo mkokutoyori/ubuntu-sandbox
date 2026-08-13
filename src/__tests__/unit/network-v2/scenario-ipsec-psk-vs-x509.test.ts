@@ -9,6 +9,7 @@ import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { X509Certificate } from '@/network/pki/X509Certificate';
 import { CertificateRevocationList } from '@/network/pki/CertificateRevocationList';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 async function buildLab() {
   const r1 = new CiscoRouter('R1');
@@ -93,7 +94,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configurePskProfile(l.r1, '10.0.12.2', 'SecretMatching', 'KR1', 'PROF1');
       await configurePskProfile(l.r2, '10.0.12.1', 'SecretMatching', 'KR2', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const ping = await l.pc1.executeCommand('ping -c 3 192.168.2.10');
+      const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 3 192.168.2.10');
       expect(ping).toContain('3 received');
       const sa = await l.r1.executeCommand('show crypto ikev2 sa');
       expect(sa).toMatch(/READY/);
@@ -106,7 +107,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configurePskProfile(l.r1, '10.0.12.2', 'SecretA', 'KR1', 'PROF1');
       await configurePskProfile(l.r2, '10.0.12.1', 'SecretB', 'KR2', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Last negotiation failure:.*PSK mismatch|authentication failed/i);
       expect(detail).not.toMatch(/certificate/i);
@@ -126,7 +127,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(ping).toContain('2 received');
       const sa = await l.r1.executeCommand('show crypto ikev2 sa');
       expect(sa).toMatch(/READY/);
@@ -145,7 +146,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Certificate unknown/i);
     });
@@ -162,7 +163,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Certificate expired/i);
       expect(detail).not.toMatch(/Certificate unknown/i);
@@ -183,7 +184,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Certificate revoked/i);
     });
@@ -202,7 +203,7 @@ describe('Scénario 3 — Authentification IKE: PSK vs X.509', () => {
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(ping).toContain('2 received');
     });
   });

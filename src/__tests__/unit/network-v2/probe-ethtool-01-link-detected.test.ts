@@ -15,6 +15,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -95,7 +96,7 @@ describe('Scénario 2 — `-i` et `-S` lisent le port, pas un gabarit', () => {
     const before = await l.pc.executeCommand('ethtool -S eth0');
     const txBefore = Number(/tx_packets: (\d+)/.exec(before)?.[1] ?? -1);
 
-    await l.pc.executeCommand('ping -c 2 192.168.1.20');
+    await pingOnSimulatedClock(l.pc, 'ping -c 2 192.168.1.20');
 
     const after = await l.pc.executeCommand('ethtool -S eth0');
     const txAfter = Number(/tx_packets: (\d+)/.exec(after)?.[1] ?? -1);

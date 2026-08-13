@@ -12,6 +12,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 function createMockContext(overrides: Partial<IpNetworkContext> = {}): IpNetworkContext {
   const interfaces: Map<string, IpInterfaceInfo> = new Map([
@@ -149,7 +150,7 @@ describe('ip -j/-s through a real LinuxPC (integration, PRD-ip.md P1)', () => {
     await pc1.executeCommand('ifconfig eth0 10.0.0.1 netmask 255.255.255.0');
     await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
 
-    await pc1.executeCommand('ping -c 2 10.0.0.2');
+    await pingOnSimulatedClock(pc1, 'ping -c 2 10.0.0.2');
 
     const output = await pc1.executeCommand('ip -s link show eth0');
     const rxLine = output.split('\n')[3].trim().split(/\s+/);

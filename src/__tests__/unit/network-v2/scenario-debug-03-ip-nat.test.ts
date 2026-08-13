@@ -14,6 +14,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('Scénario 3 (debug) — debug ip nat', () => {
   const LONG = 30_000;
@@ -106,7 +107,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
   describe('flux traduit correctement', () => {
     it('la traduction NAT est effectivement appliquée et visible dans la table', async () => {
       await natAvecMasqueCorrect();
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
 
       const trad = await run('show ip nat translations');
       expect(trad).toContain('192.168.10.101');
@@ -116,7 +117,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
     it('un paquet traduit devrait produire une ligne `NAT*: s=…->…`', async () => {
       await natAvecMasqueCorrect();
       await run('debug ip nat');
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
 
       expect(lignes.some((l) => /NAT\*: s=192\.168\.10\.101->203\.0\.113\.1/.test(l))).toBe(true);
     }, LONG);
@@ -124,7 +125,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
     it('`debug ip nat` devrait produire au moins une ligne lors d\'un flux traduit', async () => {
       await natAvecMasqueCorrect();
       await run('debug ip nat');
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
 
       expect(lignes.some((l) => l.includes('NAT'))).toBe(true);
     }, LONG);
@@ -147,7 +148,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
 
     it('après correction, la traduction fonctionne pour la machine concernée', async () => {
       await natAvecMasqueCorrect();
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
 
       const trad = await run('show ip nat translations');
       expect(trad).toContain('192.168.10.101');
@@ -157,7 +158,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
   describe('statistiques et table NAT', () => {
     it('`show ip nat statistics` expose les compteurs de traduction', async () => {
       await natAvecMasqueCorrect();
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
 
       const out = await run('show ip nat statistics');
       expect(out).toMatch(/Total (active )?translations/i);
@@ -165,7 +166,7 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
 
     it('`clear ip nat translation *` vide la table', async () => {
       await natAvecMasqueCorrect();
-      await interne.executeCommand('ping -c 2 203.0.113.50');
+      await pingOnSimulatedClock(interne, 'ping -c 2 203.0.113.50');
       expect(await run('show ip nat translations')).toContain('192.168.10.101');
 
       await run('clear ip nat translation *');

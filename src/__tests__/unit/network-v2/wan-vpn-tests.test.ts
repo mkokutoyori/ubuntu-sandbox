@@ -16,6 +16,7 @@ import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { buildWanVpnTopology, type WanVpnTopology } from './wan-vpn-topology';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -31,63 +32,63 @@ describe('Section 1: Topology validation — addressing & reachability', () => {
 
   it('1.01 — HQ server should ping HQ router LAN interface', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.server.executeCommand('ping -c 3 192.168.10.1');
+    const out = await pingOnSimulatedClock(t.server, 'ping -c 3 192.168.10.1');
     expect(out).toContain('3 received');
     expect(out).toContain('0% packet loss');
   });
 
   it('1.02 — HQ router should ping Branch1 router WAN interface', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.rHQ.executeCommand('ping 10.0.12.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.12.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('1.03 — HQ router should ping Branch2 router WAN interface', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.rHQ.executeCommand('ping 10.0.23.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.23.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('1.04 — HQ router should ping Branch3 router WAN interface', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.rHQ.executeCommand('ping 10.0.34.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.34.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('1.05 — Branch1 Huawei router should ping HQ WAN interface', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.rBR1.executeCommand('ping 10.0.12.1');
+    const out = await pingOnSimulatedClock(t.rBR1, 'ping 10.0.12.1');
     expect(out).toContain('0% packet loss');
   });
 
   it('1.06 — Server (HQ) should reach HQ router LAN gateway', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.server.executeCommand('ping -c 2 192.168.10.1');
+    const out = await pingOnSimulatedClock(t.server, 'ping -c 2 192.168.10.1');
     expect(out).toContain('2 received');
   }, 10000);
 
   it('1.07 — Linux PC (Branch2) should reach HQ server through static routes', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.linuxPC2.executeCommand('ping -c 3 192.168.10.100');
+    const out = await pingOnSimulatedClock(t.linuxPC2, 'ping -c 3 192.168.10.100');
     expect(out).toContain('3 received');
   }, 10000);
 
   it('1.08 — Linux PC (Branch3) should reach HQ server through static routes', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.linuxPC3.executeCommand('ping -c 3 192.168.10.100');
+    const out = await pingOnSimulatedClock(t.linuxPC3, 'ping -c 3 192.168.10.100');
     expect(out).toContain('3 received');
   }, 10000);
 
   it('1.09 — Windows PC (Branch1) should reach its default gateway', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.winPC1.executeCommand('ping -n 3 192.168.20.1');
+    const out = await pingOnSimulatedClock(t.winPC1, 'ping -n 3 192.168.20.1');
     expect(out).toContain('Received = 3');
     expect(out).toContain('Lost = 0');
   });
 
   it('1.10 — Windows PC (Branch1) should reach HQ server via HuaweiSwitch + WAN transit', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.winPC1.executeCommand('ping -n 3 192.168.10.100');
+    const out = await pingOnSimulatedClock(t.winPC1, 'ping -n 3 192.168.10.100');
     expect(out).toContain('Received = 3');
     expect(out).toContain('Lost = 0');
   }, 10000);
@@ -711,7 +712,7 @@ describe('Section 10: Topology options & VPN variants', () => {
 
   it('10.03 — skipVPN=true should still have working IP connectivity', async () => {
     const t = await buildWanVpnTopology({ skipVPN: true });
-    const out = await t.rHQ.executeCommand('ping 10.0.12.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.12.2');
     expect(out).toContain('Success rate is 100');
   });
 
@@ -1200,55 +1201,55 @@ describe('Section 15: End-to-end connectivity through VPN topology', () => {
 
   it('15.01 — HQ router should still ping BR1 after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rHQ.executeCommand('ping 10.0.12.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.12.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('15.02 — HQ router should still ping BR2 after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rHQ.executeCommand('ping 10.0.23.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.23.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('15.03 — HQ router should still ping BR3 after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rHQ.executeCommand('ping 10.0.34.2');
+    const out = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.34.2');
     expect(out).toContain('Success rate is 100');
   });
 
   it('15.04 — Huawei BR1 should still ping HQ after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rBR1.executeCommand('ping 10.0.12.1');
+    const out = await pingOnSimulatedClock(t.rBR1, 'ping 10.0.12.1');
     expect(out).toContain('0% packet loss');
   });
 
   it('15.05 — Huawei BR3 should still ping HQ after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rBR3.executeCommand('ping 10.0.34.1');
+    const out = await pingOnSimulatedClock(t.rBR3, 'ping 10.0.34.1');
     expect(out).toContain('0% packet loss');
   });
 
   it('15.06 — HQ server should reach gateway after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.server.executeCommand('ping -c 2 192.168.10.1');
+    const out = await pingOnSimulatedClock(t.server, 'ping -c 2 192.168.10.1');
     expect(out).toContain('2 received');
   });
 
   it('15.07 — Windows PC should reach BR1 gateway through HuaweiSwitch after VPN', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.winPC1.executeCommand('ping -n 2 192.168.20.1');
+    const out = await pingOnSimulatedClock(t.winPC1, 'ping -n 2 192.168.20.1');
     expect(out).toContain('Received = 2');
   });
 
   it('15.08 — Linux PC (BR2) should reach HQ server through full VPN topology', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.linuxPC2.executeCommand('ping -c 3 192.168.10.100');
+    const out = await pingOnSimulatedClock(t.linuxPC2, 'ping -c 3 192.168.10.100');
     expect(out).toContain('3 received');
   }, 10000);
 
   it('15.09 — Huawei BR3 routing should remain intact with VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const out = await t.rBR3.executeCommand('ping 10.0.34.1');
+    const out = await pingOnSimulatedClock(t.rBR3, 'ping 10.0.34.1');
     expect(out).toContain('0% packet loss');
     const proposals = await t.rBR3.executeCommand('display ipsec proposal');
     expect(proposals).toContain('PROP-BR3');
@@ -1256,9 +1257,9 @@ describe('Section 15: End-to-end connectivity through VPN topology', () => {
 
   it('15.10 — All routers should maintain WAN reachability after VPN config', async () => {
     const t = await buildWanVpnTopology();
-    const p1 = await t.rHQ.executeCommand('ping 10.0.12.2');
-    const p2 = await t.rHQ.executeCommand('ping 10.0.23.2');
-    const p3 = await t.rHQ.executeCommand('ping 10.0.34.2');
+    const p1 = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.12.2');
+    const p2 = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.23.2');
+    const p3 = await pingOnSimulatedClock(t.rHQ, 'ping 10.0.34.2');
     expect(p1).toContain('Success rate is 100');
     expect(p2).toContain('Success rate is 100');
     expect(p3).toContain('Success rate is 100');

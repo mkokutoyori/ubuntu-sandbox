@@ -29,6 +29,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Logger } from '@/network/core/Logger';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { VirtualTimeScheduler } from '@/events/Scheduler';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface WireProbe {
   udp4500: number;
@@ -200,7 +201,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     const { r1, pc2 } = await buildTunnel({ withNat: true, natKeepalive: 20 });
     const wan = probePort(r1.getId(), 'GigabitEthernet0/1');
 
-    const out = await pc2.executeCommand('ping -c 4 192.168.1.10');
+    const out = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(out).toContain('4 received');
 
     expect(wan.udp4500).toBeGreaterThan(0);
@@ -211,7 +212,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     const { r1, pc2 } = await buildTunnel({ withNat: false });
     const wan = probePort(r1.getId(), 'GigabitEthernet0/1');
 
-    const out = await pc2.executeCommand('ping -c 4 192.168.1.10');
+    const out = await pingOnSimulatedClock(pc2, 'ping -c 4 192.168.1.10');
     expect(out).toContain('4 received');
 
     expect(wan.rawEsp).toBeGreaterThan(0);
@@ -220,7 +221,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
 
   it('6.03 — NAT-T flag is asserted on both peers after detection', async () => {
     const { r1, r2, pc2 } = await buildTunnel({ withNat: true, natKeepalive: 20 });
-    await pc2.executeCommand('ping -c 2 192.168.1.10');
+    await pingOnSimulatedClock(pc2, 'ping -c 2 192.168.1.10');
 
     const detailR1 = await r1.executeCommand('show crypto isakmp sa detail');
     const detailR2 = await r2.executeCommand('show crypto isakmp sa detail');
@@ -238,7 +239,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     (r2 as unknown as { _getIPSecEngineInternal: () => { setScheduler(s: VirtualTimeScheduler): void } })
       ._getIPSecEngineInternal().setScheduler(scheduler);
 
-    const initHandshake = await pc2.executeCommand('ping -c 1 192.168.1.10');
+    const initHandshake = await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
     expect(initHandshake).toContain('1 received');
 
     const wanR2 = probePort(r2.getId(), 'GigabitEthernet0/1');
@@ -256,7 +257,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     (r2 as unknown as { _getIPSecEngineInternal: () => { setScheduler(s: VirtualTimeScheduler): void } })
       ._getIPSecEngineInternal().setScheduler(scheduler);
 
-    await pc2.executeCommand('ping -c 1 192.168.1.10');
+    await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
     scheduler.advance(90 * 1000);
 
     const saR1After = await r1.executeCommand('show crypto isakmp sa');
@@ -264,7 +265,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
     expect(saR1After).toContain('QM_IDLE');
     expect(saR2After).toContain('QM_IDLE');
 
-    const pingAfterIdle = await pc2.executeCommand('ping -c 2 192.168.1.10');
+    const pingAfterIdle = await pingOnSimulatedClock(pc2, 'ping -c 2 192.168.1.10');
     expect(pingAfterIdle).toContain('2 received');
     void pc1;
   });
@@ -276,7 +277,7 @@ describe('Scenario 6 — NAT-T: ESP-in-UDP 4500 + periodic keepalives', () => {
       ._getIPSecEngineInternal().setScheduler(scheduler);
     (r2 as unknown as { _getIPSecEngineInternal: () => { setScheduler(s: VirtualTimeScheduler): void } })
       ._getIPSecEngineInternal().setScheduler(scheduler);
-    await pc2.executeCommand('ping -c 1 192.168.1.10');
+    await pingOnSimulatedClock(pc2, 'ping -c 1 192.168.1.10');
 
     const wanR2 = probePort(r2.getId(), 'GigabitEthernet0/1');
     scheduler.advance(65 * 1000);

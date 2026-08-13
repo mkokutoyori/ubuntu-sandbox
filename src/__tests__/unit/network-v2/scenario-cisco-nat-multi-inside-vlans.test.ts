@@ -18,6 +18,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const run = (d: Cmd, cmds: string[]) =>
@@ -108,9 +109,9 @@ describe('Scénario 9 (Cisco) — NAT multi-inside (un sous-interface 802.1Q par
   describe('test depuis chaque VLAN', () => {
     it('le trafic des trois VLANs est traduit vers la même IP publique 203.0.113.1', async () => {
       const { h10, h20, h99, router } = await buildLab();
-      await h10.executeCommand(`ping -c 2 ${OUTSIDE_IP}`);
-      await h20.executeCommand(`ping -c 2 ${OUTSIDE_IP}`);
-      await h99.executeCommand(`ping -c 2 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(h10, `ping -c 2 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(h20, `ping -c 2 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(h99, `ping -c 2 ${OUTSIDE_IP}`);
 
       const table = await router.executeCommand('show ip nat translations');
       expect(table).toContain('192.168.10.101');
@@ -123,8 +124,8 @@ describe('Scénario 9 (Cisco) — NAT multi-inside (un sous-interface 802.1Q par
 
     it('show ip nat translations verbose indique l\'interface d\'entrée correcte pour chaque VLAN', async () => {
       const { h10, h20, router } = await buildLab();
-      await h10.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
-      await h20.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(h10, `ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(h20, `ping -c 1 ${OUTSIDE_IP}`);
 
       const out = await router.executeCommand('show ip nat translations verbose');
       expect(out).toMatch(/input iface:\s*GigabitEthernet0\/0\.10/);

@@ -44,6 +44,7 @@ import { CertificateAuthority } from '@/network/pki/CertificateAuthority';
 import { OcspResponder } from '@/network/pki/OcspResponder';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
 import { getDefaultEventBus } from '@/events/EventBus';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 const NOW = Date.parse('2026-07-01T00:00:00Z');
 const ONE_YEAR = 365 * 24 * 3600 * 1000;
@@ -150,7 +151,7 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(ping).toContain('2 received');
     });
 
@@ -167,7 +168,7 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(ping).toContain('2 received');
       expect(responder.getQueryCount()).toBeGreaterThan(0);
     });
@@ -187,13 +188,13 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const pingBefore = await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      const pingBefore = await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       expect(pingBefore).toContain('1 received');
 
       ca.revoke(c2.cert.serialNumber, NOW);
       await bounceCryptoOnPeers(l.r1, l.r2);
 
-      const pingAfter = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const pingAfter = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(pingAfter).toContain('2 received');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).not.toMatch(/Certificate revoked/i);
@@ -213,14 +214,14 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
 
       ca.revoke(c2.cert.serialNumber, NOW);
       const freshCrl = ca.publishCRL(NOW);
       l.r1.installIkeCertAuth({ localCert: c1.cert, localKey: c1.privateKey, trustAnchors: [ca.rootCertificate], crls: [freshCrl], revocationCheck: 'crl', clock: () => NOW });
       await bounceCryptoOnPeers(l.r1, l.r2);
 
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Certificate revoked/i);
       const revokedOnR1 = log.entries.filter((e) => e.deviceId === l.r1.getId() && e.event === 'ipsec:cert-revoked');
@@ -243,13 +244,13 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      const pingBefore = await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      const pingBefore = await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       expect(pingBefore).toContain('1 received');
 
       ca.revoke(c2.cert.serialNumber, NOW);
       await bounceCryptoOnPeers(l.r1, l.r2);
 
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).toMatch(/Certificate revoked/i);
       const revokedOnR1 = log.entries.filter((e) => e.deviceId === l.r1.getId() && e.event === 'ipsec:cert-revoked');
@@ -269,12 +270,12 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const firstQueryCount = responder.getQueryCount();
       expect(firstQueryCount).toBeGreaterThan(0);
 
       await bounceCryptoOnPeers(l.r1, l.r2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const secondQueryCount = responder.getQueryCount();
       expect(secondQueryCount).toBeGreaterThan(firstQueryCount);
     });
@@ -294,11 +295,11 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
 
       ca.revoke(c2.cert.serialNumber, NOW);
 
-      const pingAfter = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+      const pingAfter = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
       expect(pingAfter).toContain('2 received');
     });
   });
@@ -318,12 +319,12 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
 
       ca.revoke(c2.cert.serialNumber, NOW);
       await bounceCryptoOnPeers(l.r1, l.r2);
       const tBefore = Date.now();
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const tAfter = Date.now();
 
       const revokedOnR1 = log.entries.filter((e) => e.deviceId === l.r1.getId() && e.event === 'ipsec:cert-revoked');
@@ -374,10 +375,10 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l.pc1, l.pc2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       ca.revoke(c2.cert.serialNumber, NOW);
       await bounceCryptoOnPeers(l.r1, l.r2);
-      await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
       const detailOcsp = await l.r1.executeCommand('show crypto isakmp sa detail');
       expect(detailOcsp).toMatch(/Certificate revoked/i);
 
@@ -389,9 +390,9 @@ describe('Scenario 13 — cert revocation on active IPsec tunnel: CRL vs OCSP', 
       await configureX509Profile(l2.r1, '10.0.12.2', 'PROF1');
       await configureX509Profile(l2.r2, '10.0.12.1', 'PROF2');
       await seedPcs(l2.pc1, l2.pc2);
-      await l2.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l2.pc1, 'ping -c 1 192.168.2.10');
       await bounceCryptoOnPeers(l2.r1, l2.r2);
-      await l2.pc1.executeCommand('ping -c 1 192.168.2.10');
+      await pingOnSimulatedClock(l2.pc1, 'ping -c 1 192.168.2.10');
       const detailCrl = await l2.r1.executeCommand('show crypto isakmp sa detail');
       expect(detailCrl).not.toMatch(/Certificate revoked/i);
     });

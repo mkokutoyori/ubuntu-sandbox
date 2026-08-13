@@ -11,6 +11,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -102,7 +103,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       await pc10.executeCommand('ifconfig eth0 192.168.10.101 netmask 255.255.255.0');
       await pc10.executeCommand('ip route add default via 192.168.10.254');
 
-      const ping = await pc10.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      const ping = await pingOnSimulatedClock(pc10, 'ping -c 1 -W 1 192.168.10.254');
       expect(ping).toMatch(/100% packet loss/);
     });
 
@@ -112,7 +113,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       await configureRouterSubinterfaces(ar1, true);
       await configurePcs(pc10, pc20);
 
-      const ping = await pc10.executeCommand('ping -c 2 192.168.10.254');
+      const ping = await pingOnSimulatedClock(pc10, 'ping -c 2 192.168.10.254');
       expect(ping).toContain('2 packets transmitted, 2 received');
     });
 
@@ -122,7 +123,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       await configureRouterSubinterfaces(ar1, true);
       await configurePcs(pc10, pc20);
 
-      const ping = await pc10.executeCommand('ping -c 4 192.168.20.101');
+      const ping = await pingOnSimulatedClock(pc10, 'ping -c 4 192.168.20.101');
       expect(ping).toContain('4 packets transmitted, 4 received');
 
       const routeGet = await pc10.executeCommand('ip route get 192.168.20.101');
@@ -143,8 +144,8 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       await configureRouterSubinterfaces(ar1, true);
       await configurePcs(pc10, pc20);
 
-      await ar1.executeCommand('ping 192.168.10.101');
-      await ar1.executeCommand('ping 192.168.20.101');
+      await pingOnSimulatedClock(ar1, 'ping 192.168.10.101');
+      await pingOnSimulatedClock(ar1, 'ping 192.168.20.101');
 
       const arp = await ar1.executeCommand('display arp');
       expect(arp).toContain('192.168.10.101');
@@ -186,7 +187,7 @@ describe('Scénario 4 — Routage inter-VLAN sur routeur Huawei AR-series', () =
       await pc20.executeCommand('ifconfig eth0 192.168.20.101 netmask 255.255.255.0');
       await pc20.executeCommand('ip route add default via 192.168.20.254');
 
-      const ping = await pc10.executeCommand('ping -c 2 192.168.20.101');
+      const ping = await pingOnSimulatedClock(pc10, 'ping -c 2 192.168.20.101');
       expect(ping).toContain('2 packets transmitted, 2 received');
     });
   });

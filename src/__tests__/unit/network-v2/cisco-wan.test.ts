@@ -40,6 +40,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 // ----------------------------------------------------------------------
 // Helpers pour configurer la topologie
@@ -421,8 +422,8 @@ describe('ARP', () => {
     // A configured host resolves neighbors on first traffic (Linux arp_accept=0:
     // gratuitous ARPs do not create new entries, they only refresh existing ones).
     const pc = topology.hosts.lan1[0] as LinuxPC;
-    await pc.executeCommand('ping -c 1 192.168.1.2');
-    await pc.executeCommand('ping -c 1 192.168.1.3');
+    await pingOnSimulatedClock(pc, 'ping -c 1 192.168.1.2');
+    await pingOnSimulatedClock(pc, 'ping -c 1 192.168.1.3');
     const arpTable = await pc.executeCommand('arp -n');
     expect(arpTable).toContain('192.168.1.2');
     expect(arpTable).toContain('192.168.1.3');
@@ -431,7 +432,7 @@ describe('ARP', () => {
   it('devrait remplir la table ARP après un ping', async () => {
     const pc1 = topology.hosts.lan1[0] as LinuxPC;
     const pc2 = topology.hosts.lan1[1] as LinuxPC;
-    await pc1.executeCommand('ping -c 1 192.168.1.2');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.2');
     const arp = await pc1.executeCommand('arp -n');
     expect(arp).toContain('192.168.1.2');
     expect(arp).toContain('ether');
@@ -448,7 +449,7 @@ describe('ARP', () => {
   it('devrait supprimer une entrée ARP sur Windows', async () => {
     const win = topology.hosts.lan2[1] as WindowsPC;
     // D'abord populer
-    await win.executeCommand('ping -n 1 192.168.2.254');
+    await pingOnSimulatedClock(win, 'ping -n 1 192.168.2.254');
     let arp = await win.executeCommand('arp -a');
     expect(arp).toContain('192.168.2.254');
     await win.executeCommand('arp -d 192.168.2.254');
@@ -460,7 +461,7 @@ describe('ARP', () => {
     const { r1 } = topology.routers;
     // Générer du trafic pour remplir ARP
     const pc = topology.hosts.lan1[0] as LinuxPC;
-    await pc.executeCommand('ping -c 1 192.168.1.254');
+    await pingOnSimulatedClock(pc, 'ping -c 1 192.168.1.254');
     const arpRouter = await r1.executeCommand('show ip arp');
     expect(arpRouter).toContain('192.168.1.1');
     expect(arpRouter).toContain('ARPA');
@@ -479,7 +480,7 @@ describe('Ping', () => {
   it('devrait réussir un ping intra-LAN', async () => {
     const pc1 = topology.hosts.lan1[0] as LinuxPC;
     const pc2 = topology.hosts.lan1[1] as LinuxPC;
-    const result = await pc1.executeCommand('ping -c 2 192.168.1.2');
+    const result = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.1.2');
     expect(result).toContain('2 packets transmitted');
     expect(result).toContain('0% packet loss');
   });
@@ -487,26 +488,26 @@ describe('Ping', () => {
   it('devrait réussir un ping inter-LAN (LAN1 -> LAN2)', async () => {
     const pc1 = topology.hosts.lan1[0] as LinuxPC;
     const pc4 = topology.hosts.lan2[0] as LinuxPC;
-    const result = await pc1.executeCommand('ping -c 2 192.168.2.1');
+    const result = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.2.1');
     expect(result).toContain('0% packet loss');
   });
 
   it('devrait réussir un ping inter-LAN depuis Windows', async () => {
     const win = topology.hosts.lan2[1] as WindowsPC;
     const pc7 = topology.hosts.lan3[0] as LinuxPC;
-    const result = await win.executeCommand('ping -n 2 192.168.3.1');
+    const result = await pingOnSimulatedClock(win, 'ping -n 2 192.168.3.1');
     expect(result).toContain('0% loss');
   });
 
   it('devrait échouer un ping vers une adresse inexistante', async () => {
     const pc = topology.hosts.lan1[0] as LinuxPC;
-    const result = await pc.executeCommand('ping -c 1 192.168.99.99');
+    const result = await pingOnSimulatedClock(pc, 'ping -c 1 192.168.99.99');
     expect(result).toContain('100% packet loss');
   });
 
   it('devrait supporter un ping avec taille de paquet personnalisée', async () => {
     const pc1 = topology.hosts.lan1[0] as LinuxPC;
-    const result = await pc1.executeCommand('ping -c 1 -s 1400 192.168.1.2');
+    const result = await pingOnSimulatedClock(pc1, 'ping -c 1 -s 1400 192.168.1.2');
     // Sur Linux, ping -s 1400 affiche "PING ... 1400(1428) bytes of data."
     expect(result).toContain('1400');
     expect(result).toContain('bytes of data');
@@ -584,13 +585,13 @@ describe('Scénarios combinés', () => {
     const dhcpHost = topology.hosts.lan3[0] as LinuxPC;
     const dhcpIp = (await dhcpHost.executeCommand('ifconfig eth0')).match(/192\.168\.3\.\d+/)?.[0];
     expect(dhcpIp).toBeDefined();
-    const result = await staticHost.executeCommand(`ping -c 2 ${dhcpIp}`);
+    const result = await pingOnSimulatedClock(staticHost, `ping -c 2 ${dhcpIp}`);
     expect(result).toContain('0% packet loss');
   });
 
   it('vérification ARP après DHCP', async () => {
     const win = topology.hosts.lan4[1] as WindowsPC;
-    await win.executeCommand('ping -n 1 192.168.4.254');
+    await pingOnSimulatedClock(win, 'ping -n 1 192.168.4.254');
     const arp = await win.executeCommand('arp -a');
     expect(arp).toContain('192.168.4.254');
   });

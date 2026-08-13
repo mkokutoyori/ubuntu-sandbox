@@ -1379,11 +1379,11 @@ Total steps: 300
 --- [193] § STP — convergence sur panne de lien (HQ) ---
 [193/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.696 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.867 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.696/0.696/0.696/0.000 ms
+  rtt min/avg/max/mdev = 0.867/0.867/0.867/0.000 ms
 
 [194/300] swhq SW-HQ# show spanning-tree blockedports
   Name                 Blocked Interfaces List
@@ -1434,21 +1434,21 @@ Total steps: 300
 
 [202/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.754 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.980 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.539 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.456 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.754/0.867/0.980/0.113 ms
+  rtt min/avg/max/mdev = 0.456/0.498/0.539/0.042 ms
 
 [203/300] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=3.231 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=1.605 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.208 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.777 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.605/2.418/3.231/0.813 ms
+  rtt min/avg/max/mdev = 0.777/0.992/1.208/0.216 ms
 
 [204/300] swhq SW-HQ# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -1465,10 +1465,10 @@ Total steps: 300
 [208/300] swhq SW-HQ# show spanning-tree
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
-               Address     0200.0000.005f
-               Cost        38
-               Port        Fa0/5
+    Root ID    Priority    28673
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
@@ -1476,16 +1476,16 @@ Total steps: 300
   Fa0/2            Desg  FWD  19        128.2     P2p Edge
   Fa0/3            Desg  FWD  19        128.3     P2p Edge
   Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Root  FWD  19        128.5     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [209/300] lhq lhq$ ping -c 2 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.585 ms
-  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.807 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.418 ms
+  64 bytes from 10.1.1.11: icmp_seq=2 ttl=128 time=0.384 ms
   
   --- 10.1.1.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.585/0.696/0.807/0.111 ms
+  rtt min/avg/max/mdev = 0.384/0.401/0.418/0.017 ms
 
 
 --- [210] § STP — convergence sur panne de lien (BR Huawei) ---
@@ -1594,7 +1594,7 @@ Total steps: 300
   Ping statistics for 10.2.2.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 0ms, Maximum = 0ms, Average = 0ms
 
 [219/300] swbr <SW-BR> system-view
   Enter system view, return user view with return command.
@@ -1714,8 +1714,8 @@ Total steps: 300
 [243/300] swhq SW-HQ# show spanning-tree detail
    VLAN0001 is executing the pvst compatible Spanning Tree protocol
     Bridge Identifier has priority 28672, sysid 1, address 0200.0000.000d
-    Current root has priority 24577, address 0200.0000.005f
-    Root port is Fa0/5, cost of root path is 38
+    We are the root of the spanning tree
+    Root port is N/A, cost of root path is 0
     Hello Time 2 sec  Max Age 20 sec  Forward Delay 15 sec
   
    Port 1 (FastEthernet0/1) of VLAN0001 is designated forwarding
@@ -1726,7 +1726,7 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 14, received 0
+     BPDU: sent 13, received 0
    Port 2 (FastEthernet0/2) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.2.
      Designated root has priority 32769, address 0200.0000.000d
@@ -1744,7 +1744,7 @@ Total steps: 300
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 12, received 0
+     BPDU: sent 11, received 0
    Port 4 (FastEthernet0/4) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.4.
      Designated root has priority 28673, address 0200.0000.000d
@@ -1754,15 +1754,15 @@ Total steps: 300
      Number of transitions to forwarding state: 3
      Link type is point-to-point by default
      BPDU: sent 4, received 2
-   Port 5 (FastEthernet0/5) of VLAN0001 is root forwarding
+   Port 5 (FastEthernet0/5) of VLAN0001 is designated forwarding
      Port path cost 19, Port priority 128, Port Identifier 128.5.
-     Designated root has priority 24577, address 0200.0000.005f
-     Designated bridge has priority 32769, address 0200.0000.0079
-     Designated port id is 128.0, designated path cost 19
+     Designated root has priority 32769, address 0200.0000.000d
+     Designated bridge has priority 32769, address 0200.0000.000d
+     Designated port id is 128.4, designated path cost 0
      Timers: message age 0, forward delay 0, hold 0
      Number of transitions to forwarding state: 2
      Link type is point-to-point by default
-     BPDU: sent 8, received 1
+     BPDU: sent 8, received 0
    Port 6 (FastEthernet0/6) of VLAN0001 is disabled
      Port path cost 19, Port priority 128, Port Identifier 128.6.
      Designated root has priority 32768, address 0200.0000.000d
@@ -1998,27 +1998,27 @@ Total steps: 300
 
 [251/300] lhq lhq$ ping -c 1 10.1.1.11
   PING 10.1.1.11 (10.1.1.11) 56(84) bytes of data.
-  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.614 ms
+  64 bytes from 10.1.1.11: icmp_seq=1 ttl=128 time=0.329 ms
   
   --- 10.1.1.11 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.614/0.614/0.614/0.000 ms
+  rtt min/avg/max/mdev = 0.329/0.329/0.329/0.000 ms
 
 [252/300] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=6.009 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.381 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 6.009/6.009/6.009/0.000 ms
+  rtt min/avg/max/mdev = 0.381/0.381/0.381/0.000 ms
 
 [253/300] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.778 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.285 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.778/0.778/0.778/0.000 ms
+  rtt min/avg/max/mdev = 0.285/0.285/0.285/0.000 ms
 
 [254/300] whq whq$ getmac
   Physical Address  Transport Name          
@@ -2057,10 +2057,10 @@ Total steps: 300
 [261/300] swhq SW-HQ# show spanning-tree vlan 1
   VLAN0001
     Spanning tree enabled protocol ieee
-    Root ID    Priority    24577
-               Address     0200.0000.005f
-               Cost        38
-               Port        Fa0/5
+    Root ID    Priority    28673
+               Address     0200.0000.000d
+               Cost        0
+               This bridge is the root
   
   Interface        Role  Sts  Cost      Prio.Nbr  Type
   ---------------- ----  ---  --------  --------  ----
@@ -2068,7 +2068,7 @@ Total steps: 300
   Fa0/2            Desg  FWD  19        128.2     P2p Edge
   Fa0/3            Desg  FWD  19        128.3     P2p Edge
   Fa0/4            Desg  FWD  19        128.4     P2p
-  Fa0/5            Root  FWD  19        128.5     P2p
+  Fa0/5            Desg  FWD  19        128.5     P2p
 
 [262/300] swhq SW-HQ# show spanning-tree bridge
                                                      Hello  Max  Fwd
@@ -2438,8 +2438,8 @@ Total steps: 300
 
 [300/300] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.554 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=9.830 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.554/2.554/2.554/0.000 ms
+  rtt min/avg/max/mdev = 9.830/9.830/9.830/0.000 ms

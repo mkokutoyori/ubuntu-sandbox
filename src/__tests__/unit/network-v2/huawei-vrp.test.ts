@@ -30,6 +30,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   __assumeCarrierOnUncabledPorts(true);
@@ -385,7 +386,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       sw.advanceSTPTimer('GigabitEthernet0/0/1');
 
       // Ping from PC1 to PC2
-      const output = await pc1.executeCommand('ping -c 3 10.0.1.20');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 3 10.0.1.20');
       expect(output).toContain('64 bytes from 10.0.1.20');
       expect(output).toContain('3 received');
     });
@@ -416,7 +417,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       c2.connect(r1.getPort('GE0/0/1')!, pc2.getPort('eth0')!);
 
       // Ping with TTL=1 — should get Time Exceeded from R1
-      const output = await pc1.executeCommand('ping -c 1 -t 1 10.0.2.2');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 1 -t 1 10.0.2.2');
       expect(output).toContain('Time to live exceeded');
 
       // Router should have incremented ICMP Time Exceeded counter
@@ -444,7 +445,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       // No route to 172.16.1.1 on R1 — a missing route is ICMP code 0
       // (net unreachable), which real ping reports distinctly from code 1
       // (host unreachable).
-      const output = await pc.executeCommand('ping -c 1 172.16.1.1');
+      const output = await pingOnSimulatedClock(pc, 'ping -c 1 172.16.1.1');
       expect(output).toContain('Destination Net Unreachable');
 
       const counters = r1.getCounters();
@@ -511,7 +512,7 @@ describe('Group 4: ARP Protocol — Huawei Devices', () => {
       sw.setAllPortsSTPState('forwarding');
 
       // Ping triggers ARP resolution
-      await pc1.executeCommand('ping -c 1 10.0.1.20');
+      await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.1.20');
 
       // Check ARP table on PC1
       const arpTable = await pc1.executeCommand('arp -a');
@@ -710,7 +711,7 @@ describe('Group 6: STP & Switch Internals', () => {
       const c2 = new Cable('c2'); c2.connect(pc2.getPort('eth0')!, sw.getPort('GigabitEthernet0/0/1')!);
 
       // Ping from PC1 to PC2 — MAC of PC1 learned on port 0
-      await pc1.executeCommand('ping -c 1 10.0.1.20');
+      await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.1.20');
 
       // A clean cable swap is NOT a MAC move on real hardware: link-down
       // flushes the entry and the new port re-learns it from scratch.
@@ -824,7 +825,7 @@ describe('Group 7: Inter-VLAN Routing (Huawei)', () => {
     const c2 = new Cable('c2'); c2.connect(sw.getPort('GigabitEthernet0/0/2')!, r.getPort('GE0/0/0')!);
 
     // Test: PC1 can ping router (same VLAN)
-    const pingRouter = await pc1.executeCommand('ping -c 1 10.0.10.1');
+    const pingRouter = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.10.1');
     expect(pingRouter).toContain('64 bytes from 10.0.10.1');
   });
 });

@@ -38,6 +38,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -96,7 +97,7 @@ describe('Scénario 2 — la table se remplit de trafic RÉEL', () => {
     // Le ping ARRIVE sur le serveur : `trackConnection` n'est appelé que
     // pour un paquet ENTRANT (ou routé) et accepté, ce qui est
     // exactement la règle de netfilter.
-    await pc.executeCommand('ping -c 2 10.9.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 2 10.9.0.1');
 
     const apres = parseInt(await srv.executeCommand('conntrack -C'), 10);
     expect(apres).toBeGreaterThan(avant);
@@ -124,7 +125,7 @@ describe('Scénario 2 — la table se remplit de trafic RÉEL', () => {
     new Cable('c2').connect(srv.getPort('eth0')!, pc.getPort('eth0')!);
     await srv.executeCommand('sudo ip addr add 10.9.1.1/24 dev eth0');
     await pc.executeCommand('sudo ip addr add 10.9.1.2/24 dev eth0');
-    await pc.executeCommand('ping -c 1 10.9.1.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.9.1.1');
 
     expect(await srv.executeCommand('conntrack -L -p icmp')).toContain('src=10.9.1.2');
     // Aucun flux TCP n'a eu lieu : le filtre doit donc rendre zéro, pas

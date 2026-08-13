@@ -24,6 +24,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { collecteDebug } from './_helpers/debugLines';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -78,7 +79,7 @@ describe('Scénario 1 — debug ip icmp', () => {
     const { run, poste, lignes } = await lab();
     expect(await run('debug ip icmp')).toBe('ICMP packet debugging is on');
 
-    await poste.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(poste, 'ping -c 1 10.0.0.1');
 
     const req = lignes.find((l) => /echo received/.test(l));
     const rep = lignes.find((l) => /echo reply/.test(l));
@@ -91,7 +92,7 @@ describe('Scénario 1 — debug ip icmp', () => {
 
   it('ne trace rien tant que le debug n\'est pas actif', async () => {
     const { poste, lignes } = await lab();
-    await poste.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(poste, 'ping -c 1 10.0.0.1');
     expect(lignes).toEqual([]);
   }, LONG);
 });
@@ -109,7 +110,7 @@ describe('Scénario 2 — filtrage du debug par ACL', () => {
     expect(await run('debug ip packet DEBUG-HTTP')).toContain('access list DEBUG-HTTP');
 
     // ICMP ne répond pas au critère : il ne doit rien produire.
-    await poste.executeCommand('ping -c 2 10.0.1.2');
+    await pingOnSimulatedClock(poste, 'ping -c 2 10.0.1.2');
 
     expect(
       lignes.filter((l) => /ICMP|icmp/.test(l)),
@@ -134,7 +135,7 @@ describe('Scénario 7 — la cause du rejet est explicite', () => {
     const { run, poste, lignes } = await lab();
     await run('debug ip packet');
 
-    await poste.executeCommand('ping -c 2 203.0.113.9');
+    await pingOnSimulatedClock(poste, 'ping -c 2 203.0.113.9');
 
     expect(lignes.some((l) => l.includes('unroutable'))).toBe(true);
   }, LONG);
@@ -151,7 +152,7 @@ describe('Scénario 7 — la cause du rejet est explicite', () => {
     ]) await run(c);
     await run('debug ip packet');
 
-    await poste.executeCommand('ping -c 2 10.0.1.2');
+    await pingOnSimulatedClock(poste, 'ping -c 2 10.0.1.2');
 
     expect(lignes.some((l) => l.includes('access denied'))).toBe(true);
   }, LONG);
@@ -170,7 +171,7 @@ describe('Scénario 8 — traçabilité des translations NAT', () => {
     ]) await run(c);
 
     await run('debug ip nat');
-    await poste.executeCommand('ping -c 1 -W 1 10.0.1.2');
+    await pingOnSimulatedClock(poste, 'ping -c 1 -W 1 10.0.1.2');
 
     const nat = lignes.filter((l) => l.startsWith('NAT'));
     expect(nat.length, 'la translation doit être tracée').toBeGreaterThan(0);

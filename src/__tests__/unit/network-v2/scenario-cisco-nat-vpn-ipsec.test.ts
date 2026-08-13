@@ -20,6 +20,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Lab {
   rMandeng: CiscoRouter;
@@ -145,7 +146,7 @@ describe('Scénario 7 (Cisco) — NAT et VPN IPsec : exemption NAT et interactio
   describe('configuration NAT avec exemption VPN', () => {
     it('le tunnel IPsec est établi (QM_IDLE) et le trafic vers le LAN partenaire chiffré transite avec des compteurs non nuls', async () => {
       const { rMandeng, pcLinux1 } = await buildLab();
-      const pingOut = await pcLinux1.executeCommand('ping -c 3 10.50.0.10');
+      const pingOut = await pingOnSimulatedClock(pcLinux1, 'ping -c 3 10.50.0.10');
       expect(pingOut).toContain('0% packet loss');
 
       const isakmp = await rMandeng.executeCommand('show crypto isakmp sa');
@@ -158,7 +159,7 @@ describe('Scénario 7 (Cisco) — NAT et VPN IPsec : exemption NAT et interactio
 
     it('le trafic vers le réseau VPN distant (10.50.0.0/24) n\'apparaît jamais dans show ip nat translations', async () => {
       const { rMandeng, pcLinux1 } = await buildLab();
-      await pcLinux1.executeCommand('ping -c 3 10.50.0.10');
+      await pingOnSimulatedClock(pcLinux1, 'ping -c 3 10.50.0.10');
 
       const table = await rMandeng.executeCommand('show ip nat translations');
       expect(table).not.toContain('10.50.0.10');

@@ -5,6 +5,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 async function buildLab() {
   const r1 = new CiscoRouter('R1');
@@ -66,7 +67,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(ping).toMatch(/100% packet loss|Destination Host Unreachable|Network is unreachable/i);
   });
 
@@ -75,7 +76,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const sa = await l.r1.executeCommand('show crypto isakmp sa');
     expect(sa).toMatch(/MM_NO_STATE/);
     expect(sa).not.toMatch(/QM_IDLE/);
@@ -86,7 +87,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
     expect(detail).toMatch(/Last negotiation failure:.*No matching policy.*phase 1/i);
   });
@@ -96,7 +97,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 3 192.168.2.10');
     const ipsec = await l.r1.executeCommand('show crypto ipsec sa');
     if (/#pkts encaps/.test(ipsec)) {
       expect(ipsec).toMatch(/#pkts encaps: 0/);
@@ -111,7 +112,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const r2Sa = await l.r2.executeCommand('show crypto isakmp sa');
     const r2Detail = await l.r2.executeCommand('show crypto isakmp sa detail');
     expect(r2Sa).toMatch(/MM_NO_STATE/);
@@ -123,7 +124,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
     await configureIkev1(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 'aes 256', 'sha256', 14, 'secret42');
     await configureIkev1(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', '3des', 'md5', 1, 'secret42');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     for (const cmd of [
       'enable', 'configure terminal',
       'no crypto isakmp policy 10',
@@ -133,7 +134,7 @@ describe('Scénario 2 — Échec de négociation IKE par politique incompatible'
       'clear crypto isakmp sa',
     ]) await l.r2.executeCommand(cmd);
     await l.r1.executeCommand('clear crypto isakmp sa');
-    const ping = await l.pc1.executeCommand('ping -c 4 192.168.2.10');
+    const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 4 192.168.2.10');
     expect(ping).toMatch(/4 received|0% packet loss/);
     const sa = await l.r1.executeCommand('show crypto isakmp sa');
     expect(sa).toMatch(/QM_IDLE|MM_ACTIVE|READY/);

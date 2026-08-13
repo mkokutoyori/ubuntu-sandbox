@@ -15,6 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -69,26 +70,26 @@ describe('Cisco L3 switch — inter-VLAN routing', () => {
 
   it('PC1 (VLAN 10) ping sa SVI passerelle 10.0.10.1', async () => {
     const { pc1 } = await buildInterVlanLan();
-    const out = await pc1.executeCommand('ping -c 1 10.0.10.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.10.1');
     expect(out).toMatch(/64 bytes from 10\.0\.10\.1/);
   });
 
   it('PC1 (VLAN 10) ↔ PC2 (VLAN 20) : inter-VLAN routing via le switch', async () => {
     const { pc1 } = await buildInterVlanLan();
-    const out = await pc1.executeCommand('ping -c 3 10.0.20.10');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 3 10.0.20.10');
     expect(out).toMatch(/64 bytes from 10\.0\.20\.10/);
     expect(out).toMatch(/3 packets transmitted, 3 received/);
   });
 
   it('PC2 (VLAN 20) ping PC1 (VLAN 10) : routage symétrique', async () => {
     const { pc2 } = await buildInterVlanLan();
-    const out = await pc2.executeCommand('ping -c 3 10.0.10.10');
+    const out = await pingOnSimulatedClock(pc2, 'ping -c 3 10.0.10.10');
     expect(out).toMatch(/64 bytes from 10\.0\.10\.10/);
   });
 
   it('show arp liste les voisins appris après un ping inter-VLAN', async () => {
     const { sw, pc1 } = await buildInterVlanLan();
-    await pc1.executeCommand('ping -c 1 10.0.20.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.20.10');
     const out = await sw.executeCommand('show arp');
     expect(out).toMatch(/10\.0\.10\.10/);
     expect(out).toMatch(/10\.0\.20\.10/);
@@ -99,7 +100,7 @@ describe('Cisco L3 switch — inter-VLAN routing', () => {
     for (const cmd of [
       'enable', 'configure terminal', 'interface Vlan20', 'shutdown', 'end',
     ]) await sw.executeCommand(cmd);
-    const out = await pc1.executeCommand('ping -c 2 10.0.20.10');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 2 10.0.20.10');
     expect(out).toMatch(/100% packet loss/);
   });
 
@@ -174,7 +175,7 @@ describe('Cisco L3 switch — serveur DHCP intégré', () => {
     await pc1.executeCommand('dhclient eth0');
     await pc2.executeCommand('dhclient eth0');
     const ip2 = /inet (10\.0\.10\.\d+)/.exec(await pc2.executeCommand('ip addr show eth0'))![1];
-    const out = await pc1.executeCommand(`ping -c 2 ${ip2}`);
+    const out = await pingOnSimulatedClock(pc1, `ping -c 2 ${ip2}`);
     expect(out).toMatch(/2 packets transmitted, 2 received/);
   });
 });

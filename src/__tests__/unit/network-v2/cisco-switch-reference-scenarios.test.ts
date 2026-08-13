@@ -6,6 +6,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
@@ -59,7 +60,7 @@ describe('Switch reference scenarios — USER EXEC', () => {
 
   it('3. "show mac address-table" reflects the CAM entry learned from Linux-SRV on Fa0/2', async () => {
     const { sw, srv } = await buildLab();
-    await srv.executeCommand('ping -c 2 192.168.1.20');
+    await pingOnSimulatedClock(srv, 'ping -c 2 192.168.1.20');
     await sw.executeCommand('enable');
     const table = await sw.executeCommand('show mac address-table');
     const srvMac = srv.getPort('eth0')!.getMAC().toString().toLowerCase();
@@ -91,7 +92,7 @@ describe('Switch reference scenarios — USER EXEC', () => {
 describe('Switch reference scenarios — PRIVILEGED EXEC', () => {
   it('10. "configure terminal" enters global config and a VLAN split severs L2 reachability', async () => {
     const { sw, srv } = await buildLab();
-    expect(pktLine(await srv.executeCommand('ping -c 2 192.168.1.20'))).toContain('2 received');
+    expect(pktLine(await pingOnSimulatedClock(srv, 'ping -c 2 192.168.1.20'))).toContain('2 received');
 
     await sw.executeCommand('enable');
     expect(await sw.executeCommand('configure terminal')).toBeDefined();
@@ -105,7 +106,7 @@ describe('Switch reference scenarios — PRIVILEGED EXEC', () => {
     await sw.executeCommand('switchport access vlan 20');
     await sw.executeCommand('end');
 
-    expect(pktLine(await srv.executeCommand('ping -c 2 192.168.1.20'))).toContain('0 received');
+    expect(pktLine(await pingOnSimulatedClock(srv, 'ping -c 2 192.168.1.20'))).toContain('0 received');
   });
 
   it('11. "disable" returns the session to user EXEC (prompt # → >)', async () => {
@@ -139,12 +140,12 @@ describe('Switch reference scenarios — PRIVILEGED EXEC', () => {
 
   it('15. "clear mac address-table dynamic" empties the CAM; traffic then re-learns it', async () => {
     const { sw, srv } = await buildLab();
-    await srv.executeCommand('ping -c 2 192.168.1.20');
+    await pingOnSimulatedClock(srv, 'ping -c 2 192.168.1.20');
     await sw.executeCommand('enable');
     expect(sw.getMACTable().length).toBeGreaterThan(0);
     expect(await sw.executeCommand('clear mac address-table dynamic')).toBe('');
     expect(sw.getMACTable().filter(e => e.type === 'dynamic')).toHaveLength(0);
-    await srv.executeCommand('ping -c 2 192.168.1.20');
+    await pingOnSimulatedClock(srv, 'ping -c 2 192.168.1.20');
     expect(sw.getMACTable().length).toBeGreaterThan(0);
   });
 
@@ -193,7 +194,7 @@ describe('Switch reference scenarios — management SVI (pending Vlan1 IP stack)
     await sw.executeCommand('ip address 192.168.1.254 255.255.255.0');
     await sw.executeCommand('no shutdown');
     await sw.executeCommand('end');
-    expect(await sw.executeCommand('ping 192.168.1.10')).toContain('Success rate is 100 percent');
+    expect(await pingOnSimulatedClock(sw, 'ping 192.168.1.10')).toContain('Success rate is 100 percent');
   });
 
   it.skip('16. "sntp server 192.168.1.10" actually synchronises the clock from Linux-SRV', async () => {

@@ -8,6 +8,7 @@ import { Logger } from '@/network/core/Logger';
 import { DdnsResolver } from '@/network/ipsec/DdnsResolver';
 import { DdnsSiteTunnelController } from '@/network/ipsec/DdnsSiteTunnelController';
 import { CiscoDdnsIkeAdapter } from '@/network/ipsec/CiscoDdnsIkeAdapter';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface EngineFacade {
   ipsecSADB: Map<string, unknown[]>;
@@ -119,7 +120,7 @@ describe('Scénario 14 — DDNS + IKE renégociation (intégration réseau réel
     const { controller, adapter } = makeController(lab, zone);
     controller.connect();
     await adapter.waitForPendingOperation();
-    const ping = await lab.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await pingOnSimulatedClock(lab.pc1, 'ping -c 2 192.168.2.10');
     expect(ping).toContain('2 received');
   });
 
@@ -186,7 +187,7 @@ describe('Scénario 14 — DDNS + IKE renégociation (intégration réseau réel
       ipsecSADB: Map<string, Array<{ pktsEncaps: number }>>;
     } })._getIPSecEngineInternal();
     const before = engine.ipsecSADB.get(R2_WAN)![0].pktsEncaps;
-    await lab.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(lab.pc1, 'ping -c 3 192.168.2.10');
     const after = engine.ipsecSADB.get(R2_WAN)![0].pktsEncaps;
     expect(after).toBeGreaterThan(before);
   });

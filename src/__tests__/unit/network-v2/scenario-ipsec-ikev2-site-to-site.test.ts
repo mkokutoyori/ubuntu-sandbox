@@ -5,6 +5,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 async function buildLab() {
   const r1 = new CiscoRouter('R1');
@@ -86,7 +87,7 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('un ping entre PC1 et PC2 déclenche l\'établissement du tunnel dans le bon ordre (phase 1 puis phase 2)', async () => {
     const l = await buildLab();
     await configureLab(l);
-    const out = await l.pc1.executeCommand('ping -c 4 192.168.2.10');
+    const out = await pingOnSimulatedClock(l.pc1, 'ping -c 4 192.168.2.10');
     expect(out).toContain('4 received');
     const ikev2 = await l.r1.executeCommand('show crypto ikev2 sa');
     expect(ikev2).toContain('10.0.12.1');
@@ -102,7 +103,7 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('les SAs de phase 2 utilisent bien AES-256 + SHA-256 (transform-set annoncé)', async () => {
     const l = await buildLab();
     await configureLab(l);
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     const ipsec = await l.r1.executeCommand('show crypto ipsec sa');
     expect(ipsec).toMatch(/esp-256-aes|esp-aes.*256/i);
     expect(ipsec).toMatch(/esp-sha256-hmac/i);
@@ -111,7 +112,7 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('compteurs symétriques entre R1 et R2: encaps de l\'un = decaps de l\'autre', async () => {
     const l = await buildLab();
     await configureLab(l);
-    await l.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 3 192.168.2.10');
     const r1 = await l.r1.executeCommand('show crypto ipsec sa');
     const r2 = await l.r2.executeCommand('show crypto ipsec sa');
     const encapsR1 = /pkts encaps:\s*(\d+)/.exec(r1);
@@ -130,7 +131,7 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('le tunnel est visible sur les deux endpoints avec des identités locales/remotes miroirs', async () => {
     const l = await buildLab();
     await configureLab(l);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const r1 = await l.r1.executeCommand('show crypto ipsec sa');
     const r2 = await l.r2.executeCommand('show crypto ipsec sa');
     expect(r1).toMatch(/local  ident \(addr\/mask\/prot\/port\): \(192\.168\.1\.0\//);
@@ -144,8 +145,8 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('bidirectionnel: un ping de PC2 → PC1 réussit également via le tunnel déjà établi', async () => {
     const l = await buildLab();
     await configureLab(l);
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
-    const out = await l.pc2.executeCommand('ping -c 2 192.168.1.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
+    const out = await pingOnSimulatedClock(l.pc2, 'ping -c 2 192.168.1.10');
     expect(out).toContain('2 received');
     const ipsec = await l.r1.executeCommand('show crypto ipsec sa');
     const encaps = /pkts encaps:\s*(\d+)/.exec(ipsec);
@@ -157,11 +158,11 @@ describe('Scénario 1 — Tunnel IPsec IKEv2 site-à-site: phase 1 puis phase 2,
   it('clear crypto session sur R1 réinitialise les SAs, un nouveau ping les rétablit', async () => {
     const l = await buildLab();
     await configureLab(l);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const before = await l.r1.executeCommand('show crypto ikev2 sa');
     expect(before).toMatch(/READY/);
     await l.r1.executeCommand('clear crypto session');
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     const after = await l.r1.executeCommand('show crypto ikev2 sa');
     expect(after).toMatch(/READY/);
     const ipsec = await l.r1.executeCommand('show crypto ipsec sa');

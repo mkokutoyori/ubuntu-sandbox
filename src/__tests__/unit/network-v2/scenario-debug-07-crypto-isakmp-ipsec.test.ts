@@ -17,6 +17,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () => {
   const LONG = 30_000;
@@ -180,7 +181,7 @@ describe('Scénario 7 (debug) — debug crypto isakmp / debug crypto ipsec', () 
       await run('debug crypto isakmp');
       // Le siège n'inspecte la proposition du voisin que lorsqu'il est
       // répondeur : c'est Kribi qui initie, avec sa politique AES-128 / groupe 2.
-      await pcKribi.executeCommand('ping -c 2 -W 1 192.168.10.101');
+      await pingOnSimulatedClock(pcKribi, 'ping -c 2 -W 1 192.168.10.101');
 
       expect(lignes.some((l) => /encryption AES-CBC/i.test(l))).toBe(true);
       expect(lignes.some((l) => /keylength of 128/i.test(l))).toBe(true);

@@ -14,6 +14,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -82,7 +83,7 @@ describe('crypto isakmp profile / keyring — real PSK and identity resolution',
     ]) await l.r2.executeCommand(cmd);
 
     await seedPcs(l.pc1, l.pc2);
-    const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(ping).toContain('2 received');
     const sa = await l.r1.executeCommand('show crypto isakmp sa');
     expect(sa).toContain('QM_IDLE');
@@ -112,7 +113,7 @@ describe('crypto isakmp profile / keyring — real PSK and identity resolution',
     ]) await l.r2.executeCommand(cmd);
 
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
     expect(detail).toMatch(/PSK mismatch|authentication failed/i);
   });
@@ -142,7 +143,7 @@ describe('crypto isakmp profile / keyring — real PSK and identity resolution',
     ]) await l.r2.executeCommand(cmd);
 
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
     expect(detail).toMatch(/PSK mismatch|authentication failed/i);
   });
@@ -175,7 +176,7 @@ describe('crypto isakmp profile / keyring — real PSK and identity resolution',
     await l.r1.executeCommand('end');
 
     await seedPcs(l.pc1, l.pc2);
-    const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(ping).toContain('2 received');
   });
 });

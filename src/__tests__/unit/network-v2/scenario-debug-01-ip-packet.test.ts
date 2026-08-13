@@ -16,6 +16,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('Scénario 1 (debug) — debug ip packet', () => {
   const LONG = 30_000;
@@ -101,7 +102,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   describe('sortie nominale — paquets transmis', () => {
     it('un ping produit des lignes `IP: s=… d=…` dans la sortie de debug', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 2 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 2 192.168.10.254');
 
       expect(lignes.length).toBeGreaterThan(0);
       expect(lignes.some((l) => l.includes('s=192.168.10.101') && l.includes('d=192.168.10.254')))
@@ -110,20 +111,20 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
 
     it('la réception et l\'émission sont distinguées (`rcvd` / `sent`)', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 2 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 2 192.168.10.254');
 
       expect(lignes.some((l) => /, rcvd \d+$/.test(l))).toBe(true);
       expect(lignes.some((l) => /, sending$/.test(l))).toBe(true);
     }, LONG);
 
     it('aucune ligne n\'est produite tant que le debug n\'est pas activé', async () => {
-      await pc.executeCommand('ping -c 2 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 2 192.168.10.254');
       expect(lignes).toHaveLength(0);
     }, LONG);
 
     it('la ligne devrait porter la taille réelle (`len 84`) et l\'interface', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 192.168.10.254');
 
       const ligne = lignes.find((l) => l.includes('s=192.168.10.101')) ?? '';
       expect(ligne).toMatch(/len \d+/);
@@ -132,7 +133,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
 
     it('un paquet routé porte le verdict `forward` et le next hop `g=`', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.30.20');
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.30.20');
 
       expect(lignes.some((l) => l.includes('forward'))).toBe(true);
       expect(lignes.some((l) => /g=\d+\.\d+\.\d+\.\d+/.test(l))).toBe(true);
@@ -152,7 +153,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
       await run('end');
 
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 2 -W 1 192.168.30.20');
+      await pingOnSimulatedClock(pc, 'ping -c 2 -W 1 192.168.30.20');
 
       expect(lignes.some((l) => l.includes('access denied'))).toBe(true);
     }, LONG);
@@ -161,7 +162,7 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
   describe('paquet non routable', () => {
     it('une destination sans route devrait produire `unroutable`', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 2 10.50.0.1');
+      await pingOnSimulatedClock(pc, 'ping -c 2 10.50.0.1');
 
       expect(lignes.some((l) => l.includes('unroutable'))).toBe(true);
     }, LONG);
@@ -179,12 +180,12 @@ describe('Scénario 1 (debug) — debug ip packet', () => {
 
     it('après `undebug all`, plus aucune ligne n\'est émise', async () => {
       await run('debug ip packet');
-      await pc.executeCommand('ping -c 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 192.168.10.254');
       const avant = lignes.length;
       expect(avant).toBeGreaterThan(0);
 
       await run('undebug all');
-      await pc.executeCommand('ping -c 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 192.168.10.254');
       expect(lignes.length).toBe(avant);
     }, LONG);
   });

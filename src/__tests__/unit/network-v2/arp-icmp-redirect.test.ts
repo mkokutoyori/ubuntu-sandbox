@@ -15,6 +15,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { ARP_REACHABLE_TIME_MS } from '@/network/devices/EndHost';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ describe('ARP NUD States', () => {
     const { pc1, pc2 } = await buildTwoRouterTopology();
 
     // Trigger ARP exchange by pinging
-    await pc1.executeCommand('ping -c 1 192.168.1.1');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
     // pc1 should have R1's GW MAC as REACHABLE
     const neigh = await pc1.executeCommand('ip neigh show');
@@ -86,7 +87,7 @@ describe('ARP NUD States', () => {
     vi.useFakeTimers();
     const { pc1 } = await buildTwoRouterTopology();
 
-    await pc1.executeCommand('ping -c 1 192.168.1.1');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
     // Advance time past the reachable threshold
     vi.advanceTimersByTime(ARP_REACHABLE_TIME_MS + 1000);
@@ -141,7 +142,7 @@ describe('Gratuitous ARP', () => {
     // dropped its echo-reply (sendEchoReply checked arpTable and returned early).
     const { pc1 } = await buildTwoRouterTopology();
 
-    const ping = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const ping = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(ping).toContain('3 received');
     expect(ping).toContain('0% packet loss');
   });
@@ -195,7 +196,7 @@ describe('ICMP Redirect', () => {
     // R1's LPM hit is the /32 static route on Gi0/0 == inPort → ICMP redirect sent to PC1.
     // The ARP for 192.168.1.2 fails (no such host), so ping returns 0 received,
     // but the redirect is already processed synchronously before the timeout.
-    await pc1.executeCommand('ping -c 1 10.0.0.99');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.99');
 
     const routes = await pc1.executeCommand('ip route show');
     // PC1 should have a /32 host route installed by the ICMP redirect
@@ -262,7 +263,7 @@ describe('ip neigh flush', () => {
     const { pc1 } = await buildTwoRouterTopology();
 
     // Populate ARP table via ping
-    await pc1.executeCommand('ping -c 1 192.168.1.1');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
     let neigh = await pc1.executeCommand('ip neigh show');
     expect(neigh).toContain('192.168.1.1');

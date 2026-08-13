@@ -39,6 +39,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
@@ -109,7 +110,7 @@ describe('clé ISAKMP par nom d\'hôte — le tunnel monte pour de vrai', () => 
     // cassée sont indiscernables — c'est l'erreur qu'a évitée la mesure.
     const t = await lab('crypto isakmp key SECRET123 address 10.0.12.2',
                         'crypto isakmp key SECRET123 address 10.0.12.1');
-    expect(await t.pa.executeCommand('ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
+    expect(await pingOnSimulatedClock(t.pa, 'ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
     expect(await t.a.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
   }, 40000);
 
@@ -119,21 +120,21 @@ describe('clé ISAKMP par nom d\'hôte — le tunnel monte pour de vrai', () => 
     expect(t.retA).toBe('');
     // Du trafic réel traverse le tunnel : c'est ce qui distingue une
     // clé qui authentifie d'une clé qui est seulement mémorisée.
-    expect(await t.pa.executeCommand('ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
+    expect(await pingOnSimulatedClock(t.pa, 'ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
     expect(await t.a.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
   }, 40000);
 
   it('des clés discordantes par nom échouent à l\'authentification', async () => {
     const t = await lab('crypto isakmp key BONNE hostname rB',
                         'crypto isakmp key AUTRE hostname rA');
-    expect(await t.pa.executeCommand('ping -c 2 -W 2 192.168.2.10')).toContain(', 100% packet loss');
+    expect(await pingOnSimulatedClock(t.pa, 'ping -c 2 -W 2 192.168.2.10')).toContain(', 100% packet loss');
     expect(await t.a.executeCommand('show crypto isakmp sa')).toContain('MM_NO_STATE');
   }, 40000);
 
   it('la casse du nom n\'a pas d\'importance (RFC 4343)', async () => {
     const t = await lab('crypto isakmp key SECRET123 hostname RB',
                         'crypto isakmp key SECRET123 hostname Ra');
-    expect(await t.pa.executeCommand('ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
+    expect(await pingOnSimulatedClock(t.pa, 'ping -c 2 -W 2 192.168.2.10')).toContain(', 0% packet loss');
   }, 40000);
 });
 

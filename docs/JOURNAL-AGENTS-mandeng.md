@@ -5999,3 +5999,43 @@ Les suites de transcription `debug/` (`cisco-router-connectivity`,
 `wan-vpn-tests`, `tcpdump`, `scenario-panne-04` et la queue plus petite.
 Chacun demande son propre cablage ; la partie mecanique est eprouvee,
 je me suis arrete pour verifier et livrer ce qui est fait.
+
+---
+
+## Fin de la conversion : le reste des tests lents
+
+Environ soixante-dix fichiers de plus, apres les neuf du lot precedent.
+
+**L'horloge par laboratoire ne passait pas a l'echelle** : chaque fichier
+a une forme de laboratoire differente, et une conversion generique par
+expression reguliere a deja corrompu un fichier. La transformation est
+donc passee au POINT D'APPEL — `src/__tests__/support/fastPing.ts` prete
+une horloge virtuelle a la machine pour UNE commande et lui rend la
+sienne dans un `finally`, si bien que rien d'autre dans le test ne change
+d'ordonnanceur. Aucun constructeur de laboratoire n'a eu besoin d'etre
+touche, et c'est ce qui rend soixante-dix fichiers mecaniques.
+
+**Les suites de transcription `debug/` marchent autrement** : elles sont
+pilotees par des donnees (`{ on: 'linux1', cmd: 'ping -c 3 …' }`). Le
+correctif vit donc dans les CINQ executeurs partages (`_router-suite`,
+`_enterprise-wan`, `_cisco-suite`, `_huawei-suite`, `_l2-lan-suite`),
+une ligne chacun, ce qui couvre les dix-huit fichiers d'un coup.
+`canLendClock` garde l'appel : ces suites pilotent aussi des routeurs et
+des commutateurs, et seule une machine d'extremite porte `setScheduler`.
+
+### Trois erreurs, corrigees plutot que contournees
+
+**`probe-archive-et-rate-limit` a casse, et il avait raison.** Son seau a
+jetons CAR se remplit sur le temps REEL alors que le routeur garde
+l'horloge reelle : une rafale instantanee est donc policee, 3 emis
+1 recu. Ce test depend legitimement de l'intervalle. Il est revenu en
+arriere et reste sur l'horloge murale, delibrement.
+
+**Une insertion d'import a atterri DANS un `import {` multiligne.** A
+retenir : `tsc` restait a zero erreur, parce que le tsconfig ne couvre
+pas `__tests__` — seule l'execution des tests attrape cette classe-la.
+
+**La premiere expression d'insertion d'import ne faisait rien** (ancre
+`^` sans `/m`), d'ou un `pingOnSimulatedClock is not defined` sur tout un
+fichier. Remplacee par une insertion ligne a ligne apres le dernier
+import complet.

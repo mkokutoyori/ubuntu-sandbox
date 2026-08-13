@@ -35,6 +35,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { EthernetFrame, IPv6Packet, ICMPv6Packet } from '@/network/core/types';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -90,7 +91,7 @@ describe('a Cisco router pings IPv6', () => {
   it('`ping ipv6` succeeds and really sends Echo Requests', async () => {
     const { a } = await ciscoPair();
     const icmp = watchIcmpv6();
-    const out = await a.executeCommand('ping ipv6 2001:db8::2');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2');
     expect(out).toContain('Sending 5, 100-byte ICMP Echos to 2001:db8::2');
     expect(out).toMatch(/Success rate is 100 percent \(5\/5\)/);
     // The transcript alone proves nothing — a fabricated success reads
@@ -101,14 +102,14 @@ describe('a Cisco router pings IPv6', () => {
 
   it('a bare `ping <ipv6>` takes the same path — IOS needs no keyword', async () => {
     const { a } = await ciscoPair();
-    const out = await a.executeCommand('ping 2001:db8::2');
+    const out = await pingOnSimulatedClock(a, 'ping 2001:db8::2');
     expect(out).toMatch(/Success rate is 100 percent/);
   }, 30_000);
 
   it('`repeat` and `size` reach the probe', async () => {
     const { a } = await ciscoPair();
     const icmp = watchIcmpv6();
-    const out = await a.executeCommand('ping ipv6 2001:db8::2 repeat 2 size 200');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2 repeat 2 size 200');
     expect(out).toContain('Sending 2, 200-byte ICMP Echos');
     expect(out).toMatch(/\(2\/2\)/);
     expect(icmp.filter((t) => t === 'echo-request')).toHaveLength(2);
@@ -116,20 +117,20 @@ describe('a Cisco router pings IPv6', () => {
 
   it('an address nobody holds times out rather than pretending', async () => {
     const { a } = await ciscoPair();
-    const out = await a.executeCommand('ping ipv6 2001:db8::99 repeat 2');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::99 repeat 2');
     expect(out).toMatch(/Success rate is 0 percent/);
   }, 30_000);
 
   it('a malformed literal is still refused', async () => {
     const { a } = await ciscoPair();
-    expect(await a.executeCommand('ping ipv6 zzzz'))
+    expect(await pingOnSimulatedClock(a, 'ping ipv6 zzzz'))
       .toBe('% Unrecognized host or address, or protocol not running.');
   }, 30_000);
 
   it('its own address answers without leaving the box', async () => {
     const { a } = await ciscoPair();
     const icmp = watchIcmpv6();
-    const out = await a.executeCommand('ping ipv6 2001:db8::1 repeat 2');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::1 repeat 2');
     expect(out).toMatch(/Success rate is 100 percent/);
     expect(icmp.filter((t) => t === 'echo-request')).toHaveLength(0);
   }, 30_000);
@@ -139,7 +140,7 @@ describe('a Huawei router pings IPv6', () => {
   it('`ping ipv6` reports hop limit, and the requests are real', async () => {
     const { a } = await vrpPair();
     const icmp = watchIcmpv6();
-    const out = await a.executeCommand('ping ipv6 -c 3 2001:db8::2');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 -c 3 2001:db8::2');
     expect(out).toContain('PING 2001:db8::2 : 56  data bytes');
     // `hop limit` and not `ttl`: IPv6 has no TTL field, and VRP says so.
     expect(out).toMatch(/hop limit=64/);
@@ -151,13 +152,13 @@ describe('a Huawei router pings IPv6', () => {
 
   it('a bare `ping <ipv6>` takes the same path', async () => {
     const { a } = await vrpPair();
-    const out = await a.executeCommand('ping -c 2 2001:db8::2');
+    const out = await pingOnSimulatedClock(a, 'ping -c 2 2001:db8::2');
     expect(out).toContain('2 packet(s) received');
   }, 30_000);
 
   it('an unreachable address loses every packet', async () => {
     const { a } = await vrpPair();
-    const out = await a.executeCommand('ping ipv6 -c 2 2001:db8::99');
+    const out = await pingOnSimulatedClock(a, 'ping ipv6 -c 2 2001:db8::99');
     expect(out).toContain('0 packet(s) received');
     expect(out).toContain('100.00% packet loss');
   }, 30_000);
@@ -177,7 +178,7 @@ describe('a router answers a host that has never spoken to it', () => {
       configureIPv6Interface(i: string, a: IPv6Address, p: number): boolean;
     }).configureIPv6Interface('eth0', new IPv6Address('2001:db8::10'), 64);
 
-    const out = await pc.executeCommand('ping -6 -c 2 2001:db8::1');
+    const out = await pingOnSimulatedClock(pc, 'ping -6 -c 2 2001:db8::1');
     expect(out).toMatch(/2 received|0% packet loss/);
   }, 30_000);
 });
@@ -185,7 +186,7 @@ describe('a router answers a host that has never spoken to it', () => {
 describe('the neighbour cache is viewable', () => {
   it('IOS renders it, with the MAC in its own notation', async () => {
     const { a } = await ciscoPair();
-    await a.executeCommand('ping ipv6 2001:db8::2 repeat 1');
+    await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2 repeat 1');
     const out = await a.executeCommand('show ipv6 neighbors');
     expect(out.split('\n')[0])
       .toBe('IPv6 Address                              Age Link-layer Addr State Interface');
@@ -200,7 +201,7 @@ describe('the neighbour cache is viewable', () => {
 
   it('VRP renders the same cache as records, with its own fields', async () => {
     const { a } = await vrpPair();
-    await a.executeCommand('ping ipv6 -c 1 2001:db8::2');
+    await pingOnSimulatedClock(a, 'ping ipv6 -c 1 2001:db8::2');
     const out = await a.executeCommand('display ipv6 neighbors');
     expect(out).toContain('IPv6 Address : 2001:DB8::2');
     expect(out).toMatch(/Link-layer   : [0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}/);
@@ -254,7 +255,7 @@ describe('a router traces an IPv6 route', () => {
 describe('the cache can be emptied', () => {
   it('IOS `clear ipv6 neighbors` really empties it', async () => {
     const { a } = await ciscoPair();
-    await a.executeCommand('ping ipv6 2001:db8::2 repeat 1');
+    await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2 repeat 1');
     expect(await a.executeCommand('show ipv6 neighbors')).toContain('2001:DB8::2');
     expect(await a.executeCommand('clear ipv6 neighbors')).toBe('');
     expect(await a.executeCommand('show ipv6 neighbors')).not.toContain('2001:DB8::2');
@@ -262,7 +263,7 @@ describe('the cache can be emptied', () => {
 
   it('VRP `reset ipv6 neighbors` really empties it', async () => {
     const { a } = await vrpPair();
-    await a.executeCommand('ping ipv6 -c 1 2001:db8::2');
+    await pingOnSimulatedClock(a, 'ping ipv6 -c 1 2001:db8::2');
     expect(await a.executeCommand('display ipv6 neighbors')).toContain('2001:DB8::2');
     await a.executeCommand('reset ipv6 neighbors');
     expect(await a.executeCommand('display ipv6 neighbors')).toContain('Total: 0');
@@ -272,14 +273,14 @@ describe('the cache can be emptied', () => {
 describe('an address is rendered as an address', () => {
   it('no view uppercases a zone index or glues a prefix to it', async () => {
     const { a } = await ciscoPair();
-    await a.executeCommand('ping ipv6 2001:db8::2 repeat 1');
+    await pingOnSimulatedClock(a, 'ping ipv6 2001:db8::2 repeat 1');
     const ios = await a.executeCommand('show ipv6 neighbors');
     // The zone is an interface name, not part of the 128 bits.
     expect(ios).not.toContain('%');
     expect(ios).not.toContain('GIGABITETHERNET');
 
     const { a: v } = await vrpPair();
-    await v.executeCommand('ping ipv6 -c 1 2001:db8::2');
+    await pingOnSimulatedClock(v, 'ping ipv6 -c 1 2001:db8::2');
     expect(await v.executeCommand('display ipv6 neighbors')).not.toContain('%');
   }, 30_000);
 

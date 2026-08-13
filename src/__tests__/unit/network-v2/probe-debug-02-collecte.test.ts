@@ -21,6 +21,7 @@ import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { getDefaultEventBus } from '@/events/EventBus';
 import type { EthernetFrame } from '@/network/core/types';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 /**
  * Ce qui arrive réellement sur un port, lu sur le bus d'observation —
@@ -95,7 +96,7 @@ describe('Scénario 5 — port mirroring local (SPAN)', () => {
       'end',
     ]) await sw.executeCommand(c);
 
-    await source.executeCommand('ping -c 2 -W 1 192.168.5.3');
+    await pingOnSimulatedClock(source, 'ping -c 2 -W 1 192.168.5.3');
 
     expect(
       capture.length,
@@ -105,7 +106,7 @@ describe('Scénario 5 — port mirroring local (SPAN)', () => {
 
   it('sans session SPAN, l\'analyseur ne voit pas le trafic des autres', async () => {
     const { source, capture } = await lab();
-    await source.executeCommand('ping -c 2 -W 1 192.168.5.3');
+    await pingOnSimulatedClock(source, 'ping -c 2 -W 1 192.168.5.3');
 
     const unicastPourAutrui = capture.filter((f) => {
       const dst = f.dstMAC.toString().toLowerCase();
@@ -251,7 +252,7 @@ describe('Scénario 15 — export de flux NetFlow', () => {
       'end',
     ]) await r.executeCommand(c);
 
-    await client.executeCommand('ping -c 2 -W 1 192.168.1.1');
+    await pingOnSimulatedClock(client, 'ping -c 2 -W 1 192.168.1.1');
 
     const cache = await r.executeCommand('show ip cache flow');
     expect(cache, 'le cache de flux doit connaître le trafic observé').not.toContain('Invalid input');

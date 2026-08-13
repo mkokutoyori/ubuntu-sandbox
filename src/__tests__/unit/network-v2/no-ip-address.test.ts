@@ -6,6 +6,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const run = (d: Cmd, cmds: string[]) =>
@@ -54,7 +55,7 @@ describe('no ip address', () => {
     await run(h20, ['ip link set eth0 up', 'ip addr add 10.1.20.20/24 dev eth0', 'ip route add default via 10.1.20.1']);
 
     expect(await r.executeCommand('show ip route')).toMatch(/10\.1\.1\.0\/24 is directly connected, GigabitEthernet0\/0\.10/);
-    expect(await h10.executeCommand('ping -c 2 10.1.1.1')).toContain('0% packet loss');
-    expect(await h10.executeCommand('ping -c 2 10.1.20.20')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h10, 'ping -c 2 10.1.1.1')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h10, 'ping -c 2 10.1.20.20')).toContain('0% packet loss');
   });
 });

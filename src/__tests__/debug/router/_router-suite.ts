@@ -29,6 +29,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock, isPingStep, canLendClock } from '../../support/fastPing';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/router');
 
@@ -356,7 +357,9 @@ export async function dumpRouter(
 
     let out: string | null = null;
     try {
-      out = await dev.executeCommand(step.cmd);
+      out = isPingStep(step.cmd) && canLendClock(dev)
+        ? await pingOnSimulatedClock(dev as never, step.cmd)
+        : await dev.executeCommand(step.cmd);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       lines.push(`<JS EXCEPTION> ${msg}`);

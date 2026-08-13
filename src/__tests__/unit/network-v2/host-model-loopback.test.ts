@@ -23,6 +23,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 function buildMultiHomedTopology(gwType: 'linux' | 'windows') {
   const pc1 = new LinuxPC('linux-pc', 'PC1');
@@ -61,7 +62,7 @@ describe('Weak host model on Linux (RFC 1122 §3.3.4.2)', () => {
   it('answers a ping addressed to another local interface', async () => {
     const { pc1 } = buildMultiHomedTopology('linux');
 
-    const out = await pc1.executeCommand('ping -c 1 10.0.0.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.1');
 
     // Reply must be sourced from the address the request was sent to
     // (RFC 1122 §3.2.2.6), not from the ingress interface address.
@@ -72,7 +73,7 @@ describe('Weak host model on Linux (RFC 1122 §3.3.4.2)', () => {
   it('still answers a ping to the ingress interface address', async () => {
     const { pc1 } = buildMultiHomedTopology('linux');
 
-    const out = await pc1.executeCommand('ping -c 1 192.168.1.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
     expect(out).toContain('0% packet loss');
   }, 15000);
@@ -82,7 +83,7 @@ describe('Strong host model on Windows (Vista+ default)', () => {
   it('does NOT answer a ping addressed to another local interface', async () => {
     const { pc1 } = buildMultiHomedTopology('windows');
 
-    const out = await pc1.executeCommand('ping -c 1 10.0.0.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.0.1');
 
     expect(out).toContain('100% packet loss');
   }, 15000);
@@ -90,7 +91,7 @@ describe('Strong host model on Windows (Vista+ default)', () => {
   it('answers a ping to the ingress interface address', async () => {
     const { pc1 } = buildMultiHomedTopology('windows');
 
-    const out = await pc1.executeCommand('ping -c 1 192.168.1.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.1');
 
     expect(out).toContain('0% packet loss');
   }, 15000);
@@ -100,7 +101,7 @@ describe('Loopback delivery (RFC 1122 §3.2.1.3)', () => {
   it('Linux: ping 127.0.0.1 succeeds without touching the wire', async () => {
     const pc = new LinuxPC('linux-pc', 'Solo');
     // No interface configured, no cable: loopback must still answer.
-    const out = await pc.executeCommand('ping -c 2 127.0.0.1');
+    const out = await pingOnSimulatedClock(pc, 'ping -c 2 127.0.0.1');
 
     expect(out).toContain('from 127.0.0.1');
     expect(out).toContain('0% packet loss');
@@ -108,21 +109,21 @@ describe('Loopback delivery (RFC 1122 §3.2.1.3)', () => {
 
   it('Linux: any 127/8 address answers (e.g. 127.0.0.53)', async () => {
     const pc = new LinuxPC('linux-pc', 'Solo');
-    const out = await pc.executeCommand('ping -c 1 127.0.0.53');
+    const out = await pingOnSimulatedClock(pc, 'ping -c 1 127.0.0.53');
 
     expect(out).toContain('0% packet loss');
   }, 15000);
 
   it('Windows: ping 127.0.0.1 succeeds', async () => {
     const pc = new WindowsPC('windows-pc', 'WinSolo');
-    const out = await pc.executeCommand('ping 127.0.0.1');
+    const out = await pingOnSimulatedClock(pc, 'ping 127.0.0.1');
 
     expect(out).toMatch(/Reply from 127\.0\.0\.1|\(0% loss\)/);
   }, 15000);
 
   it('Linux: self-ping of an owned address still succeeds', async () => {
     const { pc1 } = buildMultiHomedTopology('linux');
-    const out = await pc1.executeCommand('ping -c 1 192.168.1.10');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.1.10');
 
     expect(out).toContain('0% packet loss');
   }, 15000);

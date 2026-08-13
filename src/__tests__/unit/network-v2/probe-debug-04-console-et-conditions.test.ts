@@ -27,6 +27,7 @@ import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
 import type { KeyEvent, TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { collecteDebug } from './_helpers/debugLines';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -330,7 +331,7 @@ describe('Scénario 8 — IPv4 et IPv6 sont étanches', () => {
     const { run, lignes, pc } = await lab();
     await run('debug ipv6 packet');
 
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     expect(lignes, 'un ping IPv4 ne concerne pas ce drapeau').toEqual([]);
   }, LONG);
@@ -372,7 +373,7 @@ describe('Scénario 10 — le bridage console épargne le plan de données', () 
 
     // Le plan de données, lui, n'a rien à voir avec ce budget.
     const avant = Date.now();
-    const ping = await pc.executeCommand('ping -c 3 -W 1 10.0.0.1');
+    const ping = await pingOnSimulatedClock(pc, 'ping -c 3 -W 1 10.0.0.1');
     const duree = Date.now() - avant;
 
     expect(ping, 'aucune perte sur le trafic réel').toMatch(/3 (packets )?received|0% packet loss/);

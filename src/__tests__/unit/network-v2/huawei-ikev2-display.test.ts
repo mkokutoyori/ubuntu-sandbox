@@ -13,6 +13,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -88,7 +89,7 @@ describe('Huawei display ikev2 sa — wired to the real engine (was a hardcoded 
 
   it('after a real GRE-over-IPsec IKEv2 tunnel is established, display ikev2 sa reports the live SA identically to display ike v2 sa', async () => {
     const { r1, pc1 } = await buildLab();
-    const ping = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const ping = await pingOnSimulatedClock(pc1, 'ping -c 3 192.168.2.10');
     expect(ping).toContain('3 received');
 
     const legacy = await r1.executeCommand('display ikev2 sa');

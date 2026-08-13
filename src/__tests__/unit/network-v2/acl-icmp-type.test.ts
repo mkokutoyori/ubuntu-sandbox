@@ -5,6 +5,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const run = (d: Cmd, cmds: string[]) =>
@@ -37,7 +38,7 @@ beforeEach(() => { Logger.reset(); });
 describe('ACL ICMP message-type matching', () => {
   it('permits the matching ICMP type and drops a non-matching one', async () => {
     const { r2, h1 } = await buildLab();
-    expect(await h1.executeCommand('ping -c 1 10.0.2.10')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h1, 'ping -c 1 10.0.2.10')).toContain('0% packet loss');
 
     await run(r2, ['configure terminal',
       'ip access-list extended ECHO-REPLY-ONLY',
@@ -46,7 +47,7 @@ describe('ACL ICMP message-type matching', () => {
       'exit',
       'interface GigabitEthernet0/1', 'ip access-group ECHO-REPLY-ONLY in', 'exit', 'end']);
 
-    const dropped = await h1.executeCommand('ping -c 2 10.0.2.10');
+    const dropped = await pingOnSimulatedClock(h1, 'ping -c 2 10.0.2.10');
     expect(dropped).toContain('100% packet loss');
 
     await run(r2, ['configure terminal',
@@ -56,7 +57,7 @@ describe('ACL ICMP message-type matching', () => {
       'exit',
       'interface GigabitEthernet0/1', 'ip access-group ALLOW-ECHO in', 'exit', 'end']);
 
-    const allowed = await h1.executeCommand('ping -c 2 10.0.2.10');
+    const allowed = await pingOnSimulatedClock(h1, 'ping -c 2 10.0.2.10');
     expect(allowed).toContain('0% packet loss');
 
     const counters = await r2.executeCommand('show ip access-lists ALLOW-ECHO');
@@ -72,7 +73,7 @@ describe('ACL ICMP message-type matching', () => {
       'exit',
       'interface GigabitEthernet0/1', 'ip access-group NO-UNREACH in', 'exit', 'end']);
 
-    const allowed = await h1.executeCommand('ping -c 2 10.0.2.10');
+    const allowed = await pingOnSimulatedClock(h1, 'ping -c 2 10.0.2.10');
     expect(allowed).toContain('0% packet loss');
   });
 });

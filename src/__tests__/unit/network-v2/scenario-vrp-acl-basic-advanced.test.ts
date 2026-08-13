@@ -15,6 +15,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -88,10 +89,10 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
       await sw1.executeCommand('quit');
       await sw1.executeCommand('return');
 
-      const pingBlocked = await pcA.executeCommand('ping -c 2 -W 1 192.168.1.20');
+      const pingBlocked = await pingOnSimulatedClock(pcA, 'ping -c 2 -W 1 192.168.1.20');
       expect(pingBlocked).toContain('100% packet loss');
 
-      const pingAllowed = await pcC.executeCommand('ping -c 2 192.168.1.20');
+      const pingAllowed = await pingOnSimulatedClock(pcC, 'ping -c 2 192.168.1.20');
       expect(pingAllowed).toContain('2 packets transmitted, 2 received');
     });
   });
@@ -113,13 +114,13 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
 
       // Both A→B and C→B are dropped on egress toward B, regardless of
       // which port they ingressed on.
-      const fromA = await pcA.executeCommand('ping -c 1 -W 1 192.168.1.20');
+      const fromA = await pingOnSimulatedClock(pcA, 'ping -c 1 -W 1 192.168.1.20');
       expect(fromA).toContain('100% packet loss');
-      const fromC = await pcC.executeCommand('ping -c 1 -W 1 192.168.1.20');
+      const fromC = await pingOnSimulatedClock(pcC, 'ping -c 1 -W 1 192.168.1.20');
       expect(fromC).toContain('100% packet loss');
 
       // A→C is untouched (no ACL on that egress port).
-      const aToC = await pcA.executeCommand('ping -c 1 192.168.1.30');
+      const aToC = await pingOnSimulatedClock(pcA, 'ping -c 1 192.168.1.30');
       expect(aToC).toContain('1 packets transmitted, 1 received');
     }, 15000);
   });
@@ -144,7 +145,7 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
       expect(probe).toMatch(/timed out|refused/i);
       expect(probe).not.toMatch(/succeeded/i);
 
-      const ping = await pc1.executeCommand('ping -c 2 192.168.20.101');
+      const ping = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.20.101');
       expect(ping).toContain('2 packets transmitted, 2 received');
     });
   });
@@ -166,7 +167,7 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
       await ar1.executeCommand('return');
 
       await pc1.executeCommand('nc -zv -w 1 192.168.20.101 22');
-      await pc1.executeCommand('ping -c 2 192.168.20.101');
+      await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.20.101');
 
       const before = await ar1.executeCommand('display acl 3002');
       expect(before).toMatch(/destination-port eq 22/);
@@ -197,7 +198,7 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
       await swLab.sw1.executeCommand('traffic-filter inbound acl 2001');
       await swLab.sw1.executeCommand('quit');
       await swLab.sw1.executeCommand('return');
-      const basicBlocked = await swLab.pcA.executeCommand('ping -c 1 -W 1 192.168.1.20');
+      const basicBlocked = await pingOnSimulatedClock(swLab.pcA, 'ping -c 1 -W 1 192.168.1.20');
       expect(basicBlocked).toContain('100% packet loss');
 
       const { ar1, pc1, srv } = buildRouterLab();
@@ -215,7 +216,7 @@ describe('Scénario 5 — ACL sur switch et routeur Huawei', () => {
 
       const advBlocked = await pc1.executeCommand('nc -zv -w 1 192.168.20.101 22');
       expect(advBlocked).not.toMatch(/succeeded/i);
-      const icmpStillWorks = await pc1.executeCommand('ping -c 1 192.168.20.101');
+      const icmpStillWorks = await pingOnSimulatedClock(pc1, 'ping -c 1 192.168.20.101');
       expect(icmpStillWorks).toContain('1 packets transmitted, 1 received');
 
       const display = await ar1.executeCommand('display acl 3003');

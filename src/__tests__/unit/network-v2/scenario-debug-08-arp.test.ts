@@ -18,6 +18,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('Scénario 8 (debug) — debug arp', () => {
   const LONG = 30_000;
@@ -79,7 +80,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
      */
     async function resolutionFraiche(): Promise<void> {
       await pc.executeCommand('sudo ip -s -s neigh flush all');
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.10.254');
     }
 
     it('une requête ARP reçue produit une ligne `rcvd req` avec IP et MAC source', async () => {
@@ -127,7 +128,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
     }, LONG);
 
     it('le cache ARP du routeur se peuple après la résolution', async () => {
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.10.254');
 
       const arp = await run('show arp');
       expect(arp).toContain('192.168.10.101');
@@ -138,7 +139,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
   describe('conflit d\'adresse IP — un autre équipement porte 192.168.10.254', () => {
     async function provoquerLeConflit(): Promise<void> {
       usurpateur.configureInterface('eth0', new IPAddress('192.168.10.254'), new SubnetMask('255.255.255.0'));
-      await usurpateur.executeCommand('ping -c 1 -W 1 192.168.10.101');
+      await pingOnSimulatedClock(usurpateur, 'ping -c 1 -W 1 192.168.10.101');
     }
 
     it('l\'ARP gratuit du squatteur arrive bien sur le canal de debug', async () => {
@@ -186,7 +187,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
     it('le routeur refuse d\'écraser sa propre entrée ARP et signale le doublon', async () => {
       usurpateur.configureInterface('eth0', new IPAddress('192.168.10.254'), new SubnetMask('255.255.255.0'));
-      await usurpateur.executeCommand('ping -c 1 -W 1 192.168.10.101');
+      await pingOnSimulatedClock(usurpateur, 'ping -c 1 -W 1 192.168.10.101');
 
       const usurpMac = usurpateur.getPort('eth0')!.getMAC().toString()
         .replace(/[^0-9a-f]/gi, '').toLowerCase().replace(/(.{4})(.{4})(.{4})/, '$1.$2.$3');
@@ -197,7 +198,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
   describe('nettoyage et validation', () => {
     it('`clear arp-cache` vide le cache ARP du routeur', async () => {
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.10.254');
       expect(await run('show arp')).toContain('192.168.10.101');
 
       const out = await run('clear arp-cache');
@@ -206,7 +207,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
     }, LONG);
 
     it('`show arp | include <réseau>` filtre correctement la sortie', async () => {
-      await pc.executeCommand('ping -c 1 -W 1 192.168.10.254');
+      await pingOnSimulatedClock(pc, 'ping -c 1 -W 1 192.168.10.254');
 
       const out = await run('show arp | include 192.168.10.101');
       expect(out).toContain('192.168.10.101');
@@ -215,7 +216,7 @@ describe('Scénario 8 (debug) — debug arp', () => {
 
     it('la connectivité vers la passerelle est rétablie après nettoyage', async () => {
       await run('clear arp-cache');
-      const ping = await pc.executeCommand('ping -c 3 -W 1 192.168.10.254');
+      const ping = await pingOnSimulatedClock(pc, 'ping -c 3 -W 1 192.168.10.254');
 
       expect(ping).toMatch(/64 bytes from 192\.168\.10\.254/);
       expect(ping).not.toMatch(/100% packet loss/);

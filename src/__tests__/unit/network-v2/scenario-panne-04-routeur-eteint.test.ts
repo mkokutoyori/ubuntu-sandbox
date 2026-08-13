@@ -14,6 +14,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock, isPingStep } from '../../support/fastPing';
 
 describe('Scénario 4 — extinction du routeur RTR-MANDENG-01', () => {
   const LONG = 30_000;
@@ -66,7 +67,9 @@ describe('Scénario 4 — extinction du routeur RTR-MANDENG-01', () => {
     await installMatrice();
   });
 
-  const run = (cmd: string): Promise<string> => pc1.executeCommand(cmd);
+  const run = (cmd: string): Promise<string> => (isPingStep(cmd)
+    ? pingOnSimulatedClock(pc1, cmd)
+    : Promise.resolve(pc1.executeCommand(cmd)));
 
   /**
    * Matrice de connectivité du scénario : chaque ligne « cible|attendu|

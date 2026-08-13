@@ -9,6 +9,7 @@ import { Logger } from '@/network/core/Logger';
 import {
   DSCP, dscpOf, ecnOf, withDscp, makeCopyConfig, makeSetConfig, makeMapConfig,
 } from '@/network/ipsec/DscpTunnelMarker';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface EngineInternal {
   computeOuterTosForPeer(peer: string, innerTos: number): number | null;
@@ -79,7 +80,7 @@ async function establishTunnel() {
   await configureEndpoint(lab.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1',
     '192.168.2.0', '192.168.1.0', 'DscpScenarioSecret');
   await seedPcs(lab.pc1, lab.pc2);
-  await lab.pc1.executeCommand('ping -c 2 192.168.2.10');
+  await pingOnSimulatedClock(lab.pc1, 'ping -c 2 192.168.2.10');
   return lab;
 }
 
@@ -92,7 +93,7 @@ describe('Scénario 16 — DSCP à travers un vrai tunnel IPsec (2 routeurs, 2 P
 
   it('un tunnel IPsec réel est établi entre R1 et R2 (ping OK + SA installée)', async () => {
     const lab = await establishTunnel();
-    const ping = await lab.pc1.executeCommand('ping -c 1 192.168.2.10');
+    const ping = await pingOnSimulatedClock(lab.pc1, 'ping -c 1 192.168.2.10');
     expect(ping).toContain('1 received');
     const eng1 = getEngine(lab.r1);
     expect(eng1.ipsecSADB.get('10.0.12.2')?.length ?? 0).toBeGreaterThan(0);
@@ -103,7 +104,7 @@ describe('Scénario 16 — DSCP à travers un vrai tunnel IPsec (2 routeurs, 2 P
     const eng1 = getEngine(lab.r1);
     const sa = eng1.ipsecSADB.get('10.0.12.2')![0];
     const before = sa.pktsEncaps;
-    await lab.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(lab.pc1, 'ping -c 3 192.168.2.10');
     expect(sa.pktsEncaps).toBeGreaterThan(before);
   });
 
@@ -168,7 +169,7 @@ describe('Scénario 16 — DSCP à travers un vrai tunnel IPsec (2 routeurs, 2 P
   it("modifier la config DSCP n'affecte pas les compteurs déjà accumulés", async () => {
     const lab = await establishTunnel();
     const eng1 = getEngine(lab.r1);
-    await lab.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(lab.pc1, 'ping -c 3 192.168.2.10');
     const sa = eng1.ipsecSADB.get('10.0.12.2')![0];
     const before = sa.pktsEncaps;
     eng1.setSADscpConfigForPeer('10.0.12.2', makeSetConfig(0));

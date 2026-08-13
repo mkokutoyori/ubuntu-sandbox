@@ -6,6 +6,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const run = (d: Cmd, cmds: string[]) =>
@@ -38,10 +39,10 @@ describe('Inter-VLAN routing (router-on-a-stick, 802.1Q subinterfaces)', () => {
     await run(h10, ['ip link set eth0 up', 'ip addr add 10.1.10.10/24 dev eth0', 'ip route add default via 10.1.10.1']);
     await run(h20, ['ip link set eth0 up', 'ip addr add 10.1.20.20/24 dev eth0', 'ip route add default via 10.1.20.1']);
 
-    expect(await h10.executeCommand('ping -c 2 10.1.10.1')).toContain('0% packet loss');
-    expect(await h20.executeCommand('ping -c 2 10.1.20.1')).toContain('0% packet loss');
-    expect(await h10.executeCommand('ping -c 2 10.1.20.20')).toContain('0% packet loss');
-    expect(await h20.executeCommand('ping -c 2 10.1.10.10')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h10, 'ping -c 2 10.1.10.1')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h20, 'ping -c 2 10.1.20.1')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h10, 'ping -c 2 10.1.20.20')).toContain('0% packet loss');
+    expect(await pingOnSimulatedClock(h20, 'ping -c 2 10.1.10.10')).toContain('0% packet loss');
 
     const arp = await r.executeCommand('show ip arp');
     expect(arp).toContain('GigabitEthernet0/0.10');

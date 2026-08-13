@@ -16,6 +16,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('Scénario 9 (debug) — debug interface', () => {
   const LONG = 30_000;
@@ -156,7 +157,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
 
     it('un câble corrompant les trames devrait incrémenter le compteur CRC', async () => {
       lienWan.setCorruptionRate(1);
-      await fai.executeCommand('ping -c 3 -W 1 203.0.113.1');
+      await pingOnSimulatedClock(fai, 'ping -c 3 -W 1 203.0.113.1');
 
       const out = await run(`show interfaces ${wan}`);
       const crc = /(\d+)\s+CRC/.exec(out) ?? /,\s*(\d+)\s+CRC/.exec(out);
@@ -211,7 +212,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
     });
 
     it('après `clear counters`, les compteurs de paquets repartent de zéro', async () => {
-      await fai.executeCommand('ping -c 3 -W 1 203.0.113.1');
+      await pingOnSimulatedClock(fai, 'ping -c 3 -W 1 203.0.113.1');
       expect(await run(`show interfaces ${wan}`)).not.toMatch(/\b0 packets input\b/);
 
       await run(`clear counters ${wan}`);
@@ -223,7 +224,7 @@ describe('Scénario 9 (debug) — debug interface', () => {
 
     it('après correction, le lien ne présente plus d\'erreur', async () => {
       await run(`clear counters ${wan}`);
-      await fai.executeCommand('ping -c 3 -W 1 203.0.113.1');
+      await pingOnSimulatedClock(fai, 'ping -c 3 -W 1 203.0.113.1');
 
       const out = await run(`show interfaces ${wan}`);
       expect(out).toMatch(/0 input errors, 0 CRC, 0 frame/);

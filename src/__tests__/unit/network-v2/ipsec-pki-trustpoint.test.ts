@@ -18,6 +18,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { resetPkiCaRegistry } from '@/network/pki/PkiCaRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -122,7 +123,7 @@ describe('crypto pki trustpoint — real CA enrollment wired to IKE cert auth', 
     await configureX509Profile(l.r2, '10.0.12.1');
     await seedPcs(l.pc1, l.pc2);
 
-    const ping = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(ping).toContain('2 received');
     const sa = await l.r1.executeCommand('show crypto ikev2 sa');
     expect(sa).toMatch(/READY/);
@@ -138,7 +139,7 @@ describe('crypto pki trustpoint — real CA enrollment wired to IKE cert auth', 
     await configureX509Profile(l.r2, '10.0.12.1');
     await seedPcs(l.pc1, l.pc2);
 
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const detail = await l.r1.executeCommand('show crypto isakmp sa detail');
     expect(detail).toMatch(/Certificate unknown/i);
   });

@@ -6,6 +6,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import type { PingResult } from '@/network/devices/EndHost';
 import { formatPingReplyLine } from '@/network/devices/linux/LinuxFormatHelpers';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -26,10 +27,10 @@ function topo(): { a: LinuxPC; b: LinuxPC; cable: Cable } {
 describe('non-interactive ping on a severed link (docs/PRD-Link-State.md §4 #5, P3)', () => {
   it('renders a per-packet unreachable line, not just a silent summary', async () => {
     const { a, cable } = topo();
-    await a.executeCommand('ping -c 1 10.0.9.2');
+    await pingOnSimulatedClock(a, 'ping -c 1 10.0.9.2');
     cable.disconnect();
 
-    const out = await a.executeCommand('ping -c 2 -W 1 10.0.9.2');
+    const out = await pingOnSimulatedClock(a, 'ping -c 2 -W 1 10.0.9.2');
     expect(out).toContain('Destination Host Unreachable');
     expect(out).toContain('icmp_seq=1');
     expect(out).toContain('100% packet loss');
@@ -37,7 +38,7 @@ describe('non-interactive ping on a severed link (docs/PRD-Link-State.md §4 #5,
 
   it('still reports success while the cable is plugged in', async () => {
     const { a } = topo();
-    const out = await a.executeCommand('ping -c 2 10.0.9.2');
+    const out = await pingOnSimulatedClock(a, 'ping -c 2 10.0.9.2');
     expect(out).toContain('0% packet loss');
     expect(out).not.toContain('Destination Host Unreachable');
   }, 30000);

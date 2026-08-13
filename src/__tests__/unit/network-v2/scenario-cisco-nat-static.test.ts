@@ -24,6 +24,7 @@ import type { ICMPPacket } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Lab {
   srvOracle: LinuxServer;
@@ -144,7 +145,7 @@ describe('Scénario 2 (Cisco) — NAT statique : serveur Oracle exposé avec IP 
 
     it('un ping du serveur Oracle vers l\'extérieur aboutit (round-trip complet à travers le NAT statique)', async () => {
       const { srvOracle } = await buildLab();
-      const out = await srvOracle.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
+      const out = await pingOnSimulatedClock(srvOracle, `ping -c 3 ${OUTSIDE_IP}`);
       expect(out).toMatch(/0% packet loss|3 (packets )?received/i);
     });
 

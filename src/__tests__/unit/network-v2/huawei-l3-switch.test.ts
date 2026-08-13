@@ -16,6 +16,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -70,27 +71,27 @@ describe('Huawei L3 switch — inter-VLAN routing', () => {
 
   it('PC1 (VLAN 10) ping vers la SVI Vlanif10 (sa passerelle)', async () => {
     const { pc1 } = await buildLan();
-    const out = await pc1.executeCommand('ping -c 1 10.0.10.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.10.1');
     expect(out).toMatch(/64 bytes from 10\.0\.10\.1/);
     expect(out).toMatch(/1 packets transmitted, 1 received/);
   });
 
   it('PC1 ping vers la SVI de l\'autre VLAN (10.0.20.1)', async () => {
     const { pc1 } = await buildLan();
-    const out = await pc1.executeCommand('ping -c 1 10.0.20.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.20.1');
     expect(out).toMatch(/64 bytes from 10\.0\.20\.1/);
   });
 
   it('PC1 (VLAN 10) ping PC2 (VLAN 20) — inter-VLAN routing via le switch', async () => {
     const { pc1 } = await buildLan();
-    const out = await pc1.executeCommand('ping -c 3 10.0.20.10');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 3 10.0.20.10');
     expect(out).toMatch(/64 bytes from 10\.0\.20\.10/);
     expect(out).toMatch(/3 packets transmitted, 3 received/);
   });
 
   it('PC2 (VLAN 20) ping PC1 (VLAN 10) — routage symétrique', async () => {
     const { pc2 } = await buildLan();
-    const out = await pc2.executeCommand('ping -c 3 10.0.10.10');
+    const out = await pingOnSimulatedClock(pc2, 'ping -c 3 10.0.10.10');
     expect(out).toMatch(/64 bytes from 10\.0\.10\.10/);
     expect(out).toMatch(/3 packets transmitted, 3 received/);
   });
@@ -112,7 +113,7 @@ describe('Huawei L3 switch — inter-VLAN routing', () => {
 
   it('display arp affiche les entrées apprises après un ping inter-VLAN', async () => {
     const { sw, pc1 } = await buildLan();
-    await pc1.executeCommand('ping -c 1 10.0.20.10');
+    await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.20.10');
     const out = await sw.executeCommand('display arp');
     expect(out).toMatch(/10\.0\.10\.10.*dynamic/);
     expect(out).toMatch(/10\.0\.20\.10.*dynamic/);
@@ -134,7 +135,7 @@ describe('Huawei L3 switch — inter-VLAN routing', () => {
     for (const cmd of [
       'system-view', 'interface Vlanif20', 'shutdown', 'quit', 'quit',
     ]) await sw.executeCommand(cmd);
-    const out = await pc1.executeCommand('ping -c 2 10.0.20.10');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 2 10.0.20.10');
     expect(out).toMatch(/100% packet loss/);
   });
 });
@@ -201,7 +202,7 @@ describe('Huawei L3 switch — serveur DHCP intégré (deployment "collapsed cor
   it('PC1 (bail DHCP) peut pinger sa passerelle Vlanif10', async () => {
     const { pc1 } = await buildDhcpLan();
     await pc1.executeCommand('dhclient eth0');
-    const out = await pc1.executeCommand('ping -c 1 10.0.10.1');
+    const out = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.10.1');
     expect(out).toMatch(/64 bytes from 10\.0\.10\.1/);
   });
 
@@ -210,7 +211,7 @@ describe('Huawei L3 switch — serveur DHCP intégré (deployment "collapsed cor
     await pc1.executeCommand('dhclient eth0');
     await pc2.executeCommand('dhclient eth0');
     const ip2 = /inet (10\.0\.10\.\d+)/.exec(await pc2.executeCommand('ip addr show eth0'))![1];
-    const out = await pc1.executeCommand(`ping -c 2 ${ip2}`);
+    const out = await pingOnSimulatedClock(pc1, `ping -c 2 ${ip2}`);
     expect(out).toMatch(/2 packets transmitted, 2 received/);
   });
 

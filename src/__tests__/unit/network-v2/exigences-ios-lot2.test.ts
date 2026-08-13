@@ -5,11 +5,14 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask } from '@/network/core/types';
+import { pingOnSimulatedClock, isPingStep, canLendClock } from '../../support/fastPing';
 
 beforeEach(() => { EquipmentRegistry.resetInstance(); });
 
 const run = (d: { executeCommand(c: string): string | Promise<string> }, c: string) =>
-  Promise.resolve(d.executeCommand(c));
+  (isPingStep(c) && canLendClock(d)
+    ? pingOnSimulatedClock(d as never, c)
+    : Promise.resolve(d.executeCommand(c)));
 
 async function priv(nom = 'R1'): Promise<CiscoRouter> {
   const r = new CiscoRouter(nom);

@@ -6,6 +6,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 const run = (d: Cmd, cmds: string[]) =>
@@ -31,7 +32,7 @@ describe('NAT PAT — ICMP query return path', () => {
     await run(inside, ['ip link set eth0 up', 'ip addr add 10.1.1.10/24 dev eth0', 'ip route add default via 10.1.1.1']);
     await run(isp, ['ip link set eth0 up', 'ip addr add 203.0.113.10/24 dev eth0', 'ip route add default via 203.0.113.1']);
 
-    const ping = await inside.executeCommand('ping -c 2 203.0.113.10');
+    const ping = await pingOnSimulatedClock(inside, 'ping -c 2 203.0.113.10');
     expect(ping).toContain('0% packet loss');
 
     const xlate = await r.executeCommand('show ip nat translations');

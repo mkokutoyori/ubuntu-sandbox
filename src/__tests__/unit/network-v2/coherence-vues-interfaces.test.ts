@@ -10,6 +10,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -1075,7 +1076,7 @@ async function paireLinux(): Promise<{ a: LinuxPC; b: LinuxPC; iface: string }> 
   const m = new SubnetMask(MASQUE_24);
   a.getPorts()[1].configureIP(new IPAddress('10.0.0.1'), m);
   b.getPorts()[1].configureIP(new IPAddress('10.0.0.2'), m);
-  await a.executeCommand('ping -c 3 10.0.0.2');
+  await pingOnSimulatedClock(a, 'ping -c 3 10.0.0.2');
   return { a, b, iface: a.getPorts()[1].getName() };
 }
 

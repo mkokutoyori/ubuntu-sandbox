@@ -18,6 +18,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 const GW_INSIDE = '192.168.10.254';
 const GW_OUTSIDE = '203.0.113.1';
@@ -110,7 +111,7 @@ describe('Scénario 5 (Cisco) — NAT et ACL : contrôle fin du trafic NATté', 
 
     it('le trafic vers 10.x.x.x (réseau VPN) n\'apparaît jamais dans show ip nat translations', async () => {
       const { pcLinux1, router } = await labWithExemptionACL();
-      await pcLinux1.executeCommand('ping -c 3 10.1.1.1');
+      await pingOnSimulatedClock(pcLinux1, 'ping -c 3 10.1.1.1');
 
       const table = await router.executeCommand('show ip nat translations');
       expect(table).not.toContain('10.1.1.1');
@@ -118,7 +119,7 @@ describe('Scénario 5 (Cisco) — NAT et ACL : contrôle fin du trafic NATté', 
 
     it('le trafic vers Internet (destination hors 10.x/172.16.x) est bien traduit par le PAT', async () => {
       const { pcLinux1, router } = await labWithExemptionACL();
-      await pcLinux1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pcLinux1, `ping -c 3 ${OUTSIDE_IP}`);
 
       const table = await router.executeCommand('show ip nat translations');
       expect(table).toContain(PC_LINUX1_IP);
@@ -158,7 +159,7 @@ describe('Scénario 5 (Cisco) — NAT et ACL : contrôle fin du trafic NATté', 
 
     it('les compteurs de matches de l\'ACL augmentent après trafic sortant', async () => {
       const { pcLinux1, router } = await labWithSelectiveACL();
-      await pcLinux1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pcLinux1, `ping -c 1 ${OUTSIDE_IP}`);
 
       const out = await router.executeCommand('show ip access-lists ACL-NAT-SELECTIF');
       expect(out).toMatch(/20 permit ip 192\.168\.10\.0 0\.0\.0\.255 any \(\d+ match/);
@@ -183,7 +184,7 @@ describe('Scénario 5 (Cisco) — NAT et ACL : contrôle fin du trafic NATté', 
 
     it('le serveur Oracle sort toujours via son IP publique statique (203.0.113.10), jamais via le PAT (203.0.113.1)', async () => {
       const { srvOracle, router } = await labWithMachineACL();
-      const ping = await srvOracle.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
+      const ping = await pingOnSimulatedClock(srvOracle, `ping -c 3 ${OUTSIDE_IP}`);
       expect(ping).toMatch(/0% packet loss|3 (packets )?received/i);
 
       // Le NAT statique (sans port) ne crée pas de session PAT dynamique par
@@ -200,7 +201,7 @@ describe('Scénario 5 (Cisco) — NAT et ACL : contrôle fin du trafic NATté', 
 
     it('les autres machines (non exclues) utilisent bien le PAT sur 203.0.113.1', async () => {
       const { pcLinux1, router } = await labWithMachineACL();
-      await pcLinux1.executeCommand(`ping -c 1 ${OUTSIDE_IP}`);
+      await pingOnSimulatedClock(pcLinux1, `ping -c 1 ${OUTSIDE_IP}`);
 
       const table = await router.executeCommand('show ip nat translations');
       expect(table).toMatch(new RegExp(`icmp\\s+${GW_OUTSIDE.replace(/\./g, '\\.')}:\\d+\\s+${PC_LINUX1_IP.replace(/\./g, '\\.')}`));

@@ -5,6 +5,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 async function buildLab() {
   const r1 = new CiscoRouter('R1');
@@ -86,7 +87,7 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 3600, 1800, 'Secret');
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const ipsec = await l.r1.executeCommand('show crypto ipsec sa');
     const spis = parseSpis(ipsec);
     expect(spis.in.length + spis.out.length).toBeGreaterThan(0);
@@ -98,11 +99,11 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 3600, 1800, 'Secret');
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     const before = parseSpis(await l.r1.executeCommand('show crypto ipsec sa'));
     const beforeSet = new Set([...before.in, ...before.out]);
     vi.setSystemTime(new Date('2026-07-01T00:31:00Z'));
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     const after = parseSpis(await l.r1.executeCommand('show crypto ipsec sa'));
     const afterSet = new Set([...after.in, ...after.out]);
     expect([...afterSet].some(s => !beforeSet.has(s))).toBe(true);
@@ -113,13 +114,13 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 3600, 1800, 'Secret');
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
-    const p1 = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const p1 = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(p1).toContain('2 received');
     vi.setSystemTime(new Date('2026-07-01T00:31:00Z'));
-    const p2 = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const p2 = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(p2).toContain('2 received');
     vi.setSystemTime(new Date('2026-07-01T01:05:00Z'));
-    const p3 = await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    const p3 = await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     expect(p3).toContain('2 received');
   });
 
@@ -128,9 +129,9 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 3600, 1800, 'Secret');
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 3 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 3 192.168.2.10');
     vi.setSystemTime(new Date('2026-07-01T00:31:00Z'));
-    await l.pc1.executeCommand('ping -c 2 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 2 192.168.2.10');
     const after = /pkts encaps:\s*(\d+)/.exec(await l.r1.executeCommand('show crypto ipsec sa'));
     expect(after).not.toBeNull();
     expect(Number(after![1])).toBeGreaterThan(0);
@@ -141,7 +142,7 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r1, '10.0.12.1', '10.0.12.2', '192.168.1.1', '192.168.1.0', '192.168.2.0', 3600, 1800, 'Secret');
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const eng = (l.r1 as unknown as { _getIPSecEngineInternal(): { recheckIKESALifetimes(): void; getIkeSpiForPeer(peer: string): string | undefined } })._getIPSecEngineInternal();
     const spiFor = (peer: string) => {
       const db = (eng as unknown as { ikeSADB: Map<string, { spi: string }> }).ikeSADB;
@@ -162,7 +163,7 @@ describe('Scénario 4 — Renouvellement des SA IPsec (rekey phase 1 / phase 2)'
     await configureEndpoint(l.r2, '10.0.12.2', '10.0.12.1', '192.168.2.1', '192.168.2.0', '192.168.1.0', 3600, 1800, 'Secret');
     await seedPcs(l.pc1, l.pc2);
     await l.r1.executeCommand('debug crypto isakmp');
-    await l.pc1.executeCommand('ping -c 1 192.168.2.10');
+    await pingOnSimulatedClock(l.pc1, 'ping -c 1 192.168.2.10');
     const eng = (l.r1 as unknown as { _getIPSecEngineInternal(): { recheckIKESALifetimes(): void } })._getIPSecEngineInternal();
     vi.setSystemTime(new Date('2026-07-01T02:00:00Z'));
     eng.recheckIKESALifetimes();

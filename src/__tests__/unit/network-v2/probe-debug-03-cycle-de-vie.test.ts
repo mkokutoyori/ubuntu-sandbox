@@ -30,6 +30,7 @@ import { EventBus, __setDefaultEventBus } from '@/events/EventBus';
 import { TerminalManager } from '@/terminal/sessions/TerminalManager';
 import type { KeyEvent, TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { collecteDebug } from './_helpers/debugLines';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -83,12 +84,12 @@ describe('Scénario 1 — désactivation globale', () => {
   it('après la coupure, plus une ligne n\'est émise', async () => {
     const { run, pc, lignes } = await lab();
     await run('debug ip icmp');
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
     const avant = lignes.length;
     expect(avant).toBeGreaterThan(0);
 
     await run('undebug all');
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     expect(lignes.length, 'l\'affichage s\'arrête sur-le-champ').toBe(avant);
   }, LONG);
@@ -315,7 +316,7 @@ describe('Scénario 7 — mise à jour dynamique de l\'ACL de debug', () => {
     ]) await run(c);
 
     await run('debug ip packet 101');
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
     expect(lignes.filter((l) => /ICMP|icmp/.test(l)),
       'ICMP n\'est pas dans l\'ACL : rien ne doit sortir').toEqual([]);
 
@@ -325,7 +326,7 @@ describe('Scénario 7 — mise à jour dynamique de l\'ACL de debug', () => {
       '20 permit icmp any any', 'end',
     ]) await run(c);
 
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     expect(
       lignes.length,
@@ -340,7 +341,7 @@ describe('Scénario 8 — pas de doublon quand deux debugs se recouvrent', () =>
     await run('debug ip packet');
     await run('debug ip icmp');
 
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     const doublons = lignes.filter((l, i) => lignes.indexOf(l) !== i);
     expect(
@@ -354,7 +355,7 @@ describe('Scénario 8 — pas de doublon quand deux debugs se recouvrent', () =>
     await run('debug ip packet');
     await run('debug ip icmp');
 
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     expect(lignes.some((l) => l.startsWith('IP:')), 'la vue paquet').toBe(true);
     expect(lignes.some((l) => l.startsWith('ICMP:')), 'et la vue ICMP').toBe(true);
@@ -368,7 +369,7 @@ describe('Scénario 9 — capture et debug coexistent', () => {
     expect(capture, 'la capture doit démarrer').not.toContain('command not found');
 
     await run('debug ip packet');
-    await pc.executeCommand('ping -c 2 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 2 10.0.0.1');
 
     const relecture = await pc.executeCommand('sudo tcpdump -r /tmp/c1.cap');
     expect(
@@ -381,7 +382,7 @@ describe('Scénario 9 — capture et debug coexistent', () => {
     const { run, pc, lignes } = await lab();
     await run('debug ip icmp');
     await pc.executeCommand('sudo tcpdump -i eth0 -c 1 -w /tmp/c2.cap');
-    await pc.executeCommand('ping -c 1 10.0.0.1');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.0.1');
 
     expect(await run('show debug')).toContain('ICMP packet debugging is on');
     expect(lignes.length, 'le debug continue de produire').toBeGreaterThan(0);

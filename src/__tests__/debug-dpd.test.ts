@@ -3,6 +3,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetCounters, resetDeviceCounters } from '@/network';
+import { pingOnSimulatedClock } from './support/fastPing';
 
 describe('Debug DPD', () => {
   it('should clear SAs on cable disconnect', async () => {
@@ -64,7 +65,7 @@ describe('Debug DPD', () => {
     await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-    const ping1 = await pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping1 = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.2.10');
     console.log('PING1:', ping1);
 
     const ikeBefore = await r1.executeCommand('show crypto isakmp sa');
