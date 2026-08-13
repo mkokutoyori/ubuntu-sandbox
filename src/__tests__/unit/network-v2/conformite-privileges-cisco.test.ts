@@ -165,7 +165,10 @@ describe('§34 — `enable [niveau]` est une grammaire, pas un mot', () => {
 describe('§10/§11/§35 — `privilege exec level` gouverne vraiment l\'accès', () => {
   it('une commande relevée à 5 est refusée au niveau 1 et permise au niveau 5', async () => {
     const r = new CiscoRouter('R1');
-    await conf(r, ['privilege exec level 5 show ip route']);
+    // `privilege exec level 1 show` garde la branche joignable au niveau
+    // 1 : sans elle, hisser `show ip route` hisse `show`, et
+    // `show privilege` lui-meme deviendrait invisible.
+    await conf(r, ['privilege exec level 1 show', 'privilege exec level 5 show ip route']);
     await r.executeCommand('disable');
     expect(await niveau(r)).toBe(1);
     expect(String(await r.executeCommand('show ip route'))).toContain('% Invalid input');
@@ -180,14 +183,35 @@ describe('§10/§11/§35 — `privilege exec level` gouverne vraiment l\'accès'
       .toContain('privilege exec level 5 show ip route');
   });
 
-  it('§35 — le niveau s\'applique au NŒUD nommé, pas à toute la branche', async () => {
+  /**
+   * Ce cas affirmait que `show version`, voisin dans l'arbre, restait au
+   * niveau 1. C'est l'INVERSE de ce que Cisco documente : « When you set
+   * a command to a privilege level, all commands whose syntax is a
+   * subset of that command are also set to that level (…) unless you set
+   * them to a different level. » Hisser `show running-config` hisse
+   * `show`, donc TOUTE la branche quitte le niveau 1 — c'est le piège
+   * n°1 du chapitre, et l'ignorer enseignait une délégation sans effet
+   * de bord, donc une fausse sécurité.
+   *
+   * Ce que le cas voulait dire reste vrai et reste vérifié : le niveau
+   * s'applique au NŒUD nommé et non à toute la branche — une règle sans
+   * `all` ne descend pas dans les sous-commandes. Les deux moitiés sont
+   * désormais distinguées, avec le remède documenté entre elles.
+   */
+  it('§35 — le nœud nommé est relevé, ses PARENTES le suivent, et on les redescend', async () => {
     const r = new CiscoRouter('R1');
     await conf(r, ['privilege exec level 10 show running-config']);
     await r.executeCommand('disable');
-    // `show running-config` est relevé...
     expect(String(await r.executeCommand('show running-config'))).toContain('% Invalid input');
-    // ...mais `show version`, voisin dans l'arbre, reste au niveau 1.
+    // La parente `show` a suivi : toute la branche quitte le niveau 1.
+    expect(String(await r.executeCommand('show version'))).toContain('% Invalid input');
+
+    // Le remède documenté : redescendre la parente.
+    await conf(r, ['privilege exec level 1 show']);
+    await r.executeCommand('disable');
     expect(String(await r.executeCommand('show version'))).toContain('Cisco IOS Software');
+    // Et le nœud nommé, lui, reste à son niveau.
+    expect(String(await r.executeCommand('show running-config'))).toContain('% Invalid input');
   });
 });
 

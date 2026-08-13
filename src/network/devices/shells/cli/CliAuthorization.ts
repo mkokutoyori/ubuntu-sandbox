@@ -100,23 +100,30 @@ function couvre(cible: string, commande: string): boolean {
 }
 
 /**
- * La table des niveaux de commande : les defauts d'IOS, plus ce que
- * l'operateur a deplace avec `privilege`.
+ * Ce qu'une regle `privilege` porte : un niveau, et si elle s'etend a ce
+ * qui COMPLETE la commande.
  *
- * Le stockage reste la `Map` que porte l'equipement — elle est lue par le
- * serialiseur de configuration et par l'aide — mais plus personne ne la
- * parcourt a la main : la regle de resolution vit ici, une fois.
+ * `all` etait absent, et son absence coutait deux fois : le mot-cle
+ * etait refuse, et la semantique d'`all` etait appliquee a TOUTE regle —
+ * les deux formes d'IOS faisaient donc la meme chose, qui etait celle de
+ * la seconde.
  */
+export interface CommandLevelRule {
+  readonly level: number;
+  /** `privilege <mode> all level <n> <commande>`. */
+  readonly all: boolean;
+}
+
 export class CommandLevelTable<S extends string = AuthScope> {
-  constructor(private readonly rules: () => Map<string, number> | undefined) {}
+  constructor(private readonly rules: () => Map<string, CommandLevelRule> | undefined) {}
 
   private static key(scope: string, commande: string): string {
     return `${scope} ${normalise(commande)}`;
   }
 
-  setLevel(scope: S, commande: string, level: number): void {
+  setLevel(scope: S, commande: string, level: number, all = false): void {
     const table = this.rules();
-    if (table) table.set(CommandLevelTable.key(scope, commande), level);
+    if (table) table.set(CommandLevelTable.key(scope, commande), { level, all });
   }
 
   /** Retire la regle et rend le niveau qu'elle portait, ou `undefined`. */
@@ -124,9 +131,9 @@ export class CommandLevelTable<S extends string = AuthScope> {
     const table = this.rules();
     if (!table) return undefined;
     const key = CommandLevelTable.key(scope, commande);
-    const niveau = table.get(key);
-    if (niveau !== undefined) table.delete(key);
-    return niveau;
+    const regle = table.get(key);
+    if (regle !== undefined) table.delete(key);
+    return regle?.level;
   }
 
   remove(scope: AuthScope, commande: string): void {
@@ -134,28 +141,67 @@ export class CommandLevelTable<S extends string = AuthScope> {
   }
 
   /**
-   * Le niveau EFFECTIF d'une commande : la regle la plus LONGUE gagne,
-   * comme dans l'arbre d'IOS. `privilege exec level 7 show` et
-   * `privilege exec level 10 show running-config` coexistent, et c'est la
-   * seconde qui decide pour `show running-config` — sans cette regle,
-   * l'ordre d'insertion trancherait, donc le comportement dependrait de
-   * l'ordre de frappe de l'operateur.
+   * Le niveau EFFECTIF d'une commande.
+   *
+   * Trois regles d'IOS s'y rencontrent, et il fallait les trois :
+   *
+   * 1. la regle la plus LONGUE gagne — `privilege exec level 7 show` et
+   *    `privilege exec level 10 show running-config` coexistent, et
+   *    c'est la seconde qui decide pour `show running-config` ; sans
+   *    cela l'ordre de frappe de l'operateur trancherait ;
+   * 2. une regle SANS `all` ne vaut que pour la commande NOMMEE ; avec
+   *    `all`, elle vaut aussi pour ce qui la complete ;
+   * 3. hisser une commande hisse ses PARENTES : « all commands whose
+   *    syntax is a subset of that command are also set to that level
+   *    (…) unless you set them to a different level ». C'est le piege
+   *    n°1 du chapitre — `privilege exec level 5 show running-config`
+   *    retire tous les `show` au niveau 1 — et l'ignorer enseignait une
+   *    delegation sans effet de bord, donc une fausse securite.
+   *
+   * Il faut pouvoir ATTEINDRE une commande pour la taper : le niveau
+   * rendu est donc le plus eleve entre celui de la commande et celui
+   * qu'exigent ses parentes.
    */
   levelOf(scope: AuthScope, commande: string, defaut: number): number {
     const table = this.rules();
     if (!table || table.size === 0) return defaut;
     const cible = normalise(commande);
     const prefixe = `${scope} `;
-    let meilleur: { longueur: number; niveau: number } | null = null;
-    for (const [key, niveau] of table) {
+    let propre: { longueur: number; niveau: number } | null = null;
+    for (const [key, regle] of table) {
       if (!key.startsWith(prefixe)) continue;
-      const regle = key.slice(prefixe.length);
-      if (!couvre(regle, cible)) continue;
-      if (!meilleur || regle.length > meilleur.longueur) {
-        meilleur = { longueur: regle.length, niveau };
+      const nom = key.slice(prefixe.length);
+      if (nom !== cible && !(regle.all && couvre(nom, cible))) continue;
+      if (!propre || nom.length > propre.longueur) {
+        propre = { longueur: nom.length, niveau: regle.level };
       }
     }
-    return meilleur ? meilleur.niveau : defaut;
+    const requis = this.niveauDesParentes(table, prefixe, cible);
+    return Math.max(propre ? propre.niveau : defaut, requis);
+  }
+
+  /**
+   * Le niveau qu'il faut pour ATTEINDRE `cible` : le plus eleve des
+   * niveaux de ses parentes strictes. Une parente que nomme une regle
+   * vaut ce que dit cette regle ; sinon elle vaut le plus haut niveau
+   * de ce qui la complete — c'est la promotion elle-meme.
+   */
+  private niveauDesParentes(
+    table: Map<string, CommandLevelRule>, prefixe: string, cible: string,
+  ): number {
+    const mots = cible.split(' ');
+    let requis = 0;
+    for (let i = 1; i < mots.length; i++) {
+      const parente = mots.slice(0, i).join(' ');
+      const explicite = table.get(`${prefixe}${parente}`);
+      if (explicite) { requis = Math.max(requis, explicite.level); continue; }
+      for (const [key, regle] of table) {
+        if (!key.startsWith(prefixe)) continue;
+        const nom = key.slice(prefixe.length);
+        if (nom !== parente && couvre(parente, nom)) requis = Math.max(requis, regle.level);
+      }
+    }
+    return requis;
   }
 
   /** Les regles d'un espace dont le niveau est atteignable par la session. */
@@ -164,9 +210,9 @@ export class CommandLevelTable<S extends string = AuthScope> {
     if (!table) return [];
     const prefixe = `${scope} `;
     const out: Array<{ commande: string; niveau: number }> = [];
-    for (const [key, niveau] of table) {
-      if (!key.startsWith(prefixe) || niveau > level) continue;
-      out.push({ commande: key.slice(prefixe.length), niveau });
+    for (const [key, regle] of table) {
+      if (!key.startsWith(prefixe) || regle.level > level) continue;
+      out.push({ commande: key.slice(prefixe.length), niveau: regle.level });
     }
     return out;
   }
@@ -186,13 +232,14 @@ export class CommandLevelTable<S extends string = AuthScope> {
  * L'ordre est celui d'insertion, comme partout ailleurs dans ce depot :
  * une configuration doit reproduire ce que l'operateur a tape.
  */
-export function privilegeConfigLines(rules: Map<string, number> | undefined): string[] {
+export function privilegeConfigLines(rules: Map<string, CommandLevelRule> | undefined): string[] {
   if (!rules || rules.size === 0) return [];
   const lines: string[] = [];
-  for (const [key, niveau] of rules) {
+  for (const [key, regle] of rules) {
     const sep = key.indexOf(' ');
     if (sep <= 0) continue;
-    lines.push(`privilege ${key.slice(0, sep)} level ${niveau} ${key.slice(sep + 1)}`);
+    const mode = key.slice(0, sep);
+    lines.push(`privilege ${mode}${regle.all ? ' all' : ''} level ${regle.level} ${key.slice(sep + 1)}`);
   }
   return lines;
 }
@@ -353,6 +400,20 @@ export class CliAuthorization {
       : normalise(command);
   }
 
+  /**
+   * La forme sur laquelle un NIVEAU se decide : les mots-cles seuls.
+   *
+   * Une regle de niveau porte sur une commande, pas sur ses arguments —
+   * `privilege configure level 5 hostname` gouverne `hostname R1`. Les
+   * vues, elles, continuent de raisonner sur la forme complete, parce
+   * qu'elles decrivent ce qu'un role a le droit de TAPER.
+   */
+  private formeMotsCles(scope: AuthScope, command: string): string {
+    return this.canonicalizer
+      ? this.canonicalizer.keywordsOrSelf(scope, command)
+      : normalise(command);
+  }
+
   authorize(input: AuthorizeInput): AuthVerdict {
     const commande = this.forme(input.scope, input.command);
     if (SORTIES.some((c) => couvre(c, commande))) return 'run';
@@ -363,15 +424,16 @@ export class CliAuthorization {
       return this.views.visible(vue, commande) ? 'run' : 'absent';
     }
 
-    const niveau = this.levels.levelOf(input.scope, commande, input.defaultLevel);
+    const niveau = this.levels.levelOf(
+      input.scope, this.formeMotsCles(input.scope, input.command), input.defaultLevel);
     return niveau <= input.principal.level ? 'run' : 'absent';
   }
 
   /** L'operateur a-t-il DESCENDU cette commande jusqu'a la session ? */
   estAccordee(input: AuthorizeInput): boolean {
-    const commande = this.forme(input.scope, input.command);
     if (input.principal.view !== null) return false;
-    const niveau = this.levels.levelOf(input.scope, commande, input.defaultLevel);
+    const niveau = this.levels.levelOf(
+      input.scope, this.formeMotsCles(input.scope, input.command), input.defaultLevel);
     return niveau <= input.principal.level && niveau < input.defaultLevel;
   }
 
@@ -385,13 +447,13 @@ export class CliAuthorization {
    * la configuration et que `privilege exec reset Reload` ne la trouvait
    * pas. Les faire passer ici est ce qui rend la cle unique.
    */
-  setCommandLevel(scope: AuthScope, command: string, level: number): void {
-    this.levels.setLevel(scope, this.forme(scope, command), level);
+  setCommandLevel(scope: AuthScope, command: string, level: number, all = false): void {
+    this.levels.setLevel(scope, this.formeMotsCles(scope, command), level, all);
   }
 
   /** Retire la regle et rend le niveau qu'elle portait, ou `undefined`. */
   resetCommandLevel(scope: AuthScope, command: string): number | undefined {
-    return this.levels.reset(scope, this.forme(scope, command));
+    return this.levels.reset(scope, this.formeMotsCles(scope, command));
   }
 
   /** Les regles d'un espace dont le niveau est atteignable par la session. */
@@ -411,7 +473,7 @@ export class CliAuthorization {
    */
   levelOfCommand(input: AuthorizeInput): number {
     return this.levels.levelOf(
-      input.scope, this.forme(input.scope, input.command), input.defaultLevel,
+      input.scope, this.formeMotsCles(input.scope, input.command), input.defaultLevel,
     );
   }
 }

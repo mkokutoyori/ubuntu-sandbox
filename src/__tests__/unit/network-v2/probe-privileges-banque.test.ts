@@ -82,6 +82,12 @@ async function coeurDeBanque(): Promise<CiscoRouter> {
     await r.executeCommand(`username ${c.nom} privilege ${c.niveau} secret ${c.secret}`);
   }
 
+  // `show` redescendu au niveau 1 : hisser une commande hisse ses
+  // PARENTES, donc toute la branche `show` quitterait le niveau 1 —
+  // c'est le piège n°1 du chapitre, et cette ligne en est le remède
+  // documenté par Cisco. Sans elle, ce laboratoire décrirait une
+  // machine qui n'existe pas.
+  await r.executeCommand('privilege exec level 1 show');
   await r.executeCommand('privilege exec level 5 show ip route');
   await r.executeCommand('privilege exec level 5 show interfaces');
   await r.executeCommand('privilege exec level 5 clear counters');

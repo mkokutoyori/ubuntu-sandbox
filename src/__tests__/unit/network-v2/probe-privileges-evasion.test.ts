@@ -56,6 +56,12 @@ async function cible(): Promise<CiscoRouter> {
   await r.executeCommand('username tech privilege 7 secret Tech7');
   await r.executeCommand('username chef privilege 15 secret Chef15');
   await r.executeCommand('username visiteur privilege 1 secret Visit1');
+  // `show` redescendu au niveau 1 : hisser une commande hisse ses
+  // PARENTES, donc toute la branche `show` quitterait le niveau 1 —
+  // c'est le piège n°1 du chapitre, et cette ligne en est le remède
+  // documenté par Cisco. Sans elle, ce laboratoire décrirait une
+  // machine qui n'existe pas.
+  await r.executeCommand('privilege exec level 1 show');
   await r.executeCommand('privilege exec level 7 show ip interface brief');
   await r.executeCommand('privilege exec level 7 configure terminal');
   await r.executeCommand('privilege configure level 7 interface');

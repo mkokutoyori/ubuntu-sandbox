@@ -68,6 +68,11 @@ async function roles(fabrique: () => Machine): Promise<Machine> {
   d.powerOn();
   for (const c of [
     'enable', 'configure terminal',
+    // `show` redescendu au niveau 1 : hisser `show running-config` hisse
+    // ses parentes, donc `show`, et toute la branche quitterait le
+    // niveau 1. C'est le piège que Cisco documente, et cette ligne en
+    // est le remède documenté.
+    'privilege exec level 1 show',
     'privilege exec level 7 show running-config',
     'privilege exec level 7 ping',
     'privilege exec level 10 configure terminal',

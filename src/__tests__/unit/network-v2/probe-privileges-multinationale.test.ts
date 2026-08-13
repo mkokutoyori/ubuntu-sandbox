@@ -78,6 +78,12 @@ async function siege(): Promise<CiscoRouter> {
     await r.executeCommand(`username ${c.nom} privilege ${c.niveau} secret ${c.secret}`);
   }
 
+  // `show` redescendu au niveau 1 : hisser une commande hisse ses
+  // PARENTES, donc toute la branche `show` quitterait le niveau 1 —
+  // c'est le piège n°1 du chapitre, et cette ligne en est le remède
+  // documenté par Cisco. Sans elle, ce laboratoire décrirait une
+  // machine qui n'existe pas.
+  await r.executeCommand('privilege exec level 1 show');
   await r.executeCommand('privilege exec level 3 show ip interface brief');
   await r.executeCommand('privilege exec level 3 show cdp neighbors');
 
@@ -426,6 +432,7 @@ describe('ACME — un role n\'est pas plus puissant sur le commutateur', () => {
     for (const c of [ARCHITECTE, NOC2, NOC1, STAGIAIRE]) {
       await sw.executeCommand(`username ${c.nom} privilege ${c.niveau} secret ${c.secret}`);
     }
+    await sw.executeCommand('privilege exec level 1 show');
     await sw.executeCommand('privilege exec level 3 show ip interface brief');
     await sw.executeCommand('privilege exec level 7 clear counters');
     await sw.executeCommand('end');

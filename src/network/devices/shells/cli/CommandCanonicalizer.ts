@@ -48,13 +48,34 @@ export class CommandCanonicalizer {
    * `ping 10.0.0.1` — donc les effacer changerait la portee des regles.
    */
   canonical(scope: AuthScope, command: string): string | null {
+    return this.canonicalParts(scope, command)?.full ?? null;
+  }
+
+  /**
+   * La forme canonique, separee en MOTS-CLES et forme complete.
+   *
+   * La distinction n'est pas cosmetique : une regle de niveau porte sur
+   * une COMMANDE, pas sur ses arguments. `privilege configure level 5
+   * hostname` doit gouverner `hostname R1` — meme commande, un argument
+   * — sans gouverner `hostname` d'une sous-commande qui n'existe pas.
+   * Comparer les chaines entieres confondait les deux, et il n'y a que
+   * l'arbre pour les distinguer.
+   */
+  canonicalParts(
+    scope: AuthScope, command: string,
+  ): { keywords: string; full: string } | null {
     const saisie = normalise(command);
     if (saisie.length === 0) return null;
     for (const trie of this.source.triesFor(scope)) {
-      const forme = this.canonicalIn(trie, saisie);
-      if (forme !== null) return forme;
+      const parts = this.partsIn(trie, saisie);
+      if (parts !== null) return parts;
     }
     return null;
+  }
+
+  /** Les seuls MOTS-CLES de la forme canonique, arguments exclus. */
+  keywordsOrSelf(scope: AuthScope, command: string): string {
+    return this.canonicalParts(scope, command)?.keywords ?? normalise(command);
   }
 
   /**
@@ -66,11 +87,15 @@ export class CommandCanonicalizer {
     return this.canonical(scope, command) ?? normalise(command);
   }
 
-  private canonicalIn(trie: CommandTrie, saisie: string): string | null {
+  private partsIn(
+    trie: CommandTrie, saisie: string,
+  ): { keywords: string; full: string } | null {
     const r = trie.match(saisie);
     if (r.status !== 'ok' && r.status !== 'incomplete') return null;
     if (r.matchedKeywords.length === 0) return null;
-    const mots = [...r.matchedKeywords, ...r.args];
-    return normalise(mots.join(' '));
+    return {
+      keywords: normalise(r.matchedKeywords.join(' ')),
+      full: normalise([...r.matchedKeywords, ...r.args].join(' ')),
+    };
   }
 }

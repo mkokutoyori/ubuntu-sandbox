@@ -109,15 +109,23 @@ interface PrivLan {
 const accountFor = (level: Level) => ({ user: `u${level}`, password: `Pass${level}` });
 
 /**
- * Les règles du laboratoire partagé. La règle COURTE `privilege exec
- * level 3 show` n'y est PAS, et c'est une leçon de la première exécution :
- * posée ici, elle couvrait toute la branche `show` et déplaçait aussi les
- * commandes que §6 croyait laissées à leur défaut — 29 cas rouges, tous
- * dus à ce seul mot. Elle fait exactement son travail ; c'est sa place qui
- * était fausse. Elle vit désormais dans le laboratoire de §4, dont elle
- * est le sujet.
+ * Les règles du laboratoire partagé.
+ *
+ * `privilege exec level 1 show` en tête est le remède que Cisco
+ * documente : hisser `show clock` ou `show running-config` hisse leurs
+ * PARENTES, donc `show`, et toute la branche quitterait le niveau 1 —
+ * le piège n°1 du chapitre. Sans cette ligne, ce laboratoire décrirait
+ * une machine qui n'existe pas.
+ *
+ * Note historique : une version précédente disait que la règle courte
+ * `privilege exec level 3 show` « couvrait toute la branche » et
+ * déplaçait les commandes laissées à leur défaut. C'était vrai du
+ * simulateur d'alors, qui appliquait à TOUTE règle la sémantique du
+ * mot-clé `all`. Une règle sans `all` ne vaut désormais que pour la
+ * commande NOMMÉE, donc poser `show` ici ne déplace plus rien.
  */
 const privilegeLines = (): string[] => [
+  'privilege exec level 1 show',
   ...EXEC_RULES.map(([cmd, lvl]) => `privilege exec level ${lvl} ${cmd}`),
   // Un espace voisin, pour que le débordement soit observable s'il a lieu.
   'privilege configure level 4 hostname',
@@ -407,6 +415,7 @@ describe('§8 `privilege exec reset` rend la commande à son défaut', () => {
     const dev = new CiscoRouter('R-reset', 0, 0);
     dev.powerOn();
     for (const c of ['enable', 'configure terminal',
+      'privilege exec level 1 show',
       ...EXEC_RULES.map(([cmd, lvl]) => `privilege exec level ${lvl} ${cmd}`),
       `privilege exec reset ${command}`, 'end']) await dev.executeCommand(c);
     const out = await runAt(dev, level, command);

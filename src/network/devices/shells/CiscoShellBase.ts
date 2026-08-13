@@ -116,7 +116,8 @@ import type { TftpEndpoint } from '@/network/tftp/types';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import {
   CliAuthorization, CommandLevelTable, ParserViewRegistry, scopeForMode,
-  type CliPrincipal, type AuthScope, AUTH_SCOPES, filterConfigForLevel,
+  type CliPrincipal, type AuthScope, type CommandLevelRule,
+  AUTH_SCOPES, filterConfigForLevel,
 } from './cli/CliAuthorization';
 import { CommandCanonicalizer } from './cli/CommandCanonicalizer';
 import type {
@@ -2101,7 +2102,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this._autorisation = new CliAuthorization(
         new CommandLevelTable(() => {
           const dev = this.deviceRef as unknown as {
-            _ciscoPrivilegeRules?: Map<string, number>;
+            _ciscoPrivilegeRules?: Map<string, CommandLevelRule>;
           } | null;
           if (!dev) return undefined;
           return (dev._ciscoPrivilegeRules ??= new Map());
@@ -2254,17 +2255,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * table trancherait — donc le comportement dependrait de l'ordre de
    * frappe de l'operateur.
    */
+  /**
+   * Les regles exec atteignables par la session.
+   *
+   * Cette methode relisait la `Map` a la main, en reimplementant ce que
+   * `grantedAtOrBelow` fait deja — la duplication meme que ce module
+   * annonce avoir supprimee. Elle delegue.
+   */
   private reglesExecAccordees(): Array<{ cible: string; niveau: number }> {
-    const rules = (this.d() as unknown as { _ciscoPrivilegeRules?: Map<string, number> })
-      ._ciscoPrivilegeRules;
-    if (!rules || rules.size === 0) return [];
-    const out: Array<{ cible: string; niveau: number }> = [];
-    for (const [key, niveau] of rules) {
-      if (!key.startsWith('exec ')) continue;
-      if (niveau > this.currentPrivilegeLevel) continue;
-      out.push({ cible: key.slice(5).trim().toLowerCase(), niveau });
-    }
-    return out;
+    return this.autorisation()
+      .reglesAccordees('exec', this.currentPrivilegeLevel)
+      .map((r) => ({ cible: r.commande, niveau: r.niveau }));
   }
 
   protected completionsAccordeesParNiveau(
@@ -4786,20 +4787,30 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
         return this.reinitialiserNiveauDeCommande(mode ?? '', args.slice(2).join(' '));
       }
-      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
-      if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const lvl = parseInt(args[2] ?? '', 10);
+      // `privilege <mode> [all] level <n> <commande>` : les deux parties
+      // sont independantes, et `all` etend la regle a ce qui COMPLETE la
+      // commande. Le mot-cle etait refuse, et sa semantique appliquee a
+      // toute regle — les deux formes faisaient donc la meme chose.
+      const tousDescendants = args[1]?.toLowerCase() === 'all';
+      const reste = tousDescendants ? args.slice(1) : args;
+      if (reste[1]?.toLowerCase() === 'reset') {
+        if (reste.length < 3) return CISCO_ERRORS.INCOMPLETE;
+        return this.reinitialiserNiveauDeCommande(mode ?? '', reste.slice(2).join(' '));
+      }
+      if (reste[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
+      if (reste.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      const lvl = parseInt(reste[2] ?? '', 10);
       if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
-      if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      if (reste.length < 4) return CISCO_ERRORS.INCOMPLETE;
       // La regle N'EST PAS enregistree comme « ligne non traitee » : elle
       // est rendue depuis la table qui decide (`privilegeConfigLines`).
       // Deux magasins pour un fait, c'est ce qui laissait une regle
       // paraitre dans la configuration sans avoir le moindre effet.
       void raw;
       this.autorisation().setCommandLevel(
-        mode as AuthScope, args.slice(3).join(' '), lvl,
+        mode as AuthScope, reste.slice(3).join(' '), lvl, tousDescendants,
       );
       return '';
     });

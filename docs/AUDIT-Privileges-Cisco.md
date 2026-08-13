@@ -1270,3 +1270,74 @@ Le dire évite de réécrire ce qui marchait.
 entier est la suite naturelle de cette étape, mais aucun de ces champs
 n'a aujourd'hui de conséquence de sécurité comparable, et les déplacer
 sans lecteur qui les réclame serait un remaniement sans mesure.
+
+---
+
+## Étape 10 — les deux règles d'IOS sur l'ÉCRITURE d'une règle (M3, M6, G2)
+
+*Les neuf étapes précédentes portaient sur la LECTURE des règles. Celle-ci
+porte sur ce qu'écrire une règle veut dire — et c'est la plus intrusive du
+chantier.*
+
+**Fichiers** — `cli/CliAuthorization.ts`, `cli/CommandCanonicalizer.ts`,
+`CiscoShellBase.ts`, `cisco/CiscoShowCommands.ts`, `CiscoSwitchShell.ts` ;
+`src/__tests__/unit/network-v2/cisco-privilege-parent-and-all.test.ts`
+(neuf, 11 cas) ; six fichiers de laboratoire corrigés.
+
+**Rouge — 5 échecs sur 11.** **Vert** — 11/11, puis **46 fichiers /
+1 476 cas** connexes. `tsc` : 326 avant, 326 après.
+
+**M3 — hisser une commande hisse ses parentes.** Cisco l'écrit sans
+ambiguïté, et la conséquence est le piège n°1 du chapitre :
+`privilege exec level 5 show running-config` retire **tous** les `show`
+au niveau 1. Le simulateur enseignait une délégation sans effet de bord,
+donc une fausse sécurité. Le niveau rendu est désormais le plus élevé
+entre celui de la commande et celui qu'exigent ses parentes — il faut
+pouvoir **atteindre** une commande pour la taper. Une règle explicite sur
+la parente l'emporte, ce qui est le remède documenté.
+
+**M6 — `all`.** Le mot-clé était refusé, **et** sa sémantique était
+appliquée à *toute* règle : les deux formes d'IOS faisaient donc la même
+chose, qui était celle de la seconde. Une règle sans `all` ne vaut
+désormais que pour la commande **nommée**.
+
+**G2 — la duplication annoncée disparue.** `reglesExecAccordees()`
+relisait la `Map` à la main en réimplémentant `grantedAtOrBelow`. Elle
+délègue.
+
+**Ce que la mesure a corrigé dans mon propre correctif.** Ma première
+version comparait des chaînes, et cassait `hostname R1` : une règle
+`privilege configure level 5 hostname` doit gouverner la commande
+`hostname` **avec son argument**, sans pour autant gouverner une
+sous-commande. Seul l'arbre distingue un **argument** d'une
+**sous-commande**, et c'est le canonicaliseur de l'étape 1 qui le sait —
+`canonicalParts` sépare désormais mots-clés et forme complète. Les
+niveaux se décident sur les **mots-clés** ; les **vues**, elles,
+continuent de raisonner sur la forme complète, parce qu'elles décrivent
+ce qu'un rôle a le droit de **taper**. C'est le bénéfice différé que
+l'étape 1 annonçait, encaissé ici.
+
+**Six laboratoires décrivaient une machine qui n'existe pas**, et c'est
+la retombée la plus instructive du chantier. Ils accordaient `show clock`
+au niveau 3, `show ip interface brief` au 5, `show running-config` au 10,
+puis vérifiaient que le niveau 1 garde `show version` — ce qu'une vraie
+machine ne fait pas. Ils reçoivent le remède documenté,
+`privilege exec level 1 show`, et **testent alors exactement ce qu'ils
+voulaient tester**.
+
+**Une note d'un de ces fichiers valait confirmation.**
+`cross-equipment-privilege-suite` expliquait avoir **retiré** la règle
+courte `privilege exec level 3 show` de son laboratoire partagé parce
+qu'« elle couvrait toute la branche » et déplaçait 29 cas. C'était vrai
+du simulateur d'alors — qui appliquait à toute règle la sémantique
+d'`all`. L'auteur avait donc contourné exactement le défaut corrigé ici ;
+la règle est remise, et ne déplace plus rien.
+
+**Un cas de conformité affirmait l'inverse de la règle Cisco.**
+`conformite-privileges-cisco` §35 vérifiait que `show version` reste au
+niveau 1 après avoir hissé `show running-config`. Ce qu'il voulait dire
+reste vrai et reste vérifié — le niveau s'applique au **nœud nommé** et
+non à toute la branche, ce qui est précisément M6. Les deux moitiés sont
+désormais distinguées, avec le remède documenté entre elles. C'est le
+cinquième test de ce chantier qui figeait une prémisse fausse, et le
+premier dont la moitié de l'intention était juste.
