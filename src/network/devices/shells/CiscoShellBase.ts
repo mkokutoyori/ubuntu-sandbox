@@ -2170,6 +2170,53 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return lignes.join('\n');
   }
 
+  /**
+   * Le niveau auquel se trouve cette commande, ou `null` si ce mode ne
+   * la connait dans aucun arbre.
+   *
+   * `device` est emprunte le temps de la lecture : cette methode est
+   * appelee AVANT `execute`, donc avant que le shell ne tienne sa
+   * reference — et une table de regles illisible rendrait le niveau par
+   * defaut, c'est-a-dire la mauvaise liste d'autorisation.
+   */
+  niveauEffectifDe(cmdPart: string, device?: TDevice): number | null {
+    const precedent = this.deviceRef;
+    if (device !== undefined) this.deviceRef = device;
+    try {
+      const defaut = this.niveauParDefautDe(cmdPart);
+      if (defaut === null) return null;
+      return this.autorisation().levelOfCommand({
+        principal: this.mandataire(),
+        scope: scopeForMode(this.mode),
+        command: cmdPart,
+        defaultLevel: defaut,
+      });
+    } finally {
+      this.deviceRef = precedent;
+    }
+  }
+
+  /**
+   * L'utilisateur au nom de qui cette session s'execute, ou `null` pour
+   * la console anonyme. C'est ce qu'AAA soumet au serveur ; sans nom, il
+   * n'y a rien a autoriser.
+   */
+  utilisateurDeSession(): string | null {
+    return this.configSessionLabel === 'console' ? null : this.configSessionLabel;
+  }
+
+  /**
+   * Adopter l'identite portee par l'instantane d'une session.
+   *
+   * `console` est la valeur SENTINELLE de « personne ne s'est
+   * identifie » : la stocker telle quelle est ce qui permet a
+   * `utilisateurDeSession` de repondre `null` sans distinguer un compte
+   * nomme « console ».
+   */
+  adopterUtilisateurDeSession(user: string | null): void {
+    this.configSessionLabel = user ?? 'console';
+  }
+
   /** La session voit-elle cette commande ? Une seule regle, deja ecrite. */
   protected laSessionVoit(cmdPart: string): boolean {
     const defaut = this.niveauParDefautDe(cmdPart);

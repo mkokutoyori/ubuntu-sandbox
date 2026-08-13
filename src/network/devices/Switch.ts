@@ -3178,7 +3178,34 @@ export abstract class Switch extends Equipment {
       const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
       if (dialogue !== null) return dialogue;
     }
+    const porteAaa = this.refusAutorisationAaa(command);
+    if (porteAaa !== null) {
+      const refus = await porteAaa;
+      if (refus !== null) return refus;
+    }
     return this.shell.execute(this, command);
+  }
+
+  /**
+   * Le pendant exact de `Router.refusAutorisationAaa` : un Catalyst
+   * porte le meme sous-systeme AAA, et laisser la porte ouverte ici
+   * ferait d'une plateforme la faille de l'autre.
+   */
+  protected refusAutorisationAaa(command: string): Promise<string | null> | null {
+    const ligne = command.trim();
+    if (ligne === '') return null;
+    const shell = this.shell as unknown as {
+      niveauEffectifDe?: (c: string, d?: unknown) => number | null;
+      utilisateurDeSession?: () => string | null;
+    };
+    const utilisateur = shell.utilisateurDeSession?.() ?? null;
+    if (!utilisateur) return null;
+    const niveau = shell.niveauEffectifDe?.(ligne, this) ?? null;
+    if (niveau === null) return null;
+    const aaa = this.getAaaAuthenticator();
+    if (!aaa.hasCommandAuthorization(niveau)) return null;
+    return aaa.authorizeCommand(utilisateur, ligne, niveau)
+      .then((v) => (v === 'denied' ? 'Command authorization failed.' : null));
   }
 
   /**

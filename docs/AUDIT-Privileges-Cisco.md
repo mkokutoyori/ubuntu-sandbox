@@ -1094,3 +1094,70 @@ que de retirer la propriété sans la remplacer.
 seul terminal graphique — puis les constats majeurs M1/M2 (le niveau de
 la ligne), M3/M6 (promotion des parents, mot-clé `all`), M7/M8/M9/M10/M11
 (les vues), et le nettoyage G1/G2/G4/G7/G8/G9.
+
+---
+
+## Étape 7 — l'autorisation AAA par commande garde toutes les portes (C8)
+
+**Fichiers** — `router/aaa/AaaAuthenticator.ts`, `cli/CliAuthorization.ts`,
+`CiscoShellBase.ts`, `shells/vty/CliShellSession.ts`, `CiscoIOSShell.ts`,
+`CiscoSwitchShell.ts`, `HuaweiVRPShell.ts`, `HuaweiSwitchShell.ts`,
+`Router.ts`, `Switch.ts`, `terminal/sessions/CiscoTerminalSession.ts` ;
+`src/__tests__/unit/network-v2/cisco-aaa-command-authorization-everywhere.test.ts`
+(neuf, 9 cas).
+
+**Rouge — 5 échecs sur 8** au premier jet (le 9ᵉ cas est né de la
+régression trouvée en chemin). Les 3 verts des deux côtés sont les cas de
+non-régression : sans `aaa authorization commands`, et sans utilisateur
+authentifié, rien ne doit changer.
+
+**Vert** — 9/9, puis **45 fichiers / 1 468 cas** connexes. `tsc` : aucune
+erreur ajoutée (2 retirées ; la base est passée de 296 à 321 du fait d'un
+travail concurrent sur la branche, pas de ce chantier).
+
+**Une porte, pas deux.** La garde vit désormais sur
+`Router.executeCommand` / `Switch.executeCommand`, que **tous** les
+appelants empruntent — terminal, vty, SSH, telnet, script. Celle que
+portait `CiscoTerminalSession` est **retirée** : la garder en plus aurait
+soumis deux fois la même commande au serveur et doublé ses compteurs.
+
+**La sémantique était fausse, et les deux défauts se voyaient l'un
+l'autre.** La liste consultée était choisie sur le niveau de la
+**session** ; IOS la choisit sur le niveau de la **commande**.
+`levelOfCommand` la lit sur la forme canonique (étape 2), donc une
+commande **descendue par `privilege`** change de liste avec son niveau.
+Corriger le branchement sans la sémantique aurait fait refuser des
+commandes de niveau 1 sur toute machine portant
+`aaa authorization commands 15` — le correctif aurait été pire que le
+défaut.
+
+**L'identité voyage avec la session.** La porte n'avait aucun nom à
+soumettre pour une session ouverte par le terminal : l'utilisateur vivait
+sur `configSessionLabel`, un champ du **shell**. C'est le même défaut que
+C7, sur un troisième champ — et il avait sa propre conséquence, deux
+sessions simultanées s'attribuant mutuellement leurs commandes dans les
+traces de comptabilité. `VtySnapshot` porte donc `sessionUser`, comme il
+porte le niveau et la vue.
+
+**La régression trouvée en chemin, et ce n'était pas l'autorisation mais
+le MOMENT.** Deux cas Huawei sont tombés. Cause : un `await`
+inconditionnel sur le chemin que **toute** commande emprunte diffère
+l'exécution d'un tour de micro-tâches — donc change l'instant où une
+commande prend effet, y compris sur une machine sans le moindre AAA. Un
+appelant qui n'attend pas `executeCommand` voyait son `system-view`
+arriver trop tard. `hasCommandAuthorization` est donc un prédicat
+**synchrone**, et la porte rend `null` synchroniquement quand il n'y a
+rien à autoriser ; elle ne rend une promesse que lorsqu'une autorisation
+a réellement lieu. Un cas dédié le fixe.
+
+**Une erreur de ma part, dite plutôt que tue.** Une découpe de fichier
+mal bornée a supprimé `Router.jouerDialogueSansTerminal` au passage.
+C'est la non-régression connexe qui l'a attrapée immédiatement
+(`TypeError` sur 20 cas), et non une relecture — argument de plus pour
+faire tourner la suite connexe à chaque étape plutôt qu'à la fin.
+
+**Portée.** `aaa authorization exec` — la commande par laquelle un
+serveur TACACS+ attribue le niveau de privilège à l'ouverture de session
+— reste **acceptée, stockée, rendue et consultée par personne**, de même
+que `config-commands`, `network` et `reverse-access`. C'est la moitié
+restante de C8, et l'étape suivante.

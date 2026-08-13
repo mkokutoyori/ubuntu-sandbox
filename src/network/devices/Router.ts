@@ -3098,6 +3098,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       const dialogue = await this.jouerDialogueSansTerminal(command, answers as HeadlessAnswers);
       if (dialogue !== null) { this.syncRouteDebug(); return dialogue; }
     }
+    const porteAaa = this.refusAutorisationAaa(command);
+    if (porteAaa !== null) {
+      const refus = await porteAaa;
+      if (refus !== null) return refus;
+    }
     const out = await this.shell.execute(this, command);
     this.syncRouteDebug();
     return out;
@@ -3124,6 +3129,45 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     if (!plan) return null;
     return runInteractionPlanHeadless(plan, answers,
       async (c) => this.shell.execute(this, c));
+  }
+
+  /**
+   * L'autorisation AAA par commande, sur la porte que TOUS les appelants
+   * empruntent.
+   *
+   * `authorizeCommand` etait correcte et n'avait qu'un appelant :
+   * `CiscoTerminalSession`. Une session SSH, telnet ou scriptee
+   * echappait donc entierement a `aaa authorization commands`, pourtant
+   * configuree et rendue dans la configuration. La porte vit ici, une
+   * seule fois, parce que deux portes finiraient par ne pas soumettre
+   * les memes commandes — et parce que le terminal, en la portant, en
+   * chargeait deux fois le serveur.
+   *
+   * La liste consultee est celle du niveau de la COMMANDE, comme IOS, et
+   * non celle du niveau de la session.
+   *
+   * Rend `null` SYNCHRONEMENT quand il n'y a rien a autoriser, et une
+   * promesse seulement sinon. Ce n'est pas une optimisation : `await`
+   * sur ce chemin differe l'execution d'un tour de micro-taches, donc
+   * change le moment ou une commande prend effet — mesure sur un appelant
+   * qui n'attendait pas `executeCommand` et voyait son changement de mode
+   * arriver trop tard.
+   */
+  protected refusAutorisationAaa(command: string): Promise<string | null> | null {
+    const ligne = command.trim();
+    if (ligne === '') return null;
+    const shell = this.shell as unknown as {
+      niveauEffectifDe?: (c: string, d?: unknown) => number | null;
+      utilisateurDeSession?: () => string | null;
+    };
+    const utilisateur = shell.utilisateurDeSession?.() ?? null;
+    if (!utilisateur) return null;
+    const niveau = shell.niveauEffectifDe?.(ligne, this) ?? null;
+    if (niveau === null) return null;
+    const aaa = this.getAaaAuthenticator();
+    if (!aaa.hasCommandAuthorization(niveau)) return null;
+    return aaa.authorizeCommand(utilisateur, ligne, niveau)
+      .then((v) => (v === 'denied' ? 'Command authorization failed.' : null));
   }
 
   /**

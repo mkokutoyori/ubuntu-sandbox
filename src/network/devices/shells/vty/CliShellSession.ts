@@ -96,6 +96,18 @@ export interface VtySnapshot {
    * session.
    */
   activeParserView: string | null;
+  /**
+   * L'utilisateur au nom de qui cette session s'execute, ou `null` pour
+   * la console anonyme.
+   *
+   * L'identite vivait sur le SHELL (`configSessionLabel`), que toutes
+   * les sessions partagent : deux sessions simultanees se seraient
+   * attribue les commandes l'une de l'autre dans les traces de
+   * comptabilite, et l'autorisation AAA par commande n'avait aucun nom a
+   * soumettre pour une session ouverte par le terminal. Meme regle que
+   * le niveau et la vue : ce qui est per-session voyage avec elle.
+   */
+  sessionUser: string | null;
   /** `terminal history size N` — bounded ring length. */
   historySize: number;
   /** `show history` buffer. */
@@ -181,6 +193,7 @@ export class CliShellSession {
       terminalDebugging: false,
       privilegeLevel: 1,
       activeParserView: null,
+      sessionUser: null,
       historySize: 10,
       cmdHistory: [],
     };

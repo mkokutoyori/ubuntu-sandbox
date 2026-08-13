@@ -425,6 +425,9 @@ export class CiscoTerminalSession extends CLITerminalSession {
           if (this.vty) {
             this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
             this.vty.state.privilegeLevel = privilege;
+            // L'identite voyage avec la session : c'est elle qu'AAA
+            // soumet au serveur pour autoriser chaque commande.
+            this.vty.state.sessionUser = username || null;
           }
           this.rearmExecTimeout();
           // Real IOS: `banner exec` is shown after a SUCCESSFUL login only,
@@ -490,6 +493,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
       const privilege = linePrivilege ?? this.lookupAccountPrivilege(user);
       this.vty.state.mode = privilege === 15 ? 'privileged' : 'user';
       this.vty.state.privilegeLevel = privilege;
+      this.vty.state.sessionUser = user || null;
     }
     this.isBooting = false;
     this.updatePrompt();
@@ -632,8 +636,6 @@ export class CiscoTerminalSession extends CLITerminalSession {
   ): Promise<string> {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
-    const denial = await this.checkAaaCommandAuthorization(command);
-    if (denial !== null) return denial;
     if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       const p = dev.executeCommandInVty(command, this.vty);
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
@@ -642,23 +644,15 @@ export class CiscoTerminalSession extends CLITerminalSession {
   }
 
   /**
-   * `aaa authorization commands <N> default group X local` — real IOS
-   * consults the configured server group for every command typed at
-   * privilege level N before executing it, refusing with exactly `Command
-   * authorization failed.` (session stays connected) when the server
-   * denies it. Returns null when the command is authorized (or no such
-   * method list applies), in which case the caller proceeds normally.
+   * `aaa authorization commands` ne vit plus ici.
+   *
+   * La porte etait portee par CE fichier et par lui seul : une session
+   * SSH, telnet ou scriptee y echappait entierement. Elle vit desormais
+   * sur `Router.executeCommand` / `Switch.executeCommand`, que tous les
+   * appelants empruntent — y compris celui-ci. La garder ici en plus
+   * soumettrait deux fois la meme commande au serveur, et doublerait ses
+   * compteurs.
    */
-  private async checkAaaCommandAuthorization(command: string): Promise<string | null> {
-    const dev = this.device as unknown as {
-      getAaaAuthenticator?: () => { authorizeCommand: (u: string, c: string, p: number) => Promise<'allowed' | 'denied'> };
-    };
-    const authenticator = dev.getAaaAuthenticator?.();
-    if (!authenticator || !this.authenticatedUsername) return null;
-    const privilege = this.vty?.state.privilegeLevel ?? 1;
-    const verdict = await authenticator.authorizeCommand(this.authenticatedUsername, command.trim(), privilege);
-    return verdict === 'denied' ? 'Command authorization failed.' : null;
-  }
 
   /**
    * Effective `terminal length` of this vty session.

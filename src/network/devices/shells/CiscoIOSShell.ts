@@ -455,6 +455,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       terminalDebugging: this.terminalMonitor,
       privilegeLevel: this.currentPrivilegeLevel,
       activeParserView: this.activeParserView,
+      sessionUser: this.utilisateurDeSession(),
       historySize: this.terminalHistorySize,
       cmdHistory: [...this.cmdHistory],
     };
@@ -465,6 +466,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.mode = s.mode as CiscoShellMode;
     this.currentPrivilegeLevel = s.privilegeLevel;
     this.activeParserView = s.activeParserView ?? null;
+    this.adopterUtilisateurDeSession(s.sessionUser ?? null);
     this.selectedInterface = s.selectedInterface;
     this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
     this.selectedTrack = s.selectedTrack;

@@ -398,6 +398,22 @@ export class CliAuthorization {
   reglesAccordees(scope: AuthScope, level: number): Array<{ commande: string; niveau: number }> {
     return this.levels.grantedAtOrBelow(scope, level);
   }
+
+  /**
+   * Le niveau EFFECTIF d'une commande — celui d'IOS apres les regles
+   * `privilege`, lu sur la forme canonique.
+   *
+   * C'est ce que l'autorisation AAA par commande doit interroger :
+   * `aaa authorization commands N` gouverne les commandes DE niveau N,
+   * pas les commandes tapees par une session de niveau N. Choisir la
+   * liste sur le niveau de la session soumettait `show version` — niveau
+   * 1 — a la liste 15 des lors qu'un administrateur la tapait.
+   */
+  levelOfCommand(input: AuthorizeInput): number {
+    return this.levels.levelOf(
+      input.scope, this.forme(input.scope, input.command), input.defaultLevel,
+    );
+  }
 }
 
 /** L'espace de nommage des regles qui gouverne un mode de la CLI. */

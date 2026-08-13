@@ -100,6 +100,24 @@ export class AaaAuthenticator {
    * has no per-command ACL concept in IOS (it always grants), so it — like
    * a fully exhausted chain — resolves to 'allowed'.
    */
+  /**
+   * Une liste `aaa authorization commands <niveau>` gouverne-t-elle ce
+   * niveau ?
+   *
+   * Ce predicat est SYNCHRONE, et c'est ce qui compte : la porte
+   * d'autorisation est posee sur le chemin que TOUTE commande emprunte,
+   * et y placer un `await` inconditionnel differerait l'execution d'un
+   * tour de micro-taches — donc changerait le moment ou une commande
+   * prend effet, pour toutes les machines, y compris celles qui n'ont
+   * aucun AAA configure.
+   */
+  hasCommandAuthorization(privilegeLevel: number): boolean {
+    const sec = getSecurityConfig(this.router);
+    if (!sec.aaaNewModel) return false;
+    return sec.aaaMethods.some((m) => m.phase === 'authorization' && m.service === 'commands'
+      && (m.privilegeLevel ?? 15) === privilegeLevel);
+  }
+
   async authorizeCommand(username: string, command: string, privilegeLevel: number): Promise<'allowed' | 'denied'> {
     const sec = getSecurityConfig(this.router);
     if (!sec.aaaNewModel) return 'allowed';

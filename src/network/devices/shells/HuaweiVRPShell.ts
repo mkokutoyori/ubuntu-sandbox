@@ -442,6 +442,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       selectedInterface: this.selectedInterface,
       selectedInterfaceRange: [],
       selectedVlan: null,
+      // VRP n'a pas les CLI Views d'IOS, et son shell ne porte pas
+      // d'identite de session : les deux champs du contrat sont donc
+      // renseignes pour ce qu'ils sont ici — absents — plutot que
+      // laisses indefinis.
+      activeParserView: null,
+      sessionUser: null,
       selectedArpAcl: null,
       selectedAccessMap: null,
       selectedMqcName: null,
