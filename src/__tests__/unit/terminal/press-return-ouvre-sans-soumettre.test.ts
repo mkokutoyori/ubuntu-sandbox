@@ -18,14 +18,20 @@
  * the machine asking twice.
  *
  * The gate is deliberately narrow — bare Enter, banner still up, nothing
- * typed. An earlier and wider version of it ate real commands, because
- * the scripted SSH paths fill the buffer with `setInputBuf` before
- * sending Enter; the empty-buffer condition is what keeps them safe, and
- * the last case here pins it.
+ * PENDING. "Nothing pending" has to be asked of both buffers, and getting
+ * that wrong is not hypothetical: my first fix asked only `input`, while
+ * the scripted paths call `setInputBuf`, which fills `_inputBuf` and
+ * leaves `input` empty. The gate then swallowed every scripted command
+ * and took out nine cases of `ssh-liveness-vendor-agnostic`.
  *
  * Discrimination — restore `CLITerminalSession.ts`: the first two cases
- * fail (the echoed `Router1>` comes back). The last two pass either way
- * and guard the fix rather than measure the defect.
+ * fail, the echoed `Router1>` coming back. Narrowing the gate to `input`
+ * alone (the bug I shipped) instead fails the `setInputBuf` case. Both
+ * halves are therefore pinned by a case that can see them, which the
+ * first draft of this file could not: its swallow case asserted on
+ * `Cisco IOS Software`, a string the BANNER already prints, so it passed
+ * against the very defect it existed to catch. It asserts on a clock line
+ * now — output no banner can produce.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -107,18 +113,38 @@ describe('the RETURN that opens the console does not submit a line', () => {
   });
 
   /**
-   * The scripted paths never type: they fill the buffer and send Enter.
-   * A gate keyed on the keystroke alone would swallow that command whole,
-   * which is exactly how the first version of this fix broke SSH.
+   * The scripted paths never type: they call `setInputBuf` and send
+   * Enter. That fills `_inputBuf` and leaves `input` EMPTY, so a gate
+   * that only asks `input` swallows the command whole — which is exactly
+   * what happened, twice: it took out nine cases of
+   * `ssh-liveness-vendor-agnostic`. The first version of this very test
+   * used `setInput` and so never exercised the path that breaks; it uses
+   * the scripted one now, which is the only reason it discriminates.
    */
-  it('a command already in the buffer is never swallowed by the gate', async () => {
+  it('a command placed with setInputBuf is never swallowed by the gate', async () => {
     const session = await bootedConsole();
 
-    session.setInput('show version');
+    (session as unknown as { setInputBuf(v: string): void }).setInputBuf('show clock');
     session.handleKey(key('Enter'));
     await settle(session);
 
-    expect(rendered(session)).toContain('Router1>show version');
-    expect(session.lines.map((l) => l.text).join('\n')).toContain('Cisco IOS Software');
+    // A clock line cannot come from the banner. The first version of this
+    // assertion looked for `Cisco IOS Software`, which the BANNER already
+    // prints — so it passed against the very bug it was meant to catch.
+    expect(session.lines.map((l) => l.text).join('\n')).toMatch(/\d\d:\d\d:\d\d.*UTC/);
+  });
+
+  it('a typed command is not swallowed either', async () => {
+    const session = await bootedConsole();
+
+    session.setInput('show clock');
+    session.handleKey(key('Enter'));
+    await settle(session);
+
+    expect(rendered(session)).toContain('Router1>show clock');
+    // A clock line cannot come from the banner. The first version of this
+    // assertion looked for `Cisco IOS Software`, which the BANNER already
+    // prints — so it passed against the very bug it was meant to catch.
+    expect(session.lines.map((l) => l.text).join('\n')).toMatch(/\d\d:\d\d:\d\d.*UTC/);
   });
 });

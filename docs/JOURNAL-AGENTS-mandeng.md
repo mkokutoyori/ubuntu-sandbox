@@ -6112,3 +6112,25 @@ puissent plus diverger.
 
 Discrimine en restaurant `CiscoRouter.ts` : 3 cas sur 4 tombent. Aucun
 test existant ne figeait les anciens formats, verifie avant de changer.
+
+### Correctif du correctif : le garde-fou avalait les commandes scriptees
+
+Le lot `Press RETURN` ci-dessus etait CASSE et l'est reste le temps d'un
+commit. `returnOpensTheSession` demandait `this.input === ''`, mais les
+chemins scriptes appellent `setInputBuf`, qui remplit `_inputBuf` et
+LAISSE `input` vide : le garde avalait donc chaque commande SSH
+scriptee. Neuf cas de `ssh-liveness-vendor-agnostic` sont tombes. C'est
+le piege que l'en-tete annoncait eviter, et j'y suis tombe pour la
+deuxieme fois de la session. La question « rien en attente » se pose aux
+DEUX tampons.
+
+**Le test de garde avait un trou, deux fois.** Son cas « une commande
+n'est jamais avalee » utilisait `setInput`, donc jamais le chemin qui
+casse. Reecrit avec `setInputBuf`, il passait ENCORE contre le bug :
+il cherchait `Cisco IOS Software`, chaine que la BANNIERE imprime deja.
+L'assertion validait le defaut qu'elle devait attraper. Elle porte
+desormais sur une ligne d'horloge, qu'aucune banniere ne produit.
+
+Discrimine dans les deux sens : gate restaure, les 2 premiers cas
+tombent ; gate retreci a `input` seul (le bug livre), le cas
+`setInputBuf` tombe.

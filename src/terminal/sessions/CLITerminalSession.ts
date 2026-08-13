@@ -348,13 +348,18 @@ export abstract class CLITerminalSession extends TerminalSession {
    * twice, which is not what a real console does.
    *
    * The condition is narrow on purpose: only a bare Enter, only while the
-   * banner is still up, only with nothing typed. A caller that filled the
-   * buffer first (`setInputBuf`, the scripted SSH paths) leaves it
-   * non-empty and is never swallowed — an earlier, wider version of this
-   * gate ate real commands that way.
+   * banner is still up, only with nothing pending to run.
+   *
+   * "Nothing pending" must be asked of BOTH buffers. Typing fills
+   * `input`; the scripted paths call `setInputBuf`, which fills
+   * `_inputBuf` and leaves `input` empty. Asking only the first let this
+   * gate swallow every scripted SSH command — measured, not feared: nine
+   * cases of `ssh-liveness-vendor-agnostic` went down, and a wider
+   * version of this same gate had already done it once before.
    */
   private returnOpensTheSession(e: KeyEvent): boolean {
-    return this.promptHiddenUntilFirstKey && e.key === 'Enter' && this.input === '';
+    if (!this.promptHiddenUntilFirstKey || e.key !== 'Enter') return false;
+    return this.input === '' && this.getInputBuf() === '';
   }
 
   /** Rouvrir une session EXEC apres la frappe. */

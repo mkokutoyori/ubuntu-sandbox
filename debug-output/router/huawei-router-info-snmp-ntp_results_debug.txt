@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-08-13T11:55:06.436Z
+Generated: 2026-08-13T12:19:25.063Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -119,10 +119,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-13 11:55:06 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-13 11:55:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-13 11:55:06 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 11:55:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-13 12:19:25 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-13 12:19:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-13 12:19:25 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-13 12:19:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [31/233] r1 <R1> display logbuffer summary
   Log buffer: 0 messages.
@@ -323,7 +323,7 @@ Total steps: 233
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [75/233] r1 <R1> display snmp-agent local-engineid
-  SNMP local EngineID: 8000000903DA8876C5
+  SNMP local EngineID: 8000000903D1CF3D3B
 
 
 --- [76] § NTP ---
@@ -396,7 +396,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 11:55:06.584  Aug 13 2026(EE282F1A.95810624)
+  Reference time: 12:19:25.080  Aug 13 2026(EE2834CD.147AE147)
   Source interface: LoopBack0
 
 [95/233] r1 <R1> display ntp-service sessions
@@ -421,7 +421,7 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-08-13 11:55:06
+  2026-08-13 12:19:25
   Thursday
   Time Zone(UTC) : UTC
 
@@ -798,7 +798,7 @@ Total steps: 233
   Root delay: 0.00 ms
   Root dispersion: 0.00 ms
   Peer dispersion: 0.00 ms
-  Reference time: 11:55:06.864  Aug 13 2026(EE282F1A.DD2F1A9F)
+  Reference time: 12:19:25.153  Aug 13 2026(EE2834CD.272B020C)
   Source interface: LoopBack0
 
 [163/233] r1 <R1> display ntp session
@@ -814,7 +814,7 @@ Total steps: 233
   Total sessions: 4
 
 [164/233] r1 <R1> display clock
-  2026-08-13 11:55:06
+  2026-08-13 12:19:25
   Thursday
   Time Zone(UTC) : UTC
 
@@ -827,13 +827,13 @@ Total steps: 233
 [167/233] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-13 11:55:06
+  CPU Usage Stat. Time : 2026-08-13 12:19:25
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-13 11:55:06
+  Memory utilization statistics at 2026-08-13 12:19:25
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -874,10 +874,10 @@ Total steps: 233
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-13 11:55:06 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-13 11:55:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-13 11:55:06 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 11:55:06 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-13 12:19:25 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-13 12:19:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-13 12:19:25 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-13 12:19:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [173/233] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
