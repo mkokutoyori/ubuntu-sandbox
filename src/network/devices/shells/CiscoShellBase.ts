@@ -147,6 +147,12 @@ const EIGRP_DEBUG_SUBJECTS: Readonly<Record<string, string>> = {
 const PIPE_WRITE_BANNER = '!!';
 
 /** La taille d'historique d'IOS quand aucune ligne ne l'a fixee. */
+/**
+ * Le nombre maximal de vues et superviews qu'IOS accepte, vue racine non
+ * comprise (Cisco, Role-Based CLI Access).
+ */
+const MAX_PARSER_VIEWS = 15;
+
 const HISTORIQUE_PAR_DEFAUT = 20;
 
 /** Le texte que `help` imprime sur IOS, mot pour mot. */
@@ -1944,10 +1950,34 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected tryGlobalConfigNavigation(cmdPart: string): string | null {
     if (!this.isConfigMode() || this.mode === 'config') return null;
+    // `config-view` : ce qui est CERTAIN est qu'une commande venue de
+    // l'arbre global ne doit pas DEPLACER la session. `interface Gi0/0`
+    // y changeait de mode, si bien que le `exit` suivant ne quittait
+    // plus la vue mais l'interface, et la definition de la vue restait a
+    // moitie faite.
+    //
+    // Ce qui n'est PAS certain, et n'est donc pas fait : savoir si IOS
+    // refuse aussi les commandes globales qui ne changent pas de mode
+    // (`hostname`, `username`). La documentation ne le dit pas, et
+    // l'indice le plus fort va dans l'autre sens — une configuration
+    // rendue enchaine `parser view X`, ses lignes, puis les comptes,
+    // SANS `exit` entre les deux, donc IOS doit pouvoir les rejouer
+    // depuis ce sous-mode. Inventer un refus serait aussi faux
+    // qu'inventer une ligne `exit` dans la configuration.
+    const modeAvant = this.mode;
     const result = this.configTrie.match(cmdPart);
     if (result.status === 'ok' && result.node?.action) {
       try {
-        return result.node.action(result.args, cmdPart);
+        const sortie = result.node.action(result.args, cmdPart);
+        if (modeAvant === 'config-view' && this.mode !== modeAvant) {
+          this.mode = modeAvant;
+          this.fsm.mode = modeAvant;
+          return renderCliDiagnostic('invalid', {
+            line: cmdPart,
+            tokenOffset: argumentOffset(cmdPart, result.matchedKeywords.length, 0),
+          });
+        }
+        return sortie;
       } catch (err) {
         if (err instanceof CliInvalidInput) {
           return renderCliDiagnostic('invalid', {
@@ -4839,6 +4869,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const superview = (args[1] ?? '').toLowerCase() === 'superview';
       if (args[1] !== undefined && !superview) throw new CliInvalidInput({ token: args[1] });
       const existante = sec.parserViews.get(nom);
+      // Cisco documente un maximum de 15 vues et superviews, vue racine
+      // non comprise. Re-entrer dans une vue EXISTANTE n'est pas une
+      // creation et ne compte donc pas. Le libelle exact du refus d'IOS
+      // n'a pas pu etre verifie : celui-ci dit la limite plutot que
+      // d'imiter une phrase dont on n'est pas sur.
+      if (!existante && sec.parserViews.size >= MAX_PARSER_VIEWS) {
+        return `%Error: maximum number of views (${MAX_PARSER_VIEWS}) already configured`;
+      }
       if (!existante) {
         sec.parserViews.set(nom, {
           name: nom, execInclude: [], execExclude: [],

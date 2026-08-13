@@ -351,6 +351,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       case 'config-archive':     return this.configArchiveTrie;
       case 'config-archive-log': return this.configArchiveLogTrie;
       case 'config-line': return this.configLineTrie;
+      // Un Catalyst connait les CLI Views tout autant qu'un routeur. Sans
+      // ce cas, `parser view NOC` creait la vue et `secret`/`commands`
+      // tombaient sur l'arbre UTILISATEUR : on obtenait une vue qui
+      // existe, ne peut rien contenir, et dans laquelle on peut entrer.
+      case 'config-view': return this.configViewTrie;
       case 'config-acl':  return this.configAclTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-access-map': return this.configAccessMapTrie;
@@ -3298,6 +3303,18 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     if (dnsLignes.length > 0) { lines.push(...dnsLignes); lines.push('!'); }
     else if (sw.getDomainName()) { lines.push(`ip domain-name ${sw.getDomainName()}`); lines.push('!'); }
     if (sw.getDefaultGateway()) { lines.push(`ip default-gateway ${sw.getDefaultGateway()}`); lines.push('!'); }
+
+    // Les vues AVANT les comptes, pour la meme raison que sur le
+    // routeur : `username X view NOC` refuse une vue inconnue, donc une
+    // configuration qui nommerait la vue apres le compte ne serait pas
+    // rejouable — et c'est ce que l'import d'une topologie en fait.
+    const viewLines = (sw as unknown as {
+      [k: symbol]: { parserViewLines?: () => string[] } | undefined;
+    })[Symbol.for('CiscoSecurityConfig')]?.parserViewLines?.() ?? [];
+    if (viewLines.length > 0) {
+      lines.push('!');
+      lines.push(...viewLines);
+    }
 
     // Local AAA users (`username NAME privilege N secret …`).
     const users = sw._listLocalUsers();

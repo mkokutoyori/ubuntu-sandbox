@@ -497,6 +497,13 @@ export class CiscoSecurityConfig {
       for (const m of v.members ?? []) lines.push(` view ${m}`);
       for (const c of v.execInclude) lines.push(` commands exec include ${c}`);
       for (const c of v.execExclude) lines.push(` commands exec exclude ${c}`);
+      // Le bloc se TERMINE lui-meme. Sans cette ligne, la configuration
+      // rendue laisse la session dans `config-view` : tout ce qui suit —
+      // les comptes, les interfaces — serait rejoue depuis ce sous-mode
+      // a l'import d'une topologie. C'est aussi ce qui permet de
+      // confiner le sous-mode : un sous-mode dont on ne sort jamais ne
+      // peut pas etre restreint sans rendre la machine irrelisable.
+      lines.push(' exit');
       lines.push('!');
     }
     return lines;

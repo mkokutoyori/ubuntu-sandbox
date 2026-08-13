@@ -1341,3 +1341,61 @@ non à toute la branche, ce qui est précisément M6. Les deux moitiés sont
 désormais distinguées, avec le remède documenté entre elles. C'est le
 cinquième test de ce chantier qui figeait une prémisse fausse, et le
 premier dont la moitié de l'intention était juste.
+
+---
+
+## Étape 11 — déclarer une vue : la plateforme, le sous-mode, la limite (M9, M10, M11)
+
+**Fichiers** — `CiscoSwitchShell.ts`, `CiscoShellBase.ts`,
+`router/security/CiscoSecurityConfig.ts` ;
+`src/__tests__/unit/network-v2/cisco-view-declaration.test.ts`
+(neuf, 21 cas).
+
+**Rouge — 9 échecs sur 21.** **Vert** — 21/21, puis **47 fichiers /
+1 497 cas** connexes. `tsc` : 329 avant, 329 après.
+
+**M10 — le Catalyst produisait une vue-piège.** `getActiveTrie()` n'avait
+pas de cas `config-view` et retombait sur l'arbre **utilisateur** : la vue
+était créée, `secret` et `commands` étaient refusés, et l'on pouvait
+quand même y entrer. Une vue qui existe, ne peut rien contenir, ne peut
+pas avoir de mot de passe, et dont on ne voit rien. Un cas ajouté, et le
+rendu des vues branché sur la configuration du commutateur — les onze
+cas de la plateforme passent maintenant par les mêmes assertions que le
+routeur.
+
+**M9 — la limite de 15 vues.** Ré-entrer dans une vue existante n'est pas
+une création et ne compte pas ; en retirer une libère une place ; la vue
+racine ne compte pas. **Le libellé exact du refus d'IOS n'a pas pu être
+vérifié**, et le message dit donc la limite plutôt que d'imiter une
+phrase dont on n'est pas sûr — c'est écrit dans le code.
+
+**M11 — et c'est ici que la mesure a corrigé l'audit.** L'audit affirmait
+que `(config-view)#` d'IOS n'accepte que ses propres commandes. **Je n'ai
+pas pu le vérifier**, et deux indices vont contre : la documentation ne
+le dit nulle part, et surtout une configuration rendue enchaîne les vues
+puis les comptes puis les interfaces — donc IOS doit pouvoir les rejouer
+depuis ce sous-mode, sans quoi sa propre configuration serait
+irrelisable.
+
+Ce qui est **certain**, en revanche, est le préjudice mesuré : une
+commande venue de l'arbre global pouvait **déplacer la session**.
+`interface Gi0/0` changeait de mode, le `exit` suivant quittait
+l'interface au lieu de la vue, et la définition restait à moitié faite.
+C'est ce point, et lui seul, qui est corrigé : un repli qui changerait de
+mode est refusé et la session reste où elle est. Refuser en plus
+`hostname` ou `username` aurait été **inventer un refus**, ce qui n'est
+pas moins faux qu'inventer une sortie.
+
+**La contrepartie était nécessaire, et c'est le rejeu qui l'a imposée.**
+Confiner un sous-mode dont on ne sort jamais rend la machine irrelisable :
+la première version du correctif a fait tomber quatre cas de rejeu de
+configuration. Le bloc de vue **se termine désormais lui-même** (` exit`),
+donc tout ce qui suit se rejoue depuis la configuration globale. Le rendu
+exact d'IOS sur ce point n'est pas vérifié non plus ; c'est la contrainte
+de **rejouabilité** — que ce dépôt traite comme non négociable — qui
+tranche, et elle est écrite là où la ligne est produite.
+
+**Ce que la non-régression garde** : depuis `config-if`, une commande de
+configuration globale fonctionne toujours. C'est un comportement réel
+d'IOS, et le confinement de `config-view` ne devait pas l'emporter avec
+lui — un cas le fixe sur les deux plateformes.
