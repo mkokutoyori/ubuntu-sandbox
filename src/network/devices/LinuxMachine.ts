@@ -3382,6 +3382,7 @@ export abstract class LinuxMachine extends EndHost
       hasRoute: (target: IPAddress): boolean => {
         return this.hasRouteOrLocal(target);
       },
+      getScheduler: () => this.getScheduler(),
       pingSequence: (
         target: IPAddress,
         count: number,

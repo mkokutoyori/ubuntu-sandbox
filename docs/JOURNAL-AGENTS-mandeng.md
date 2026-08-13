@@ -5894,3 +5894,54 @@ REMPLACE l'arbre visible, la poser par-dessus le socle de niveau 1
 `clock` seul en configuration globale rendait `% Invalid input` au lieu
 de `% Incomplete command`, et `calendar-valid` n'avait pas de
 description propre (le cliquet d'aide le comptait).
+
+---
+
+## `scenario-cisco-pat-overload` : l'attente de `ping` appartient a l'horloge simulee
+
+Fichiers touches : `src/network/devices/linux/commands/net/Ping.ts`,
+`src/network/devices/linux/LinuxNetKernel.ts`,
+`src/network/devices/LinuxMachine.ts`, `src/events/Scheduler.ts`,
+`src/__tests__/unit/network-v2/ping-interval-uses-the-simulated-clock.test.ts`
+(nouveau), `src/__tests__/unit/network-v2/scenario-cisco-pat-overload.test.ts`.
+
+Ce n'etait pas une assertion qui echouait mais un DEPASSEMENT : « Test
+timed out in 5000ms ». Mesure : les deux cas coutaient 4125 ms et
+4115 ms a vide, soit 82 % du budget par defaut de vitest, et une
+execution chargee franchissait la marche. Le detail :
+
+```
+ping -c 1 10.0.0.2           13 ms
+ping -c 3 10.0.0.2         2005 ms
+ping -c 3 -i 0.2 10.0.0.2   406 ms
+```
+
+Deux secondes d'attente pour treize millisecondes d'echo. La cause est
+que l'espacement des echos etait un `globalThis.setTimeout` NU — la
+seule attente de la logique de protocole que `src/events/Scheduler` ne
+possedait pas, donc la seule invirtualisable, alors que l'en-tete du
+`Scheduler` designe exactement ce cas (« the critical piece that
+`vi.useFakeTimers` does not provide for `await`-based protocol logic »).
+A l'echelle de la suite : 242 `ping -c 2`, 112 `-c 3`, plus les
+comptes superieurs, soit de l'ordre de neuf minutes d'attente reelle.
+
+**L'attente RESTE** : sous l'horloge reelle `ping -c 3` prend toujours
+2004 ms, parce qu'un terminal affiche une ligne par seconde et qu'un
+`ping` instantane serait un simulateur moins fidele, pas plus rapide.
+Ce qui change est QUELLE horloge la mesure : `LinuxNetKernel` gagne
+`getScheduler()`, et l'attente passe par `delay()`. Les deux cas
+tombent a 116 ms et 93 ms, toutes les assertions NAT tenant — les echos
+traversent donc toujours le fil pour de bon.
+
+`VirtualTimeScheduler.msUntilNextTask()` est ajoute parce qu'un pilote
+qui avance d'un pas fixe ne peut pas mesurer une attente plus courte
+que son pas : l'horloge rapportait la cadence du pilote et non les
+delais demandes.
+
+**Deux erreurs de MA sonde, corrigees plutot qu'ajustees** : mesurer
+l'attente par le total de l'horloge virtuelle etait faux (une machine
+arme d'autres minuteries, que le pilote traverse aussi) — la mesure est
+donc une DIFFERENCE entre deux laboratoires identiques, ou seul
+l'intervalle change ; et l'en-tete annoncait qu'avant correctif la
+promesse « ne se resout jamais », alors qu'elle se resout, simplement
+au prix de 2175 ms au lieu de 156.

@@ -151,6 +151,23 @@ export class VirtualTimeScheduler implements IScheduler {
   }
 
   /**
+   * Milliseconds until the earliest pending task, or null when none is
+   * armed. A driver that steps by a fixed amount cannot measure a wait
+   * shorter than its own step, so the virtual clock ends up reporting the
+   * driver's cadence rather than the code's; advancing by exactly this
+   * makes the clock read the delays that were actually requested.
+   */
+  msUntilNextTask(): number | null {
+    let soonest: number | null = null;
+    for (const t of this.tasks) {
+      if (t.cancelled) continue;
+      const due = Math.max(0, t.due - this.currentTime);
+      if (soonest === null || due < soonest) soonest = due;
+    }
+    return soonest;
+  }
+
+  /**
    * Advance the virtual clock by `ms` and run every task whose due time
    * falls within the window. Tasks scheduled by other tasks during the
    * advance are processed in chronological order within the same window.

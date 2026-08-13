@@ -423,7 +423,7 @@ async function runPing(
       results.push({ success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: 'Destination unreachable' });
     }
     if (seq < parsed.count && sendIntervalMs > 0) {
-      await new Promise<void>(resolve => setTimeout(resolve, sendIntervalMs));
+      await ctx.net.getScheduler().delay(sendIntervalMs);
     }
   }
 
