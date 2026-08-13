@@ -23,6 +23,7 @@ import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
 import type { TcpdumpDeps } from './network/tcpdump/TcpdumpRunner';
+import type { IScheduler } from '@/events/Scheduler';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -120,6 +121,8 @@ export interface LinuxNetKernel {
   // ─── L3 probes ───────────────────────────────────────────────────
   /** True if the kernel has a route (default or specific) to reach `target`. */
   hasRoute(target: IPAddress): boolean;
+
+  getScheduler(): IScheduler;
 
   pingSequence(
     target: IPAddress,

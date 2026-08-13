@@ -21,6 +21,7 @@ import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { VirtualTimeScheduler } from '@/events/Scheduler';
 
 interface Lab {
   pcLinux1: LinuxPC;
@@ -28,6 +29,7 @@ interface Lab {
   pcWin1: WindowsPC;
   router: CiscoRouter;
   outside: LinuxServer;
+  clock: VirtualTimeScheduler;
 }
 
 const PC_LINUX1_IP = '192.168.10.101';
@@ -90,7 +92,40 @@ async function buildLab(): Promise<Lab> {
     'end',
   ]) await router.executeCommand(cmd);
 
-  return { pcLinux1, pcLinux2, pcWin1, router, outside };
+  const clock = new VirtualTimeScheduler();
+  for (const host of [pcLinux1, pcLinux2, pcWin1]) host.setScheduler(clock);
+
+  return { pcLinux1, pcLinux2, pcWin1, router, outside, clock };
+}
+
+/**
+ * `ping -c 3` waits a second between echoes, like the real one. Measured,
+ * that is 2005 ms of wall clock for 13 ms of actual echo — and the three
+ * pings below put this test at 4.1 s against vitest's 5 s default, which is
+ * how it timed out under a loaded full-suite run while passing alone.
+ *
+ * The wait is real behaviour and must stay (the UI terminal prints one line
+ * per second), so the clock is what changes, not the interval: the hosts run
+ * on a `VirtualTimeScheduler` and this drives it. Advancing blindly would
+ * race the ping's own continuations, so each turn drains the microtask queue
+ * before moving the clock, and the loop is bounded — a ping that never
+ * settles must fail the test, not hang the run.
+ */
+async function underVirtualClock<T>(
+  scheduler: VirtualTimeScheduler,
+  work: Promise<T>,
+): Promise<T> {
+  let settled = false;
+  const tracked = work.then(
+    (v) => { settled = true; return v; },
+    (e) => { settled = true; throw e; },
+  );
+  for (let turn = 0; turn < 5000 && !settled; turn++) {
+    await Promise.resolve();
+    await Promise.resolve();
+    if (!settled) scheduler.advance(250);
+  }
+  return tracked;
 }
 
 interface Xlate {
@@ -151,9 +186,9 @@ describe('Scénario 1 (Cisco) — PAT (NAT Overload) sur le LAN Mandeng', () => 
   describe('vérification de la table de traduction', () => {
     it('chaque machine interne obtient une entrée traduite vers la même IP publique 203.0.113.1', async () => {
       const lab = await buildLab();
-      await lab.pcLinux1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
-      await lab.pcLinux2.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
-      await lab.pcWin1.executeCommand(`ping ${OUTSIDE_IP} -n 3`);
+      await underVirtualClock(lab.clock, lab.pcLinux1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`));
+      await underVirtualClock(lab.clock, lab.pcLinux2.executeCommand(`ping -c 3 ${OUTSIDE_IP}`));
+      await underVirtualClock(lab.clock, lab.pcWin1.executeCommand(`ping ${OUTSIDE_IP} -n 3`));
 
       const table = await lab.router.executeCommand('show ip nat translations');
       expect(table).toContain(PC_LINUX1_IP);
@@ -166,9 +201,9 @@ describe('Scénario 1 (Cisco) — PAT (NAT Overload) sur le LAN Mandeng', () => 
 
     it('show ip nat statistics affiche Total active translations, Inside/Outside interfaces et des Hits non nuls', async () => {
       const lab = await buildLab();
-      await lab.pcLinux1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
-      await lab.pcLinux2.executeCommand(`ping -c 3 ${OUTSIDE_IP}`);
-      await lab.pcWin1.executeCommand(`ping ${OUTSIDE_IP} -n 3`);
+      await underVirtualClock(lab.clock, lab.pcLinux1.executeCommand(`ping -c 3 ${OUTSIDE_IP}`));
+      await underVirtualClock(lab.clock, lab.pcLinux2.executeCommand(`ping -c 3 ${OUTSIDE_IP}`));
+      await underVirtualClock(lab.clock, lab.pcWin1.executeCommand(`ping ${OUTSIDE_IP} -n 3`));
 
       const out = await lab.router.executeCommand('show ip nat statistics');
       expect(out).toMatch(/Total active translations:\s*\d+/);
