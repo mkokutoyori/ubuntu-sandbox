@@ -107,13 +107,14 @@ describe('Syslog — wire format', () => {
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.99'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
-    Logger.info(r.id, 'sys:restart', 'Configuration changed by console');
+    r.getSyslogAgent().sendImmediate('notification', '%SYS-5-RESTART',
+      'Configuration changed by console');
 
     expect(seen).not.toBeNull();
     expect(seen!.dport).toBe(UDP_PORT_SYSLOG);
-    expect(seen!.severity).toBe(SYSLOG_SEVERITY.informational);
+    expect(seen!.severity).toBe(SYSLOG_SEVERITY.notification);
     expect(seen!.message).toBe('Configuration changed by console');
-    expect(seen!.tag).toMatch(/SYS-6-RESTART/);
+    expect(seen!.tag).toMatch(/SYS-5-RESTART/);
   });
 });
 
@@ -128,8 +129,8 @@ describe('Syslog — reactive bus', () => {
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ serverIp: string; severity: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.warn(r.id, 'router:test', 'Test warning');
-    Logger.error(r.id, 'router:bug', 'Test error');
+    r.getSyslogAgent().sendImmediate('warning', '%SYS-4-CONFIG_RESOLVE_FAILURE', 'Test warning');
+    r.getSyslogAgent().sendImmediate('error', '%LINK-3-UPDOWN', 'Test error');
     expect(sent.length).toBe(2);
     expect(sent[0].serverIp).toBe('10.0.0.99');
     expect(sent[0].severity).toBe('warning');
@@ -148,8 +149,8 @@ describe('Syslog — reactive bus', () => {
     const dropped: Array<{ reason: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
     bus.subscribe('syslog.packet.dropped', (e) => dropped.push(e.payload));
-    Logger.info(r.id, 'sys:i', 'informational - should drop');
-    Logger.warn(r.id, 'sys:w', 'warning - should pass');
+    r.getSyslogAgent().sendImmediate('informational', '%SYS-6-LOGGINGHOST_STARTSTOP', 'informational - should drop');
+    r.getSyslogAgent().sendImmediate('warning', '%SYS-4-CONFIG_RESOLVE_FAILURE', 'warning - should pass');
     expect(sent.length).toBe(1);
     expect(sent[0].severity).toBe('warning');
     expect(dropped.some(d => d.reason === 'threshold')).toBe(true);
@@ -194,7 +195,7 @@ describe('Syslog — vendor-neutral', () => {
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ message: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.info(r.id, 'sys:up', 'system started');
+    r.getSyslogAgent().sendImmediate('informational', '%SYS-6-RESTART', 'system started');
     expect(sent.length).toBe(1);
     expect(sent[0].message).toBe('system started');
   });
@@ -211,7 +212,7 @@ describe('Syslog — switch as source', () => {
     sw1.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ deviceId: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.info(sw1.id, 'sw:up', 'switch ready');
+    sw1.getSyslogAgent().sendImmediate('informational', '%SYS-6-RESTART', 'switch ready');
     expect(sent.some(s => s.deviceId === sw1.id)).toBe(true);
   });
 });

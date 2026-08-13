@@ -5,8 +5,7 @@ export type ExecScope = 'user' | 'privileged';
 export const PRIVILEGED_ONLY_SHOW_CHILDREN: ReadonlySet<string> = new Set([
   'running-config', 'startup-config', 'tech-support', 'archive',
   'debugging', 'debug',
-  'logging', 'snmp', 'processes', 'controllers', 'memory',
-  'parser', 'ssh', 'platform', 'diag', 'license',
+  'logging', 'snmp', 'parser', 'ssh', 'platform', 'diag', 'license',
 ]);
 
 export const PRIVILEGED_ONLY_PATHS: readonly string[] = [
@@ -23,13 +22,6 @@ export const PRIVILEGED_EXEC_ONLY: ReadonlySet<string> = new Set([
   'show logging history',
   'show logging persistent',
   'clear logging persistent',
-  'show processes',
-  'show processes cpu',
-  'show processes cpu sorted',
-  'show processes cpu history',
-  'show processes memory',
-  'show memory',
-  'show controllers',
   'show snmp',
   'show snmp community',
   'show snmp host',
@@ -49,7 +41,6 @@ export const PRIVILEGED_EXEC_ONLY: ReadonlySet<string> = new Set([
   'show license feature',
   'show license udi',
   'clear ntp statistics',
-  'clear history',
 ]);
 
 export interface ScopedTrie {

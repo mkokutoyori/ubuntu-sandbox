@@ -2512,7 +2512,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   beginExecSession(level: number, user?: string, view?: string | null): void {
     this.currentPrivilegeLevel = level;
-    this.mode = level >= 15 ? 'privileged' : 'user';
+    this.mode = (level >= 15 || view) ? 'privileged' : 'user';
     this.fsm.mode = this.mode;
     // `username X view NOC` attache un ROLE au compte : la session doit
     // s'ouvrir DANS cette vue. Le champ etait range sur le compte, rendu
@@ -4751,12 +4751,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.registerGreedy('clock set', 'Set system clock',
       (args) => this.applyClockSet(args));
     this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
-      const sub = (args[0] ?? '').toLowerCase();
-      if (sub !== 'calendar-valid') throw new CliInvalidInput({ argIndex: 0, token: args[0] ?? '' });
+      if (args.length === 0) throw new CliIncomplete();
+      const sub = args[0].toLowerCase();
+      if (sub !== 'calendar-valid') throw new CliInvalidInput({ argIndex: 0, token: args[0] });
       const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
       dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
       return '';
-    });
+    }, [{ keyword: 'calendar-valid', description: 'Hardware calendar is a valid time source' }]);
 
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };

@@ -5839,3 +5839,58 @@ de ma part — les deux échouaient déjà :
 Je ne les corrige pas : ce sont vos fichiers. Ils sont ici pour ne pas
 être découverts deux fois.
 
+
+---
+
+## Journalisation — le collecteur syslog recevait double, et recevait ce que la machine niait
+
+Fichiers touchés : `src/network/syslog/SyslogAgent.ts`,
+`src/network/devices/inspection/config/LoggingConfig.ts`,
+`src/events/DuplicateEventFilter.ts` (nouveau),
+`src/__tests__/unit/network-v2/journalisation-collecteur-syslog.test.ts`
+(nouveau), `docs/PRD-Logging-Cisco.md` §5.
+
+Mesuré sur un routeur câblé à un vrai serveur écoutant UDP/514 : cinq
+lignes au tampon, **douze datagrammes** au collecteur.
+
+1. **`ForwardingEventBus` reverse le MÊME objet** vers le bus
+   observateur, et `SyslogAgent` s'abonnait à `device.syslog.entry` sur
+   les deux bus — donc traitait chaque entrée deux fois. Même double
+   abonnement sur `log` dans `LoggingConfig.attachToBus`, qui entrait
+   alors deux fois au tampon. `DuplicateEventFilter` répond par
+   l'identité de l'objet. Le contournement qui existait déjà sur `log`
+   (clé `…|Date.now()`) est supprimé : il écrasait deux messages
+   réellement identiques dans la même milliseconde, ce qu'un routeur
+   écrit dès que deux interfaces bougent ensemble.
+2. **`tagFor()` fabriquait un tag** depuis le nom d'événement interne :
+   `port:admin` partait en `%PORT-6-ADMIN`, message qu'aucun IOS n'écrit,
+   absent du `show logging` de la machine qui venait de l'envoyer,
+   toujours en sévérité 6. Ce chemin contournait `mnemonicFromEvent()`,
+   le tampon, les discriminateurs, `logging count` et la numérotation.
+   `onLog`/`tagFor` supprimés ; le pont générique de `LoggingConfig`
+   passe en `republish: true` — il ne reste qu'une route vers le
+   collecteur.
+
+`logging trap` et la diffusion vers deux collecteurs étaient JUSTES :
+ma première mesure disait le contraire parce que le laboratoire coupait
+l'interface qui portait le syslog. C'est écrit dans l'en-tête du test.
+
+### Régressions de MON lot précédent, corrigées ici
+
+`PRIVILEGED_ONLY_SHOW_CHILDREN` était trop large. `show processes`,
+`show memory` et `show controllers` sont des commandes d'EXEC
+utilisateur sur un vrai IOS — des compteurs de diagnostic, ni
+configuration ni secret — de même que `clear history`, qui vide
+l'historique de SA propre session. Elles sont rendues au niveau 1, et
+`niveau-1-ne-peut-que-le-permis.test.ts` les déplace dans la liste des
+commandes autorisées plutôt que l'inverse.
+
+`show parser view` reste privilégiée, mais **une session ouverte DANS
+une vue ouvre en EXEC privilégié** (`beginExecSession`) : une vue
+REMPLACE l'arbre visible, la poser par-dessus le socle de niveau 1
+était exactement le modèle qu'elle existe pour éviter — et sans
+`show parser view` on ne sait pas dans quelle vue on est.
+
+`clock` seul en configuration globale rendait `% Invalid input` au lieu
+de `% Incomplete command`, et `calendar-valid` n'avait pas de
+description propre (le cliquet d'aide le comptait).

@@ -37,19 +37,27 @@ const PROVISIONED_LEVEL_1 = 'alice';
 const PRIVILEGED_EXEC = [
   'show running-config', 'show startup-config', 'configure terminal',
   'show logging', 'show snmp community', 'show snmp host', 'show snmp user',
-  'show parser view', 'show ip ssh', 'show ssh', 'show memory',
-  'show processes', 'show controllers', 'show platform', 'show diag',
+  'show parser view', 'show ip ssh', 'show ssh',
+  'show platform', 'show diag',
   'show license', 'show ip http server status',
   'debug ip packet', 'reload', 'copy running-config startup-config',
   'write memory', 'erase startup-config', 'clear line vty 0',
-  'clear history', 'clear ntp statistics', 'setup',
+  'clear ntp statistics', 'setup',
 ];
 
-/** Commands real IOS leaves in user EXEC. */
+/**
+ * Commands real IOS leaves in user EXEC. `show processes`, `show memory`
+ * and `show controllers` belong here and not above: they are diagnostic
+ * counters, disclosing neither configuration nor credential, and the IOS
+ * Configuration Fundamentals reference gives all three the command mode
+ * `User EXEC, Privileged EXEC`. Confining them was over-reach on my part,
+ * measured by the three suites it broke.
+ */
 const USER_EXEC = [
   'show version', 'show clock', 'show users', 'show sessions',
   'show terminal', 'show history', 'show privilege', 'show line',
   'show inventory', 'show hosts', 'terminal length 0', 'where',
+  'show processes cpu', 'show memory statistics', 'show controllers',
 ];
 
 /**

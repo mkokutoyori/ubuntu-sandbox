@@ -1,11 +1,12 @@
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
+import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import {
   type SyslogConfig, type SyslogServer, type SyslogPacket,
   type SyslogSeverityName, type SyslogFacilityName,
   createDefaultSyslogConfig, defaultServer,
-  severityFromLogLevel, shouldForward, bsdTimestamp, syslogSeverityFromNum,
+  shouldForward, bsdTimestamp, syslogSeverityFromNum,
   SYSLOG_SEVERITY, SYSLOG_FACILITY, syslogTagOf,
 } from './types';
 import {
@@ -193,36 +194,21 @@ export class SyslogAgent {
   private installSubscribers(): void {
     const localBus = this.getBus();
     const defaultBus = getDefaultEventBus();
-    const seen = new Set<string>();
-    const subscribeOn = (bus: IEventBus): void => {
-      this.unsubscribers.push(bus.subscribeWhere(
-        'log',
-        (p) => p.source === this.host.id,
-        (e) => {
-          const key = `${e.payload.level}|${e.payload.event}|${e.payload.message}|${Date.now()}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          if (seen.size > 256) {
-            const first = seen.values().next().value;
-            if (first !== undefined) seen.delete(first);
-          }
-          this.onLog(e.payload.level, e.payload.event, e.payload.message);
-        },
-      ));
-    };
-    subscribeOn(localBus);
-    if (localBus !== defaultBus) subscribeOn(defaultBus);
+    const once = new DuplicateEventFilter();
     const subscribeEntryOn = (bus: IEventBus): void => {
       this.unsubscribers.push(bus.subscribeWhere(
         'device.syslog.entry',
         (p) => p.deviceId === this.host.id,
-        (e) => this.onLoggingEntry({
-          deviceId: e.payload.deviceId,
-          severity: syslogSeverityFromNum(e.payload.severityNum),
-          tag: e.payload.tag,
-          mnemonic: e.payload.mnemonic,
-          message: e.payload.message,
-        }),
+        (e) => {
+          if (!once.firstSight(e)) return;
+          this.onLoggingEntry({
+            deviceId: e.payload.deviceId,
+            severity: syslogSeverityFromNum(e.payload.severityNum),
+            tag: e.payload.tag,
+            mnemonic: e.payload.mnemonic,
+            message: e.payload.message,
+          });
+        },
       ));
     };
     subscribeEntryOn(localBus);
@@ -235,11 +221,6 @@ export class SyslogAgent {
   }): void {
     if (!this.config.enabled) return;
     if (this.config.servers.size === 0) return;
-    // Le MÊME `%TAG-SEV-MNEMONIQUE` que `show logging` affiche. Ce
-    // chemin passait le tag NU (`SYS`), tandis que l'autre chemin de ce
-    // même agent (`onLog`, via `tagFor`) en construisait un complet :
-    // deux messages issus de la même machine arrivaient au collecteur
-    // sous deux formes, selon le bus interne qui les avait portés.
     const tag = syslogTagOf({
       tag: p.tag, severityNum: SYSLOG_SEVERITY[p.severity], mnemonic: p.mnemonic, message: p.message,
     });
@@ -250,26 +231,6 @@ export class SyslogAgent {
       }
       this.deliver(s, p.severity, tag, p.message);
     }
-  }
-
-  private onLog(level: 'debug' | 'info' | 'warn' | 'error', event: string, message: string): void {
-    if (!this.config.enabled) return;
-    if (this.config.servers.size === 0) return;
-    const severity = severityFromLogLevel(level);
-    const tag = this.tagFor(event);
-    for (const s of this.config.servers.values()) {
-      if (!shouldForward(s.severityThreshold, severity)) {
-        this.dropped(s.ip, 'threshold');
-        continue;
-      }
-      this.deliver(s, severity, tag, message);
-    }
-  }
-
-  private tagFor(event: string): string {
-    const m = /^([a-z][a-z0-9-]*?):([a-z][a-z0-9-]*)/i.exec(event);
-    if (m) return `%${m[1].toUpperCase()}-6-${m[2].toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
-    return `%${event.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
   }
 
   /**

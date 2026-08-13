@@ -548,3 +548,93 @@ ici pour être corrigés plutôt que découverts. La différence avec l'état
 précédent n'est pas de degré : un mnémonique approximatif reste un
 mnémonique, propre à une famille de messages et utilisable par un
 filtre ou un regroupement ; `NOTIFICATIONS` ne l'était pas.
+
+---
+
+## 5. Le collecteur reçoit ce que la machine a journalisé
+
+### 5.1 Ce que la mesure a trouvé
+
+Le §4 s'arrêtait au message : sa sévérité, son mnémonique, sa forme. Il
+ne posait jamais la question suivante, qui est celle qu'un opérateur
+pose vraiment : **le collecteur reçoit-il ce que `show logging`
+affiche ?** La réponse était non, dans les deux sens.
+
+La mesure a été faite sur un routeur câblé à un vrai serveur Linux
+écoutant sur UDP/514, en faisant battre une interface. Cinq lignes au
+tampon, **douze datagrammes** au collecteur :
+
+```
+show logging   %LINK-5-CHANGED | %LINEPROTO-5-UPDOWN | %LINK-3-UPDOWN | %LINEPROTO-5-UPDOWN | %SYS-5-CONFIG_I
+collecteur     %PORT-6-ADMIN | %LINK-5-CHANGED | %LINK-5-CHANGED | %LINEPROTO-5-UPDOWN | %LINEPROTO-5-UPDOWN
+               | %PORT-6-ADMIN | %LINK-3-UPDOWN | %LINK-3-UPDOWN | %LINEPROTO-5-UPDOWN | %LINEPROTO-5-UPDOWN
+               | %SYS-5-CONFIG_I | %SYS-5-CONFIG_I
+```
+
+**Le laboratoire a d'abord été mal bâti, et c'est écrit ici plutôt que
+tu** : sa première version coupait l'interface qui portait justement le
+syslog, si bien que les messages ne pouvaient pas partir. Elle donnait
+« 0 datagramme avec `logging trap errors` », d'où j'avais conclu à un
+défaut du seuil de relais. C'était faux : le seuil était juste, le
+laboratoire ne mesurait rien. Le collecteur est désormais sur une
+interface que le test ne fait pas battre.
+
+### 5.2 Chaque ligne partait en double
+
+`ForwardingEventBus` reverse **le même objet** d'événement vers le bus
+observateur. `SyslogAgent` s'abonnait à `device.syslog.entry` sur son
+bus local ET sur le bus par défaut : il traitait donc chaque entrée deux
+fois, et une ligne du journal devenait deux datagrammes chez le
+collecteur — un compteur d'événements y comptait double. Le même agent
+avait déjà rencontré le piège sur le sujet `log` et l'avait contourné
+par un ensemble de clés `niveau|événement|message|Date.now()` ; ce
+contournement n'avait jamais été étendu au second sujet, et il était
+lui-même faux : deux messages RÉELLEMENT identiques dans la même
+milliseconde — ce qu'un routeur écrit dès que deux interfaces changent
+d'état ensemble — étaient réduits à un.
+
+`LoggingConfig.attachToBus` portait le même double abonnement sur `log`,
+sans aucun garde-fou : ces messages-là entraient deux fois **au tampon**.
+
+`DuplicateEventFilter` (`src/events/`) répond par l'identité, qui est la
+seule réponse exacte : deux messages distincts sont deux objets, un
+message reversé est un seul. Le `WeakSet` ne retient rien, donc l'oubli
+suit le bus.
+
+### 5.3 Le collecteur recevait des messages qu'aucun IOS n'écrit
+
+`%PORT-6-ADMIN` n'existe pas. Il était **fabriqué** par `tagFor()` à
+partir du nom de l'événement interne (`port:admin`), toujours en
+sévérité 6 quelle que soit la sévérité réelle, et envoyé au collecteur
+par un chemin qui ne passait pas par le sous-système de journalisation.
+Conséquences au-delà de l'affichage : ce chemin contournait
+`mnemonicFromEvent()` — la table du §4.3, dont le second rôle est
+justement de rendre `null` pour un événement sans équivalent IOS — donc
+aussi le tampon, les discriminateurs, `logging count` et la
+numérotation de séquence. La machine niait avoir journalisé ce qu'elle
+venait d'envoyer.
+
+`onLog()` et `tagFor()` sont supprimés. `LoggingConfig` écoute déjà
+`log`, traduit par la table, et republie ce qui a un équivalent : il
+reste **une seule route** vers le collecteur, et c'est celle que
+`show logging` enregistre. Les trois appels du pont générique passent
+donc de `republish: false` à `true` — le commentaire qui justifiait le
+`false` décrivait exactement le double chemin qu'on vient de fermer.
+
+### 5.4 Ce qui était déjà juste, et qu'il ne fallait pas « corriger »
+
+`logging trap errors` filtrait correctement : après correction, la
+rafale de cinq messages n'en livre qu'un, `%LINK-3-UPDOWN`, la seule de
+sévérité 3. Le tampon les garde tous les cinq — `logging trap` gouverne
+le relais et lui seul. La diffusion vers deux collecteurs distincts
+était juste elle aussi. Un « correctif » du seuil aurait cassé les
+deux.
+
+### 5.5 Vérification
+
+`journalisation-collecteur-syslog.test.ts` (6 cas). Discriminé en
+restaurant les trois fichiers de production : **5 cas tombent**, dont
+celui de la diffusion vers deux collecteurs, que j'avais annoncé comme
+neutre et qui ne l'est pas. Le sixième — « rien ne part si aucun
+collecteur n'est déclaré » — passe des deux côtés et garde le correctif
+au lieu de mesurer le défaut.

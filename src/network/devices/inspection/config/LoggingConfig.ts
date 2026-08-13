@@ -1,4 +1,5 @@
 import { getDefaultEventBus } from '@/events/EventBus';
+import { DuplicateEventFilter } from '@/events/DuplicateEventFilter';
 import { isValidIPv4 } from '@/network/core/ip';
 
 /**
@@ -1329,20 +1330,22 @@ export class LoggingConfig {
         this.append('warnings', 'cdp', `Duplex mismatch detected on ${ours}`, true, 'DUPLEX_MISMATCH');
       }),
     ];
+    const once = new DuplicateEventFilter();
     const logHandler = (e: { payload: unknown }): void => {
+      if (!once.firstSight(e)) return;
       const p = e.payload as unknown as { source: string; level: string; event: string; message: string };
       if (p.source !== deviceId) return;
       if (p.event.startsWith('router:acl-deny')) {
-        this.append('warnings', 'sec', p.message, false, 'IPACCESSLOGP');
+        this.append('warnings', 'sec', p.message, true, 'IPACCESSLOGP');
         return;
       }
       if (p.event === 'cdp:native-vlan-mismatch') return;
       const mnemonic = mnemonicFromEvent(p.event);
       if (!mnemonic) return;
       if (p.level === 'error') {
-        this.append('errors', this.tagFromEvent(p.event), p.message, false, mnemonic);
+        this.append('errors', this.tagFromEvent(p.event), p.message, true, mnemonic);
       } else if (p.level === 'warn') {
-        this.append('warnings', this.tagFromEvent(p.event), p.message, false, mnemonic);
+        this.append('warnings', this.tagFromEvent(p.event), p.message, true, mnemonic);
       }
     };
     unsubs.push(bus.subscribe('log', logHandler));
