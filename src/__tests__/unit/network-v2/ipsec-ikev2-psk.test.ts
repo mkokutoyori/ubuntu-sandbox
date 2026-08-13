@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -190,7 +191,11 @@ async function buildIKEv2Topology(opts: {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, clock };
 }
 
 // ─── Suite ─────────────────────────────────────────────────────────────────
@@ -205,10 +210,10 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 2.01 : Établissement basique ────────────────────────────────────────
   it('2.01 – should establish IKEv2 SA and child SA, traffic flows encrypted', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv2Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv2Topology();
 
     // Trafic intéressant → déclenche IKE_SA_INIT + IKE_AUTH + CREATE_CHILD_SA
-    const pingOut = await pc1.executeCommand('ping -c 4 192.168.2.10');
+    const pingOut = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 4 192.168.2.10'));
     expect(pingOut).toContain('4 packets transmitted');
     expect(pingOut).toContain('4 received');
     expect(pingOut).toContain('0% packet loss');
@@ -255,7 +260,7 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
   // ─── 2.02 : Négociation de proposal ──────────────────────────────────────
   it('2.02 – should select the first common IKEv2 proposal (AES-256 preferred over AES-128)', async () => {
     // R1 propose d'abord AES-256, R2 accepte les deux → AES-256 doit être choisi
-    const { r1, r2, pc1 } = await buildIKEv2Topology({
+    const { r1, r2, pc1, clock } = await buildIKEv2Topology({
       r1Enc: 'aes-cbc-256',
       r2Enc: 'aes-cbc-256',
     });
@@ -286,7 +291,7 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
     await r2.executeCommand('exit');
     await r2.executeCommand('end');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     const detail = await r1.executeCommand('show crypto ikev2 sa detail');
     // La SA IKEv2 doit afficher AES-256 comme algorithme de chiffrement
@@ -296,10 +301,10 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 2.03 : Bidirectionnel – répondeur initie ────────────────────────────
   it('2.03 – should allow the responder side (PC2) to initiate the IKEv2 tunnel', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv2Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv2Topology();
 
     // PC2 initie → R2 devient initiateur IKEv2
-    const pingOut = await pc2.executeCommand('ping -c 3 192.168.1.10');
+    const pingOut = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
     expect(pingOut).toContain('3 received');
     expect(pingOut).toContain('0% packet loss');
 
@@ -322,9 +327,9 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 2.04 : show crypto ikev2 sa detail ──────────────────────────────────
   it('2.04 – show crypto ikev2 sa detail should expose negotiated algorithms and SPI', async () => {
-    const { r1, pc1 } = await buildIKEv2Topology();
+    const { r1, pc1, clock } = await buildIKEv2Topology();
 
-    await pc1.executeCommand('ping -c 1 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 1 192.168.2.10'));
 
     const detail = await r1.executeCommand('show crypto ikev2 sa detail');
 
@@ -353,12 +358,12 @@ describe('IPSec – IKEv2 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 2.05 : Compteurs trafic bidirectionnel ───────────────────────────────
   it('2.05 – should track encap/decap counters independently for each direction', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv2Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv2Topology();
 
     // 6 paquets de PC1 → PC2
-    await pc1.executeCommand('ping -c 6 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 6 192.168.2.10'));
     // 3 paquets de PC2 → PC1
-    await pc2.executeCommand('ping -c 3 192.168.1.10');
+    await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
     // Sur un vrai équipement, TOUTES les trames IPSec sont comptées (requêtes ET réponses).
     // R1 encaps: 6 echo-request (PC1→PC2) + 3 echo-reply (pour les pings PC2→PC1) = 9

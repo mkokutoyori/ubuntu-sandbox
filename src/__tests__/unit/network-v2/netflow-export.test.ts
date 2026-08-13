@@ -87,7 +87,7 @@ describe('a cached flow eventually leaves', () => {
   it('nothing before the inactive timeout, a datagram after', async () => {
     const { a, clock } = await lab();
     const exports = observeExports();
-    await a.executeCommand('ping -c 2 10.0.1.10');
+    await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     // Export is driven by expiry, not by the packet: checking here is
     // what made an earlier reading of mine conclude "nothing exports".
     expect(exports.length).toBe(0);
@@ -100,7 +100,7 @@ describe('a cached flow eventually leaves', () => {
   it('and it goes to the configured collector', async () => {
     const { a, clock } = await lab();
     const exports = observeExports();
-    await a.executeCommand('ping -c 2 10.0.1.10');
+    await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     clock.advance(60_000);
     await new Promise((r) => setTimeout(r, 0));
     expect(exports.length).toBeGreaterThan(0);
@@ -112,7 +112,7 @@ describe('what does not export', () => {
   it('no destination configured, no datagram', async () => {
     const { a, clock } = await lab({ exportTo: false });
     const exports = observeExports();
-    await a.executeCommand('ping -c 2 10.0.1.10');
+    await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     clock.advance(60_000);
     await new Promise((r) => setTimeout(r, 0));
     expect(exports).toEqual([]);
@@ -124,8 +124,8 @@ describe('what does not export', () => {
       const p = e.payload as { sourceIp: string; destinationIp: string };
       flows.push({ src: p.sourceIp, dst: p.destinationIp });
     });
-    const { a } = await lab();
-    await a.executeCommand('ping -c 2 10.0.1.10');
+    const { a, clock } = await lab();
+    await clock.advanceUntilSettled(a.executeCommand('ping -c 2 10.0.1.10'));
     expect(flows.length).toBeGreaterThan(0);
     expect(flows.some((f) => f.src === '10.0.0.10' && f.dst === '10.0.1.10')).toBe(true);
   });

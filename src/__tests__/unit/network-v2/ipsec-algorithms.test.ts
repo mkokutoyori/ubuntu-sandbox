@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -130,7 +131,11 @@ async function buildAlgoTopology(transformSet: string) {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, clock };
 }
 
 // ─── Suite ─────────────────────────────────────────────────────────────────
@@ -145,9 +150,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.01 : AES-128 + SHA1 ───────────────────────────────────────────────
   it('3.01 – ESP AES-128 + SHA1-HMAC should establish tunnel and pass traffic', async () => {
-    const { r1, pc1, pc2 } = await buildAlgoTopology('esp-aes esp-sha-hmac');
+    const { r1, pc1, pc2, clock } = await buildAlgoTopology('esp-aes esp-sha-hmac');
 
-    const ping = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const ping = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
     expect(ping).toContain('3 received');
     expect(ping).toContain('0% packet loss');
 
@@ -167,9 +172,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.02 : AES-128 + SHA256 ─────────────────────────────────────────────
   it('3.02 – ESP AES-128 + SHA256-HMAC should negotiate and encrypt traffic', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-aes esp-sha256-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-aes esp-sha256-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     expect(sa).toContain('esp-aes');
@@ -180,9 +185,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.03 : AES-256 + SHA256 (référence) ─────────────────────────────────
   it('3.03 – ESP AES-256 + SHA256-HMAC should be the recommended algorithm combination', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-aes 256 esp-sha256-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-aes 256 esp-sha256-hmac');
 
-    await pc1.executeCommand('ping -c 4 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 4 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     // Vérification de l'algorithme AES-256
@@ -196,9 +201,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.04 : AES-256 + SHA384 ─────────────────────────────────────────────
   it('3.04 – ESP AES-256 + SHA384-HMAC should establish and verify integrity', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-aes 256 esp-sha384-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-aes 256 esp-sha384-hmac');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     expect(sa).toContain('esp-256-aes');
@@ -209,9 +214,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.05 : AES-256 + SHA512 ─────────────────────────────────────────────
   it('3.05 – ESP AES-256 + SHA512-HMAC should establish and verify integrity', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-aes 256 esp-sha512-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-aes 256 esp-sha512-hmac');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     expect(sa).toContain('esp-256-aes');
@@ -222,9 +227,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.06 : 3DES + MD5 (héritage) ───────────────────────────────────────
   it('3.06 – ESP 3DES + MD5-HMAC (legacy) should still negotiate and pass traffic', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-3des esp-md5-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-3des esp-md5-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     expect(sa).toContain('esp-3des');
@@ -240,9 +245,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.07 : 3DES + SHA1 (héritage) ──────────────────────────────────────
   it('3.07 – ESP 3DES + SHA1-HMAC (legacy) should negotiate and pass traffic', async () => {
-    const { r1, pc1 } = await buildAlgoTopology('esp-3des esp-sha-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-3des esp-sha-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     expect(sa).toContain('esp-3des');
@@ -254,9 +259,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
   // ─── 3.08 : AES-GCM-256 (AEAD – pas de HMAC séparé) ─────────────────────
   it('3.08 – ESP AES-256-GCM (AEAD) should provide combined encryption and authentication', async () => {
     // AES-GCM combine chiffrement + intégrité en un seul algorithme
-    const { r1, pc1 } = await buildAlgoTopology('esp-gcm 256');
+    const { r1, pc1, clock } = await buildAlgoTopology('esp-gcm 256');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     // L'algorithme AEAD ne nécessite pas de HMAC séparé
@@ -273,9 +278,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
 
   // ─── 3.09 : AH seul SHA256 (intégrité sans chiffrement) ─────────────────
   it('3.09 – AH-only with SHA256-HMAC should provide integrity without encryption', async () => {
-    const { r1, r2, pc1 } = await buildAlgoTopology('ah-sha256-hmac');
+    const { r1, r2, pc1, clock } = await buildAlgoTopology('ah-sha256-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
 
@@ -299,9 +304,9 @@ describe('IPSec – Combinaisons d\'algorithmes ESP/AH', () => {
   // ─── 3.10 : ESP AES-256 + AH SHA256 (combiné) ───────────────────────────
   it('3.10 – ESP AES-256-GCM combined with AH SHA256 should provide both encryption and outer integrity', { timeout: 15000 }, async () => {
     // Combinaison : ESP pour le chiffrement + AH pour l'intégrité de l'en-tête IP externe
-    const { r1, pc1 } = await buildAlgoTopology('ah-sha256-hmac esp-aes 256 esp-sha256-hmac');
+    const { r1, pc1, clock } = await buildAlgoTopology('ah-sha256-hmac esp-aes 256 esp-sha256-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
 

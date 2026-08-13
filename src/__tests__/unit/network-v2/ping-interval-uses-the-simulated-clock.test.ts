@@ -55,22 +55,6 @@ function twoHosts(): { a: LinuxPC; b: LinuxPC } {
   return { a, b };
 }
 
-async function drive<T>(clock: VirtualTimeScheduler, work: Promise<T>): Promise<T> {
-  let settled = false;
-  const tracked = work.then(
-    (v) => { settled = true; return v; },
-    (e) => { settled = true; throw e; },
-  );
-  for (let turn = 0; turn < 5000 && !settled; turn++) {
-    await Promise.resolve();
-    await Promise.resolve();
-    if (settled) break;
-    const due = clock.msUntilNextTask();
-    if (due !== null) clock.advance(due);
-  }
-  return tracked;
-}
-
 function echoCount(output: string): number {
   return output.split('\n').filter((l) => /bytes from /.test(l)).length;
 }
@@ -82,7 +66,7 @@ describe('the ping interval is measured by the simulated clock', () => {
     a.setScheduler(clock);
 
     const startedAt = Date.now();
-    const out = await drive(clock, a.executeCommand('ping -c 3 10.0.0.2'));
+    const out = await clock.advanceUntilSettled(a.executeCommand('ping -c 3 10.0.0.2'));
     const wallMs = Date.now() - startedAt;
 
     expect(echoCount(out)).toBe(3);
@@ -105,7 +89,7 @@ describe('the ping interval is measured by the simulated clock', () => {
       const clock = new VirtualTimeScheduler();
       a.setScheduler(clock);
       const before = clock.now();
-      const out = await drive(clock, a.executeCommand(cmd));
+      const out = await clock.advanceUntilSettled(a.executeCommand(cmd));
       expect(echoCount(out), cmd).toBe(3);
       return clock.now() - before;
     };

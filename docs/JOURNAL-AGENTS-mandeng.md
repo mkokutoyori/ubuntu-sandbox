@@ -5945,3 +5945,57 @@ donc une DIFFERENCE entre deux laboratoires identiques, ou seul
 l'intervalle change ; et l'en-tete annoncait qu'avant correctif la
 promesse « ne se resout jamais », alors qu'elle se resout, simplement
 au prix de 2175 ms au lieu de 156.
+
+---
+
+## Les autres tests lents : l'horloge simulee pilote le `ping`
+
+Suite du precedent. `VirtualTimeScheduler.advanceUntilSettled()` porte la
+regle une seule fois plutot que d'etre recopiee dans chaque fichier :
+sous horloge virtuelle rien n'avance sans qu'on l'avance, donc attendre
+un appel qui dort a l'interieur se bloque jusqu'au delai de l'appelant.
+Chaque fichier converti ne met que ses machines EMETTRICES sur l'horloge
+virtuelle — les routeurs gardent l'horloge reelle, donc les minuteries
+IKE/DPD ne changent pas.
+
+Neuf fichiers convertis, mesures avant/apres (temps de test seul) :
+
+| fichier | avant | apres |
+|---|---|---|
+| `ipsec-failures` | ~34 s | 822 ms |
+| `ipsec-algorithms` | ~19 s | 771 ms |
+| `ipsec-modes-pfs` | ~9 s | 507 ms |
+| `tracert-ping` | 34,6 s | 19,4 s |
+| `scenario-cisco-pat-overload` | 8,2 s | ~0,2 s |
+
+plus `scenario-8-ipsec-anti-replay`, `scenario-7-vpn-acl-filtering`,
+`ipsec-ikev1-psk`, `ipsec-ikev2-psk`, `netflow-export`.
+
+### Deux erreurs de ma part, ecrites plutot qu'effacees
+
+**J'ai failli supprimer l'intervalle.** La mesure disait que personne ne
+le lit : le resume ne porte aucun champ de duree, `time` n'atteint meme
+pas une commande asynchrone, et la cadence que voit l'utilisateur vient
+de `executePingStream` et de son `sleep` INJECTE, pas de cette boucle.
+Puis le cas 253 de `tracert-ping` debranche un cable EN COURS de ping :
+l'intervalle est donc bien observe — non comme une duree lue, mais comme
+une fenetre pendant laquelle la topologie change. L'intervalle est
+restaure. Le cas 253 y gagne : au lieu de faire courir un sommeil reel
+de 1,5 s contre la cadence du ping, il avance d'exactement un intervalle,
+debranche, puis laisse finir — c'est deterministe.
+
+**Un passage par expression reguliere a corrompu un fichier.** Le `$1`
+de perl etait developpe par le shell, ce qui a vide les arguments de 78
+appels (79 echecs). Repris avec le programme correctement protege ; un
+second motif, trop large, enveloppait aussi les commandes de mise en
+place a l'interieur d'un constructeur de laboratoire, corrige en ne
+visant que les appels `ping`.
+
+### Non convertis, et dit plutot que sous-entendu
+
+Les suites de transcription `debug/` (`cisco-router-connectivity`,
+`icmp`, `acl-security`, `ospf` — environ 70 s d'attente a elles quatre),
+`ipsec-advanced` (cinq machines emettrices distinctes), `ipsec-nat-dpd`,
+`wan-vpn-tests`, `tcpdump`, `scenario-panne-04` et la queue plus petite.
+Chacun demande son propre cablage ; la partie mecanique est eprouvee,
+je me suis arrete pour verifier et livrer ce qui est fait.

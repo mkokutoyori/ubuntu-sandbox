@@ -17,6 +17,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network/equipment/Equipment';
@@ -52,13 +53,17 @@ function setupWANTopology() {
   const c6 = new Cable('c6');
   c6.connect(sw2.getPort('FastEthernet0/1')!, pc2.getPort('eth0')!);
 
-  return { pc1, pc2, sw1, r1, r2, hw_sw1, sw2, c1, c2, c3, c4, c5, c6 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { pc1, pc2, sw1, r1, r2, hw_sw1, sw2, c1, c2, c3, c4, c5, c6, clock };
 }
 
 async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
   // PC1 (Linux)
-  await topo.pc1.executeCommand('ifconfig eth0 10.0.1.10 netmask 255.255.255.0');
-  await topo.pc1.executeCommand('ip route add default via 10.0.1.1');
+  await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ifconfig eth0 10.0.1.10 netmask 255.255.255.0'));
+  await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ip route add default via 10.0.1.1'));
 
   // R1 (Cisco)
   await topo.r1.executeCommand('enable');
@@ -111,7 +116,7 @@ async function configureWANIPs(topo: ReturnType<typeof setupWANTopology>) {
   await topo.hw_sw1.executeCommand('quit');
 
   // PC2 (Windows)
-  await topo.pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.2.10 255.255.255.0 10.0.2.1');
+  await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface ip set address "Ethernet" static 10.0.2.10 255.255.255.0 10.0.2.1'));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -139,49 +144,49 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('2. should ping remote host with specific packet count using -c', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 3 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 3 10.0.2.10'));
       expect(output).toContain('3 packets transmitted, 3 received');
     });
 
     it('3. should ping with custom packet size using -s', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -s 120 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -s 120 10.0.2.10'));
       expect(output).toContain('128 bytes from 10.0.2.10'); // 120 payload + 8 ICMP header
     });
 
     it('4. should ping with specific Time To Live using -t', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -t 64 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -t 64 10.0.2.10'));
       expect(output).toContain('64 bytes from 10.0.2.10');
     });
 
     it('5. should timeout ping requests on unreachable host using -W', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.99.99');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.99.99'));
       expect(output).toContain('100% packet loss');
     });
 
     it('6. should set custom ping interval using -i', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 -i 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 -i 2 10.0.2.10'));
       expect(output).toContain('2 received');
     });
 
     it('7. should bind ping to specific interface using -I', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -I eth0 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -I eth0 10.0.2.10'));
       expect(output).toContain('64 bytes from');
     });
 
     it('8. should fill payload with specific hex pattern using -p', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -p abcd 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -p abcd 10.0.2.10'));
       expect(output).toContain('PATTERN: 0xabcd');
     });
 
@@ -200,7 +205,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('11. should display quiet summaries with ping -q', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 -q 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 -q 10.0.2.10'));
       expect(output).not.toContain('64 bytes from');
       expect(output).toContain('ping statistics');
     });
@@ -208,7 +213,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('12. should support verbose printing with ping -v', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -v 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -v 10.0.2.10'));
       expect(output).toContain('64 bytes from');
     });
 
@@ -269,49 +274,49 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('22. should support printing timestamps with ping -D', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -D 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -D 10.0.2.10'));
       expect(output).toMatch(/\[\s*\d+\.\d+\]/);
     });
 
     it('23. should allow broadcast ping explicitly on local subnet with -b', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -b 10.0.1.255');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -b 10.0.1.255'));
       expect(output).toBeDefined();
     });
 
     it('24. should reject broadcast ping if -b is omitted', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.1.255');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.1.255'));
       expect(output.toLowerCase()).toContain('broadcast');
     });
 
     it('25. should support quiet and count combinations simultaneously (-c 2 -q)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 -q 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 -q 10.0.2.10'));
       expect(output).not.toContain('64 bytes');
     });
 
     it('26. should support interval and count combinations simultaneously (-c 2 -i 3)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 -i 3 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 -i 3 10.0.2.10'));
       expect(output).toContain('2 received');
     });
 
     it('27. should support pattern and size combinations simultaneously (-s 100 -p aabb)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -s 100 -p aabb 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -s 100 -p aabb 10.0.2.10'));
       expect(output).toContain('PATTERN: 0xaabb');
     });
 
     it('28. should support TTL and timeout combinations simultaneously (-t 10 -W 2)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -t 10 -W 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -t 10 -W 2 10.0.2.10'));
       expect(output).toContain('64 bytes');
     });
 
@@ -319,16 +324,16 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Remove default gateway to make 10.0.2.10 unreachable
-      await topo.pc1.executeCommand('ip route del default');
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ip route del default'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
     it('30. should support resolving and pinging via hostname directly if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts');
-      const output = await topo.pc1.executeCommand('ping -c 1 win-host');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 win-host'));
       expect(output).toContain('10.0.2.10');
     });
 
@@ -368,7 +373,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('36. should support continuous ping trace displaying ICMP sequence integers', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 10.0.2.10'));
       expect(output).toContain('icmp_seq=1');
       expect(output).toContain('icmp_seq=2');
     });
@@ -376,7 +381,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('37. should support showing round-trip times (rtt) statistics on termination', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output).toContain('rtt min/avg/max/mdev');
     });
 
@@ -395,21 +400,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('40. should support numeric IP display omitting name resolutions via -n', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -n 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -n 10.0.2.10'));
       expect(output).toContain('10.0.2.10');
     });
 
     it('41. should support auditable log structures verification', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('42. should support passing multiple trailing spaces surrounding target IP cleanly', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1    10.0.2.10   ');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1    10.0.2.10   '));
       expect(output).toContain('64 bytes');
     });
 
@@ -422,21 +427,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('44. should support pinging gateway explicitly from local subnets', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.1.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.1.1'));
       expect(output).toContain('64 bytes');
     });
 
     it('45. should support pinging remote gateway SVI across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.1'));
       expect(output).toContain('64 bytes');
     });
 
     it('46. should support customized packets interval metrics smaller than 1s (if simulated)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 -i 0.5 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 -i 0.5 10.0.2.10'));
       expect(output).toContain('2 received');
     });
 
@@ -456,7 +461,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('49. should support double quote wrapping of IP address parameters', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 "10.0.2.10"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 "10.0.2.10"'));
       expect(output).toContain('64 bytes');
     });
 
@@ -479,28 +484,28 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('52. should configure packet counts using -n option', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 3 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 3 10.0.1.10'));
       expect(output).toContain('Packets: Sent = 3, Received = 3');
     });
 
     it('53. should configure packet buffer payload size using -l option', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -l 150 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -l 150 10.0.1.10'));
       expect(output).toContain('Reply from 10.0.1.10: bytes=150');
     });
 
     it('54. should configure packet Time To Live using -i option', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -i 128 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -i 128 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
     it('55. should timeout ping requests on unreachable host using -w', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -w 1000 10.0.99.99');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -w 1000 10.0.99.99'));
       // An unreachable host yields 100% loss; the per-request line is either
       // "Request timed out." or "PING: transmit failed." depending on whether
       // a route/ARP exists — both are valid Windows failure indications.
@@ -510,14 +515,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('56. should bind source IP explicitly during pings via -S', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -S 10.0.2.10 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -S 10.0.2.10 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
     it('57. should set Don\'t Fragment flag inside packets via -f', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -f 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -f 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
@@ -530,7 +535,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('59. should show correct metrics inside stats tables on termination', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 2 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 2 10.0.1.10'));
       expect(output).toContain('Approximate round trip times');
     });
 
@@ -579,8 +584,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('67. should support hostname resolutions of Windows PCs explicitly', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts');
-      const output = await topo.pc2.executeCommand('ping linux-host');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping linux-host'));
       expect(output).toContain('10.0.1.10');
     });
 
@@ -592,7 +597,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('no ip route 10.0.1.0 255.255.255.0 10.0.12.1');
       await topo.r2.executeCommand('end');
 
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.1.10'));
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
@@ -632,28 +637,28 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('74. should support count and size options concurrently (-n 2 -l 500)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 2 -l 500 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 2 -l 500 10.0.1.10'));
       expect(output).toContain('bytes=500');
     });
 
     it('75. should support count and timeout options concurrently (-n 1 -w 1500)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -w 1500 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -w 1500 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
     it('76. should support size and DF flag options concurrently (-l 100 -f)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -l 100 -f 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -l 100 -f 10.0.1.10'));
       expect(output).toContain('bytes=100');
     });
 
     it('77. should support TTL and timeout options concurrently (-i 32 -w 2000)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -i 32 -w 2000 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -i 32 -w 2000 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
@@ -667,7 +672,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('79. should support double quotes wrapping on Windows targets IP', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 "10.0.1.10"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 "10.0.1.10"'));
       expect(output).toContain('Reply from');
     });
 
@@ -686,22 +691,22 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('82. should support pinging gateway SVI explicitly', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.2.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.2.1'));
       expect(output).toContain('Reply from');
     });
 
     it('83. should support pinging remote routers interface across links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.1.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.1.1'));
       expect(output).toContain('Reply from');
     });
 
     it('84. should support resolving host names via IPv4 specifically using -4', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts');
-      const output = await topo.pc2.executeCommand('ping -4 linux-host');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -4 linux-host'));
       expect(output).toContain('10.0.1.10');
     });
 
@@ -732,7 +737,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('89. should support routing queries diagnostics matching intermediate hops', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
@@ -751,8 +756,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('92. should preserve interface status parameters across continuous pings execution', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('ping -n 5 10.0.1.10');
-      const config = await topo.pc2.executeCommand('netsh interface ip show addresses');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 5 10.0.1.10'));
+      const config = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface ip show addresses'));
       expect(config).toBeDefined();
     });
 
@@ -760,14 +765,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Run continuous ping in simulator (requires self-termination or small mock)
-      const output = await topo.pc2.executeCommand('ping -t -n 2 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -t -n 2 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
     it('94. should set fragment boundaries dynamically inside buffer sizes check', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -l 1472 -f 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -l 1472 -f 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
@@ -815,7 +820,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('101. should trace route to target IP using traceroute', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
       expect(output).toContain('10.0.1.1');
     });
@@ -823,56 +828,56 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('102. should limit maximum TTL hops using -m', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -m 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -m 2 10.0.2.10'));
       expect(output).toContain('2 hops max');
     });
 
     it('103. should configure queries per hop using -q', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -q 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -q 1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('104. should set custom wait timeout using -w', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -w 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 2 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('105. should use ICMP ECHO method instead of UDP using -I', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -I 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -I 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 
     it('106. should use TCP SYN method instead of UDP using -T', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -T 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -T 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 
     it('107. should use UDP method explicitly using -U', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -U 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -U 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 
     it('108. should set target port for probes using -p', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -p 8080 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -p 8080 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('109. should bind traceroute to specific interface using -i', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -i eth0 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -i eth0 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
@@ -891,7 +896,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('112. should show numerical addresses only with traceroute -n', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -n 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n 10.0.2.10'));
       expect(output).not.toMatch(/[a-zA-Z]/); // Should exclude text names in hops
     });
 
@@ -946,14 +951,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('121. should support gateway list option using -g', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -g 10.0.1.1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -g 10.0.1.1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('122. should support specifying starting TTL using -f', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -f 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -f 2 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
@@ -977,7 +982,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await configureWANIPs(topo);
       topo.c3.setPacketLossRate(1);
 
-      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 1 10.0.2.10'));
       expect(output).toContain('* * *');
       // The first hop is on the near side of the lossy link and answers.
       expect(output).toContain('10.0.1.1');
@@ -994,7 +999,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
 
       // R2 stops driving its side of the link, so R1's own interface
       // loses carrier and R1 — with no other path — says so.
-      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 1 10.0.2.10'));
       expect(output).toContain('!N');
       expect(output).not.toContain('10.0.12.2');
     });
@@ -1002,44 +1007,44 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('125. should support maximum trace queries limits securely', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -q 10 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -q 10 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('126. should support combining max-hops and query count options (-m 5 -q 2)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -m 5 -q 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -m 5 -q 2 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('127. should support combining numeric display and ICMP method options (-n -I)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -n -I 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n -I 10.0.2.10'));
       expect(output).not.toMatch(/[a-zA-Z]/);
     });
 
     it('128. should support combining interface and maximum TTL options (-i eth0 -m 10)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -i eth0 -m 10 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -i eth0 -m 10 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('129. should preserve routing metrics correctly after trace executions', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('traceroute 10.0.2.10');
-      const routes = await topo.pc1.executeCommand('ip route show');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
+      const routes = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ip route show'));
       expect(routes).toContain('default via 10.0.1.1');
     });
 
     it('130. should support resolving and tracing via hostnames directly if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts');
-      const output = await topo.pc1.executeCommand('traceroute win-host');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute win-host'));
       expect(output).toContain('10.0.2.10');
     });
 
@@ -1079,7 +1084,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('136. should show intermediate hops IP addresses correctly inside detailed tables', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('10.0.1.1');
       expect(output).toContain('10.0.12.2');
       expect(output).toContain('10.0.23.3');
@@ -1088,7 +1093,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('137. should show associated delay metrics inside detailed tables', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('ms');
     });
 
@@ -1107,22 +1112,22 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('140. should support displaying hostname aliases inside intermediate hops lists if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('echo "10.0.1.1 core-gw" >> /etc/hosts');
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.1.1 core-gw" >> /etc/hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('core-gw');
     });
 
     it('141. should support tracing gateway explicitly on local subnet', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.1.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.1.1'));
       expect(output).toContain('10.0.1.1');
     });
 
     it('142. should support tracing remote gateway SVI across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.1'));
       expect(output).toContain('10.0.2.1');
     });
 
@@ -1142,14 +1147,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('145. should support double quote wrapping of IP address parameters inside traceroute', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute "10.0.2.10"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute "10.0.2.10"'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 
     it('146. should support passing multiple trailing spaces surrounding target IP cleanly inside traceroute', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute    10.0.2.10   ');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute    10.0.2.10   '));
       expect(output).toContain('10.0.2.10');
     });
 
@@ -1184,7 +1189,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('151. should trace route to target IP using tracert', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('Tracing route to 10.0.1.10');
       expect(output).toContain('10.0.2.1');
     });
@@ -1192,21 +1197,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('152. should limit maximum TTL hops using -h', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -h 2 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -h 2 10.0.1.10'));
       expect(output).toContain('maximum of 2 hops');
     });
 
     it('153. should set custom wait timeout using -w', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -w 1000 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -w 1000 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('154. should suppress dns name resolutions using -d', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -d 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -d 10.0.1.10'));
       // -d only suppresses reverse-DNS resolution: the header/trailer are
       // unchanged, and hops show bare IPs (never a "name [ip]" mapping).
       expect(output).toContain('Tracing route to 10.0.1.10');
@@ -1222,7 +1227,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('156. should show correct metrics inside stats tables on termination', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -h 5 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -h 5 10.0.1.10'));
       expect(output).toContain('ms');
     });
 
@@ -1247,14 +1252,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('160. should support loose source route list option using -j', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('161. should support forcing IPv4 specifically using -4', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -4 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -4 10.0.1.10'));
       expect(output).toContain('Tracing route to 10.0.1.10');
     });
 
@@ -1274,7 +1279,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('164. should support double quotes wrapping on Windows targets IP inside tracert', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert "10.0.1.10"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert "10.0.1.10"'));
       expect(output).toContain('Tracing route to 10.0.1.10');
     });
 
@@ -1293,14 +1298,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('167. should support tracing gateway SVI explicitly from Windows environment', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.2.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.2.1'));
       expect(output).toContain('Tracing route to 10.0.2.1');
     });
 
     it('168. should support tracing remote router interface across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.1'));
       expect(output).toContain('Tracing route to 10.0.1.1');
     });
 
@@ -1313,8 +1318,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('170. should support hostname resolutions of Windows PCs explicitly inside tracert', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts');
-      const output = await topo.pc2.executeCommand('tracert linux-host');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.1.10 linux-host" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert linux-host'));
       expect(output).toContain('10.0.1.10');
     });
 
@@ -1326,7 +1331,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.hw_sw1.executeCommand('undo ip route-static 10.0.1.0 255.255.255.0 10.0.23.2');
       await topo.hw_sw1.executeCommand('quit');
 
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
@@ -1340,14 +1345,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('shutdown');
       await topo.r2.executeCommand('end');
 
-      const output = await topo.pc2.executeCommand('tracert -w 500 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -w 500 10.0.1.10'));
       expect(output).toContain('* * *');
     });
 
     it('173. should show intermediate hops IP addresses correctly inside Windows detailed tables', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('10.0.2.1');
       expect(output).toContain('10.0.23.2');
       expect(output).toContain('10.0.12.1');
@@ -1356,14 +1361,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('174. should support combining max-hops and timeout options concurrently inside tracert (-h 5 -w 1000)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -h 5 -w 1000 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -h 5 -w 1000 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('175. should support combining dns suppression and max-hops options concurrently inside tracert (-d -h 10)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -d -h 10 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -d -h 10 10.0.1.10'));
       // -d suppresses name resolution; -h bounds the hop count. Header stays.
       expect(output).toContain('over a maximum of 10 hops');
       expect(output).not.toMatch(/[A-Za-z0-9.-]+\s\[\d+\.\d+\.\d+\.\d+\]/);
@@ -1372,8 +1377,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('176. should preserve Windows interface status parameters across tracert executions', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('tracert 10.0.1.10');
-      const config = await topo.pc2.executeCommand('netsh interface ip show config');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
+      const config = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface ip show config'));
       expect(config).toBeDefined();
     });
 
@@ -1411,8 +1416,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('182. should support displaying hostname aliases inside intermediate hops lists on Windows if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('echo "10.0.2.1 lan-gateway" >> C:\\Windows\\System32\\drivers\\etc\\hosts');
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('echo "10.0.2.1 lan-gateway" >> C:\\Windows\\System32\\drivers\\etc\\hosts'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('lan-gateway');
     });
 
@@ -1446,7 +1451,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('187. should support loose source route list option inside Windows tracert alias (-j)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
@@ -1477,15 +1482,15 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('192. should preserve active connections metrics after tracert completes', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('tracert 10.0.1.10');
-      const output = await topo.pc2.executeCommand('netsh interface ip show config');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface ip show config'));
       expect(output).toContain('Ethernet');
     });
 
     it('193. should show correct hop count inside tracert output list', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toMatch(/\s+1\s+.*ms/);
     });
 
@@ -1540,14 +1545,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('201. should ping remote PC successfully across the entire WAN topology', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 2 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 2 10.0.2.10'));
       expect(output).toContain('2 packets transmitted, 2 received');
     });
 
     it('202. should traceroute remote PC successfully showing each intermediate router SVI', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('10.0.1.1');  // R1
       expect(output).toContain('10.0.12.2'); // R2
       expect(output).toContain('10.0.23.3'); // HW_SW1 SVI
@@ -1557,21 +1562,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Linux: -M want (use DF), -s size
-      const output = await topo.pc1.executeCommand('ping -c 1 -M want -s 2000 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -M want -s 2000 10.0.2.10'));
       expect(output.toLowerCase()).toMatch(/local error|too long|frag needed/);
     });
 
     it('204. should fail Windows ping with fragmentation error if -f is set and size exceeds MTU (1500)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -f -l 2000 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -f -l 2000 10.0.1.10'));
       expect(output.toLowerCase()).toMatch(/packet needs to be fragmented|too long|frag needed/);
     });
 
     it('205. should allow pinging with large packets (e.g. 2000) if DF is NOT set (fragments are sent)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 -s 2000 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -s 2000 10.0.2.10'));
       expect(output).toContain('2008 bytes from'); // payload + header, successfully fragmented/reassembled
     });
 
@@ -1579,8 +1584,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Route specifically via another hop if simulated, or check metric updates
-      await topo.pc1.executeCommand('ip route add 10.0.2.10 via 10.0.1.1 metric 50');
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ip route add 10.0.2.10 via 10.0.1.1 metric 50'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('10.0.1.1');
     });
 
@@ -1588,7 +1593,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Setup suboptimal SVI redirect if supported, verify command runs without crash
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
@@ -1601,7 +1606,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('shutdown');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10'));
       expect(output).toContain('100% packet loss');
     });
 
@@ -1613,43 +1618,43 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.hw_sw1.executeCommand('shutdown');
       await topo.hw_sw1.executeCommand('quit');
 
-      const output = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10'));
       expect(output).toContain('100% packet loss');
     });
 
     it('210. should show destination host unreachable on traceroute if destination host is shut down', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled');
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
     it('211. should show TTL expired in transit inside traceroute output logs', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toBeDefined(); // implicit TTL expired at each hop
     });
 
     it('212. should verify ICMP echo reply generation from Huawei L3 switch SVI interface', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.23.3');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.23.3'));
       expect(output).toContain('64 bytes from 10.0.23.3');
     });
 
     it('213. should verify ICMP echo reply generation from Cisco router interfaces', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.12.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.12.1'));
       expect(output).toContain('64 bytes from 10.0.12.1');
     });
 
     it('214. should trace path correctly from Windows PC showing R2 and R1 intermediate hops', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -d 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -d 10.0.1.10'));
       expect(output).toContain('10.0.23.2'); // R2
       expect(output).toContain('10.0.12.1'); // R1
     });
@@ -1657,7 +1662,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('215. should support Windows path MTU discovery simulation using -l and -f loop bounds', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 -f -l 1472 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 -f -l 1472 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
@@ -1670,7 +1675,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('ip mtu 1400');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('ping -c 1 -M want -s 1300 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -M want -s 1300 10.0.2.10'));
       expect(output).toContain('1308 bytes from 10.0.2.10');
     });
 
@@ -1683,7 +1688,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('ip mtu 1400');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('ping -c 1 -M want -s 1450 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -M want -s 1450 10.0.2.10'));
       expect(output.toLowerCase()).toMatch(/local error|too long|frag needed/);
     });
 
@@ -1699,7 +1704,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('ip access-group 100 in');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10'); // Default is UDP
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10')); // Default is UDP
       expect(output).toContain('* * *');
     });
 
@@ -1714,7 +1719,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('ip access-group 100 in');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('traceroute -I 10.0.2.10'); // Uses ICMP
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -I 10.0.2.10')); // Uses ICMP
       expect(output).toContain('10.0.1.1');
     });
 
@@ -1722,7 +1727,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // L2 SW1 is transparent, ping should pass cleanly
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.1.1');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.1.1'));
       expect(output).toContain('64 bytes');
     });
 
@@ -1730,7 +1735,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // If OSPF is configured on R1 and R2, routes are populated dynamically
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output).toContain('64 bytes');
     });
 
@@ -1744,36 +1749,36 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('223. should route pings using specific gateway configurations in Huawei switch Vlanif structures', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.23.3');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.23.3'));
       expect(output).toContain('Reply from');
     });
 
     it('224. should show correct metrics inside fdisk/blkid equivalent partition queries on Windows host', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('225. should track destination host changes dynamically inside traceroute outputs', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('traceroute 10.0.2.10');
-      const output = await topo.pc1.executeCommand('traceroute 10.0.1.1');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.1.1'));
       expect(output).toContain('10.0.1.1');
     });
 
     it('226. should support traceroute with precise wait timeouts configurations (-w 1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
     it('227. should support Windows tracert with precise wait timeouts configurations (-w 1000)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -w 1000 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -w 1000 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
@@ -1785,29 +1790,29 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r1.executeCommand('no ip route 10.0.2.0 255.255.255.0 10.0.12.2');
       await topo.r1.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).not.toContain('10.0.23.3');
     });
 
     it('229. should preserve WAN topology connection states across multiple ping checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.1.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.1.10'));
       expect(output).toContain('Reply from');
     });
 
     it('230. should support printing results matching specific network domains inside Windows traces', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('231. should support WAN tracing with specific packet size modifiers (traceroute 10.0.2.10 100)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10 100');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10 100'));
       expect(output).toContain('100 bytes packets');
     });
 
@@ -1826,14 +1831,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('234. should support Windows ping with specific routing option flags (-r 9)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -r 9 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -r 9 10.0.1.10'));
       expect(output).toContain('Route:');
     });
 
     it('235. should support Windows ping with specific loose routing option flags (-j 10.0.2.1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -j 10.0.2.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -j 10.0.2.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
@@ -1846,14 +1851,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('237. should support showing hop count parameters inside Windows tracert output', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('10.0.2.1');
     });
 
     it('238. should support showing RTT metrics inside Windows tracert output', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toMatch(/\d+\s+ms/);
     });
 
@@ -1872,14 +1877,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('241. should show correct hop count inside Linux traceroute output list', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toMatch(/\s+1\s+10.0.1.1/);
     });
 
     it('242. should support Linux traceroute with specific IP protocol types (IPv4 only forced by -4)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -4 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -4 10.0.2.10'));
       expect(output).toContain('traceroute to 10.0.2.10');
     });
 
@@ -1892,7 +1897,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('244. should preserve all SVI VLAN interfaces status configurations inside Huawei switch across tracert checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc2.executeCommand('tracert 10.0.1.10');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       const status = await topo.hw_sw1.executeCommand('display vlan');
       expect(status).toContain('10');
     });
@@ -1900,7 +1905,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('245. should show correct intermediate SVI VLAN interface inside Huawei switch during traces', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -d 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -d 10.0.1.10'));
       expect(output).toContain('10.0.23.2');
     });
 
@@ -1908,21 +1913,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // Trunk configurations on SW1, verify ping passes cleanly
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(output).toContain('64 bytes');
     });
 
     it('247. should show Correct WAN hop paths inside Cisco routers interfaces lists', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('10.0.12.2');
     });
 
     it('248. should support showing round-trip times (RTT) details in traceroute outputs', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toMatch(/\d+\s+ms/);
     });
 
@@ -1938,14 +1943,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('ip access-group 100 in');
       await topo.r2.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 1 10.0.2.10'));
       expect(output).toContain('* * *');
     });
 
     it('250. should execute successfully and return status 0 on complete WAN routes validations', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('ping -c 1 10.0.2.10 && echo "WAN_OK"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10 && echo "WAN_OK"'));
       expect(output).toContain('WAN_OK');
     });
   });
@@ -1969,11 +1974,17 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
 
+      // The unplug has to land BETWEEN two echoes, which used to mean racing
+      // a real 1.5 s sleep against the ping's own pacing. On the simulated
+      // clock the window is exact: let the first echo go, step one interval,
+      // pull the cable, then let the rest run out.
       const pingPromise = topo.pc1.executeCommand('ping -c 4 -i 1 10.0.2.10');
-      await new Promise(resolve => setTimeout(resolve, 1500)); // wait for 1.5 seconds
+      await new Promise(resolve => setTimeout(resolve, 0));
+      topo.clock.advance(1000);
+      await new Promise(resolve => setTimeout(resolve, 0));
       topo.c1.disconnect(); // Unplug PC1 cable mid-run
 
-      const output = await pingPromise;
+      const output = await topo.clock.advanceUntilSettled(pingPromise);
       expect(output).toContain('packet loss');
       expect(output).not.toContain('4 received'); // should have drops
     });
@@ -1983,13 +1994,13 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await configureWANIPs(topo);
       topo.c1.disconnect(); // unplug
 
-      const ping1 = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10');
+      const ping1 = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10'));
       expect(ping1).toContain('100% packet loss');
 
       topo.c1.connect(topo.pc1.getPort('eth0')!, topo.sw1.getPort('FastEthernet0/1')!); // reconnect
       await new Promise(resolve => setTimeout(resolve, 50)); // let STP or link state settle
 
-      const ping2 = await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      const ping2 = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       expect(ping2).toContain('64 bytes');
     });
 
@@ -2032,7 +2043,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.hw_sw1.executeCommand('shutdown');
       await topo.hw_sw1.executeCommand('quit');
 
-      const output = await topo.pc2.executeCommand('ping -n 1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -n 1 10.0.1.10'));
       // With the SVI down the destination is unreachable: assert the real
       // failure signal rather than the old fabricated stats line.
       expect(output.toLowerCase()).toMatch(/unreachable|timed out|transmit failed|100% loss/);
@@ -2042,8 +2053,8 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
       // PC2 (Windows) is on, shutdown interface to make it unresponsive
-      await topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled');
-      const output = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('netsh interface set interface "Ethernet" admin=disabled'));
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10'));
       expect(output.toLowerCase()).toContain('unreachable');
     });
 
@@ -2057,21 +2068,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('263. should show Correct WAN hop paths inside Huawei switch interfaces lists', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -d 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -d 10.0.1.10'));
       expect(output).toContain('10.0.23.2');
     });
 
     it('264. should support Windows ping with specific loose routing option flags targeting local gateways SVI (-j 10.0.2.1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -j 10.0.2.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -j 10.0.2.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('265. should support Windows ping with specific loose routing option flags targeting remote gateways SVI (-j 10.0.1.1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('ping -j 10.0.1.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('ping -j 10.0.1.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
@@ -2090,21 +2101,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('268. should support showing delay metrics inside Windows tracert output detailed tables', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert 10.0.1.10'));
       expect(output).toContain('ms');
     });
 
     it('269. should support showing hop count inside Linux traceroute output detailed tables', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toMatch(/\s+2\s+10.0.12.2/);
     });
 
     it('270. should support Linux traceroute with specific IP protocol types (IPv4 only forced by -4) across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -4 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -4 10.0.2.10'));
       expect(output).toContain('10.0.2.10');
     });
 
@@ -2117,7 +2128,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('272. should preserve all SVI VLAN interfaces status configurations inside Huawei switch across traceroute checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       const status = await topo.hw_sw1.executeCommand('display vlan');
       expect(status).toContain('20');
     });
@@ -2125,21 +2136,21 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('273. should show correct intermediate SVI VLAN interface inside Huawei switch during traceroute checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -n 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n 10.0.2.10'));
       expect(output).toContain('10.0.23.3');
     });
 
     it('274. should support trace path over multiple Cisco switch VLAN boundaries (trunking) across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('10.0.2.10');
     });
 
     it('275. should show Correct WAN hop paths inside Cisco routers interfaces lists across traceroute checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -n 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -n 10.0.2.10'));
       // Each hop is the address that answered — R1's LAN side, then the
       // far end of each WAN link. A router's other interfaces never
       // appear: nothing on the path ever announced them.
@@ -2152,7 +2163,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('276. should support showing round-trip times (RTT) details in traceroute outputs across WAN links', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('ms');
     });
 
@@ -2168,14 +2179,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.r2.executeCommand('ip access-group 100 in');
       await topo.r2.executeCommand('end');
 
-      const output = await topo.pc1.executeCommand('traceroute -w 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -w 1 10.0.2.10'));
       expect(output).toContain('* * *');
     });
 
     it('278. should successfully execute and return status 0 on complete WAN routes validations across traceroute checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute localhost && echo "SUCCESS"');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute localhost && echo "SUCCESS"'));
       expect(output).toContain('SUCCESS');
     });
 
@@ -2224,14 +2235,14 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('285. should support Windows tracert loose source route with single target IP (-j 10.0.2.1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc2.executeCommand('tracert -j 10.0.2.1 10.0.1.10'));
       expect(output).toBeDefined();
     });
 
     it('286. should support Linux traceroute gateway loose source route with single target IP (-g 10.0.1.1)', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      const output = await topo.pc1.executeCommand('traceroute -g 10.0.1.1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute -g 10.0.1.1 10.0.2.10'));
       expect(output).toBeDefined();
     });
 
@@ -2279,7 +2290,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
       await topo.hw_sw1.executeCommand('undo ip route-static 10.0.1.0 255.255.255.0 10.0.23.2');
       await topo.hw_sw1.executeCommand('quit');
 
-      const output = await topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10');
+      const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 -W 1 10.0.2.10'));
       expect(output).toContain('100% packet loss');
     });
 
@@ -2320,7 +2331,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('299. should preserve all SVI VLAN interfaces status configurations inside Cisco switches across multiple checks', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.pc1.executeCommand('ping -c 1 10.0.2.10');
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 10.0.2.10'));
       const status = await topo.sw1.executeCommand('show vlan brief');
       expect(status).toContain('default');
     });

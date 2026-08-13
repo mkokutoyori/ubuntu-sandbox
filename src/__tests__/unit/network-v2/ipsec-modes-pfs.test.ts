@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -89,7 +90,11 @@ async function buildTunnelTopology(pfsGroup?: string) {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, clock };
 }
 
 // ─── Helper : topologie host-to-host (mode transport, via loopbacks) ────────
@@ -174,9 +179,9 @@ describe('IPSec – Mode Tunnel vs Mode Transport', () => {
 
   // ─── 4.01 : Tunnel mode ──────────────────────────────────────────────────
   it('4.01 – Tunnel mode should encapsulate entire IP packet inside new IP+ESP header', async () => {
-    const { r1, pc1 } = await buildTunnelTopology();
+    const { r1, pc1, clock } = await buildTunnelTopology();
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const sa = await r1.executeCommand('show crypto ipsec sa');
     // Le mode tunnel doit être affiché explicitement
@@ -198,7 +203,7 @@ describe('IPSec – Mode Tunnel vs Mode Transport', () => {
 
   // ─── 4.02 : Transport mode ───────────────────────────────────────────────
   it('4.02 – Transport mode should protect only payload, keeping original IP header', async () => {
-    const { r1, r2 } = await buildTransportTopology();
+    const { r1, r2, clock } = await buildTransportTopology();
 
     // Ping de la loopback de R1 vers la loopback de R2
     const ping = await r1.executeCommand('ping 2.2.2.2 source Loopback0 repeat 3');
@@ -225,9 +230,9 @@ describe('IPSec – Perfect Forward Secrecy (PFS)', () => {
 
   // ─── 4.03 : PFS group14 ──────────────────────────────────────────────────
   it('4.03 – PFS group14 should perform new DH exchange when child SA is rekeyed', async () => {
-    const { r1, pc1 } = await buildTunnelTopology('group14');
+    const { r1, pc1, clock } = await buildTunnelTopology('group14');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // Le crypto map doit afficher PFS activé
     const mapOut = await r1.executeCommand('show crypto map');
@@ -246,9 +251,9 @@ describe('IPSec – Perfect Forward Secrecy (PFS)', () => {
 
   // ─── 4.04 : PFS group2 ───────────────────────────────────────────────────
   it('4.04 – PFS group2 (1024-bit DH) should be configured and displayed correctly', async () => {
-    const { r1, pc1 } = await buildTunnelTopology('group2');
+    const { r1, pc1, clock } = await buildTunnelTopology('group2');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     const mapOut = await r1.executeCommand('show crypto map');
     expect(mapOut).toContain('PFS (Y/N): Y');
@@ -268,6 +273,9 @@ describe('IPSec – Perfect Forward Secrecy (PFS)', () => {
     const r2  = new CiscoRouter('R2');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
     const pc2 = new LinuxPC('linux-pc', 'PC2');
+    const clock = new VirtualTimeScheduler();
+    pc1.setScheduler(clock);
+    pc2.setScheduler(clock);
 
     new Cable('wan').connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/1')!);
     new Cable('lan1').connect(pc1.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
@@ -354,7 +362,7 @@ describe('IPSec – Perfect Forward Secrecy (PFS)', () => {
     await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
     // Le tunnel initial peut s'établir (la négociation PFS n'a lieu qu'au rekey)
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     // Vérification du mismatch : les crypto maps montrent des groupes différents
     const mapR1 = await r1.executeCommand('show crypto map');
@@ -373,15 +381,15 @@ describe('IPSec – Perfect Forward Secrecy (PFS)', () => {
     const saAfterClear = await r1.executeCommand('show crypto ipsec sa');
     // Soit vide (pas de SA), soit avec erreurs de rekey
     // Dans tous les cas, le trafic ne passe plus
-    const pingAfter = await pc1.executeCommand('ping -c 2 192.168.2.10');
+    const pingAfter = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
     expect(pingAfter).toContain('100% packet loss');
   });
 
   // ─── 4.06 : Sans PFS ─────────────────────────────────────────────────────
   it('4.06 – without PFS, child SA rekey reuses IKE keying material (no DH)', async () => {
-    const { r1, pc1 } = await buildTunnelTopology(); // pas de pfsGroup → sans PFS
+    const { r1, pc1, clock } = await buildTunnelTopology(); // pas de pfsGroup → sans PFS
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     const mapOut = await r1.executeCommand('show crypto map');
     // PFS doit être désactivé

@@ -27,6 +27,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -142,7 +143,11 @@ async function buildTunnel() {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, clock };
 }
 
 function inboundSaOnReceiver(receiver: CiscoRouter): {
@@ -188,8 +193,8 @@ beforeEach(() => {
 describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
   describe('8.A — baseline (no replay)', () => {
     it('legit ping traffic never trips the anti-replay counter', async () => {
-      const { r1, r2, pc2 } = await buildTunnel();
-      const out = await pc2.executeCommand('ping -c 5 192.168.1.10');
+      const { r1, r2, pc2, clock } = await buildTunnel();
+      const out = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 5 192.168.1.10'));
       expect(out).toContain('5 received');
 
       const sa1 = await r1.executeCommand('show crypto ipsec sa');
@@ -199,8 +204,8 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     });
 
     it('show crypto ipsec sa exposes the RFC-4303 replay counter with IOS labelling', async () => {
-      const { r1, pc2 } = await buildTunnel();
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      const { r1, pc2, clock } = await buildTunnel();
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
       const sa = await r1.executeCommand('show crypto ipsec sa');
       expect(sa).toMatch(/#pkts replay failed \(rcv\):\s*\d+/);
       expect(sa).toMatch(/#pkts replay rollover \(send\)/);
@@ -209,9 +214,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.B — replayed ESP frame is dropped and counted', () => {
     it('a single re-injected ESP frame increments #pkts replay failed (rcv) by exactly 1 on R1', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       expect(probe.espFrames.length).toBeGreaterThan(0);
 
       const before = readReplayCounter(await r1.executeCommand('show crypto ipsec sa'));
@@ -222,9 +227,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     });
 
     it('the replayed frame is never decapsulated: #pkts decaps does not grow', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const decapsBefore = readDecapsCounter(await r1.executeCommand('show crypto ipsec sa'));
       const port = r1.getPort('GigabitEthernet0/1') as Port;
@@ -236,9 +241,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
     it('emits an ipsec:anti-replay log per drop with SPI, seq and peer', async () => {
       const log = captureAntiReplayLog();
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;
       port.receiveFrame(probe.espFrames[0]);
@@ -254,9 +259,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.C — N re-injected frames produce exactly N counted drops', () => {
     it('replaying every captured ESP frame once increments the counter by that same N', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 4 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 4 192.168.1.10'));
       expect(probe.espFrames.length).toBeGreaterThanOrEqual(4);
 
       const before = readReplayCounter(await r1.executeCommand('show crypto ipsec sa'));
@@ -268,9 +273,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     });
 
     it('replaying the same frame K times counts K, not 1 (each attempt is scored)', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const before = readReplayCounter(await r1.executeCommand('show crypto ipsec sa'));
       const port = r1.getPort('GigabitEthernet0/1') as Port;
@@ -282,14 +287,14 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.D — concurrent legitimate traffic is unaffected', () => {
     it('a ping issued after a replay salvo still succeeds end-to-end', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;
       for (let i = 0; i < 5; i++) port.receiveFrame(probe.espFrames[0]);
 
-      const post = await pc2.executeCommand('ping -c 3 192.168.1.10');
+      const post = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       expect(post).toContain('3 received');
       expect(post).toContain('0% packet loss');
     });
@@ -297,8 +302,8 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.E — window RFC 4303: in-window reorder accepted, out-of-window rejected', () => {
     it('checkAntiReplay accepts a new seq inside the window and rejects a duplicate of it', async () => {
-      const { r1, pc2 } = await buildTunnel();
-      await pc2.executeCommand('ping -c 1 192.168.1.10');
+      const { r1, pc2, clock } = await buildTunnel();
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 1 192.168.1.10'));
       const sa = inboundSaOnReceiver(r1);
       const last = sa.replayWindowLastSeq;
       const inWindow = last - 2;
@@ -310,11 +315,11 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     });
 
     it('checkAntiReplay rejects a seq that falls before the sliding window (too old)', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('crypto ipsec security-association replay window-size 8');
       await r1.executeCommand('end');
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       const sa = inboundSaOnReceiver(r1);
       if (sa.replayWindowLastSeq <= sa.replayWindowSize) return;
       const outOfWindow = sa.replayWindowLastSeq - sa.replayWindowSize - 1;
@@ -326,7 +331,7 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.F — replay window is configurable and persisted', () => {
     it('crypto ipsec security-association replay window-size N sets the value the CLI reports back', async () => {
-      const { r1 } = await buildTunnel();
+      const { r1, clock } = await buildTunnel();
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('crypto ipsec security-association replay window-size 256');
       await r1.executeCommand('end');
@@ -336,12 +341,12 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
     });
 
     it('setting window-size 0 disables anti-replay: replayed frames stop being counted', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       await r1.executeCommand('configure terminal');
       await r1.executeCommand('crypto ipsec security-association replay window-size 0');
       await r1.executeCommand('end');
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const engine = (r1 as unknown as {
         _getIPSecEngineInternal: () => { getReplayWindowSize?: () => number; ipsecSADB: Map<string, Array<{ replayWindowSize: number }>> };
@@ -360,9 +365,9 @@ describe('Scenario 8 — IPsec anti-replay detection and prevention', () => {
 
   describe('8.G — cross-check counter consistency', () => {
     it('the delta reported by the CLI matches the internal SA counter to the unit', async () => {
-      const { r1, pc2 } = await buildTunnel();
+      const { r1, pc2, clock } = await buildTunnel();
       const probe = probeInboundEsp(r1.getId(), 'GigabitEthernet0/1');
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const port = r1.getPort('GigabitEthernet0/1') as Port;
       const N = 7;

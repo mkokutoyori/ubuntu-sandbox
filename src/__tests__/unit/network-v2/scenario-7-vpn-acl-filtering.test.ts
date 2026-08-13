@@ -23,6 +23,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -121,7 +122,11 @@ async function buildTransitTunnel() {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, ra, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, ra, r2, pc1, pc2, clock };
 }
 
 async function installAclOnRa(ra: CiscoRouter, name: string, rules: string[]): Promise<void> {
@@ -179,10 +184,10 @@ beforeEach(() => {
 describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
   describe('7.A — permit-all baseline', () => {
     it('lets the tunnel come up and end-to-end ping succeeds through ESP', async () => {
-      const { ra, r1, r2, pc2 } = await buildTransitTunnel();
+      const { ra, r1, r2, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'PERMIT_ALL', PERMIT_ALL);
 
-      const out = await pc2.executeCommand('ping -c 4 192.168.1.10');
+      const out = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 4 192.168.1.10'));
       expect(out).toContain('4 received');
       expect(out).toContain('0% packet loss');
 
@@ -191,9 +196,9 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
     });
 
     it('separates match counters per constituent protocol (UDP/500 vs ESP)', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'PERMIT_ALL', PERMIT_ALL);
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const show = await ra.executeCommand('show access-lists PERMIT_ALL');
       expect(counterFromIfacesShow(show, 'permit udp any any eq 500')).toBeGreaterThan(0);
@@ -204,25 +209,25 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.B — deny UDP/500 (block IKE)', () => {
     it('prevents any IKE SA from being installed on either peer', async () => {
-      const { ra, r1, r2, pc2 } = await buildTransitTunnel();
+      const { ra, r1, r2, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_IKE', [
         'deny udp any any eq 500',
         ...PERMIT_ALL,
       ]);
 
-      const out = await pc2.executeCommand('ping -c 2 192.168.1.10');
+      const out = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
       expect(out).toContain('0 received');
       expect(await r1.executeCommand('show crypto isakmp sa')).not.toContain('QM_IDLE');
       expect(await r2.executeCommand('show crypto isakmp sa')).not.toContain('QM_IDLE');
     });
 
     it('increments the deny counter on the UDP/500 ACE, not on ESP', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_IKE', [
         'deny udp any any eq 500',
         ...PERMIT_ALL,
       ]);
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const show = await ra.executeCommand('show access-lists BLK_IKE');
       expect(counterFromIfacesShow(show, 'deny udp any any eq 500')).toBeGreaterThan(0);
@@ -230,13 +235,13 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
     });
 
     it('debug crypto isakmp reflects that no phase-1 message was accepted', async () => {
-      const { ra, r1, pc2 } = await buildTransitTunnel();
+      const { ra, r1, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_IKE', [
         'deny udp any any eq 500',
         ...PERMIT_ALL,
       ]);
       await r1.executeCommand('debug crypto isakmp');
-      await pc2.executeCommand('ping -c 1 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 1 192.168.1.10'));
 
       const detail = await r1.executeCommand('show crypto isakmp sa detail');
       expect(detail).not.toContain('QM_IDLE');
@@ -245,7 +250,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.C — deny ESP (asymmetric: IKE up, data plane down)', () => {
     it('leaves both peers in QM_IDLE but no ping traverses', async () => {
-      const { ra, r1, r2, pc2 } = await buildTransitTunnel();
+      const { ra, r1, r2, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -254,14 +259,14 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ip any any',
       ]);
 
-      const out = await pc2.executeCommand('ping -c 3 192.168.1.10');
+      const out = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       expect(out).toContain('0 received');
       expect(await r1.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
       expect(await r2.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
     });
 
     it('proves the asymmetry via encaps > 0 on sender and decaps = 0 on receiver', async () => {
-      const { ra, r1, r2, pc2 } = await buildTransitTunnel();
+      const { ra, r1, r2, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -269,7 +274,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ahp any any',
         'permit ip any any',
       ]);
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const senderSa = await r2.executeCommand('show crypto ipsec sa');
       const receiverSa = await r1.executeCommand('show crypto ipsec sa');
@@ -278,7 +283,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
     });
 
     it('increments the deny counter on the ESP ACE, not on UDP/500', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -286,7 +291,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ahp any any',
         'permit ip any any',
       ]);
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
 
       const show = await ra.executeCommand('show access-lists BLK_ESP');
       expect(counterFromIfacesShow(show, 'deny esp any any')).toBeGreaterThan(0);
@@ -295,7 +300,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
     it('emits router:acl-deny-in log events tagged for ESP frames only', async () => {
       const log = captureAclDenyLog();
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -303,7 +308,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ahp any any',
         'permit ip any any',
       ]);
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
 
       const raDenies = log.denies.filter((d) => d.deviceId === ra.getId());
       expect(raDenies.length).toBeGreaterThan(0);
@@ -315,7 +320,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.D — silent DROP vs active ICMP admin-prohibited', () => {
     it('default (ip unreachables enabled) sends ICMP admin-prohibited on deny', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -324,13 +329,13 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ip any any',
       ]);
       const before = ra.getCounters().icmpOutDestUnreachs ?? 0;
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       const after = ra.getCounters().icmpOutDestUnreachs ?? 0;
       expect(after - before).toBeGreaterThan(0);
     });
 
     it('no ip unreachables on the transit interface makes the deny silent', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_ESP', [
         'permit udp any any eq 500',
         'permit udp any any eq 4500',
@@ -347,7 +352,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
       await ra.executeCommand('end');
 
       const before = ra.getCounters().icmpOutDestUnreachs ?? 0;
-      await pc2.executeCommand('ping -c 3 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
       const after = ra.getCounters().icmpOutDestUnreachs ?? 0;
       expect(after - before).toBe(0);
     });
@@ -355,7 +360,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.E — deny UDP/4500 only', () => {
     it('leaves IKE alive because IKE runs on UDP/500', async () => {
-      const { ra, r1, r2, pc2 } = await buildTransitTunnel();
+      const { ra, r1, r2, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_4500', [
         'permit udp any any eq 500',
         'deny udp any any eq 4500',
@@ -363,7 +368,7 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
         'permit ahp any any',
         'permit ip any any',
       ]);
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
       expect(await r1.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
       expect(await r2.executeCommand('show crypto isakmp sa')).toContain('QM_IDLE');
     });
@@ -371,12 +376,12 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.F — symmetry of the transit filter', () => {
     it('deny UDP/500 blocks IKE regardless of which side originates the trigger', async () => {
-      const { ra, r1, pc1 } = await buildTransitTunnel();
+      const { ra, r1, pc1, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'BLK_IKE', [
         'deny udp any any eq 500',
         ...PERMIT_ALL,
       ]);
-      const out = await pc1.executeCommand('ping -c 2 192.168.2.10');
+      const out = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
       expect(out).toContain('0 received');
       expect(await r1.executeCommand('show crypto isakmp sa')).not.toContain('QM_IDLE');
     });
@@ -384,9 +389,9 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
 
   describe('7.G — show access-lists formatting sanity', () => {
     it('lists every ACE with its match count in a stable order', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'PERMIT_ALL', PERMIT_ALL);
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
       const show = await ra.executeCommand('show access-lists PERMIT_ALL');
       const lines = show.split('\n').map((l) => l.trim()).filter(Boolean);
       expect(lines[0]).toBe('Extended IP access list PERMIT_ALL');
@@ -399,9 +404,9 @@ describe('Scenario 7 — Cisco ACL filtering of IPsec constituents', () => {
     });
 
     it('counter reads from show access-lists <name> match the internal ACE state', async () => {
-      const { ra, pc2 } = await buildTransitTunnel();
+      const { ra, pc2, clock } = await buildTransitTunnel();
       await installAclOnRa(ra, 'PERMIT_ALL', PERMIT_ALL);
-      await pc2.executeCommand('ping -c 2 192.168.1.10');
+      await clock.advanceUntilSettled(pc2.executeCommand('ping -c 2 192.168.1.10'));
       const show = await ra.executeCommand('show access-lists PERMIT_ALL');
       const espCount = counterOf(show, 'permit esp any any');
       const ipCount = counterOf(show, 'permit ip any any');
