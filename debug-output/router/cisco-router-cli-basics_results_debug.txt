@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-cli-basics
-Generated: 2026-08-13T09:41:13.645Z
+Generated: 2026-08-13T11:55:12.138Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IOS router CLI: show family, mode nav, pipes, no, save
 Total steps: 482
@@ -29,7 +29,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -57,7 +57,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -65,10 +65,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [3/482] r1 R1> show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [4/482] r1 R1> show calendar
-  09:41:13 UTC Thu Aug 13 2026
+  11:55:12 UTC Thu Aug 13 2026
 
 [5/482] r1 R1> show users
       Line       User       Host(s)              Idle       Location
@@ -84,7 +84,7 @@ Total steps: 482
 
 [7/482] r1 R1> show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3140G7VK
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3344DN54
 
 [8/482] r1 R1> show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -423,7 +423,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE280FB9.AA3D70A3 (09:41:13.665 UTC Thu Aug 13 2026)
+  reference time is EE282F20.2872B020 (11:55:12.158 UTC Thu Aug 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -730,7 +730,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -738,10 +738,10 @@ Total steps: 482
   Configuration register is 0x2102
 
 [80/482] r1 R1# show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [81/482] r1 R1# show calendar
-  09:41:13 UTC Thu Aug 13 2026
+  11:55:12 UTC Thu Aug 13 2026
 
 [82/482] r1 R1# show users
       Line       User       Host(s)              Idle       Location
@@ -772,7 +772,7 @@ Total steps: 482
 
 [84/482] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3140G7VK
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3344DN54
 
 [85/482] r1 R1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1177,10 +1177,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 09:41:13.640: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:41:13.640: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:41:13.642: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:41:13.642: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 11:55:12.131: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 11:55:12.132: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 11:55:12.134: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 11:55:12.134: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [119/482] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1192,7 +1192,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE280FB9.B70A3D70 (09:41:13.715 UTC Thu Aug 13 2026)
+  reference time is EE282F20.3C28F5C2 (11:55:12.235 UTC Thu Aug 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1243,7 +1243,7 @@ Total steps: 482
 [126/482] r1 R1# show platform
   Cisco ISR 2911
     PID: CISCO2911/K9
-    S/N: FTX3140G7VK
+    S/N: FTX3344DN54
 
 [127/482] r1 R1# show license
   Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority
@@ -1252,7 +1252,7 @@ Total steps: 482
 
 [128/482] r1 R1# show license udi
   Device#   PID                   SN
-  *0        CISCO2911/K9          FTX3140G7VK
+  *0        CISCO2911/K9          FTX3344DN54
 
 [129/482] r1 R1# show boot
   BOOT variable = 
@@ -1381,7 +1381,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1582,10 +1582,10 @@ Total steps: 482
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 09:41:13.640: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:41:13.640: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 09:41:13.642: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 09:41:13.642: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 11:55:12.131: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 11:55:12.132: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 13 11:55:12.134: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 13 11:55:12.134: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
 
 [146/482] r1 R1# show diag
   Slot 0:
@@ -1595,7 +1595,7 @@ Total steps: 482
           Hardware Revision        : 1.0
           Part Number              : CISCO2911/K9
           Board Revision           : 1.0
-          PCB Serial Number        : FTX3140G7VK
+          PCB Serial Number        : FTX3344DN54
 
 [147/482] r1 R1# show idprom backplane
           ^
@@ -1664,7 +1664,7 @@ Total steps: 482
 <empty>
 
 [157/482] r1 R1(config-if)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [158/482] r1 R1(config-if)# exit
 <empty>
@@ -1673,7 +1673,7 @@ Total steps: 482
 <empty>
 
 [160/482] r1 R1(config-if)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [161/482] r1 R1(config-if)# exit
 <empty>
@@ -1682,7 +1682,7 @@ Total steps: 482
 <empty>
 
 [163/482] r1 R1(config-if)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [164/482] r1 R1(config-if)# exit
 <empty>
@@ -1691,7 +1691,7 @@ Total steps: 482
 <empty>
 
 [166/482] r1 R1(config-router)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [167/482] r1 R1(config-router)# exit
 <empty>
@@ -1700,7 +1700,7 @@ Total steps: 482
 <empty>
 
 [169/482] r1 R1(config-router)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [170/482] r1 R1(config-router)# exit
 <empty>
@@ -1709,7 +1709,7 @@ Total steps: 482
 <empty>
 
 [172/482] r1 R1(config-router)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [173/482] r1 R1(config-router)# exit
 <empty>
@@ -1718,7 +1718,7 @@ Total steps: 482
 <empty>
 
 [175/482] r1 R1(config-router)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [176/482] r1 R1(config-router)# exit
 <empty>
@@ -1727,7 +1727,7 @@ Total steps: 482
 <empty>
 
 [178/482] r1 R1(dhcp-config)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [179/482] r1 R1(dhcp-config)# exit
 <empty>
@@ -1736,7 +1736,7 @@ Total steps: 482
 <empty>
 
 [181/482] r1 R1(config-line)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [182/482] r1 R1(config-line)# exit
 <empty>
@@ -1745,7 +1745,7 @@ Total steps: 482
 <empty>
 
 [184/482] r1 R1(config-line)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [185/482] r1 R1(config-line)# exit
 <empty>
@@ -1754,7 +1754,7 @@ Total steps: 482
 <empty>
 
 [187/482] r1 R1(config-line)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [188/482] r1 R1(config-line)# exit
 <empty>
@@ -1763,7 +1763,7 @@ Total steps: 482
 <empty>
 
 [190/482] r1 R1(config-std-nacl)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [191/482] r1 R1(config-std-nacl)# exit
 <empty>
@@ -1772,7 +1772,7 @@ Total steps: 482
 <empty>
 
 [193/482] r1 R1(config-ext-nacl)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [194/482] r1 R1(config-ext-nacl)# exit
 <empty>
@@ -1781,7 +1781,7 @@ Total steps: 482
 <empty>
 
 [196/482] r1 R1(config-route-map)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [197/482] r1 R1(config-route-map)# exit
 <empty>
@@ -1790,7 +1790,7 @@ Total steps: 482
 <empty>
 
 [199/482] r1 R1(config-cmap)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [200/482] r1 R1(config-cmap)# exit
 <empty>
@@ -1799,7 +1799,7 @@ Total steps: 482
 <empty>
 
 [202/482] r1 R1(config-pmap)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [203/482] r1 R1(config-pmap)# exit
 <empty>
@@ -1808,7 +1808,7 @@ Total steps: 482
 <empty>
 
 [205/482] r1 R1(config-isakmp)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [206/482] r1 R1(config-isakmp)# exit
 <empty>
@@ -1817,7 +1817,7 @@ Total steps: 482
 <empty>
 
 [208/482] r1 R1(cfg-crypto-trans)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [209/482] r1 R1(cfg-crypto-trans)# exit
 <empty>
@@ -1826,7 +1826,7 @@ Total steps: 482
 <empty>
 
 [211/482] r1 R1(config-crypto-map)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [212/482] r1 R1(config-crypto-map)# exit
 <empty>
@@ -1835,7 +1835,7 @@ Total steps: 482
 <empty>
 
 [214/482] r1 R1(config-keychain)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [215/482] r1 R1(config-keychain)# exit
 <empty>
@@ -1844,7 +1844,7 @@ Total steps: 482
 <empty>
 
 [217/482] r1 R1(config-track)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [218/482] r1 R1(config-track)# exit
 <empty>
@@ -1853,7 +1853,7 @@ Total steps: 482
 <empty>
 
 [220/482] r1 R1(config-vrf)# do show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [221/482] r1 R1(config-vrf)# exit
 <empty>
@@ -1943,7 +1943,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2472,7 +2472,7 @@ Total steps: 482
   !
   router ospf 1
   !
-  ! Last configuration change at 09:41:13 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 11:55:12 UTC Thu Aug 13 2026 by console
   ip vrf CUST
   no ip domain-lookup
   no logging buffered
@@ -2632,7 +2632,7 @@ Total steps: 482
   !
   router ospf 1
   !
-  ! Last configuration change at 09:41:13 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 11:55:12 UTC Thu Aug 13 2026 by console
   ip vrf CUST
   no ip domain-lookup
   no logging buffered
@@ -2833,7 +2833,7 @@ Total steps: 482
   !
   router ospf 1
   !
-  ! Last configuration change at 09:41:13 UTC Thu Aug 13 2026 by console
+  ! Last configuration change at 11:55:12 UTC Thu Aug 13 2026 by console
   alias exec sr show running-config
   alias exec sib show ip interface brief
   ip vrf CUST
@@ -2963,7 +2963,7 @@ Total steps: 482
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3140G7VK
+  Processor board ID FTX3344DN54
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -3312,7 +3312,7 @@ Total steps: 482
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE280FB9.EC49BA5E (09:41:13.923 UTC Thu Aug 13 2026)
+  reference time is EE282F20.8DD2F1A9 (11:55:12.554 UTC Thu Aug 13 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -3323,7 +3323,7 @@ Total steps: 482
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [412/482] r1 R1> show clock
-  *09:41:13.000 UTC Thu Aug 13 2026
+  *11:55:12.000 UTC Thu Aug 13 2026
 
 [413/482] r1 R1> show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -3364,8 +3364,8 @@ Total steps: 482
   
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
-      3  -rwx         1522   Aug 13 2026 09:41:13  cfg.txt
-      4  -rwx         2088   Aug 13 2026 09:41:13  backup.cfg
+      3  -rwx         1522   Aug 13 2026 11:55:12  cfg.txt
+      4  -rwx         2088   Aug 13 2026 11:55:12  backup.cfg
   
   256016384 bytes total (169776614 bytes free)
 
@@ -3494,7 +3494,7 @@ Total steps: 482
 
 [426/482] r1 R1> show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3140G7VK
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3344DN54
 
 [427/482] r1 R1> show environment
   Number of Critical alarms:  0

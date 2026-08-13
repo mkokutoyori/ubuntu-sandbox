@@ -6077,3 +6077,38 @@ Discrimine en restaurant le fichier : 2 cas sur 4 tombent.
 `Router1 uptime is 00:00:00` (un IOS qui vient de demarrer affiche des
 minutes) et l'adresse MAC de base rendue `02:00:00:00:00:01` la ou IOS
 ecrit trois groupes pointes, `0200.0000.0001`.
+
+---
+
+## La banniere de demarrage contredisait `show version`
+
+Fichiers : `src/network/devices/CiscoRouter.ts`,
+`src/__tests__/unit/network-v2/banniere-demarrage-cisco-formats.test.ts`
+(nouveau).
+
+Deux lignes de la banniere d'un routeur neuf ne parlaient pas IOS :
+
+```
+Router1 uptime is 00:00:00
+Base ethernet MAC address: 02:00:00:00:00:01
+```
+
+**L'uptime** etait rendu par `formatUptime`, l'horloge des objets
+`track` — un HH:MM:SS, donc une autre unite ET une autre commande. IOS
+compte cette ligne en MINUTES et n'ecrit jamais de secondes ;
+`formatIosUptime` le fait depuis toujours, son propre commentaire
+enoncant deja la regle, et c'est ce que `show version` appelle. La meme
+machine se contredisait donc sur son propre age selon l'endroit ou on le
+lisait.
+
+**L'adresse MAC de base** sortait en deux-points, la notation d'un hote.
+IOS ecrit trois groupes pointes, et `CiscoSwitch` le faisait deja par
+`toCiscoString()` : le routeur etait le seul a ne pas suivre.
+
+Le correctif ne reecrit aucun format a la main, il branche le routeur
+sur ce qui existait. Le troisieme cas du test epingle cela : la banniere
+et `show version` doivent rendre la MEME chaine, pour qu'elles ne
+puissent plus diverger.
+
+Discrimine en restaurant `CiscoRouter.ts` : 3 cas sur 4 tombent. Aucun
+test existant ne figeait les anciens formats, verifie avant de changer.

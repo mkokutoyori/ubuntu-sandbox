@@ -65,8 +65,8 @@ import { TcpMssClamper as TcpMssClamperImpl } from '../ipsec/TcpMssClamper';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import {
   algorithmesRetenus, chassisSerial, CISCO_HARDWARE_PROFILES, licenseTable,
+  formatIosUptime,
 } from './shells/cisco/CiscoCommonShow';
-import { formatUptime } from './shells/cisco/CiscoTrackCommands';
 
 export class CiscoRouter extends Router {
   protected bootsInterfacesShutdown(): boolean {
@@ -628,7 +628,7 @@ export class CiscoRouter extends Router {
       'Technical Support: http://www.cisco.com/techsupport',
       `Copyright (c) 1986-2025 by Cisco Systems, Inc.`,
       '',
-      `${this.hostname} uptime is ${formatUptime(this._getUptimeMs?.() ?? 0)}`,
+      `${this.hostname} uptime is ${formatIosUptime(this._getUptimeMs?.() ?? 0)}`,
       'System returned to ROM by power-on',
       'Last reload reason: power-on',
       '',
@@ -649,7 +649,7 @@ export class CiscoRouter extends Router {
       `${hw.nvramDisplayKB}K bytes of non-volatile configuration memory.`,
       `${Math.floor(hw.flashTotalBytes / 1024)}K bytes of ATA System CompactFlash 0 (Read/Write)`,
       '',
-      `Base ethernet MAC address: ${ports.values().next().value?.getMAC() || '00:00:00:00:00:00'}`,
+      `Base ethernet MAC address: ${ports.values().next().value?.getMAC().toCiscoString() ?? '0000.0000.0000'}`,
       // Le registre gouverne le demarrage : il est ANNONCE au demarrage
       // sur une vraie machine, et c'est la seule facon de voir qu'un
       // `config-register 0x2142` va faire ignorer la configuration au
