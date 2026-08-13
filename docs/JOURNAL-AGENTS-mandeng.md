@@ -6155,3 +6155,49 @@ Verification refaite autrement : tous les consommateurs de
 `getBootSequence()` ont ete relus et executes
 (`cisco-chassis-identity`, `cisco-switch-l3-referential`,
 `cisco-switch-diagnostics-report`), 46 cas verts.
+
+---
+
+## 432 scenarios de privileges, en table, entre equipements
+
+Fichier : `src/__tests__/unit/network-v2/cross-equipment-privilege-suite.test.ts`
+(nouveau). Frere de `cross-equipment-ssh-suite.test.ts` : un LAN
+heterogene, `test.each` sur des lignes de donnees, ajouter un cas est
+ajouter une ligne. La ou l'autre demande « SSH atteint-il le pair »,
+celle-ci pose la question du dessous : **une fois sur le pair, que
+peut-on lancer ?**
+
+**La matrice cross-equipements n'est pas uniforme, et c'est mesure :**
+
+- **Un Catalyst n'est pas une cible SSH** — `Switch` n'a aucune pile TCP,
+  l'ssh n'aboutit pas. La suite de reference le dit deja dans sa
+  topologie (« pure L2 switches — no L3 address »). Le commutateur garde
+  donc toute la matrice mais par sa vty, qui est le meme portail, et §13
+  epingle le refus au lieu de le laisser en trou.
+- **VRP ne lit pas la table `privilege` d'IOS** — un pair Huawei repond
+  `display version` a tous les niveaux. §7 fige cette DIFFERENCE plutot
+  qu'une uniformite inventee.
+- Ce qui traverse vraiment le fil : Linux PC, serveur Linux et Windows PC
+  vers le routeur Cisco et le routeur Huawei (§1, §3, §11, §12).
+
+Quinze sections, 432 cas, 3,1 s : le LAN est bati UNE fois et
+re-enregistre par cas (le montage global vide le registre, que le
+lanceur SSH consulte), les deux sections qui MUTENT la configuration
+batissent le leur.
+
+### Deux erreurs a moi, corrigees par la mesure
+
+1. **J'avais devine des niveaux par defaut.** `clear counters`,
+   `show logging` et `show tech-support` sont a 15, pas a 1. Mesures,
+   puis encodes.
+2. **La premiere execution a donne 29 rouges, tous dus a un seul mot.**
+   J'avais pose `privilege exec level 3 show` sur le laboratoire
+   PARTAGE : elle couvre toute la branche `show` et deplacait donc aussi
+   les commandes que §6 croyait laissees a leur defaut. La regle faisait
+   exactement son travail — c'est sa place qui etait fausse. Elle vit
+   desormais dans le laboratoire de §4, dont elle est le sujet, et la
+   lecon est ecrite dans le fichier plutot qu'effacee.
+
+Discrimination : en neutralisant `CommandLevelTable.levelOf` (tout au
+niveau 1), **126 des 432 tombent**. La suite mesure le mecanisme et ne
+passe pas a vide.
