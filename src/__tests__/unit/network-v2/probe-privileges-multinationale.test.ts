@@ -145,12 +145,37 @@ describe('ACME — chaque role ouvre a son niveau, sur dix roles', () => {
 });
 
 describe('ACME — separation des devoirs : lire n\'est pas ecrire', () => {
-  it('l\'auditeur LIT la configuration entiere', async () => {
+  /**
+   * Ce cas affirmait que l'auditeur lit la configuration ENTIÈRE, dont
+   * les comptes locaux et les délégations. C'est exactement ce que Cisco
+   * dit qui ne doit pas arriver : `show running-config` ne montre que
+   * « les commandes que l'utilisateur courant peut MODIFIER », et la
+   * documentation nomme elle-même le risque — un niveau intermédiaire
+   * qui lit `snmp-server community` reprend la machine.
+   *
+   * Le scénario garde son objet, « lire n'est pas écrire », et gagne le
+   * bon enseignement : déléguer `show running-config` ne délègue pas la
+   * lecture de tout. Ce que l'auditeur doit voir se délègue ligne à
+   * ligne, dans l'espace `configure`.
+   */
+  it('l\'auditeur lit la configuration RAMENÉE à ce qu\'il peut modifier', async () => {
     const r = await siege();
     await ouvre(r, AUDITEUR);
     const cfg = await r.executeCommand('show running-config');
-    expect(cfg).toContain('username arch.reseau');
-    expect(cfg).toContain('privilege exec level 7 configure terminal');
+    expect(cfg).toContain('Building configuration');
+    expect(cfg).not.toContain('username arch.reseau');
+    expect(cfg).not.toContain('privilege exec level 7 configure terminal');
+  }, 30_000);
+
+  it('ce que l\'auditeur doit voir se délègue explicitement', async () => {
+    const r = await siege();
+    await ouvre(r, ARCHITECTE);
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('privilege configure level 5 hostname');
+    await r.executeCommand('end');
+
+    await ouvre(r, AUDITEUR);
+    expect(await r.executeCommand('show running-config')).toContain('hostname ');
   }, 30_000);
 
   it('l\'auditeur n\'ECRIT rien — ni configuration, ni interface', async () => {

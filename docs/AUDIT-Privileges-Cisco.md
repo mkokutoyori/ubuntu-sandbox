@@ -1038,3 +1038,59 @@ changements** : elle ne reproduisait pas le laboratoire du test, et
 conclure dessus aurait envoyé chercher une régression inexistante dans le
 rendu des mots de passe. C'est la comparaison avec l'état d'avant, et
 non la reproduction seule, qui a tranché.
+
+---
+
+## Étape 6 — `show running-config` ne montre que ce qu'on peut modifier (C5)
+
+*Le constat le plus lourd pédagogiquement : le simulateur divulguait
+précisément l'exemple que Cisco cite pour justifier le filtrage.*
+
+**Fichiers** — `cli/CliAuthorization.ts` (`filterConfigForLevel`),
+`CiscoShellBase.ts`, `CiscoIOSShell.ts`, `CiscoSwitchShell.ts` ;
+`src/__tests__/unit/network-v2/cisco-running-config-filtered.test.ts`
+(neuf, 9 cas) ; `probe-privileges-multinationale.test.ts` (corrigé).
+
+**Rouge — 7 échecs sur 9.** Les 2 verts des deux côtés sont les cas de
+**non-régression au niveau 15**, dont c'est l'objet.
+
+**Vert** — 9/9, puis **42 fichiers / 1 439 cas** connexes, plus les
+**9 fichiers / 86 cas** de sérialisation et d'aller-retour de topologie.
+
+**Le mécanisme, et la seule décision qui comptait.** `filterConfigForLevel`
+juge chaque ligne : à l'indentation 0 dans l'espace `configure`, indentée
+dans l'espace du bloc qui la porte (`interface` → `interface`, `line` →
+`line`). **Un bloc dont l'en-tête est invisible disparaît en entier** —
+montrer ` ip address 10.0.0.1` sans dire de quelle interface il s'agit ne
+serait ni plus sûr ni plus lisible. Les lignes d'ancrage (`!`, `end`, les
+en-têtes) ne sont gouvernées par aucun niveau et traversent.
+
+**Au niveau 15, la sortie est rendue telle quelle**, par un retour
+anticipé : le cas courant ne traverse aucune logique nouvelle, ce qui
+borne le risque de ce correctif à la seule situation qu'il vise.
+
+**`show startup-config` est filtré aussi.** La NVRAM porte la *même*
+configuration que la mémoire vive ; laisser l'autre commande la rendre en
+entier aurait rouvert la fuite par la porte d'à côté.
+
+**Vérifié plutôt que supposé : l'export de topologie n'est pas touché.**
+Il passe par `Router.getRunningConfig()` → `shell.getRunningConfigText()`,
+et non par la commande du trie — donc il capture toujours l'intégralité,
+ce qu'un export doit faire. Les neuf fichiers d'aller-retour le
+confirment.
+
+**Un test encodait C5 comme contrat de scénario**, et c'est le troisième
+de la série (après G6 à l'étape 3 et les deux de l'étape 4).
+`probe-privileges-multinationale` affirmait qu'un auditeur de niveau 5
+« LIT la configuration entière », y compris les comptes locaux et les
+délégations — exactement ce que Cisco dit qui ne doit pas arriver. Le
+scénario **garde son objet** (« lire n'est pas écrire ») et gagne le bon
+enseignement : déléguer `show running-config` ne délègue pas la lecture
+de tout, et ce que l'auditeur doit voir se délègue ligne à ligne. Un
+second cas a été ajouté pour montrer cette délégation explicite, plutôt
+que de retirer la propriété sans la remplacer.
+
+**Portée.** Reste C8 — l'autorisation AAA par commande, branchée sur le
+seul terminal graphique — puis les constats majeurs M1/M2 (le niveau de
+la ligne), M3/M6 (promotion des parents, mot-clé `all`), M7/M8/M9/M10/M11
+(les vues), et le nettoyage G1/G2/G4/G7/G8/G9.

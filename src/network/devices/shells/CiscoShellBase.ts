@@ -116,7 +116,7 @@ import type { TftpEndpoint } from '@/network/tftp/types';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import {
   CliAuthorization, CommandLevelTable, ParserViewRegistry, scopeForMode,
-  type CliPrincipal, type AuthScope, AUTH_SCOPES,
+  type CliPrincipal, type AuthScope, AUTH_SCOPES, filterConfigForLevel,
 } from './cli/CliAuthorization';
 import { CommandCanonicalizer } from './cli/CommandCanonicalizer';
 import type {
@@ -1197,7 +1197,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     } | null;
     const snapshot = dev?.getStartupConfigSnapshot?.() ?? dev?.getStartupConfig?.() ?? null;
     if (snapshot === null) return '% startup-config is not present';
-    return renderStartupConfig(snapshot, this.fs().nvramTotalBytes());
+    // La NVRAM porte la MEME configuration que la memoire vive : la lire
+    // par l'autre commande ne doit pas contourner le filtre par niveau.
+    return this.filtrerConfigurationParNiveau(
+      renderStartupConfig(snapshot, this.fs().nvramTotalBytes()),
+    );
   }
 
   protected fs(): CiscoFileSystem {
@@ -2142,6 +2146,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (connue(this.getActiveTrie()) || connue(this.configTrie)) return 15;
     return null;
+  }
+
+  /**
+   * Une configuration rendue, ramenee a ce que CETTE session peut
+   * modifier.
+   *
+   * Au niveau 15 la sortie est rendue telle quelle : le cas courant ne
+   * traverse aucune logique nouvelle, et le filtre ne peut donc pas
+   * abimer ce que toutes les autres vues de la configuration attendent.
+   */
+  protected filtrerConfigurationParNiveau(texte: string): string {
+    if (this.currentPrivilegeLevel >= 15) return texte;
+    // Toute commande de configuration nait au niveau 15 sur IOS, quel
+    // que soit son espace : c'est la delegation qui la descend.
+    const lignes = filterConfigForLevel(texte.split('\n'), (scope, commande) =>
+      this.autorisation().authorize({
+        principal: this.mandataire(),
+        scope,
+        command: commande,
+        defaultLevel: 15,
+      }) === 'run');
+    return lignes.join('\n');
   }
 
   /** La session voit-elle cette commande ? Une seule regle, deja ecrite. */

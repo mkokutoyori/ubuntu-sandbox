@@ -198,6 +198,62 @@ export function privilegeConfigLines(rules: Map<string, number> | undefined): st
 }
 
 /**
+ * Ce qui n'est pas une commande dans une configuration rendue : l'ancrage
+ * du texte autour des lignes, qu'aucun niveau ne gouverne.
+ */
+const LIGNES_HORS_COMMANDE = /^(?:!|end|Building configuration\.\.\.|Current configuration|Using \d+ out of|\s*$)/;
+
+/** L'espace de nommage des lignes INDENTEES sous un en-tete de bloc. */
+function scopeDuBloc(entete: string): AuthScope {
+  const premier = normalise(entete).split(' ')[0];
+  if (premier === 'interface') return 'interface';
+  if (premier === 'line') return 'line';
+  return 'configure';
+}
+
+/**
+ * Filtrer une configuration rendue par le niveau de la session.
+ *
+ * IOS ne montre que « all the commands that the current user is able to
+ * modify », et Cisco documente ce filtrage comme une mesure de SECURITE
+ * en nommant lui-meme le contre-exemple : sans lui, un operateur de
+ * niveau intermediaire lit `snmp-server community …` et s'en sert pour
+ * reprendre la machine. Ce simulateur rendait la configuration ENTIERE.
+ *
+ * La consequence normale — sans delegation, la configuration parait vide
+ * — est celle qu'IOS produit, et non un defaut de ce filtre.
+ *
+ * Un bloc dont l'EN-TETE est invisible disparait en entier : montrer
+ * ` ip address …` sans dire de quelle interface il s'agit ne serait ni
+ * plus sur ni plus lisible.
+ */
+export function filterConfigForLevel(
+  lignes: readonly string[],
+  visible: (scope: AuthScope, command: string) => boolean,
+): string[] {
+  const out: string[] = [];
+  let blocMasque = false;
+  let scopeCourant: AuthScope = 'configure';
+  for (const ligne of lignes) {
+    const indentee = /^\s/.test(ligne) && ligne.trim().length > 0;
+    if (LIGNES_HORS_COMMANDE.test(ligne)) {
+      blocMasque = false;
+      out.push(ligne);
+      continue;
+    }
+    if (!indentee) {
+      blocMasque = !visible('configure', ligne);
+      scopeCourant = scopeDuBloc(ligne);
+      if (!blocMasque) out.push(ligne);
+      continue;
+    }
+    if (blocMasque) continue;
+    if (visible(scopeCourant, ligne.trim())) out.push(ligne);
+  }
+  return out;
+}
+
+/**
  * Les vues, y compris COMPOSEES.
  *
  * Une superview ne porte aucune commande a elle : elle reunit les vues

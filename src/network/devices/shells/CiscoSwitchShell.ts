@@ -2412,7 +2412,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
 
     this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
-      return this.buildRunningConfig(this.d());
+      return this.filtrerConfigurationParNiveau(this.buildRunningConfig(this.d()));
     });
 
     for (const chemin of ['show startup-config', 'show configuration']) {

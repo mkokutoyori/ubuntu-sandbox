@@ -999,7 +999,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return out.join('\n');
     });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
+    trie.register('show running-config', 'Display running configuration', () =>
+      this.filtrerConfigurationParNiveau(Show.showRunningConfig(getRouter())));
     // `show startup-config` lit la NVRAM : son en-tête annonce
     // l'occupation, pas « Building configuration… » qui appartient à
     // `show running-config`.
