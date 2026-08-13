@@ -341,6 +341,22 @@ export abstract class CLITerminalSession extends TerminalSession {
     this.updatePrompt();
   }
 
+  /**
+   * `Press RETURN to get started.` — that RETURN OPENS the session, it
+   * does not submit a line. Letting it fall through to the ordinary Enter
+   * handling made the console echo an extra line and show the prompt
+   * twice, which is not what a real console does.
+   *
+   * The condition is narrow on purpose: only a bare Enter, only while the
+   * banner is still up, only with nothing typed. A caller that filled the
+   * buffer first (`setInputBuf`, the scripted SSH paths) leaves it
+   * non-empty and is never swallowed — an earlier, wider version of this
+   * gate ate real commands that way.
+   */
+  private returnOpensTheSession(e: KeyEvent): boolean {
+    return this.promptHiddenUntilFirstKey && e.key === 'Enter' && this.input === '';
+  }
+
   /** Rouvrir une session EXEC apres la frappe. */
   protected reopenConsoleExec(): void {
     this.updatePrompt();
@@ -368,6 +384,11 @@ export abstract class CLITerminalSession extends TerminalSession {
   }
 
   protected handleModeKey(e: KeyEvent): boolean {
+    if (this.returnOpensTheSession(e)) {
+      this.revealPromptOnFirstKey();
+      this.notify();
+      return true;
+    }
     this.revealPromptOnFirstKey();
 
     // La console est libre : toute frappe est absorbee, seule RETURN

@@ -6039,3 +6039,41 @@ pas `__tests__` — seule l'execution des tests attrape cette classe-la.
 `^` sans `/m`), d'ou un `pingOnSimulatedClock is not defined` sur tout un
 fichier. Remplacee par une insertion ligne a ligne apres le dernier
 import complet.
+
+---
+
+## `Press RETURN to get started.` ouvre la session, il ne soumet pas de ligne
+
+Fichiers : `src/terminal/sessions/CLITerminalSession.ts`,
+`src/__tests__/unit/terminal/press-return-ouvre-sans-soumettre.test.ts`
+(nouveau).
+
+Sur un routeur neuf, la banniere etait suivie de DEUX invites :
+
+```
+Press RETURN to get started.
+
+Router1>
+Router1>
+```
+
+**Une seule frappe faisait deux metiers** : elle revelait l'invite, puis
+retombait dans le traitement ordinaire d'Entree, qui ECHOUE la ligne que
+l'operateur n'a pas tapee. `addEchoLine` garde l'invite dans
+`promptText` et la commande dans `text` — une commande VIDE accompagnee
+d'une invite se rend donc comme un `Router1>` nu. Avec l'invite vivante
+en dessous, la machine demande deux fois.
+
+La condition est etroite a dessein : Entree seule, banniere encore
+affichee, tampon vide. C'est une erreur que j'avais deja faite dans
+cette session — une version plus large de ce meme garde-fou avait mange
+de vraies commandes, les chemins SSH scriptes remplissant le tampon par
+`setInputBuf` avant d'envoyer Entree. La condition « tampon vide » est
+ce qui les protege, et le dernier cas du test l'epingle.
+
+Discrimine en restaurant le fichier : 2 cas sur 4 tombent.
+
+**Deux points VUS et NON traites**, faute de savoir s'ils etaient vises :
+`Router1 uptime is 00:00:00` (un IOS qui vient de demarrer affiche des
+minutes) et l'adresse MAC de base rendue `02:00:00:00:00:01` la ou IOS
+ecrit trois groupes pointes, `0200.0000.0001`.
