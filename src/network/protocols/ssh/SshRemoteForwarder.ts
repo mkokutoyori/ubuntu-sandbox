@@ -6,10 +6,9 @@
  * is bridged back through the SSH session to `localHost:localPort` on
  * the client side.
  *
- * For the simulator, the bridge is exposed via an exec channel running
- * `nc <localHost> <localPort>` on the client — pedagogically sufficient
- * to demonstrate that the listener exists on the remote and traffic is
- * carried over the SSH session.
+ * The client is the end that dials `localHost:localPort`, mirroring real
+ * OpenSSH: `-R` reverses which side listens, so it also reverses which
+ * side opens the far leg. See `forwardRelay.ts`.
  *
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P6.
  */
@@ -17,7 +16,7 @@
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
-import { isOk } from './Result';
+import { relayThroughDialer } from './forwardRelay';
 
 export interface RemoteForwardSpec {
   /** Port opened on the remote (SSH server) device. */
@@ -37,6 +36,11 @@ export class SshRemoteForwarder {
     private readonly remoteDevice: EndHost,
     private readonly session: SshSession | null,
     private readonly spec: RemoteForwardSpec,
+    /**
+     * The tunnel's OTHER end — for `-R` that is the CLIENT, which dials
+     * `localHost:localPort` on the remote user's behalf.
+     */
+    private readonly dialDevice: EndHost | null = null,
   ) {}
 
   getSpec(): RemoteForwardSpec {
@@ -65,27 +69,11 @@ export class SshRemoteForwarder {
   // ─── private ────────────────────────────────────────────────────
 
   private handleAccept(conn: TcpConnection): void {
-    if (!this.session) {
-      conn.close();
-      return;
-    }
-    // The pedagogical stub: launch `nc` on the CLIENT (which is the
-    // process the SSH session can reach via the same channel API the
-    // local forwarder uses).
-    const channelResult = this.session.openExecChannel(
-      `nc ${this.spec.localHost} ${this.spec.localPort}`,
+    relayThroughDialer(
+      conn,
+      this.dialDevice,
+      this.spec.localHost,
+      this.spec.localPort,
     );
-    if (!isOk(channelResult)) {
-      conn.close();
-      return;
-    }
-    // Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
-    // result protocol, not a continuous stream — pre-existing, untested
-    // pedagogical stub, not actually wired to pump bytes. Cast preserves
-    // that behavior rather than papering over it.
-    const channel = channelResult.value as unknown as { write(data: string): void; onData(handler: (data: string) => void): () => void; close(): void };
-    conn.onData((data) => channel.write(data));
-    channel.onData((data) => conn.write(data));
-    conn.onClose?.(() => channel.close());
   }
 }

@@ -394,6 +394,12 @@ Ceci contredit directement `GAP.md` §7.3, qui décrit ce chemin comme
 réellement — le commentaire du code dit l'inverse : `execute()` n'est jamais
 appelé du tout sur ce chemin.
 
+> **État depuis la Phase 10** : ce constat est corrigé. Les trois
+> forwarders de ce chemin relaient de vrais octets par une paire de
+> connexions TCP (`forwardRelay.ts`) ; le canal `exec` a disparu. Le
+> paragraphe ci-dessus décrit l'état d'avant, conservé parce que c'est
+> lui qui motive l'objectif 10.
+
 **Chemin 2 — `executeCommand`** (`LinuxSshClient.ts` +
 `SshPortForward.ts`/`SshForwardingTable.ts`, utilisé par
 `LinuxPC`/`LinuxServer` et réutilisé par les shells Cisco/Huawei pour `ssh`
@@ -965,6 +971,46 @@ passe dans tous les cas.
   sur `PortProxySocketProjection`, classe distincte de
   `PortProxyTable`/`WindowsServicePortProjection`, qui porte désormais un
   vrai relais depuis la Phase 7).
+
+### Phase 10 — SSH : relais réel pour la pile interactive (« Chemin 1 ») — livrée
+
+La Phase 8 avait délibérément laissé le chemin interactif de côté (§3,
+« Choix de la pile »). Il est comblé ici, avec exactement la même
+sémantique — ce qui compte, parce que deux relais divergeant sur « qui
+compose la patte lointaine » seraient pires qu'un seul.
+
+- `src/network/protocols/ssh/forwardRelay.ts` (nouveau) : `dialThroughTunnel`
+  (ouvrir la patte lointaine), `pipeSockets` (relier les deux sockets),
+  `relayThroughDialer` (les deux d'un coup, en refusant la connexion
+  acceptée si la patte lointaine ne s'ouvre pas). Un seul module pour les
+  trois forwarders, plutôt que trois copies du même pontage.
+- Les trois forwarders reçoivent un 4ᵉ paramètre `dialDevice` — l'AUTRE
+  extrémité du tunnel, pas la machine qui porte l'écouteur : le serveur
+  pour `-L`/`-D`, le client pour `-R`. Le canal `exec` (`nc <host> <port>`,
+  jamais invoqué) disparaît des trois.
+- `LinuxTerminalSession.connectAndEnterSsh` résout le pair AVANT
+  d'enregistrer les forwards (il ne le faisait qu'après, pour `-R` seul) et
+  le passe aux trois installateurs ; `asDialDevice()` refuse un pair sans
+  pile TCP, auquel cas l'écouteur refuse — ce que voit un utilisateur dont
+  le forward ne peut pas être servi.
+- `-D` est câblé ici, contrairement à la Phase 8 : cette pile-ci possède
+  déjà l'analyse SOCKS5 qui manquait à l'autre. La réponse SOCKS est
+  désormais écrite APRÈS la composition, donc `REP=0x05` (connection
+  refused) quand la patte lointaine ne s'ouvre pas, au lieu d'un succès
+  annoncé qui ne pontait rien (`ssh-lan-dynamicforward.test.ts` D9 corrigé
+  en conséquence : il affirmait ce succès mensonger).
+- Comme en Phase 8, aucune adresse n'est réécrite : deux connexions TCP
+  réelles et indépendantes de part et d'autre du relais, donc pas
+  d'asymétrie de voie retour façon NAT.
+- Vérification : `ssh-forwards-interactifs-relaient.test.ts` (4 cas, dont
+  un témoin de refus) discriminé par `git stash` — les 4 échouent avant le
+  correctif, y compris le témoin, puisque le comportement d'avant était
+  « on accepte tout et on jette » ; `e2e/ssh-reverse-forward-listener.spec.ts`
+  pour la moitié observable au navigateur.
+- Restent hors périmètre : `BIND`/`UDP ASSOCIATE` de SOCKS5, et
+  l'interopération des deux piles (chantier d'unification SSH) — un client
+  au prompt ne compose toujours pas un port de forward en loopback, les
+  deux tables de forwards restant distinctes.
 
 ---
 

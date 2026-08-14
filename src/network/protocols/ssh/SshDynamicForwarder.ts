@@ -3,13 +3,14 @@
  *
  * Opens a TCP listener on `socksPort` on the local device. Each
  * accepted connection runs through a minimal SOCKS5 handshake to
- * extract the target host/port, then a bridge is established to the
- * SSH server via an exec channel running `nc <host> <port>`.
+ * extract the target host/port, which the SSH server then dials on the
+ * user's behalf — the two sockets are piped both ways (`forwardRelay.ts`).
  *
  * Supported SOCKS surface (pedagogical subset):
  *   - Version negotiation: `05 NM METHODS` → `05 00` (no-auth).
  *   - CONNECT request with `atyp ∈ {1: IPv4, 3: domain, 4: IPv6}`.
- *   - Reply: `05 00 00 01 00 00 00 00 00 00` (success, bound to 0.0.0.0:0).
+ *   - Reply: `05 00 00 01 00 00 00 00 00 00` (success, bound to 0.0.0.0:0),
+ *     or REP=0x05 (connection refused) when the far leg cannot be opened.
  *
  * UDP ASSOCIATE / BIND are not implemented — they are rare in tutorials.
  *
@@ -20,7 +21,7 @@
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
-import { isOk } from './Result';
+import { dialThroughTunnel, pipeSockets } from './forwardRelay';
 
 export interface DynamicForwardSpec {
   /** Port the SOCKS listener binds to on the local device. */
@@ -44,6 +45,11 @@ export class SshDynamicForwarder {
     private readonly localDevice: EndHost,
     private readonly session: SshSession | null,
     private readonly spec: DynamicForwardSpec,
+    /**
+     * The tunnel's OTHER end — the SSH server, which dials whatever the
+     * SOCKS request names on the user's behalf.
+     */
+    private readonly dialDevice: EndHost | null = null,
   ) {}
 
   getSpec(): DynamicForwardSpec {
@@ -109,34 +115,29 @@ export class SshDynamicForwarder {
           return;
         }
         this.lastConnectTarget = target;
+        // The reply reports the far leg, so it is written after the dial:
+        // REP=0x05 (connection refused) when there is nothing to dial from
+        // or the server cannot open a socket to the target.
+        const remote = dialThroughTunnel(
+          this.dialDevice,
+          target.host,
+          target.port,
+        );
+        if (!remote) {
+          conn.write('\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00');
+          conn.close();
+          return;
+        }
         // Reply succeeded, atyp=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0.
         conn.write('\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00');
         phase = 'bridging';
-        this.startBridge(conn, target);
+        pipeSockets(conn, remote);
         return;
       }
       // Bridging is handled by startBridge's installed handlers.
     });
   }
 
-  private startBridge(conn: TcpConnection, target: ConnectTarget): void {
-    if (!this.session) return;
-    const channelResult = this.session.openExecChannel(
-      `nc ${target.host} ${target.port}`,
-    );
-    if (!isOk(channelResult)) {
-      conn.close();
-      return;
-    }
-    // Known gap: `ISshExecChannel` only exposes the one-shot `execute()`
-    // result protocol, not a continuous stream — pre-existing, untested
-    // stub, not actually wired to pump bytes. Cast preserves that behavior
-    // rather than papering over it.
-    const channel = channelResult.value as unknown as { write(data: string): void; onData(handler: (data: string) => void): () => void; close(): void };
-    conn.onData((data) => channel.write(data));
-    channel.onData((data) => conn.write(data));
-    conn.onClose?.(() => channel.close());
-  }
 }
 
 /**

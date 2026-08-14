@@ -3027,16 +3027,22 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     //
+    // Every forwarder needs the tunnel's OTHER end, so the peer is
+    // resolved first: `-L`/`-D` are dialled by the server, `-R` by us.
+    // Any peer holding a TCP stack can dial — a router and a Windows
+    // machine both have one — so the dialler is not narrowed to a
+    // LinuxMachine the way `-R`'s listener below is.
+    const linuxRemoteDevice = findLinuxMachineByIp(host);
+    const dialPeer = linuxRemoteDevice ?? findEquipmentByIp(host);
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
-    const forwarders = this.installLocalForwards(session, host, meta);
+    const forwarders = this.installLocalForwards(session, host, meta, dialPeer);
     // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
     // `-L` (always on the local device).
-    const dynamicForwarders = this.installDynamicForwards(session, host, meta);
+    const dynamicForwarders = this.installDynamicForwards(session, host, meta, dialPeer);
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
-    const linuxRemoteDevice = findLinuxMachineByIp(host);
     const remoteForwarders = linuxRemoteDevice
       ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta)
       : [];
@@ -4016,6 +4022,7 @@ export class LinuxTerminalSession extends TerminalSession {
     session: SshSession,
     sshHost: string,
     meta: { localForwards?: readonly LocalForward[] },
+    peerDevice: unknown,
   ): SshLocalForwarder[] {
     const forwards = meta.localForwards ?? [];
     if (forwards.length === 0) return [];
@@ -4024,6 +4031,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
+    const dialDevice = asDialDevice(peerDevice);
     const out: SshLocalForwarder[] = [];
     for (const fwd of forwards) {
       const forwarder = new SshLocalForwarder(localDevice, session, {
@@ -4031,7 +4039,7 @@ export class LinuxTerminalSession extends TerminalSession {
         remoteHost: fwd.remoteHost,
         remotePort: fwd.remotePort,
         sshHost,
-      });
+      }, dialDevice);
       forwarder.register();
       this.addLine(
         `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
@@ -4049,6 +4057,7 @@ export class LinuxTerminalSession extends TerminalSession {
     session: SshSession,
     sshHost: string,
     meta: { dynamicForwards?: readonly DynamicForward[] },
+    peerDevice: unknown,
   ): SshDynamicForwarder[] {
     const forwards = meta.dynamicForwards ?? [];
     if (forwards.length === 0) return [];
@@ -4057,13 +4066,14 @@ export class LinuxTerminalSession extends TerminalSession {
     if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
+    const dialDevice = asDialDevice(peerDevice);
     const out: SshDynamicForwarder[] = [];
     for (const fwd of forwards) {
       const forwarder = new SshDynamicForwarder(localDevice, session, {
         socksPort: fwd.socksPort,
         bindAddress: fwd.bindAddress,
         sshHost,
-      });
+      }, dialDevice);
       forwarder.register();
       this.addLine(
         `SOCKS proxy listening on ${fwd.bindAddress ?? '*'}:${fwd.socksPort} via ${sshHost}`,
@@ -4099,7 +4109,7 @@ export class LinuxTerminalSession extends TerminalSession {
         localHost: fwd.localHost,
         localPort: fwd.localPort,
         sshHost,
-      });
+      }, asDialDevice(this.getLocalDevice()));
       forwarder.register();
       this.addLine(
         `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
@@ -4208,6 +4218,22 @@ function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
   const eq = findEquipmentByIp(targetIp);
   if (eq && eq instanceof LinuxMachine) return eq;
   return null;
+}
+
+/**
+ * The tunnel's far end must be able to open a socket for the forwarder to
+ * relay anything. A peer that resolves to nothing — or to an Equipment
+ * with no TCP stack — leaves the listener refusing connections, which is
+ * what the user sees when the forward cannot be served.
+ */
+function asDialDevice(
+  candidate: unknown,
+): import('@/network/devices/EndHost').EndHost | null {
+  if (!candidate) return null;
+  if (typeof (candidate as { getTcpStack?: unknown }).getTcpStack !== 'function') {
+    return null;
+  }
+  return candidate as import('@/network/devices/EndHost').EndHost;
 }
 
 /**
