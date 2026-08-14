@@ -29,7 +29,7 @@
 | 1 | `TcpStateMachine` | 34 | ✅ |
 | 1 | Audit de non-duplication (procédure permanente) | — | ✅ |
 | 1 | `SessionTable` | 33 | ✅ |
-| 1 | `SecurityRule` + `PolicyEvaluator` | — | ⏳ |
+| 1 | `SecurityRule` + `PolicyEvaluator` | 37 | ✅ |
 | 1 | `PolicyStore` | — | ⏳ |
 | 1 | `PacketContext` + `FirewallPipeline` | — | ⏳ |
 | 1 | Étapes de pipeline | — | ⏳ |
@@ -37,7 +37,7 @@
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 215 cas, verts.**
+**Total actuel : 252 cas, verts.**
 
 ---
 
@@ -255,6 +255,42 @@ horloge virtuelle globale et sans attente réelle.
 
 ---
 
+### E8 — `SecurityRule` + `PolicyEvaluator`
+
+`src/network/devices/firewall/policy/PolicyEvaluator.ts` — 37 cas.
+
+**Audit préalable (A4)** — candidat : `ACLEngine.evaluateACL`, qui est bien
+une itération première-correspondance rendant `permit`/`deny`. **Verdict :
+distinct.** `ACLEntry` n'a ni zone, ni objet nommé, ni service nommé, ni
+horaire, ni utilisateur, ni application, ni compteur d'octets ; c'est un
+matcher de *littéraux* lié à une interface et une direction. Extraire une
+primitive « itérer et rendre la première correspondance » coûterait plus
+cher qu'elle ne rapporte : trois lignes, sur deux types de critères sans
+recouvrement.
+
+**Divergence délibérée, mesurée et écrite** : `evaluateACL` rend `null` pour
+une ACL absente **ou vide** — « aucune ACL appliquée, pas deny-all », qui est
+le vrai comportement d'IOS. Un pare-feu fait l'**inverse** : une politique
+vide REFUSE (P8). Copier ici la sémantique de l'ACL ouvrirait le pare-feu en
+grand le jour où la politique est vide. Un cas l'épingle.
+
+**I-P3 vérifié par ses deux moitiés** : la règle qui correspond compte, la
+règle traversée sans correspondre ne compte pas. Sans la seconde, le
+compteur ne servirait à rien pour le diagnostic.
+
+**Les niveaux de sécurité ASA** sont un mode du même évaluateur, avec un
+**témoin** monté dans le même laboratoire : sous `deny-all`, haut→bas est
+refusé ; sous `security-level`, il est autorisé sans aucune règle. Sans ce
+témoin, les deux modes seraient indiscernables.
+
+**Défaut trouvé dans mon propre test (B4)** : j'avais écrit « inverser
+l'ordre du tableau inverse le verdict », ce qui contredisait le cas voisin
+épinglant que c'est la **séquence** qui décide. L'évaluateur avait raison ;
+le test exprimait mal I-P2. Corrigé en échangeant les séquences — ce que
+« déplacer une règle » veut dire.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -273,6 +309,7 @@ horloge virtuelle globale et sans attente réelle.
 | `ServiceObject` | `core/WellKnownPorts.ts` — `getServiceName(port, proto)` + table `IANA` | **Contrainte enregistrée — voir A3** |
 | `ObjectStore` | `object-group` n'apparaît que dans `ciscoArgumentHelp.ts` (texte d'aide) | **Aucun magasin existant** |
 | `TcpStateMachine` | `tcp/types.ts` → `TcpState` ; `TcpStack.ts` (1711 l.) | **Doublon partiel — voir A1** |
+| `PolicyEvaluator` | `ACLEngine.evaluateACL`, `Ipv6AclEngine`, `RoutePolicy` | **Distinct — voir A4** |
 | `SessionTable` | `LinuxIptablesManager.conntrack`, `SocketTable` | **Distinct.** `SocketTable` décrit ce qui *écoute sur cet hôte* ; la table de sessions décrit ce que le pare-feu *achemine* |
 
 ### A1 — `TcpSessionState` était un doublon de `TcpState`
@@ -340,6 +377,25 @@ convergence ne perd aucune information.
 À corriger dans `CLAUDE.md` le jour où ce module atteindra la couche
 vendeur : l'affirmation « aucun concept de zone » est inexacte.
 
+### A4 — `PolicyEvaluator` n'est pas `ACLEngine`, et ne doit pas lui ressembler
+
+`ACLEngine.evaluateACL` itère une liste et rend la première correspondance,
+comme le fera l'évaluateur de politique. La ressemblance s'arrête là :
+`ACLEntry` n'a ni zone, ni objet nommé, ni service nommé, ni horaire, ni
+utilisateur, ni application, ni compteur d'octets.
+
+**Le point à ne pas rater est une divergence, pas une ressemblance** :
+`evaluateACL` rend `null` pour une ACL absente **ou vide**, avec le
+commentaire « Undefined or empty ACL = no ACL applied (real IOS), not
+deny-all ». C'est juste pour IOS. Un pare-feu fait l'inverse — politique
+vide vaut refus (P8). Réutiliser ce moteur aurait importé sa sémantique
+d'ouverture par défaut dans un équipement dont le premier principe est de
+refuser.
+
+Aucune primitive commune n'est extraite : « itérer et rendre la première
+correspondance » fait trois lignes, et une abstraction partagée sur deux
+types de critères sans recouvrement coûterait plus qu'elle ne rapporte.
+
 ### A3 — Le catalogue de services prédéfinis devra lire `WellKnownPorts`
 
 `core/WellKnownPorts.ts` porte une table `IANA` et `getServiceName(port, proto)`.
@@ -373,6 +429,7 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B1 | « Rouge TDD » qui n'en était pas un (`vite` absent) | E1 | Installation puis remesure |
 | B2 | Adresses `'a'`/`'b'` invalides dans un test | E1 | Adresses réelles |
 | B3 | `TcpSessionState` redéfinissait `TcpState` du dépôt | E6 | `ObservedTcpState = Exclude<TcpState, 'listen'>` ; a fait gagner l'état `closing` |
+| B4 | Test I-P2 auto-contradictoire (ordre du tableau vs séquence) | E8 | Le test exprimait mal l'invariant ; l'évaluateur avait raison |
 
 ## Prochaines étapes
 
