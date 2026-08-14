@@ -47,9 +47,15 @@ const offerts = (t: string): string[] =>
     : t.split('\n').map((l) => MOT.exec(l)?.[1])
       .filter((x): x is string => !!x && x !== '<cr>');
 
-/** Un substitut d'argument (`WORD`, `A.B.C.D`, `<1-9>`) n'est pas un mot-cle. */
+/**
+ * Un substitut d'argument (`WORD`, `A.B.C.D`, `<1-9>`) n'est pas un
+ * mot-cle : on ne peut pas le taper tel quel, donc l'essayer ne mesure
+ * rien. Les bornes comptent a l'INTERIEUR du mot et pas seulement en
+ * tete — `X:X:X:X::X/<0-128>` est un substitut, et le premier jet le
+ * prenait pour un mot-cle faute de cette nuance.
+ */
 const estSubstitut = (k: string): boolean =>
-  k.startsWith('<') || /^[A-Z0-9.:$/-]+$/.test(k);
+  k.startsWith('<') || /^[A-Z0-9.:$/<>-]+$/.test(k);
 
 let serie = 0;
 async function neuf(prelude: readonly string[]): Promise<Dev> {
@@ -90,40 +96,22 @@ async function promessesNonTenues(
 /**
  * Le CLIQUET.
  *
- * Trois correctifs structurels ont ramene les soixante-dix promesses non
- * tenues a treize. Les treize restantes ne partagent aucune cause : ce
- * sont des defauts de commandes prises une a une — un mot-cle rendu par
- * une commande que ce simulateur n'implemente pas (`ip scp`, `no line`),
- * un message d'analyseur a corriger (`enable algorithm-type`), un
- * mot-cle perime (`show ip sla monitor`), des freres qui s'excluent et
- * ne le declarent pas (`show interfaces`).
+ * Le balayage a trouve SOIXANTE-DIX promesses non tenues. Elles sont
+ * toutes corrigees : quatre regles structurelles en ont emporte la
+ * plupart, et les dernieres etaient des commandes prises une a une —
+ * une commande annoncee et jamais ecrite (`write terminal`, `debug
+ * dhcp`, `no line`, `no debug domain`), une negation qui manquait, une
+ * arite jamais declaree, un rang d'argument decrit une place trop loin
+ * (`enable algorithm-type`).
  *
- * Elles sont NOMMEES plutot que tues, et le balayage exige l'egalite
- * exacte : aucune nouvelle ne peut apparaitre sans faire echouer ce
- * fichier, et en corriger une oblige a la retirer d'ici. La liste ne
- * peut que decroitre.
+ * La liste est donc VIDE, et l'egalite exacte la maintient : une
+ * nouvelle promesse non tenue fait echouer ce fichier en la nommant.
+ * On ne peut plus qu'y ajouter une regression, jamais l'ignorer.
  */
 const RESTE_CONNU = {
-  exec: [
-    '«show interfaces rate-limit ?» offre «accounting»',
-    '«show interfaces rate-limit ?» offre «counters»',
-    '«show interfaces stats ?» offre «accounting»',
-    '«show interfaces stats ?» offre «counters»',
-    '«show ip sla ?» offre «monitor»',
-  ],
-  config: [
-    '«enable ?» offre «algorithm-type»',
-    '«ip ?» offre «scp»',
-    '«no ?» offre «line»',
-    '«enable algorithm-type ?» offre «level»',
-    '«enable algorithm-type ?» offre «secret»',
-    '«ip scp ?» offre «server»',
-    '«no ip ?» offre «scp»',
-  ],
-  configIf: [
-    '«ip rip ?» offre «authentication»',
-    '«ipv6 address ?» offre «X:X:X:X::X/<0-128>»',
-  ],
+  exec: [] as readonly string[],
+  config: [] as readonly string[],
+  configIf: [] as readonly string[],
 } as const;
 
 describe('M5 — ce que `?` propose, la machine le connait', () => {
@@ -174,9 +162,54 @@ describe('les cas nommes de l audit', () => {
     for (const frere of ['description', 'rate-limit', 'summary']) {
       expect(o, frere).not.toContain(frere);
     }
-    // `accounting` et `counters` sont de VRAIS noeuds enfants et non des
-    // mots extraits : ils resistent a la regle ci-dessus et figurent dans
-    // le reste connu du cliquet, ou ils ne peuvent plus proliferer.
+  });
+
+  it.each([
+    ['write terminal', [], 'Current configuration'],
+    ['debug dhcp', [], 'debugging is on'],
+    ['undebug domain', [], 'debugging is off'],
+  ] as Array<[string, string[], string]>)(
+    '`%s` etait offerte et refusee ; elle fait maintenant ce qu elle annonce',
+    async (cmd, pre, attendu) => {
+      const r = await neuf(pre);
+      expect(String(await r.executeCommand(cmd)), cmd).toContain(attendu);
+    });
+
+  it('`no line vty 0 4` retire le bloc, et la configuration cesse de le rendre', async () => {
+    const r = await neuf(['configure terminal']);
+    await r.executeCommand('line vty 0 4');
+    await r.executeCommand('exec-timeout 9 0');
+    await r.executeCommand('exit');
+    expect(String(await r.executeCommand('do show running-config'))).toContain('line vty 0 4');
+    expect(String(await r.executeCommand('no line vty 0 4'))).not.toContain('Invalid');
+    expect(String(await r.executeCommand('do show running-config'))).not.toContain('exec-timeout 9 0');
+  });
+
+  it('mais la console ne se retire pas d un chassis', async () => {
+    const r = await neuf(['configure terminal']);
+    expect(String(await r.executeCommand('no line console 0'))).toContain("Can't delete");
+  });
+
+  it('un mot ABSENT est reclame, un mot FAUX est nie', async () => {
+    const r = await neuf([]);
+    expect(String(await r.executeCommand('debug aaa'))).toContain('Incomplete');
+    expect(String(await r.executeCommand('debug aaa zzz'))).toContain('Invalid input');
+  });
+
+  it('`enable algorithm-type ?` nomme l algorithme, pas le rang suivant', async () => {
+    const r = await neuf(['configure terminal']);
+    const o = offerts(r.cliHelp('enable algorithm-type '));
+    expect(o).toContain('scrypt');
+    expect(o).not.toContain('secret');
+    expect(offerts(r.cliHelp('enable algorithm-type scrypt '))).toContain('secret');
+  });
+
+  it('et un routeur n offre plus `clear mac`, qui est un organe de commutateur', async () => {
+    const r = await neuf([]);
+    expect(offerts(r.cliHelp('clear '))).not.toContain('mac');
+    const s = new CiscoSwitch('switch-cisco', 'SWM') as unknown as Dev;
+    await s.executeCommand('enable');
+    expect(offerts(s.cliHelp('clear '))).toContain('mac');
   });
 });
 

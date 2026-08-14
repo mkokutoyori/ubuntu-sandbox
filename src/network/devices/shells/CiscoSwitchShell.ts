@@ -746,6 +746,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       'Restart protocol migration', () => '');
     this.privilegedTrie.registerGreedy('clear spanning-tree counters',
       'Clear spanning-tree counters', () => '');
+    // Quatre noeuds INTERMEDIAIRES nes de l'enregistrement de chemins
+    // plus profonds, donc sans description propre : `?` les offrait nus.
+    // Ils n'etaient visibles que depuis l'EXEC d'un Catalyst, que le
+    // garde-fou des descriptions ne parcourait pas ; `do ?` les expose
+    // desormais depuis la configuration, ou il passe.
+    this.privilegedTrie.describeNode('clear spanning-tree', 'Spanning trees');
+    this.privilegedTrie.describeNode('show errdisable', 'Error-disable configuration');
+    this.privilegedTrie.describeNode('show queuing', 'Show queueing configuration');
   }
 
   private handleArpAclLine(kw: string, args: string[]): string {
@@ -1185,6 +1193,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         }
         return '';
       });
+    // `describeNode` sort en silence sur un noeud absent : l'appel doit
+    // SUIVRE l'enregistrement qui cree le noeud intermediaire.
     this.privilegedTrie.registerGreedy('clear errdisable interface',
       'Recover an err-disabled port', (args) => {
         const portName = this.resolveInterfaceName(args.join(' ')) ?? args.join(' ');
@@ -1193,6 +1203,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
           || (this.d()._clearBpduGuardErrDisable?.(portName) ?? false);
         return cleared ? '' : '';
       });
+    this.privilegedTrie.describeNode('clear errdisable', 'Error-disable state');
   }
 
   // ─── Port-Security Display ────────────────────────────────────────

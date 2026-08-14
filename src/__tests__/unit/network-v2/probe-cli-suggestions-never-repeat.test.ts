@@ -79,7 +79,14 @@ async function walk(
     seenPrefix.add(prefix);
     const help = cli.cliHelp(prefix);
     const offered = keywords(help);
-    const already = new Set(typed.map((t) => t.toLowerCase()));
+    // `do` et `default` sont des PREFIXES : ils ne font pas partie de la
+    // commande qu'ils portent, et l'aide qui suit est celle d'un autre
+    // arbre. `default bgp default ipv4-unicast` est une vraie ligne IOS,
+    // donc `default` reste offert derriere `default bgp` sans se
+    // repeter — c'est le premier mot qui n'est pas du meme discours.
+    const already = new Set(
+      typed.filter((t, i) => !(i === 0 && /^(do|default)$/i.test(t)))
+        .map((t) => t.toLowerCase()));
     for (const k of offered) {
       if (already.has(k.toLowerCase())) {
         faults.push(`${label}: "${prefix}?" offre encore « ${k} », déjà tapé`);

@@ -515,6 +515,30 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   for (const chemin of ['show logging last', 'show running-config interface']) {
     tries.privileged.requireArgs(chemin, 1);
   }
+  // Ces chemins-la existent et fonctionnent : seule leur ARITE manquait,
+  // si bien qu'ils annoncaient `<cr>` et refusaient ensuite au caret le
+  // mot qui manquait. Trouves par le balayage des promesses non tenues.
+  tries.privileged.requireArgs('copy', 2);
+  tries.privileged.requireArgs('terminal', 1);
+  // `enable algorithm-type ?` rendait `level` et `secret` — les mots du
+  // rang SUIVANT — alors qu'IOS y attend l'algorithme. Meme faute que
+  // `ip access-group`, meme remede : declarer le rang.
+  tries.config.describeArgs('enable algorithm-type', [
+    ENUM('algorithm', 'Algorithm to hash the secret with', [
+      ['md5', 'Select MD5 as the hashing algorithm'],
+      ['scrypt', 'Select scrypt as the hashing algorithm'],
+      ['sha256', 'Select PBKDF2 with SHA256 as the hashing algorithm'],
+    ]),
+    ENUM('kind', 'What to set', [['secret', 'Assign the privileged level secret']]),
+    LINE('secret', 'The UNENCRYPTED (cleartext) enable secret'),
+  ]);
+  tries.config.requireArgs('enable algorithm-type', 3);
+  tries.config.requireArgs('ip scp', 2);
+  tries.config.requireArgs('no ip scp', 2);
+  tries.config.requireArgs('no line', 2);
+  tries.privileged.requireArgs('send', 1);
+  tries.configIf.requireArgs('ip rip', 1);
+  tries.configIf.requireArgs('ip rip authentication', 2);
   // Quand le mot suivant est ABSORBE par un noeud glouton, l'arite seule
   // ne suffit pas : c'est le meme nombre d'arguments qui, selon leur
   // contenu, complete la commande ou non. `privilege exec` en porte

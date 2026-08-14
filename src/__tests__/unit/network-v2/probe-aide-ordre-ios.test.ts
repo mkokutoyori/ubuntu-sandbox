@@ -62,7 +62,12 @@ async function routeur(nom: string): Promise<Machine> {
 }
 
 describe('M1 — `<cr>` est le dernier element', () => {
-  it.each(['reload ', 'ping ', 'traceroute ', 'terminal ', 'show clock '])(
+  // `terminal ` figurait ici et n'y a plus sa place : il ne s'execute
+  // pas nu (`% Incomplete command.`), donc son `<cr>` etait justement
+  // l'un des mensonges que M5 a corriges. `show ip route ` le remplace —
+  // plusieurs mots-cles ET une forme nue qui s'execute, ce que ce cas
+  // demande pour mesurer un ordre.
+  it.each(['reload ', 'ping ', 'traceroute ', 'show ip route ', 'show clock '])(
     '«%s?» le place en queue', async (cas) => {
       const r = await routeur(`R${cas.length}`);
       const mots = motsDe(r.cliHelp(cas));

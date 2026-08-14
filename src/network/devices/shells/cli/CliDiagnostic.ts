@@ -12,11 +12,33 @@ export class CliInvalidInput extends Error {
   readonly argIndex?: number;
   readonly token?: string;
 
+  private readonly jetonNomme: boolean;
+
   constructor(at?: { argIndex?: number; token?: string }) {
     super('% Invalid input detected at \'^\' marker.');
     this.name = 'CliInvalidInput';
     this.argIndex = at?.argIndex;
     this.token = at?.token;
+    this.jetonNomme = at !== undefined && 'token' in at;
+  }
+
+  /**
+   * Un mot ABSENT n'est pas un mot faux.
+   *
+   * Vingt-huit gestionnaires refusent leur sous-commande par
+   * `throw new CliInvalidInput({ token: args[0] })`, et `args[0]` vaut
+   * `undefined` quand rien n'a ete tape : `debug aaa` repondait donc
+   * « ce mot n'existe pas » a une ligne ou aucun mot n'a ete ecrit,
+   * alors que son aide venait d'en proposer trois. IOS distingue les
+   * deux, et la distinction est la seule information utile — l'une dit
+   * « continuez », l'autre « recommencez ».
+   *
+   * La regle est posee ICI plutot qu'aux vingt-huit appels : chacun
+   * enonce deja la bonne chose (« ce jeton-la ne convient pas »), et
+   * c'est la lecture d'un jeton absent qui etait fausse.
+   */
+  motAbsent(): boolean {
+    return this.jetonNomme && this.token === undefined && this.argIndex === undefined;
   }
 }
 

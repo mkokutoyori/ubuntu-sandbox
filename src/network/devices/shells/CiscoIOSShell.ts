@@ -993,13 +993,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       return [head, ...rows].join('\n');
     });
     trie.register('show ip static route', 'Display static routes', () => Show.showIpRoute(getRouter()));
-    trie.registerGreedy('show interfaces accounting', 'Display interface accounting', () => {
-      const router = getRouter();
-      const ports = router.getPortNames();
-      const out: string[] = [];
-      for (const p of ports) out.push(`${p}\n  No accounting protocols configured.`);
-      return out.join('\n');
-    });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
     trie.register('show running-config', 'Display running configuration', () =>
       this.filtrerConfigurationParNiveau(Show.showRunningConfig(getRouter())));

@@ -818,6 +818,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (path === 'send') {
       const cible = this.cibleDeSend(m.args);
       if (cible === null) return { steps: [{ kind: 'output', lines: [CISCO_ERRORS.INVALID_INPUT] }] };
+      if (cible === 'incomplet') {
+        return { steps: [{ kind: 'output', lines: [CISCO_ERRORS.INCOMPLETE] }] };
+      }
       return this.sendInteractionPlan(cible, ctx?.device);
     }
     if (path === 'copy' && m.args.length === 2) {
@@ -849,11 +852,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * supports de cours n'existent sur aucune machine, et les accepter
    * apprendrait une commande que le materiel refuse.
    */
-  private cibleDeSend(args: string[]): 'all' | number | null {
+  /**
+   * `null` = ce mot-la ne convient pas ; `'incomplet'` = il en manque un.
+   *
+   * `send vty` etait refuse au caret alors que son aide venait de
+   * proposer `vty` : il manquait seulement le rang de la ligne, ce
+   * qu'IOS dit par « % Incomplete command. ». Les deux reponses etaient
+   * confondues parce que la fonction n'avait qu'une facon d'echouer.
+   */
+  private cibleDeSend(args: string[]): 'all' | number | 'incomplet' | null {
     const a = args.map((x) => x.toLowerCase()).filter((x) => x.length > 0);
-    if (a.length === 0) return null;
+    if (a.length === 0) return 'incomplet';
     if (a[0] === '*') return a.length === 1 ? 'all' : null;
     if (a[0] === 'vty' || a[0] === 'tty' || a[0] === 'aux' || a[0] === 'console' || a[0] === 'con') {
+      if (a.length === 1) return 'incomplet';
       const n = Number.parseInt(a[1] ?? '', 10);
       if (!Number.isInteger(n) || n < 0 || a.length > 2) return null;
       // La console et l'AUX sont les lignes 0 et 1 ; une vty prend son rang.
@@ -2116,6 +2128,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return sortie;
       } catch (err) {
         if (err instanceof CliInvalidInput) {
+          if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
           return renderCliDiagnostic('invalid', {
             line: cmdPart,
             tokenOffset: offsetForInvalidInput(cmdPart, result.matchedKeywords.length, err),
@@ -2656,6 +2669,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         } catch (err) {
           if (this.isControlFlowError(err)) throw err;
           if (err instanceof CliInvalidInput) {
+            if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
             return renderCliDiagnostic('invalid', {
               line: cmdPart,
               tokenOffset: offsetForInvalidInput(cmdPart, keywordCount, err),
@@ -3195,6 +3209,52 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return filter.type === 'tee' ? `${sortie}\n${PIPE_WRITE_BANNER}` : PIPE_WRITE_BANNER;
   }
 
+  /**
+   * L'aide des commandes que le RÉPARTITEUR traite avant l'arbre.
+   *
+   * `exit`, `end`, `help`, `do` et `default` sont interceptées dans
+   * `executeCommand` et n'ont donc aucun nœud — or l'aide ne lit que
+   * l'arbre. Elles étaient offertes par la liste du mode et leur aide
+   * propre répondait `% Invalid input` : cinq commandes annoncées et
+   * indocumentables, dont `do`, dont l'aide est la seule façon de
+   * découvrir qu'on peut lancer une commande EXEC sans quitter la
+   * configuration.
+   *
+   * Ce que chacune rend est LU sur ce qu'elle fait, pas choisi : `do X`
+   * s'exécute sur l'arbre privilégié, donc son aide est celle de cet
+   * arbre ; `default X` s'exécute comme `no X`, donc son aide est celle
+   * de `no`. Rendre autre chose serait décrire une commande différente
+   * de celle qui s'exécutera.
+   *
+   * Rend `null` quand la ligne ne relève pas de cette famille, pour que
+   * l'arbre reprenne la main sans rien savoir de tout ceci.
+   */
+  private aideDesCommandesUniverselles(input: string, device?: TDevice): string | null {
+    const ligne = input.trim();
+    const mots = ligne.split(/\s+/).filter((m) => m !== '');
+    // Un mot SEUL non suivi d'un blanc est en cours de frappe : `do?`
+    // demande « quelles commandes commencent par do », ce que l'arbre
+    // sait faire. C'est à partir du blanc, ou d'un second mot, que la
+    // question devient « que prend `do` ».
+    if (mots.length < 2 && !input.endsWith(' ')) return null;
+    const premier = mots[0]?.toLowerCase() ?? '';
+    const reste = ligne.slice(premier.length).trim();
+    const universelles = new Set(this.universalCommands().map((u) => u.keyword));
+    if (!universelles.has(premier)) return null;
+
+    const suffixe = input.endsWith(' ') ? ' ' : '';
+    if (premier === 'do') {
+      const savedMode = this.mode;
+      this.mode = 'privileged';
+      try { return this.getHelp(`${reste}${suffixe}`, device); }
+      finally { this.mode = savedMode; }
+    }
+    if (premier === 'default') return this.getHelp(`no ${reste}${suffixe}`, device);
+    // `exit`, `end` et `help` ne prennent aucun argument : IOS rend
+    // `<cr>` et rien d'autre. Un mot derrière n'est plus cette commande.
+    return reste === '' ? '  <cr>' : CISCO_ERRORS.UNRECOGNIZED_HELP;
+  }
+
   getHelp(input: string, device?: TDevice): string {
     // `show running-config | ?` n'était le nœud d'aucun arbre : le `|`
     // est retiré de la ligne avant l'analyse, donc l'aide répondait au
@@ -3209,6 +3269,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const large = Math.max(...offerts.map((m) => m.keyword.length));
       return offerts.map((m) => `  ${m.keyword.padEnd(large + 2)}${m.description}`).join('\n');
     }
+    const aideUniverselle = this.aideDesCommandesUniverselles(input, device);
+    if (aideUniverselle !== null) return aideUniverselle;
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(device ? new EquipmentParamResolver(device) : null);
     try {
@@ -3235,17 +3297,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }
       }
       ordonnerCommeIos(completions);
-      if (completions.length === 0) {
-        return CISCO_ERRORS.UNRECOGNIZED_HELP;
-      }
-      // Seul le menu RACINE d'un mode porte les commandes universelles :
-      // elles ne sont pas des continuations de `show` ou de `ip`.
-      if (input.trim() === '') {
+      // Seul le PREMIER rang d'un mode porte les commandes universelles :
+      // elles ne sont pas des continuations de `show` ou de `ip`. Le mot
+      // partiel compte comme premier rang — `do?` demande quelles
+      // commandes commencent par `do`, et `do` est l'une d'elles.
+      if (base === '') {
+        const partiel = surMotPartiel ? brut.toLowerCase() : '';
         const deja = new Set(completions.map((c) => c.keyword.toLowerCase()));
         for (const u of this.universalCommands()) {
-          if (!deja.has(u.keyword)) completions.push(u);
+          if (!deja.has(u.keyword) && u.keyword.startsWith(partiel)) completions.push(u);
         }
         ordonnerCommeIos(completions);
+      }
+      if (completions.length === 0) {
+        return CISCO_ERRORS.UNRECOGNIZED_HELP;
       }
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -3805,6 +3870,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (head === 'no') {
       const sub = (rest[0] ?? '').toLowerCase();
+      // `terminal no` seul ne nie rien : il manque le mot a nier, et
+      // l'aide venait d'en proposer quatre.
+      if (sub === '') return CISCO_ERRORS.INCOMPLETE;
       if (sub === 'length') { this.terminalLength = 24; return ''; }
       if (sub === 'width')  { this.terminalWidth  = 80; return ''; }
       // `terminal no history` DESACTIVE l'historique de cette session :
@@ -3957,6 +4025,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.describeNode('copy', 'Copy a file');
 
     this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
+    // `write terminal` etait offert par `write ?` et refuse au caret.
+    // C'est le synonyme historique de `show running-config`, et il rend
+    // donc le MEME texte plutot qu'une seconde version qui pourrait en
+    // diverger.
+    this.privilegedTrie.register('write terminal', 'Write to terminal (display running-config)',
+      () => this.executeOnTrie('show running-config'));
     this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
     // `archive config` / `show archive` — enregistrées ici, donc pour le
@@ -4038,11 +4112,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'terminal', description: 'Write to terminal (display running-config)' },
       { keyword: 'erase',    description: 'Erase NVRAM' },
     ]);
+    // `mac` n'est PAS dans cette liste : une table d'adresses MAC est un
+    // organe de commutateur, et le commutateur enregistre `clear mac
+    // address-table` pour de vrai — donc son `clear ?` offre `mac` comme
+    // un enfant reel. L'annoncer ici le proposait aussi sur un routeur,
+    // qui refusait ensuite au caret.
     this.privilegedTrie.registerSuggestions('clear', [
       { keyword: 'arp-cache', description: 'Clear ARP cache' },
       { keyword: 'counters',  description: 'Clear interface counters' },
       { keyword: 'ip',        description: 'Clear an IP subsystem' },
-      { keyword: 'mac',       description: 'Clear MAC address tables' },
       { keyword: 'logging',   description: 'Clear logging buffer' },
     ]);
     const showIpRouteHints = [
@@ -4194,12 +4272,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }).getDebugService?.();
       return svc ? svc.enable('ip.domain') : 'Domain Name System debugging is on';
     });
-    this.privilegedTrie.register('undebug domain', 'Stop DNS debugging', () => {
+    // `undebug X` est REECRIT en `no debug X` par le repartiteur, donc
+    // `undebug domain` ne pouvait aboutir qu'une fois `no debug domain`
+    // enregistre : la commande existait, sa negation non, et l'aide
+    // proposait pourtant `domain` sous `undebug`.
+    const arreterDebugDomain = () => {
       const svc = (this.d() as unknown as {
         getDebugService?: () => { disable: (c: 'ip.domain') => string };
       }).getDebugService?.();
       return svc ? svc.disable('ip.domain') : '';
-    });
+    };
+    this.privilegedTrie.register('undebug domain', 'Stop DNS debugging', arreterDebugDomain);
+    this.privilegedTrie.register('no debug domain', 'Stop DNS debugging', arreterDebugDomain);
+    // `debug dhcp` etait offert par `debug ?` et n'existait pas. Il vise
+    // la meme categorie que `debug ip dhcp server` — c'est la que le
+    // service publie deja les changements d'etat du CLIENT DHCP
+    // (`dhcp.client.state-changed`), donc en creer une seconde ferait
+    // deux interrupteurs pour un seul flux.
+    const debugDhcp = (actif: boolean) => () => {
+      const svc = (this.d() as unknown as {
+        getDebugService?: () => {
+          enable: (c: 'ip.dhcp.server') => string;
+          disable: (c: 'ip.dhcp.server') => string;
+        };
+      }).getDebugService?.();
+      if (!svc) return '';
+      return actif ? svc.enable('ip.dhcp.server') : svc.disable('ip.dhcp.server');
+    };
+    this.privilegedTrie.register('debug dhcp', 'Debug DHCP', debugDhcp(true));
+    this.privilegedTrie.register('no debug dhcp', 'Stop DHCP debugging', debugDhcp(false));
     this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
       const sub = args.join(' ').toLowerCase();
       const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.domain' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string, detail?: boolean) => string } };
@@ -4340,6 +4441,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!svc) return '';
       const kind = (args[0] ?? '').toLowerCase();
       const value = args.slice(1).join(' ').trim();
+      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
       if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
@@ -4358,6 +4460,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // retaper l'ACL ou l'interface au caractère près.
       if (/^\d+$/.test(kind)) return svc.removeConditionById(parseInt(kind, 10));
       const value = args.slice(1).join(' ').trim();
+      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
       if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
       if (!value) return CISCO_ERRORS.INCOMPLETE;
       const resolved = kind === 'interface'
@@ -4473,6 +4576,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.privilegedTrie.registerGreedy('send', 'Send a message to other tty lines', (args) => {
       const cible = this.cibleDeSend(args);
       if (cible === null) return CISCO_ERRORS.INVALID_INPUT;
+      if (cible === 'incomplet') return CISCO_ERRORS.INCOMPLETE;
       // Appel non interactif (script, pipe) : aucun corps a saisir, donc
       // rien a livrer. On ne feint pas un envoi.
       return '';
@@ -5272,8 +5376,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const algoName = args[0]?.toLowerCase();
       const algoMap: Record<string, 'md5' | 'scrypt' | 'sha256'> = { md5: 'md5', scrypt: 'scrypt', sha256: 'sha256' };
       const algo = algoMap[algoName ?? ''];
+      // Un mot ABSENT n'est pas un mot faux : `enable algorithm-type`
+      // seul reclame l'algorithme, il ne le nie pas.
+      if (algoName === undefined) return CISCO_ERRORS.INCOMPLETE;
       if (!algo) return CISCO_ERRORS.INVALID_INPUT;
-      if (args[1]?.toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      if (args[1].toLowerCase() !== 'secret') return CISCO_ERRORS.INVALID_INPUT;
       let level = 15;
       let rest = args.slice(2);
       if (rest[0]?.toLowerCase() === 'level' && /^\d+$/.test(rest[1] ?? '')) {
@@ -5391,6 +5499,48 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
+    /**
+     * `no line <type> <first> [<last>]` remet ces lignes a leur
+     * configuration d'usine.
+     *
+     * `no ?` offrait `line` — « Remove line configuration » — et rien ne
+     * portait ce chemin : la commande etait annoncee et refusee au
+     * caret. Ce qu'elle fait est LU sur ce que `line` ecrit : le bloc
+     * VTY est le seul etat que la configuration de ligne persiste, donc
+     * le retirer EST le retour aux defauts, et la running-config cesse
+     * de le rendre. La console et l'AUX n'ont pas de bloc a supprimer :
+     * IOS refuse d'ailleurs `no line console 0`, une ligne qu'on ne peut
+     * pas retirer d'un chassis.
+     */
+    this.configTrie.registerGreedy('no line', 'Remove line configuration', (args) => {
+      const kind = (args[0] ?? '').toLowerCase();
+      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
+      if (kind === 'console' || kind === 'con' || kind === 'aux') {
+        return `% Can't delete ${kind === 'aux' ? 'AUX' : 'console'} line`;
+      }
+      if (kind !== 'vty' && kind !== 'tty') throw new CliInvalidInput({ token: args[0] });
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
+      const first = Number.parseInt(args[1], 10);
+      const last = Number.parseInt(args[2] ?? args[1], 10);
+      if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last < first) {
+        throw new CliInvalidInput({ token: args[2] ?? args[1] });
+      }
+      const dev = this.d() as unknown as {
+        _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
+      };
+      dev._getVtyLineConfig?.().remove(first, last);
+      if (this.selectedVtyRange?.first === first && this.selectedVtyRange?.last === last) {
+        this.selectedVtyRange = null;
+      }
+      return '';
+    });
+    this.configTrie.registerSuggestions('no line', [
+      { keyword: 'vty', description: 'Virtual terminal', leadingOnly: true },
+      { keyword: 'tty', description: 'Terminal controller', leadingOnly: true },
+      { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
+      { keyword: 'aux', description: 'Auxiliary line', leadingOnly: true },
+    ]);
+
     for (const kw of ['login', 'password',
       'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
       'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',

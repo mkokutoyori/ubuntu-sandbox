@@ -1108,3 +1108,131 @@ seulement lue.
 Non-régression connexe : 209 fichiers, 5 886 cas. `tsc` : 343 avant, 343
 après (le socle passe de 342 à 343 par un commit amont rebasé,
 `CiscoShellBase.ts:2481`, mesuré en remisant mes changements).
+
+---
+
+## Étape 8 — M3, M11 et G4 : plus une seule aide morte, plus une seule promesse non tenue
+
+`probe-aide-commandes-universelles.test.ts`, et le cliquet de M5 vidé.
+
+**M11 était déjà fermé** par une étape antérieure : `vlan ?` rend
+aujourd'hui `<1-4094>`, `access-map` et `filter` sur un Catalyst. Mesuré,
+pas supposé.
+
+### Première famille — les commandes que le répartiteur traite avant l'arbre
+
+`exit`, `end`, `help`, `do` et `default` sont interceptées dans
+`executeCommand` et n'ont **aucun nœud** ; or l'aide ne lit que l'arbre.
+La liste du mode les offrait toutes les cinq et leur aide propre répondait
+`% Invalid input`. Une seule cause pour cinq symptômes.
+
+Ce que chacune rend est **lu sur ce qu'elle fait**, jamais choisi :
+
+* `do X` s'exécute sur l'arbre **privilégié** — donc `do ?` rend cet
+  arbre, et `do show ?` ses sous-commandes, à toute profondeur, le mot
+  partiel compris (`do sh?` liste `show`). Un test vérifie que la liste
+  rendue par `do show ?` est **identique** à celle de `show ?` en EXEC :
+  c'est le même arbre, deux listes ne pourraient que diverger.
+* `default X` s'exécute **comme `no X`** — c'est écrit dans le
+  répartiteur — donc son aide est celle de `no`, à chaque rang.
+* `exit`/`end`/`help` ne prennent aucun argument : `<cr>` et rien d'autre.
+
+`do?` (sans blanc) reste une question sur le mot `do` lui-même : le
+premier rang injecte désormais les commandes universelles **filtrées par
+le préfixe**, là où il ne les injectait que pour une ligne vide.
+
+### Seconde famille — offert par une liste, porté par personne
+
+Le balayage de M5, relancé après le branchement de `do`, a vu d'un coup
+tout l'EXEC depuis la configuration et a nommé quinze fautes de plus.
+Aucune n'a été contournée.
+
+**Écrites, parce qu'elles étaient annoncées et n'existaient pas** :
+`write terminal` (synonyme historique de `show running-config`, et il rend
+le **même** texte plutôt qu'une seconde version qui pourrait en diverger),
+`debug dhcp` (vers la catégorie où le service publie déjà les changements
+d'état du client DHCP — en créer une seconde ferait deux interrupteurs
+pour un flux), `no debug domain` (sans lequel `undebug domain` ne pouvait
+pas aboutir, le répartiteur réécrivant `undebug X` en `no debug X` : la
+commande existait, sa négation non), et `no line <type> <n>` avec le
+`remove` correspondant sur le magasin des blocs VTY — ce que fait cette
+commande est lu sur ce que `line` écrit, et la console refuse d'être
+supprimée, comme sur un vrai châssis.
+
+**Un mot ABSENT n'est pas un mot faux.** Vingt-huit gestionnaires
+refusent leur sous-commande par `throw new CliInvalidInput({ token:
+args[0] })`, et `args[0]` vaut `undefined` quand rien n'a été tapé :
+`debug aaa` répondait donc « ce mot n'existe pas » à une ligne où aucun
+mot n'a été écrit, alors que son aide venait d'en proposer trois. La règle
+est posée **une fois**, dans le diagnostic lui-même, plutôt qu'aux
+vingt-huit appels — chacun énonce déjà la bonne chose, c'est la lecture
+d'un jeton absent qui était fausse.
+
+Et ce détail-là a coûté un tour : `motAbsent()` a d'abord répondu vrai
+pour un `throw new CliInvalidInput()` **nu**, qui ne veut pas dire « il
+manque un mot » mais « invalide, position inconnue ». Six cas de la
+régression connexe l'ont dit tout de suite. Le prédicat exige désormais
+que le jeton ait été **nommé** (`'token' in at`), ce qui distingue
+exactement `{ token: undefined }` d'un appel sans argument.
+
+**Trois places décrites un rang trop loin**, même faute que M4 :
+`enable algorithm-type ?` rendait `level`/`secret` au lieu de
+l'algorithme ; `ip scp server` et `ip rip authentication` refusaient au
+caret ce qu'ils réclamaient en réalité. Déclarés.
+
+**Un aiguillage pris ferme ses autres branches.** L'étape 6 posait cette
+règle pour les mots extraits d'un gestionnaire ; elle vaut aussi pour les
+**enfants** du même nœud, qui sont les mêmes alternatives déclarées
+autrement — sans quoi la moitié de la famille disparaissait et l'autre
+restait proposée (`show interfaces stats ?` offrait encore `accounting` et
+`counters`). Elle ne joue que si l'un de ces mots est déjà sur la ligne,
+donc `show interfaces Gi0/0 ?` garde les six : nommer une interface ne
+choisit aucune vue.
+
+**`clear mac` retiré de la liste du socle** : une table d'adresses MAC est
+un organe de commutateur, et le commutateur enregistre `clear mac
+address-table` pour de vrai — son `clear ?` offre donc `mac` comme un
+enfant réel, pendant que le routeur cesse d'annoncer ce qu'il refuse.
+
+**`show ip sla monitor` est enregistrée POUR ÊTRE REFUSÉE** — IOS 15 a
+supprimé cette branche, et l'enregistrement existe uniquement pour que le
+glouton `show ip sla` ne réponde pas à sa place. L'aide la proposait,
+c'est-à-dire qu'elle enseignait une syntaxe supprimée. `neJamaisAnnoncer`
+la retire de `?`, de la tabulation **et du décompte des chemins
+exécutables** — elle ne rend qu'un refus, la compter ferait réclamer
+qu'on l'annonce.
+
+**Supprimé au passage** : un second `show interfaces accounting`
+enregistré à part, qui rendait « No accounting protocols configured. »
+là où `showInterfaceCmd` — qui traite déjà la forme nue — rend le vrai
+tableau. Deux réponses à une question, la plus pauvre l'emportant.
+
+### Le cliquet est vide
+
+Les soixante-dix promesses non tenues du départ sont **toutes** corrigées,
+sur les trois modes balayés. `RESTE_CONNU` ne contient plus rien, et
+l'égalité exacte le maintient : une nouvelle faute fera échouer le fichier
+en la nommant.
+
+**Deux tests corrigés plutôt que le code**, chacun pour une raison écrite
+sur place : `probe-aide-ordre-ios` mesurait l'ordre du `<cr>` sur
+`terminal `, dont le `<cr>` était justement l'un des mensonges corrigés
+ici (remplacé par `show ip route `, qui a plusieurs mots-clés **et** une
+forme nue qui s'exécute) ; et `probe-cli-suggestions-never-repeat`
+comptait `do` et `default` comme des mots de la commande, alors que ce
+sont des **préfixes** — `default bgp default ipv4-unicast` est une vraie
+ligne IOS.
+
+**Quatre nœuds intermédiaires décrits** sur le Catalyst (`clear
+errdisable`, `clear spanning-tree`, `show errdisable`, `show queuing`) :
+ils n'étaient visibles que depuis l'EXEC d'un commutateur, que le
+garde-fou des descriptions ne parcourait pas ; `do ?` les y expose
+désormais. Rappel gagné une fois de plus : `describeNode` sort en silence
+sur un nœud absent, donc l'appel doit **suivre** l'enregistrement qui crée
+le nœud.
+
+**Discrimination.** 43 cas sur les deux fichiers : **28 tombent** avant
+correctif.
+
+Non-régression connexe : 210 fichiers, 5 909 cas. `tsc` : 343 avant, 343
+après.

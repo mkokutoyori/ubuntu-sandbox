@@ -123,6 +123,16 @@ export interface CommandNode {
    */
   hintSuggestions?: Array<{ keyword: string; description: string; leadingOnly?: boolean }>;
   _hintOnly?: boolean;
+  /**
+   * Enregistre POUR ETRE REFUSE, donc jamais annonce.
+   *
+   * `show ip sla monitor` existe uniquement pour que le glouton
+   * `show ip sla` n'avale pas `monitor` et ne reponde pas a sa place :
+   * IOS 15 a supprime cette branche, et le refus est le bon
+   * comportement. L'aide le proposait pourtant, c'est-a-dire qu'elle
+   * enseignait une syntaxe supprimee et menait droit au caret.
+   */
+  _neJamaisAnnoncer?: boolean;
   _passthrough?: boolean;
   /**
    * Un nœud PUREMENT INDICATIF créé par `describeArgs` sous une commande
@@ -421,6 +431,17 @@ export class CommandTrie {
     }
     node.action = action;
     if (params) node.params = params;
+  }
+
+  /**
+   * Cette commande est enregistree POUR ETRE REFUSEE : elle ne doit pas
+   * etre annoncee. Elle continue de se faire reconnaitre — c'est tout
+   * l'objet de son enregistrement, empecher un glouton voisin de
+   * repondre a sa place — mais `?` et la tabulation l'ignorent.
+   */
+  neJamaisAnnoncer(path: string): void {
+    const node = this.nodeAt(path);
+    if (node) node._neJamaisAnnoncer = true;
   }
 
   registerSuggestions(
@@ -770,7 +791,12 @@ export class CommandTrie {
     this.viderDeclarationsEnAttente();
     const out: string[] = [];
     const walk = (node: CommandNode, path: string[]): void => {
-      if (path.length > 0 && node.action && !node._hintOnly) out.push(path.join(' '));
+      // Un noeud enregistre POUR ETRE REFUSE n'est pas un chemin
+      // executable : il ne rend qu'un refus, et le compter ferait
+      // reclamer qu'on l'annonce.
+      if (path.length > 0 && node.action && !node._hintOnly && !node._neJamaisAnnoncer) {
+        out.push(path.join(' '));
+      }
       for (const child of node.children.values()) {
         walk(child, [...path, child.keyword]);
       }
@@ -841,7 +867,7 @@ export class CommandTrie {
     const racine = path.trim().split(/\s+/).filter((t) => t.length > 0);
     const walk = (node: CommandNode, chemin: string[]): boolean => {
       const propre = chemin.join(' ');
-      if (node.action && !node._hintOnly && propre !== racine.join(' ')) {
+      if (node.action && !node._hintOnly && !node._neJamaisAnnoncer && propre !== racine.join(' ')) {
         if (visite(propre)) return true;
       }
       for (const child of node.children.values()) {
@@ -929,7 +955,8 @@ export class CommandTrie {
         // "sh?" → which keywords start with "sh"? List them.
         // "show?" → which keywords start with "show"? → "show"
         // Never drill down into the match — just show the matches themselves.
-        const matches = this.prefixMatch(node, token, true);
+        const matches = this.prefixMatch(node, token, true)
+          .filter((m) => !m._neJamaisAnnoncer);
         const listed = matches.map(m => ({ keyword: m.keyword, description: this.resolveDescription(m) }));
         {
           const seen = new Set(listed.map(e => e.keyword.toLowerCase()));
@@ -1404,7 +1431,8 @@ export class CommandTrie {
   private childCandidates(r: SuggestionRequest): SuggestionCandidate[] {
     const enfants = r.matchPartial
       ? this.prefixMatch(r.node, r.partial.toLowerCase(), true)
-      : [...r.node.children.values()].filter((c) => !c._hintOnly || c._passthrough);
+      : [...r.node.children.values()]
+        .filter((c) => (!c._hintOnly || c._passthrough) && !c._neJamaisAnnoncer);
     return enfants.map((child) => ({
       keyword: child.keyword,
       description: this.resolveDescription(child) || this.hintDescription(r.node, child.keyword),
@@ -1645,7 +1673,29 @@ export class CommandTrie {
      * argument, comme sur une vraie machine.
      */
     const enfantsHorsDePortee = consumedArgs > 0 && node.params.length > 0;
-    if (!enfantsHorsDePortee) results.push(...jamaisDeuxFois(depuis('child')));
+
+    /**
+     * L'AIGUILLAGE est pris : les autres branches ne sont plus des suites.
+     *
+     * Les mots extraits du corps d'un gestionnaire modelisent un
+     * aiguillage — il lit un mot et branche. `show interfaces` en porte
+     * six (`accounting`, `counters`, `description`, `rate-limit`,
+     * `stats`, `summary`) qui s'excluent : `show interfaces stats
+     * accounting` n'existe pas. La regle valait deja pour les mots
+     * extraits ; elle vaut pour les ENFANTS du meme noeud, qui sont les
+     * memes alternatives declarees autrement — sans quoi la moitie de la
+     * famille disparaissait et l'autre restait proposee.
+     *
+     * Elle ne joue que si l'un de ces mots est DEJA sur la ligne, donc
+     * `show interfaces Gi0/0 ?` garde les six : nommer une interface ne
+     * choisit aucune vue.
+     */
+    const dejaSurLaLigne = new Set(argsSoFar.map((a) => a.toLowerCase()));
+    const aiguillagePris = this.autoContinuations(node)
+      .some((a) => dejaSurLaLigne.has(a.keyword.toLowerCase()));
+    if (!enfantsHorsDePortee && !aiguillagePris) {
+      results.push(...jamaisDeuxFois(depuis('child')));
+    }
 
     // Un paramètre déjà fourni n'est plus proposé : après
     // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.

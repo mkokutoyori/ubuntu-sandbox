@@ -32,6 +32,17 @@ export class VtyLineConfigStore {
     return Array.from(this.byKey.values());
   }
 
+  /**
+   * `no line vty <first> <last>` : le bloc retourne a sa configuration
+   * d'usine, ce qui ici veut dire qu'il n'existe plus — la
+   * running-config ne le rend plus, et une session entrante retombe sur
+   * les defauts. Rend `false` quand aucun bloc ne porte ces bornes, pour
+   * que l'appelant puisse le dire plutot que de feindre une suppression.
+   */
+  remove(first: number, last: number): boolean {
+    return this.byKey.delete(`${first} ${last}`);
+  }
+
   clear(): void {
     this.byKey.clear();
   }

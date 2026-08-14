@@ -448,8 +448,13 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n');
   });
 
+  // Enregistree pour que le glouton `show ip sla` n'avale pas `monitor`
+  // et ne reponde pas a sa place. IOS 15 a supprime cette branche : le
+  // refus est le bon comportement, et l'annoncer enseignait une syntaxe
+  // qui n'existe plus.
   trie.registerGreedy('show ip sla monitor', 'Legacy IP SLAs Monitor (removed)', () =>
     '% Invalid input detected at \'^\' marker.');
+  trie.neJamaisAnnoncer('show ip sla monitor');
 
   trie.registerGreedy('show ip sla', 'IP SLAs information', (args) =>
     args.length === 0 ? renderApplication(engine()) : '% Invalid input detected at \'^\' marker.');

@@ -572,12 +572,18 @@ export function buildIdentityConfigCommands(
   // intermediate node spelled out in the path carries no description.
   const scpServerArgs = (args: string[]): boolean =>
     args[0] === 'server' && args[1] === 'enable';
+  // `ip scp server` sans `enable` n'est pas une commande fausse mais une
+  // commande INACHEVEE, et l'aide venait de proposer `server`.
+  const scpInacheve = (args: string[]): boolean =>
+    args.length === 0 || (args.length === 1 && 'server'.startsWith(args[0].toLowerCase()));
   trie.registerGreedy('ip scp', 'SCP server config', (args) => {
+    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
     if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = true;
     return '';
   }, [{ keyword: 'server', description: 'Enable the SCP server' }]);
   trie.registerGreedy('no ip scp', 'Disable the SCP server', (args) => {
+    if (scpInacheve(args)) return CISCO_ERRORS.INCOMPLETE;
     if (!scpServerArgs(args)) throw new CliInvalidInput({ token: args[0] ?? 'scp' });
     sec().ssh.scpServerEnabled = false;
     return '';
