@@ -34,11 +34,12 @@
 | 1 | `PacketContext` + `FirewallPipeline` | 23 | ✅ |
 | 1 | Étapes du pipeline (7 étapes) | 30 | ✅ |
 | 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
-| 1 | `ArpService` + `IcmpService` + `L2Delivery` | — | ⏳ |
+| 1 | `ArpService` | 23 | ✅ |
+| 1 | Façade `Firewall` + `L2Delivery` | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 367 cas, verts.**
+**Total actuel : 390 cas, verts.**
 
 ---
 
@@ -423,6 +424,36 @@ qui ont trouvé le trou.
 
 ---
 
+### E13 — `ArpService`
+
+`src/network/devices/firewall/l3/ArpService.ts` — 23 cas.
+
+**Audit préalable (A7)** — `src/network/arp/` existe mais porte
+l'**inspection** ARP (DAI, une fonction de sécurité de commutateur) :
+`ArpInspectionEngine`, `ArpRateLimiter`, `ArpStats`. Aucun cache de voisins
+réutilisable. **En revanche** `core/interfaces.ts` *déclare* déjà
+`INeighborResolver<TAddress>`, pensé pour unifier ARP et NDP. Ce service
+**implémente ce contrat** au lieu d'inventer une interface voisine — c'est
+la règle du carnet appliquée à la lettre : enrichir l'existant.
+
+**Le fait qui compte** : un pare-feu ne répond à une demande ARP que pour
+les adresses **qu'il porte**, et deux cas le vérifient — il ne répond ni
+pour un tiers du sous-réseau, ni pour l'adresse d'une *autre* de ses
+interfaces. Répondre pour autrui est du proxy ARP, une fonction distincte
+qui se configure ; l'activer par défaut ferait du pare-feu un trou noir pour
+tout le segment.
+
+**Une demande ARP apprend son émetteur, même sans réponse.** C'est ce qui
+évite l'aller-retour symétrique : quand A demande l'adresse de B, B connaît
+déjà A. Un cas l'épingle sur une demande à laquelle le pare-feu ne répond
+pas.
+
+**Statique contre appris** : l'entrée apprise expire, la statique non, et
+un réapprentissage repousse l'échéance. C'est ce qui distingue une table qui
+*suit* le réseau d'une table qui le *décrète*.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -560,6 +591,21 @@ service du pare-feu fait 180 lignes contre les 5615 de `Router.ts`.
 d'ECMP ou de `maximum-paths` (BRD §19), cette logique devra être **extraite**
 de `Router` vers un module partagé et consommée par les deux — jamais
 recopiée. Même sens que A2.
+
+### A7 — `ArpService` implémente un contrat qui existait déjà
+
+`src/network/arp/` ne contient aucun résolveur : ses quatre fichiers portent
+l'inspection ARP dynamique (DAI), une fonction de sécurité de commutateur.
+Rien à réutiliser de ce côté.
+
+Mais `core/interfaces.ts` déclare `INeighborResolver<TAddress>` avec
+`resolve`/`learn`/`lookup`/`getCache`/`clear`, explicitement conçu pour
+« unifier les motifs de résolution ARP et NDP ». `ArpService` l'implémente,
+et `ArpEntry extends INeighborEntry`. Le jour où le pare-feu parlera NDP,
+le même contrat servira.
+
+`core/packetBuilders.ts` (`wrapIpv4InEthernet`, `buildIpv4Frame`) est réservé
+pour `L2Delivery`, la brique suivante.
 
 ### A3 — Le catalogue de services prédéfinis devra lire `WellKnownPorts`
 
