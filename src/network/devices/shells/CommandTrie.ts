@@ -971,6 +971,20 @@ export class CommandTrie {
               listed.push({ keyword: h.keyword, description: h.description });
             }
           }
+          // Les valeurs VIVANTES de la machine — ports, ACL, VLAN — que
+          // seule la tabulation lisait. `show ip interface G?` repondait
+          // « ce mot n'existe pas » pendant que `Tab` completait les
+          // quatre ports, sur la meme machine au meme instant. Un
+          // mot-cle reel garde la priorite : il est deja dans `seen`.
+          for (const v of this.dynamicCandidates({
+            node, path, consumedArgs, argsSoFar,
+            partial: token, matchPartial: true, forTab: false,
+          })) {
+            if (v.keyword.toLowerCase().startsWith(token) && !seen.has(v.keyword.toLowerCase())) {
+              seen.add(v.keyword.toLowerCase());
+              listed.push({ keyword: v.keyword, description: v.description });
+            }
+          }
         }
         return this.applyFilter(path, listed);
       }
@@ -1198,7 +1212,11 @@ export class CommandTrie {
       }
     }
 
-    return results;
+    // L'ordre des octets, comme celui de `?` : les deux portes
+    // repondent a la meme question et rendaient deux ordres, celui de
+    // l'aide et celui de l'INSERTION dans l'arbre — `show v` donnait
+    // `vrf, vrrp, version, vlans`, qui ne se lit pas.
+    return results.sort();
   }
 
   // ─── Internal Helpers ───────────────────────────────────────────

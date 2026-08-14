@@ -14,8 +14,15 @@ export interface CompletableDevice {
   getKnownMacAddresses?(): string[];
 }
 
+/**
+ * `show interfaces` est au PLURIEL, et c'est la commande la plus tapee
+ * de toutes : la reconnaitre au seul singulier lui refusait toute
+ * valeur vivante pendant que `show ip interface` — singulier — les
+ * recevait, sur la meme machine et pour la meme question.
+ */
 const INTERFACE_PATH_TAILS: ReadonlyArray<readonly string[]> = [
   ['interface'],
+  ['interfaces'],
 ];
 
 const VLAN_PATH_TAILS: ReadonlyArray<readonly string[]> = [

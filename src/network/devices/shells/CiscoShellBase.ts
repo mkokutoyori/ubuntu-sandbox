@@ -3374,7 +3374,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           if (!this.laSessionVoit(cible)) continue;
           base.push(cible);
         }
-        return base;
+        // Retri APRES les ajouts : les commandes universelles et celles
+        // descendues par un niveau de privilege arrivent en queue, et
+        // une liste triee a moitie ne se lit pas mieux qu'une liste non
+        // triee.
+        return base.sort();
       } finally {
         this.deviceRef = precedent;
       }

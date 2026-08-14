@@ -1236,3 +1236,68 @@ correctif.
 
 Non-régression connexe : 210 fichiers, 5 909 cas. `tsc` : 343 avant, 343
 après.
+
+---
+
+## Étape 9 — M10 et M12 : les valeurs vivantes, et l'ordre
+
+`src/__tests__/unit/network-v2/probe-completion-valeurs-vivantes.test.ts`
+
+### M10 — le résolveur existait, deux portes sur trois ne l'interrogeaient pas
+
+```
+TAB «show ip interface G»  -> les quatre ports    (bon)
+?   «show ip interface G»  -> % Invalid input      (mauvais)
+TAB «show interfaces G»    -> rien du tout         (mauvais)
+```
+
+Le `DynamicParamResolver` **est** branché et **fonctionne** — c'est la
+première chose que la mesure a corrigée dans le constat de l'audit, qui le
+disait « presque pas branché ». Deux causes distinctes, chacune d'une
+phrase, expliquaient tout ce qu'on croyait manquant.
+
+**A — `?` sur un mot PARTIEL ne consultait pas le résolveur.** La branche
+du mot partiel liste les enfants, les suites déclarées et les valeurs
+énumérées ; les valeurs vivantes n'y figuraient pas. La même machine
+complétait donc `G` par la tabulation et répondait « ce mot n'existe pas »
+à `G?`. Un test vérifie désormais que les deux portes rendent **la même
+liste**, ce qui est la seule formulation qui ne puisse pas dériver.
+
+**B — le résolveur reconnaissait la place d'une interface au SINGULIER.**
+`show interfaces` est au pluriel : la commande la plus tapée de toutes ne
+recevait donc jamais rien, pendant que `show ip interface` — singulier —
+fonctionnait sur la même machine. Une ligne dans la table des places.
+
+Ce que le fichier **ne** demande pas, et le dit : que la tabulation
+réponde à une ligne finie par un blanc. Une vraie machine n'y complète
+rien — elle émet un bip — et `?` est la porte de cette question-là. C'est
+la correction de ma propre erreur de lecture consignée en §8, et un cas de
+non-régression la fixe pour qu'elle ne se reperde pas.
+
+Corrigé aussi du constat : les ACL nommées **se complétaient déjà**. Ma
+première mesure disait le contraire parce que le laboratoire créait
+`ip access-list extended MAVIE` sans y mettre une seule règle — une liste
+vide n'existe pas encore. Le laboratoire était en cause, pas la fonction ;
+le cas reste dans le fichier, avec sa règle.
+
+### M12 — l'ordre était celui de l'insertion dans l'arbre
+
+```
+TAB «show v» -> ["show vrf", "show vrrp", "show version", "show vlans"]
+```
+
+L'aide trie depuis l'étape 3 ; la tabulation, non. Les deux portes de la
+même question rendaient deux ordres, dont l'un ne se lit pas. Le tri est
+celui des **octets**, comme celui de l'aide et comme celui d'IOS, et il
+est appliqué **deux fois** : dans le trie, et de nouveau après les ajouts
+du shell — les commandes universelles et celles descendues par un niveau
+de privilège arrivent en queue, et une liste triée à moitié ne se lit pas
+mieux qu'une liste non triée.
+
+**Discrimination.** 17 cas : **8 tombent** avant correctif. Les témoins
+vérifient qu'un mot-clé réel l'emporte toujours sur une valeur
+(`show ip interface b` rend `brief`), qu'un préfixe qui ne désigne aucun
+port ne rend rien, et que ce que la tabulation propose **s'exécute**.
+
+Non-régression connexe : 211 fichiers, 5 926 cas. `tsc` : 343 avant, 343
+après.
