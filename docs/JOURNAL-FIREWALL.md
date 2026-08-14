@@ -32,13 +32,13 @@
 | 1 | `SecurityRule` + `PolicyEvaluator` | 37 | ✅ |
 | 1 | `PolicyStore` | 31 | ✅ |
 | 1 | `PacketContext` + `FirewallPipeline` | 23 | ✅ |
-| 1 | Étapes de pipeline | — | ⏳ |
+| 1 | Étapes du pipeline (7 étapes) | 30 | ✅ |
 | 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
 | 1 | `ArpService` + `IcmpService` + `L2Delivery` | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 337 cas, verts.**
+**Total actuel : 367 cas, verts.**
 
 ---
 
@@ -377,6 +377,52 @@ de sens que A2 pour les zones.
 
 ---
 
+### E12 — Les étapes du pipeline
+
+`src/network/devices/firewall/pipeline/stages/coreStages.ts` — 30 cas.
+
+Le premier fichier à faire travailler ensemble `ZoneTable`,
+`InterfaceTable`, `RouteTable`, `PolicyEvaluator`, `SessionTable` et
+`TcpStateMachine`. C'est donc le premier à pouvoir démontrer les **cas
+d'usage fondateurs** au lieu de briques isolées.
+
+**UC-1 est démontré** : une seule règle, dans le sens aller ; le retour
+passe parce que la session existe. Le contre-test l'accompagne — un ACK
+forgé sans session est refusé avec `no-session-non-syn` — et purger la
+session coupe le retour immédiatement.
+
+**UC-4 est mesuré, pas affirmé** : le compteur de la règle vaut 1 après le
+premier paquet et **ne bouge plus** pour les suivants. Un second cas vérifie
+que la trace du chemin rapide ne contient pas `policy-lookup`. I-F1 devient
+ainsi vérifiable plutôt que déclaratif.
+
+**P9 a son cas** : une règle supprimée ne coupe pas la session en cours.
+
+**P10 a ses cinq motifs distincts**, chacun avec son cas : `implicit-deny`,
+`policy-deny`, `no-route`, `invalid-tcp-flags`, `zone-mismatch`.
+
+#### Défaut trouvé et corrigé dans le même passage (B6)
+
+Un avertissement de lint (`services` inutilisé) a mis sur la piste d'un vrai
+défaut : `tcp-state-check` créait une machine à états **neuve à chaque
+paquet**, et le chemin rapide ne la traversait jamais — la machine ne
+servait donc qu'au premier paquet. Or le BRD §13.8 exige explicitement
+qu'« un paquet invalide dans une session valide soit rejeté ».
+
+Corrigé : la session **porte** sa machine (`FirewallSession.tcpMachine`), et
+`session-lookup` la fait avancer sur chaque paquet du chemin rapide. Cinq
+cas neufs l'épinglent — l'état avance au fil de la poignée de main, un Xmas
+scan dans une session établie est rejeté (avec son témoin : un ACK ordinaire
+passe), un RST ferme la session, et le délai d'expiration suit l'état
+(30 s en poignée de main, 3600 s une fois établie).
+
+**Ce que ce défaut enseigne** : un test qui ne couvre que le premier paquet
+laisse passer une inspection à états qui n'inspecte qu'une fois. La suite
+était verte avant le correctif — c'est le lint, puis la relecture du BRD,
+qui ont trouvé le trou.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -549,6 +595,8 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B2 | Adresses `'a'`/`'b'` invalides dans un test | E1 | Adresses réelles |
 | B3 | `TcpSessionState` redéfinissait `TcpState` du dépôt | E6 | `ObservedTcpState = Exclude<TcpState, 'listen'>` ; a fait gagner l'état `closing` |
 | B4 | Test I-P2 auto-contradictoire (ordre du tableau vs séquence) | E8 | Le test exprimait mal l'invariant ; l'évaluateur avait raison |
+| B5 | Test « absence de route » visant une destination CONNECTÉE | E12 | Le moteur avait raison ; test corrigé + témoin ajouté |
+| B6 | Machine à états TCP non traversée par le chemin rapide | E12 | La session porte sa machine ; 5 cas neufs |
 
 ## Prochaines étapes
 

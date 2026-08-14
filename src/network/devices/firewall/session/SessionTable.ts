@@ -1,5 +1,5 @@
 import { flowKeyToString, reverseFlowKey, type FlowKey } from './FlowKey';
-import type { FlowDirection, ObservedTcpState } from './TcpStateMachine';
+import type { FlowDirection, ObservedTcpState, TcpStateMachine } from './TcpStateMachine';
 
 export type SessionState = 'init' | 'opening' | 'active' | 'closing' | 'closed' | 'discard';
 
@@ -37,6 +37,7 @@ export interface FirewallSession {
   egressInterface: string;
   state: SessionState;
   tcpState?: ObservedTcpState;
+  tcpMachine?: TcpStateMachine;
   policyId?: string;
   natRuleId?: string;
   translation?: SessionTranslation;
