@@ -1,10 +1,12 @@
 import type { INeighborEntry, INeighborResolver } from '../../../core/interfaces';
-import { IPAddress, MACAddress, type ARPPacket } from '../../../core/types';
+import { IPAddress, MACAddress, type ARPEntry, type ARPPacket } from '../../../core/types';
 import type { InterfaceTable } from './InterfaceTable';
 
-export interface ArpEntry extends INeighborEntry {
-  readonly isStatic: boolean;
-}
+export type DuplicateAddressReport = {
+  readonly address: string;
+  readonly claimedBy: MACAddress;
+  readonly iface: string;
+};
 
 export interface ArpServiceDeps {
   interfaces: InterfaceTable;
@@ -13,6 +15,7 @@ export interface ArpServiceDeps {
   agingSec?: number;
   resolveTimeoutMs?: number;
   onRequestNeeded?: (request: ARPPacket, iface: string) => void;
+  onDuplicateAddress?: (report: DuplicateAddressReport) => void;
 }
 
 const DEFAULT_AGING_SEC = 14400;
@@ -24,7 +27,7 @@ interface PendingResolution {
 }
 
 export class ArpService implements INeighborResolver<string> {
-  private readonly cache = new Map<string, ArpEntry>();
+  private readonly cache = new Map<string, ARPEntry>();
   private readonly pending = new Map<string, PendingResolution[]>();
   private readonly deps: ArpServiceDeps;
   private readonly now: () => number;
@@ -38,19 +41,33 @@ export class ArpService implements INeighborResolver<string> {
 
   learn(address: string, mac: MACAddress, iface: string): void {
     const existing = this.cache.get(address);
-    if (existing?.isStatic) return;
+    if (existing?.type === 'static') return;
 
-    this.cache.set(address, { mac, iface, timestamp: this.now(), isStatic: false });
+    this.cache.set(address, { mac, iface, timestamp: this.now(), type: 'dynamic' });
     this.settle(address, mac);
   }
 
   setStatic(address: string, mac: MACAddress, iface: string): void {
-    this.cache.set(address, { mac, iface, timestamp: this.now(), isStatic: true });
+    this.cache.set(address, { mac, iface, timestamp: this.now(), type: 'static' });
     this.settle(address, mac);
   }
 
-  lookup(address: string): ArpEntry | undefined {
+  markFailed(address: string, iface: string): void {
+    const existing = this.cache.get(address);
+    if (existing?.type === 'static') return;
+
+    this.cache.set(address, {
+      mac: new MACAddress(ZERO_MAC), iface, timestamp: this.now(), type: 'failed',
+    });
+  }
+
+  lookup(address: string): ARPEntry | undefined {
     return this.cache.get(address);
+  }
+
+  resolved(address: string): MACAddress | undefined {
+    const entry = this.cache.get(address);
+    return entry && entry.type !== 'failed' ? entry.mac : undefined;
   }
 
   getCache(): Map<string, INeighborEntry> {
@@ -73,7 +90,7 @@ export class ArpService implements INeighborResolver<string> {
     const deadline = this.now() - this.agingMs;
     let removed = 0;
     for (const [address, entry] of [...this.cache]) {
-      if (!entry.isStatic && entry.timestamp <= deadline) {
+      if (entry.type !== 'static' && entry.timestamp <= deadline) {
         this.cache.delete(address);
         removed++;
       }
@@ -82,6 +99,7 @@ export class ArpService implements INeighborResolver<string> {
   }
 
   handleRequest(packet: ARPPacket, iface: string): ARPPacket | undefined {
+    if (this.reportsDuplicate(packet, iface)) return undefined;
     this.learn(packet.senderIP.toString(), packet.senderMAC, iface);
 
     const target = packet.targetIP.toString();
@@ -99,7 +117,17 @@ export class ArpService implements INeighborResolver<string> {
   }
 
   handleReply(packet: ARPPacket, iface: string): void {
+    if (this.reportsDuplicate(packet, iface)) return;
     this.learn(packet.senderIP.toString(), packet.senderMAC, iface);
+  }
+
+  private reportsDuplicate(packet: ARPPacket, iface: string): boolean {
+    const sender = packet.senderIP.toString();
+    if (this.deps.interfaces.owningInterface(sender) === undefined) return false;
+    if (packet.senderMAC.equals(this.deps.macOf(iface))) return false;
+
+    this.deps.onDuplicateAddress?.({ address: sender, claimedBy: packet.senderMAC, iface });
+    return true;
   }
 
   buildRequest(targetAddress: string, iface: string): ARPPacket | undefined {
@@ -132,7 +160,7 @@ export class ArpService implements INeighborResolver<string> {
 
   resolve(address: string, iface: string): Promise<MACAddress> {
     const cached = this.cache.get(address);
-    if (cached) return Promise.resolve(cached.mac);
+    if (cached && cached.type !== 'failed') return Promise.resolve(cached.mac);
 
     const request = this.buildRequest(address, iface);
     if (!request) return Promise.reject(new Error(`no source address on ${iface}`));
@@ -148,7 +176,8 @@ export class ArpService implements INeighborResolver<string> {
   }
 
   private failIfStillPending(address: string): void {
-    if (this.cache.has(address)) return;
+    const entry = this.cache.get(address);
+    if (entry && entry.type !== 'failed') return;
 
     const waiters = this.pending.get(address);
     if (!waiters) return;

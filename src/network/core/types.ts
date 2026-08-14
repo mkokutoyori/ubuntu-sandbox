@@ -882,6 +882,15 @@ export interface ARPPacket extends NetworkPdu {
   targetIP: IPAddress;
 }
 
+export interface ARPEntry {
+  mac: MACAddress;
+  /** Interface on which this entry was learned */
+  iface: string;
+  timestamp: number;
+  /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
+  type: 'dynamic' | 'static' | 'failed';
+}
+
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────
 //
 // Per RFC 792, ICMP does NOT carry source/destination IP — that is the

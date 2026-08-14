@@ -259,6 +259,108 @@ describe('ArpService — reponses recues et ARP gratuit', () => {
   });
 });
 
+describe('ArpService — le type ARPEntry du depot, et ses trois etats', () => {
+  it('une entree apprise est de type dynamic', () => {
+    const { arp } = lab();
+    arp.learn('192.168.1.10', new MACAddress(PEER_MAC), 'port1');
+
+    expect(arp.lookup('192.168.1.10')?.type).toBe('dynamic');
+  });
+
+  it('une entree posee a la main est de type static', () => {
+    const { arp } = lab();
+    arp.setStatic('192.168.1.10', new MACAddress(PEER_MAC), 'port1');
+
+    expect(arp.lookup('192.168.1.10')?.type).toBe('static');
+  });
+
+  it('une resolution qui echoue laisse une entree failed — NUD FAILED', () => {
+    const { arp } = lab();
+
+    arp.markFailed('192.168.1.99', 'port1');
+
+    expect(arp.lookup('192.168.1.99')?.type).toBe('failed');
+  });
+
+  it('une entree failed n\'est PAS une adresse resolue', () => {
+    const { arp } = lab();
+    arp.markFailed('192.168.1.99', 'port1');
+
+    expect(arp.lookup('192.168.1.99')).toBeDefined();
+    expect(arp.resolved('192.168.1.99')).toBeUndefined();
+  });
+
+  it('un apprentissage ulterieur remplace l\'echec', () => {
+    const { arp } = lab();
+    arp.markFailed('192.168.1.10', 'port1');
+
+    arp.learn('192.168.1.10', new MACAddress(PEER_MAC), 'port1');
+
+    expect(arp.resolved('192.168.1.10')?.toString()).toBe(PEER_MAC);
+  });
+
+  it('markFailed n\'ecrase pas une entree statique', () => {
+    const { arp } = lab();
+    arp.setStatic('192.168.1.10', new MACAddress(PEER_MAC), 'port1');
+
+    arp.markFailed('192.168.1.10', 'port1');
+
+    expect(arp.lookup('192.168.1.10')?.type).toBe('static');
+  });
+});
+
+describe('ArpService — adresse dupliquee, comme Router.handleARP', () => {
+  it('signale quand un tiers revendique UNE DE SES adresses', () => {
+    const reports: string[] = [];
+    const interfaces = new InterfaceTable();
+    interfaces.configure('port1', { ip: '192.168.1.1', mask: '255.255.255.0' });
+    const arp = new ArpService({
+      interfaces, macOf: () => new MACAddress(FW_MAC_1), now: () => clock,
+      onDuplicateAddress: (r) => reports.push(r.address),
+    });
+
+    arp.handleRequest(request('192.168.1.1', PEER_MAC, '192.168.1.50'), 'port1');
+
+    expect(reports).toEqual(['192.168.1.1']);
+  });
+
+  it('n\'APPREND PAS d\'un paquet qui usurpe son adresse', () => {
+    const { arp } = lab();
+
+    arp.handleRequest(request('192.168.1.1', PEER_MAC, '192.168.1.50'), 'port1');
+
+    expect(arp.lookup('192.168.1.1')).toBeUndefined();
+  });
+
+  it('ne signale rien pour une adresse ordinaire', () => {
+    const reports: string[] = [];
+    const interfaces = new InterfaceTable();
+    interfaces.configure('port1', { ip: '192.168.1.1', mask: '255.255.255.0' });
+    const arp = new ArpService({
+      interfaces, macOf: () => new MACAddress(FW_MAC_1), now: () => clock,
+      onDuplicateAddress: (r) => reports.push(r.address),
+    });
+
+    arp.handleRequest(request('192.168.1.10', PEER_MAC, '192.168.1.1'), 'port1');
+
+    expect(reports).toEqual([]);
+  });
+
+  it('ne se signale pas lui-meme — son propre ARP gratuit revenu', () => {
+    const reports: string[] = [];
+    const interfaces = new InterfaceTable();
+    interfaces.configure('port1', { ip: '192.168.1.1', mask: '255.255.255.0' });
+    const arp = new ArpService({
+      interfaces, macOf: () => new MACAddress(FW_MAC_1), now: () => clock,
+      onDuplicateAddress: (r) => reports.push(r.address),
+    });
+
+    arp.handleRequest(request('192.168.1.1', FW_MAC_1, '192.168.1.1'), 'port1');
+
+    expect(reports).toEqual([]);
+  });
+});
+
 describe('ArpService — resolution asynchrone du contrat INeighborResolver', () => {
   it('resout immediatement depuis le cache', async () => {
     const { arp } = lab();

@@ -34,12 +34,12 @@
 | 1 | `PacketContext` + `FirewallPipeline` | 23 | ✅ |
 | 1 | Étapes du pipeline (7 étapes) | 30 | ✅ |
 | 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
-| 1 | `ArpService` | 23 | ✅ |
+| 1 | `ArpService` | 33 | ✅ |
 | 1 | Façade `Firewall` + `L2Delivery` | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 390 cas, verts.**
+**Total actuel : 400 cas, verts.**
 
 ---
 
@@ -452,6 +452,36 @@ pas.
 un réapprentissage repousse l'échéance. C'est ce qui distingue une table qui
 *suit* le réseau d'une table qui le *décrète*.
 
+#### Correction majeure — mon audit initial était incomplet (B7)
+
+**J'avais audité `src/network/arp/` et rien d'autre.** L'utilisateur a
+insisté pour que l'exploration soit systématique, et il avait raison : la
+mesure complète a montré que j'avais créé un **doublon partiel**.
+
+| Ce qui existait déjà | Ce que j'avais fait |
+|---|---|
+| `ARPEntry` défini dans `EndHost.ts:108`, avec `type: 'dynamic' \| 'static' \| 'failed'`, importé par **9 fichiers / 29 sites** | Inventé un `ArpEntry` avec `isStatic: boolean` |
+| L'état `'failed'` (NUD FAILED) déjà modélisé | Omis |
+| `Router.handleARP` détecte les adresses dupliquées | Omis |
+| `LinuxArp.ts` lit une `Map<string, ARPEntry>` | Ma table n'aurait pas été lisible par la commande `arp` |
+
+**Corrigé, et l'occasion a servi à améliorer le dépôt** : `ARPEntry` était un
+type *partagé* (Router, EndHost, Cisco, Linux, Windows) rangé dans
+`EndHost.ts`. Il est déplacé vers `core/types.ts`, à côté d'`ARPPacket`, et
+**ré-exporté depuis `EndHost.ts`** pour qu'aucun des 29 sites ne casse.
+`ArpService` l'utilise désormais, avec les trois états et la détection
+d'adresse dupliquée. Dix cas neufs.
+
+**Régression connexe exécutée** : les quatre suites ARP du dépôt
+(`arp-aware-control-plane`, `arp-command`, `arp-icmp-redirect`,
+`arp-persistence-on-switch`) — 89 cas, verts.
+
+**Ce que cette correction enseigne, et pourquoi elle est ici** : un audit
+qui ne regarde que le répertoire portant le nom du sujet passe à côté. Les
+implémentations réelles de ce dépôt vivent dans les équipements, pas dans
+les répertoires de protocole. La procédure d'audit est corrigée en
+conséquence (voir la note de méthode ci-dessous).
+
 ---
 
 ## Audit de non-duplication
@@ -460,6 +490,15 @@ un réapprentissage repousse l'échéance. C'est ce qui distingue une table qui
 > d'écrire une brique, mesurer le dépôt : la chose existe-t-elle déjà ?
 > Si oui, l'enrichir plutôt que la dupliquer. Si elle existe sous une forme
 > voisine mais répond à une **autre question**, l'écrire et dire pourquoi.
+>
+> **Méthode, corrigée après le défaut B7.** Regarder le répertoire qui porte
+> le nom du sujet ne suffit pas — dans ce dépôt les implémentations réelles
+> vivent souvent dans les ÉQUIPEMENTS (`Router.ts`, `EndHost.ts`,
+> `LinuxMachine.ts`) et les répertoires de protocole ne portent qu'une
+> fonction annexe. `src/network/arp/` contient l'inspection ARP ; le vrai
+> cache ARP est dans `EndHost.ts`. L'audit doit donc **toujours** être un
+> `grep` sur tout `src/`, par concept et non par répertoire, et vérifier
+> **qui définit le type** autant que qui l'utilise.
 
 ### Résultats
 
@@ -643,6 +682,7 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B4 | Test I-P2 auto-contradictoire (ordre du tableau vs séquence) | E8 | Le test exprimait mal l'invariant ; l'évaluateur avait raison |
 | B5 | Test « absence de route » visant une destination CONNECTÉE | E12 | Le moteur avait raison ; test corrigé + témoin ajouté |
 | B6 | Machine à états TCP non traversée par le chemin rapide | E12 | La session porte sa machine ; 5 cas neufs |
+| B7 | Audit ARP limité à `src/network/arp/` → doublon partiel de `ARPEntry` | E13 | `ARPEntry` déplacé vers `core/types.ts` + ré-export ; méthode d'audit corrigée |
 
 ## Prochaines étapes
 

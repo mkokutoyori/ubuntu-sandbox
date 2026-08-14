@@ -105,14 +105,7 @@ export interface GreDecapsulator {
 
 // ─── Internal Types ────────────────────────────────────────────────
 
-export interface ARPEntry {
-  mac: MACAddress;
-  /** Interface on which this entry was learned */
-  iface: string;
-  timestamp: number;
-  /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
-  type: 'dynamic' | 'static' | 'failed';
-}
+export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
 export const ARP_REACHABLE_TIME_MS = 30_000;
