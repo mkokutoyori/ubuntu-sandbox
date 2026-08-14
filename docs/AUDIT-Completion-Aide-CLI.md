@@ -882,3 +882,55 @@ rang, et les commandes de ce mode qui doivent continuer à s'exécuter.
 
 Non-régression connexe : 207 fichiers, 5 858 cas. `tsc` : 337, à la ligne
 près.
+
+## Étape 5 — un `<cr>` annoncé se valide vraiment (M6)
+
+**Le garde-fou avant les correctifs.** L'audit demandait un balayage
+plutôt qu'une correction au cas par cas, et c'est l'ordre suivi :
+`probe-aide-cr-tient-sa-promesse.test.ts` parcourt l'arbre d'aide de trois
+modes et, pour **chaque** `<cr>` annoncé, valide la commande sur une
+machine neuve. C'est lui qui a établi la liste — trente-deux fautes, dont
+je n'en avais mesuré que trois à l'audit — et c'est lui qui nommera la
+trente-troisième.
+
+Une machine neuve par validation, parce qu'une commande validée modifie la
+configuration : un balayage qui s'observe lui-même ne mesure plus rien.
+
+**Un premier instrument s'est révélé aveugle, et c'est instructif.** J'ai
+d'abord écrit le balayage sur `trie.match()` — statique, sans effet de
+bord, séduisant. Il a trouvé **zéro** `<cr>` menteur. `match()` accepte
+précisément là où l'exécution refuse : le gestionnaire glouton lève
+`CliIncomplete` à l'exécution, ce que l'analyse de la ligne ne peut pas
+savoir. Il fallait exécuter.
+
+**La cause est déclarative.** `<cr>` s'affiche dès qu'un nœud porte une
+action et que son arité minimale vaut zéro. `requiredArity` la déduit déjà
+des paramètres déclarés non optionnels — mais ces nœuds-là n'en déclarent
+aucun. Vingt-trois reçoivent leur arité (`requireArgs`), et trois cas
+demandaient mieux :
+
+* **`privilege`** et **`rate-limit`** absorbent leur mot suivant, donc
+  c'est l'arité du glouton lui-même qu'il faut poser (3 et 2).
+* **`class-map`** ne se distingue pas par le nombre d'arguments mais par
+  leur contenu : `class-map NOM` se valide, `class-map match-all` attend
+  encore son nom — un seul argument dans les deux cas. C'est exactement ce
+  que `executableWhen` existe pour dire.
+
+**Et un raccourci du moteur devait céder.** `class-map match-all` a résisté
+au prédicat, parce que le rendu de `<cr>` court-circuite l'arité dès que le
+premier argument est un mot-clé connu (`keywordForm`) — un raccourci utile
+pour les formes gloutonnes dont l'arité ne se calcule pas. Mais un
+`executableWhen` **déclaré** est un énoncé explicite sur ce qui complète la
+commande, et il oppose désormais son veto au raccourci.
+
+**Discrimination.** 16 cas : **11 tombent** avant correctif. Les 5 témoins
+vérifient qu'un `<cr>` légitime reste — `show version`, `show clock`,
+`show ip route`, `shutdown`, `no shutdown` — et chacun est validé, pas
+seulement lu.
+
+Non-régression connexe : 208 fichiers, 5 874 cas.
+
+**Note sur `tsc`.** Le socle passe de 337 à 338 erreurs, et **l'erreur
+ajoutée n'est pas la mienne** : `firewall-pipeline.test.ts` vient du commit
+concurrent `5646bd63`, rebasé dans la branche. Mesuré en remisant mes
+changements : 338 avant comme après, à la ligne près.

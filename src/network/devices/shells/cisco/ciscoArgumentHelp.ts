@@ -488,6 +488,44 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
       ]),
     ]);
   }
+  // ── `<cr>` ne s'annonce que si la commande se valide vraiment ──
+  //
+  // `<cr>` promet une chose et une seule : vous pouvez valider ici.
+  // Il s'affiche des qu'un noeud porte une action et que son ARITE
+  // MINIMALE vaut zero — et `requiredArity` la deduit des parametres
+  // declares non optionnels, dont ces noeuds-la n'ont aucun. La machine
+  // annoncait donc qu'on pouvait valider une commande a laquelle il
+  // manque un mot, et la validation repondait `% Incomplete command.`
+  //
+  // La liste vient d'un balayage de l'arbre d'aide
+  // (`probe-aide-cr-tient-sa-promesse.test.ts`), pas d'une inspection a
+  // l'oeil : c'est lui qui les a nommees, et lui qui nommera la suivante.
+  for (const chemin of [
+    'class-map', 'class-map match-all', 'class-map match-any',
+    'clock', 'crypto map', 'ip community-list', 'ip sla',
+    'logging history', 'no logging', 'policy-map',
+    'privilege configure', 'privilege exec', 'privilege interface', 'privilege line',
+    'route-map', 'sntp server', 'zone-pair security',
+  ]) tries.config.requireArgs(chemin, 1);
+  for (const chemin of [
+    'ip access-group', 'ip ospf', 'ipv6 ospf',
+    'rate-limit input', 'rate-limit output',
+  ]) tries.configIf.requireArgs(chemin, 1);
+  for (const chemin of ['show logging last', 'show running-config interface']) {
+    tries.privileged.requireArgs(chemin, 1);
+  }
+  // Quand le mot suivant est ABSORBE par un noeud glouton, l'arite seule
+  // ne suffit pas : c'est le meme nombre d'arguments qui, selon leur
+  // contenu, complete la commande ou non. `privilege exec` en porte
+  // trois au minimum (le mode, le verbe, la commande visee), et
+  // `rate-limit input` attend encore son debit.
+  tries.config.requireArgs('privilege', 3);
+  tries.configIf.requireArgs('rate-limit', 2);
+  // `class-map NOM` se valide ; `class-map match-all` attend son nom.
+  // Un seul argument dans les deux cas — seul son contenu les separe.
+  tries.config.executableWhen('class-map',
+    (args) => !(args.length === 1 && /^match-(all|any)$/i.test(args[0])));
+
 }
 
 export function describeCiscoArguments(tries: ArgumentHelpTries): void {

@@ -1667,7 +1667,15 @@ export class CommandTrie {
     // <cr> — shown when the current command is already executable
     // (real Cisco always shows <cr> when you can press Enter)
     const keywordForm = firstArg !== null && this.isContinuationKeyword(node, firstArg);
-    if ((!!node.action || !!node._porteAction)
+    // Le raccourci `keywordForm` — « le premier argument est un mot-clé,
+    // donc la commande est complète » — sert les formes gloutonnes dont
+    // l'arité ne se calcule pas. Mais un `executableWhen` DÉCLARÉ est un
+    // énoncé explicite sur ce qui complète la commande, et il doit
+    // pouvoir opposer son veto : `class-map match-all` porte bien un
+    // mot-clé en premier argument, et attend pourtant encore son nom.
+    const predicatSatisfait = node.executableWhen
+      ? node.executableWhen(argsSoFar) : true;
+    if ((!!node.action || !!node._porteAction) && predicatSatisfait
       && (keywordForm || this.isExecutableAt(node, consumedArgs, argsSoFar))) {
       results.push({ keyword: '<cr>', description: '' });
     }
