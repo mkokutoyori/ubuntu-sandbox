@@ -1732,3 +1732,55 @@ plutôt que corrigés en silence** : F4 mesurait un comportement correct et
 manquait l'inversion voisine ; F6 décrivait comme manquant un niveau 0
 déjà juste ; et l'énoncé de F3 réunissait deux placements dont un seul
 tenait à la cause qu'il donnait.
+
+## Étape 16 — `no privilege` lit la même analyse que `privilege`
+
+Trouvé en relisant le diff de l'étape 14 : la forme qui **retire** une
+délégation portait encore, intacte, la famille de défauts que F1/F2/F7
+venaient de refermer sur la forme positive. Son analyse était séparée et
+plus pauvre —
+
+* un mot-clé mal écrit rendait `% Incomplete command.`, c'est-à-dire
+  « continue de taper » à quelqu'un qui doit **effacer** ;
+* le refus était une chaîne, donc le curseur ne se posait pas sur le mot
+  fautif ;
+* une commande inexistante était acceptée, et retirait une règle qui
+  n'existe pas ;
+* **`all` était refusé** alors que la forme positive l'accepte — donc une
+  règle posée en `privilege exec all level 5 show ip` n'avait pas de
+  commande symétrique pour la reprendre.
+
+Corriger une moitié et pas l'autre, c'est laisser deux réponses possibles
+à la même question — le défaut que ce dépôt referme partout ailleurs.
+`analyserRegleDePrivilege()` est l'analyse unique ; les deux
+enregistrements l'appellent et ne diffèrent plus que par ce qu'ils font du
+résultat. La forme `reset` cesse d'être un cas à part dans le corps :
+elle est simplement la règle dont le niveau est absent.
+
+**Discrimination.** Le fichier de l'étape 14 passe de 32 à 44 cas ; **6
+des 12 nouveaux tombent** avant correctif — le mot-clé inconnu, la
+commande inexistante et `all`, sur chaque plateforme. Les 6 autres sont
+nommés plutôt que laissés à découvrir : le mode inconnu était déjà pointé
+au bon endroit, `% Incomplete command.` était déjà juste quand il manque
+vraiment un mot, et le retrait d'une règle ordinaire fonctionnait — ce
+sont les non-régressions de cette étape.
+
+**Une régression causée par ce correctif, attrapée par un garde-fou du
+dépôt.** `no privilege ?` s'est mis à offrir un `WORD` portant la
+description de son parent (« Remove privilege command rule ») au lieu de
+nommer ce qu'IOS attend. La cause est structurelle et vaut d'être écrite :
+l'aide d'un nœud glouton non décrit est **extraite du texte source du
+gestionnaire** (`autoContinuations`). L'ancien corps contenait
+littéralement `'level'`, le nouveau délègue — donc il n'y avait plus rien
+à extraire. Une aide dérivée du code se défait dès qu'on réécrit le code.
+Corrigé au bon endroit : `no privilege` déclare désormais son argument,
+le même énum de modes que la forme positive, les deux le tirant d'une
+seule définition. `probe-cli-arguments-types.test.ts` l'a signalé sans
+que rien d'autre ne bouge — c'est ce garde-fou qui a fait son travail.
+
+**Ce que §7 demandait est déjà fait, vérification faite.** Le rapport
+listait onze laboratoires « à re-mesurer après correctif de C1 » en notant
+qu'aucun ne tapait d'abréviation. Comptés un par un : les onze en tapent
+aujourd'hui, entre 4 et 18 occurrences chacun, `probe-privileges-evasion`
+compris — dont le rapport disait qu'il « porte le nom du sujet et ne
+l'atteint pas ». Rien à ajouter ; l'obligation est éteinte, pas oubliée.

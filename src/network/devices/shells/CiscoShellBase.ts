@@ -1024,6 +1024,50 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     throw new CliInvalidInput({ token: mots[0] });
   }
 
+  /**
+   * `[no] privilege <mode> [all] {level <n> | reset} <commande>`, lue une
+   * seule fois pour les deux formes.
+   *
+   * `no privilege` portait sa propre analyse, plus pauvre : elle rendait
+   * `% Incomplete command.` pour un mot-cle mal ecrit — donc « continue
+   * de taper » a qui doit effacer —, posait le curseur ailleurs que sur
+   * le mot fautif, acceptait une commande inexistante et REFUSAIT `all`
+   * que la forme positive accepte. Deux analyses d'une meme commande
+   * finissent toujours par rendre deux verdicts.
+   */
+  private analyserRegleDePrivilege(args: string[]): {
+    scope: AuthScope; tous: boolean; niveau: number | null; commande: string;
+  } {
+    if (args.length === 0) throw new CliIncomplete();
+    const mode = args[0].toLowerCase();
+    if (!AUTH_SCOPES.includes(mode as AuthScope)) {
+      throw new CliInvalidInput({ token: args[0] });
+    }
+    const scope = mode as AuthScope;
+    let i = 1;
+    const tous = args[i]?.toLowerCase() === 'all';
+    if (tous) i += 1;
+    const verbe = args[i]?.toLowerCase();
+    if (verbe === undefined) throw new CliIncomplete();
+    if (verbe !== 'level' && verbe !== 'reset') {
+      throw new CliInvalidInput({ token: args[i] });
+    }
+    let niveau: number | null = null;
+    if (verbe === 'level') {
+      const brut = args[i + 1];
+      if (brut === undefined) throw new CliIncomplete();
+      if (!/^\d+$/.test(brut) || Number(brut) > 15) {
+        throw new CliInvalidInput({ token: brut });
+      }
+      niveau = Number(brut);
+      i += 1;
+    }
+    const mots = args.slice(i + 1);
+    if (mots.length === 0) throw new CliIncomplete();
+    this.exigerCommandeConnue(scope, mots);
+    return { scope, tous, niveau, commande: mots.join(' ') };
+  }
+
   protected setupConfigurableInterfaces(deviceCtx?: unknown): string[] {
     const dev = (deviceCtx ?? this.deviceRef) as unknown as {
       getPorts?: () => Array<{ getName(): string }>;
@@ -4838,42 +4882,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * n'autorise jamais rien.
      */
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const mode = args[0].toLowerCase();
-      if (!AUTH_SCOPES.includes(mode as AuthScope)) {
-        throw new CliInvalidInput({ token: args[0] });
+      const regle = this.analyserRegleDePrivilege(args);
+      if (regle.niveau === null) {
+        return this.reinitialiserNiveauDeCommande(regle.scope, regle.commande);
       }
-      const scope = mode as AuthScope;
-      let i = 1;
-      // `all` etend la regle a ce qui COMPLETE la commande.
-      const tousDescendants = args[i]?.toLowerCase() === 'all';
-      if (tousDescendants) i += 1;
-      const verbe = args[i]?.toLowerCase();
-      if (verbe === undefined) throw new CliIncomplete();
-      if (verbe !== 'level' && verbe !== 'reset') {
-        throw new CliInvalidInput({ token: args[i] });
-      }
-      if (verbe === 'reset') {
-        const cible = args.slice(i + 1).join(' ');
-        if (cible === '') throw new CliIncomplete();
-        this.exigerCommandeConnue(scope, args.slice(i + 1));
-        return this.reinitialiserNiveauDeCommande(mode, cible);
-      }
-      const brut = args[i + 1];
-      if (brut === undefined) throw new CliIncomplete();
-      const lvl = parseInt(brut, 10);
-      if (!/^\d+$/.test(brut) || lvl < 0 || lvl > 15) {
-        throw new CliInvalidInput({ token: brut });
-      }
-      const commande = args.slice(i + 2).join(' ');
-      if (commande === '') throw new CliIncomplete();
-      this.exigerCommandeConnue(scope, args.slice(i + 2));
       // La regle N'EST PAS enregistree comme « ligne non traitee » : elle
       // est rendue depuis la table qui decide (`privilegeConfigLines`).
       // Deux magasins pour un fait, c'est ce qui laissait une regle
       // paraitre dans la configuration sans avoir le moindre effet.
       void raw;
-      this.autorisation().setCommandLevel(scope, commande, lvl, tousDescendants);
+      this.autorisation()
+        .setCommandLevel(regle.scope, regle.commande, regle.niveau, regle.tous);
       return '';
     });
     /**
@@ -4946,11 +4965,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.describeNode('no parser', 'Negate a parser command');
 
     this.configTrie.registerGreedy('no privilege', 'Remove privilege command rule', (args) => {
-      const mode = args[0]?.toLowerCase();
-      if (!AUTH_SCOPES.includes(mode as AuthScope)) return CISCO_ERRORS.INVALID_INPUT;
-      if (args[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
-      if (args.length < 4) return CISCO_ERRORS.INCOMPLETE;
-      this.autorisation().resetCommandLevel(mode as AuthScope, args.slice(3).join(' '));
+      const regle = this.analyserRegleDePrivilege(args);
+      this.autorisation().resetCommandLevel(regle.scope, regle.commande);
       return '';
     });
 

@@ -329,3 +329,69 @@ describe('F6 — non-regression : le niveau 0 d IOS', () => {
     expect(await r.executeCommand('show version')).toContain('Invalid input');
   });
 });
+
+/**
+ * `no privilege` est la commande qui RETIRE une delegation, et elle
+ * portait encore, intacte, la famille de defauts que F1/F2/F7 viennent
+ * de refermer sur la forme positive : un mot-cle mal ecrit rendu
+ * `% Incomplete command.` — donc « continue de taper » a qui doit
+ * effacer —, un curseur pose ailleurs que sur le mot fautif, une
+ * commande inexistante acceptee, et le mot-cle `all` refuse alors que la
+ * forme positive l'accepte.
+ *
+ * Corriger une moitie et pas l'autre, c'est laisser deux reponses
+ * possibles a la meme question. Les deux formes lisent desormais UNE
+ * analyse.
+ */
+describe.each(PLATEFORMES)('`no privilege` lit la meme analyse — %s', (_n, fabrique) => {
+  it('un MODE inconnu est pointe', async () => {
+    const m = fabrique();
+    await jouer(m, ['enable', 'configure terminal']);
+    const out = await m.executeCommand('no privilege badmode level 5 show');
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(colonneDuCurseur(out)).toBe('no privilege '.length);
+  });
+
+  it('un mot-cle inconnu est INVALIDE, pas incomplet', async () => {
+    const m = fabrique();
+    await jouer(m, ['enable', 'configure terminal']);
+    const out = await m.executeCommand('no privilege exec badkeyword 5 show');
+    expect(out).toContain("% Invalid input detected at '^' marker.");
+    expect(out).not.toContain('Incomplete');
+    expect(colonneDuCurseur(out)).toBe('no privilege exec '.length);
+  });
+
+  it('une commande inexistante est refusee', async () => {
+    const m = fabrique();
+    await jouer(m, ['enable', 'configure terminal']);
+    expect(await m.executeCommand('no privilege exec level 5 shwo verison'))
+      .toContain("% Invalid input detected at '^' marker.");
+  });
+
+  it('`all` est accepte, comme sur la forme positive', async () => {
+    const m = fabrique();
+    await jouer(m, ['enable', 'configure terminal']);
+    await m.executeCommand('privilege exec all level 5 show ip');
+    expect(await m.executeCommand('no privilege exec all level 5 show ip')).toBe('');
+  });
+
+  it('et elle retire vraiment la regle', async () => {
+    const m = fabrique();
+    await jouer(m, [
+      'enable', 'configure terminal', 'privilege exec level 5 show version',
+    ]);
+    await m.executeCommand('end');
+    expect(await m.executeCommand('show running-config'))
+      .toContain('privilege exec level 5 show version');
+    await jouer(m, ['configure terminal', 'no privilege exec level 5 show version', 'end']);
+    expect(await m.executeCommand('show running-config'))
+      .not.toContain('privilege exec level 5 show version');
+  });
+
+  it('une ligne a qui il manque un mot reste `% Incomplete command.`', async () => {
+    const m = fabrique();
+    await jouer(m, ['enable', 'configure terminal']);
+    expect(await m.executeCommand('no privilege exec level')).toBe('% Incomplete command.');
+    expect(await m.executeCommand('no privilege exec level 5')).toBe('% Incomplete command.');
+  });
+});

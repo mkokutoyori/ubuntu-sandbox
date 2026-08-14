@@ -724,14 +724,18 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   // `privilege ?` n'offrait que `level`, un mot-clé qui vient après le
   // mode : `privilege level` seul n'existe pas, IOS demande d'abord de
   // quel mode on parle.
-  tries.config.describeArgs('privilege', [
-    ENUM('mode', 'Command mode', [
-      ['configure', 'Global configuration mode'],
-      ['exec', 'Exec mode'],
-      ['interface', 'Interface configuration mode'],
-      ['line', 'Line configuration mode'],
-    ]),
+  const MODE_DE_PRIVILEGE = () => ENUM('mode', 'Command mode', [
+    ['configure', 'Global configuration mode'],
+    ['exec', 'Exec mode'],
+    ['interface', 'Interface configuration mode'],
+    ['line', 'Line configuration mode'],
   ]);
+  tries.config.describeArgs('privilege', [MODE_DE_PRIVILEGE()]);
+  // La forme qui RETIRE prend le meme argument que celle qui pose : sans
+  // sa propre description, `no privilege ?` recopiait celle de son
+  // parent, c'est-a-dire la phrase qui decrit la commande entiere la ou
+  // IOS nomme ce qu'il attend.
+  tries.config.describeArgs('no privilege', [MODE_DE_PRIVILEGE()]);
   // `aaa authentication ?` retombait sur les mots-clés de la RACINE
   // `aaa` (il proposait `new-model`, `attempts`, `session-id`…), parce
   // que rien ne décrivait ce qui vient après. Chaque niveau porte
