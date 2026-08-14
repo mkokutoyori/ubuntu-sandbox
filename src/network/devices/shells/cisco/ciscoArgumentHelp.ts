@@ -1,4 +1,5 @@
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
+import { estTypeSansNumero } from './CiscoConfigCommands';
 
 const IP = (name: string, description: string): ParamSpec =>
   ({ name, type: 'IP_ADDR', description });
@@ -556,6 +557,10 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
 
   tries.config.describeArgs('access-list', [
     INT('number', [1, 2699], 'Access list number'),
+    ENUM('action', 'Specify packets to forward or reject', [
+      ['deny', 'Specify packets to reject'],
+      ['permit', 'Specify packets to forward'],
+    ]),
   ]);
   tries.config.describeArgs('ip route', [
     IP('prefix', 'Destination prefix'),
@@ -1010,6 +1015,10 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   describeArgumentTypes(tries);
 
   tries.config.requireArgs('interface', 1);
+  // Un type seul compte pour un argument, donc l'arité est satisfaite —
+  // et pourtant la commande est incomplète. Le prédicat le dit.
+  tries.config.executableWhen('interface',
+    (args) => !(args.length === 1 && estTypeSansNumero(args[0])));
   tries.config.requireArgs('ip dhcp pool', 1);
   tries.config.requireArgs('enable secret', 1);
   tries.config.requireArgs('enable password', 1);

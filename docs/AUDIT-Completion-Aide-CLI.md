@@ -934,3 +934,109 @@ Non-régression connexe : 208 fichiers, 5 874 cas.
 ajoutée n'est pas la mienne** : `firewall-pipeline.test.ts` vient du commit
 concurrent `5646bd63`, rebasé dans la branche. Mesuré en remisant mes
 changements : 338 avant comme après, à la ligne près.
+
+---
+
+## Étape 6 — M5 : `?` ne propose plus un mot que l'analyseur refuse
+
+`src/__tests__/unit/network-v2/probe-aide-tient-ses-promesses.test.ts`
+
+**L'invariant n'est pas « la commande s'exécute » mais « le mot existe ».**
+C'est la distinction qu'IOS fait lui-même, et elle sépare deux réponses
+très différentes pour l'opérateur :
+
+```
+% Incomplete command.   →  le mot-clé est bon, il en manque d'autres.
+                           L'aide avait raison de le proposer.
+% Invalid input         →  ce mot-là n'existe pas ici. L'aide a menti.
+```
+
+Le balayage exécute donc chaque mot proposé, sur une **machine neuve à
+chaque essai** — la commande essayée peut modifier la configuration, et un
+balayage qui s'observe lui-même ne mesure plus rien. Il attrape deux
+familles de fautes d'un coup : l'aide qui propose un mot inexistant, et
+l'analyseur qui répond « inconnu » à un mot qu'il connaît mais trouve
+incomplet. Les deux mentent, chacun à sa manière.
+
+**Mesure de départ : 70 promesses non tenues.** Quatre corrections
+structurelles les ramènent à 13.
+
+**1 — Un type d'interface n'est pas un nom inconnu.** `interface ?`
+proposait `GigabitEthernet`, et `interface GigabitEthernet` répondait
+`% Invalid input` — c'est-à-dire « ce mot n'existe pas » à un mot que la
+même machine venait de proposer. Il manque seulement le numéro, et IOS le
+dit ainsi. Le commutateur avait la variante du même défaut, avec ses
+propres mots : `% Invalid interface name "FastEthernet"`, qui nie le nom
+au lieu de réclamer sa suite. `estTypeSansNumero` est le prédicat unique
+des deux plateformes **et de l'aide** — trois listes de types finiraient
+par diverger, et l'aide promettrait à nouveau ce que l'analyseur refuse.
+
+**2 — Un type d'interface ne se propose qu'en première place.**
+`interface GigabitEthernet0/0 GigabitEthernet` n'existe pas ; les types
+sont désormais `leadingOnly`, sur le routeur comme sur le commutateur.
+
+**3 — Une liste extraite est un aiguillage, pas une suite.** Les mots
+qu'on extrait du corps d'un gestionnaire décrivent **une** lecture : le
+gestionnaire lit un mot-clé et agit. Dès qu'un de ces mots est sur la
+ligne, les autres sont ses **alternatives**, pas ses suites. Sans cette
+règle, `show interfaces stats ?` reproposait `description`, `rate-limit`
+et `summary`, que la machine refuse ensuite.
+
+**4 — Un nœud qui déclare des paramètres n'accepte ses enfants qu'au
+rang zéro.** C'est le correctif qui a demandé trois essais, et les deux
+premiers étaient faux pour la même raison : je corrigeais la mauvaise
+famille de suggestions.
+
+`ip address 10.0.0.1 255.255.255.0 ?` proposait `dhcp`. J'ai d'abord
+supposé un mot extrait, et j'ai posé la règle sur les continuations
+automatiques. Résultat mesuré : `dhcp` **était toujours là** et
+`access-list 10 ?` avait perdu `deny` et `permit`. La mesure a dit
+pourquoi — `ip address dhcp` est un **nœud enfant** enregistré, donc
+`dhcp` occupe le rang d'argument zéro ; tandis que `deny`/`permit`, eux,
+étaient bien des mots extraits. J'avais interverti les deux.
+
+La règle juste porte sur les enfants, et **elle ne joue que pour un nœud
+à paramètres déclarés** — c'est ce qui la rend vraie plutôt que
+seulement efficace :
+
+```ts
+const enfantsHorsDePortee = consumedArgs > 0 && node.params.length > 0;
+```
+
+`ip address` déclare l'adresse et le masque : une fois les deux saisis, la
+machine est dans sa propre liste d'arguments et l'exécution refuse
+`dhcp` — ce que l'aide annonçait pourtant. `show interfaces` n'en déclare
+aucun, donc `show interfaces Gi0/0 accounting` reste atteignable après son
+argument, comme sur une vraie machine ; et `ping 1.1.1.1 repeat 5 ?` garde
+`size`/`source`/`timeout`, qui sont des suggestions déclarées et non des
+enfants. Le même verrou est posé sur la tabulation, sans quoi les deux
+portes répondraient différemment à la même question.
+
+**`access-list 10 ?` proposait `eq`**, glané dans `srcPortSpec?.spec.op
+=== 'eq'`. `eq` est un vrai mot-clé d'IOS — mais après un port, jamais à
+la place de l'action. Le correctif n'est pas un filtre : l'action est
+**déclarée** comme second paramètre énuméré, ce qu'elle est. L'aide rend
+alors `deny`/`permit` et rien d'autre, exactement comme une vraie machine.
+
+**Le reste : un cliquet, pas un silence.** Les 13 promesses restantes ne
+partagent aucune cause — un mot-clé rendu par une commande que ce
+simulateur n'implémente pas (`ip scp`, `no line`), un message d'analyseur
+à corriger (`enable algorithm-type`), un mot-clé périmé (`show ip sla
+monitor`), des frères qui s'excluent sans le déclarer (`show interfaces`,
+qui ne déclare aucun paramètre et échappe donc à la règle 4). Elles sont
+**nommées** dans `RESTE_CONNU`, et le balayage exige l'égalité exacte :
+aucune nouvelle ne peut apparaître sans faire échouer ce fichier, et en
+corriger une oblige à la retirer d'ici. La liste ne peut que décroître.
+
+**Discrimination.** 12 cas : **7 tombent** avant correctif, dont les deux
+balayages et les quatre cas nommés. Les témoins vérifient qu'un mot
+légitime reste proposé — `interface ?` offre toujours les types, et
+`interface FastEthernet9/9` garde bien « nom invalide », qu'il est.
+
+**Trouvé au passage.** `registerSuggestions` n'acceptait pas `leadingOnly`
+dans sa signature alors que le nœud le porte depuis longtemps et que
+`addCompletionKeywords` l'accepte : le drapeau était honoré à l'exécution
+et refusé par le typage.
+
+Non-régression connexe : 208 fichiers, 5 874 cas. `tsc` : 342 avant, 342
+après.

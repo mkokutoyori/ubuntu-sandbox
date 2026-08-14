@@ -413,7 +413,10 @@ export class CommandTrie {
     if (params) node.params = params;
   }
 
-  registerSuggestions(path: string, suggestions: Array<{ keyword: string; description: string }>): void {
+  registerSuggestions(
+    path: string,
+    suggestions: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }>,
+  ): void {
     const keywords = path.split(/\s+/).map(k => k.toLowerCase());
     let node: CommandNode = this.root;
     for (const kw of keywords) {
@@ -1133,6 +1136,7 @@ export class CommandTrie {
     for (const c of this.suggestionsApplicables(statiques, paramIdx, argsSoFar)) {
       if (c.origin === 'auto'
         && (!c.description || attendUnArgument || argumentsConsommes)) continue;
+      if (c.origin === 'child' && paramIdx > 0 && node.params.length > 0) continue;
       if (c.origin === 'child' || c.keyword.toLowerCase().startsWith(partialLower)) {
         push(c.keyword);
       }
@@ -1429,8 +1433,16 @@ export class CommandTrie {
   }
 
   private autoCandidates(r: SuggestionRequest): SuggestionCandidate[] {
-    return this.autoContinuations(r.node)
-      .map((a) => ({ keyword: a.keyword, description: a.description, origin: 'auto' as const }));
+    const auto = this.autoContinuations(r.node);
+    // L'extraction modélise UN aiguillage : le gestionnaire lit un
+    // mot-clé et agit. Dès qu'un de ces mots est sur la ligne, les
+    // autres sont ses alternatives, pas ses suites — sans quoi
+    // `show interfaces stats ?` reproposait `accounting`, `counters`,
+    // `summary`, que la machine refuse ensuite.
+    const dejaTape = new Set(r.argsSoFar.map((a) => a.toLowerCase()));
+    if (auto.some((a) => dejaTape.has(a.keyword.toLowerCase()))) return [];
+    return auto.map((a) =>
+      ({ keyword: a.keyword, description: a.description, origin: 'auto' as const }));
   }
 
   private dynamicCandidates(r: SuggestionRequest): SuggestionCandidate[] {
@@ -1604,7 +1616,22 @@ export class CommandTrie {
       this.collectSuggestions(requete, new Set([origin]));
 
     const argumentsConsumed = consumedArgs > 0 && node.params.length > consumedArgs;
-    if (!argumentsConsumed) results.push(...jamaisDeuxFois(depuis('child')));
+
+    /**
+     * Un nœud QUI DÉCLARE des paramètres n'accepte ses enfants qu'à la
+     * PREMIÈRE place. `ip address dhcp` est un nœud enfant, donc `dhcp`
+     * occupe le rang d'argument zéro ; une fois l'adresse et le masque
+     * saisis, la machine est dans la liste d'arguments de `ip address`
+     * et l'exécution refuse `ip address 10.0.0.1 255.255.255.0 dhcp` —
+     * que l'aide proposait pourtant.
+     *
+     * La règle ne joue QUE pour un nœud à paramètres déclarés, et c'est
+     * ce qui la rend vraie : `show interfaces` n'en déclare aucun, donc
+     * `show interfaces Gi0/0 accounting` reste atteignable après son
+     * argument, comme sur une vraie machine.
+     */
+    const enfantsHorsDePortee = consumedArgs > 0 && node.params.length > 0;
+    if (!enfantsHorsDePortee) results.push(...jamaisDeuxFois(depuis('child')));
 
     // Un paramètre déjà fourni n'est plus proposé : après
     // `ip address 192.168.10.1`, IOS attend le masque, pas l'adresse.

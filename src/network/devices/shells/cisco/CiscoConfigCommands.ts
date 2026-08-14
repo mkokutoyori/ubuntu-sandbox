@@ -19,6 +19,20 @@ import { CliInvalidInput } from '../cli/CliDiagnostic';
 import { CISCO_ERRORS } from '../cli-utils';
 import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
 
+/**
+ * Un TYPE d'interface sans son numéro.
+ *
+ * `interface GigabitEthernet` est un nom INCOMPLET, pas un nom inconnu :
+ * IOS réclame la suite. La même question se pose à deux endroits — le
+ * gestionnaire, qui doit répondre `% Incomplete command.`, et l'aide,
+ * qui ne doit pas annoncer `<cr>` sur une commande que la machine
+ * refusera. Deux listes de types finiraient par diverger, et l'aide
+ * promettrait alors ce que l'analyseur refuse.
+ */
+export const estTypeSansNumero = (mot: string): boolean =>
+  /^(gigabitethernet|fastethernet|tengigabitethernet|ethernet|loopback|serial|tunnel|port-channel|virtual-template|bvi|vlan|dialer|async)$/i
+    .test(mot);
+
 // ─── Shell Context Interface ─────────────────────────────────────────
 
 export type CiscoShellMode =
@@ -139,6 +153,10 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
           }
         }
       }
+      // Un TYPE sans numero n'est pas un nom inconnu : c'est un nom
+      // incomplet, et IOS le dit ainsi. Les confondre faisait repondre
+      // « ce mot n'existe pas » a un mot que l'aide venait de proposer.
+      if (estTypeSansNumero(combined)) return '% Incomplete command.';
       if (!ifName) return formatInvalidInput(10);
     }
     ctx.setSelectedInterface(ifName);
@@ -329,21 +347,26 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
 
+  // `leadingOnly` : un type d'interface EXCLUT les autres. Sans lui, la
+  // liste etait reproposee apres qu'on en eut choisi un, et `interface
+  // Ethernet ?` offrait `FastEthernet`, `GigabitEthernet`, `Serial`… —
+  // sept lignes que la machine refuse ensuite. Il en va de meme des
+  // sortes de ligne.
   trie.registerSuggestions('interface', [
-    { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z' },
-    { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u' },
-    { keyword: 'Ethernet',         description: 'IEEE 802.3' },
-    { keyword: 'Loopback',         description: 'Loopback interface' },
-    { keyword: 'Serial',           description: 'Serial' },
-    { keyword: 'Tunnel',           description: 'Tunnel interface' },
-    { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces' },
-    { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface' },
+    { keyword: 'GigabitEthernet',  description: 'GigabitEthernet IEEE 802.3z', leadingOnly: true },
+    { keyword: 'FastEthernet',     description: 'FastEthernet IEEE 802.3u', leadingOnly: true },
+    { keyword: 'Ethernet',         description: 'IEEE 802.3', leadingOnly: true },
+    { keyword: 'Loopback',         description: 'Loopback interface', leadingOnly: true },
+    { keyword: 'Serial',           description: 'Serial', leadingOnly: true },
+    { keyword: 'Tunnel',           description: 'Tunnel interface', leadingOnly: true },
+    { keyword: 'Port-channel',     description: 'Ethernet Channel of interfaces', leadingOnly: true },
+    { keyword: 'BVI',              description: 'Bridge-Group Virtual Interface', leadingOnly: true },
   ]);
   trie.registerSuggestions('line', [
-    { keyword: 'console', description: 'Primary terminal line' },
-    { keyword: 'vty',     description: 'Virtual terminal' },
-    { keyword: 'aux',     description: 'Auxiliary line' },
-    { keyword: 'tty',     description: 'Terminal controller' },
+    { keyword: 'console', description: 'Primary terminal line', leadingOnly: true },
+    { keyword: 'vty',     description: 'Virtual terminal', leadingOnly: true },
+    { keyword: 'aux',     description: 'Auxiliary line', leadingOnly: true },
+    { keyword: 'tty',     description: 'Terminal controller', leadingOnly: true },
   ]);
   trie.registerSuggestions('no', [
     { keyword: 'hostname',  description: 'Reset system hostname' },

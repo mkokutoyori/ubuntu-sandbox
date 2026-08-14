@@ -35,6 +35,7 @@ import {
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { CISCO_ERRORS } from './cli-utils';
+import { estTypeSansNumero } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
@@ -2566,6 +2567,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName || !this.d().getPort(portName)) {
+        // Un TYPE sans numero est un nom INCOMPLET, pas un nom invalide.
+        // L'aide vient de proposer `FastEthernet` : lui repondre que ce
+        // nom n'existe pas la dementirait, alors qu'il manque seulement
+        // le numero. Le routeur repond deja ainsi.
+        if (args.length === 1 && estTypeSansNumero(args[0])) return CISCO_ERRORS.INCOMPLETE;
         return `% Invalid interface name "${args[0]}"`;
       }
       this.selectedInterface = portName;
@@ -2574,14 +2580,16 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
+    // `leadingOnly` : un type d'interface exclut les autres — voir la
+    // meme declaration cote routeur.
     this.configTrie.addCompletionKeywords('interface', [
-      { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3' },
-      { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z' },
-      { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae' },
-      { keyword: 'Loopback', description: 'Loopback interface' },
-      { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces' },
-      { keyword: 'Vlan', description: 'Catalyst VLANs' },
-      { keyword: 'range', description: 'interface range command' },
+      { keyword: 'FastEthernet', description: 'FastEthernet IEEE 802.3', leadingOnly: true },
+      { keyword: 'GigabitEthernet', description: 'GigabitEthernet IEEE 802.3z', leadingOnly: true },
+      { keyword: 'TenGigabitEthernet', description: 'TenGigabitEthernet IEEE 802.3ae', leadingOnly: true },
+      { keyword: 'Loopback', description: 'Loopback interface', leadingOnly: true },
+      { keyword: 'Port-channel', description: 'Ethernet Channel of interfaces', leadingOnly: true },
+      { keyword: 'Vlan', description: 'Catalyst VLANs', leadingOnly: true },
+      { keyword: 'range', description: 'interface range command', leadingOnly: true },
     ]);
 
     this.configTrie.registerGreedy('mac address-table aging-time', 'Set MAC address aging time', (args) => {
@@ -2755,6 +2763,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       const portName = this.resolveInterfaceName(args[0]);
       if (!portName || !this.d().getPort(portName)) {
+        // Un TYPE sans numero est un nom INCOMPLET, pas un nom invalide.
+        // L'aide vient de proposer `FastEthernet` : lui repondre que ce
+        // nom n'existe pas la dementirait, alors qu'il manque seulement
+        // le numero. Le routeur repond deja ainsi.
+        if (args.length === 1 && estTypeSansNumero(args[0])) return CISCO_ERRORS.INCOMPLETE;
         return `% Invalid interface name "${args[0]}"`;
       }
       this.selectedInterface = portName;
