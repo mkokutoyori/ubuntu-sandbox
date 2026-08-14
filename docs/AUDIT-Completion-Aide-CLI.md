@@ -1370,3 +1370,53 @@ réécriture de gestionnaire ne peut plus défaire l'aide.
 
 Non-régression connexe : 211 fichiers, 5 920 cas. `tsc` : 343 avant, 343
 après.
+
+---
+
+# Clôture — les dix-neuf constats, et où ils en sont
+
+Dix étapes, chacune livrée avec sa sonde discriminée par `git stash` et sa
+non-régression connexe.
+
+| # | Constat | État | Étape |
+|---|---|---|---|
+| C1 | `Tab` ignore la vue CLI | fermé | 1 |
+| C2 | `?`/`Tab` divulguent des branches inatteignables | fermé | 2 |
+| M1 | `<cr>` rendu en premier | fermé | 3 |
+| M2 | Tri insensible à la casse | fermé | 3 |
+| M3 | `do ?` / `default ?` morts | fermé | 8 |
+| M4 | Position décrite un rang trop loin | fermé | 7 |
+| M5 | L'aide promet ce que l'analyseur refuse | fermé | 6, 8 |
+| M6 | `<cr>` mensonger | fermé | 5 |
+| M7 | Un nœud glouton recopie la liste du MODE | fermé | 4 |
+| M8 | `Tab` propose ce que `?` a écarté | fermé | 4 |
+| M9 | Fuite de description d'une commande vers une autre | fermé | 4 |
+| M10 | Aucune complétion dynamique | fermé | 9 |
+| M11 | `vlan ?` mort sur un Catalyst | déjà fermé | — |
+| M12 | Candidats de `Tab` non triés | fermé | 9 |
+| G1 | L'aide dérivée du texte source | fermé | 4, 10 |
+| G2 | Deux portes pour une décision | fermé | 1 |
+| G3 | Descriptions absentes en production | fermé | 4, 10 |
+| G4 | Aides mortes | fermé | 8 |
+| G5 | Blancs de fin de ligne sur `<cr>` | fermé | 3 |
+
+**Trois garde-fous restent en place et ne peuvent que se resserrer**, parce
+qu'ils exigent l'égalité exacte plutôt qu'un plafond :
+
+* **les promesses tenues** — tout mot que `?` propose est exécuté, et ne
+  doit pas répondre « ce mot n'existe pas ». La liste des exceptions est
+  **vide**.
+* **les `<cr>` tenus** — tout `<cr>` annoncé est validé sur une machine
+  neuve. Vide également.
+* **les descriptions** — tout mot-clé offert, et tout mot déclaré comme
+  suite, porte une description.
+
+**Ce que la campagne a appris, au-delà des correctifs.** Trois fois, le
+correctif évident était faux, et c'est la mesure qui l'a dit : la règle
+sur `ip address … dhcp` visait la mauvaise famille de suggestions ; le
+prédicat « mot absent » traitait un refus anonyme comme un manque ; le
+relevé des continuations n'a d'abord parcouru que cinq arbres sur
+cinquante-deux. Dans les trois cas, une sonde exécutant vraiment la
+commande a tranché en une minute ce qu'une lecture du code aurait discuté
+longtemps — et deux fois sur trois, la correction juste était l'inverse de
+la première idée.
