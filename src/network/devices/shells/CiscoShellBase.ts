@@ -22,6 +22,7 @@ import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
 import { buildPrompt } from './PromptBuilder';
@@ -1005,6 +1006,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       command: cmdPart,
       defaultLevel: defaut,
     }) === 'run';
+  }
+
+  private commandeConnueDansMode(scope: AuthScope, commande: string): boolean {
+    for (const trie of this.arbresDe(scope)) {
+      const r = trie.match(commande);
+      if (r.status === 'ok' || r.status === 'incomplete') return true;
+    }
+    return false;
   }
 
   protected setupConfigurableInterfaces(deviceCtx?: unknown): string[] {
@@ -4879,7 +4888,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (!existante) {
         sec.parserViews.set(nom, {
-          name: nom, execInclude: [], execExclude: [],
+          name: nom, modes: new Map(),
           superview: superview || undefined, members: superview ? [] : undefined,
         });
       } else if (superview && !existante.superview) {
@@ -5495,37 +5504,61 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
 
     this.configViewTrie.registerGreedy('commands', 'Configure the commands of a view', (args) => {
-      // `commands exec {include|exclude} <commande>`
+      // `commands <mode> {include | include-exclusive | exclude} [all] <cmd>`
       if (args.length < 3) throw new CliIncomplete();
       const vue = this.vueEnCours();
       if (!vue) return '';
-      if (args[0].toLowerCase() !== 'exec') {
-        // IOS connait d'autres modes (`configure`, `interface`…) ; ce
-        // simulateur ne filtre que le mode exec, et le dire vaut mieux
-        // que ranger une regle que la porte ne consultera jamais.
-        throw new CliInvalidInput({ token: args[0] });
-      }
+      const mode = args[0].toLowerCase();
+      if (!AUTH_SCOPES.includes(mode as AuthScope)) throw new CliInvalidInput({ token: args[0] });
       const sens = args[1].toLowerCase();
-      const commande = args.slice(2).join(' ').toLowerCase();
+      if (sens !== 'include' && sens !== 'include-exclusive' && sens !== 'exclude') {
+        throw new CliInvalidInput({ token: args[1] });
+      }
+      // `all` etend l'entree a ce qui COMPLETE la commande, comme le
+      // mot-cle homonyme des regles de niveau. La documentation Cisco
+      // l'emploie elle-meme : `commands exec include all show`.
+      const tous = args[2].toLowerCase() === 'all';
+      const reste = args.slice(tous ? 3 : 2);
+      if (reste.length === 0) throw new CliIncomplete();
+      const commande = this.autorisation()
+        .formeDeVue(mode as AuthScope, reste.join(' '));
       // Une commande qui n'existe pas n'accorderait rien : l'accepter
       // ferait d'une faute de frappe une vue silencieusement vide, ce
-      // qui est le defaut que ce mecanisme est cense refermer. IOS
-      // refuse aussi. On interroge l'arbre PRIVILEGIE, le seul qui
-      // contienne l'ensemble des commandes exec.
-      const essai = this.privilegedTrie.match(commande);
-      if (essai.status !== 'ok' && essai.status !== 'incomplete') {
-        return '%Command not found';
+      // qui est le defaut que ce mecanisme est cense refermer.
+      if (!this.commandeConnueDansMode(mode as AuthScope, commande)) return '%Command not found';
+
+      const jeu = parserViewMode(vue, mode);
+      if (sens === 'exclude') {
+        if (!jeu.exclude.some((c) => c.command === commande)) {
+          jeu.exclude.push({ command: commande, all: tous, exclusive: false });
+        }
+        return '';
       }
-      if (sens === 'include' || sens === 'include-exclusive') {
-        if (!vue.execInclude.includes(commande)) vue.execInclude.push(commande);
-      } else if (sens === 'exclude') {
-        if (!vue.execExclude.includes(commande)) vue.execExclude.push(commande);
+      // `include-exclusive` RESERVE la commande : aucune autre vue ne
+      // peut la revendiquer. Le mot-cle etait traite comme `include`,
+      // donc il produisait autre chose que ce qu'il promet, en silence.
+      const reservee = this.autorisation().views
+        .reservedBy(mode as AuthScope, commande, vue.name);
+      if (reservee !== null) {
+        return `%Command is set as include-exclusive in view ${reservee}`;
+      }
+      const exclusive = sens === 'include-exclusive';
+      const deja = jeu.include.find((c) => c.command === commande);
+      if (deja) {
+        jeu.include[jeu.include.indexOf(deja)] = { command: commande, all: tous, exclusive };
       } else {
-        throw new CliInvalidInput({ token: args[1] });
+        jeu.include.push({ command: commande, all: tous, exclusive });
       }
       return '';
     });
 
+    /**
+     * La commande existe-t-elle dans l'arbre de ce mode ?
+     *
+     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
+     * tout : `commands configure include hostname` porte sur une commande
+     * de configuration, qui n'est dans aucun arbre exec.
+     */
     this.configLineTrie.setCompletionFilter((path, keyword) =>
       this.lineKeywordAllowed(path.length > 0 ? path[0] : keyword));
     // `login-timeout <secondes>` : le delai laisse pour s'identifier,

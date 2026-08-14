@@ -164,7 +164,7 @@ describe('abreviation dans une vue', () => {
     await jouer(r, [
       'enable', 'configure terminal', 'aaa new-model',
       'parser view V',
-      'commands exec include show',
+      'commands exec include all show',
       'commands exec exclude show running-config',
       'exit', 'end',
       'enable view V',

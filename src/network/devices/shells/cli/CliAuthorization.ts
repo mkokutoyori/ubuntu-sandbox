@@ -62,11 +62,27 @@ export interface CliPrincipal {
  */
 export type AuthVerdict = 'run' | 'absent';
 
+/** Une commande entree dans une vue, avec ses deux nuances. */
+export interface AuthViewCommand {
+  readonly command: string;
+  /** `all` — l'entree couvre ce qui COMPLETE la commande. */
+  readonly all: boolean;
+  /** `include-exclusive` — aucune autre vue ne peut la revendiquer. */
+  readonly exclusive: boolean;
+}
+
 /** Une vue d'analyseur, y compris composee. */
 export interface AuthView {
   readonly name: string;
-  readonly execInclude: readonly string[];
-  readonly execExclude: readonly string[];
+  /**
+   * Les commandes autorisees PAR MODE d'analyseur (`exec`, `configure`,
+   * `interface`, `line`). Une vue qui ne gouvernerait que l'exec ne
+   * pourrait decrire aucun role qui configure quoi que ce soit.
+   */
+  readonly modes: ReadonlyMap<string, {
+    readonly include: readonly AuthViewCommand[];
+    readonly exclude: readonly AuthViewCommand[];
+  }>;
   /** Une superview ne contient pas de commandes : elle REUNIT des vues. */
   readonly superview?: boolean;
   readonly members?: readonly string[];
@@ -342,15 +358,44 @@ export class ParserViewRegistry {
    * egalite : on doit pouvoir taper `show` pour se voir proposer la
    * suite.
    */
-  visible(nom: string, commande: string): boolean {
+  /**
+   * `commande` est la forme canonique en MOTS-CLES : une entree de vue
+   * porte sur une commande, pas sur ses arguments — `commands exec
+   * include ping` autorise `ping 10.0.0.1`. C'est la meme distinction
+   * que pour les niveaux, et seul l'arbre la connait.
+   */
+  visible(nom: string, scope: AuthScope, commande: string): boolean {
     const membres = this.resolues(nom);
     if (membres.length === 0) return false;
     const cible = normalise(commande);
-    if (membres.some((v) => v.execExclude.some((c) => couvre(normalise(c), cible)))) return false;
-    return membres.some((v) => v.execInclude.some((c) => {
-      const inclus = normalise(c);
-      return couvre(inclus, cible) || inclus.startsWith(cible + ' ');
-    }));
+    const jeux = membres.map((v) => v.modes.get(scope)).filter((j) => j !== undefined);
+    const couvertPar = (c: AuthViewCommand): boolean => {
+      const inclus = normalise(c.command);
+      return c.all ? couvre(inclus, cible) : inclus === cible;
+    };
+    if (jeux.some((j) => j!.exclude.some((c) => couvre(normalise(c.command), cible)))) return false;
+    return jeux.some((j) => j!.include.some((c) =>
+      // Un prefixe entre dans la vue reste joignable pour ce qu'il
+      // complete quand `all` est pose ; et une commande incluse PLUS
+      // LONGUE que ce qui est tape reste atteignable, parce que c'est un
+      // arbre et non une egalite — on doit pouvoir taper `show` pour se
+      // voir proposer la suite.
+      couvertPar(c) || normalise(c.command).startsWith(cible + ' ')));
+  }
+
+  /**
+   * La vue qui a RESERVE cette commande par `include-exclusive`, s'il y
+   * en a une autre que `sauf`.
+   */
+  reservedBy(scope: AuthScope, commande: string, sauf: string): string | null {
+    const cible = normalise(commande);
+    for (const [nom, vue] of this.views()) {
+      if (nom === sauf) continue;
+      const jeu = vue.modes.get(scope);
+      if (!jeu) continue;
+      if (jeu.include.some((c) => c.exclusive && normalise(c.command) === cible)) return nom;
+    }
+    return null;
   }
 }
 
@@ -421,7 +466,9 @@ export class CliAuthorization {
 
     const vue = input.principal.view;
     if (vue !== null && this.views.has(vue)) {
-      return this.views.visible(vue, commande) ? 'run' : 'absent';
+      return this.views.visible(
+        vue, input.scope, this.formeMotsCles(input.scope, input.command),
+      ) ? 'run' : 'absent';
     }
 
     const niveau = this.levels.levelOf(
@@ -454,6 +501,16 @@ export class CliAuthorization {
   /** Retire la regle et rend le niveau qu'elle portait, ou `undefined`. */
   resetCommandLevel(scope: AuthScope, command: string): number | undefined {
     return this.levels.reset(scope, this.formeMotsCles(scope, command));
+  }
+
+  /**
+   * La forme sous laquelle une entree de VUE est rangee : ses MOTS-CLES
+   * canoniques. Une entree porte sur une commande et laisse ses
+   * arguments libres — `commands exec include ping` autorise
+   * `ping 10.0.0.1`.
+   */
+  formeDeVue(scope: AuthScope, command: string): string {
+    return this.formeMotsCles(scope, command);
   }
 
   /** Les regles d'un espace dont le niveau est atteignable par la session. */

@@ -341,26 +341,66 @@ export interface ParameterMapInspect {
  * pour un role — on decrit ce que le role a le droit de faire, pas ce
  * qu'on lui ajoute par-dessus un socle qu'on n'a pas choisi.
  */
+/**
+ * Ce qu'une vue autorise dans UN mode d'analyseur.
+ *
+ * `include` et `include-exclusive` entrent tous deux la commande dans la
+ * vue ; ce qui les distingue est ce qu'ils permettent AILLEURS —
+ * `include-exclusive` interdit a toute autre vue de revendiquer la meme
+ * commande. Les confondre laissait deux vues la reclamer, ce qu'IOS
+ * refuse, et le mot-cle produisait donc autre chose que ce qu'il
+ * promet.
+ *
+ * `all` etend l'entree a ce qui COMPLETE la commande, comme le mot-cle
+ * homonyme des regles de niveau.
+ */
+export interface ParserViewCommand {
+  readonly command: string;
+  readonly all: boolean;
+  readonly exclusive: boolean;
+}
+
+export interface ParserViewMode {
+  include: ParserViewCommand[];
+  exclude: ParserViewCommand[];
+}
+
+/**
+ * Une vue CLI (RBAC d'IOS), telle que `parser view <nom>` la declare.
+ *
+ * Une vue n'est PAS un niveau de privilege : les niveaux ajoutent des
+ * commandes au socle du niveau 1, une vue REMPLACE l'arbre visible par
+ * ce qu'elle inclut, et rien d'autre. C'est ce qui la rend utilisable
+ * pour un role — on decrit ce que le role a le droit de faire, pas ce
+ * qu'on lui ajoute par-dessus un socle qu'on n'a pas choisi.
+ *
+ * Les commandes sont rangees PAR MODE d'analyseur : une vue qui ne
+ * gouvernerait que l'exec ne pourrait decrire aucun role qui configure
+ * quoi que ce soit, ce qui est la moitie de l'interet du mecanisme.
+ */
 export interface ParserView {
   readonly name: string;
   /** `secret …` sous la vue — ce que `enable view <nom>` demande. */
   secret?: string;
   secretAlgo?: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-  /** `commands exec include <cmd>` — les commandes exec autorisees. */
-  execInclude: string[];
-  /** `commands exec exclude <cmd>` — retirees d'un prefixe inclus. */
-  execExclude: string[];
+  /** Les commandes autorisees, par mode d'analyseur. */
+  modes: Map<string, ParserViewMode>;
   /**
    * `parser view <nom> superview` — une vue COMPOSEE ne porte aucune
    * commande a elle : elle reunit celles des vues qu'on lui ajoute par
    * `view <nom>`. C'est ainsi qu'IOS decrit un role recoupant plusieurs
-   * metiers sans dupliquer leurs listes. Le mot-cle etait accepte et
-   * JETE, donc la vue naissait ordinaire ET VIDE, et le compte qui la
-   * portait ne voyait rien du tout — pire qu'un refus.
+   * metiers sans dupliquer leurs listes.
    */
   superview?: boolean;
   /** Les vues membres, dans l'ordre d'ajout. */
   members?: string[];
+}
+
+/** Le jeu de commandes d'un mode, cree a la demande. */
+export function parserViewMode(v: ParserView, mode: string): ParserViewMode {
+  let m = v.modes.get(mode);
+  if (!m) { m = { include: [], exclude: [] }; v.modes.set(mode, m); }
+  return m;
 }
 
 /**
@@ -495,8 +535,15 @@ export class CiscoSecurityConfig {
         lines.push(` secret ${renderViewSecret(v)}`);
       }
       for (const m of v.members ?? []) lines.push(` view ${m}`);
-      for (const c of v.execInclude) lines.push(` commands exec include ${c}`);
-      for (const c of v.execExclude) lines.push(` commands exec exclude ${c}`);
+      for (const [mode, jeu] of v.modes) {
+        for (const c of jeu.include) {
+          lines.push(` commands ${mode} ${c.exclusive ? 'include-exclusive' : 'include'}`
+            + `${c.all ? ' all' : ''} ${c.command}`);
+        }
+        for (const c of jeu.exclude) {
+          lines.push(` commands ${mode} exclude${c.all ? ' all' : ''} ${c.command}`);
+        }
+      }
       // Le bloc se TERMINE lui-meme. Sans cette ligne, la configuration
       // rendue laisse la session dans `config-view` : tout ce qui suit —
       // les comptes, les interfaces — serait rejoue depuis ce sous-mode

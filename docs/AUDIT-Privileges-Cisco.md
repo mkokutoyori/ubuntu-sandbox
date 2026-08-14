@@ -1399,3 +1399,54 @@ tranche, et elle est écrite là où la ligne est produite.
 configuration globale fonctionne toujours. C'est un comportement réel
 d'IOS, et le confinement de `config-view` ne devait pas l'emporter avec
 lui — un cas le fixe sur les deux plateformes.
+
+---
+
+## Étape 12 — `commands <mode> {include | include-exclusive | exclude} [all]` (M7, M8)
+
+*Le bloc des vues est fermé.*
+
+**Fichiers** — `router/security/CiscoSecurityConfig.ts`,
+`cli/CliAuthorization.ts`, `CiscoShellBase.ts` ;
+`src/__tests__/unit/network-v2/cisco-view-commands-modes.test.ts`
+(neuf, 14 cas) ; deux fichiers de laboratoire corrigés.
+
+**Rouge — 10 échecs sur 14.** **Vert** — 14/14, puis **48 fichiers /
+1 511 cas** connexes. `tsc` : 334 avant, 334 après.
+
+**M7 — une vue ne pouvait décrire aucun rôle qui configure.** Seul le
+mode `exec` était accepté ; `commands configure include interface`
+répondait au caret. `ParserView` porte désormais ses commandes **par
+mode d'analyseur** (`modes: Map<mode, {include, exclude}>`), et
+`ParserViewRegistry.visible()` reçoit l'espace de nommage — la même
+valeur que celle qui gouverne les niveaux. Une vue gouverne donc
+maintenant la configuration globale et le mode interface, et ce qu'elle
+n'inclut pas y est **absent**, comme en exec.
+
+**M8 — `include-exclusive` produisait autre chose que ce qu'il promet.**
+Cisco distingue les deux dans les mêmes mots : *include* « allows the
+same command to be added to an additional view », *include-exclusive*
+« excludes the same command from being added to all other views ». Les
+confondre laissait deux vues revendiquer la même commande. Une seconde
+vue reçoit désormais `%Command is set as include-exclusive in view <X>`,
+et le mot-clé se rend sous son propre nom.
+
+**Le mot-clé `all` des vues**, que la documentation Cisco emploie
+elle-même (`commands exec include all show`), suit la même règle que
+celui des règles de niveau : sans lui, seule la commande **nommée** entre
+dans la vue.
+
+**Ce que l'étape 10 avait déjà appris, appliqué ici sans le redécouvrir.**
+Une entrée de vue porte sur une **commande**, pas sur ses arguments :
+`commands exec include ping` autorise `ping 10.0.0.1`. Les entrées sont
+donc rangées et comparées sur leurs **mots-clés canoniques**, exactement
+comme les règles de niveau — le canonicaliseur de l'étape 1 sert une
+troisième fois.
+
+**Quatre cas encodaient l'ancienne sémantique**, et l'un d'eux mérite
+d'être nommé : `tuto-cli-views-cisco` vérifiait qu'un mode autre
+qu'`exec` était **refusé**, au motif qu'il aurait été « rangé sans
+effet ». Le motif a disparu avec M7 — les quatre modes sont rangés *et*
+consultés. Le cas vérifie désormais ce qui reste vrai : un mode
+**inventé** est toujours refusé. Les trois autres passent à `all`, qui
+est ce qu'IOS exige pour couvrir une branche.

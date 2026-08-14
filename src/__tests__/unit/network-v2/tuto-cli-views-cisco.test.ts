@@ -126,10 +126,21 @@ describe('§11 : déclarer une vue', () => {
     ])).toContain('%Command not found');
   });
 
-  it('un mode autre qu\'exec est refusé plutôt que rangé sans effet', async () => {
+  /**
+   * Ce cas vérifiait qu'un mode autre qu'`exec` était REFUSÉ, au motif
+   * qu'il aurait été rangé sans effet. Le motif a disparu : les quatre
+   * modes d'analyseur sont désormais rangés ET consultés, donc une vue
+   * peut décrire un rôle qui configure. Ce qui reste à vérifier est
+   * qu'un mode INEXISTANT, lui, est toujours refusé.
+   */
+  it('les modes d\'analyseur réels sont acceptés, un mode inventé non', async () => {
     const r = new CiscoRouter('R1');
     expect(await config(r, [
       'aaa new-model', 'parser view V', 'commands configure include hostname',
+    ])).not.toContain('% Invalid input detected');
+    const r2 = new CiscoRouter('R2');
+    expect(await config(r2, [
+      'aaa new-model', 'parser view V', 'commands nawak include hostname',
     ])).toContain('% Invalid input detected');
   });
 
@@ -183,7 +194,10 @@ describe('§11 : une vue REMPLACE l\'arbre visible', () => {
 
   it('un préfixe inclus couvre ce qui le complète', async () => {
     const r = new CiscoRouter('R1');
-    await config(r, ['aaa new-model', 'parser view V', 'commands exec include show ip']);
+    // `all` : sans lui, une entrée ne vaut que pour la commande NOMMÉE.
+    // C'est la distinction qu'IOS fait et que ce simulateur ignorait, en
+    // appliquant la sémantique d'`all` à toute entrée.
+    await config(r, ['aaa new-model', 'parser view V', 'commands exec include all show ip']);
     await ios(r, ['enable view V']);
     expect(await ios(r, ['show ip interface brief'])).not.toContain('% Invalid input');
     expect(await ios(r, ['show version'])).toContain('% Invalid input detected');
@@ -193,7 +207,7 @@ describe('§11 : une vue REMPLACE l\'arbre visible', () => {
     const r = new CiscoRouter('R1');
     await config(r, [
       'aaa new-model', 'parser view V',
-      'commands exec include show ip',
+      'commands exec include all show ip',
       'commands exec exclude show ip route',
     ]);
     await ios(r, ['enable view V']);
