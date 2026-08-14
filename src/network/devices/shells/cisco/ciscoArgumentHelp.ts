@@ -1014,6 +1014,41 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
 
   describeArgumentTypes(tries);
 
+  // Une place qui accepte PLUSIEURS formes, et la direction qui suit.
+  //
+  // `ip access-group ?` rendait `in`/`out` — l'aide de la place
+  // SUIVANTE — donc elle sautait en silence un argument obligatoire.
+  // La direction est declaree comme second parametre : elle revient
+  // d'elle-meme une fois la liste nommee, sans qu'une suggestion ait a
+  // deviner a quel rang elle appartient.
+  const DIRECTION = ENUM('direction', 'Filter direction', [
+    ['in', 'Inbound packets'],
+    ['out', 'Outbound packets'],
+  ]);
+  const LISTE_IP: ParamSpec = {
+    name: 'access-list', type: 'WORD', description: 'Access-list name',
+    alternatives: [
+      { literal: '<1-199>', description: 'IP access list (standard or extended)' },
+      { literal: '<1300-2699>', description: 'IP expanded access list (standard or extended)' },
+      { literal: 'WORD', description: 'Access-list name' },
+    ],
+  };
+  tries.configIf.describeArgs('ip access-group', [LISTE_IP, DIRECTION]);
+  tries.configIf.describeArgs('ipv6 traffic-filter', [
+    WORD('access-list', 'IPv6 access-list name'), DIRECTION,
+  ]);
+  tries.configLine.describeArgs('access-class', [
+    { ...LISTE_IP, alternatives: LISTE_IP.alternatives!.filter((a) => a.literal !== '<1300-2699>') },
+    DIRECTION,
+  ]);
+  tries.configIf.describeArgs('service-policy', [
+    ENUM('direction', 'Policy direction', [
+      ['input', 'Assign policy-map to the input of an interface'],
+      ['output', 'Assign policy-map to the output of an interface'],
+    ]),
+    WORD('policy-map', 'Policy-map name'),
+  ]);
+
   tries.config.requireArgs('interface', 1);
   // Un type seul compte pour un argument, donc l'arité est satisfaite —
   // et pourtant la commande est incomplète. Le prédicat le dit.

@@ -1040,3 +1040,71 @@ et refusé par le typage.
 
 Non-régression connexe : 208 fichiers, 5 874 cas. `tsc` : 342 avant, 342
 après.
+
+---
+
+## Étape 7 — M4 : l'aide décrit la place où l'on est, pas la suivante
+
+`src/__tests__/unit/network-v2/probe-aide-decrit-la-bonne-place.test.ts`
+
+```
+avant                              après
+(config-if)# ip access-group ?     (config-if)# ip access-group ?
+  in   Inbound direction             <1-199>      IP access list (standard or extended)
+  out  Outbound direction            <1300-2699>  IP expanded access list (standard or extended)
+                                     WORD         Access-list name
+```
+
+La syntaxe est `ip access-group {numéro | nom} {in | out}` : ce qui
+s'affichait était l'aide de la place **suivante**. L'aide sautait un
+argument obligatoire en silence, et celui qui la suivait tapait
+`ip access-group in` — que la machine refuse.
+
+**Le cas révèle une lacune du modèle, pas un oubli de déclaration.** À
+cette place IOS accepte **trois formes**, et un `ParamSpec` n'en rendait
+qu'une : `literal` est un rendu, au singulier. Ce n'est pas non plus un
+`ENUM` — un `ENUM` liste des *valeurs admises*, alors qu'ici ce sont des
+*types*, chacun avec sa propre description. D'où `alternatives`, qui les
+nomme toutes :
+
+```ts
+alternatives: [
+  { literal: '<1-199>',     description: 'IP access list (standard or extended)' },
+  { literal: '<1300-2699>', description: 'IP expanded access list (standard or extended)' },
+  { literal: 'WORD',        description: 'Access-list name' },
+]
+```
+
+**La direction n'est pas filtrée, elle est déclarée à son rang.** `in` et
+`out` sont désormais le **second** paramètre, et ils reviennent d'eux-mêmes
+dès que la liste est nommée (`ip access-group 10 ?`). Déclarer le rang
+plutôt que masquer le mot est ce qui rend la correction stable : rien
+n'a à deviner à quelle position un mot-clé appartient.
+
+**Trois voisins portaient la même faute**, trouvés en cherchant la forme
+plutôt que le cas :
+
+* **`ipv6 traffic-filter ?`** rendait `out` seul — et un `<cr>` qui
+  annonçait une commande complète à laquelle il manquait **deux** mots.
+  Il rend le nom de la liste ; les IPv6 ACL étant nommées, il n'y a
+  qu'une forme et `alternatives` ne sert pas.
+* **`access-class ?`** (mode `line`) rendait la direction elle aussi.
+  Deux formes ici, pas trois : une ACL VTY ne prend pas la plage étendue.
+* **`service-policy ?`** rendait bien `input`/`output` — la direction y
+  est réellement première — mais annonçait `<cr>` avant le nom de la
+  politique. Le nom est déclaré, le `<cr>` tombe de lui-même.
+
+**La validation reste permissive et c'est délibéré.** `alternatives` est
+une affaire de RENDU : le type déclaré reste `WORD`, donc l'analyseur
+accepte comme avant et c'est le gestionnaire qui juge le numéro. Une
+validation qui n'accepterait littéralement que `<1-199>` refuserait `10`.
+
+**Discrimination.** 12 cas : **7 tombent** avant correctif. Les 3 témoins
+vérifient qu'une place à forme unique ne bouge pas — `ip address ?` rend
+toujours `A.B.C.D`, `ip policy ?` toujours `route-map`, `ip ospf cost ?`
+toujours sa borne — et chaque commande complète est exécutée, pas
+seulement lue.
+
+Non-régression connexe : 209 fichiers, 5 886 cas. `tsc` : 343 avant, 343
+après (le socle passe de 342 à 343 par un commit amont rebasé,
+`CiscoShellBase.ts:2481`, mesuré en remisant mes changements).

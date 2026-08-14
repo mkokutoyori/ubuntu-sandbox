@@ -41,6 +41,16 @@ export interface ParamSpec {
   range?: readonly [number, number];
   /** Rendu littéral imposé, quand le type ne suffit pas (`LINE`, `hh:mm`). */
   literal?: string;
+  /**
+   * Les FORMES qu'une même place accepte, quand il y en a plusieurs.
+   *
+   * `ip access-group ?` en rend trois — `<1-199>`, `<1300-2699>`,
+   * `WORD` — et un `ParamSpec` n'en rendait qu'une, si bien que la place
+   * était décrite par l'aide de la SUIVANTE. Ce n'est pas un `ENUM` :
+   * ce ne sont pas des valeurs admises mais des types, chacun avec sa
+   * propre description, exactement comme la vraie machine les liste.
+   */
+  alternatives?: ReadonlyArray<{ literal: string; description: string }>;
   /** Valeurs admises d'un `ENUM`, rendues chacune comme un mot-clé propre. */
   values?: ReadonlyArray<{ keyword: string; description: string }>;
   /**
@@ -1409,7 +1419,11 @@ export class CommandTrie {
     }
     const out: SuggestionCandidate[] = [];
     for (const param of r.node.params.slice(r.consumedArgs)) {
-      if (param.type === 'ENUM' && param.values) {
+      if (param.alternatives) {
+        for (const a of param.alternatives) {
+          out.push({ keyword: a.literal, description: a.description, origin: 'param' });
+        }
+      } else if (param.type === 'ENUM' && param.values) {
         for (const v of param.values) out.push({ ...v, origin: 'param' });
       } else {
         out.push({
