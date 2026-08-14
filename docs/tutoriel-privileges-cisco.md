@@ -196,17 +196,44 @@ Trois tentatives, puis IOS abandonne. Comportement normal.
 Nous y voilà. C'est ici que le sujet devient intéressant, et c'est ici que
 tout le monde se plante, moi le premier. 🙈
 
-Objectif : le niveau 5 doit pouvoir consulter la table de routage. Une seule
+### D'abord, choisir la bonne commande à déléguer
+
+Avant de taper quoi que ce soit : **regardez ce que le niveau 1 sait déjà
+faire.** C'est l'erreur que je vois le plus souvent, et je l'ai faite en
+écrivant la première version de cet article. 🙃
+
+```
+R1> show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       ...
+Gateway of last resort is not set
+R1> show running-config
+% Invalid input detected at '^' marker.
+```
+
+`show ip route` **est déjà au niveau 1** sur IOS — comme `show version`,
+`show interfaces`, `ping`, `traceroute`. Le déléguer au niveau 5 ne le
+donnerait à personne : ça le **retirerait** au niveau 1. Une délégation ne
+sert que pour une commande qui vit au niveau 15, et `show running-config`
+en est l'exemple type.
+
+Une bonne habitude avant chaque règle : `disable`, tapez la commande, et
+regardez. Si elle passe déjà, il n'y a rien à déléguer.
+
+### La délégation
+
+Objectif : le niveau 5 doit pouvoir **lire la configuration**. Une seule
 commande à descendre :
 
 ```
 R1# configure terminal
-R1(config)# privilege exec level 5 show ip route
+R1(config)# privilege exec level 5 show running-config
 R1(config)# end
 ```
 
 La syntaxe se lit de gauche à droite : `privilege` **`exec`** (dans quel mode)
-**`level 5`** (à quel niveau) **`show ip route`** (quelle commande). Testons :
+**`level 5`** (à quel niveau) **`show running-config`** (quelle commande).
+Testons :
 
 ```
 R1# disable
@@ -214,11 +241,12 @@ R1> enable 5
 Password: Tech5!
 R1# show privilege
 Current privilege level is 5
-R1# show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       ...
-Gateway of last resort is not set
+R1# show running-config
+Building configuration...
+
+Current configuration : 95 bytes
+!
+...
 ```
 
 Ça marche. 🎊 On pourrait s'arrêter là, écrire dans le rapport « délégation en
@@ -229,25 +257,30 @@ s'est passé au niveau 1 :
 R1# disable
 R1> show version
 % Invalid input detected at '^' marker.
+R1> show ip route
+% Invalid input detected at '^' marker.
 R1> show privilege
 % Invalid input detected at '^' marker.
 ```
 
-Voilà. En descendant `show ip route` au niveau 5, on vient de faire monter
-**toute la branche `show`** au niveau 5. Le niveau 1 a perdu `show version`,
-`show interfaces`, `show clock`… et même `show privilege`, la commande qui
-aurait permis de comprendre ce qui se passe. 😱
+Voilà. En descendant `show running-config` au niveau 5, on vient de faire
+monter **toute la branche `show`** au niveau 5. Le niveau 1 a perdu
+`show version`, `show ip route`, `show interfaces`, `show clock`… et même
+`show privilege`, la commande qui aurait permis de comprendre ce qui se
+passe. 😱
 
 ### Pourquoi ?
 
 Parce qu'IOS ne stocke pas des commandes, il stocke un **arbre**. Pour
-atteindre `show ip route`, il faut d'abord franchir le nœud `show`, puis le
-nœud `show ip`. Si `show ip route` exige le niveau 5, alors le chemin qui y
-mène l'exige aussi — sinon la règle ne voudrait rien dire. Cisco appelle ça
-la promotion des commandes parentes, et c'est parfaitement logique une fois
-qu'on l'a vu. Le problème, c'est qu'on ne le voit que si on va regarder au
-niveau 1, ce que personne ne fait spontanément après avoir vérifié que sa
-délégation marche.
+atteindre `show running-config`, il faut d'abord franchir le nœud `show`. Si
+`show running-config` exige le niveau 5, alors le chemin qui y mène l'exige
+aussi — sinon la règle ne voudrait rien dire. Cisco le documente en une
+phrase : quand vous fixez le niveau d'une commande à plusieurs mots, **les
+commandes commençant par le premier mot reçoivent ce niveau aussi**.
+
+C'est parfaitement logique une fois qu'on l'a vu. Le problème, c'est qu'on ne
+le voit que si on va regarder au niveau 1, ce que personne ne fait
+spontanément après avoir vérifié que sa délégation marche.
 
 ### Le remède
 
@@ -265,12 +298,16 @@ Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5
 R1> show privilege
 Current privilege level is 1
 R1> show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       ...
+R1> show running-config
 % Invalid input detected at '^' marker.
 ```
 
-Regardez bien ce dernier bloc, parce qu'il est parfait : `show version` est
-revenu au niveau 1, `show privilege` aussi, et `show ip route` reste réservé
-au niveau 5. C'est exactement ce qu'on voulait depuis le début.
+Regardez bien ce dernier bloc, parce qu'il est parfait : `show version`,
+`show ip route` et `show privilege` sont revenus au niveau 1, et
+`show running-config` reste réservé au niveau 5. C'est exactement ce qu'on
+voulait depuis le début.
 
 **La règle à retenir : dès que vous descendez une commande à plusieurs mots,
 redescendez son premier mot au niveau 1.** Écrivez-la sur un post-it. Elle
@@ -330,7 +367,7 @@ qui *configure* quelque chose sans tout configurer.
 
 | Espace | Ce qu'il couvre | Exemple |
 |---|---|---|
-| `exec` | le mode utilisateur/privilégié | `privilege exec level 5 show ip route` |
+| `exec` | le mode utilisateur/privilégié | `privilege exec level 5 show running-config` |
 | `configure` | la configuration globale | `privilege configure level 5 interface` |
 | `interface` | le sous-mode d'interface | `privilege interface level 5 description` |
 | `line` | le sous-mode de ligne | `privilege line level 5 exec-timeout` |
@@ -796,9 +833,10 @@ session qui reçoit `% Invalid input detected` prouve quelque chose.
 
 Je les regroupe ici pour que vous puissiez revenir sur cette section seule.
 
-1. **La promotion des parentes.** Descendre `show ip route` fait monter
-   `show` — donc le niveau 1 perd `show version` *et* `show privilege`.
-   Remède : `privilege exec level 1 show`. C'est le piège n°1, et de loin.
+1. **La promotion des parentes.** Descendre `show running-config` fait monter
+   `show` — donc le niveau 1 perd `show version`, `show ip route` *et*
+   `show privilege`. Remède : `privilege exec level 1 show`. C'est le piège
+   n°1, et de loin.
 2. **Le prompt ment.** `#` s'affiche dès le niveau 2. Fiez-vous à
    `show privilege`.
 3. **La configuration « vide » n'est pas une panne.** IOS ne montre que ce que
@@ -813,6 +851,10 @@ Je les regroupe ici pour que vous puissiez revenir sur cette section seule.
 7. **N'oubliez pas le parent de `configure terminal`.** Il faut les deux
    lignes, `configure` et `configure terminal`.
 8. **`enable password` n'est pas un mot de passe.** Toujours `enable secret`.
+9. **Ne déléguez pas une commande déjà accessible.** `show ip route`,
+   `show version`, `ping`, `traceroute` vivent au niveau 1. Les « donner »
+   à un niveau supérieur revient à les **retirer** au niveau 1. Vérifiez
+   d'abord : `disable`, tapez la commande, regardez.
 
 ---
 
