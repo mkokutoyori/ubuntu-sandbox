@@ -33,11 +33,12 @@
 | 1 | `PolicyStore` | 31 | ✅ |
 | 1 | `PacketContext` + `FirewallPipeline` | 23 | ✅ |
 | 1 | Étapes de pipeline | — | ⏳ |
-| 1 | Services L3 (`l3/`) | — | ⏳ |
+| 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
+| 1 | `ArpService` + `IcmpService` + `L2Delivery` | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 306 cas, verts.**
+**Total actuel : 337 cas, verts.**
 
 ---
 
@@ -345,6 +346,37 @@ sans branchement dans le moteur.
 
 ---
 
+### E11 — `InterfaceTable` + `RouteTable`
+
+`src/network/devices/firewall/l3/` — 31 cas. Les deux premiers services de
+couche 3, **par composition** (arbitrage A1).
+
+**Audit préalable (A6)** — mesuré, pas supposé. `Router.lookupRoute` est
+enchevêtré avec sept magasins `maximum-paths` par protocole, un curseur
+ECMP, `isRouteUsable`, le rafraîchissement du plan de contrôle et
+l'intégration IPsec, dans un fichier de 5615 lignes. Rien de cela n'est ce
+dont un pare-feu a besoin. **Réutilisés en revanche** : `core/ip.ts`
+(arithmétique d'adresses) et `core/RoutingTable.ts` (primitives de
+correspondance). Le service du pare-feu fait 180 lignes.
+
+**Les routes connectées sont dérivées, jamais saisies.** Trois cas le
+vérifient par leurs conséquences : une interface qui tombe retire sa route,
+une interface qui remonte la remet, et une interface ajoutée après coup
+apparaît dans la table sans qu'on l'y écrive. Sans cela, un pare-feu
+continuerait d'acheminer vers un lien mort.
+
+**Un saut suivant hors de tout sous-réseau connecté ne résout pas.** Ce
+dépôt connaît déjà ce défaut côté routeur — « aucune résolution récursive de
+saut suivant », `CLAUDE.md` — et le reproduire ici serait le repayer. La
+limite est donc la même, mais **assumée et testée** plutôt que subie.
+
+**Reste ouvert et déclaré** : ECMP et les protocoles dynamiques (BRD §19).
+Le jour où le pare-feu en aura besoin, la logique `maximum-paths` devra être
+**extraite** de `Router` vers un module partagé, jamais recopiée — même règle
+de sens que A2 pour les zones.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -366,6 +398,7 @@ sans branchement dans le moteur.
 | `PolicyEvaluator` | `ACLEngine.evaluateACL`, `Ipv6AclEngine`, `RoutePolicy` | **Distinct — voir A4** |
 | `PolicyStore` | aucun magasin de politique ordonnée n'existe | **Aucun** |
 | `FirewallPipeline` | `core/FilterChain.ts` | **RÉUTILISÉ tel quel — voir A5** |
+| `InterfaceTable` / `RouteTable` | `Router.lookupRoute`, `core/RoutingTable.ts`, `core/ip.ts` | **Primitives réutilisées, moteur distinct — voir A6** |
 | `SessionTable` | `LinuxIptablesManager.conntrack`, `SocketTable` | **Distinct.** `SocketTable` décrit ce qui *écoute sur cet hôte* ; la table de sessions décrit ce que le pare-feu *achemine* |
 
 ### A1 — `TcpSessionState` était un doublon de `TcpState`
@@ -464,6 +497,23 @@ Le BRD l'avait mesuré comme « écrit et inutilisé » (§4.1.5) — c'était u
 opportunité, pas un signal négatif. `FirewallPipeline` n'ajoute que deux
 choses : un **registre** d'étapes nommées et la **composition** d'une chaîne
 à partir d'une liste de noms. Le moteur de chaîne lui-même n'est pas touché.
+
+### A6 — `RouteTable` réutilise les primitives, pas le moteur
+
+`Router.lookupRoute` porte sept magasins `maximum-paths` (un par protocole
+et par constructeur), un curseur ECMP tournant, `isRouteUsable`, un appel à
+`dynamicRouting.refresh()` — c'est-à-dire une recomputation de plan de
+contrôle déclenchée par le plan de données — et l'intégration IPsec. Un
+pare-feu n'a besoin d'aucun de ces cinq mécanismes aujourd'hui.
+
+**Réutilisé** : `core/ip.ts` (14 fonctions d'arithmétique d'adresses) et
+`core/RoutingTable.ts` (39 lignes de primitives de correspondance). Le
+service du pare-feu fait 180 lignes contre les 5615 de `Router.ts`.
+
+**Règle de convergence enregistrée** : le jour où le pare-feu aura besoin
+d'ECMP ou de `maximum-paths` (BRD §19), cette logique devra être **extraite**
+de `Router` vers un module partagé et consommée par les deux — jamais
+recopiée. Même sens que A2.
 
 ### A3 — Le catalogue de services prédéfinis devra lire `WellKnownPorts`
 
