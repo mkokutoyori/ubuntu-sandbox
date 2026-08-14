@@ -151,14 +151,6 @@ export interface PasswordPolicy {
   encrypted: boolean;
 }
 
-export interface UsernameEntry {
-  name: string;
-  privilege: number;
-  secret?: string;
-  password?: string;
-  view?: string;
-}
-
 export interface ClassMap {
   name: string;
   matchAll: boolean;
@@ -437,7 +429,6 @@ export class CiscoSecurityConfig {
   enableSecret?: string;
   servicePasswordEncryption = false;
   passwords: PasswordPolicy = { encrypted: false };
-  usernames: Map<string, UsernameEntry> = new Map();
   login: LoginControl = {};
   ipCef = true;
   ipCefDistributed = false;
@@ -566,10 +557,11 @@ export class CiscoSecurityConfig {
       if (this.aaaSessionId) lines.push(`aaa session-id ${this.aaaSessionId}`);
       if (this.localAuthMaxFailAttempts) lines.push(`aaa local authentication attempts max-fail ${this.localAuthMaxFailAttempts}`);
     }
-    // Local usernames are rendered (and password-encoded) by the credential
-    // store path in CiscoShowCommands (_listLocalUsers). Rendering them here
-    // too would duplicate the line and leak the plaintext secret.
-    void this.usernames;
+    // Les comptes locaux sont rendus par le magasin d'identifiants
+    // (`_listLocalUsers`), qui est le seul a les porter. Un second
+    // magasin a existe ici : ecrit par une ligne, lu par personne, et
+    // destructeur — il ramenait le privilege a 1 quand la commande ne le
+    // precisait pas, et perdait la vue et l'algorithme du secret.
     void this.enableSecret;
     void this.servicePasswordEncryption;
     if (this.passwords.minLength) lines.push(`security passwords min-length ${this.passwords.minLength}`);

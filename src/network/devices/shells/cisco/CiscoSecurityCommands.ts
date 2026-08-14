@@ -309,7 +309,6 @@ export function buildIdentityConfigCommands(
     if (router._upsertCiscoUsername) {
       router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description, view: vue });
     }
-    sec().usernames.set(name, { name, privilege: privilege ?? 1, secret, password: undefined });
     if (type0PasswordWarning) {
       return "WARNING: Command has been added to the configuration using a type 0\n"
         + "password. However, type 0 passwords will soon be deprecated. Migrate\n"

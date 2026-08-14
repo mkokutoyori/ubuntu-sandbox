@@ -1450,3 +1450,67 @@ effet ». Le motif a disparu avec M7 — les quatre modes sont rangés *et*
 consultés. Le cas vérifie désormais ce qui reste vrai : un mode
 **inventé** est toujours refusé. Les trois autres passent à `all`, qui
 est ce qu'IOS exige pour couvrir une branche.
+
+---
+
+## Étape 13 — hygiène : le code mort, le magasin destructeur, le repli dangereux (G1, G4, G5, G7, G8, G9)
+
+*Aucun de ces six constats n'était visible d'un opérateur. Un seul —
+G5 — avait une conséquence de sécurité, et c'est le seul qui a droit à
+un test.*
+
+**Fichiers** — `cli/CliAuthorization.ts`,
+`router/security/CiscoPrivilegeStore.ts` (neuf),
+`router/security/CiscoSecurityConfig.ts`, `CiscoShellBase.ts`,
+`CiscoSwitchShell.ts`, `cisco/CiscoShowCommands.ts`,
+`cisco/CiscoSecurityCommands.ts` ;
+`src/__tests__/unit/network-v2/cli-authorization-fail-closed.test.ts`
+(neuf, 5 cas) ; `zz-priv.test.ts` supprimé.
+
+**Vert** — 5/5, puis **49 fichiers / 1 516 cas** connexes. `tsc` : 334
+avant, 334 après.
+
+**G5 — ne pas savoir n'est pas savoir que oui.** La fabrique de la table
+rend `undefined` quand l'équipement n'est pas joignable, et `levelOf`
+rendait alors le **niveau par défaut** — donc 1 pour une commande de
+l'arbre utilisateur, donc `run`. Une commande hissée au niveau 15
+redevenait joignable au niveau 1 dès que la table était illisible. La
+distinction qui manquait est celle entre une table **vide** (« aucune
+règle », le défaut s'applique) et une table **illisible** (« on ne sait
+pas », on refuse). Les **sorties** restent joignables : une table
+illisible ne doit pas être une souricière non plus.
+
+**Rouge — 2 échecs sur 5**, et le second était mon test : j'attendais que
+`show clock` passe alors que la promotion des parentes (étape 10) la
+refuse à juste titre. Corrigé dans le test, avec le remède documenté à
+côté — une confirmation incidente que la promotion vaut aussi sans
+canonicaliseur.
+
+**G1 — `CommandLevelTable.remove` n'avait toujours aucun appelant.**
+`setLevel`, `reset` et `grantedAtOrBelow` en ont gagné un aux étapes 2 et
+10 ; `remove` faisait doublon avec `reset`, qui rend en plus le niveau
+retiré. Supprimée.
+
+**G4 — un magasin mort ET destructeur.** `CiscoSecurityConfig.usernames`
+était écrit par une seule ligne et lu par personne (`void this.usernames`
+le disait déjà). Il perdait la vue et l'algorithme du secret, et
+**ramenait le privilège à 1** quand la commande ne le précisait pas.
+Supprimé avec son type `UsernameEntry` : le magasin d'identifiants est le
+seul à porter les comptes.
+
+**G9 — une capacité nommée à la place de cinq casts.**
+`as unknown as { _ciscoPrivilegeRules?: Map<…> }` était répété dans trois
+fichiers. `CiscoPrivilegeStore` le nomme une fois. Ce n'est pas
+cosmétique : la table **a changé de forme** à l'étape 10 en gagnant le
+mot-clé `all`, et un cast en ligne n'aurait prévenu personne.
+
+**G8 — un commentaire qui disait l'inverse du code.** Il affirmait que
+l'invite montre `#` seulement au niveau 15 « comme le vrai IOS, où même
+le privilège 7 montre `>` », alors que le code affiche `#` dès le niveau
+2 — ce qui est le comportement réel. Supprimé plutôt que corrigé, selon
+la convention du dépôt ; ce qui reste vrai est écrit là où la décision se
+prend.
+
+**G7 — un fichier de mise au point commité.** `zz-priv.test.ts` :
+`describe('p')`, `it('x')`, quatre `console.log`, un `expect(1).toBe(1)`.
+Il ne pouvait pas échouer et ne décrivait rien. Supprimé.

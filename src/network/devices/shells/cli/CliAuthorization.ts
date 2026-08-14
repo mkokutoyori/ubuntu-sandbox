@@ -106,6 +106,13 @@ const SORTIES: readonly string[] = ['exit', 'end', 'logout'];
  */
 const TOUJOURS_EN_EXEC: readonly string[] = ['disable', 'enable', 'show parser view'];
 
+/**
+ * Le niveau rendu quand la table des regles ne peut pas etre lue. C'est
+ * le plus haut : seule une session qui a deja tout ne perd rien, et
+ * toute autre est refusee plutot qu'accordee par defaut.
+ */
+const NIVEAU_INDECIDABLE = 15;
+
 function normalise(commande: string): string {
   return commande.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -152,10 +159,6 @@ export class CommandLevelTable<S extends string = AuthScope> {
     return regle?.level;
   }
 
-  remove(scope: AuthScope, commande: string): void {
-    this.rules()?.delete(CommandLevelTable.key(scope, commande));
-  }
-
   /**
    * Le niveau EFFECTIF d'une commande.
    *
@@ -180,7 +183,13 @@ export class CommandLevelTable<S extends string = AuthScope> {
    */
   levelOf(scope: AuthScope, commande: string, defaut: number): number {
     const table = this.rules();
-    if (!table || table.size === 0) return defaut;
+    // Une table ILLISIBLE n'est pas une table vide : la premiere veut
+    // dire « on ne sait pas », la seconde « aucune regle ». Rendre le
+    // niveau par defaut pour la premiere accordait une commande hissee
+    // au niveau 15 des lors que l'equipement n'etait pas joignable —
+    // ne pas savoir n'est pas savoir que oui.
+    if (!table) return NIVEAU_INDECIDABLE;
+    if (table.size === 0) return defaut;
     const cible = normalise(commande);
     const prefixe = `${scope} `;
     let propre: { longueur: number; niveau: number } | null = null;

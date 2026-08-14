@@ -117,9 +117,9 @@ import type { TftpEndpoint } from '@/network/tftp/types';
 import { parseTftpUrl, tftpGet, tftpPut, TFTP_NO_HOST } from './cisco/CiscoTftpCopy';
 import {
   CliAuthorization, CommandLevelTable, ParserViewRegistry, scopeForMode,
-  type CliPrincipal, type AuthScope, type CommandLevelRule,
-  AUTH_SCOPES, filterConfigForLevel,
+  type CliPrincipal, type AuthScope, AUTH_SCOPES, filterConfigForLevel,
 } from './cli/CliAuthorization';
+import { ensurePrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandCanonicalizer } from './cli/CommandCanonicalizer';
 import type {
   CommandInteractionPlan,
@@ -175,12 +175,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
   /**
-   * Real 0-15 privilege level (real IOS model). `mode` stays a simpler
-   * user/privileged/config-* FSM for trie selection and prompt rendering
-   * (`#` iff level 15, `>` otherwise — matching real IOS exactly, where
-   * even privilege 7 still shows `>`), but this field is the single
-   * source of truth for `show privilege`, `enable`/`enable N` escalation,
-   * and `privilege exec level N <command>` gating.
+   * Le niveau 0-15 de la session. `mode` reste une machine a etats plus
+   * simple, qui choisit l'arbre ; ce champ-ci est la seule source de
+   * verite pour `show privilege`, l'escalade par `enable N` et le
+   * filtrage par `privilege exec level N`. Ce que l'INVITE affiche est
+   * decide par `buildDevicePrompt` seul.
    */
   protected currentPrivilegeLevel: number = 1;
   /** Recent commands for `show history` (shared switch + router). */
@@ -2139,13 +2138,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected autorisation(): CliAuthorization {
     if (!this._autorisation) {
       this._autorisation = new CliAuthorization(
-        new CommandLevelTable(() => {
-          const dev = this.deviceRef as unknown as {
-            _ciscoPrivilegeRules?: Map<string, CommandLevelRule>;
-          } | null;
-          if (!dev) return undefined;
-          return (dev._ciscoPrivilegeRules ??= new Map());
-        }),
+        new CommandLevelTable(() => ensurePrivilegeRules(this.deviceRef)),
         new ParserViewRegistry(() => {
           if (!this.deviceRef) return new Map();
           return getSecurityConfig(this.d()).parserViews;
