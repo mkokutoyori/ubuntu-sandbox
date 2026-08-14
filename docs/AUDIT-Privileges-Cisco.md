@@ -1693,3 +1693,42 @@ reste dans son bloc, un stratum explicite reste écrit, et ce que seul le
 rendu riche écrivait était déjà rendu une fois sur le routeur.
 Non-régression connexe : 186 fichiers, 5325 cas. `tsc` : 337 erreurs
 avant comme après, à la ligne près.
+
+## Clôture — où chaque constat a été refermé
+
+Les 37 constats du rapport sont traités. Cette table dit lequel, par
+quelle étape, pour qu'aucun ne reste ouvert par oubli.
+
+| Constat | Étape | Ce qui a changé |
+|---|---|---|
+| C1 | 2 | L'autorisation décide sur la forme canonique : `sh ver` et `show version` sont la même commande |
+| C2, C3, C4 | 3 | Le `secret` d'une vue est vérifié ; `enable view` passe par un vrai dialogue |
+| C5 | 6 | `show running-config` ne rend que ce que le niveau peut modifier |
+| C6 | 4 | Un `secret` saisi en type 0 est stocké haché, jamais en clair |
+| C7 | 5 | La vue active appartient à la session, pas à la machine |
+| C8 | 7, 8 | `aaa authorization commands` garde toutes les portes ; `aaa authorization exec` décide du niveau d'ouverture |
+| M1, M2 | 9, 14 | Le niveau de la ligne s'applique par les **trois** portes ; il vit sur l'équipement |
+| M3, M6 | 10 | Promotion des parentes, et le mot-clé `all` |
+| M4, M5, M12 | 2 | Une règle rendue a un effet ; une seule dérivation de clé ; la tabulation filtre |
+| M7, M8 | 12 | Les quatre modes de vue ; `include-exclusive` réserve vraiment |
+| M9, M10, M11 | 11 | Limite de 15 vues ; les vues sur Catalyst ; `config-view` confiné |
+| G1, G4, G5, G7, G8, G9 | 13 | Code mort, magasin destructeur, repli **fail-open**, fichier de mise au point, commentaire faux, castes |
+| G2 | 10 | `reglesExecAccordees()` délègue |
+| G3 | 2 | Un seul magasin de règles |
+| G6 | 15 | Vérifié refermé par les étapes 3 et 4 : témoins négatifs présents |
+| F1, F2, F5, F7, F8 | 14 | Curseur, refus, `show parser view all`, commande inexistante, vue racine |
+| F3 | 14, 15 | La provenance est un en-tête ; les règles `privilege` sont classées |
+| F4 | 15 | `snmp-server` avant `route-map` — l'inversion que le constat ne nommait pas |
+| F6 | 14 | Mesuré juste, gardé par deux cas de non-régression |
+
+**Deux défauts trouvés en chemin, hors de la liste, et corrigés** : le
+niveau de `line console 0` perdu par la porte du terminal (étape 14,
+lecture via `deviceRef`, nulle hors exécution) et la configuration NTP
+rendue deux fois et différemment sur le routeur, une seule fois et trop
+pauvrement sur le commutateur (étape 15).
+
+**Trois constats de la liste étaient partiellement faux, et le sont dits
+plutôt que corrigés en silence** : F4 mesurait un comportement correct et
+manquait l'inversion voisine ; F6 décrivait comme manquant un niveau 0
+déjà juste ; et l'énoncé de F3 réunissait deux placements dont un seul
+tenait à la cause qu'il donnait.
