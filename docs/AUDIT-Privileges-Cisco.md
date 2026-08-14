@@ -1784,3 +1784,48 @@ qu'aucun ne tapait d'abréviation. Comptés un par un : les onze en tapent
 aujourd'hui, entre 4 et 18 occurrences chacun, `probe-privileges-evasion`
 compris — dont le rapport disait qu'il « porte le nom du sujet et ne
 l'atteint pas ». Rien à ajouter ; l'obligation est éteinte, pas oubliée.
+
+## Étape 17 — l'en-tête décrit ce qui est rendu, pas ce qui est caché
+
+Signalé par une session réelle, et la question posée était la bonne : un
+compte de niveau 5 à qui `show running-config` a été déléguée lit une
+configuration presque **vide**. Cela **est** le comportement d'IOS, et
+c'est même le but du filtrage de l'étape 6 : Cisco documente que la vue ne
+montre que ce que la session peut *modifier*, et un niveau 5 sans aucune
+délégation en mode configuration ne peut rien modifier. Ce n'est donc pas
+un défaut — c'est la surprise que ce mécanisme cause à tout le monde, et
+un cas du fichier de l'étape 6 le disait déjà.
+
+**Mais l'en-tête, lui, était faux.** Mesuré sur cette même session :
+
+```
+Current configuration : 861 bytes     ← annoncé
+<corps réellement rendu : 95 octets>
+```
+
+La taille est calculée dans `showRunningConfig`, donc **avant** le filtre,
+et le filtre ne la recalculait pas. L'en-tête décrivait un document que la
+session n'a pas sous les yeux — et, plus sérieusement, il rendait
+mesurable **à l'octet près la quantité exacte de configuration qu'on lui
+cache**. C'est le contraire de ce que ce filtre existe pour faire : une
+vue de sécurité qui publie la taille de ce qu'elle censure.
+
+`retaillerEnTeteDeConfiguration()` recalcule la ligne sur le corps
+effectivement rendu, avec la même convention que `showRunningConfig` (le
+corps commence après le séparateur qui suit l'en-tête, et le compte inclut
+le `\n` final). Elle ne s'applique qu'au chemin filtré : au niveau 15 la
+sortie est rendue telle quelle et ne traverse aucune logique nouvelle, ce
+qu'un cas de non-régression vérifie.
+
+**Observé et volontairement pas touché, faute de référence.** La sortie
+filtrée porte une échelle de `!` nus — un par bloc supprimé. Un vrai IOS
+en montre aussi plusieurs à bas niveau ; savoir s'il en montre *autant*
+demanderait une capture d'un `show running-config` à privilège réduit, et
+je n'en ai pas trouvé de consultable. Les réduire sur une intuition
+rendrait la sortie moins fidèle plutôt que plus, exactement l'erreur que
+F4 a failli faire commettre. C'est écrit ici plutôt que corrigé au jugé.
+
+**Discrimination.** 3 cas ajoutés au fichier de l'étape 6 (12 en tout) ;
+**2 tombent** avant correctif, le troisième étant la non-régression du
+niveau 15. Non-régression connexe : 186 fichiers, 5340 cas. `tsc` : 337,
+identique à la ligne près.

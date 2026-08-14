@@ -2264,7 +2264,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         command: commande,
         defaultLevel: 15,
       }) === 'run');
-    return lignes.join('\n');
+    return this.retaillerEnTeteDeConfiguration(lignes).join('\n');
+  }
+
+  /**
+   * L'en-tete decrit ce qui est RENDU, pas ce qui est cache.
+   *
+   * La taille est calculee avant le filtre, donc une session de niveau 5
+   * lisait `Current configuration : 861 bytes` au-dessus d'un corps de 95
+   * octets : l'en-tete decrivait un document qu'elle n'a pas sous les
+   * yeux, et rendait mesurable — a l'octet pres — la quantite exacte de
+   * configuration qu'on lui cache. C'est le contraire de ce que ce
+   * filtre existe pour faire.
+   */
+  private retaillerEnTeteDeConfiguration(lignes: string[]): string[] {
+    const rang = lignes.findIndex((l) => /^Current configuration : \d+ bytes$/.test(l));
+    if (rang === -1) return lignes;
+    const corps = lignes.slice(rang + 2).join('\n');
+    const sortie = [...lignes];
+    sortie[rang] = `Current configuration : ${new TextEncoder().encode(corps).length + 1} bytes`;
+    return sortie;
   }
 
   /**
