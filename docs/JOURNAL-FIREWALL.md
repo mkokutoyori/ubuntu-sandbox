@@ -30,14 +30,14 @@
 | 1 | Audit de non-duplication (procédure permanente) | — | ✅ |
 | 1 | `SessionTable` | 33 | ✅ |
 | 1 | `SecurityRule` + `PolicyEvaluator` | 37 | ✅ |
-| 1 | `PolicyStore` | — | ⏳ |
+| 1 | `PolicyStore` | 31 | ✅ |
 | 1 | `PacketContext` + `FirewallPipeline` | — | ⏳ |
 | 1 | Étapes de pipeline | — | ⏳ |
 | 1 | Services L3 (`l3/`) | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 252 cas, verts.**
+**Total actuel : 283 cas, verts.**
 
 ---
 
@@ -288,6 +288,31 @@ l'ordre du tableau inverse le verdict », ce qui contredisait le cas voisin
 épinglant que c'est la **séquence** qui décide. L'évaluateur avait raison ;
 le test exprimait mal I-P2. Corrigé en échangeant les séquences — ce que
 « déplacer une règle » veut dire.
+
+---
+
+### E9 — `PolicyStore`
+
+`src/network/devices/firewall/model/PolicyStore.ts` — 31 cas.
+
+**I-P5 gouverne tout le fichier : `seq` n'est pas l'identifiant.** FortiOS
+numérote ses politiques par un identifiant stable (`edit 3`) tout en les
+ordonnant séparément — `move 3 after 7` change l'ordre, pas l'identifiant.
+Confondre les deux rendrait `move` impossible à simuler, alors que c'est la
+manipulation la plus courante d'une politique en production. Les séquences
+sont donc **recalculées** après chaque mutation (pas de 10, comme une ACL
+IOS), et un cas vérifie qu'elles restent croissantes et distinctes.
+
+**Le bouclage des références est fermé ici.** `zoneReferents()` et
+`objectReferents()` alimentent le `referenceChecker` de `ZoneTable` (I-Z5)
+et les `externalReferences` d'`ObjectStore` (I-A1). Sans ce bouclage,
+supprimer une zone citée par une règle serait accepté et la règle
+pointerait dans le vide.
+
+Deux décisions dans ce bouclage, chacune avec son cas : une règle
+**désactivée** référence toujours (elle peut être réactivée), et `any` ne
+compte **pas** comme une référence (il est prédéfini et indestructible, donc
+le compter empêcherait toute suppression d'objet pour rien).
 
 ---
 
