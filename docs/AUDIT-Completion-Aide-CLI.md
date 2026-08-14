@@ -785,3 +785,43 @@ qui répond.
 
 Non-régression connexe : 205 fichiers, 5 791 cas. `tsc` : 337, à la ligne
 près.
+
+## Étape 3 — l'ordre d'IOS : ASCII, `<cr>` en dernier (M1, M2, G5)
+
+**Les deux constats n'en font qu'un, et la cause était à un seul endroit.**
+L'arbre classait déjà correctement — son tri range `<cr>` en queue et les
+substituts après les mots-clés — et `getHelp` **retriait** derrière lui
+par `localeCompare`. Ce retri annulait tout : il remontait `<cr>` en tête
+(`<` vaut 0x3C, donc avant les lettres) et rendait le tri insensible à la
+casse, si bien que `LINE`, `WORD` et `A.B.C.D` tombaient au milieu des
+mots-clés.
+
+`ordonnerCommeIos()` remplace les deux appels. La règle qu'elle écrit tient
+en une phrase : **`<cr>` est placé, pas classé** — le trier avec les autres
+le remettrait en tête, quel que soit le comparateur.
+
+**Pourquoi le tri est sur les octets et non sur la locale.** La capture de
+référence donne `/noverify`, `/verify`, `LINE`, `at`, `cancel`, `in`,
+`warm`, `<cr>` : `/` (0x2F) avant les majuscules (0x41…) avant les
+minuscules (0x61…). Un `localeCompare` place `at` avant `LINE`, ce que
+la machine ne fait jamais.
+
+**G5 fermé au passage**, et pour la même raison qu'il existait : `<cr>` n'a
+pas de description, et la ligne était quand même rembourrée à la largeur
+de la colonne. Une description vide ne se rembourre plus.
+
+**Trois renderers, pas un.** `?` est servi par trois fonctions distinctes —
+`CiscoShellBase`, `HuaweiVRPShell`, `HuaweiSwitchShell`. Mesuré avant de
+corriger : VRP plaçait déjà `<cr>` en queue (sa propre construction le
+met en dernier), donc **seul le rembourrage y était faux**. Corriger
+l'ordre côté VRP aurait été corriger ce qui n'était pas cassé ; les deux
+fichiers ne reçoivent que le correctif du blanc final, et un cas de la
+sonde le vérifie sur chaque plateforme.
+
+**Discrimination.** `probe-aide-ordre-ios.test.ts` (24 cas) : **13
+tombent** avant correctif. Les 11 autres sont les non-régressions —
+l'alignement de la colonne, le contenu des listes sans `<cr>`, les
+modificateurs de tuyau, et le fait que `<cr>` était déjà en queue sur VRP.
+
+Non-régression connexe : 206 fichiers, 5 815 cas. `tsc` : 337, à la ligne
+près.

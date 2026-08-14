@@ -558,7 +558,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
-        .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+        // Une description vide ne se rembourre pas : `<cr>` laissait
+        // sinon la largeur de la colonne en blancs de fin de ligne.
+        .map(c => (c.description
+          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          : `  ${c.keyword}`))
         .join('\n');
     } finally {
       trie.setDynamicResolver(null);

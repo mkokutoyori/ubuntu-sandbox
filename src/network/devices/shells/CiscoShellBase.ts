@@ -156,6 +156,29 @@ const MAX_PARSER_VIEWS = 15;
 const HISTORIQUE_PAR_DEFAUT = 20;
 
 /** Le texte que `help` imprime sur IOS, mot pour mot. */
+/**
+ * L'ordre d'une liste d'aide IOS : les octets, et `<cr>` en dernier.
+ *
+ * `<cr>` est PLACE, pas classe. Le trier avec les autres le remettrait en
+ * tete, `<` valant 0x3C — c'est exactement ce que faisait le
+ * `localeCompare` que cette fonction remplace, et qui annulait au passage
+ * le classement que l'arbre venait de produire.
+ *
+ * Le tri est sur les octets et non sur la locale : IOS place `/verify`
+ * puis `LINE` puis `at`, ordre qu'un tri insensible a la casse rend faux
+ * des qu'un substitut en majuscules cotoie des mots-cles.
+ */
+function ordonnerCommeIos(
+  entrees: Array<{ keyword: string; description: string }>,
+): void {
+  entrees.sort((a, b) => {
+    if (a.keyword === b.keyword) return 0;
+    if (a.keyword === '<cr>') return 1;
+    if (b.keyword === '<cr>') return -1;
+    return a.keyword < b.keyword ? -1 : 1;
+  });
+}
+
 const HELP_SYSTEM_TEXT = [
   'Help may be requested at any point in a command by entering',
   'a question mark \'?\'.  If nothing matches, the help list will',
@@ -3211,7 +3234,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           completions.push(c);
         }
       }
-      completions.sort((a, b) => a.keyword.localeCompare(b.keyword));
+      ordonnerCommeIos(completions);
       if (completions.length === 0) {
         return CISCO_ERRORS.UNRECOGNIZED_HELP;
       }
@@ -3222,11 +3245,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         for (const u of this.universalCommands()) {
           if (!deja.has(u.keyword)) completions.push(u);
         }
-        completions.sort((a, b) => a.keyword.localeCompare(b.keyword));
+        ordonnerCommeIos(completions);
       }
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
-        .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
+        .map(c => (c.description
+          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          // Une description vide ne se rembourre pas : `<cr>` laissait
+          // sinon la largeur de la colonne en blancs de fin de ligne.
+          : `  ${c.keyword}`))
         .join('\n');
     } finally {
       trie.setDynamicResolver(null);
