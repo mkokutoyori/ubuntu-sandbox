@@ -1098,7 +1098,11 @@ export abstract class LinuxMachine extends EndHost
       this.executor.setCwd(entry.home ?? `/home/${ctx.user}`);
     }
     try {
-      const output = this.executor.executeWithEnv(command, ctx.env);
+      // cron n'a pas de terminal : sa commande ne va pas dans l'historique
+      // de l'opérateur, elle va dans syslog.
+      const output = this.executor.runNonInteractive(
+        () => this.executor.executeWithEnv(command, ctx.env),
+      );
       return { output: output ?? '', exitCode: 0 };
     } catch {
       return { output: '', exitCode: 1 };

@@ -450,6 +450,30 @@ export class LinuxCommandExecutor {
   private suStack: Array<{ user: string; uid: number; gid: number; cwd: string; umask: number }> = [];
   // Command history (like bash HISTFILE)
   private commandHistory: string[] = [];
+  /**
+   * Profondeur d'exécution NON INTERACTIVE. bash ne tient d'historique
+   * que pour un shell interactif : cron lance son `sh -c` sans terminal,
+   * et sa commande n'a donc rien à faire dans le `history` de l'opérateur
+   * — elle y apparaissait, jusqu'à s'intercaler dans la numérotation
+   * d'un utilisateur qui n'avait rien tapé. La trace de cron est ailleurs,
+   * dans syslog, et c'est là qu'un vrai système la met.
+   */
+  private nonInteractiveDepth = 0;
+
+  /** Exécute `fn` comme un shell non interactif : aucun historique. */
+  runNonInteractive<T>(fn: () => T): T {
+    this.nonInteractiveDepth++;
+    try {
+      return fn();
+    } finally {
+      this.nonInteractiveDepth--;
+    }
+  }
+
+  private recordHistory(line: string): void {
+    if (this.nonInteractiveDepth > 0) return;
+    this.commandHistory.push(line);
+  }
   /** Reactive service supervisor (auto-restart per Restart= policy). */
   private supervisor: LinuxServiceSupervisor | null = null;
   /** Reactive projection: IAM domain events → /var/log/auth.log. */
@@ -2882,7 +2906,7 @@ export class LinuxCommandExecutor {
     this.syncProcPids();
 
     // Track command in history (store the raw input, like bash)
-    this.commandHistory.push(trimmed);
+    this.recordHistory(trimmed);
 
     // Intercept builtins that the bash interpreter doesn't know about.
     const builtin = this.runJobBuiltinIfMatching(trimmed);
@@ -3010,7 +3034,7 @@ export class LinuxCommandExecutor {
     this.currentCommandHead = extractCommandHead(trimmed);
 
     this.syncProcPids();
-    this.commandHistory.push(trimmed);
+    this.recordHistory(trimmed);
 
     const builtin = this.runJobBuiltinIfMatching(trimmed);
     if (builtin !== null) return builtin;
