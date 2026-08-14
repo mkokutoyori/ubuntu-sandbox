@@ -766,6 +766,79 @@ export class CommandTrie {
     return out;
   }
 
+  /**
+   * Les commandes exécutables SOUS un chemin, ce chemin compris.
+   *
+   * `enumerateExecutablePaths` parcourt l'arbre entier ; celle-ci ne
+   * descend que le sous-arbre demandé, parce qu'elle est appelée une
+   * fois par mot-clé proposé — donc plusieurs dizaines de fois par
+   * frappe de `?`.
+   *
+   * `limite` borne la descente : le prédicat qui l'appelle cherche
+   * seulement s'il EXISTE une commande visible, et une réponse à mille
+   * chemins coûte autant qu'une réponse à dix pour la même décision.
+   */
+  /**
+   * Peut-on valider ICI, sans rien ajouter ? C'est exactement ce que le
+   * marqueur `<cr>` annonce, et c'est ce qui distingue une commande d'un
+   * simple point de passage : `show running-config` s'exécute seule,
+   * `show ip` répond `% Incomplete command.` bien que l'arbre porte une
+   * action sur ce nœud.
+   */
+  estExecutableTelQuel(path: string): boolean {
+    this.viderDeclarationsEnAttente();
+    const node = this.nodeAt(path);
+    return node ? this.isExecutableAt(node, 0, []) : false;
+  }
+
+  executablePathsUnder(path: string): string[] {
+    const out: string[] = [];
+    this.walkExecutableUnder(path, (p) => { out.push(p); return false; });
+    return out;
+  }
+
+  /**
+   * Existe-t-il, STRICTEMENT sous ce chemin, une commande exécutable que
+   * `predicat` accepte ? `null` quand le chemin n'a aucun descendant
+   * exécutable — « il n'y a rien à juger », ce que l'appelant ne doit pas
+   * confondre avec « rien n'est acceptable ».
+   *
+   * Le prédicat est passé À la marche plutôt que la liste rendue À
+   * l'appelant : c'est ce qui permet de s'arrêter au premier descendant
+   * qui convient. Une première version bornait la liste à 64 chemins pour
+   * en limiter le coût, et cette borne était un défaut à elle seule —
+   * dans une vue ne contenant que `show version`, la troncature coupait
+   * avant lui et `show` disparaissait de la complétion.
+   */
+  someExecutableUnder(path: string, predicat: (chemin: string) => boolean): boolean | null {
+    let vu = false;
+    const trouve = this.walkExecutableUnder(path, (p) => {
+      vu = true;
+      return predicat(p);
+    });
+    if (trouve) return true;
+    return vu ? false : null;
+  }
+
+  /** Rend `true` dès que `visite` s'arrête, ce qui interrompt la marche. */
+  private walkExecutableUnder(path: string, visite: (chemin: string) => boolean): boolean {
+    this.viderDeclarationsEnAttente();
+    const depart = this.nodeAt(path);
+    if (!depart) return false;
+    const racine = path.trim().split(/\s+/).filter((t) => t.length > 0);
+    const walk = (node: CommandNode, chemin: string[]): boolean => {
+      const propre = chemin.join(' ');
+      if (node.action && !node._hintOnly && propre !== racine.join(' ')) {
+        if (visite(propre)) return true;
+      }
+      for (const child of node.children.values()) {
+        if (walk(child, [...chemin, child.keyword])) return true;
+      }
+      return false;
+    };
+    return walk(depart, racine);
+  }
+
   private porteUneSuite(node: CommandNode): boolean {
     return node.params.length > 0
       || node.children.size > 0

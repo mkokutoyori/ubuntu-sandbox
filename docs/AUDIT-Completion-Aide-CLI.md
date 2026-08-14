@@ -729,3 +729,59 @@ dans la vue et en exigeant qu'aucun ne réponde `% Invalid input`.
 
 Non-régression connexe : 204 fichiers, 5 782 cas. `tsc` : 337 erreurs
 avant comme après, à la ligne près.
+
+## Étape 2 — un nœud qui ne mène nulle part ne se propose plus (C2)
+
+**Trois fois, la mesure a corrigé le correctif.** C'est l'étape où
+supposer coûtait le plus cher, et les trois erreurs valent d'être écrites.
+
+**Un — le nœud intermédiaire n'en est pas un.** J'ai d'abord traité le cas
+« `niveauParDefautDe` rend `null` », en croyant que `show ip` n'avait pas
+de niveau. Mesuré : il en a un, **1**. L'arbre porte bien une action sur
+ce nœud, et atteindre `show ip` ne demande en effet que d'atteindre
+`show`. La branche corrigée ne se déclenchait donc jamais.
+
+**Deux — le prédicat existait en double.** Le correctif ne changeait rien
+parce que la CLI n'appelle pas `commandVisibleToNow` mais `laSessionVoit`,
+qui portait **sa propre copie** de l'appel à `authorize` — sous un
+commentaire annonçant « une seule règle, déjà écrite ». Les deux ont
+divergé au moment exact où l'une a appris quelque chose. `laSessionVoit`
+délègue désormais.
+
+**Trois — la borne était elle-même un défaut.** J'avais borné le parcours
+des descendants à 64 chemins pour en limiter le coût. Dans une vue ne
+contenant que `show version`, la troncature coupait **avant lui** : `show`
+disparaissait de la complétion, et le témoin de l'étape 1 l'a attrapé. Le
+prédicat est maintenant passé **à** la marche, qui s'arrête au premier
+descendant qui convient — sans borne, et plus vite qu'avec.
+
+**La règle, une fois juste.** Un nœud est visible s'il est **validable ici**
+*ou* s'il **mène à quelque chose de visible** — un OU, pas un ET. Ma
+première version exigeait les deux, et cassait `show running-config`
+descendue au niveau 10 : elle est validable seule, mais tout ce qui la
+complète (`all`, `interface …`) reste au niveau 15. Le signal qui
+distingue « validable ici » de « simple point de passage » existait déjà
+et est celui qu'IOS affiche : le marqueur `<cr>`. `show running-config`
+en a un, `show ip` n'en a pas.
+
+**Le repli reste OUVERT** : un chemin sans aucun descendant exécutable
+connu demeure proposé. Masquer ici n'est pas une frontière de sécurité —
+l'exécution l'est, et elle refuse — donc en cas de doute une liste trop
+large vaut mieux qu'une CLI amputée.
+
+**Coût, mesuré et non supposé.** `?` sur `show ` passe de 0,7 ms à 3 ms au
+niveau 1. Le cas de très loin le plus courant — niveau 15, hors vue — est
+court-circuité par un fait plutôt que par une optimisation : rien ne peut
+être au-dessus de 15, donc le parcours ne pourrait rendre que `true`.
+
+**Discrimination.** `probe-aide-noeuds-intermediaires.test.ts` (9 cas) :
+**3 tombent** avant correctif. La paire qui porte tout le poids est
+`ip` contre `ipv6` — au même instant, sur la même machine et au même
+niveau, `show ipv6 interface brief` **s'exécute**. Un correctif qui
+masquerait les deux serait aussi faux que celui qui n'en masque aucun, et
+c'est le seul témoin qui les distingue. Un dernier cas ferme la boucle :
+**chaque** mot-clé que `show ?` propose au niveau 1 doit avoir une aide
+qui répond.
+
+Non-régression connexe : 205 fichiers, 5 791 cas. `tsc` : 337, à la ligne
+près.

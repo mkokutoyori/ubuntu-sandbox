@@ -990,20 +990,75 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private commandVisibleToNow(
     cmdPart: string, mode: string, ctx?: InteractionPlanContext,
   ): boolean {
+    const niveau = ctx?.level ?? this.declaredModeLevel(ctx?.mode);
+    const vue = ctx && 'view' in ctx ? (ctx.view ?? null) : this.activeParserView;
+    // Hors d'une vue, le niveau 15 voit tout : rien ne peut etre
+    // au-dessus. Le dire ici epargne a la frappe la plus courante le
+    // parcours des descendants, qui ne pourrait rendre que `true`.
+    if (vue === null && niveau >= 15) return true;
     const defaut = this.niveauParDefautDe(cmdPart);
-    if (defaut === null) return true;
-    return this.autorisation().authorize({
-      principal: {
-        level: ctx?.level ?? this.declaredModeLevel(ctx?.mode),
+    if (defaut !== null) {
+      const accordee = this.autorisation().authorize({
         // `??` confondrait une vue RACINE explicitement transmise
         // (`null`) avec une absence de contexte, et retomberait alors
         // sur la vue du shell — donc sur celle d'une autre session.
-        view: ctx && 'view' in ctx ? (ctx.view ?? null) : this.activeParserView,
-      },
-      scope: scopeForMode(mode as typeof this.mode),
-      command: cmdPart,
-      defaultLevel: defaut,
-    }) === 'run';
+        principal: { level: niveau, view: vue },
+        scope: scopeForMode(mode as typeof this.mode),
+        command: cmdPart,
+        defaultLevel: defaut,
+      }) === 'run';
+      // Hissee au-dessus de la session : invisible, quoi qu'il y ait
+      // dessous.
+      if (!accordee) return false;
+      // Validable ICI : elle se suffit, meme si tout ce qui la complete
+      // est hors de portee. `show running-config` descendue au niveau 10
+      // doit paraitre a ce niveau bien que `show running-config all`
+      // reste au 15.
+      if (this.executableTelleQuelle(cmdPart, mode)) return true;
+    }
+    return this.meneAQuelqueChoseDeVisible(cmdPart, mode, ctx);
+  }
+
+  /** Peut-on valider cette ligne telle quelle dans l'un des arbres du mode ? */
+  private executableTelleQuelle(cmdPart: string, mode: string): boolean {
+    for (const trie of this.arbresDe(scopeForMode(mode as typeof this.mode))) {
+      if (trie.estExecutableTelQuel(cmdPart)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Un noeud qui a des enfants est visible s'il MENE a quelque chose de
+   * visible.
+   *
+   * Atteindre `show ip` ne demande que d'atteindre `show`, donc le
+   * niveau propre de ce noeud vaut 1 — mais hisser `show ip route` au
+   * niveau 5 hisse chacun de ses freres avec lui, si bien qu'au niveau 1
+   * rien sous ce noeud ne s'execute. Le noeud etait donc juge sur son
+   * propre niveau, qui ne dit rien de ce a quoi il donne acces, et il
+   * paraissait dans la liste en ne menant nulle part.
+   *
+   * Le noeud lui-meme est exclu de la recherche, sans quoi un noeud
+   * executable se justifierait par lui-meme — et la recursion ne
+   * s'arreterait jamais.
+   *
+   * Le repli est OUVERT, et c'est delibere : un chemin sans aucun
+   * descendant executable connu reste propose. Masquer ici n'est pas une
+   * frontiere de securite — l'execution l'est, et elle refuse — donc en
+   * cas de doute une liste trop large vaut mieux qu'une CLI amputee.
+   */
+  private meneAQuelqueChoseDeVisible(
+    cmdPart: string, mode: string, ctx?: InteractionPlanContext,
+  ): boolean {
+    const cible = cmdPart.trim();
+    let juge = false;
+    for (const trie of this.arbresDe(scopeForMode(mode as typeof this.mode))) {
+      const verdict = trie.someExecutableUnder(
+        cible, (chemin) => this.commandVisibleToNow(chemin, mode, ctx));
+      if (verdict === true) return true;
+      if (verdict === false) juge = true;
+    }
+    return !juge;
   }
 
   private commandeConnueDansMode(scope: AuthScope, commande: string): boolean {
@@ -2333,16 +2388,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configSessionLabel = user ?? 'console';
   }
 
-  /** La session voit-elle cette commande ? Une seule regle, deja ecrite. */
+  /**
+   * La session voit-elle cette commande ?
+   *
+   * Le commentaire d'origine annoncait « une seule regle, deja ecrite »
+   * et la methode en portait pourtant une SECONDE copie : elle
+   * reconstruisait l'appel a `authorize` au lieu d'appeler le predicat
+   * qui le fait. Les deux ont diverge des que l'un des deux a appris
+   * quelque chose — la regle des noeuds intermediaires n'a d'abord porte
+   * que sur celui que la CLI n'appelle pas.
+   */
   protected laSessionVoit(cmdPart: string): boolean {
-    const defaut = this.niveauParDefautDe(cmdPart);
-    if (defaut === null) return true;
-    return this.autorisation().authorize({
-      principal: this.mandataire(),
-      scope: scopeForMode(this.mode),
-      command: cmdPart,
-      defaultLevel: defaut,
-    }) === 'run';
+    return this.commandVisibleToNow(cmdPart, this.mode, {
+      level: this.currentPrivilegeLevel,
+      view: this.activeParserView,
+    });
   }
 
   /**
