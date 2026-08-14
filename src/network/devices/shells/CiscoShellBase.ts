@@ -2386,6 +2386,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const out: Array<{ keyword: string; description: string }> = [];
       for (const { cible } of regles) {
         if (base.length > 0 && !cible.startsWith(base + ' ')) continue;
+        // Le meme predicat que la tabulation. Les gardes ci-dessus sur
+        // le mode et le niveau ecartaient deja le cas d'une vue, mais
+        // sans jamais parler de vue : un garde qui protege pour une
+        // raison qui n'est pas la sienne protege jusqu'au jour ou la
+        // raison change.
+        if (!this.laSessionVoit(cible)) continue;
         const reste = base.length > 0 ? cible.slice(base.length + 1) : cible;
         const mot = reste.split(/\s+/)[0];
         if (!mot || !mot.startsWith(partiel)) continue;
@@ -3205,8 +3211,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
           .filter((c) => this.laSessionVoit(c));
         const prefixe = input.trim().toLowerCase();
+        // Une commande DESCENDUE depuis l'arbre privilegie n'est pas
+        // dans l'arbre utilisateur : la marche du trie ne peut pas la
+        // trouver, d'ou cet ajout. Mais il passe par la MEME porte que
+        // le reste — sans quoi une vue CLI, qui remplace l'arbre visible
+        // au lieu de s'y ajouter, voyait la tabulation lui rendre une
+        // commande qu'elle exclut et que l'execution refuse ensuite.
         for (const { cible } of this.reglesExecAccordees()) {
-          if (cible.startsWith(prefixe) && !base.includes(cible)) base.push(cible);
+          if (!cible.startsWith(prefixe) || base.includes(cible)) continue;
+          if (!this.laSessionVoit(cible)) continue;
+          base.push(cible);
         }
         return base;
       } finally {

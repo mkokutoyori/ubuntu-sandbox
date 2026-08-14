@@ -679,3 +679,53 @@ jamais contre une analogie.
 * Mesures propres : sondes `cliHelp` / `cliTabCandidates` /
   `cliTabComplete` sur `CiscoRouter`, `CiscoSwitch` et `HuaweiRouter`,
   1 416 chemins d'aide parcourus, transcriptions conservées.
+
+---
+
+# Carnet de bord — correctifs
+
+## Étape 1 — une seule porte pour l'autorisation (C1, et la moitié de G2)
+
+**Ce que la mesure a trouvé sous le constat.** La fuite n'était pas un
+filtre absent, c'était un filtre **contourné**. `tabCandidates` filtre
+correctement ses candidats par `laSessionVoit` — puis **ajoute derrière**
+les règles `privilege` accordées, sans les soumettre à quoi que ce soit :
+
+```ts
+for (const { cible } of this.reglesExecAccordees()) {
+  if (cible.startsWith(prefixe) && !base.includes(cible)) base.push(cible);
+}
+```
+
+L'ajout lui-même est légitime et doit rester : une commande **descendue**
+depuis l'arbre privilégié n'est pas dans l'arbre utilisateur, donc la
+marche du trie ne peut pas la trouver. Ce qui manquait, c'est qu'il passe
+par la même porte que le reste.
+
+**Et le pendant côté `?` était protégé par accident.**
+`completionsAccordeesParNiveau` ne fuyait pas — mais grâce à deux gardes
+qui ne parlent pas de vue : `mode !== 'user'` et « ni le niveau 1, ni le
+niveau 15 ». Une session en vue est au niveau 15, donc elle sortait par la
+seconde. *Un garde qui protège pour une raison qui n'est pas la sienne
+protège jusqu'au jour où la raison change.* Les deux injections consultent
+désormais explicitement `laSessionVoit`.
+
+**Ce que le correctif ne fait pas, et c'est voulu.** Il n'unifie pas les
+deux méthodes en une : elles ne rendent pas la même chose (`?` rend le
+mot-clé de la position courante, `Tab` rend la ligne entière). Ce qui est
+unifié est la **décision** — le prédicat — et c'est le seul point où
+elles pouvaient diverger.
+
+**Discrimination.** `probe-completion-vue-et-niveau.test.ts` (7 cas) :
+**2 tombent** avant correctif — la citation et la complétion d'une
+commande hors de la vue. Les 5 autres sont les témoins, et ils sont la
+partie délicate de cette sonde : sans eux, un filtre qui écarterait
+**tout** passerait pour un correctif. Ils vérifient donc qu'au niveau 5,
+hors d'une vue, `Tab` propose **toujours** `show ip route` ; qu'au
+niveau 1 il ne le propose pas ; qu'au niveau 15 la tabulation ordinaire
+fonctionne ; et que ce que la vue inclut reste complétable et exécutable.
+Un cas ferme la boucle en exécutant **chaque** candidat que `Tab` rend
+dans la vue et en exigeant qu'aucun ne réponde `% Invalid input`.
+
+Non-régression connexe : 204 fichiers, 5 782 cas. `tsc` : 337 erreurs
+avant comme après, à la ligne près.
