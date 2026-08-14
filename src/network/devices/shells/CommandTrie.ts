@@ -1112,9 +1112,27 @@ export class CommandTrie {
       node, path: completed, consumedArgs: paramIdx, argsSoFar,
       partial, matchPartial: true, forTab: true,
     };
+    // Les MEMES gardes que le rendu de `?`, et pour les memes raisons.
+    //
+    // Tant que le noeud attend un argument DECLARE, ses mots-cles ne sont
+    // pas des candidats : apres `password`, la ligne attend un mot de
+    // passe, pas `absolute-timeout`. Et un mot EXTRAIT du corps d'un
+    // gestionnaire qu'on ne sait pas decrire n'est probablement pas un
+    // mot-cle. `?` ecartait deja les deux ; `Tab` les servait, donc les
+    // deux portes repondaient differemment a la meme question.
+    // Un mot-cle et une valeur PEUVENT se disputer la meme place —
+    // `ping ?` offre `A.B.C.D` et `ip` — donc les enfants restent
+    // collectes. Ce que le rendu de `?` ecarte, et que la tabulation
+    // servait, c'est le mot EXTRAIT du corps d'un gestionnaire : tant
+    // qu'un argument declare est attendu, il n'a rien a faire la, et
+    // celui qu'on ne sait pas decrire n'est probablement pas un mot-cle.
+    const attendUnArgument = node.params.length > paramIdx;
+    const argumentsConsommes = paramIdx > 0 && node.params.length > paramIdx;
     const statiques = this.collectSuggestions(
       requete, new Set<SuggestionOrigin>(['child', 'hint', 'auto', 'param']));
     for (const c of this.suggestionsApplicables(statiques, paramIdx, argsSoFar)) {
+      if (c.origin === 'auto'
+        && (!c.description || attendUnArgument || argumentsConsommes)) continue;
       if (c.origin === 'child' || c.keyword.toLowerCase().startsWith(partialLower)) {
         push(c.keyword);
       }
@@ -1176,6 +1194,32 @@ export class CommandTrie {
       && !(e.leadingOnly && consumedArgs > 0));
   }
 
+  /**
+   * Le corps de ce gestionnaire sert-il plusieurs nœuds de l'arbre ?
+   *
+   * L'index est construit une fois et gardé : les enregistrements ont
+   * tous lieu à la construction du shell, et cette question est posée à
+   * chaque frappe.
+   */
+  private corpsPartage(node: CommandNode): boolean {
+    if (!node.action) return false;
+    if (!this._corpsGloutons) {
+      const compte = new Map<string, number>();
+      const walk = (n: CommandNode): void => {
+        if (n.greedy && n.action) {
+          const src = n.action.toString();
+          compte.set(src, (compte.get(src) ?? 0) + 1);
+        }
+        for (const c of n.children.values()) walk(c);
+      };
+      walk(this.root);
+      this._corpsGloutons = compte;
+    }
+    return (this._corpsGloutons.get(node.action.toString()) ?? 0) > 1;
+  }
+
+  private _corpsGloutons: Map<string, number> | null = null;
+
     private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
     if (node._autoKeywords !== undefined) return node._autoKeywords;
     if (!node.greedy || !node.action) {
@@ -1202,6 +1246,18 @@ export class CommandTrie {
     // `synchronous`. L'extraction ne comble que les nœuds dont personne
     // n'a déclaré les suites.
     if (curated.size > 0) {
+      node._autoKeywords = [];
+      return node._autoKeywords;
+    }
+    // Un corps de fonction PARTAGE par plusieurs nœuds ne sait pas
+    // lequel il sert, donc il ne peut attribuer aucun de ses mots-clés.
+    //
+    // Les vingt-deux commandes du mode `line` sont enregistrées dans une
+    // boucle sur `kw` : la fermeture ainsi créée porte le même corps pour
+    // toutes, et ce corps est un aiguillage qui cite forcément chacune.
+    // Chaque nœud recevait donc la liste des vingt et un autres —
+    // `speed ?` répondait `authentication`, `autocommand`, `banner`.
+    if (this.corpsPartage(node)) {
       node._autoKeywords = [];
       return node._autoKeywords;
     }

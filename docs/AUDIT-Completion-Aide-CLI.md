@@ -825,3 +825,60 @@ modificateurs de tuyau, et le fait que `<cr>` était déjà en queue sur VRP.
 
 Non-régression connexe : 206 fichiers, 5 815 cas. `tsc` : 337, à la ligne
 près.
+
+## Étape 4 — l'aide ne se dérive plus du texte source (G1, M7, M8)
+
+**La cause, mesurée plutôt que devinée.** Ma première hypothèse était que
+plusieurs nœuds partageaient une même *référence* de fonction — fausse :
+mesuré, zéro. La vraie cause est plus subtile et se lit dans le code
+extrait : les vingt-deux commandes du mode `line` sont enregistrées **dans
+une boucle sur `kw`**, si bien que chaque fermeture est un objet distinct
+mais porte le **même corps** — un aiguillage qui cite forcément toutes les
+commandes. Chaque nœud recevait donc la liste des vingt et une autres.
+
+Deux règles, et chacune énonce une vérité sur ce que le nœud attend :
+
+> **A.** Un corps de fonction partagé par plusieurs nœuds ne peut pas
+> attribuer ses mots-clés : il ne sait pas lequel il sert.
+>
+> **B.** Un mot extrait du code n'a rien à faire là où un argument déclaré
+> est attendu — et celui qu'on ne sait pas décrire n'est probablement pas
+> un mot-clé.
+
+**La mesure a réduit le chantier de deux ordres de grandeur.** Sur les
+**107 nœuds** à corps partagé de la plateforme, seuls **quatre** rendaient
+la liste du mode : `speed`, `stopbits`, `flowcontrol`, `databits`. Tous les
+autres portent déjà un paramètre déclaré ou des suites curatées
+(`ntp server`, `debug vrrp`, `show ip vrf`, `mdix`…) et rendaient déjà la
+bonne chose. Un inventaire exhaustif de ce que la règle A retire a
+confirmé qu'elle n'emporte **qu'un seul mot-clé légitime** dans toute la
+plateforme : `source-interface`, sur les quatre écritures de
+`ip domain lookup`. Il est déclaré, ce qui lui donne aussi une
+description.
+
+Les quatre commandes série reçoivent leurs vraies valeurs — `speed` de 300
+à 115200, `databits` 5-8, `stopbits` 1-2, `parity` even/none/odd,
+`flowcontrol` hardware/none/software.
+
+**Une erreur en chemin, et elle valait la mesure.** Ma première écriture de
+la règle B ne collectait plus que les paramètres dès qu'un argument était
+attendu. Sept cas connexes sont tombés, dont celui qui dit la vérité :
+`ping i` doit **toujours** proposer `ip` et `ipv6`. Un mot-clé et une
+valeur peuvent se disputer la même place — `ping ?` offre `A.B.C.D` **et**
+`ip` — donc seuls les mots **extraits** sont écartés, et exactement selon
+le garde que le rendu de `?` applique déjà. Corriger « comme le fait
+l'autre porte » plutôt que « comme il me semble » était toute la
+différence.
+
+**Ce que le repli devient.** Un glouton que personne n'a décrit rend
+`WORD` : il annonce qu'un mot est attendu sans prétendre savoir lequel.
+C'est vrai, là où la liste du mode était fausse.
+
+**Discrimination.** `probe-aide-non-derivee-du-code.test.ts` (27 cas) :
+**20 tombent** avant correctif. Les 7 témoins sont ceux qui protègent
+contre la sur-correction — les groupes à corps partagé **déclarés** qui
+doivent garder leur aide, le mode `line` qui doit rester entier au premier
+rang, et les commandes de ce mode qui doivent continuer à s'exécuter.
+
+Non-régression connexe : 207 fichiers, 5 858 cas. `tsc` : 337, à la ligne
+près.
