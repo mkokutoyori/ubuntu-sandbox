@@ -2628,21 +2628,14 @@ export abstract class LinuxMachine extends EndHost
     };
     const offRestart = bus.subscribeWhere('linux.service.restarted', isSsh, reload);
     const offReload = bus.subscribeWhere('linux.service.reloaded', isSsh, reload);
-    const rebindPorts = (): void => {
-      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
-        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
-      }
-      const sshdBanner = 'SSH-2.0-Sandbox-Server\r\n';
-      for (const p of this.sshdPortsFromConfig()) {
-        try { this.socketTable.bind('tcp', '0.0.0.0', p, 985, 'sshd', sshdBanner); } catch { /* already bound */ }
-        try { this.socketTable.bind('tcp', '::', p, 985, 'sshd', sshdBanner); } catch { /* already bound */ }
-      }
-      this.attachSshTcpListeners();
-    };
+    // Ouvrir et refermer les écoutes suffit : elles s'inscrivent et se
+    // retirent elles-mêmes de la table que lit `ss` (§P2b). Les
+    // `bind()`/`unbind()` manuels qui doublaient ce cycle réinscrivaient
+    // les mêmes lignes à côté, ce qui rendait le puits muet pour sshd —
+    // son `announce` se tait sur un port déjà lié — et l'écoute cessait
+    // d'être la seule à décider ce qui s'affiche.
+    const rebindPorts = (): void => { this.attachSshTcpListeners(); };
     const offStopped = bus.subscribeWhere('linux.service.stopped', isSsh, () => {
-      for (const sock of this.socketTable.getAll().filter(s => s.processName === 'sshd')) {
-        this.socketTable.unbind('tcp', sock.localAddress, sock.localPort);
-      }
       this.detachSshTcpListeners();
     });
     const offStarted = bus.subscribeWhere('linux.service.started', isSsh, rebindPorts);

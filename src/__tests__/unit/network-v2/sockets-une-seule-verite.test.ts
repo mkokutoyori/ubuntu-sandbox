@@ -280,3 +280,84 @@ describe('§P2b — sshd sur les deux familles, sans doublon', () => {
     expect(joignableInvisible(srv)).toEqual([]);
   });
 });
+
+/**
+ * §P2b, la moitié qui n'était pas mesurée : le CYCLE DE VIE.
+ *
+ * Les deux tables s'accordaient à l'amorçage, et c'est tout ce qui était
+ * vérifié. Or le démon s'arrête, redémarre, et change de port — et
+ * jusqu'ici deux `bind()`/`unbind()` manuels doublaient ce cycle en
+ * réinscrivant les mêmes lignes à côté de l'écoute. Ils ne mentaient pas
+ * sur le résultat, mais ils rendaient le puits muet pour sshd (son
+ * `announce` se tait sur un port déjà lié), donc l'écoute n'était plus
+ * la seule à décider ce que `ss` montre — la condition exacte dans
+ * laquelle ce défaut est né cinq fois.
+ */
+describe('§P2b — le cycle de vie de sshd, pas seulement son amorçage', () => {
+  const sshd = () => {
+    const srv = new LinuxServer('linux-server', 'CYCLE-SSHD');
+    srv.powerOn();
+    return srv;
+  };
+  const lignes22 = (srv: LinuxServer, port = 22) =>
+    srv.getSocketTable().getListening()
+      .filter((e) => e.protocol === 'tcp' && e.localPort === port);
+
+  it('arrêter le démon retire les lignes ET les écoutes', async () => {
+    const srv = sshd();
+    await srv.executeCommand('sudo systemctl stop ssh');
+
+    expect(lignes22(srv)).toEqual([]);
+    expect(srv.getTcpStack().listListeners().filter((l) => l.localPort === 22)).toEqual([]);
+    expect(joignableInvisible(srv as unknown as Host)).toEqual([]);
+  });
+
+  it('le redémarrer les remet, identité comprise', async () => {
+    const srv = sshd();
+    await srv.executeCommand('sudo systemctl stop ssh');
+    await srv.executeCommand('sudo systemctl start ssh');
+
+    const lignes = lignes22(srv);
+    expect(lignes.map((l) => l.localAddress).sort()).toEqual(['0.0.0.0', '::']);
+    for (const l of lignes) {
+      expect(l.processName).toBe('sshd');
+      expect(l.banner).toContain('SSH-2.0');
+    }
+    expect(joignableInvisible(srv as unknown as Host)).toEqual([]);
+  });
+
+  it('changer le Port déplace la ligne ET l\'écoute, sans en laisser derrière', async () => {
+    const srv = sshd();
+    await srv.executeCommand("sudo sed -i 's/^#*Port .*/Port 2222/' /etc/ssh/sshd_config");
+    await srv.executeCommand('sudo systemctl reload ssh');
+
+    // L'ancien port ne doit subsister ni comme ligne ni comme écoute :
+    // une ligne restée seule serait précisément le décor que §P2 chasse.
+    expect(lignes22(srv, 22)).toEqual([]);
+    expect(srv.getTcpStack().listListeners().filter((l) => l.localPort === 22)).toEqual([]);
+
+    expect(lignes22(srv, 2222).map((l) => l.localAddress).sort()).toEqual(['0.0.0.0', '::']);
+    expect(
+      srv.getTcpStack().listListeners().filter((l) => l.localPort === 2222).map((l) => l.localIp).sort(),
+    ).toEqual(['0.0.0.0', '::']);
+    expect(joignableInvisible(srv as unknown as Host)).toEqual([]);
+    expect(await srv.executeCommand('ss -ltn')).toContain(':2222');
+  });
+
+  it('après un redémarrage, la ligne suit toujours son écoute', async () => {
+    const srv = sshd();
+    // Le redémarrage est ce qui déclenche `rebindPorts` — sans lui, la
+    // ligne posée à l'amorçage appartient à l'écoute de toute façon, et
+    // la mesure ne dirait rien. C'est ce cas-là, et lui seul, qui
+    // distingue les deux versions.
+    await srv.executeCommand('sudo systemctl restart ssh');
+    srv.getTcpStack().closeListener(22, '0.0.0.0');
+
+    // La question que le cycle de vie posait vraiment : la ligne suit-elle
+    // l'écoute, ou quelqu'un d'autre l'a-t-il réinscrite à côté ? Avec le
+    // `bind()` manuel, elle survivait à la fermeture de sa propre écoute —
+    // un port affiché que plus rien n'ouvre.
+    expect(lignes22(srv).map((l) => l.localAddress)).toEqual(['::']);
+    expect(afficheInjoignable(srv as unknown as Host)).not.toContain(22);
+  });
+});

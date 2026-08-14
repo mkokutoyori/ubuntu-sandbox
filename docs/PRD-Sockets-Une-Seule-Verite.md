@@ -231,17 +231,38 @@ qu'il faut nommer plutôt que de le trancher au passage.
   préambule NetBIOS (RFC 1002 §4.3), faute de couche NBSS ici et de
   client qui l'attendrait.
 
-#### P2b — reste à faire
+#### P2b — fait
 
-- **sshd 22 (v4 et v6) et les ports de `sshd_config`.** Doublons, mais
-  pas anodins : ils portent la bannière SSH, et l'entrée `:::22` n'a pas
-  d'écoute propre — `findListener` rabat une connexion v6 sur le
-  générique v4. Les retirer sans donner au `listen()` une écoute `::`
-  ferait apparaître l'erreur symétrique en v6. À traiter seul, pour que
-  la régression reste attribuable sur une surface aussi testée.
-- **Le listener TNS d'Oracle (1521).** Inchangé, et pour la raison déjà
-  écrite au point de liaison : lui donner une vraie boucle d'acceptation
-  suppose un serveur TNS. Nommé plutôt que tranché au passage.
+- **sshd 22 (v4 et v6) et les ports de `sshd_config`.** L'amorçage était
+  déjà traité : `attachSshTcpListeners()` ouvre les deux familles en
+  portant pid, nom et bannière, et `findListener` sert désormais une
+  connexion v6 par l'écoute `::` plutôt qu'en la rabattant sur le
+  générique v4.
+
+  Restait le **cycle de vie**, et c'est là que le doublon avait survécu :
+  `rebindPorts` — appelé sur `start`, `reload` et `restart` — refaisait
+  les deux `socketTable.bind()` manuels après avoir retiré à la main
+  toutes les lignes de sshd. Le résultat affiché était juste, ce qui est
+  précisément pourquoi rien ne le signalait ; mais le puits redevenait
+  muet pour sshd — son `announce` se tait sur un port déjà lié — donc
+  après le premier `systemctl restart ssh` la ligne de `ss`
+  n'appartenait plus à l'écoute et lui survivait. Ouvrir et refermer
+  l'écoute suffit : les deux boucles manuelles sont parties, `rebindPorts`
+  n'appelle plus que `attachSshTcpListeners()` et l'arrêt que
+  `detachSshTcpListeners()`.
+
+  Mesuré plutôt que supposé, et la première mesure était fausse : quatre
+  cas étendent le croisement au cycle (`stop`, `start`, changement de
+  `Port` suivi d'un `reload`, et fermeture de l'écoute), mais les trois
+  premiers passent des deux côtés du correctif — le résultat affiché
+  était juste, c'est bien pour cela que rien ne le signalait. Seul le
+  quatrième distingue, et seulement s'il **redémarre le démon d'abord** :
+  sans redémarrage, `rebindPorts` ne s'exécute pas et la ligne posée à
+  l'amorçage appartient à son écoute de toute façon. Avec le `bind()`
+  manuel, `ss` gardait `0.0.0.0:22` après la fermeture de l'écoute
+  correspondante ; sans lui, la ligne s'en va avec elle.
+- **Le listener TNS d'Oracle (1521).** Traité en P2c : il écoute
+  réellement dès l'amorçage.
 
 ### P3 — Le garde-fou
 
