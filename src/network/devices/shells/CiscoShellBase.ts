@@ -1015,6 +1015,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return false;
   }
 
+  /**
+   * La meme verification, rendue avec le curseur sous le PREMIER mot de
+   * la commande citee : c'est lui qu'IOS pointe, et lui que l'operateur
+   * doit relire, meme quand la faute porte sur un mot suivant.
+   */
+  private exigerCommandeConnue(scope: AuthScope, mots: readonly string[]): void {
+    if (this.commandeConnueDansMode(scope, mots.join(' '))) return;
+    throw new CliInvalidInput({ token: mots[0] });
+  }
+
   protected setupConfigurableInterfaces(deviceCtx?: unknown): string[] {
     const dev = (deviceCtx ?? this.deviceRef) as unknown as {
       getPorts?: () => Array<{ getName(): string }>;
@@ -3453,8 +3463,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
       if (sec.parserViews.size === 0) return 'No views are configured';
-      const lignes = ['Views/Superviews Present in System:'];
-      for (const v of sec.parserViews.values()) lignes.push(`  ${v.name}  `);
+      // L'etoile est la SEULE information que cette vue apporte de plus
+      // que la configuration : laquelle des vues declarees est une
+      // supervue. Sans elle et sans sa legende, la commande recopie une
+      // liste de noms.
+      const lignes = ['Views/SuperViews Present in System:'];
+      for (const v of sec.parserViews.values()) {
+        lignes.push(v.superview ? `${v.name} *` : v.name);
+      }
+      lignes.push('-------(*) represent superview-------');
       return lignes.join('\n');
     });
     // Le nœud intermédiaire porte sa description, APRÈS l'enregistrement
@@ -4809,41 +4826,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       r._recordUnhandledConfigLine?.(raw ?? `queue-list ${args.join(' ')}`);
       return '';
     });
+    /**
+     * `privilege <mode> [all] {level <n> | reset} <commande>`.
+     *
+     * Les deux diagnostics d'IOS ne sont pas interchangeables : `%
+     * Incomplete command.` dit « continue de taper », `% Invalid input`
+     * dit « ce mot-la est faux » et POSE LE CURSEUR dessous. Cette
+     * analyse rendait le premier pour un mot-cle mal ecrit — une ligne
+     * a qui il ne manque rien — et posait le curseur ailleurs que sur
+     * le mot fautif quand elle rendait le second.
+     *
+     * Et la COMMANDE elle-meme est verifiee, comme `commands <mode>
+     * include` la verifie deja : une regle nee sur une faute de frappe
+     * parait dans la configuration, se recharge a l'import, et
+     * n'autorise jamais rien.
+     */
     this.configTrie.registerGreedy('privilege', 'Configure command privilege levels', (args, raw) => {
-      if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-      const mode = args[0]?.toLowerCase();
+      if (args.length === 0) throw new CliIncomplete();
+      const mode = args[0].toLowerCase();
       if (!AUTH_SCOPES.includes(mode as AuthScope)) {
-        return CISCO_ERRORS.INVALID_INPUT;
+        throw new CliInvalidInput({ token: args[0] });
       }
-      if (args[1]?.toLowerCase() === 'reset') {
-        if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-        return this.reinitialiserNiveauDeCommande(mode ?? '', args.slice(2).join(' '));
+      const scope = mode as AuthScope;
+      let i = 1;
+      // `all` etend la regle a ce qui COMPLETE la commande.
+      const tousDescendants = args[i]?.toLowerCase() === 'all';
+      if (tousDescendants) i += 1;
+      const verbe = args[i]?.toLowerCase();
+      if (verbe === undefined) throw new CliIncomplete();
+      if (verbe !== 'level' && verbe !== 'reset') {
+        throw new CliInvalidInput({ token: args[i] });
       }
-      // `privilege <mode> [all] level <n> <commande>` : les deux parties
-      // sont independantes, et `all` etend la regle a ce qui COMPLETE la
-      // commande. Le mot-cle etait refuse, et sa semantique appliquee a
-      // toute regle — les deux formes faisaient donc la meme chose.
-      const tousDescendants = args[1]?.toLowerCase() === 'all';
-      const reste = tousDescendants ? args.slice(1) : args;
-      if (reste[1]?.toLowerCase() === 'reset') {
-        if (reste.length < 3) return CISCO_ERRORS.INCOMPLETE;
-        return this.reinitialiserNiveauDeCommande(mode ?? '', reste.slice(2).join(' '));
+      if (verbe === 'reset') {
+        const cible = args.slice(i + 1).join(' ');
+        if (cible === '') throw new CliIncomplete();
+        this.exigerCommandeConnue(scope, args.slice(i + 1));
+        return this.reinitialiserNiveauDeCommande(mode, cible);
       }
-      if (reste[1]?.toLowerCase() !== 'level') return CISCO_ERRORS.INCOMPLETE;
-      if (reste.length < 3) return CISCO_ERRORS.INCOMPLETE;
-      const lvl = parseInt(reste[2] ?? '', 10);
-      if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-        return CISCO_ERRORS.INVALID_INPUT;
+      const brut = args[i + 1];
+      if (brut === undefined) throw new CliIncomplete();
+      const lvl = parseInt(brut, 10);
+      if (!/^\d+$/.test(brut) || lvl < 0 || lvl > 15) {
+        throw new CliInvalidInput({ token: brut });
       }
-      if (reste.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      const commande = args.slice(i + 2).join(' ');
+      if (commande === '') throw new CliIncomplete();
+      this.exigerCommandeConnue(scope, args.slice(i + 2));
       // La regle N'EST PAS enregistree comme « ligne non traitee » : elle
       // est rendue depuis la table qui decide (`privilegeConfigLines`).
       // Deux magasins pour un fait, c'est ce qui laissait une regle
       // paraitre dans la configuration sans avoir le moindre effet.
       void raw;
-      this.autorisation().setCommandLevel(
-        mode as AuthScope, reste.slice(3).join(' '), lvl, tousDescendants,
-      );
+      this.autorisation().setCommandLevel(scope, commande, lvl, tousDescendants);
       return '';
     });
     /**
@@ -4863,6 +4897,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       if (this.activeParserView !== null) {
         return '%Currently in view mode. Please exit to root view first';
+      }
+      /**
+       * La vue RACINE est la condition d'IOS, et Cisco la definit par le
+       * niveau : un utilisateur de la vue racine a les privileges du
+       * niveau 15, et c'est ce qui le distingue des autres — lui seul
+       * peut declarer une vue et en changer le contenu.
+       *
+       * Sans ce controle, il suffisait de se DELEGUER `parser view`
+       * (`privilege configure level 5 parser view`) pour que le
+       * mecanisme d'autorisation se reconfigure depuis l'interieur de
+       * ce qu'il restreint : la session s'ecrivait un role sur mesure.
+       */
+      if (this.currentPrivilegeLevel < 15) {
+        return '%Root view is required to configure a view';
       }
       const nom = args[0];
       // `parser view <nom> superview` : le mot-cle etait accepte et JETE,

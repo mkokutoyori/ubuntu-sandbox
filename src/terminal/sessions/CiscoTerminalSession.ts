@@ -500,13 +500,20 @@ export class CiscoTerminalSession extends CLITerminalSession {
     this.rearmExecTimeout();
   }
 
-  /** `privilege level N` configured on `line console 0`, if any. */
+  /**
+   * `privilege level N` configured on `line console 0`, if any.
+   *
+   * Ce niveau vit sur l'EQUIPEMENT, et c'est la qu'il se lit : passer
+   * par le shell le faisait transiter par `consolePrivilegeLevel()`,
+   * qui interroge `deviceRef` — une reference que le shell ne tient que
+   * PENDANT `execute`. Lue hors execution, elle est nulle, donc le
+   * reglage de la ligne repondait « aucun » et le niveau du COMPTE
+   * l'emportait : exactement l'inverse de la precedence d'IOS.
+   */
   private consoleLinePrivilegeOverride(): number | null {
-    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
-    const cfg = (shell as {
-      _getConsoleLineConfig?: () => { privilegeLevel: number | null } | null;
-    } | undefined)?._getConsoleLineConfig?.();
-    return cfg?.privilegeLevel ?? null;
+    return (this.device as unknown as {
+      getConsoleLinePrivilege?: () => number | null;
+    }).getConsoleLinePrivilege?.() ?? null;
   }
 
   /**

@@ -455,13 +455,14 @@ export function showRunningConfig(router: Router): string {
   const ports = router._getPortsInternal();
   const table = router._getRoutingTableInternal();
   const dhcp = router._getDHCPServerInternal();
+  const provenance = configProvenanceLines(router);
   const lines = [
     'Building configuration...',
     '',
     'Current configuration:',
     '!',
-    ...configProvenanceLines(router),
-    ...(configProvenanceLines(router).length > 0 ? ['!'] : []),
+    ...provenance,
+    ...(provenance.length > 0 ? ['!'] : []),
     `hostname ${router._getHostnameInternal()}`,
     '!',
   ];
@@ -789,8 +790,16 @@ export function showRunningConfig(router: Router): string {
 
   // IOS closes the configuration with a separator before `end`, and its
   // header reports the stored size in bytes.
-  const header = lines.slice(0, 4);
-  const ordered = orderCiscoConfigBlocks(lines.slice(4));
+  //
+  // La provenance fait partie de l'EN-TETE et ne traverse donc pas le
+  // tri des blocs : `! Last configuration change ...` commence par `!`
+  // sans etre le separateur `!`, si bien que le decoupeur en faisait un
+  // bloc ordinaire, que rien ne classait, et qui sortait au milieu des
+  // commandes globales. Aucun IOS n'ecrit sa provenance apres ses
+  // interfaces, et cette configuration est rejouee a l'import.
+  const tailleEnTete = 4 + provenance.length + (provenance.length > 0 ? 1 : 0);
+  const header = lines.slice(0, tailleEnTete);
+  const ordered = orderCiscoConfigBlocks(lines.slice(tailleEnTete));
   const assembled = [...header, ...ordered, 'end'];
   const body = assembled.slice(4).join('\n');
   assembled[2] = `Current configuration : ${new TextEncoder().encode(body).length + 1} bytes`;

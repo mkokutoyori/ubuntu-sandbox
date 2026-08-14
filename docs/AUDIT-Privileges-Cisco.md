@@ -1514,3 +1514,103 @@ prend.
 **G7 — un fichier de mise au point commité.** `zz-priv.test.ts` :
 `describe('p')`, `it('x')`, quatre `console.log`, un `expect(1).toBe(1)`.
 Il ne pouvait pas échouer et ne décrivait rien. Supprimé.
+
+## Étape 14 — la fidélité du dialogue : le curseur, le refus, l'ordre (F1, F2, F3, F5, F7, F8)
+
+Six points qui ne changent aucun droit et changent tout ce que
+l'opérateur **lit**. C'est ce qui les rend coûteux : un curseur posé sous
+le mauvais mot envoie corriger un mot juste, une commande inexistante
+acceptée en silence produit une règle qui n'autorisera jamais rien, et
+une ligne d'en-tête rendue au milieu des interfaces fait d'une
+configuration un fichier qu'IOS n'a jamais pu produire — or ce fichier
+est **rejoué à l'import d'une topologie**.
+
+**F1/F2 — les deux diagnostics d'IOS ne sont pas interchangeables.**
+`% Incomplete command.` dit « continue de taper », `% Invalid input
+detected` dit « ce mot-là est faux » et **pose le curseur dessous**.
+L'analyse de `privilege` rendait le premier pour un mot-clé mal écrit
+(`privilege exec badkeyword 5 show`) — une ligne à qui il ne manque rien,
+qui porte un mot de trop — et posait le curseur ailleurs que sur le mot
+fautif quand elle rendait le second (`privilege badmode level 5 show`
+pointait la colonne 21 au lieu de 10). Cause commune : les deux refus
+étaient des **chaînes rendues** (`CISCO_ERRORS.INVALID_INPUT`) au lieu du
+diagnostic typé que le reste du shell utilise, et une chaîne ne transporte
+pas le mot fautif. `CliInvalidInput({ token })` le transporte, et
+`offsetForInvalidInput` le retrouve dans la ligne tapée. Un niveau hors de
+0-15 est désormais pointé **sur le nombre**.
+
+**F7 — une règle ne naît pas pour une commande qui n'existe pas.**
+`privilege exec level 5 shwo verison` était accepté, la règle paraissait
+dans la configuration, se rechargeait à l'import, et n'autorisait jamais
+rien : la faute de frappe silencieuse que `commands <mode> include` refuse
+depuis l'étape 12. `exigerCommandeConnue` réutilise
+`commandeConnueDansMode` — la **même** vérification que les vues, pas une
+seconde — et pointe le curseur sur le premier mot de la commande citée.
+Une commande connue d'un **autre** mode est refusée dans celui-ci
+(`privilege exec level 5 ip address` refusé, `privilege interface level 5
+ip address` accepté) : la portée est ce que la règle déclare. `reset`
+vérifie de même, et l'abréviation reste acceptée (`sh ver`), puisque la
+vérification passe par l'arbre et non par une comparaison de texte.
+
+**F3 — la provenance est un en-tête.** `! Last configuration change at
+…` commence par `!` **sans être** le séparateur `!` : le découpeur en
+blocs en faisait donc un bloc ordinaire, que rien ne classait, qui
+tombait au rang des non-classées (19,5) et sortait **après les
+interfaces**. L'en-tête ne fait plus que quatre lignes par convention :
+il fait quatre lignes **plus la provenance**, qui ne traverse pas le tri.
+
+**F5 — `show parser view all` disait des noms, pas ce qu'ils sont.**
+L'étoile est la seule information que cette vue apporte de plus que la
+configuration : laquelle des vues déclarées est une **supervue**. Format
+mesuré sur une transcription de laboratoire (et non sur la documentation,
+dont le HTML écrase les blancs) : en-tête `Views/SuperViews Present in
+System:` — majuscule à `SuperViews` —, un nom par ligne sans indentation,
+` *` sur les supervues, et la légende `-------(*) represent
+superview-------` en dernière ligne.
+
+**F8 — déclarer une vue exige la vue racine.** Cisco définit la vue
+racine par le niveau : « quand un système est en vue racine, il a tous les
+privilèges d'un utilisateur de niveau 15 », et c'est ce qui distingue ce
+dernier — lui seul peut déclarer une vue et en changer le contenu. Sans
+ce contrôle il suffisait de **se déléguer** `parser view` (`privilege
+configure level 5 parser view`) pour que le mécanisme d'autorisation se
+reconfigure depuis l'intérieur de ce qu'il restreint : la session
+s'écrivait un rôle sur mesure. La sonde **délègue** la commande, sans quoi
+le refus viendrait du filtre de niveau et ne prouverait rien de la vue
+racine.
+
+**F6 — mesuré juste, laissé tel quel.** Le niveau 0 d'IOS (`disable`,
+`enable`, `exit`, `help`, `logout`) est déjà exact, `show` n'en fait pas
+partie, et deux cas de non-régression le gardent.
+
+**Trouvé en chemin, et corrigé — le niveau de la ligne console perdu par
+une porte sur trois.** L'étape 9 avait déplacé ce niveau sur
+l'**équipement** pour qu'aucun shell n'en garde une copie, et vérifié les
+deux portes qu'elle connaissait. Une troisième le lisait encore par le
+shell : `CiscoTerminalSession.consoleLinePrivilegeOverride()` passait par
+`_getConsoleLineConfig()`, donc par `consolePrivilegeLevel()`, qui
+interroge `deviceRef` — une référence que le shell ne tient que **pendant**
+`execute`. Lue hors exécution — c'est-à-dire au moment de
+l'authentification — elle est nulle : le réglage de la ligne répondait
+« aucun » et le niveau du **compte** l'emportait, exactement l'inverse de
+la précédence d'IOS. Un compte à 1 sur une console `privilege level 15`
+ouvrait donc à 1. La porte lit désormais l'équipement, seul magasin.
+
+**Deux laboratoires décrivaient une machine qui n'existe pas.**
+`tuto-cycle-identite-cisco` et `tuto-identite-chapitres-complets`
+déléguaient `show running-config` au niveau 7 sans redescendre `show`,
+donc le niveau 1 perdait `show privilege` elle-même — la promotion des
+parentes de l'étape 13, correcte, et le remède documenté est celui déjà
+appliqué à neuf autres laboratoires : `privilege exec level 1 show`.
+
+**Discrimination.** `cisco-privilege-fidelite-ios.test.ts` (32 cas,
+routeur et commutateur) : **19 tombent** avant correctif. Les 13 qui
+passent des deux côtés sont nommés plutôt que laissés à découvrir — ce
+sont les cas de non-régression (formes correctes, `% Incomplete command.`
+authentique, niveau 0, déclaration de vue au niveau 15) et la réponse
+« aucune vue configurée », qui ne dépend d'aucun des six points. La sonde
+lit la largeur d'invite en vigueur par `formatInvalidInput(0)` au lieu de
+la déduire du nom de la machine : deux plateformes ne la déclarent pas de
+la même façon, et une position de curseur mesurée contre une invite
+supposée n'aurait rien prouvé. Non-régression connexe : 165 fichiers,
+4890 cas. `tsc` : 337 erreurs avant comme après, à la ligne près.

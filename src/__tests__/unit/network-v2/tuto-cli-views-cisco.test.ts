@@ -147,7 +147,8 @@ describe('§11 : déclarer une vue', () => {
   it('`show parser view all` liste les vues déclarées', async () => {
     const r = await labVue();
     const out = await ios(r, ['show parser view all']);
-    expect(out).toContain('Views/Superviews Present in System:');
+    // L'en-tete d'IOS porte une majuscule a `SuperViews`.
+    expect(out).toContain('Views/SuperViews Present in System:');
     expect(out).toContain('NOC_VIEW');
     expect(out).toContain('HELPDESK_VIEW');
   });

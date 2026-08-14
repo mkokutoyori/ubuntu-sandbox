@@ -140,9 +140,14 @@ for (const [nom, fabrique] of PLATEFORMES) {
      */
     it('`privilege exec level N` autorise ET bloque vraiment', async () => {
       const d = await machine(fabrique);
+      // Hisser `show running-config` hisse `show` avec elle — c'est la
+      // promotion des parentes d'IOS. Sans redescendre `show`, le
+      // niveau 1 perdrait `show privilege` elle-meme, et le laboratoire
+      // decrirait une machine qui n'existe pas.
       await tape(d, [
         'configure terminal',
         'privilege exec level 7 show running-config',
+        'privilege exec level 1 show',
         'privilege exec level 10 configure terminal',
         'privilege exec level 15 reload',
         'enable secret level 7 PasswordTechnicien2024!',

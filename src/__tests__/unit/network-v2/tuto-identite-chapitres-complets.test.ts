@@ -214,8 +214,13 @@ for (const [nom, fabrique] of PLATEFORMES) {
   describe(`${nom} — Ch.6 : les niveaux de privilège`, () => {
     async function roles(): Promise<Machine> {
       const d = await allumee(fabrique);
+      // Hisser `show running-config` hisse `show` avec elle — c'est la
+      // promotion des parentes d'IOS. Sans redescendre `show`, le
+      // niveau 1 perdrait `show privilege` elle-meme, et le laboratoire
+      // decrirait une machine qui n'existe pas.
       const cmds = ['enable', 'configure terminal',
         'privilege exec level 7 show running-config',
+        'privilege exec level 1 show',
         'privilege exec level 7 ping',
         'privilege exec level 10 configure terminal',
         'privilege exec level 15 reload',
