@@ -1614,3 +1614,121 @@ la déduire du nom de la machine : deux plateformes ne la déclarent pas de
 la même façon, et une position de curseur mesurée contre une invite
 supposée n'aurait rien prouvé. Non-régression connexe : 165 fichiers,
 4890 cas. `tsc` : 337 erreurs avant comme après, à la ligne près.
+
+## Étape 15 — l'ordre des blocs, mesuré contre des captures (F3 seconde moitié, F4, G6)
+
+L'audit relevait deux placements et leur donnait la **même** raison —
+« rendu après les interfaces ». La mesure contre de vraies configurations
+dit que cette raison est fausse pour l'une des deux, et que le défaut est
+ailleurs.
+
+**La référence.** `ciscoconfparse`,
+`tests/fixtures/configs/sample_01.ios` et `sample_08.ios` : du texte
+capturé sur de vraies machines, pas un exemple de documentation — dont le
+HTML écrase les blancs et dont les extraits ne montrent jamais le fichier
+entier. Ordre relevé, deux fois indépendamment : `interface …` →
+`router ospf` → `ip route` → `ip access-list` → `access-list` →
+`snmp-server community` → `route-map` → `control-plane` → `banner login`
+→ `line con 0` → `ntp master` → `end`.
+
+**F4 — le constat visait juste la commande, pour la mauvaise raison.**
+`snmp-server community` **est** rendu après les interfaces sur une vraie
+machine : ce que l'audit mesurait était un comportement correct. Ce qui
+ne l'était pas, et que la capture montre, c'est qu'il passe **avant**
+`route-map` — la table du dépôt les avait inversés (rangs 20 et 21). Un
+constat qui aurait été « corrigé » sur son énoncé aurait déplacé une
+ligne juste et laissé l'inversion en place.
+
+**F3 (seconde moitié) — les règles `privilege` n'étaient classées nulle
+part.** Elles tombaient au rang des non-classées (19,5), c'est-à-dire à
+une place que rien n'a choisie, entre les listes d'accès et les
+route-maps. Une règle `privilege` décrit **qui a le droit de faire quoi**,
+comme `enable secret`, `aaa`, `parser view` et `username` — que la capture
+montre toutes groupées dans le bloc de tête avant les interfaces — et la
+documentation Cisco enchaîne partout `username …` puis
+`privilege exec level …`. Rang 8,5, juste après les comptes. Le
+`privilege level N` d'une **ligne** ne bouge pas : il est indenté, donc il
+appartient au bloc de sa ligne, et un cas le vérifie. Portée honnête de
+ce demi-point : aucune capture consultable ne contient de ligne
+`privilege exec level` ; le rang s'appuie sur le groupement que la capture
+montre et sur les exemples Cisco, et non sur un dump — mais la place
+qu'il remplace, elle, n'était appuyée sur rien.
+
+**G6 — les deux moitiés étaient déjà refermées, vérification faite.** Le
+test qui figeait C2 comme contrat (`tuto-cli-views-cisco.test.ts`) a été
+corrigé à l'étape 3, et le `passwordInput` jamais vérifié de
+`probe-privileges-banque.test.ts` l'est depuis que la porte `enable`
+vérifie : le laboratoire pose bien `enable secret`, et trois témoins
+négatifs (`% Bad secrets`) y prouvent qu'un mauvais secret échoue. Aucun
+code à changer ; l'entrée est close plutôt que laissée ouverte.
+
+**Trouvé en mesurant l'ordre, et corrigé — une machine décrivait sa
+configuration NTP deux fois, différemment.** Le rendu de l'ordre a fait
+apparaître `ntp server 10.0.0.9` deux fois de suite. Onze commandes `ntp`
+tapées produisaient **quinze** lignes, et les deux copies se
+contredisaient sur la même machine au même instant : `ntp master 8` contre
+`ntp master`, et `sntp server 10.0.0.20` contre `ntp server 10.0.0.20` —
+la même association décrite de deux façons. Deux rendus vivaient dans la
+même fonction, `ntpConfigLines(router)` et
+`NtpAgent.asRunningConfigLines()`. Ce n'est pas de l'affichage : la
+configuration est rejouée à l'import, donc chaque ligne y était **tapée**
+deux fois et la seconde effaçait ce que la première disait. **Sur le
+commutateur, le même partage produisait l'autre moitié du défaut** : il ne
+connaissait que le rendu pauvre, si bien que `ntp authentication-key`,
+`ntp update-calendar` et `ntp access-group` étaient acceptés, honorés, et
+absents de sa propre configuration — donc perdus au rechargement. Une clé
+d'authentification qui disparaît de la configuration est exactement ce
+qu'un auditeur cherche. Il n'en reste qu'un : celui de l'agent, qui porte
+l'état, omet le stratum à sa valeur par défaut comme IOS le fait (`ntp
+master` seul, ligne 138 de la capture) et a reçu l'orthographe `sntp`, que
+seul le rendu pauvre connaissait — `sntp server` est une **autre**
+commande, pas un synonyme d'affichage. `ciscoNtpConfig.ts` est supprimé,
+ainsi que `CiscoShellBase.ntpConfigLines()`, méthode sans appelant.
+
+**Discrimination.** `cisco-ordre-configuration-ios.test.ts` (8 cas) et
+`cisco-ntp-un-seul-rendu.test.ts` (13 cas) : **12 des 21 tombent** avant
+correctif. Les 9 qui passent des deux côtés sont les non-régressions —
+`snmp-server` reste après les interfaces, un `privilege level` de ligne
+reste dans son bloc, un stratum explicite reste écrit, et ce que seul le
+rendu riche écrivait était déjà rendu une fois sur le routeur.
+Non-régression connexe : 186 fichiers, 5325 cas. `tsc` : 337 erreurs
+avant comme après, à la ligne près.
+
+## Clôture — où chaque constat a été refermé
+
+Les 37 constats du rapport sont traités. Cette table dit lequel, par
+quelle étape, pour qu'aucun ne reste ouvert par oubli.
+
+| Constat | Étape | Ce qui a changé |
+|---|---|---|
+| C1 | 2 | L'autorisation décide sur la forme canonique : `sh ver` et `show version` sont la même commande |
+| C2, C3, C4 | 3 | Le `secret` d'une vue est vérifié ; `enable view` passe par un vrai dialogue |
+| C5 | 6 | `show running-config` ne rend que ce que le niveau peut modifier |
+| C6 | 4 | Un `secret` saisi en type 0 est stocké haché, jamais en clair |
+| C7 | 5 | La vue active appartient à la session, pas à la machine |
+| C8 | 7, 8 | `aaa authorization commands` garde toutes les portes ; `aaa authorization exec` décide du niveau d'ouverture |
+| M1, M2 | 9, 14 | Le niveau de la ligne s'applique par les **trois** portes ; il vit sur l'équipement |
+| M3, M6 | 10 | Promotion des parentes, et le mot-clé `all` |
+| M4, M5, M12 | 2 | Une règle rendue a un effet ; une seule dérivation de clé ; la tabulation filtre |
+| M7, M8 | 12 | Les quatre modes de vue ; `include-exclusive` réserve vraiment |
+| M9, M10, M11 | 11 | Limite de 15 vues ; les vues sur Catalyst ; `config-view` confiné |
+| G1, G4, G5, G7, G8, G9 | 13 | Code mort, magasin destructeur, repli **fail-open**, fichier de mise au point, commentaire faux, castes |
+| G2 | 10 | `reglesExecAccordees()` délègue |
+| G3 | 2 | Un seul magasin de règles |
+| G6 | 15 | Vérifié refermé par les étapes 3 et 4 : témoins négatifs présents |
+| F1, F2, F5, F7, F8 | 14 | Curseur, refus, `show parser view all`, commande inexistante, vue racine |
+| F3 | 14, 15 | La provenance est un en-tête ; les règles `privilege` sont classées |
+| F4 | 15 | `snmp-server` avant `route-map` — l'inversion que le constat ne nommait pas |
+| F6 | 14 | Mesuré juste, gardé par deux cas de non-régression |
+
+**Deux défauts trouvés en chemin, hors de la liste, et corrigés** : le
+niveau de `line console 0` perdu par la porte du terminal (étape 14,
+lecture via `deviceRef`, nulle hors exécution) et la configuration NTP
+rendue deux fois et différemment sur le routeur, une seule fois et trop
+pauvrement sur le commutateur (étape 15).
+
+**Trois constats de la liste étaient partiellement faux, et le sont dits
+plutôt que corrigés en silence** : F4 mesurait un comportement correct et
+manquait l'inversion voisine ; F6 décrivait comme manquant un niveau 0
+déjà juste ; et l'énoncé de F3 réunissait deux placements dont un seul
+tenait à la cause qu'il donnait.

@@ -22,6 +22,19 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
    */
   { rank: 7.5, test: /^parser view\b/ },
   { rank: 8, test: /^username\b/ },
+  /**
+   * Une regle `privilege` n'etait classee NULLE PART : elle tombait au
+   * rang des non-classees (19,5), c'est-a-dire a une place que rien n'a
+   * choisie, entre les listes d'acces et les route-maps. Elle decrit qui
+   * a le droit de faire quoi, comme `enable secret`, `aaa`, `parser
+   * view` et `username` — que les captures montrent toutes dans le bloc
+   * de tete, avant les interfaces — et la documentation Cisco enchaine
+   * partout `username …` puis `privilege exec level …`.
+   *
+   * Le `privilege level N` d'une LIGNE ne passe pas ici : il est
+   * indente, donc il appartient au bloc de sa ligne.
+   */
+  { rank: 8.5, test: /^privilege\b/ },
   { rank: 9, test: /^key chain\b/ },
   { rank: 10, test: /^ip dhcp\b/ },
   { rank: 11, test: /^(no )?ip (cef|routing|source-route|subnet-zero)\b/ },
@@ -34,8 +47,15 @@ const BLOCK_ORDER: ReadonlyArray<{ rank: number; test: RegExp }> = [
   { rank: 18, test: /^ip sla\b/ },
   { rank: 19, test: /^(ip )?access-list\b/ },
   { rank: 19, test: /^ip prefix-list\b/ },
-  { rank: 20, test: /^route-map\b/ },
-  { rank: 21, test: /^snmp-server\b/ },
+  /**
+   * `snmp-server` passe AVANT `route-map`, et les deux etaient invertis.
+   * Mesure sur du texte capture (`ciscoconfparse`,
+   * `tests/fixtures/configs/sample_01.ios` et `sample_08.ios`), deux
+   * fois independamment : `access-list` … `snmp-server community` …
+   * `route-map` … `control-plane` … `line con 0`.
+   */
+  { rank: 20, test: /^snmp-server\b/ },
+  { rank: 21, test: /^route-map\b/ },
   { rank: 22, test: /^banner\b/ },
   { rank: 23, test: /^line\b/ },
   { rank: 24, test: /^ntp\b/ },
