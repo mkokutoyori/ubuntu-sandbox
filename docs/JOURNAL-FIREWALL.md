@@ -31,13 +31,13 @@
 | 1 | `SessionTable` | 33 | ✅ |
 | 1 | `SecurityRule` + `PolicyEvaluator` | 37 | ✅ |
 | 1 | `PolicyStore` | 31 | ✅ |
-| 1 | `PacketContext` + `FirewallPipeline` | — | ⏳ |
+| 1 | `PacketContext` + `FirewallPipeline` | 23 | ✅ |
 | 1 | Étapes de pipeline | — | ⏳ |
 | 1 | Services L3 (`l3/`) | — | ⏳ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
 
-**Total actuel : 283 cas, verts.**
+**Total actuel : 306 cas, verts.**
 
 ---
 
@@ -316,6 +316,35 @@ le compter empêcherait toute suppression d'objet pour rien).
 
 ---
 
+### E10 — `PacketContext` + `FirewallPipeline`
+
+`src/network/devices/firewall/pipeline/` — 23 cas.
+
+**Le pari d'architecture du module, vérifié plutôt que répété.** P2 affirme
+que l'ordre d'opérations est une *donnée*. Un cas le prouve : deux profils
+qui ne diffèrent **que** par leur liste d'étapes produisent deux traces
+différentes, sans qu'aucune ligne de code ne les distingue.
+
+**Audit préalable (A5)** — `core/FilterChain.ts` existait, complet et
+**inutilisé** (BRD §4.1.5 l'avait mesuré). Rien n'est réécrit : verdicts,
+propagation, conversion des exceptions en rejet, publication d'événements
+viennent de là. Les deux seules nouveautés sont le **registre d'étapes**
+(patron Registre, point d'extension E1) et la **composition depuis une
+liste de noms**.
+
+**G7 — une étape déclarée mais absente du registre est refusée à la
+composition**, et l'erreur nomme l'étape. Trois cas : le refus, le nom, et
+l'absence de composition partielle. Sans cela, une faute de frappe dans un
+profil produirait un pare-feu qui saute une étape sans que rien ne le dise —
+exactement le défaut « accepté et inerte » que ce dépôt referme partout.
+
+**`originalPacket` ne suit pas les transformations du courant**, et un cas
+l'épingle. C'est ce qui permettra à un profil ASA 8.2 (ACL sur les adresses
+traduites) et à un profil 8.3+ (ACL sur les adresses réelles) de coexister
+sans branchement dans le moteur.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -335,6 +364,8 @@ le compter empêcherait toute suppression d'objet pour rien).
 | `ObjectStore` | `object-group` n'apparaît que dans `ciscoArgumentHelp.ts` (texte d'aide) | **Aucun magasin existant** |
 | `TcpStateMachine` | `tcp/types.ts` → `TcpState` ; `TcpStack.ts` (1711 l.) | **Doublon partiel — voir A1** |
 | `PolicyEvaluator` | `ACLEngine.evaluateACL`, `Ipv6AclEngine`, `RoutePolicy` | **Distinct — voir A4** |
+| `PolicyStore` | aucun magasin de politique ordonnée n'existe | **Aucun** |
+| `FirewallPipeline` | `core/FilterChain.ts` | **RÉUTILISÉ tel quel — voir A5** |
 | `SessionTable` | `LinuxIptablesManager.conntrack`, `SocketTable` | **Distinct.** `SocketTable` décrit ce qui *écoute sur cet hôte* ; la table de sessions décrit ce que le pare-feu *achemine* |
 
 ### A1 — `TcpSessionState` était un doublon de `TcpState`
@@ -420,6 +451,19 @@ refuser.
 Aucune primitive commune n'est extraite : « itérer et rendre la première
 correspondance » fait trois lignes, et une abstraction partagée sur deux
 types de critères sans recouvrement coûterait plus qu'elle ne rapporte.
+
+### A5 — `FilterChain` est réutilisé, pas réécrit
+
+`core/FilterChain.ts` (337 lignes) portait déjà tout ce dont le pipeline a
+besoin : verdicts `continue`/`accept`/`transform`/`drop`/`reject`,
+propagation du contexte transformé, trace des filtres traversés,
+`decidedBy`, conversion des exceptions d'un filtre en rejet plutôt qu'en
+remontée, et publication d'événements sur le bus.
+
+Le BRD l'avait mesuré comme « écrit et inutilisé » (§4.1.5) — c'était une
+opportunité, pas un signal négatif. `FirewallPipeline` n'ajoute que deux
+choses : un **registre** d'étapes nommées et la **composition** d'une chaîne
+à partir d'une liste de noms. Le moteur de chaîne lui-même n'est pas touché.
 
 ### A3 — Le catalogue de services prédéfinis devra lire `WellKnownPorts`
 
