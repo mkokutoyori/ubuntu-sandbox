@@ -133,6 +133,7 @@ import {
   registerNATPrivilegedCommands, registerNATShowCommands,
 } from './cisco/CiscoNATCommands';
 import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
@@ -307,6 +308,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // `registerShowCommands` est appelé pour plusieurs tries ; le debug
     // est privilégié seulement, donc enregistré ici une seule fois.
     registerIpSlaDebugCommands(this.privilegedTrie, this);
+    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
+    // texte source de son gestionnaire. Les arbres sont releves sur
+    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
+    // arbre oublie est un mode entier prive de ses suites.
+    appliquerContinuations(this.tousLesArbres(), SOCLE, ROUTEUR_SEUL);
     // Après TOUS les enregistrements : `describeArgs` attache les
     // spécifications à des nœuds existants, il n'en crée pas.
     describeCiscoArguments({

@@ -3162,6 +3162,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * la rend, et un mot-clé ne peut donc plus être exécutable sans être
    * proposé (ni l'inverse).
    */
+  /**
+   * Tous les arbres que ce shell porte, nommes comme la table des
+   * continuations les nomme (`configIfTrie` -> `configIf`).
+   *
+   * Releve sur l'objet plutot qu'ecrit a la main : le routeur en porte
+   * cinquante-deux et le commutateur seize, et en nommer cinq — ce que
+   * faisait le premier jet — privait quarante-sept modes de leurs
+   * suites, sans que rien ne le dise.
+   */
+  protected tousLesArbres(): Record<string, CommandTrie | undefined> {
+    const out: Record<string, CommandTrie | undefined> = {};
+    for (const cle of Object.keys(this) as Array<keyof this>) {
+      const valeur = this[cle];
+      if (valeur instanceof CommandTrie) out[String(cle).replace(/Trie$/, '')] = valeur;
+    }
+    return out;
+  }
+
   protected universalCommands(): Array<{ keyword: string; description: string }> {
     // `end` n'existe QUE dans les modes de configuration : il n'y a rien
     // à terminer depuis un EXEC, et IOS ne le propose pas là.

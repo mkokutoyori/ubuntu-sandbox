@@ -1301,3 +1301,72 @@ port ne rend rien, et que ce que la tabulation propose **s'exécute**.
 
 Non-régression connexe : 211 fichiers, 5 926 cas. `tsc` : 343 avant, 343
 après.
+
+---
+
+## Étape 10 — G1 : l'aide n'est plus dérivée du code
+
+`src/network/devices/shells/cisco/ciscoContinuations.ts`,
+`probe-continuations-declarees.test.ts`
+
+Les étapes précédentes ont corrigé **tout ce que l'extraction produisait
+de faux** — la liste du mode fuyant sous chaque commande, les mots
+indescriptibles, les promesses non tenues. Il restait ce que l'audit
+demandait explicitement et que je n'avais pas fait : **retirer le
+mécanisme**, plutôt que le filtrer à l'affichage. « Tant qu'elle existe,
+`Tab` la verra. »
+
+**La mesure d'abord, et elle a surpris dans le bon sens.** Ce que
+l'extraction produisait au moment de la retirer était **juste** : 344
+paires côté routeur, 213 côté commutateur, toutes de vrais mots-clés
+d'IOS (`show ip bgp neighbors advertised-routes`, `debug aaa accounting`,
+`clear mac address-table dynamic`…), aucune n'étant un identifiant du
+code. Le défaut restant n'était donc pas ce qu'elle disait mais **d'où
+elle le tenait** : une aide dérivée du code se défait dès qu'on réécrit le
+code, en silence — ce dépôt l'a déjà payé, la réécriture de `no privilege`
+ayant fait disparaître le mot `level` de son texte source, donc de son
+aide.
+
+Les paires ont été relevées, vérifiées contre la syntaxe d'IOS, et
+écrites. `SOCLE` est ce que les deux plateformes portent ; `ROUTEUR_SEUL`
+et `COMMUTATEUR_SEUL` ne sont appliquées qu'à la leur, pour qu'une
+déclaration ne fabrique jamais un nœud sur une machine qui n'a pas la
+commande. `HandlerKeywordExtractor` et son test sont supprimés, ainsi que
+`setAutoExtractionEnabled` — un interrupteur dont le mécanisme n'existe
+plus.
+
+**Une erreur commise et corrigée par la mesure, et elle valait la
+peine.** Mon premier relevé n'a parcouru que **cinq** arbres
+(`user`, `privileged`, `config`, `configIf`, `configLine`). Le routeur en
+porte **cinquante-deux** et le commutateur seize : quarante-sept modes se
+sont donc retrouvés sans suites, ce que trois fichiers de la
+non-régression ont dit tout de suite (`network 10.0.0.0 0.0.0.255 ?`
+n'offrait plus `area`, et six modes rendaient un `WORD` portant la
+description de leur parent). Les arbres sont désormais **relevés sur
+l'objet** (`tousLesArbres()`) plutôt que nommés à la main — les nommer
+était précisément l'erreur.
+
+**Le filtre « pas de description, pas d'annonce » est retiré avec le
+mécanisme qu'il compensait.** Il existait pour écarter les identifiants
+que l'extraction ramassait ; une suite déclarée est un vrai mot-clé par
+construction, et le filtre ne faisait plus que taire ce qu'on venait
+d'écrire. À la place, un test exige que **chaque mot déclaré porte une
+description** — ce qui a fait écrire les **71** qui n'en avaient pas, tous
+de vrais mots-clés d'IOS (`switchport port-security violation
+protect|restrict|shutdown`, `channel-group … on|passive|desirable`,
+`ip verify unicast reverse-path`…). Ils étaient jusqu'ici proposés par la
+tabulation et **tus par `?`** : ils sont désormais annoncés par les deux.
+
+**Un test mis à jour plutôt que le code** : `probe-cli-suggestion-sources`
+vérifiait qu'un mot *cité* par le corps d'un gestionnaire est proposé —
+c'est-à-dire le mécanisme supprimé. Il vérifie maintenant l'inverse (un
+mot seulement cité n'est pas proposé) et que le même mot **déclaré** l'est
+par les deux portes. La source `auto` n'a pas disparu, elle a changé de
+nature : elle lisait le code, elle lit la déclaration.
+
+**Ce que cela change pour la suite** : un mot-clé ne s'ajoute plus en
+écrivant du code, il s'ajoute en l'écrivant dans la table — et une
+réécriture de gestionnaire ne peut plus défaire l'aide.
+
+Non-régression connexe : 211 fichiers, 5 920 cas. `tsc` : 343 avant, 343
+après.

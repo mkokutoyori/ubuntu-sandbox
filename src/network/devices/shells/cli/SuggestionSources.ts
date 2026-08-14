@@ -40,8 +40,6 @@ export const SUGGESTION_SOURCES: readonly SuggestionSource[] = [
   { origin: 'dynamic', collect: (r, a) => a.dynamicCandidates(r) },
 ];
 
-export const DERIVED_ORIGINS: ReadonlySet<SuggestionOrigin> = new Set<SuggestionOrigin>(['auto']);
-
 export interface DynamicRequestShape {
   readonly path: readonly string[];
   readonly paramType: ParamType | null;

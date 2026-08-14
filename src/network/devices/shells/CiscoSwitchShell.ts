@@ -57,6 +57,7 @@ import { CliInvalidInput } from './cli/CliDiagnostic';
 import { describeCiscoSwitchArguments } from './cisco/ciscoArgumentHelp';
 import { renderTableText, FIXED_TABLE } from './cli/TextTable';
 import { INTERFACE_STATUS_COLUMNS, INTERFACE_STATUS_STYLE, type InterfaceStatusRow } from './cisco/ciscoTableLayouts';
+import { SOCLE, COMMUTATEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
 
 /** CLI Mode (FSM State) */
 export type CLIMode =
@@ -4486,6 +4487,11 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // jetables : decrire un argument sur un arbre que rien ne consulte
     // ne coute rien et evite d'avoir DEUX tables a tenir.
     const inutilise = () => new CommandTrie();
+    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
+    // texte source de son gestionnaire. Les arbres sont releves sur
+    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
+    // arbre oublie est un mode entier prive de ses suites.
+    appliquerContinuations(this.tousLesArbres(), SOCLE, COMMUTATEUR_SEUL);
     describeCiscoArguments({
       config: this.configTrie,
       configIf: this.configIfTrie,

@@ -16,13 +16,12 @@
  *   next tokens. Leaf/executable nodes have an action callback.
  */
 
-import { extractHandlerKeywords } from './HandlerKeywordExtractor';
 import { descriptionForKeyword } from './CliKeywordDescriptions';
 import {
   type CommandSpec, validateCommandSpec, specIsGreedy, specAppliesTo,
 } from './cli/CommandSpec';
 import {
-  SUGGESTION_SOURCES, DERIVED_ORIGINS,
+  SUGGESTION_SOURCES,
   type SuggestionCandidate, type SuggestionOrigin, type SuggestionRequest,
   type SuggestionTrieAccess,
 } from './cli/SuggestionSources';
@@ -133,6 +132,8 @@ export interface CommandNode {
    * enseignait une syntaxe supprimee et menait droit au caret.
    */
   _neJamaisAnnoncer?: boolean;
+  /** Les suites de ce noeud, ECRITES plutot que lues dans son source. */
+  _continuations?: string[];
   _passthrough?: boolean;
   /**
    * Un nœud PUREMENT INDICATIF créé par `describeArgs` sous une commande
@@ -1168,25 +1169,21 @@ export class CommandTrie {
     };
     // Les MEMES gardes que le rendu de `?`, et pour les memes raisons.
     //
-    // Tant que le noeud attend un argument DECLARE, ses mots-cles ne sont
+    // Tant que le noeud attend un argument DECLARE, ses suites ne sont
     // pas des candidats : apres `password`, la ligne attend un mot de
-    // passe, pas `absolute-timeout`. Et un mot EXTRAIT du corps d'un
-    // gestionnaire qu'on ne sait pas decrire n'est probablement pas un
-    // mot-cle. `?` ecartait deja les deux ; `Tab` les servait, donc les
-    // deux portes repondaient differemment a la meme question.
+    // passe, pas `absolute-timeout`. `?` ecartait deja celles-la ; `Tab`
+    // les servait, donc les deux portes repondaient differemment a la
+    // meme question.
+    //
     // Un mot-cle et une valeur PEUVENT se disputer la meme place —
     // `ping ?` offre `A.B.C.D` et `ip` — donc les enfants restent
-    // collectes. Ce que le rendu de `?` ecarte, et que la tabulation
-    // servait, c'est le mot EXTRAIT du corps d'un gestionnaire : tant
-    // qu'un argument declare est attendu, il n'a rien a faire la, et
-    // celui qu'on ne sait pas decrire n'est probablement pas un mot-cle.
+    // collectes.
     const attendUnArgument = node.params.length > paramIdx;
     const argumentsConsommes = paramIdx > 0 && node.params.length > paramIdx;
     const statiques = this.collectSuggestions(
       requete, new Set<SuggestionOrigin>(['child', 'hint', 'auto', 'param']));
     for (const c of this.suggestionsApplicables(statiques, paramIdx, argsSoFar)) {
-      if (c.origin === 'auto'
-        && (!c.description || attendUnArgument || argumentsConsommes)) continue;
+      if (c.origin === 'auto' && (attendUnArgument || argumentsConsommes)) continue;
       if (c.origin === 'child' && paramIdx > 0 && node.params.length > 0) continue;
       if (c.origin === 'child' || c.keyword.toLowerCase().startsWith(partialLower)) {
         push(c.keyword);
@@ -1253,91 +1250,37 @@ export class CommandTrie {
       && !(e.leadingOnly && consumedArgs > 0));
   }
 
+
   /**
-   * Le corps de ce gestionnaire sert-il plusieurs nœuds de l'arbre ?
+   * Les suites DECLAREES d'un noeud glouton.
    *
-   * L'index est construit une fois et gardé : les enregistrements ont
-   * tous lieu à la construction du shell, et cette question est posée à
-   * chaque frappe.
+   * Elles etaient jusqu'ici EXTRAITES du texte source du gestionnaire,
+   * ce qui liait l'aide au code : reecrire un corps la defaisait sans
+   * que rien ne le signale, et ce depot en a fait l'experience — la
+   * reecriture de `no privilege` a fait disparaitre le mot `level` de
+   * son source, donc de son aide. Elles sont desormais ecrites.
+   *
+   * Distinct de `hintSuggestions` a dessein : une suite ainsi declaree
+   * est une ALTERNATIVE d'aiguillage, ce qui lui vaut des regles
+   * propres — une seule d'entre elles peut figurer sur la ligne, et
+   * celle qu'on ne sait pas decrire n'est pas annoncee.
    */
-  private corpsPartage(node: CommandNode): boolean {
-    if (!node.action) return false;
-    if (!this._corpsGloutons) {
-      const compte = new Map<string, number>();
-      const walk = (n: CommandNode): void => {
-        if (n.greedy && n.action) {
-          const src = n.action.toString();
-          compte.set(src, (compte.get(src) ?? 0) + 1);
-        }
-        for (const c of n.children.values()) walk(c);
-      };
-      walk(this.root);
-      this._corpsGloutons = compte;
+  declareContinuations(path: string, keywords: readonly string[]): void {
+    const node = this.nodeAt(path);
+    if (!node) return;
+    const deja = new Set((node._continuations ?? []).map((k) => k.toLowerCase()));
+    const out = [...(node._continuations ?? [])];
+    for (const k of keywords) {
+      if (!deja.has(k.toLowerCase())) { deja.add(k.toLowerCase()); out.push(k); }
     }
-    return (this._corpsGloutons.get(node.action.toString()) ?? 0) > 1;
+    node._continuations = out;
+    node._autoKeywords = undefined;
   }
 
-  private _corpsGloutons: Map<string, number> | null = null;
-
-    private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
+  private autoContinuations(node: CommandNode): ReadonlyArray<{ keyword: string; description: string }> {
     if (node._autoKeywords !== undefined) return node._autoKeywords;
-    if (!node.greedy || !node.action) {
-      node._autoKeywords = [];
-      return node._autoKeywords;
-    }
-    // Une liste d'ARGUMENTS déclarée (`describeArgs`) dit la même chose
-    // qu'une liste d'indices curatés : l'auteur connaît les suites de ce
-    // nœud. Seule la première était consultée, si bien que Tab
-    // complétait `aaa authentication local` — un mot grappillé dans le
-    // corps du handler d'`aaa`, qu'IOS n'accepte pas à cette place et
-    // que `?` ne proposait pas. Les deux portes lisaient deux règles.
-    const declares = node.params.flatMap((p) =>
-      (p.values ?? []).map((v) => v.keyword.toLowerCase()));
-    const curated = new Set([
-      ...(node.hintSuggestions ?? []).map(h => h.keyword.toLowerCase()),
-      ...declares,
-    ]);
-    // Une liste CURATÉE dit que l'auteur connaît les suites de ce nœud.
-    // Y ajouter les mots grappillés dans le corps du handler annule ce
-    // qu'elle affirme : vingt mots-clés de `line` partagent un seul
-    // aiguillage, donc chacun se voyait proposer l'union des mots des
-    // dix-neuf autres — `login ?` offrait `password`, `size`,
-    // `synchronous`. L'extraction ne comble que les nœuds dont personne
-    // n'a déclaré les suites.
-    if (curated.size > 0) {
-      node._autoKeywords = [];
-      return node._autoKeywords;
-    }
-    // Un corps de fonction PARTAGE par plusieurs nœuds ne sait pas
-    // lequel il sert, donc il ne peut attribuer aucun de ses mots-clés.
-    //
-    // Les vingt-deux commandes du mode `line` sont enregistrées dans une
-    // boucle sur `kw` : la fermeture ainsi créée porte le même corps pour
-    // toutes, et ce corps est un aiguillage qui cite forcément chacune.
-    // Chaque nœud recevait donc la liste des vingt et un autres —
-    // `speed ?` répondait `authentication`, `autocommand`, `banner`.
-    if (this.corpsPartage(node)) {
-      node._autoKeywords = [];
-      return node._autoKeywords;
-    }
-    const children = new Set(node.children.keys());
-    // Un nœud ne se propose JAMAIS lui-même comme sa propre suite.
-    // L'extraction lit le corps d'un handler qui, lorsqu'il sert
-    // plusieurs mots-clés, cite forcément le sien : `exec ?` répondait
-    // `exec`, `login ?` répondait `login`, dans tous les modes servis
-    // par un aiguillage commun.
-    const soiMeme = node.keyword.toLowerCase();
-    const extracted = extractHandlerKeywords(node.action.toString())
-      .filter(kw => !curated.has(kw) && !children.has(kw) && kw !== soiMeme);
-    // A greedy handler often also accepts abbreviations (`con` for
-    // `console`, `sum` for `summary`). An extracted keyword that is a
-    // proper prefix of a real keyword — a child, a curated hint, or
-    // another extracted keyword — is such an abbreviation, not a distinct
-    // command, and must never be offered as its own completion candidate.
-    const fullKeywords = [...curated, ...children, ...extracted];
-    node._autoKeywords = extracted
-      .filter(kw => !fullKeywords.some(other => other !== kw && other.startsWith(kw)))
-      .map(kw => ({ keyword: kw, description: descriptionForKeyword(kw) }));
+    node._autoKeywords = (node._continuations ?? [])
+      .map((kw) => ({ keyword: kw, description: descriptionForKeyword(kw) }));
     return node._autoKeywords;
   }
 
@@ -1412,16 +1355,6 @@ export class CommandTrie {
     return node.hintSuggestions?.find(h => h.keyword.toLowerCase() === key)?.description ?? '';
   }
 
-  private autoExtractionEnabled = true;
-
-  setAutoExtractionEnabled(on: boolean): void {
-    this.autoExtractionEnabled = on;
-  }
-
-  isAutoExtractionEnabled(): boolean {
-    return this.autoExtractionEnabled;
-  }
-
   private suggestionAccess(): SuggestionTrieAccess {
     return {
       childCandidates: (r) => this.childCandidates(r),
@@ -1440,7 +1373,6 @@ export class CommandTrie {
     const out: SuggestionCandidate[] = [];
     for (const source of SUGGESTION_SOURCES) {
       if (!origins.has(source.origin)) continue;
-      if (DERIVED_ORIGINS.has(source.origin) && !this.autoExtractionEnabled) continue;
       out.push(...source.collect(request, access));
     }
     return out;
@@ -1737,25 +1669,9 @@ export class CommandTrie {
     }
 
     const awaitsDeclaredArgument = node.params.length > consumedArgs;
-    /** Des continuations existaient, mais aucune n'était descriptible. */
-    let autoIndescriptibles = false;
     if (!argumentsConsumed && !awaitsDeclaredArgument) {
       const seen = new Set(results.map(r => r.keyword.toLowerCase()));
       for (const auto of jamaisDeuxFois(depuis('auto'))) {
-        // Un mot EXTRAIT du corps d'un handler et qu'on ne sait pas
-        // décrire n'est probablement pas un mot-clé : c'est un nom de
-        // variable que l'extracteur a ramassé au passage. `acl ?` sur
-        // VRP proposait ainsi `nom` et `refus`, deux identifiants du
-        // code, que la machine refuse ensuite. L'aide ne peut pas
-        // annoncer ce qu'elle n'est pas capable d'expliquer.
-        //
-        // La complétion par tabulation, elle, continue de les accepter
-        // (`tabCandidates` lit `autoContinuations` directement) : un
-        // mot-clé réel qu'on n'a pas encore décrit reste complétable, et
-        // le NOMMER dans `CliKeywordDescriptions` le fait réapparaître
-        // ici — c'est la voie prise pour `vpn-instance`, un vrai mot-clé
-        // que ce même filtre aurait masqué.
-        if (!auto.description) { autoIndescriptibles = true; continue; }
         if (!seen.has(auto.keyword)) {
           seen.add(auto.keyword);
           results.push({ keyword: auto.keyword, description: auto.description });
@@ -1764,12 +1680,9 @@ export class CommandTrie {
     }
 
     // Le repli de dernier recours n'a de sens que pour un nœud dont on
-    // n'a RIEN à dire. Si le filtre ci-dessus vient d'écarter des
-    // continuations faute de description, le nœud en a bien — les
-    // remplacer par un `WORD` inventé annoncerait un argument là où la
-    // commande attend un mot-clé, ce qui est un deuxième mensonge après
-    // celui qu'on vient d'éviter.
-    if (node.greedy && !node._noArgument && results.length === 0 && !autoIndescriptibles) {
+    // n'a RIEN à dire : un `WORD` annonce qu'un mot est attendu sans
+    // prétendre savoir lequel.
+    if (node.greedy && !node._noArgument && results.length === 0) {
       results.push({ keyword: 'WORD', description: node.description });
     }
 

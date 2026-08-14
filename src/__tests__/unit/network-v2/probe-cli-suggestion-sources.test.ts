@@ -17,34 +17,33 @@ const motsAide = (trie: CommandTrie, entree: string): string[] =>
   trie.getCompletions(entree).map((c) => c.keyword);
 
 describe('les cinq sources de suggestion', () => {
-  it('l\'ordre est déclaré une fois, l\'extraction vient en dernier avant le dynamique', () => {
+  it('l\'ordre est déclaré une fois, la suite déclarée vient avant le dynamique', () => {
     expect(SUGGESTION_SOURCES.map((s) => s.origin))
       .toEqual(['child', 'param', 'hint', 'auto', 'dynamic']);
   });
 
-  it('un mot extrait du corps du handler est proposé par `?` et par Tab', () => {
+  // La source `auto` a change de NATURE : elle lisait le texte source du
+  // gestionnaire, elle lit desormais ce qui a ete declare. Le mot cite
+  // par le corps ne suffit plus, et c'est tout l'objet du changement.
+  it('un mot seulement CITÉ par le corps n\'est pas proposé', () => {
     const trie = trieAvecGlouton();
-    expect(motsAide(trie, 'show interfaces ')).toContain('summary');
-    expect(trie.tabCandidates('show interfaces summ')).toContain('show interfaces summary');
-  });
-
-  it('l\'extraction se coupe, et les deux portes se taisent ensemble', () => {
-    const trie = trieAvecGlouton();
-    trie.setAutoExtractionEnabled(false);
     expect(motsAide(trie, 'show interfaces ')).not.toContain('summary');
     expect(trie.tabCandidates('show interfaces summ')).toEqual([]);
   });
 
-  it('couper l\'extraction ne touche pas aux commandes DÉCLARÉES', () => {
+  it('le même mot DÉCLARÉ l\'est par les deux portes', () => {
     const trie = trieAvecGlouton();
-    trie.setAutoExtractionEnabled(false);
+    trie.declareContinuations('show interfaces', ['summary', 'counters']);
+    expect(motsAide(trie, 'show interfaces ')).toContain('summary');
+    expect(trie.tabCandidates('show interfaces summ')).toContain('show interfaces summary');
+  });
+
+  it('et une déclaration ne touche pas aux commandes enregistrées', () => {
+    const trie = trieAvecGlouton();
+    trie.declareContinuations('show interfaces', ['summary']);
     expect(motsAide(trie, 'show ')).toContain('version');
     expect(motsAide(trie, 'show ')).toContain('interfaces');
     expect(trie.tabCandidates('show ver')).toEqual(['show version']);
-  });
-
-  it('l\'extraction est allumée par défaut', () => {
-    expect(new CommandTrie().isAutoExtractionEnabled()).toBe(true);
   });
 
   it('une valeur vivante ne se propose que si aucun mot-clé ne convient', () => {
