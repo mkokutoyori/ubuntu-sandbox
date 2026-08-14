@@ -28,8 +28,9 @@ import { describe, it, expect } from 'vitest';
 import {
   TcpStateMachine,
   tcpFlagsAreValid,
-  type TcpSessionState,
+  type ObservedTcpState,
 } from '@/network/devices/firewall/session/TcpStateMachine';
+import type { TcpState } from '@/network/tcp/types';
 import type { TCPFlags } from '@/network/core/types';
 
 function flags(set: Partial<TCPFlags>): TCPFlags {
@@ -59,7 +60,7 @@ describe('TcpStateMachine — la poignee de main', () => {
     const m = machine();
 
     expect(m.onFirstPacket(SYN).accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('syn-sent');
+    expect(m.state).toBe<ObservedTcpState>('syn-sent');
   });
 
   it('le SYN-ACK de retour fait passer en syn-received', () => {
@@ -67,7 +68,7 @@ describe('TcpStateMachine — la poignee de main', () => {
     m.onFirstPacket(SYN);
 
     expect(m.onPacket(SYN_ACK, 's2c').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('syn-received');
+    expect(m.state).toBe<ObservedTcpState>('syn-received');
   });
 
   it('l\'ACK final etablit la session', () => {
@@ -76,7 +77,7 @@ describe('TcpStateMachine — la poignee de main', () => {
     m.onPacket(SYN_ACK, 's2c');
 
     expect(m.onPacket(ACK, 'c2s').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('established');
+    expect(m.state).toBe<ObservedTcpState>('established');
   });
 
   it('une session etablie accepte des paquets dans les deux sens', () => {
@@ -84,7 +85,7 @@ describe('TcpStateMachine — la poignee de main', () => {
 
     expect(m.onPacket(ACK, 'c2s').accepted).toBe(true);
     expect(m.onPacket(ACK, 's2c').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('established');
+    expect(m.state).toBe<ObservedTcpState>('established');
   });
 });
 
@@ -118,7 +119,7 @@ describe('TcpStateMachine — UC-1, le premier paquet non-SYN', () => {
     const verdict = m.onFirstPacket(ACK);
 
     expect(verdict.accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('established');
+    expect(m.state).toBe<ObservedTcpState>('established');
   });
 });
 
@@ -202,7 +203,7 @@ describe('TcpStateMachine — transitions interdites', () => {
     m.onFirstPacket(SYN);
 
     expect(m.onPacket(SYN, 'c2s').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('syn-sent');
+    expect(m.state).toBe<ObservedTcpState>('syn-sent');
   });
 });
 
@@ -211,27 +212,38 @@ describe('TcpStateMachine — fermeture', () => {
     const m = established();
 
     expect(m.onPacket(FIN_ACK, 'c2s').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('fin-wait-1');
+    expect(m.state).toBe<ObservedTcpState>('fin-wait-1');
   });
 
   it('deroule la fermeture complete jusqu\'a time-wait', () => {
     const m = established();
     m.onPacket(FIN_ACK, 'c2s');
     m.onPacket(ACK, 's2c');
-    expect(m.state).toBe<TcpSessionState>('fin-wait-2');
+    expect(m.state).toBe<ObservedTcpState>('fin-wait-2');
 
     m.onPacket(FIN_ACK, 's2c');
-    expect(m.state).toBe<TcpSessionState>('last-ack');
+    expect(m.state).toBe<ObservedTcpState>('last-ack');
 
     m.onPacket(ACK, 'c2s');
-    expect(m.state).toBe<TcpSessionState>('time-wait');
+    expect(m.state).toBe<ObservedTcpState>('time-wait');
+  });
+
+  it('une fermeture SIMULTANEE passe par closing — le nom que la RFC donne', () => {
+    const m = established();
+    m.onPacket(FIN_ACK, 'c2s');
+
+    m.onPacket(FIN_ACK, 's2c');
+    expect(m.state).toBe<ObservedTcpState>('closing');
+
+    m.onPacket(ACK, 'c2s');
+    expect(m.state).toBe<ObservedTcpState>('time-wait');
   });
 
   it('un RST ferme immediatement depuis established', () => {
     const m = established();
 
     expect(m.onPacket(RST, 's2c').accepted).toBe(true);
-    expect(m.state).toBe<TcpSessionState>('closed');
+    expect(m.state).toBe<ObservedTcpState>('closed');
   });
 
   it('un RST ferme immediatement depuis syn-sent — le refus de connexion', () => {
@@ -240,7 +252,7 @@ describe('TcpStateMachine — fermeture', () => {
 
     m.onPacket(RST, 's2c');
 
-    expect(m.state).toBe<TcpSessionState>('closed');
+    expect(m.state).toBe<ObservedTcpState>('closed');
   });
 
   it('accepte encore des donnees en fin-wait-1 — la fermeture est a demi', () => {
@@ -248,6 +260,25 @@ describe('TcpStateMachine — fermeture', () => {
     m.onPacket(FIN_ACK, 'c2s');
 
     expect(m.onPacket(ACK, 's2c').accepted).toBe(true);
+  });
+});
+
+describe('TcpStateMachine — vocabulaire partage', () => {
+  it('les etats observes sont ceux de `tcp/types.ts`, pas un second jeu', () => {
+    const m = established();
+    const shared: TcpState = m.state;
+
+    expect(shared).toBe('established');
+  });
+
+  it('`listen` est le seul etat exclu — il appartient a une extremite, pas a un flux', () => {
+    const observed: ObservedTcpState[] = [
+      'closed', 'syn-sent', 'syn-received', 'established',
+      'fin-wait-1', 'fin-wait-2', 'close-wait', 'closing', 'last-ack', 'time-wait',
+    ];
+    const asShared: TcpState[] = observed;
+
+    expect(asShared).toHaveLength(10);
   });
 });
 

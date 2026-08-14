@@ -1,15 +1,15 @@
-import type { TCPFlags } from '../../../core/types';
+import type { TcpState } from '../../../tcp/types';
 
-export type TcpSessionState =
-  | 'syn-sent'
-  | 'syn-received'
-  | 'established'
-  | 'fin-wait-1'
-  | 'fin-wait-2'
-  | 'close-wait'
-  | 'last-ack'
-  | 'time-wait'
-  | 'closed';
+export type ObservedTcpState = Exclude<TcpState, 'listen'>;
+
+export interface ObservedTcpFlags {
+  readonly syn: boolean;
+  readonly ack: boolean;
+  readonly fin: boolean;
+  readonly rst: boolean;
+  readonly psh: boolean;
+  readonly urg: boolean;
+}
 
 export type FlowDirection = 'c2s' | 's2c';
 
@@ -49,7 +49,7 @@ function rejected(reason: TcpRejectReason): TcpVerdict {
   return Object.freeze({ accepted: false, reason, refreshes: false });
 }
 
-export function tcpFlagsAreValid(flags: TCPFlags): boolean {
+export function tcpFlagsAreValid(flags: ObservedTcpFlags): boolean {
   if (!flags.syn && !flags.ack && !flags.fin && !flags.rst) return false;
   if (flags.syn && flags.fin) return false;
   if (flags.syn && flags.rst) return false;
@@ -59,7 +59,7 @@ export function tcpFlagsAreValid(flags: TCPFlags): boolean {
 }
 
 export class TcpStateMachine {
-  private current: TcpSessionState = 'closed';
+  private current: ObservedTcpState = 'closed';
   private readonly synCheck: boolean;
   private readonly timeouts: TcpTimeouts;
 
@@ -68,7 +68,7 @@ export class TcpStateMachine {
     this.timeouts = options.timeouts ?? DEFAULT_TCP_TIMEOUTS;
   }
 
-  get state(): TcpSessionState {
+  get state(): ObservedTcpState {
     return this.current;
   }
 
@@ -86,7 +86,7 @@ export class TcpStateMachine {
     }
   }
 
-  onFirstPacket(flags: TCPFlags): TcpVerdict {
+  onFirstPacket(flags: ObservedTcpFlags): TcpVerdict {
     if (!tcpFlagsAreValid(flags)) return rejected('invalid-tcp-flags');
 
     if (flags.syn && !flags.ack) {
@@ -100,7 +100,7 @@ export class TcpStateMachine {
     return rejected('no-session-non-syn');
   }
 
-  onPacket(flags: TCPFlags, direction: FlowDirection): TcpVerdict {
+  onPacket(flags: ObservedTcpFlags, direction: FlowDirection): TcpVerdict {
     if (!tcpFlagsAreValid(flags)) return rejected('invalid-tcp-flags');
 
     if (flags.rst) {
@@ -115,7 +115,7 @@ export class TcpStateMachine {
     return ACCEPTED;
   }
 
-  private nextState(flags: TCPFlags, direction: FlowDirection): TcpSessionState | undefined {
+  private nextState(flags: ObservedTcpFlags, direction: FlowDirection): ObservedTcpState | undefined {
     switch (this.current) {
       case 'syn-sent':
         if (flags.syn && flags.ack) return direction === 's2c' ? 'syn-received' : undefined;
@@ -132,13 +132,17 @@ export class TcpStateMachine {
         return 'established';
 
       case 'fin-wait-1':
-        if (flags.fin) return 'last-ack';
+        if (flags.fin) return 'closing';
         if (flags.ack) return 'fin-wait-2';
         return 'fin-wait-1';
 
       case 'fin-wait-2':
         if (flags.fin) return 'last-ack';
         return 'fin-wait-2';
+
+      case 'closing':
+        if (flags.ack && !flags.fin) return 'time-wait';
+        return 'closing';
 
       case 'last-ack':
         if (flags.ack && !flags.fin) return 'time-wait';
