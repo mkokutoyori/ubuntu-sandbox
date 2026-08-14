@@ -1506,6 +1506,7 @@ export type DeviceType =
   | 'router-cisco'
   | 'router-huawei'
   // Firewalls
+  | 'firewall-generic'
   | 'firewall-cisco'
   | 'firewall-fortinet'
   | 'firewall-paloalto'

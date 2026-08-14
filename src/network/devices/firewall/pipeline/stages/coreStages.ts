@@ -90,6 +90,12 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       context.session = found.session;
       context.sessionDirection = found.direction;
       context.isFirstPacket = false;
+      context.egressPort = found.direction === 'c2s'
+        ? found.session.egressInterface
+        : found.session.ingressInterface;
+      context.egressZone = found.direction === 'c2s'
+        ? found.session.egressZone
+        : found.session.ingressZone;
 
       if (found.session.state === 'discard') {
         return deny(context, 'session-lookup', 'policy-deny');

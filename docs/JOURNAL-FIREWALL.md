@@ -35,11 +35,11 @@
 | 1 | Étapes du pipeline (7 étapes) | 30 | ✅ |
 | 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
 | 1 | `ArpService` | 33 | ✅ |
-| 1 | Façade `Firewall` + `L2Delivery` | — | ⏳ |
+| 1 | Façade `Firewall` (équipement) | 15 | ✅ |
 | 1 | Façade `Firewall` | — | ⏳ |
-| 1 | Sonde de phase 1 (topologie réelle) | — | ⏳ |
+| 1 | Sonde de phase 1 (topologie réelle) | ✅ incluse | ✅ |
 
-**Total actuel : 400 cas, verts.**
+**Total actuel : 415 cas, verts. PHASE 1 FONCTIONNELLE.**
 
 ---
 
@@ -484,6 +484,57 @@ conséquence (voir la note de méthode ci-dessous).
 
 ---
 
+### E14 — La façade `Firewall`, et la sonde de phase 1
+
+`src/network/devices/firewall/Firewall.ts` — 15 cas, sur une **topologie
+réelle**.
+
+Tout ce qui précédait était testé en isolation. Ici le pare-feu est déposé
+entre deux postes Linux, câblé pour de bon, et le trafic est un **vrai
+`ping`** : des trames traversent `Port` et `Cable`, l'ARP est résolu par un
+échange réel, et le verdict vient du pipeline. C'est le principe P6 appliqué
+au module entier.
+
+**UC-1 est démontré sur le fil** : une seule règle `trust → untrust`, et le
+ping répond. Avec **son témoin** — la même topologie sans règle ne répond
+pas — et **son inverse** — une règle qui n'autorise que le retour ne suffit
+pas, puisque c'est l'aller qui ouvre la session.
+
+`Firewall extends Equipment` : l'arbitrage A1 tient. Aucune ligne héritée de
+`Router`. La classe fait 210 lignes et ne contient **aucune décision** —
+elle assemble et délègue, conformément au patron Façade.
+
+#### Trois défauts trouvés en montant la sonde (B8, B9, B10)
+
+Aucun n'aurait été vu par les tests unitaires : il a fallu de vraies trames.
+
+**B8 — la requête ARP partait vers l'adresse MAC nulle** au lieu de la
+diffusion. `buildRequest` remplit correctement `targetMAC` à zéro *dans la
+charge utile ARP* — c'est la RFC — mais la destination **Ethernet** doit
+être la diffusion. Deux notions différentes que le même champ pouvait faire
+confondre.
+
+**B9 — le paquet était jeté pendant la résolution ARP.** Corrigé en tirant
+parti d'une propriété réelle de ce simulateur : la livraison est
+**synchrone**, donc l'aller-retour ARP se termine à l'intérieur de l'appel
+qui a émis la requête. Le pare-feu réinterroge donc son cache juste après
+avoir émis, et trouve. Un vrai routeur perdrait le premier paquet ; ici il
+ne le perd pas, et c'est une conséquence assumée du modèle synchrone plutôt
+qu'un oubli.
+
+**B10 — le plus intéressant : le chemin rapide n'avait pas d'interface de
+sortie.** `route-lookup` ne s'exécute pas sur le chemin rapide (c'est tout
+son intérêt, I-F1), donc `egressPort` restait indéfini et **le paquet de
+retour était jeté**. Le BRD le disait pourtant en toutes lettres (§13.8,
+« Recherche de route → non → **mémorisée sur la session** ») : l'interface de
+sortie doit venir de la session, et pour le sens `s2c` c'est l'interface
+d'*entrée* de la session — la réponse repart par où la demande est venue.
+
+Ce défaut est la meilleure justification de cette sonde : les 400 cas
+unitaires étaient verts, et le pare-feu ne faisait pas passer un ping.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -646,6 +697,24 @@ le même contrat servira.
 `core/packetBuilders.ts` (`wrapIpv4InEthernet`, `buildIpv4Frame`) est réservé
 pour `L2Delivery`, la brique suivante.
 
+### A8 — `IFirewallCapable` est un contrat mort du dépôt
+
+Constat fait en auditant la façade, et signalé ici parce qu'il dépasse ce
+module : `core/interfaces.ts` déclare `IFirewallCapable` (avec
+`firewallFilter(direction, packet, iface): boolean`) **et son garde de
+type `isFirewallCapable`**, et son en-tête annonce qu'il « remplace le no-op
+par défaut sur `Equipment` ». Mesure : **aucune classe ne l'implémente**, et
+`isFirewallCapable` n'a aucun appelant hors de sa propre déclaration.
+
+`Firewall` ne l'implémente **pas**, et c'est délibéré : sa signature ne
+prend ni port, ni session, ni zone, et rend un booléen nu — elle ne peut pas
+exprimer ce qu'un pare-feu décide (22 motifs de rejet, §37.2). L'implémenter
+donnerait un contrat qui ment sur ce qu'il rend.
+
+Le candidat naturel serait `LinuxPC`, qui possède un vrai netfilter
+(`LinuxIptablesManager`). C'est un chantier distinct ; le constat est
+consigné pour qu'il ne se reperde pas.
+
 ### A3 — Le catalogue de services prédéfinis devra lire `WellKnownPorts`
 
 `core/WellKnownPorts.ts` porte une table `IANA` et `getServiceName(port, proto)`.
@@ -683,6 +752,9 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B5 | Test « absence de route » visant une destination CONNECTÉE | E12 | Le moteur avait raison ; test corrigé + témoin ajouté |
 | B6 | Machine à états TCP non traversée par le chemin rapide | E12 | La session porte sa machine ; 5 cas neufs |
 | B7 | Audit ARP limité à `src/network/arp/` → doublon partiel de `ARPEntry` | E13 | `ARPEntry` déplacé vers `core/types.ts` + ré-export ; méthode d'audit corrigée |
+| B8 | Requête ARP émise vers la MAC nulle au lieu de la diffusion | E14 | Destination Ethernet distinguée du champ ARP |
+| B9 | Paquet jeté pendant la résolution ARP | E14 | Cache réinterrogé après émission (livraison synchrone) |
+| B10 | Chemin rapide sans interface de sortie → retour jeté | E14 | Sortie lue sur la session, inversée pour `s2c` |
 
 ## Prochaines étapes
 
