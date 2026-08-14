@@ -35,7 +35,7 @@ import {
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { CISCO_ERRORS } from './cli-utils';
-import { ntpConfigLines } from './cisco/ciscoNtpConfig';
+import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
   buildIdentityShowCommands, type CiscoSecurityShellContext,
@@ -3334,7 +3334,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // `password`/`login` sur sa console et ne les rendait nulle part.
     lines.push(...consoleAndAuxLineConfigLines(sw, chiffre));
 
-    const lignesNtp = ntpConfigLines(sw);
+    // Le MEME rendu que le routeur, et non un second : celui-ci ecrivait
+    // toujours le stratum la ou IOS l'omet a sa valeur par defaut, et ne
+    // connaissait ni `update-calendar`, ni `authentication-key`, ni
+    // `access-group` — donc un Catalyst acceptait sa cle NTP, l'honorait,
+    // et ne la rendait nulle part.
+    const lignesNtp = getNtpAgent(sw)?.asRunningConfigLines() ?? [];
     if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
 
     // VTY line configuration (transport input, login, password, …).

@@ -6,7 +6,6 @@
  */
 
 import type { Router } from '../../Router';
-import { ntpConfigLines } from './ciscoNtpConfig';
 import { privilegeConfigLines } from '../cli/CliAuthorization';
 import { getPrivilegeRules } from '../../router/security/CiscoPrivilegeStore';
 import type { Port } from '../../../hardware/Port';
@@ -492,9 +491,6 @@ export function showRunningConfig(router: Router): string {
   }
 
   lines.push(...consoleAndAuxLineConfigLines(router, serviceEncryption));
-
-  const lignesNtp = ntpConfigLines(router);
-  if (lignesNtp.length > 0) { lines.push(...lignesNtp); lines.push('!'); }
 
   if (dhcp.isEnabled()) {
     lines.push('service dhcp');

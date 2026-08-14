@@ -1614,3 +1614,82 @@ la déduire du nom de la machine : deux plateformes ne la déclarent pas de
 la même façon, et une position de curseur mesurée contre une invite
 supposée n'aurait rien prouvé. Non-régression connexe : 165 fichiers,
 4890 cas. `tsc` : 337 erreurs avant comme après, à la ligne près.
+
+## Étape 15 — l'ordre des blocs, mesuré contre des captures (F3 seconde moitié, F4, G6)
+
+L'audit relevait deux placements et leur donnait la **même** raison —
+« rendu après les interfaces ». La mesure contre de vraies configurations
+dit que cette raison est fausse pour l'une des deux, et que le défaut est
+ailleurs.
+
+**La référence.** `ciscoconfparse`,
+`tests/fixtures/configs/sample_01.ios` et `sample_08.ios` : du texte
+capturé sur de vraies machines, pas un exemple de documentation — dont le
+HTML écrase les blancs et dont les extraits ne montrent jamais le fichier
+entier. Ordre relevé, deux fois indépendamment : `interface …` →
+`router ospf` → `ip route` → `ip access-list` → `access-list` →
+`snmp-server community` → `route-map` → `control-plane` → `banner login`
+→ `line con 0` → `ntp master` → `end`.
+
+**F4 — le constat visait juste la commande, pour la mauvaise raison.**
+`snmp-server community` **est** rendu après les interfaces sur une vraie
+machine : ce que l'audit mesurait était un comportement correct. Ce qui
+ne l'était pas, et que la capture montre, c'est qu'il passe **avant**
+`route-map` — la table du dépôt les avait inversés (rangs 20 et 21). Un
+constat qui aurait été « corrigé » sur son énoncé aurait déplacé une
+ligne juste et laissé l'inversion en place.
+
+**F3 (seconde moitié) — les règles `privilege` n'étaient classées nulle
+part.** Elles tombaient au rang des non-classées (19,5), c'est-à-dire à
+une place que rien n'a choisie, entre les listes d'accès et les
+route-maps. Une règle `privilege` décrit **qui a le droit de faire quoi**,
+comme `enable secret`, `aaa`, `parser view` et `username` — que la capture
+montre toutes groupées dans le bloc de tête avant les interfaces — et la
+documentation Cisco enchaîne partout `username …` puis
+`privilege exec level …`. Rang 8,5, juste après les comptes. Le
+`privilege level N` d'une **ligne** ne bouge pas : il est indenté, donc il
+appartient au bloc de sa ligne, et un cas le vérifie. Portée honnête de
+ce demi-point : aucune capture consultable ne contient de ligne
+`privilege exec level` ; le rang s'appuie sur le groupement que la capture
+montre et sur les exemples Cisco, et non sur un dump — mais la place
+qu'il remplace, elle, n'était appuyée sur rien.
+
+**G6 — les deux moitiés étaient déjà refermées, vérification faite.** Le
+test qui figeait C2 comme contrat (`tuto-cli-views-cisco.test.ts`) a été
+corrigé à l'étape 3, et le `passwordInput` jamais vérifié de
+`probe-privileges-banque.test.ts` l'est depuis que la porte `enable`
+vérifie : le laboratoire pose bien `enable secret`, et trois témoins
+négatifs (`% Bad secrets`) y prouvent qu'un mauvais secret échoue. Aucun
+code à changer ; l'entrée est close plutôt que laissée ouverte.
+
+**Trouvé en mesurant l'ordre, et corrigé — une machine décrivait sa
+configuration NTP deux fois, différemment.** Le rendu de l'ordre a fait
+apparaître `ntp server 10.0.0.9` deux fois de suite. Onze commandes `ntp`
+tapées produisaient **quinze** lignes, et les deux copies se
+contredisaient sur la même machine au même instant : `ntp master 8` contre
+`ntp master`, et `sntp server 10.0.0.20` contre `ntp server 10.0.0.20` —
+la même association décrite de deux façons. Deux rendus vivaient dans la
+même fonction, `ntpConfigLines(router)` et
+`NtpAgent.asRunningConfigLines()`. Ce n'est pas de l'affichage : la
+configuration est rejouée à l'import, donc chaque ligne y était **tapée**
+deux fois et la seconde effaçait ce que la première disait. **Sur le
+commutateur, le même partage produisait l'autre moitié du défaut** : il ne
+connaissait que le rendu pauvre, si bien que `ntp authentication-key`,
+`ntp update-calendar` et `ntp access-group` étaient acceptés, honorés, et
+absents de sa propre configuration — donc perdus au rechargement. Une clé
+d'authentification qui disparaît de la configuration est exactement ce
+qu'un auditeur cherche. Il n'en reste qu'un : celui de l'agent, qui porte
+l'état, omet le stratum à sa valeur par défaut comme IOS le fait (`ntp
+master` seul, ligne 138 de la capture) et a reçu l'orthographe `sntp`, que
+seul le rendu pauvre connaissait — `sntp server` est une **autre**
+commande, pas un synonyme d'affichage. `ciscoNtpConfig.ts` est supprimé,
+ainsi que `CiscoShellBase.ntpConfigLines()`, méthode sans appelant.
+
+**Discrimination.** `cisco-ordre-configuration-ios.test.ts` (8 cas) et
+`cisco-ntp-un-seul-rendu.test.ts` (13 cas) : **12 des 21 tombent** avant
+correctif. Les 9 qui passent des deux côtés sont les non-régressions —
+`snmp-server` reste après les interfaces, un `privilege level` de ligne
+reste dans son bloc, un stratum explicite reste écrit, et ce que seul le
+rendu riche écrivait était déjà rendu une fois sur le routeur.
+Non-régression connexe : 186 fichiers, 5325 cas. `tsc` : 337 erreurs
+avant comme après, à la ligne près.

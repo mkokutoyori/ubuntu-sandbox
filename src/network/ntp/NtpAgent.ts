@@ -239,7 +239,11 @@ export class NtpAgent {
     }
     for (const [ip, a] of this.config.associations) {
       const kind = a.mode === 'symmetric-active' ? 'peer' : 'server';
-      lines.push(`ntp ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
+      // `sntp server` est une AUTRE commande, pas un synonyme
+      // d'affichage : la rendre en `ntp server` decrit une machine
+      // qu'on n'a pas configuree, et la configuration est rejouee.
+      const famille = a.configuredAs === 'sntp' ? 'sntp' : 'ntp';
+      lines.push(`${famille} ${kind} ${ip}${a.keyId !== undefined ? ' key ' + a.keyId : ''}${a.prefer ? ' prefer' : ''}`);
     }
     if (this.config.sourceInterface) lines.push(`ntp source ${this.config.sourceInterface}`);
     if (this.config.updateCalendar) lines.push('ntp update-calendar');

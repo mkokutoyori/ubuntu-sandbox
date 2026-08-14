@@ -14,7 +14,6 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
-import { ntpConfigLines } from './cisco/ciscoNtpConfig';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
@@ -1223,9 +1222,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * lui faut alors un `flash:` à décrire.
    */
   private _fs: CiscoFileSystem | null = null;
-  protected ntpConfigLines(): string[] {
-    return ntpConfigLines(this.d());
-  }
 
 
 
