@@ -918,28 +918,118 @@ Equipment  (abstrait, existant)
 
 | Option | Pour | Contre |
 |---|---|---|
-| **A — `Firewall extends Router`** | Récupère routage, FIB, NAT, ARP, ICMP, IPsec, interfaces L3, `show ip route` | Hérite aussi de tout le modèle IOS (ACL liées aux interfaces, pipeline routeur, CDP, EIGRP/OSPF Cisco) et de 5615 lignes dont l'essentiel ne convient pas |
-| **B — `Firewall extends Equipment`** | Aucune dette héritée ; pipeline propre | Doit réimplémenter routage, ARP, ICMP, gestion d'interfaces L3 — soit plusieurs milliers de lignes déjà écrites |
-| **C — `Firewall extends Router`, pipeline substitué** | Récupère l'infrastructure L3 ; `processIPv4` est **redéfini** intégralement | La dette héritée reste présente mais inerte |
+| **A — `Firewall extends Router`** | Récupère routage, FIB, NAT, ARP, ICMP, IPsec, interfaces L3 | Hérite de tout le modèle IOS (ACL liées aux interfaces, pipeline routeur, CDP, EIGRP/OSPF Cisco) et de 5615 lignes dont l'essentiel ne convient pas |
+| **B — `Firewall extends Equipment`, capacités L3 par composition** | Aucune dette héritée ; chaque collaborateur testable seul ; le pare-feu ne porte que ce qu'un pare-feu a | Doit construire sa propre couche L3 |
+| **C — `Firewall extends Router`, pipeline substitué** | Récupère l'infrastructure L3 | La dette héritée reste présente mais inerte — un piège pour le prochain développeur |
 
-**Décision : option C**, avec une contrainte explicite. `Router.processIPv4()`
-et `Router.forwardPacket()` sont `protected` — donc redéfinissables. Le
-pare-feu redéfinit `processIPv4()` pour déléguer à `FirewallPipeline`, et
-n'appelle plus jamais le chemin du routeur. Ce que le pare-feu **conserve**
-de `Router` : la table de routage, `lookupRoute()`, l'ARP, la réponse ICMP,
-la gestion des interfaces L3, l'intégration IPsec, le registre d'équipement.
+### 7.3.1 Décision : option B — composition plutôt qu'héritage
 
-La contrainte : `Firewall` doit **désactiver explicitement** ce qu'un
-pare-feu n'a pas — et cette désactivation doit être un refus visible, non un
-silence. Le §26.4 en donne le mécanisme (`UnsupportedOnThisPlatformError`,
-transposition directe de `UnsupportedOnThisSwitchError` déjà utilisé pour
-`GenericSwitch`).
+**`Firewall extends Equipment`.** Les capacités de couche 3 sont des
+**collaborateurs injectés**, pas un héritage.
 
-Ce précédent est important et vaut d'être cité : `GenericSwitch` reçoit le
-`CiscoSwitchShell` complet alors qu'il ne fait tourner aucun protocole
-Cisco, et le dépôt a résolu exactement ce problème par un accesseur
-`require*` qui lève une erreur nommée, rattrapée en un seul point. Le
-pare-feu réutilise ce patron.
+Quatre raisons, dans l'ordre de poids :
+
+**1. Un pare-feu n'EST PAS un routeur.** L'héritage exprime « est un ». Un
+pare-feu route, mais router n'est pas ce qu'il est ; c'est un service dont
+il a besoin. `Firewall extends Router` fait de la relation d'usage une
+relation d'identité, et le prix se paie à chaque ajout : toute méthode
+ajoutée à `Router` apparaît sur le pare-feu, qu'elle ait un sens ou non.
+
+**2. La dette inerte n'est pas neutre, elle est active.** L'option C
+laissait `Router`'s CDP, EIGRP, HSRP, les ACL liées aux interfaces et le
+pipeline IOS présents mais inutilisés. Un développeur ultérieur les
+trouverait, les croirait disponibles, et les câblerait. Le dépôt a un
+précédent exact : `GenericSwitch` reçoit le `CiscoSwitchShell` complet alors
+qu'il ne fait tourner aucun protocole Cisco — il a fallu ~53 sites d'appel
+et une erreur nommée pour refermer ce que l'héritage avait ouvert. Ne pas
+ouvrir coûte moins cher que refermer.
+
+**3. La testabilité est structurellement meilleure.** Un `PolicyEvaluator`
+qui reçoit une `RouteLookup` en argument se teste avec une fonction de
+trois lignes. Le même code atteint par héritage exige d'instancier un
+`Router` complet — donc son ARP, ses minuteurs, son registre. C'est la
+différence entre un test unitaire et un test d'intégration déguisé, et elle
+décide de la vitesse à laquelle ce module pourra être développé en TDD.
+
+**4. `Router.ts` fait 5615 lignes et NFR-M3 en impose 800.** Hériter d'un
+fichier qui viole la contrainte qu'on se donne serait incohérent.
+
+### 7.3.2 Ce que la composition doit fournir
+
+Le pare-feu a besoin de cinq services de couche 2/3. Aucun n'exige de
+toucher à `Router` :
+
+| Service | Rôle | Primitives réutilisées |
+|---|---|---|
+| `InterfaceTable` | Interfaces L3 : adresse, masque, MTU, état | `hardware/Port.ts` (complet), `core/ip.ts` |
+| `RouteTable` | Correspondance au plus long préfixe, AD, ECMP | `core/ip.ts`, `core/interfaces.ts` (`IIPv4Route`) |
+| `ArpService` | Cache, résolution, réponse | `core/types.ts` (`ARPPacket`), `core/interfaces.ts` (`INeighborResolver`) |
+| `IcmpService` | Écho, erreurs (inaccessible, TTL expiré) | `core/IcmpErrors.ts`, `core/packetBuilders.ts` |
+| `L2Delivery` | Trame sortante, MAC de destination | `hardware/Port.ts`, `hardware/Cable.ts` |
+
+**Mesure, et c'est ce qui rend l'option B abordable** : ces cinq services
+s'appuient sur des primitives **déjà autonomes** dans `core/` — `ip.ts`
+(arithmétique d'adresses, 14 fonctions), `interfaces.ts` (`IIPv4Route`,
+`INeighborResolver`), `packetBuilders.ts`, `IcmpErrors.ts`,
+`Ipv4Fragmentation.ts`, `FilterChain.ts`. Le contre-argument de l'option B
+(« réimplémenter des milliers de lignes ») supposait de repartir de zéro ;
+il ne tient pas, parce que ce qui est coûteux dans `Router.ts` — les
+protocoles de routage, les shells vendeur, les redondances FHRP — n'est
+précisément pas ce dont le pare-feu a besoin.
+
+Estimation : les cinq services représentent environ 700 lignes, contre 5615
+héritées dont ~90 % inutiles.
+
+### 7.3.3 Le patron retenu
+
+```
+                     ┌──────────────────────┐
+                     │      Equipment       │  (existant, non modifié)
+                     │  ports · bus · power │
+                     └──────────▲───────────┘
+                                │ extends
+                     ┌──────────┴───────────┐
+                     │      Firewall        │  FAÇADE — assemble, ne décide pas
+                     └──────────┬───────────┘
+                                │ compose
+   ┌────────────┬───────────┬───┴────┬────────────┬─────────────┐
+   ▼            ▼           ▼        ▼            ▼             ▼
+InterfaceTable RouteTable ArpService IcmpService SessionTable Pipeline
+                                                              │
+                                                    composé depuis
+                                                    FirewallProfile
+```
+
+`Firewall` est une **façade** : elle assemble des collaborateurs et leur
+délègue. Elle ne contient aucune décision. C'est ce qui lui permet de
+respecter NFR-M3 (≤ 800 lignes) alors que `Router.ts` en fait 5615.
+
+### 7.3.4 Les patrons de conception employés, et pourquoi
+
+| Patron | Où | Ce qu'il achète |
+|---|---|---|
+| **Stratégie** | `FirewallProfile` | Le comportement vendeur est une donnée injectée ; ajouter un constructeur n'ouvre aucun fichier du socle |
+| **Chaîne de responsabilité** | `FirewallPipeline` sur `FilterChain` | L'ordre d'opérations devient composable ; une étape s'ajoute sans toucher aux autres |
+| **Registre** | `PipelineStageRegistry`, `AlgRegistry` | Extension par enregistrement, pas par modification |
+| **Dépôt** | `ZoneTable`, `ObjectStore`, `PolicyStore`, … | Chaque magasin est testable seul, sans équipement |
+| **Façade** | `Firewall` | Un point d'entrée simple sur un assemblage riche |
+| **Objet-valeur** | `FlowKey`, `AddressSet`, `PortRange` | Immuables, comparables, sans identité — donc sans bogue d'aliasing |
+| **Spécification** | `MatchCriteria` | Les critères de correspondance se composent et se testent isolément |
+| **Observateur** | `EventBus` | Découplage des consommateurs (UI, journal, tests) |
+| **Composite** | `ObjectGroup` | Un groupe et un objet se résolvent par la même interface |
+| **Injection de dépendance** | Tous les collaborateurs | Un test fournit un double ; aucun singleton caché |
+
+Ces patrons ne sont pas décoratifs : chacun répond à une contrainte
+nommée du document. La stratégie sert FR-VEN-02 (aucun moteur chez le
+vendeur), la chaîne sert FR-PIP-01 (l'ordre est une donnée), le dépôt sert
+NFR-M4 (magasins testables séparément), l'injection sert la démarche TDD.
+
+### 7.3.5 Le refus de plateforme
+
+`UnsupportedOnThisPlatformError` (§26.4) reste utile, mais son rôle change :
+il ne sert plus à masquer un héritage encombrant — il n'y en a plus — mais à
+refuser une fonction qu'un **profil vendeur** ne déclare pas. C'est un
+mécanisme de politique produit, non de rattrapage d'architecture.
 
 ### 7.4 Les huit magasins du socle
 
@@ -5175,10 +5265,20 @@ ajoutée à `TOPOLOGY_SAVE_CAVEATS`.
 ```
 src/network/devices/firewall/
 │
-├── Firewall.ts                        classe de base (extends Router)
+├── Firewall.ts                        façade (extends Equipment)
 ├── FirewallProfile.ts                 le contrat déclaratif
+├── FirewallDependencies.ts            injection
 ├── types.ts                           types partagés
 ├── capabilities.ts                    capacités ségrégées
+│
+├── l3/                                services de couche 3, par composition
+│   ├── L3Services.ts                  les cinq interfaces
+│   ├── InterfaceTable.ts
+│   ├── RouteTable.ts
+│   ├── ArpService.ts
+│   ├── IcmpService.ts
+│   ├── L2Delivery.ts
+│   └── FrameDispatcher.ts
 │
 ├── model/
 │   ├── SecurityZone.ts
@@ -5361,44 +5461,74 @@ ne suffisait pas.
 | `HaAgent` | `HsrpAgent` / `VrrpAgent` | Protocoles différents ; l'ARP gratuit est réutilisé |
 | `FirewallLogger` | `LoggingConfig` | Étendu, pas dupliqué (§23.2) |
 | `pipeline/` | `FilterChain` | **Réutilisé tel quel** (§4.1.5) |
+| `l3/InterfaceTable` | `Router`'s interfaces | Composition retenue plutôt qu'héritage (§7.3.1) ; bâti sur `Port`, déjà complet |
+| `l3/RouteTable` | `Router.lookupRoute` | Idem ; bâti sur `core/ip.ts` et `IIPv4Route` |
+| `l3/ArpService` | `Router`'s ARP | Idem ; contrat `INeighborResolver` déjà défini dans `core/` |
+| `l3/IcmpService` | `Router`'s ICMP | Idem ; `core/IcmpErrors.ts` réutilisé |
 
 ### 36.3 La classe `Firewall`
 
 ```ts
-export abstract class Firewall extends Router {
-  protected readonly profile: FirewallProfile;
-  protected readonly zones: ZoneTable;
-  protected readonly objects: ObjectStore;
-  protected readonly policy: PolicyStore;
-  protected readonly natPolicy: NatPolicyStore;
-  protected readonly sessions: SessionTable;
-  protected readonly algs: AlgRegistry;
-  protected readonly profiles: ProfileStore;
-  protected readonly screens: ScreenStore;
-  protected readonly pipeline: FirewallPipeline;
-  protected readonly firewallCounters: FirewallCounters;
+export abstract class Firewall extends Equipment {
+  private readonly l3: L3Services;
+  private readonly stores: FirewallStores;
+  private readonly pipeline: FirewallPipeline;
+  private readonly counters: FirewallCounters;
 
-  protected override processIPv4(inPort: string, pkt: IPv4Packet): void {
-    const ctx = this.buildContext(inPort, pkt);
-    const outcome = this.pipeline.process(ctx);
-    this.applyVerdict(outcome);
+  protected constructor(deps: FirewallDependencies) {
+    super(deps.deviceType, deps.name, deps.x, deps.y);
+    this.l3 = deps.l3 ?? createDefaultL3Services(this);
+    this.stores = deps.stores ?? createDefaultStores(deps.profile);
+    this.pipeline = FirewallPipeline.fromProfile(deps.profile, deps.stageRegistry);
+    this.counters = new FirewallCounters();
   }
 
-  protected override forwardPacket(): never {
-    throw new UnsupportedOnThisPlatformError(
-      'router-forwarding', 'firewall uses FirewallPipeline');
+  protected handleFrame(portName: string, frame: EthernetFrame): void {
+    this.frameDispatcher.dispatch(portName, frame);
   }
 
+  getSessionTable(): SessionTableView { return this.stores.sessions.view(); }
+  getPolicyStore(): PolicyStoreView { return this.stores.policy.view(); }
+  getZoneTable(): ZoneTableView { return this.stores.zones.view(); }
   abstract getProfile(): FirewallProfile;
-  getSessionTable(): SessionTableView { return this.sessions.view(); }
-  getPolicyStore(): PolicyStoreView { return this.policy.view(); }
-  getZoneTable(): ZoneTableView { return this.zones.view(); }
 }
 ```
 
-Le `forwardPacket()` qui lève est délibéré : il rend **impossible** qu'un
-chemin oublié retombe silencieusement dans le pipeline du routeur. Un
-appel inattendu produit une erreur nommée plutôt qu'un comportement faux.
+Trois propriétés de cette signature méritent d'être relevées, parce
+qu'elles sont ce que l'option B achète :
+
+- **Tout est injectable.** `FirewallDependencies` porte des valeurs par
+  défaut, si bien qu'un test fournit un double de `RouteTable` ou de
+  `SessionTable` sans instancier de topologie. C'est ce qui rend le TDD
+  praticable sur ce module.
+- **Aucun `override` d'un chemin hérité.** Il n'y a rien à neutraliser :
+  `handleFrame` est la seule méthode abstraite d'`Equipment`, et le pare-feu
+  l'implémente pour son propre compte.
+- **La façade ne décide de rien.** Chaque accesseur délègue. C'est ce qui
+  tient NFR-M3.
+
+### 36.3.1 Les services L3
+
+```ts
+export interface L3Services {
+  readonly interfaces: InterfaceTable;
+  readonly routes: RouteTable;
+  readonly arp: ArpService;
+  readonly icmp: IcmpService;
+  readonly delivery: L2Delivery;
+}
+```
+
+Chacun est une interface, donc substituable. `createDefaultL3Services()`
+fournit l'implémentation réelle ; un test fournit ce qu'il veut.
+
+Note de périmètre, écrite plutôt que tue : ces cinq services sont
+**nouveaux**, mais ils ne dupliquent pas `Router` au sens où le ferait un
+copier-coller — ils s'appuient sur les mêmes primitives autonomes de
+`core/` (§7.3.2) et n'implémentent que ce qu'un pare-feu utilise. Le jour où
+une convergence avec `Router` deviendrait souhaitable, elle se ferait en
+faisant consommer ces interfaces par `Router`, jamais l'inverse — même règle
+de sens que celle posée en §10.9 pour les tables d'état.
 
 ### 36.4 L'arbitrage NAT, tranché
 
@@ -5673,7 +5803,8 @@ et E14 — c'est sa justification principale (§30.6).
 
 | Livrable | Détail |
 |---|---|
-| `Firewall.ts` | Étend `Router`, redéfinit `processIPv4`, lève sur `forwardPacket` |
+| `l3/` | Les cinq services de couche 3, injectables |
+| `Firewall.ts` | Façade sur `Equipment`, assemble et délègue |
 | `SessionTable` | Index directionnel, objet session, machine à états TCP, expiration par balayage |
 | `ZoneTable` | Zones, appartenance, invariants I-Z1 à I-Z6 |
 | `ObjectStore` | Adresses, services, groupes, résolution, invariants I-A et I-G |
@@ -5772,6 +5903,46 @@ découverte tardivement.
 | **Sonde de phase** | Discriminée par `git stash` | `probe-firewall-*.test.ts` |
 | **Garde-fou** | Contraintes d'architecture | `firewall-architecture-guards.test.ts` |
 | **Transcription** | Longue séquence de commandes, pour analyse d'écart | `debug/firewall/` |
+
+### 40.1.1 La démarche est TDD
+
+Chaque mini-livraison suit le cycle, sans exception :
+
+```
+1. Écrire le test qui décrit le comportement voulu
+2. L'exécuter → il ÉCHOUE (et l'échec est celui attendu, pas une erreur d'import)
+3. Écrire le minimum de code qui le fait passer
+4. L'exécuter → il PASSE
+5. Nettoyer, en gardant le test vert
+6. Commit + push
+```
+
+L'étape 2 est celle qu'on saute par facilité et c'est la seule qui prouve
+quelque chose : un test qui n'a jamais échoué ne démontre pas qu'il teste.
+La discipline est la même que celle de la sonde discriminée (§40.2), appliquée
+en continu plutôt qu'à la fin.
+
+### 40.1.2 La portée de la non-régression
+
+**Règle** : les tests de régression exécutés à chaque mini-livraison portent
+sur les **fonctionnalités connexes**, pas sur l'ensemble du dépôt.
+
+| Ce qui est modifié | Suites à exécuter |
+|---|---|
+| Un magasin du socle (`ZoneTable`, `ObjectStore`, …) | Les tests de ce magasin |
+| Le pipeline ou une étape | `firewall/pipeline/`, `firewall/session/` |
+| Un service L3 | `firewall/l3/` |
+| Une déclinaison vendeur | La suite de ce vendeur uniquement |
+| Une primitive NAT partagée (§36.4) | `nat-*.test.ts` — **la seule extraction qui sorte du module** |
+
+Justification : le module pare-feu est **additif**. Il ne modifie aucun
+fichier existant hors de trois points d'intégration explicites
+(`DeviceFactory`, `DeviceType`, `ShellFactory`), et l'extraction NAT de la
+phase 2. Exécuter la suite complète du dépôt à chaque commit coûterait des
+minutes pour ne rien mesurer de plus que la suite ciblée.
+
+La suite complète est exécutée à trois moments, et à ceux-là seulement : à
+la fin de chaque **phase**, avant l'extraction NAT de la phase 2, et après.
 
 ### 40.2 La sonde discriminée — méthode obligatoire
 
@@ -5929,7 +6100,8 @@ savoir en phase 9 qu'en phase 15.
 | **R2** | Le socle se révèle trop abstrait, aucun vendeur ne s'y reconnaît | Faible | Élevé | Chaque concept est présent chez ≥ 3 vendeurs (§11.2) |
 | **R3** | Le modèle candidat rétrofitté coûte cher | **Élevée** | Élevé | Couche de mutation unique dès la phase 1 (FR-MGT-11) |
 | **R4** | Explosion du volume d'événements sur le bus | Moyenne | Moyen | Liste blanche stricte (FR-UI-11), leçon de l'élément #52 |
-| **R5** | `Firewall extends Router` traîne une dette inerte | **Élevée** | Moyen | `forwardPacket` lève ; refus de plateforme nommé |
+| ~~**R5**~~ | ~~`Firewall extends Router` traîne une dette inerte~~ | — | — | **Éliminé** par l'option B : il n'y a plus d'héritage, donc plus de dette à neutraliser (§7.3.1) |
+| **R5b** | Les cinq services L3 divergent un jour de ceux de `Router` | Moyenne | Moyen | Interfaces explicites ; règle de sens de convergence posée (§36.3.1) |
 | **R6** | L'extraction NAT régresse | Moyenne | Élevé | Phase isolée, suite verte avant/après |
 | **R7** | Le mode transparent bute sur l'absence de base L3/L2 commune | Moyenne | Moyen | Phase 10, après stabilisation ; précédent du NAT sur SVI Huawei |
 | **R8** | La virtualisation devient une étiquette (défaut PDB) | Moyenne | **Élevé** | Isolation réelle ou refus (§22.2) |
@@ -5943,7 +6115,7 @@ savoir en phase 9 qu'en phase 15.
 
 | # | Question | Décision | § |
 |---|---|---|---|
-| **A1** | `Firewall extends` quoi ? | `Router`, pipeline substitué | 7.3 |
+| **A1** | `Firewall extends` quoi ? | **`Equipment`** ; les capacités L3 sont des collaborateurs injectés | 7.3.1 |
 | **A2** | NAT : réutiliser, étendre ou nouveau ? | Nouveau + primitives extraites | 12.5 |
 | **A3** | Une ou deux tables d'état ? | Deux, justifiées | 10.9 |
 | **A4** | Expiration : minuteur ou balayage ? | Balayage | 10.6.1 |
