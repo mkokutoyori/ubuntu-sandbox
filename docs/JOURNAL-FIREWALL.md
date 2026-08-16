@@ -49,10 +49,11 @@
 | 3 | Simulation d'un paquet (socle de `packet-tracer`) | 19 | ✅ |
 | 3 | `packet-tracer` (rendu ASA) | 19 | ✅ |
 | 3 | Sections NAT (socle) + `object network … nat` (ASA) | 29 | ✅ |
+| 3 | `show conn` / `show xlate` / `clear` sur trafic réel | 18 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 632 cas verts sur 23 fichiers.**
+**Total actuel : 650 cas verts sur 24 fichiers.**
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1207,6 +1208,58 @@ pour mot.
 
 ---
 
+### E26 — `show conn` et `show xlate`, mesurés sur du trafic réel
+
+Les deux tables qu'un ASA fait consulter, écrites ensemble parce qu'elles
+décrivent le **même** flux vu de deux endroits. Une machine où elles se
+contrediraient serait indiagnosticable — et c'est exactement ce qui arrive
+quand deux rendus lisent deux magasins ; ici les deux lisent la
+`SessionTable`, `show xlate` n'étant que sa projection sur les sessions
+qui portent une traduction.
+
+**Le trafic du test est réel**, sur un vrai câble, avec de vrais pings. Un
+test qui poserait les sessions à la main vérifierait le formateur et rien
+d'autre — or la question est de savoir si la table se remplit quand des
+paquets traversent, et si ce qu'elle annonce correspond à ce qui a
+circulé. Les compteurs d'octets et les drapeaux sont donc des **mesures** :
+`U` dit que la connexion est établie, `I` qu'il est entré des données, `O`
+qu'il en est sorti (documentation Cisco, vérifiée). L'ordre des champs
+vient de la même source et n'est pas devinable — `TCP outside <distant>
+inside <local>`, le côté extérieur d'abord, quel que soit le sens dans
+lequel la connexion a été ouverte.
+
+#### Mes deux témoins étaient faux, et chacun pour une raison instructive
+
+- **« trois pings comptent plus d'octets qu'un seul »** mesurait 168 des
+  deux côtés. La cause n'est pas le compteur : trois pings créent **trois
+  sessions**, et mon expression régulière ne lisait que la première ligne.
+- **« un flux qui ne reçoit rien ne porte pas `I` »** posait une règle de
+  refus sur le retour et attendait que la réponse soit bloquée. C'est
+  l'inverse d'un pare-feu à états : le retour d'une session établie passe
+  par le chemin rapide et ne consulte aucune politique. Le code avait
+  raison, le test avait tort. Remplacé par un ping vers une adresse
+  **routable dont personne ne répond** — le seul montage où il n'entre
+  vraiment rien.
+
+#### Un défaut mesuré, hors périmètre, et écrit plutôt que tu
+
+Les trois sessions ci-dessus viennent de `EndHost` : **`ping` attribue un
+identifiant ICMP NOUVEAU à chaque sonde** (`pingIdCounter` incrémenté dans
+la boucle) là où un vrai `ping` garde un identifiant pour tout le processus
+et n'incrémente que le numéro de séquence. Conséquence observable :
+`show conn` affiche trois connexions pour un `ping -c 3`, quand un vrai ASA
+en affiche une.
+
+Ce n'est **pas** un défaut du pare-feu — `FlowKey` indexe l'ICMP par
+identifiant, ce qui est juste et ce que fait un vrai pare-feu. C'est le
+poste émetteur qui se comporte comme trois processus. Non corrigé ici :
+`EndHost` est un autre sous-système, `pingIdCounter` sert aussi à
+corréler les réponses sur le bus, et le rayon d'action couvre des
+centaines de tests — le mélanger à ce chantier serait mal cadré. Consigné
+pour être traité pour lui-même.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1252,19 +1305,23 @@ pour mot.
 | B25 | `NatPolicyStore` n'avait aucune notion de section : l'ordre de saisie décidait seul | E25 | `section` sur la règle ; `ordered()` trie par section, saisie ensuite |
 | B26 | `bidirectional` écrit en 4 endroits, lu par aucun — la publication de serveur ne marchait pas | E25 | `translateInboundBidirectional()` lit la règle à l'envers ; 4 cas de trafic |
 | B27 | Mon propre témoin visait une destination sans route : il s'arrêtait avant l'étape mesurée | E25 | Destination routable ; le cas mesure enfin ce qu'il annonce |
+| B28 | Témoin d'octets ne lisant que la PREMIÈRE ligne de `show conn` | E26 | Somme de toutes les lignes |
+| B29 | Témoin attendant qu'une règle de refus bloque un RETOUR établi | E26 | C'est l'inverse d'un pare-feu à états ; remplacé par une destination qui ne répond pas |
 
 ## Prochaines étapes
 
 Phase 3 (ASA), reste à faire :
 
-1. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque)
-   et `show xlate`, son jumeau côté traduction.
-2. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
+1. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
    cesse d'être un `LinuxPC`. C'est ce qui rend l'ASA atteignable depuis la
    toile, et donc réellement utilisable.
-3. NAT manuel (`nat (a,b) source static … destination static …`), qui est
+2. NAT manuel (`nat (a,b) source static … destination static …`), qui est
    la section 1 dont l'ordonnancement vient d'être posé — aujourd'hui elle
    n'est remplissable que par l'API, pas par la CLI.
+
+Hors périmètre de ce module, mesuré ici et à traiter pour lui-même :
+`EndHost.pingIdCounter` incrémenté par sonde plutôt que par processus
+(E26).
 
 Puis phases 4 à 15 : diagnostics et journaux, FortiOS, cadre ALG, PAN-OS
 (configuration candidate), écrans et profils, Junos (validation du contrat,

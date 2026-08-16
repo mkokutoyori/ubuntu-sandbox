@@ -4,6 +4,8 @@ import {
 import type { RuleAction } from '../../model/SecurityRule';
 import type { AsaFirewall } from './AsaFirewall';
 import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
+import type { FirewallSession } from '../../session/SessionTable';
+import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../core/types';
 import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
 import { renderPacketTracer } from './AsaPacketTracer';
 import {
@@ -54,6 +56,55 @@ function numericFlow(
     };
   }
   return { protocol, sourceIP, destinationIP, sourcePort: first, destinationPort: second };
+}
+
+const XLATE_FLAGS = 'Flags: D - DNS, i - dynamic, r - portmap, s - static, I - identity';
+
+function protocolName(protocol: number): string {
+  if (protocol === IP_PROTO_TCP) return 'TCP';
+  if (protocol === IP_PROTO_UDP) return 'UDP';
+  if (protocol === IP_PROTO_ICMP) return 'ICMP';
+  return String(protocol);
+}
+
+function idleClock(sinceMs: number): string {
+  const total = Math.max(0, Math.floor(sinceMs / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function connFlags(session: FirewallSession): string {
+  const flags: string[] = [];
+  if (session.tcpState === 'established' || session.tcpState === undefined) flags.push('U');
+  if (session.counters.bytesS2C > 0) flags.push('I');
+  if (session.counters.bytesC2S > 0) flags.push('O');
+  return flags.join('');
+}
+
+function connLine(
+  session: FirewallSession, now: number, zoneName: (iface: string) => string,
+): string {
+  const bytes = session.counters.bytesC2S + session.counters.bytesS2C;
+  return `${protocolName(session.c2s.protocol)}`
+    + ` ${zoneName(session.egressInterface)} ${session.c2s.destIP}:${session.c2s.destPort}`
+    + ` ${zoneName(session.ingressInterface)} ${session.c2s.sourceIP}:${session.c2s.sourcePort},`
+    + ` idle ${idleClock(now - session.lastSeenAt)}, bytes ${bytes},`
+    + ` flags ${connFlags(session)}`;
+}
+
+function xlateLine(
+  session: FirewallSession, now: number, zoneName: (iface: string) => string,
+): string {
+  const translation = session.translation!;
+  const kind = session.natRuleId === undefined ? 'i' : 'ri';
+  return `NAT from ${zoneName(session.ingressInterface)}:${translation.originalSource}`
+    + `/${translation.originalSourcePort}`
+    + ` to ${zoneName(session.egressInterface)}:${translation.translatedSource}`
+    + `/${translation.translatedSourcePort}`
+    + ` flags ${kind} idle ${idleClock(now - session.lastSeenAt)}`
+    + ` timeout ${idleClock(session.timeoutSec * 1000)}`;
 }
 
 function natSectionTitle(section: number): string {
@@ -227,11 +278,13 @@ export class AsaShell {
   private execCommand(tokens: string[]): string {
     const [head, ...rest] = tokens;
     if (head === 'packet-tracer') return this.packetTracer(rest);
+    if (head === 'clear') return this.clearCommand(rest);
     if (head !== 'show') return ASA_INVALID_INPUT;
 
     switch (rest[0]) {
       case 'nameif': return this.showNameif();
-      case 'conn': return this.showConn();
+      case 'conn': return this.showConn(rest[1] !== 'count');
+      case 'xlate': return this.showXlate();
       case 'version': return this.showVersion();
       case 'running-config': return this.showRunningConfig();
       case 'access-list': return this.showAccessList();
@@ -413,15 +466,39 @@ export class AsaShell {
     return lines.join('\n');
   }
 
-  private showConn(): string {
+  private showConn(withLines: boolean): string {
     const sessions = this.fw.getSessionTable().view().all();
     const header = `${sessions.length} in use, ${sessions.length} most used`;
-    if (sessions.length === 0) return header;
+    if (!withLines || sessions.length === 0) return header;
 
-    const lines = sessions.map(s =>
-      `TCP ${s.egressZone} ${s.c2s.destIP}:${s.c2s.destPort} ${s.ingressZone} `
-      + `${s.c2s.sourceIP}:${s.c2s.sourcePort}, idle 0:00:00, bytes ${s.counters.bytesC2S}`);
-    return [header, ...lines].join('\n');
+    const now = this.fw.now();
+    return [header, ...sessions.map(session => connLine(session, now, this.zoneName.bind(this)))]
+      .join('\n');
+  }
+
+  private showXlate(): string {
+    const translated = this.fw.getSessionTable().view()
+      .find(session => session.translation !== undefined);
+    const header = `${translated.length} in use, ${translated.length} most used`;
+    if (translated.length === 0) return header;
+
+    const now = this.fw.now();
+    return [header, XLATE_FLAGS,
+      ...translated.map(session => xlateLine(session, now, this.zoneName.bind(this)))].join('\n');
+  }
+
+  private clearCommand(rest: string[]): string {
+    if (rest[0] === 'conn') { this.fw.getSessionTable().clear(); return ''; }
+    if (rest[0] === 'xlate') { this.fw.clearTranslations(); return ''; }
+    if (rest[0] === 'nat' && rest[1] === 'counters') {
+      this.fw.getNatPolicy().resetCounters();
+      return '';
+    }
+    return ASA_INVALID_INPUT;
+  }
+
+  private zoneName(iface: string): string {
+    return this.fw.getZoneTable().zoneOf(iface) ?? iface;
   }
 
   private showVersion(): string {

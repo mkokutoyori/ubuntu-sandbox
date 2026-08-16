@@ -158,6 +158,19 @@ export class Firewall extends Equipment {
     this.getPort(name)?.setAdminShutdown(!up);
   }
 
+  now(): number { return this.services.now(); }
+
+  clearTranslations(): number {
+    let cleared = 0;
+    for (const session of this.sessions.view().all()) {
+      if (session.translation === undefined) continue;
+      this.nat.release(session.translation);
+      this.sessions.close(session, 'clear');
+      cleared++;
+    }
+    return cleared;
+  }
+
   getInterfaceTable(): InterfaceTable { return this.interfaces; }
   getZoneTable(): ZoneTable { return this.zones; }
   getObjectStore(): ObjectStore { return this.objects; }
