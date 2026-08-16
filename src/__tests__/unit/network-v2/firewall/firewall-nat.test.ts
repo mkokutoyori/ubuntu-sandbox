@@ -152,6 +152,83 @@ describe('FirewallNatEngine — NAT source vers l\'adresse d\'interface', () => 
   });
 });
 
+describe('FirewallNatEngine — RFC 4787, exigences de comportement', () => {
+  function withPat() {
+    const { nat, store } = engine();
+    store.append({
+      id: 'S1', type: 'dynamic-pat',
+      fromZone: ['trust'], toZone: ['untrust'], originalSource: ['LAN'],
+      sourceTranslation: { kind: 'interface-address' },
+    });
+    return { nat, store };
+  }
+
+  it('REQ-1 : Endpoint-Independent Mapping — MEME source, DEUX destinations, MEME port traduit', () => {
+    const { nat } = withPat();
+
+    const versA = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40000), CTX);
+    const versB = nat.translateOutbound(tcp('192.168.1.10', '198.51.100.9', 40000, 443), CTX);
+
+    expect(srcPortOf(versB.packet)).toBe(srcPortOf(versA.packet));
+  });
+
+  it('REQ-1 : le mapping est stable meme quand le port preferre a du etre change', () => {
+    const { nat } = withPat();
+    nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40000), CTX);
+    const collision = nat.translateOutbound(tcp('192.168.1.11', '203.0.113.5', 40000), CTX);
+
+    const meme = nat.translateOutbound(tcp('192.168.1.11', '198.51.100.9', 40000, 443), CTX);
+
+    expect(srcPortOf(meme.packet)).toBe(srcPortOf(collision.packet));
+  });
+
+  it('REQ-3 : pas de « port overloading » — deux sources n\'obtiennent jamais le meme port', () => {
+    const { nat } = withPat();
+
+    const a = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40000), CTX);
+    const b = nat.translateOutbound(tcp('192.168.1.11', '203.0.113.5', 40000), CTX);
+
+    expect(srcPortOf(a.packet)).not.toBe(srcPortOf(b.packet));
+  });
+
+  it('REQ-3 : deux PORTS de la meme source restent distincts apres traduction', () => {
+    const { nat } = withPat();
+
+    const a = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40000), CTX);
+    const b = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40001), CTX);
+
+    expect(srcPortOf(a.packet)).not.toBe(srcPortOf(b.packet));
+  });
+
+  it('la RFC recommande de garder le port dans 1024-65535 — et c\'est le cas', () => {
+    const { nat } = withPat();
+
+    const result = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 1000), CTX);
+
+    expect(srcPortOf(result.packet)).toBeGreaterThanOrEqual(1024);
+    expect(srcPortOf(result.packet)).toBeLessThanOrEqual(65535);
+  });
+
+  it('liberer un mapping le rend reattribuable a une AUTRE source', () => {
+    const store = new NatPolicyStore();
+    const nat = new FirewallNatEngine({
+      objects: objects(), policy: store,
+      interfaceAddress: () => '203.0.113.1',
+      portRange: { from: 40000, to: 40000 },
+    });
+    store.append({
+      id: 'S1', type: 'dynamic-pat', fromZone: ['trust'], toZone: ['untrust'],
+      originalSource: ['LAN'], sourceTranslation: { kind: 'interface-address' },
+    });
+    const first = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5', 40000), CTX);
+
+    nat.release(first.translation!);
+
+    const second = nat.translateOutbound(tcp('192.168.1.11', '203.0.113.5', 40000), CTX);
+    expect(second.translation).toBeDefined();
+  });
+});
+
 describe('FirewallNatEngine — NAT destination, la publication de serveur', () => {
   function withDnat() {
     const { nat, store } = engine();

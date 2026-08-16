@@ -8,8 +8,10 @@ import { isDenyAction } from '../../model/SecurityRule';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
 import { flowKeyFromPacket } from '../../session/FlowKey';
-import type { SessionTable } from '../../session/SessionTable';
+import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
 import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
+import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
+import type { NatPolicyStore } from '../../nat/NatPolicyStore';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
 
@@ -22,14 +24,23 @@ export interface FirewallServices {
   evaluator: PolicyEvaluator;
   sessions: SessionTable;
   now: () => number;
+  natPolicy?: NatPolicyStore;
+  nat?: FirewallNatEngine;
+  natOrder?: NatOrder;
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
+}
+
+export interface NatOrder {
+  policySeesPreNatSource?: boolean;
+  policySeesPreNatDestination?: boolean;
 }
 
 const DEFAULT_TIMEOUT_SEC = 3600;
 const DISCARD_TIMEOUT_SEC = 5;
 
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
+const pendingTranslations = new WeakMap<object, SessionTranslation>();
 
 function deny(context: PacketContext, stage: string, reason: VerdictReason): FilterVerdict<PacketContext> {
   context.verdict = Object.freeze({ action: 'deny' as const, reason, stage });
@@ -57,9 +68,11 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     ingressZoneStage(services),
     sessionLookupStage(services),
     tcpStateCheckStage(services),
+    natDestinationStage(services),
     routeLookupStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
+    natSourceStage(services),
     sessionInstallStage(services),
   ];
 }
@@ -150,6 +163,69 @@ function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
   };
 }
 
+function natContextOf(context: PacketContext) {
+  return {
+    ingressZone: context.ingressZone ?? '',
+    egressZone: context.egressZone ?? '',
+    ingressInterface: context.ingressPort,
+    egressInterface: context.egressPort ?? '',
+  };
+}
+
+function natDestinationStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'nat-destination',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet || !services.nat) return proceed(context, 'nat-destination', 'no-nat');
+
+      const outcome = services.nat.translateInbound(packet, natContextOf(context));
+      if (!outcome.translation) return proceed(context, 'nat-destination', 'no-match');
+
+      context.packet = outcome.packet;
+      pendingTranslations.set(context, outcome.translation);
+      return proceed(context, 'nat-destination', outcome.matchedRuleId);
+    },
+  };
+}
+
+function natSourceStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'nat-source',
+    apply(context) {
+      const packet = ipv4(context);
+      if (!packet || !services.nat) return proceed(context, 'nat-source', 'no-nat');
+
+      const outcome = services.nat.translateOutbound(packet, natContextOf(context));
+      if (outcome.failure === 'nat-port-exhausted') {
+        return deny(context, 'nat-source', 'nat-port-exhausted');
+      }
+      if (!outcome.translation) return proceed(context, 'nat-source', 'no-match');
+
+      context.packet = outcome.packet;
+      pendingTranslations.set(context, mergeTranslations(pendingTranslations.get(context), outcome.translation));
+      return proceed(context, 'nat-source', outcome.matchedRuleId);
+    },
+  };
+}
+
+function mergeTranslations(
+  existing: SessionTranslation | undefined, added: SessionTranslation,
+): SessionTranslation {
+  if (!existing) return added;
+  return Object.freeze({
+    natRuleId: existing.natRuleId,
+    originalSource: added.originalSource,
+    originalSourcePort: added.originalSourcePort,
+    translatedSource: added.translatedSource,
+    translatedSourcePort: added.translatedSourcePort,
+    originalDest: existing.originalDest,
+    originalDestPort: existing.originalDestPort,
+    translatedDest: existing.translatedDest,
+    translatedDestPort: existing.translatedDestPort,
+  });
+}
+
 function routeLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'route-lookup',
@@ -195,10 +271,10 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           egressZone: context.egressZone ?? '',
           ingressInterface: context.ingressPort,
           egressInterface: context.egressPort ?? '',
-          sourceIP: packet.sourceIP.toString(),
-          destIP: packet.destinationIP.toString(),
+          sourceIP: policySource(context, packet, services).sourceIP.toString(),
+          destIP: policyDestination(context, packet, services).destinationIP.toString(),
           protocol: packet.protocol,
-          ...transportPorts(packet),
+          ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
         },
         packet.totalLength,
@@ -243,6 +319,12 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       });
       session.tcpMachine = tcpMachines.get(context);
 
+      const translation = pendingTranslations.get(context);
+      if (translation) {
+        session.translation = translation;
+        session.natRuleId = translation.natRuleId;
+      }
+
       services.sessions.recordTraffic(session, 'c2s', packet.totalLength);
       context.session = session;
       context.sessionDirection = 'c2s';
@@ -264,6 +346,22 @@ function installDiscard(
     timeoutSec: services.discardTimeoutSec ?? DISCARD_TIMEOUT_SEC,
     policyId: context.matchedPolicy?.id,
   });
+}
+
+function policySource(
+  context: PacketContext, packet: IPv4Packet, services: FirewallServices,
+): IPv4Packet {
+  if (services.natOrder?.policySeesPreNatSource === false) return packet;
+  const original = context.originalPacket;
+  return original.type === 'ipv4' ? original : packet;
+}
+
+function policyDestination(
+  context: PacketContext, packet: IPv4Packet, services: FirewallServices,
+): IPv4Packet {
+  if (!services.natOrder?.policySeesPreNatDestination) return packet;
+  const original = context.originalPacket;
+  return original.type === 'ipv4' ? original : packet;
 }
 
 function transportPorts(packet: IPv4Packet): { sourcePort?: number; destPort?: number } {

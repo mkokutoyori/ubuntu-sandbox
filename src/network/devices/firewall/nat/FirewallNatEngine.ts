@@ -52,6 +52,7 @@ export class FirewallNatEngine {
   private readonly deps: FirewallNatEngineDeps;
   private readonly portRange: PortRange;
   private readonly usedPorts = new Map<string, Set<number>>();
+  private readonly endpointMappings = new Map<string, number>();
   private rulesEvaluated = 0;
   private translationsCreated = 0;
   private portExhaustions = 0;
@@ -73,7 +74,7 @@ export class FirewallNatEngine {
     if (target === undefined) return { packet, matchedRuleId: rule.id, failure: 'nat-no-rule' };
 
     const originalPort = getPacketSrcPort(packet);
-    const port = this.allocatePort(target, originalPort);
+    const port = this.mapEndpoint(target, packet.sourceIP.toString(), originalPort);
     if (port === null) {
       this.portExhaustions++;
       return { packet, matchedRuleId: rule.id, failure: 'nat-port-exhausted' };
@@ -162,6 +163,8 @@ export class FirewallNatEngine {
 
   release(translation: SessionTranslation): void {
     this.usedPorts.get(translation.translatedSource)?.delete(translation.translatedSourcePort);
+    this.endpointMappings.delete(endpointKey(
+      translation.translatedSource, translation.originalSource, translation.originalSourcePort));
   }
 
   statistics(): NatStatistics {
@@ -195,6 +198,18 @@ export class FirewallNatEngine {
     return undefined;
   }
 
+  private mapEndpoint(address: string, sourceIP: string, sourcePort: number): number | null {
+    const key = endpointKey(address, sourceIP, sourcePort);
+    const existing = this.endpointMappings.get(key);
+    if (existing !== undefined) return existing;
+
+    const port = this.allocatePort(address, sourcePort);
+    if (port === null) return null;
+
+    this.endpointMappings.set(key, port);
+    return port;
+  }
+
   private allocatePort(address: string, preferred: number): number | null {
     let ports = this.usedPorts.get(address);
     if (!ports) { ports = new Set(); this.usedPorts.set(address, ports); }
@@ -210,6 +225,10 @@ export class FirewallNatEngine {
     }
     return null;
   }
+}
+
+function endpointKey(translatedAddress: string, sourceIP: string, sourcePort: number): string {
+  return `${translatedAddress}|${sourceIP}:${sourcePort}`;
 }
 
 function listMatches(list: readonly string[], value: string): boolean {

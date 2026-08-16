@@ -39,9 +39,11 @@
 | 1 | Sonde de phase 1 (topologie réelle) | ✅ incluse | ✅ |
 | **2** | **Extraction des primitives NAT (DRY)** | 571 réf. | ✅ |
 | 2 | `NatPolicyStore` + `FirewallNatEngine` | 24 | ✅ |
-| 2 | Câblage NAT dans le pipeline | — | ⏳ |
+| 2 | Conformité RFC 4787 (REQ-1, REQ-3) | 6 | ✅ |
+| 2 | Câblage NAT dans le pipeline (§12.4) | 15 | ✅ |
+| 2 | Sonde de phase 2 (publication sur le fil) | — | ⏳ |
 
-**Total actuel : 439 cas, verts. PHASE 1 FONCTIONNELLE.**
+**Total actuel : 460 cas, verts. PHASE 1 FONCTIONNELLE.**
 
 ---
 
@@ -617,6 +619,60 @@ reformulé, et un second cas épingle la collision.
 **B13** — j'utilisais le port 1000, **hors de la plage PAT** (1024-65535),
 donc non préservable. Corrigé, et un cas dédié épingle désormais cette
 règle plutôt que de la laisser implicite.
+
+---
+
+### E17 — Vérification contre les standards, et deux corrections
+
+**Cette entrée existe parce que la recherche a trouvé un défaut dans ce que
+je venais d'écrire.** Elle justifie d'en faire une habitude plutôt qu'un
+geste ponctuel.
+
+#### RFC 4787 — non-conformité trouvée et corrigée
+
+La lecture des exigences de comportement NAT (BCP 127) a montré que mon
+allocateur violait **REQ-1, *Endpoint-Independent Mapping*** : il indexait
+les ports utilisés par adresse *traduite* seulement, si bien que le même
+couple (IP interne, port interne) recevait **deux ports externes différents**
+selon la destination. C'est un *Address-and-Port-Dependent Mapping*, que la
+RFC interdit — et dont la conséquence pratique est que toute traversée de
+NAT (STUN, WebRTC, jeux en ligne) échoue.
+
+Corrigé par une table de mappage indexée par point de terminaison interne.
+Six cas neufs épinglent REQ-1 (mapping stable, y compris quand le port
+préféré a dû être changé) et **REQ-3** (pas de *port overloading* : deux
+sources n'obtiennent jamais le même port).
+
+Ce que la RFC a aussi **confirmé**, et que j'avais deviné juste : « if the
+host's source port was in the range 1024-65535, it is RECOMMENDED that the
+NAT's source port be in that range ». La préservation de port bornée à la
+plage est donc citée, plus supposée.
+
+#### PAN-OS — la documentation est plus précise que mon BRD
+
+« **Pre-NAT IP, post-NAT everything else** », et surtout : la traduction
+« n'a pas lieu tant que le paquet n'a pas quitté le pare-feu ». La
+destination NAT doit donc être **décidée avant le routage** — sans quoi la
+décision porterait sur l'adresse publique et désignerait la mauvaise
+interface de sortie, donc la mauvaise zone, donc la mauvaise règle — tandis
+que la politique lit les adresses **pré-NAT**.
+
+C'est exactement ce que `originalPacket` permet, et le BRD §7.5 l'avait
+anticipé : « sa simple présence permet aux deux profils de coexister sans
+branchement dans le moteur ». Vérifié : un cas monte **la même règle et le
+même paquet**, et obtient `accepted` sous le profil PAN-OS et `dropped` sous
+le profil ASA 8.3+ — par un seul booléen.
+
+---
+
+### E18 — Le NAT dans le pipeline
+
+Deux étapes neuves, `nat-destination` (avant le routage) et `nat-source`
+(après la politique), plus la lecture pré/post-NAT par la politique. 15 cas.
+
+La traduction décidée est **portée jusqu'à `session-install`** et posée sur
+la session : c'est I-N1 réalisé de bout en bout. Un cas vérifie qu'un flux
+**refusé** n'alloue aucune traduction — sinon un scan épuiserait le pool.
 
 ---
 
