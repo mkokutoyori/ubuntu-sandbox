@@ -113,13 +113,14 @@ export class FirewallNatEngine {
 
     const originalPort = getPacketDstPort(packet);
     const port = translation.translatedPort ?? originalPort;
+    const realDest = this.resolveAddress(translation.translatedAddress);
 
     rule.hitCount++;
     rule.byteCount += packet.totalLength;
     this.translationsCreated++;
 
     return {
-      packet: rewriteDestIP(packet, translation.translatedAddress, port),
+      packet: rewriteDestIP(packet, realDest, port),
       matchedRuleId: rule.id,
       translation: Object.freeze({
         natRuleId: rule.id,
@@ -129,7 +130,7 @@ export class FirewallNatEngine {
         translatedSourcePort: getPacketSrcPort(packet),
         originalDest: packet.destinationIP.toString(),
         originalDestPort: originalPort,
-        translatedDest: translation.translatedAddress,
+        translatedDest: realDest,
         translatedDestPort: port,
       }),
     };
@@ -243,7 +244,7 @@ export class FirewallNatEngine {
       this.rulesEvaluated++;
 
       if (!listMatches(rule.fromZone, context.ingressZone)) continue;
-      if (!listMatches(rule.toZone, context.egressZone)) continue;
+      if (context.egressZone !== '' && !listMatches(rule.toZone, context.egressZone)) continue;
       if (!this.deps.objects.matchesAnyAddress(rule.originalSource, packet.sourceIP.toString())) continue;
       if (!this.deps.objects.matchesAnyAddress(rule.originalDestination, packet.destinationIP.toString())) continue;
 

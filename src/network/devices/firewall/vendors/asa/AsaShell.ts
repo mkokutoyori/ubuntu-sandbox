@@ -123,6 +123,59 @@ function addressObjectLine(object: AddressObject): string | undefined {
   return undefined;
 }
 
+interface ManualNatSpec {
+  readonly fromZone: string;
+  readonly toZone: string;
+  readonly afterAuto: boolean;
+  readonly sourceStatic: boolean;
+  readonly realSource: string;
+  readonly mappedSource?: string;
+  readonly mappedDestination?: string;
+  readonly realDestination?: string;
+}
+
+function parseInterfacePair(word: string | undefined): [string, string] | undefined {
+  if (word === undefined || !word.startsWith('(') || !word.endsWith(')')) return undefined;
+  const zones = word.slice(1, -1).split(',');
+  if (zones.length !== 2 || !zones[0] || !zones[1]) return undefined;
+  return [zones[0], zones[1]];
+}
+
+function parseManualNat(tokens: string[]): ManualNatSpec | undefined {
+  const pair = parseInterfacePair(tokens[1]);
+  if (!pair) return undefined;
+
+  let index = 2;
+  const afterAuto = tokens[index] === 'after-auto';
+  if (afterAuto) index++;
+
+  if (tokens[index] !== 'source') return undefined;
+  const sourceKind = tokens[index + 1];
+  if (sourceKind !== 'static' && sourceKind !== 'dynamic') return undefined;
+
+  const realSource = tokens[index + 2];
+  const mappedSource = tokens[index + 3];
+  if (realSource === undefined || mappedSource === undefined) return undefined;
+  index += 4;
+
+  let mappedDestination: string | undefined;
+  let realDestination: string | undefined;
+  if (tokens[index] === 'destination') {
+    if (tokens[index + 1] !== 'static') return undefined;
+    mappedDestination = tokens[index + 2];
+    realDestination = tokens[index + 3];
+    if (mappedDestination === undefined || realDestination === undefined) return undefined;
+  }
+
+  return {
+    fromZone: pair[0], toZone: pair[1], afterAuto,
+    sourceStatic: sourceKind === 'static',
+    realSource,
+    mappedSource: mappedSource === 'interface' ? undefined : mappedSource,
+    mappedDestination, realDestination,
+  };
+}
+
 interface ObjectNatSpec {
   readonly fromZone: string;
   readonly toZone: string;
@@ -132,11 +185,9 @@ interface ObjectNatSpec {
 
 function parseObjectNat(tokens: string[]): ObjectNatSpec | undefined {
   const [, pair, kind, target] = tokens;
-  if (pair === undefined || !pair.startsWith('(') || !pair.endsWith(')')) return undefined;
+  const zones = parseInterfacePair(pair);
+  if (!zones) return undefined;
   if (kind !== 'static' && kind !== 'dynamic') return undefined;
-
-  const zones = pair.slice(1, -1).split(',');
-  if (zones.length !== 2 || !zones[0] || !zones[1]) return undefined;
 
   if (kind === 'static' && target === undefined) return undefined;
   if (kind === 'dynamic' && target === undefined) return undefined;
@@ -152,6 +203,8 @@ export class AsaShell {
   private mode: AsaMode = 'exec';
   private negatedLine = false;
   private readonly objectNatLines = new Map<string, string>();
+  private readonly manualNatLines = new Map<string, string>();
+  private manualRuleCounter = 0;
   private currentInterface?: string;
   private currentObject?: string;
   private currentGroup?: string;
@@ -314,6 +367,7 @@ export class AsaShell {
   private configCommand(tokens: string[], negated: boolean): string {
     const [head, ...rest] = tokens;
 
+    if (head === 'nat') return this.manualNat(tokens);
     if (head === 'access-list') return this.accessList(rest);
     if (head === 'access-group') return this.accessGroup(rest, negated);
     if (head === 'same-security-traffic') return this.sameSecurityTraffic(rest, negated);
@@ -364,6 +418,42 @@ export class AsaShell {
     if (head === 'range') { store.addAddress(rangeAddress(name, rest[0], rest[1])); return ''; }
     if (head === 'nat') return this.objectNat(name, tokens);
     return ASA_INVALID_INPUT;
+  }
+
+  private manualNat(tokens: string[]): string {
+    const spec = parseManualNat(tokens);
+    if (!spec) return ASA_INVALID_INPUT;
+
+    if (!this.interfaceNamed(spec.fromZone) || !this.interfaceNamed(spec.toZone)) {
+      return ASA_INVALID_INPUT;
+    }
+
+    this.manualRuleCounter++;
+    const id = `manual#${this.manualRuleCounter}`;
+    this.manualNatLines.set(id, tokens.join(' '));
+
+    this.fw.getNatPolicy().append({
+      id,
+      section: spec.afterAuto ? ASA_NAT_SECTIONS.autoAfter : ASA_NAT_SECTIONS.manual,
+      type: spec.sourceStatic ? 'static' : 'dynamic-pat',
+      fromZone: [spec.fromZone],
+      toZone: [spec.toZone],
+      originalSource: [spec.realSource],
+      originalDestination: spec.mappedDestination === undefined
+        ? undefined
+        : [spec.mappedDestination],
+      bidirectional: spec.sourceStatic,
+      sourceTranslation: spec.mappedSource === undefined
+        ? { kind: 'interface-address' }
+        : {
+          kind: spec.sourceStatic ? 'static-ip' : 'dynamic-ip-and-port',
+          translatedAddress: [spec.mappedSource],
+        },
+      destinationTranslation: spec.realDestination === undefined
+        ? undefined
+        : { kind: 'static-ip', translatedAddress: spec.realDestination },
+    });
+    return '';
   }
 
   private objectNat(objectName: string, tokens: string[]): string {
@@ -593,6 +683,8 @@ export class AsaShell {
 
     const objects = this.objectLines();
     if (objects.length > 0) { lines.push(...objects, '!'); }
+
+    for (const line of this.manualNatLines.values()) lines.push(line);
 
     for (const line of this.aclLines) {
       const keyword = line.action === 'allow' ? 'permit' : 'deny';

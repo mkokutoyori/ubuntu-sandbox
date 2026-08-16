@@ -51,10 +51,11 @@
 | 3 | Sections NAT (socle) + `object network … nat` (ASA) | 29 | ✅ |
 | 3 | `show conn` / `show xlate` / `clear` sur trafic réel | 18 | ✅ |
 | 3 | L'ASA devient un équipement déposable et ouvrable | 17 | ✅ |
+| 3 | NAT manuel (« twice NAT »), section 1 et `after-auto` | 17 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 667 cas verts sur 25 fichiers** (1446 avec les suites
+**Total actuel : 684 cas verts sur 26 fichiers** (1446 avec les suites
 connexes : palette, terminal, terminal-core).
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
@@ -1305,6 +1306,47 @@ il le sera avec le démon, pas avant.
 
 ---
 
+### E28 — Le NAT manuel, et l'ordre qui s'inverse sans qu'on le voie
+
+`nat (a,b) source static … destination static …` — la section 1, dite
+« twice NAT ». Sa raison d'être : traduire la source **en fonction de la
+destination**, ce qu'une règle objet ne sait pas faire puisqu'elle ne
+connaît qu'un objet.
+
+**Le détail qui s'inverse sans qu'on le voie** : `source` s'écrit RÉELLE
+puis TRADUITE, et `destination` s'écrit TRADUITE puis RÉELLE. L'ordre est
+inversé entre les deux clauses, et c'est logique une fois dit — pour la
+destination, le paquet ARRIVE sur l'adresse traduite, donc c'est elle qu'on
+nomme en premier, comme critère. Aligner les deux clauses « pour la
+cohérence » dé-NATerait vers la mauvaise machine, sans que rien ne le
+signale.
+
+Les recherches secondaires se contredisaient sur ce point et `cisco.com`
+est bloqué par le mandataire de sortie ; ce qui a tranché est **l'exemple
+du BRD lui-même** (`nat (outside,dmz) source static any any destination
+static PUB_IP SRV_WEB`), écrit en son temps à partir de la documentation.
+Le fichier de test le dit, plutôt que de le laisser deviner.
+
+`after-auto` range la règle en section 3. Sans elle la section 3 serait un
+rang que rien ne peut atteindre — et c'est la seule façon d'écrire une
+règle manuelle qui passe APRÈS une règle objet. Deux cas opposés vérifient
+l'ordre obtenu dans les deux sens.
+
+#### Deux défauts préexistants, révélés parce que quelque chose s'en sert
+
+- **La zone de sortie ne peut pas être un critère de dé-NAT.** Le
+  `match()` du moteur exigeait `toZone == egressZone`, or le dé-NAT a lieu
+  **avant** la recherche de route : la zone de sortie n'est pas encore
+  décidée, donc aucune règle de destination ne pouvait jamais correspondre.
+  Le critère n'est appliqué que lorsque la zone est connue.
+- **La destination était réécrite avec le NOM de l'objet.** `rewriteDestIP`
+  recevait `'SRV_WEB'` là où il attend une adresse : le chemin de
+  destination n'avait jamais résolu un objet, personne ne lui en ayant
+  jamais passé. Il lit désormais `resolveAddress()`, la même fonction que
+  le chemin bidirectionnel.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1354,6 +1396,8 @@ il le sera avec le démon, pas avant.
 | B29 | Témoin attendant qu'une règle de refus bloque un RETOUR établi | E26 | C'est l'inverse d'un pare-feu à états ; remplacé par une destination qui ne répond pas |
 | B30 | `firewall-cisco` construisait un `LinuxPC` : le pare-feu était injoignable | E27 | `DeviceFactory` → `AsaFirewall` ; `ICLIDevice` ; `AsaTerminalSession` |
 | B31 | Mon test passait un NOM là où `createDevice` attend une coordonnée | E27 | Vraie signature, et un cas qui pin le nommage par la fabrique |
+| B32 | Le dé-NAT exigeait une zone de SORTIE pas encore décidée : aucune règle de destination ne pouvait correspondre | E28 | Critère appliqué seulement quand la zone est connue |
+| B33 | La destination était réécrite avec le NOM de l'objet, pas son adresse | E28 | `resolveAddress()`, la même que le chemin bidirectionnel |
 
 ## Prochaines étapes
 
@@ -1361,9 +1405,9 @@ Phase 3 (ASA), reste à faire :
 
 1. Démon SSH sur le pare-feu, puis `ShellFactory.register('asa', …)` — la
    CLI est là, il lui manque le transport (E27).
-2. NAT manuel (`nat (a,b) source static … destination static …`), qui est
-   la section 1 dont l'ordonnancement vient d'être posé — aujourd'hui elle
-   n'est remplissable que par l'API, pas par la CLI.
+2. Phase 4 du BRD : diagnostics et journaux (`show logging`, syslog),
+   puis les constructeurs suivants — FortiOS, PAN-OS, Junos — dont le
+   contrat de profil est désormais éprouvé par une déclinaison complète.
 
 Hors périmètre de ce module, mesuré ici et à traiter pour lui-même :
 `EndHost.pingIdCounter` incrémenté par sonde plutôt que par processus
