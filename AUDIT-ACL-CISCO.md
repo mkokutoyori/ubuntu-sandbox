@@ -18,10 +18,12 @@
 >
 > Le banc de preuves a changé de nature avec le code. Il assoyait le
 > comportement fautif ; il assoit désormais le comportement juste —
-> **33 tests de non-régression**, et plus aucune sonde de défaut ouvert.
+> **34 tests de non-régression** couvrant F-01 à F-19 plus §7.4 et §8.3,
+> et plus aucune sonde de défaut ouvert.
 >
 > ```bash
-> npx vitest run src/__tests__/audit/     # 33 passed
+> npx vitest run src/__tests__/audit/   # 34 passed
+> npx vitest run src/__tests__/unit/    # 1905 fichiers, 31 553 tests, 0 echec
 > ```
 
 ---
@@ -526,6 +528,18 @@ nouvelle (343 avant, 343 après).
 17. **§7.4 — les compteurs ne sont plus pollués** : `evaluateACL` accepte
     `countMatches`, et le filtre d'affichage de `debug ip packet` observe sans
     compter. `show access-lists` remesure le trafic, pas l'observateur.
+18. **§8.3 — la règle appliquée à ses propres restes.** L'inventaire des neuf
+    champs-façades a été repris jusqu'au bout. Huit sont traités ; le neuvième,
+    `option <name>` (`match ip options`), était **encore un critère sauté** —
+    `permit ip any any option any-options` valait `permit ip any any`. Comme
+    `IPv4Packet` ne porte aucune option d'en-tête, le critère n'est pas
+    vérifiable : il échoue désormais, comme la règle l'exige.
+    Restent `reflect` / `reflectTimeout`, qui ne sont **pas** des critères de
+    correspondance mais un modificateur d'action inerte : les ACL réflexives ne
+    sont pas implémentées, faute de table de sessions. Le couple est cohérent et
+    sûr — `reflect` filtre normalement sur ses autres critères, et `evaluate`
+    échoue fermé, de sorte que le trafic retour n'est jamais ouvert par accident.
+    C'est écrit sur le champ plutôt que laissé à deviner.
 
 ## 12. Conclusion
 
@@ -564,7 +578,7 @@ un critère qu'on n'évalue pas** — l'appliquer, ou le refuser à l'analyse.
 
 **Ce qui reste vrai.** Le dispositif de test garde son angle mort d'origine :
 83 tests ACL verts n'avaient vu aucun des dix-neuf défauts, faute de sonder les
-cas dégradés. Les 33 tests du banc ne le comblent que pour les défauts connus.
+cas dégradés. Les 34 tests du banc ne le comblent que pour les défauts connus.
 La discipline qui manquait n'était pas l'écriture de tests, mais l'habitude de
 tester **ce qui cède** plutôt que ce qui marche.
 

@@ -415,6 +415,27 @@ describe('ACL Cisco — non-régression des constats d\'audit', () => {
     expect(r.getAccessLists().find(a => a.name === 'S')?.entries.length).toBe(0);
   });
 
+  it('§8.3 `option <name>` est un critere non verifiable : il ne correspond pas', () => {
+    const e = new ACLEngine();
+    e.addNamedAccessListEntry('O', 'extended', 'permit', {
+      protocol: 'ip', ...ANY(), optionName: 'any-options',
+    });
+    e.addNamedAccessListEntry('O', 'extended', 'deny', { protocol: 'ip', ...ANY() });
+    // `IPv4Packet` ne modelise aucune option d'en-tete : le permit ne peut
+    // pas s'appliquer, et la liste retombe sur le deny.
+    expect(e.evaluateACL('O', tcpPkt('1.1.1.1', '2.2.2.2', 80))).toBe('deny');
+  });
+
+  it('§7.4 observer une ACL ne la fait plus compter', () => {
+    const e = new ACLEngine();
+    e.addNamedAccessListEntry('C', 'extended', 'permit', { protocol: 'ip', ...ANY() });
+    const pkt = tcpPkt('1.1.1.1', '2.2.2.2', 80);
+    e.evaluateACL('C', pkt, new Date(), false);
+    expect(e.findByName('C')!.entries[0].matchCount).toBe(0);
+    e.evaluateACL('C', pkt);
+    expect(e.findByName('C')!.entries[0].matchCount).toBe(1);
+  });
+
   it('F-01 rayon de souffle : les VACL de commutateur héritent du correctif', () => {
     const e = new ACLEngine();
     e.addNamedAccessListEntry('SW', 'extended', 'permit', { protocol: 'ip', ...ANY(), remark: 'politique de port' });

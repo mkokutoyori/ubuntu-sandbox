@@ -153,6 +153,15 @@ export interface ACLEntry {
   log?: boolean;
   logInput?: boolean;
   timeRange?: string;
+  /**
+   * `reflect NAME` — les ACL réflexives ne sont PAS implémentées : il
+   * n'existe aucune table de sessions miroir. Le mot-clé n'est donc pas
+   * un critère de correspondance mais un modificateur d'action inerte ;
+   * l'ACE qui le porte filtre normalement sur ses autres critères, et
+   * `evaluate NAME` (la liste miroir) échoue fermé faute d'être étayée.
+   * Le couple est cohérent : le trafic retour n'est pas ouvert par
+   * accident.
+   */
   reflect?: string;
   reflectTimeout?: number;
   evaluate?: string;
@@ -597,6 +606,12 @@ export class ACLEngine {
       const isFragment = (ipPkt.fragmentOffset > 0) || ((ipPkt.flags & 0x1) !== 0);
       if (!isFragment) return false;
     }
+
+    // `match ip options` : `IPv4Packet` ne porte aucune option d'en-tête,
+    // le critère n'est donc jamais vérifiable. Il échoue — il était
+    // simplement sauté, ce qui rendait `permit ip any any option
+    // any-options` équivalent à `permit ip any any`.
+    if (entry.optionName !== undefined) return false;
 
     return true;
   }
