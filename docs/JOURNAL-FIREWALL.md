@@ -36,12 +36,12 @@
 | 1 | `InterfaceTable` + `RouteTable` (`l3/`) | 31 | ✅ |
 | 1 | `ArpService` | 33 | ✅ |
 | 1 | Façade `Firewall` (équipement) | 15 | ✅ |
-| 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | ✅ incluse | ✅ |
 | **2** | **Extraction des primitives NAT (DRY)** | 571 réf. | ✅ |
-| 2 | `FirewallNatEngine` | — | ⏳ |
+| 2 | `NatPolicyStore` + `FirewallNatEngine` | 24 | ✅ |
+| 2 | Câblage NAT dans le pipeline | — | ⏳ |
 
-**Total actuel : 415 cas, verts. PHASE 1 FONCTIONNELLE.**
+**Total actuel : 439 cas, verts. PHASE 1 FONCTIONNELLE.**
 
 ---
 
@@ -587,6 +587,39 @@ confirmé la responsabilité en restaurant l'original sur ce seul fichier
 
 ---
 
+### E16 — `NatPolicyStore` + `FirewallNatEngine`
+
+`src/network/devices/firewall/nat/` — 24 cas.
+
+Le moteur consomme les primitives partagées d'E15 : **aucune fonction de
+réécriture n'est réécrite ici.**
+
+**I-N1 et I-N2 sont ce qui distingue ce moteur de celui du routeur.** La
+traduction est décidée au premier paquet et **rendue pour être mémorisée sur
+la session** ; `reapply()` la réapplique sans consulter la politique, et un
+cas le mesure par le compteur `rulesEvaluated` qui ne bouge pas. Le retour
+applique l'inverse, lu sur la **même** traduction.
+
+C'est structurellement ce qui rend impossible le défaut que
+`PRD-Port-Forwarding.md` a dû corriger **deux fois** côté routeur : la
+traduction vit sur la session, pas sur la règle.
+
+#### Deux défauts dans mes propres tests (B12, B13)
+
+Les deux venaient d'une méconnaissance du comportement réel, et le moteur
+avait raison les deux fois.
+
+**B12** — j'avais écrit qu'un PAT « réécrit le port source ». **Faux** : un
+vrai PAT *préserve* le port quand il est libre (Cisco et netfilter le
+documentent tous deux) et n'en change que sur collision. Le cas est
+reformulé, et un second cas épingle la collision.
+
+**B13** — j'utilisais le port 1000, **hors de la plage PAT** (1024-65535),
+donc non préservable. Corrigé, et un cas dédié épingle désormais cette
+règle plutôt que de la laisser implicite.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -808,6 +841,8 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B9 | Paquet jeté pendant la résolution ARP | E14 | Cache réinterrogé après émission (livraison synchrone) |
 | B10 | Chemin rapide sans interface de sortie → retour jeté | E14 | Sortie lue sur la session, inversée pour `s2c` |
 | B11 | `import` inséré dans le commentaire d'en-tête → primitives non résolues | E15 | Placé après le dernier import réel ; rattrapé par la référence verte |
+| B12 | Test affirmant qu'un PAT change toujours le port source | E16 | Un vrai PAT le *préserve* quand il est libre ; moteur correct |
+| B13 | Test utilisant un port hors de la plage PAT | E16 | Corrigé + cas dédié à la règle |
 
 ## Prochaines étapes
 
