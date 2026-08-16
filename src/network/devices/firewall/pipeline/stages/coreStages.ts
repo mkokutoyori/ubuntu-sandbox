@@ -134,6 +134,12 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       }
 
       services.sessions.recordTraffic(found.session, found.direction, packet.totalLength);
+
+      const translation = found.session.translation;
+      if (translation && services.nat) {
+        context.packet = services.nat.reapply(packet, translation, found.direction);
+      }
+
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
       context.verdict = Object.freeze({
         action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',

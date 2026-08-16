@@ -41,9 +41,9 @@
 | 2 | `NatPolicyStore` + `FirewallNatEngine` | 24 | ✅ |
 | 2 | Conformité RFC 4787 (REQ-1, REQ-3) | 6 | ✅ |
 | 2 | Câblage NAT dans le pipeline (§12.4) | 15 | ✅ |
-| 2 | Sonde de phase 2 (publication sur le fil) | — | ⏳ |
+| 2 | Sonde de phase 2 (publication sur le fil) | 10 | ✅ |
 
-**Total actuel : 460 cas, verts. PHASE 1 FONCTIONNELLE.**
+**Total actuel : 470 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
 
 ---
 
@@ -676,6 +676,43 @@ la session : c'est I-N1 réalisé de bout en bout. Un cas vérifie qu'un flux
 
 ---
 
+### E19 — Sonde de phase 2 : la publication répond sur le fil
+
+10 cas, sur une topologie réelle.
+
+La sonde de phase 1 prouvait l'inspection à états ; celle-ci prouve la
+**traduction**, et surtout sa moitié la plus facile à rater : **le retour**.
+L'aller se teste tout seul ; le retour ne se voit que du côté du client — si
+le pare-feu ne réécrit pas la source du serveur en adresse publique, le
+client reçoit une réponse d'une machine à qui il n'a rien demandé et la
+jette. Un cas vérifie que la sortie du `ping` contient l'adresse **publique**
+et **pas** l'adresse réelle.
+
+**Deux témoins**, parce qu'un seul ne suffirait pas à distinguer les causes :
+sans règle NAT le ping échoue, et sans règle de politique **non plus**. Il
+faut les deux, et le laboratoire le montre.
+
+La topologie évite délibérément le proxy ARP : l'adresse publique
+n'appartient à aucun sous-réseau connecté, donc le client l'atteint par sa
+route par défaut. Un laboratoire qui aurait mis la VIP dans le sous-réseau
+du client aurait testé le proxy ARP sans le savoir.
+
+#### Défaut trouvé par la sonde (B14)
+
+Le PAT sortant échouait, et la cause est de la même famille que B10. La
+réponse du client revient vers `198.51.100.1` — **l'adresse du pare-feu
+lui-même**, puisque c'est elle qui a servi de source traduite. Elle était
+donc consommée en **livraison locale** au lieu d'être dé-NATée et
+réacheminée.
+
+Corrigé : **la recherche de session précède le test « est-ce pour nous ? »**.
+Un paquet adressé à notre propre adresse mais appartenant à une session
+existante est du transit, pas du trafic local. C'est le comportement réel, et
+il n'est pas devinable depuis les tests unitaires — il fallait un PAT complet
+sur un vrai câble.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -899,6 +936,7 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B11 | `import` inséré dans le commentaire d'en-tête → primitives non résolues | E15 | Placé après le dernier import réel ; rattrapé par la référence verte |
 | B12 | Test affirmant qu'un PAT change toujours le port source | E16 | Un vrai PAT le *préserve* quand il est libre ; moteur correct |
 | B13 | Test utilisant un port hors de la plage PAT | E16 | Corrigé + cas dédié à la règle |
+| B14 | Réponse PAT consommée localement au lieu d'être dé-NATée | E19 | La recherche de session précède le test « pour nous ? » |
 
 ## Prochaines étapes
 

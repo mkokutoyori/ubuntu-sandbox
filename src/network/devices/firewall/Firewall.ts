@@ -22,13 +22,16 @@ import { ObjectStore } from './model/ObjectStore';
 import { PolicyStore } from './model/PolicyStore';
 import { PolicyEvaluator } from './policy/PolicyEvaluator';
 import { SessionTable } from './session/SessionTable';
+import { NatPolicyStore } from './nat/NatPolicyStore';
+import { FirewallNatEngine } from './nat/FirewallNatEngine';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { makePacketContext } from './pipeline/PacketContext';
+import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
 
 const DEFAULT_PIPELINE = [
-  'ingress-zone', 'session-lookup', 'tcp-state-check',
-  'route-lookup', 'egress-zone', 'policy-lookup', 'session-install',
+  'ingress-zone', 'session-lookup', 'tcp-state-check', 'nat-destination',
+  'route-lookup', 'egress-zone', 'policy-lookup', 'nat-source', 'session-install',
 ];
 
 const DEFAULT_PORT_COUNT = 8;
@@ -45,6 +48,8 @@ export class Firewall extends Equipment {
   private readonly zones = new ZoneTable();
   private readonly objects = new ObjectStore();
   private readonly policy = new PolicyStore();
+  private readonly natPolicy = new NatPolicyStore();
+  private readonly nat: FirewallNatEngine;
   private readonly sessions: SessionTable;
   private readonly routes: RouteTable;
   private readonly arp: ArpService;
@@ -76,6 +81,11 @@ export class Firewall extends Equipment {
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
     });
     this.evaluator = new PolicyEvaluator({ objects: this.objects });
+    this.nat = new FirewallNatEngine({
+      objects: this.objects,
+      policy: this.natPolicy,
+      interfaceAddress: (iface) => this.interfaces.get(iface)?.ip,
+    });
 
     this.services = {
       zones: this.zones,
@@ -85,6 +95,9 @@ export class Firewall extends Equipment {
       policy: this.policy,
       evaluator: this.evaluator,
       sessions: this.sessions,
+      natPolicy: this.natPolicy,
+      nat: this.nat,
+      natOrder: { policySeesPreNatSource: true, policySeesPreNatDestination: true },
       now,
     };
 
@@ -111,6 +124,8 @@ export class Firewall extends Equipment {
   getSessionTable(): SessionTable { return this.sessions; }
   getRouteTable(): RouteTable { return this.routes; }
   getArpService(): ArpService { return this.arp; }
+  getNatPolicy(): NatPolicyStore { return this.natPolicy; }
+  getNatEngine(): FirewallNatEngine { return this.nat; }
   getPipeline(): FirewallPipeline { return this.pipeline; }
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
@@ -138,7 +153,9 @@ export class Firewall extends Equipment {
   private handleIpv4Frame(portName: string, packet: IPv4Packet): void {
     if (!packet || packet.type !== 'ipv4') return;
 
-    if (this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
+    const belongsToSession = this.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
+    if (!belongsToSession
+      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
       this.deliverLocally(portName, packet);
       return;
     }
