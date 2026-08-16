@@ -1,8 +1,10 @@
-import { subnetAddress, hostAddress, rangeAddress } from '../../model/AddressObject';
+import {
+  subnetAddress, hostAddress, rangeAddress, type AddressObject,
+} from '../../model/AddressObject';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { AsaFirewall } from './AsaFirewall';
 import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
-import { ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
+import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
 import { renderPacketTracer } from './AsaPacketTracer';
 import {
   ASA_INVALID_INPUT,
@@ -54,8 +56,50 @@ function numericFlow(
   return { protocol, sourceIP, destinationIP, sourcePort: first, destinationPort: second };
 }
 
+function natSectionTitle(section: number): string {
+  if (section === ASA_NAT_SECTIONS.manual) return 'Manual NAT Policies (Section 1)';
+  if (section === ASA_NAT_SECTIONS.auto) return 'Auto NAT Policies (Section 2)';
+  return 'Manual NAT Policies (Section 3)';
+}
+
+function addressObjectLine(object: AddressObject): string | undefined {
+  if (object.kind === 'host') return `host ${object.value}`;
+  if (object.kind === 'range') return `range ${object.value} ${object.endValue}`;
+  if (object.kind === 'subnet' && object.value && object.careMask) {
+    return `subnet ${object.value} ${object.careMask}`;
+  }
+  return undefined;
+}
+
+interface ObjectNatSpec {
+  readonly fromZone: string;
+  readonly toZone: string;
+  readonly static: boolean;
+  readonly translated?: string;
+}
+
+function parseObjectNat(tokens: string[]): ObjectNatSpec | undefined {
+  const [, pair, kind, target] = tokens;
+  if (pair === undefined || !pair.startsWith('(') || !pair.endsWith(')')) return undefined;
+  if (kind !== 'static' && kind !== 'dynamic') return undefined;
+
+  const zones = pair.slice(1, -1).split(',');
+  if (zones.length !== 2 || !zones[0] || !zones[1]) return undefined;
+
+  if (kind === 'static' && target === undefined) return undefined;
+  if (kind === 'dynamic' && target === undefined) return undefined;
+
+  return {
+    fromZone: zones[0], toZone: zones[1],
+    static: kind === 'static',
+    translated: target === 'interface' ? undefined : target,
+  };
+}
+
 export class AsaShell {
   private mode: AsaMode = 'exec';
+  private negatedLine = false;
+  private readonly objectNatLines = new Map<string, string>();
   private currentInterface?: string;
   private currentObject?: string;
   private currentGroup?: string;
@@ -90,6 +134,7 @@ export class AsaShell {
     const negated = line.startsWith('no ');
     const body = negated ? line.slice(3).trim() : line;
     const tokens = body.split(/\s+/);
+    this.negatedLine = negated;
 
     const navigated = this.navigate(tokens, negated);
     if (navigated !== null) return navigated;
@@ -190,6 +235,7 @@ export class AsaShell {
       case 'version': return this.showVersion();
       case 'running-config': return this.showRunningConfig();
       case 'access-list': return this.showAccessList();
+      case 'nat': return this.showNat();
       default: return ASA_INVALID_INPUT;
     }
   }
@@ -245,7 +291,40 @@ export class AsaShell {
     if (head === 'host') { store.addAddress(hostAddress(name, rest[0])); return ''; }
     if (head === 'subnet') { store.addAddress(subnetAddress(name, rest[0], rest[1])); return ''; }
     if (head === 'range') { store.addAddress(rangeAddress(name, rest[0], rest[1])); return ''; }
+    if (head === 'nat') return this.objectNat(name, tokens);
     return ASA_INVALID_INPUT;
+  }
+
+  private objectNat(objectName: string, tokens: string[]): string {
+    if (this.negatedLine) {
+      return this.fw.getNatPolicy().remove(objectName) ? '' : ASA_INVALID_INPUT;
+    }
+
+    const spec = parseObjectNat(tokens);
+    if (!spec) return ASA_INVALID_INPUT;
+
+    const fromPort = this.interfaceNamed(spec.fromZone);
+    const toPort = this.interfaceNamed(spec.toZone);
+    if (!fromPort || !toPort) return ASA_INVALID_INPUT;
+
+    this.fw.getNatPolicy().remove(objectName);
+    this.objectNatLines.set(objectName, tokens.join(' '));
+    this.fw.getNatPolicy().append({
+      id: objectName,
+      section: ASA_NAT_SECTIONS.auto,
+      type: spec.static ? 'static' : 'dynamic-pat',
+      fromZone: [spec.fromZone],
+      toZone: [spec.toZone],
+      originalSource: [objectName],
+      bidirectional: spec.static,
+      sourceTranslation: spec.translated === undefined
+        ? { kind: 'interface-address' }
+        : {
+          kind: spec.static ? 'static-ip' : 'dynamic-ip-and-port',
+          translatedAddress: [spec.translated],
+        },
+    });
+    return '';
   }
 
   private groupCommand(tokens: string[]): string {
@@ -364,6 +443,41 @@ export class AsaShell {
     }).join('\n');
   }
 
+  private showNat(): string {
+    const lines: string[] = [];
+    let heading: number | undefined;
+    let index = 0;
+
+    for (const rule of this.fw.getNatPolicy().ordered()) {
+      if (rule.section !== heading) {
+        heading = rule.section;
+        index = 0;
+        lines.push(`${natSectionTitle(rule.section)}:`);
+      }
+      index++;
+      lines.push(`${index} (${rule.fromZone[0]}) to (${rule.toZone[0]})`
+        + ` source ${rule.type === 'static' ? 'static' : 'dynamic'} ${rule.originalSource[0]}`
+        + ` ${rule.sourceTranslation?.translatedAddress?.[0] ?? 'interface'}`);
+      lines.push(`    translate_hits = ${rule.hitCount}, untranslate_hits = 0`);
+    }
+
+    return lines.length === 0 ? 'There are no NAT policies' : lines.join('\n');
+  }
+
+  private objectLines(): string[] {
+    const lines: string[] = [];
+    for (const object of this.fw.getObjectStore().listAddresses()) {
+      const body = addressObjectLine(object);
+      if (!body) continue;
+
+      lines.push(`object network ${object.name}`);
+      lines.push(` ${body}`);
+      const nat = this.objectNatLines.get(object.name);
+      if (nat) lines.push(` ${nat}`);
+    }
+    return lines;
+  }
+
   private showRunningConfig(): string {
     const lines: string[] = [`hostname ${this.fw.getName()}`, '!'];
 
@@ -381,6 +495,9 @@ export class AsaShell {
       if (!this.fw.getInterfaceTable().isUp(iface)) lines.push(' shutdown');
       lines.push('!');
     }
+
+    const objects = this.objectLines();
+    if (objects.length > 0) { lines.push(...objects, '!'); }
 
     for (const line of this.aclLines) {
       const keyword = line.action === 'allow' ? 'permit' : 'deny';

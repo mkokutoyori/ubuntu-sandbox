@@ -468,3 +468,64 @@ describe('FirewallNatEngine — epuisement du pool de ports', () => {
       .toBeDefined();
   });
 });
+
+describe('NatPolicyStore — les SECTIONS, et pourquoi elles ne sont pas l\'ordre de saisie', () => {
+  it('sans section declaree, l\'ordre de saisie decide', () => {
+    const store = new NatPolicyStore();
+    store.append({ id: 'A', type: 'dynamic-pat' });
+    store.append({ id: 'B', type: 'dynamic-pat' });
+
+    expect(store.ordered().map(rule => rule.id)).toEqual(['A', 'B']);
+  });
+
+  it('une section BASSE passe avant une haute, quel que soit l\'ordre de saisie', () => {
+    const store = new NatPolicyStore();
+    store.append({ id: 'AUTO', type: 'dynamic-pat', section: 2 });
+    store.append({ id: 'MANUELLE', type: 'dynamic-pat', section: 1 });
+
+    expect(store.ordered().map(rule => rule.id)).toEqual(['MANUELLE', 'AUTO']);
+  });
+
+  it('dans une MEME section, l\'ordre de saisie decide toujours', () => {
+    const store = new NatPolicyStore();
+    store.append({ id: 'A1', type: 'dynamic-pat', section: 2 });
+    store.append({ id: 'A2', type: 'dynamic-pat', section: 2 });
+    store.append({ id: 'M1', type: 'dynamic-pat', section: 1 });
+
+    expect(store.ordered().map(rule => rule.id)).toEqual(['M1', 'A1', 'A2']);
+  });
+
+  it('la numerotation rendue suit l\'ordre EVALUE, pas celui de la saisie', () => {
+    const store = new NatPolicyStore();
+    store.append({ id: 'AUTO', type: 'dynamic-pat', section: 2 });
+    store.append({ id: 'MANUELLE', type: 'dynamic-pat', section: 1 });
+
+    expect(store.byId('MANUELLE')!.seq).toBeLessThan(store.byId('AUTO')!.seq);
+  });
+
+  it('une regle sans section vaut la section par defaut', () => {
+    const store = new NatPolicyStore();
+    store.append({ id: 'SANS', type: 'dynamic-pat' });
+    store.append({ id: 'AVANT', type: 'dynamic-pat', section: -1 });
+
+    expect(store.ordered()[0].id).toBe('AVANT');
+  });
+
+  it('le moteur EVALUE dans cet ordre, ce n\'est pas qu\'un affichage', () => {
+    const { nat, store } = engine();
+    store.append({
+      id: 'AUTO', type: 'dynamic-pat', section: 2,
+      fromZone: ['trust'], toZone: ['untrust'], originalSource: ['LAN'],
+      sourceTranslation: { kind: 'static-ip', translatedAddress: ['198.51.100.1'] },
+    });
+    store.append({
+      id: 'MANUELLE', type: 'dynamic-pat', section: 1,
+      fromZone: ['trust'], toZone: ['untrust'], originalSource: ['LAN'],
+      sourceTranslation: { kind: 'interface-address' },
+    });
+
+    const result = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5'), CTX);
+
+    expect(result.matchedRuleId).toBe('MANUELLE');
+  });
+});

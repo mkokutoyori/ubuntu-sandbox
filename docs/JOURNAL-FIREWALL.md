@@ -48,11 +48,12 @@
 | 3 | `AsaShell` (grammaire CLI) | 45 | ✅ |
 | 3 | Simulation d'un paquet (socle de `packet-tracer`) | 19 | ✅ |
 | 3 | `packet-tracer` (rendu ASA) | 19 | ✅ |
+| 3 | Sections NAT (socle) + `object network … nat` (ASA) | 29 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 603 cas verts sur 22 fichiers** (729 avec les suites
-connexes). **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
+**Total actuel : 632 cas verts sur 23 fichiers.**
+**Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
 
@@ -1150,6 +1151,62 @@ L'inverse reste faux, et un cas le vérifie.
 
 ---
 
+### E25 — L'auto NAT passe après le manuel, et une statique publie vraiment
+
+`nat (inside,outside) dynamic interface` et `nat (dmz,outside) static <ip>`
+sous `object network` — la syntaxe 8.3+. Le moteur savait déjà traduire ;
+ce qui manquait était la grammaire **et une règle d'ordonnancement que la
+syntaxe seule ne donne pas**.
+
+#### La règle qu'on ne devine pas en lisant la syntaxe
+
+La documentation Cisco fixe l'ordre : **NAT manuel, puis auto NAT, puis
+auto-after** — quel que soit l'ordre de saisie. C'est le piège le plus
+connu de l'ASA : une règle objet écrite en premier ne s'applique pas en
+premier. Une implémentation qui empilerait dans l'ordre tapé donnerait la
+bonne réponse tant qu'on ne mélange pas les deux, et la mauvaise le jour
+où on les mélange — c'est-à-dire le jour où cela compte.
+
+`NatPolicyStore` porte donc une **section**, numérique et sans nom de
+constructeur (G2 interdit un branchement vendeur dans le socle) : les noms
+ASA vivent dans `ASA_NAT_SECTIONS`, côté vendeur. `ordered()` trie par
+section, l'ordre de saisie tranchant *à l'intérieur* d'une section — le tri
+de JavaScript étant stable, il n'y a rien de plus à écrire pour ça. La
+numérotation rendue suit l'ordre **évalué**, pas celui de la saisie, sans
+quoi `show nat` décrirait un ordre que le moteur n'applique pas.
+
+#### `bidirectional` était stocké et lu par PERSONNE
+
+Constat fait en relisant mon propre test : il vérifiait que le drapeau est
+**posé**. C'est exactement le défaut « accepté et inerte » que ce dépôt
+referme partout — et il portait sur ce qui EST la publication d'un serveur
+sur un ASA. Une recherche sur tout le module l'a confirmé : quatre
+occurrences, toutes des écritures, aucune lecture.
+
+Mesuré avant de corriger, par quatre cas qui font traverser du trafic :
+depuis dehors, l'adresse publiée n'était pas dé-NATée, et le paquet ne
+ressortait pas vers le serveur réel. `translateInboundBidirectional()` lit
+la règle **à l'envers** — la zone de sortie devient celle d'entrée, et
+l'adresse traduite devient le critère de correspondance sur la
+destination, ce qui est précisément la façon dont un ASA fait son un-NAT.
+
+Le témoin sortant a fait tomber un piège de laboratoire au passage : ma
+première version visait une destination **sans route**, si bien que le
+paquet s'arrêtait à `route-lookup` et n'atteignait jamais l'étape NAT — le
+cas aurait échoué pour une raison sans rapport avec ce qu'il prétend
+mesurer. Un cas de plus vérifie qu'une règle **dynamique** n'est PAS
+bidirectionnelle : sans lui, « tout dé-NATer » passerait le test principal.
+
+#### Rendu
+
+`show nat` sépare les sections par leur titre réel (`Auto NAT Policies
+(Section 2)`), et `show running-config` rend enfin les objets — lus depuis
+`ObjectStore`, pas depuis une copie tenue par le shell, seule la ligne
+`nat` étant mémorisée telle qu'elle a été tapée pour être reproduite mot
+pour mot.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1192,18 +1249,22 @@ L'inverse reste faux, et un cas le vérifie.
 | B22 | `__implicit__`, marqueur interne, rendu à l'opérateur | E24 | `IMPLICIT_RULE_ID` nommé une fois ; rendu `Implicit Rule` |
 | B23 | Mes règles NAT de test : ni le bon variant ni le bon champ, passant par un repli | E24 | Vraie forme ; `type` obligatoire, donc le typage l'attrape désormais |
 | B24 | Un `show` depuis la configuration était refusé — sur ASA il est légal sans `do` | E24 | `dispatch()` : le mode courant d'abord, repli sur l'EXEC |
+| B25 | `NatPolicyStore` n'avait aucune notion de section : l'ordre de saisie décidait seul | E25 | `section` sur la règle ; `ordered()` trie par section, saisie ensuite |
+| B26 | `bidirectional` écrit en 4 endroits, lu par aucun — la publication de serveur ne marchait pas | E25 | `translateInboundBidirectional()` lit la règle à l'envers ; 4 cas de trafic |
+| B27 | Mon propre témoin visait une destination sans route : il s'arrêtait avant l'étape mesurée | E25 | Destination routable ; le cas mesure enfin ce qu'il annonce |
 
 ## Prochaines étapes
 
 Phase 3 (ASA), reste à faire :
 
-1. NAT objet ASA : `nat (inside,outside) static …` sous `object network`,
-   et `nat (inside,outside) dynamic interface` — la syntaxe 8.3+ que le
-   moteur sait déjà exécuter et que la CLI ne sait pas encore écrire.
-2. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque)
+1. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque)
    et `show xlate`, son jumeau côté traduction.
-3. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
-   cesse d'être un `LinuxPC`.
+2. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
+   cesse d'être un `LinuxPC`. C'est ce qui rend l'ASA atteignable depuis la
+   toile, et donc réellement utilisable.
+3. NAT manuel (`nat (a,b) source static … destination static …`), qui est
+   la section 1 dont l'ordonnancement vient d'être posé — aujourd'hui elle
+   n'est remplissable que par l'API, pas par la CLI.
 
 Puis phases 4 à 15 : diagnostics et journaux, FortiOS, cadre ALG, PAN-OS
 (configuration candidate), écrans et profils, Junos (validation du contrat,

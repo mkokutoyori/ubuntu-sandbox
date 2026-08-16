@@ -105,11 +105,11 @@ export class FirewallNatEngine {
 
   translateInbound(packet: IPv4Packet, context: NatContext): NatOutcome {
     const rule = this.match(packet, context, 'destination');
-    if (!rule) return { packet };
+    if (!rule) return this.translateInboundBidirectional(packet, context);
     if (rule.noTranslation) return { packet, matchedRuleId: rule.id };
 
     const translation = rule.destinationTranslation;
-    if (!translation) return { packet, matchedRuleId: rule.id };
+    if (!translation) return this.translateInboundBidirectional(packet, context);
 
     const originalPort = getPacketDstPort(packet);
     const port = translation.translatedPort ?? originalPort;
@@ -133,6 +133,61 @@ export class FirewallNatEngine {
         translatedDestPort: port,
       }),
     };
+  }
+
+  private translateInboundBidirectional(packet: IPv4Packet, context: NatContext): NatOutcome {
+    const rule = this.matchReverse(packet, context);
+    if (!rule) return { packet };
+
+    const realAddress = rule.originalSource[0];
+    const originalDest = packet.destinationIP.toString();
+    const port = getPacketDstPort(packet);
+
+    rule.hitCount++;
+    rule.byteCount += packet.totalLength;
+    this.translationsCreated++;
+
+    return {
+      packet: rewriteDestIP(packet, this.resolveAddress(realAddress), port),
+      matchedRuleId: rule.id,
+      translation: Object.freeze({
+        natRuleId: rule.id,
+        originalSource: packet.sourceIP.toString(),
+        originalSourcePort: getPacketSrcPort(packet),
+        translatedSource: packet.sourceIP.toString(),
+        translatedSourcePort: getPacketSrcPort(packet),
+        originalDest,
+        originalDestPort: port,
+        translatedDest: this.resolveAddress(realAddress),
+        translatedDestPort: port,
+      }),
+    };
+  }
+
+  private matchReverse(packet: IPv4Packet, context: NatContext): NatRule | undefined {
+    const destination = packet.destinationIP.toString();
+
+    for (const rule of this.deps.policy.ordered()) {
+      if (!rule.enabled || !rule.bidirectional) continue;
+      if (!listMatches(rule.toZone, context.ingressZone)) continue;
+
+      const published = rule.sourceTranslation?.translatedAddress?.[0];
+      if (published === undefined) continue;
+      if (!this.addressMatches(published, destination)) continue;
+
+      this.rulesEvaluated++;
+      return rule;
+    }
+    return undefined;
+  }
+
+  private addressMatches(name: string, candidate: string): boolean {
+    if (name === candidate) return true;
+    return this.deps.objects.matchesAddress(name, candidate);
+  }
+
+  private resolveAddress(name: string): string {
+    return this.deps.objects.getAddress(name)?.value ?? name;
   }
 
   reapply(

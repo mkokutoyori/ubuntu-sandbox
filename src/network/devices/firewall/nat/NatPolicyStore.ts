@@ -13,9 +13,12 @@ export interface DestinationTranslation {
   readonly translatedPort?: number;
 }
 
+export const DEFAULT_NAT_SECTION = 0;
+
 export interface NatRule {
   readonly id: string;
   seq: number;
+  readonly section: number;
   name?: string;
   enabled: boolean;
   type: NatRuleType;
@@ -39,6 +42,7 @@ export interface NatRule {
 
 export interface NatRuleDraft {
   id: string;
+  section?: number;
   name?: string;
   enabled?: boolean;
   type: NatRuleType;
@@ -65,6 +69,7 @@ export class NatPolicyStore {
     this.rules.push({
       id: draft.id,
       seq: 0,
+      section: draft.section ?? DEFAULT_NAT_SECTION,
       name: draft.name,
       enabled: draft.enabled ?? true,
       type: draft.type,
@@ -102,6 +107,10 @@ export class NatPolicyStore {
     return Object.freeze([...this.rules]);
   }
 
+  sectionOf(id: string): number | undefined {
+    return this.byId(id)?.section;
+  }
+
   size(): number {
     return this.rules.length;
   }
@@ -111,6 +120,7 @@ export class NatPolicyStore {
   }
 
   private renumber(): void {
+    this.rules.sort((left, right) => left.section - right.section);
     this.rules.forEach((rule, index) => { rule.seq = (index + 1) * SEQ_STEP; });
   }
 }
