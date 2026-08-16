@@ -105,6 +105,7 @@ interface ExtendedOptions {
   icmpCode?: number;
   tcpEstablished?: boolean;
   tcpFlags?: string[];
+  tcpFlagsMatch?: 'any' | 'all';
   dscp?: string;
   precedence?: string;
   tos?: string;
@@ -138,6 +139,9 @@ function parseTrailingOptions(args: string[], startOffset: number, protocol: str
       continue;
     }
     if (protocol === 'tcp' && (tok === 'match-any' || tok === 'match-all')) {
+      // Le mode était perdu : `match-all` était stocké comme `match-any`,
+      // et le moteur n'évaluait de toute façon aucun des deux.
+      opts.tcpFlagsMatch = tok === 'match-all' ? 'all' : 'any';
       const flags: string[] = [];
       i++;
       while (i < args.length && !isTerminatorKeyword(args[i].toLowerCase())) {
@@ -588,7 +592,9 @@ function formatACLEntry(
     if (entry.icmpCode !== undefined) result += ` ${entry.icmpCode}`;
   }
   if (entry.tcpEstablished) result += ' established';
-  if (entry.tcpFlags && entry.tcpFlags.length) result += ' match-any ' + entry.tcpFlags.join(' ');
+  if (entry.tcpFlags && entry.tcpFlags.length) {
+    result += ` match-${entry.tcpFlagsMatch === 'all' ? 'all' : 'any'} ` + entry.tcpFlags.join(' ');
+  }
   result += formatTrailing(entry);
   return result;
 }

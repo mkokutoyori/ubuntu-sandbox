@@ -5,6 +5,7 @@ import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
 import { NATEngine } from './router/NATEngine';
+import { VRP_ACL_NUMBERING } from './router/ACLEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
@@ -33,6 +34,8 @@ export class HuaweiSwitch extends Switch {
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
+    // Même raison que sur HuaweiRouter : les plages VRP, pas celles d'IOS.
+    this.getVaclEngine().setNumberingPolicy(VRP_ACL_NUMBERING);
     this.natEngine.setDeviceId(this.id, this.getHostname());
     this.natEngine.setEventBus(this.getBus());
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {

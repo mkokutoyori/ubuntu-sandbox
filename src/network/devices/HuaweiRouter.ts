@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { VRP_ACL_NUMBERING } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
@@ -80,6 +81,10 @@ export class HuaweiRouter extends Router {
   private readonly vxlanAgent: VxlanAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
+    // VRP numérote autrement qu'IOS : 2000-2999 « basic », 3000-3999
+    // « advanced ». Sans cette pose, le moteur appliquerait les plages
+    // IOS, où 2000-2699 sont des listes ÉTENDUES.
+    this._setAclNumberingPolicy(VRP_ACL_NUMBERING);
     const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),

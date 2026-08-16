@@ -126,7 +126,7 @@ import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
-import { ACLEngine } from './router/ACLEngine';
+import { ACLEngine, type AclNumbering } from './router/ACLEngine';
 import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/CiscoSecurityConfig';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
@@ -5539,6 +5539,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   // ─── ACL Public API — delegated to ACLEngine ──────────────────
 
   getAccessLists() { return this.aclEngine.getAccessLists(); }
+  /**
+   * Quelle plage de numéros désigne quel type de liste. IOS par défaut ;
+   * les sous-classes VRP posent la leur, les deux conventions se
+   * contredisant sur 2000-2699.
+   */
+  _setAclNumberingPolicy(fn: AclNumbering) { this.aclEngine.setNumberingPolicy(fn); }
   addAccessListEntry(...args: Parameters<ACLEngine['addAccessListEntry']>) { this.aclEngine.addAccessListEntry(...args); }
   addNamedAccessListEntry(...args: Parameters<ACLEngine['addNamedAccessListEntry']>) { this.aclEngine.addNamedAccessListEntry(...args); }
   removeAccessList(id: number) { this.aclEngine.removeAccessList(id); }
