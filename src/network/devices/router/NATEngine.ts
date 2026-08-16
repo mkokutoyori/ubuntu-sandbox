@@ -1034,97 +1034,6 @@ function translateNetworkOffset(srcIP: string, entry: NatStaticEntry): string | 
   return uint32ToIp(((globalNum & mask) + offset) >>> 0);
 }
 
-function recomputeL4Checksum(result: IPv4Packet): void {
-  const payload = result.payload as (UDPPacket | TCPPacket | undefined);
-  if (!payload) return;
-  const srcIp = result.sourceIP.toString();
-  const dstIp = result.destinationIP.toString();
-  if (payload.type === 'tcp') {
-    const seg = payload as unknown as TcpSegment;
-    result.payload = { ...payload, checksum: computeTcpChecksum(seg, srcIp, dstIp) };
-  } else if (payload.type === 'udp') {
-    const udp = payload as unknown as UdpChecksumInput;
-    result.payload = { ...payload, checksum: computeUdpChecksum(udp, srcIp, dstIp) };
-  }
-}
-
-function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: number): IPv4Packet {
-  const result: IPv4Packet = { ...pkt, sourceIP: new IPAddress(newSrc), headerChecksum: 0 };
-
-  if (newSrcPort !== undefined) {
-    const payload = pkt.payload as (UDPPacket | TCPPacket | ICMPPacket);
-    if (payload && payload.type === 'udp') {
-      result.payload = { ...payload, sourcePort: newSrcPort };
-    } else if (payload && payload.type === 'tcp') {
-      result.payload = { ...payload, sourcePort: newSrcPort };
-    } else if (pkt.protocol === IP_PROTO_ICMP) {
-      const icmp = pkt.payload as ICMPPacket;
-      if (icmp && icmp.type === 'icmp') {
-        result.payload = { ...icmp, id: newSrcPort };
-      }
-    }
-  }
-
-  recomputeL4Checksum(result);
-  result.headerChecksum = computeIPv4Checksum(result);
-  return result;
-}
-
-function rewriteDestIP(pkt: IPv4Packet, newDst: string, newDstPort?: number): IPv4Packet {
-  const result: IPv4Packet = { ...pkt, destinationIP: new IPAddress(newDst), headerChecksum: 0 };
-
-  if (newDstPort !== undefined) {
-    const payload = pkt.payload as (UDPPacket | TCPPacket | ICMPPacket);
-    if (payload && payload.type === 'udp') {
-      result.payload = { ...payload, destinationPort: newDstPort };
-    } else if (payload && payload.type === 'tcp') {
-      result.payload = { ...payload, destinationPort: newDstPort };
-    } else if (pkt.protocol === IP_PROTO_ICMP) {
-      const icmp = pkt.payload as ICMPPacket;
-      if (icmp && icmp.type === 'icmp') {
-        result.payload = { ...icmp, id: newDstPort };
-      }
-    }
-  }
-
-  recomputeL4Checksum(result);
-  result.headerChecksum = computeIPv4Checksum(result);
-  return result;
-}
-
-function getPacketSrcPort(pkt: IPv4Packet): number {
-  const payload = pkt.payload as (UDPPacket | TCPPacket);
-  if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.sourcePort;
-  if (pkt.protocol === IP_PROTO_ICMP) {
-    const icmp = pkt.payload as ICMPPacket;
-    if (icmp && icmp.type === 'icmp') return icmp.id ?? 0;
-  }
-  return 0;
-}
-
-/**
- * True for the limited broadcast address (255.255.255.255) or any
- * multicast destination (224.0.0.0/4 — both link-local, 224.0.0.0/24, and
- * admin-scoped groups above it). Mirrors the same classification
- * `Router.processIPv4` uses to special-case broadcast/multicast delivery,
- * needed here too since `translateInbound` runs before that check.
- */
-function isBroadcastOrMulticastDest(ip: string): boolean {
-  if (ip === '255.255.255.255') return true;
-  const first = Number(ip.split('.', 1)[0]);
-  return first >= 224 && first <= 239;
-}
-
-function getPacketDstPort(pkt: IPv4Packet): number {
-  const payload = pkt.payload as (UDPPacket | TCPPacket);
-  if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
-  if (pkt.protocol === IP_PROTO_ICMP) {
-    const icmp = pkt.payload as ICMPPacket;
-    if (icmp && icmp.type === 'icmp') return icmp.id ?? 0;
-  }
-  return 0;
-}
-
 function makeKey(proto: number, ip: string, port: number): string {
   return `${proto}:${ip}:${port}`;
 }
@@ -1135,6 +1044,14 @@ function makeKey4(proto: number, srcIP: string, srcPort: number, dstIP: string, 
 }
 
 import type { TCPPacket as _TCP } from '../../core/types';
+import {
+  getPacketDstPort,
+  getPacketSrcPort,
+  isBroadcastOrMulticastDest,
+  recomputeL4Checksum,
+  rewriteDestIP,
+  rewriteSrcIP,
+} from '../../nat/rewrite';
 
 /** Update TCP session state based on observed flags (simplified RFC 6146 §2.1). */
 function updateTcpState(session: NatSession, pkt: IPv4Packet, _dir: 'in' | 'out'): void {

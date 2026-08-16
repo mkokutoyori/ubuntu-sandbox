@@ -38,6 +38,8 @@
 | 1 | Façade `Firewall` (équipement) | 15 | ✅ |
 | 1 | Façade `Firewall` | — | ⏳ |
 | 1 | Sonde de phase 1 (topologie réelle) | ✅ incluse | ✅ |
+| **2** | **Extraction des primitives NAT (DRY)** | 571 réf. | ✅ |
+| 2 | `FirewallNatEngine` | — | ⏳ |
 
 **Total actuel : 415 cas, verts. PHASE 1 FONCTIONNELLE.**
 
@@ -535,6 +537,56 @@ unitaires étaient verts, et le pare-feu ne faisait pas passer un ping.
 
 ---
 
+### E15 — Phase 2 : l'extraction des primitives NAT
+
+`src/network/nat/rewrite.ts` — **la seule modification de code existant que
+le BRD prévoit** (§36.4), et la seule qui exige la suite complète avant et
+après.
+
+**Référence capturée d'abord** : 557 cas verts sur 14 fichiers (8 suites
+`nat-*` plus 6 adjacentes). **Après extraction** : 571 verts sur 15 —
+identique, plus `linux-nat-redirect-output` ajouté au périmètre.
+
+**Ce qui est désormais partagé, en un seul exemplaire** :
+`recomputeL4Checksum`, `rewriteSrcIP`, `rewriteDestIP`, `getPacketSrcPort`,
+`getPacketDstPort`, `isBroadcastOrMulticastDest`, `parseNatAddress`,
+`rewriteNatAddress`.
+
+**Le doublon que `CLAUDE.md` déclarait « délibérément non unifié » est
+refermé.** `EndHost.ts` portait ses propres `parseNatAddress` /
+`rewriteNatAddress` — « même forme, moteur différent, consolidation non
+demandée ». Elle l'est maintenant. `PRD-Port-Forwarding.md` avait dû
+corriger **deux fois** le même défaut de somme de contrôle L4 (phase 1 sur
+`NATEngine`, phase 5 sur `EndHost`) : c'est précisément ce que cette fusion
+rend impossible à repayer une troisième fois.
+
+**Deux différences réelles mesurées avant de fondre**, plutôt que supposées
+équivalentes :
+
+| | `EndHost` | `NATEngine` | Retenu |
+|---|---|---|---|
+| `parseNatAddress` | `parseInt` (accepte `"80x"` → 80) | — | **`parseInt`** — la sémantique en production, pour ne rien changer en douce |
+| `rewriteNatAddress` | ne réécrit **pas** l'identifiant ICMP | le réécrit | Celle de `NATEngine`, strictement plus complète |
+
+La seconde est un élargissement de comportement, borné : la branche ICMP ne
+s'exécute que si un port est fourni, ce qu'un DNAT iptables sur ICMP ne fait
+pas. Les 571 cas le confirment.
+
+#### Défaut introduit et corrigé (B11)
+
+Mon script d'extraction n'a pas trouvé son point d'ancrage et a inséré le
+bloc d'`import` **à l'intérieur du commentaire d'en-tête** du fichier — donc
+neutralisé. Cinq cas sont tombés.
+
+**Ce que j'ai mal fait en le diagnostiquant** : mon contrôle `tsc` avait
+filtré la sortie sur un motif trop étroit et n'a rien montré, ce qui m'a
+fait croire le type-check passé. C'est la **référence verte capturée avant**
+qui a rattrapé l'erreur — exactement ce pour quoi le BRD l'exigeait. J'ai
+confirmé la responsabilité en restaurant l'original sur ce seul fichier
+(6 cas verts) avant de corriger.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -755,6 +807,7 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B8 | Requête ARP émise vers la MAC nulle au lieu de la diffusion | E14 | Destination Ethernet distinguée du champ ARP |
 | B9 | Paquet jeté pendant la résolution ARP | E14 | Cache réinterrogé après émission (livraison synchrone) |
 | B10 | Chemin rapide sans interface de sortie → retour jeté | E14 | Sortie lue sur la session, inversée pour `s2c` |
+| B11 | `import` inséré dans le commentaire d'en-tête → primitives non résolues | E15 | Placé après le dernier import réel ; rattrapé par la référence verte |
 
 ## Prochaines étapes
 

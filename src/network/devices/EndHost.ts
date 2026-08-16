@@ -98,6 +98,7 @@ import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
 import type { LldpNeighbor } from '../lldp/LldpAgent';
+import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
 
 export interface GreDecapsulator {
   handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
@@ -252,50 +253,6 @@ function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRou
 }
 
 /** `--to-destination`/`--to-source` as iptables/ip6tables accept them: a bare "ip" or "ip:port". */
-function parseNatAddress(spec: string): { ip: string; port?: number } {
-  const idx = spec.lastIndexOf(':');
-  if (idx === -1) return { ip: spec };
-  const port = parseInt(spec.slice(idx + 1), 10);
-  if (isNaN(port) || port < 1 || port > 65535) return { ip: spec };
-  return { ip: spec.slice(0, idx), port };
-}
-
-/**
- * Rewrites a packet's source or destination IP (and, when given, port) for
- * DNAT/SNAT, then recomputes the IPv4 header checksum and the TCP/UDP
- * checksum covering both addresses via the pseudo-header (RFC 793/RFC 768)
- * — fixing up only the IPv4 header leaves every real segment's checksum
- * verifying against the pre-NAT address, so the first SYN (or any UDP
- * datagram carrying a real checksum) is silently dropped as bad-checksum
- * by the receiver.
- */
-function rewriteNatAddress(pkt: IPv4Packet, target: 'src' | 'dst', ip: string, port?: number): IPv4Packet {
-  const result: IPv4Packet = target === 'src'
-    ? { ...pkt, sourceIP: new IPAddress(ip), headerChecksum: 0 }
-    : { ...pkt, destinationIP: new IPAddress(ip), headerChecksum: 0 };
-
-  if (port !== undefined) {
-    const payload = pkt.payload as (UDPPacket | TCPPacket | undefined);
-    if (payload?.type === 'udp' || payload?.type === 'tcp') {
-      result.payload = target === 'src'
-        ? { ...payload, sourcePort: port }
-        : { ...payload, destinationPort: port };
-    }
-  }
-
-  const payload = result.payload as (UDPPacket | TCPPacket | undefined);
-  const srcIp = result.sourceIP.toString();
-  const dstIp = result.destinationIP.toString();
-  if (payload?.type === 'tcp') {
-    result.payload = { ...payload, checksum: computeTcpChecksum(payload as unknown as TcpSegment, srcIp, dstIp) };
-  } else if (payload?.type === 'udp') {
-    result.payload = { ...payload, checksum: computeUdpChecksum(payload as unknown as UdpChecksumInput, srcIp, dstIp) };
-  }
-
-  result.headerChecksum = computeIPv4Checksum(result);
-  return result;
-}
-
 // ─── EndHost ───────────────────────────────────────────────────────
 
 export abstract class EndHost extends Equipment {
