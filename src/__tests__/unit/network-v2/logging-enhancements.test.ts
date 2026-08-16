@@ -214,7 +214,10 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
 
     await Promise.resolve(srv.executeCommand('enable'));
     await Promise.resolve(srv.executeCommand('configure terminal'));
-    await Promise.resolve(srv.executeCommand('access-list 100 deny tcp any any eq 22'));
+    // `log` est REQUIS : IOS n'ecrit un %SEC-*-IPACCESSLOGP que pour une ACE
+    // qui le porte. Avant le lot ACL palier 1, la ligne sortait pour tout
+    // refus, marque ou non — ce qui rendait le mot-cle sans effet.
+    await Promise.resolve(srv.executeCommand('access-list 100 deny tcp any any eq 22 log'));
     await Promise.resolve(srv.executeCommand('access-list 100 permit ip any any'));
     await Promise.resolve(srv.executeCommand('interface GigabitEthernet0/0'));
     await Promise.resolve(srv.executeCommand('ip access-group 100 in'));
@@ -224,7 +227,7 @@ describe('Logging — Cisco show logging buffers TCP/SSH events', () => {
 
     cli.getTcpStack().connect('10.0.0.2', 22);
     const out = await Promise.resolve(srv.executeCommand('show logging'));
-    expect(out).toMatch(/%SEC-4-IPACCESSLOGP:.+ACL denied inbound on GigabitEthernet0\/0/);
+    expect(out).toMatch(/%SEC-4-IPACCESSLOGP: list 100 denied tcp 10\.0\.0\.1\(\d+\) -> 10\.0\.0\.2\(22\), 1 packet/);
   });
 
   it('a Windows firewall Block rule emits a 5152 Security event', async () => {

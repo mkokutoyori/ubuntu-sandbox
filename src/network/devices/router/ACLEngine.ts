@@ -5,7 +5,8 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
-import type { IPAddress, SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
+import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
+import { IPAddress } from '../../core/types';
 import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH,
   IP_PROTO_EIGRP, IP_PROTO_OSPF,
@@ -28,32 +29,35 @@ const PRECEDENCE_KEYWORD_TO_VALUE: Record<string, number> = {
  * Les mots-clés ICMP que ce simulateur sait ÉVALUER.
  *
  * `ICMPType` ne modélise que cinq types (echo-request, echo-reply,
- * destination-unreachable, redirect, time-exceeded). Les autres mots-clés
- * qu'IOS accepte — `source-quench`, `packet-too-big`, `parameter-problem`,
- * `traceroute`, `router-advertisement/solicitation`, `mask-*`,
- * `timestamp-*`, `information-*`, `administratively-prohibited` — décrivent
- * des paquets qu'aucun équipement d'ici ne produit.
+ * destination-unreachable, redirect, time-exceeded) ; le CODE affine les
+ * variantes d'`unreachable` et de `time-exceeded`. Les mots-clés qu'IOS
+ * accepte et qui restent hors de portée — `source-quench`,
+ * `parameter-problem`, `traceroute`, `router-advertisement/solicitation`,
+ * `mask-*`, `timestamp-*`, `information-*` — décrivent des paquets
+ * qu'aucun équipement d'ici ne produit.
  *
  * Un mot-clé absent de cette table fait donc échouer la correspondance
  * (voir `aclEntryMatches`) : c'est le seul choix sûr. Le faire réussir
  * revenait à ce qu'une ACE portant un critère inconnu corresponde à TOUT
  * le trafic ICMP, donc à ouvrir la liste au lieu de la restreindre.
- *
- * Limite connue : les quatre variantes d'`unreachable` retombent sur le
- * même type faute de discrimination par code ICMP.
  */
-const ACL_ICMP_KEYWORD_TO_TYPE: Record<string, string> = {
-  'echo': 'echo-request',
-  'echo-request': 'echo-request',
-  'echo-reply': 'echo-reply',
-  'unreachable': 'destination-unreachable',
-  'host-unreachable': 'destination-unreachable',
-  'net-unreachable': 'destination-unreachable',
-  'port-unreachable': 'destination-unreachable',
-  'protocol-unreachable': 'destination-unreachable',
-  'time-exceeded': 'time-exceeded',
-  'ttl-exceeded': 'time-exceeded',
-  'redirect': 'redirect',
+const ACL_ICMP_KEYWORDS: Record<string, { type: string; code?: number }> = {
+  'echo': { type: 'echo-request' },
+  'echo-request': { type: 'echo-request' },
+  'echo-reply': { type: 'echo-reply' },
+  // `unreachable` nu couvre toutes les variantes ; les mots-clés précis
+  // se distinguent par le CODE ICMP, qui n'était pas lu — de sorte que
+  // `host-unreachable` bloquait aussi les `port-unreachable`.
+  'unreachable': { type: 'destination-unreachable' },
+  'net-unreachable': { type: 'destination-unreachable', code: 0 },
+  'host-unreachable': { type: 'destination-unreachable', code: 1 },
+  'protocol-unreachable': { type: 'destination-unreachable', code: 2 },
+  'port-unreachable': { type: 'destination-unreachable', code: 3 },
+  'packet-too-big': { type: 'destination-unreachable', code: 4 },
+  'administratively-prohibited': { type: 'destination-unreachable', code: 13 },
+  'time-exceeded': { type: 'time-exceeded' },
+  'ttl-exceeded': { type: 'time-exceeded', code: 0 },
+  'redirect': { type: 'redirect' },
 };
 
 // ─── Drapeaux TCP ───────────────────────────────────────────────
@@ -86,6 +90,32 @@ export const IOS_ACL_NUMBERING: AclNumbering = (id) =>
 /** VRP : 2000-2999 « basic » (source seule) ; 3000-3999 « advanced ». */
 export const VRP_ACL_NUMBERING: AclNumbering = (id) =>
   (id >= 2000 && id <= 2999) ? 'standard' : 'extended';
+
+// ─── Sonde « adresse source » ───────────────────────────────────
+
+/**
+ * Un paquet-sonde COMPLET, pour les questions qui ne portent que sur une
+ * adresse source : `access-class` sur une vty, `ntp access-group`,
+ * `ip nat inside source list`.
+ *
+ * Ces appelants passaient un objet ne portant que `sourceIP`, transtypé
+ * pour faire taire le vérificateur. Sur une liste ÉTENDUE, la
+ * correspondance cherchait alors la destination et lisait `.getOctets()`
+ * sur `undefined` : le routeur plantait. Une sonde bien formée supprime
+ * la cause ; les critères qu'elle ne peut pas renseigner (ports,
+ * drapeaux) ne correspondent pas, conformément à la règle d'échec.
+ */
+export function sourceProbePacket(src: IPAddress, dst?: IPAddress): IPv4Packet {
+  return {
+    type: 'ipv4',
+    version: 4, ihl: 5, tos: 0, dscp: 0, ecn: 0,
+    totalLength: 20, identification: 0, flags: 0, fragmentOffset: 0,
+    ttl: 255, protocol: IP_PROTO_TCP, headerChecksum: 0,
+    sourceIP: src,
+    destinationIP: dst ?? new IPAddress('0.0.0.0'),
+    payload: undefined,
+  } as unknown as IPv4Packet;
+}
 
 // ─── ACL Types ──────────────────────────────────────────────────
 
@@ -176,6 +206,31 @@ export interface AccessList {
   entries: ACLEntry[];
 }
 
+/** Une correspondance sur une ACE marquée `log` ou `log-input`. */
+export interface AclLogEvent {
+  /** Nom de la liste, ou son numéro à défaut. */
+  aclLabel: string;
+  action: 'permit' | 'deny';
+  entry: ACLEntry;
+  packet: IPv4Packet;
+  /** `log-input` : IOS ajoute l'interface et la MAC d'entrée. */
+  wantsInput: boolean;
+}
+
+/**
+ * Le corps d'un `%SEC-6-IPACCESSLOGP`, tel qu'IOS l'écrit :
+ * `list 100 denied tcp 10.0.0.1(1234) -> 10.0.0.2(22), 1 packet`.
+ */
+export function formatAclLogMessage(e: AclLogEvent): string {
+  const proto = e.entry.protocol && e.entry.protocol !== 'ip' ? e.entry.protocol : 'ip';
+  const l4 = e.packet.payload as Partial<UDPPacket> | undefined;
+  const sPort = typeof l4?.sourcePort === 'number' ? `(${l4.sourcePort})` : '';
+  const dPort = typeof l4?.destinationPort === 'number' ? `(${l4.destinationPort})` : '';
+  const verb = e.action === 'permit' ? 'permitted' : 'denied';
+  return `list ${e.aclLabel} ${verb} ${proto} `
+    + `${e.packet.sourceIP}${sPort} -> ${e.packet.destinationIP}${dPort}, 1 packet`;
+}
+
 /** Interface ACL binding: which ACL is applied in which direction */
 export interface InterfaceACLBinding {
   /** ACL ID (number) or name (string) */
@@ -197,6 +252,18 @@ export class ACLEngine {
    */
   private numbering: AclNumbering = IOS_ACL_NUMBERING;
   setNumberingPolicy(fn: AclNumbering): void { this.numbering = fn; }
+
+  /**
+   * Puits de journalisation des ACE marquées `log` / `log-input`.
+   *
+   * Ces deux mots-clés étaient analysés, stockés, rendus par `show` et par
+   * `running-config` — et n'émettaient rien. Une fonctionnalité qui a
+   * toute l'apparence de l'existence sauf l'effet. Le moteur signale
+   * désormais chaque correspondance marquée ; c'est l'équipement qui
+   * décide de la mise en forme et de la destination.
+   */
+  private logSink: ((e: AclLogEvent) => void) | null = null;
+  setLogSink(fn: ((e: AclLogEvent) => void) | null): void { this.logSink = fn; }
 
   getAccessLists(): AccessList[] {
     return this.accessLists.map(acl => ({
@@ -224,16 +291,20 @@ export class ACLEngine {
     ACLEngine.sortBySequence(acl);
   }
 
+  /** Rend `false` si le numéro de séquence demandé est déjà pris (IOS refuse). */
   addNamedAccessListEntry(
     name: string,
     type: 'standard' | 'extended',
     action: 'permit' | 'deny',
     opts: ACLEntryOptions,
-  ): void {
+  ): boolean {
     let acl = this.accessLists.find(a => a.name === name);
     if (!acl) {
       acl = { name, type, entries: [] };
       this.accessLists.push(acl);
+    }
+    if (opts.sequence !== undefined && acl.entries.some(e => e.sequence === opts.sequence)) {
+      return false;
     }
     const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
     acl.entries.push({
@@ -241,6 +312,7 @@ export class ACLEngine {
       matchCount: 0,
     });
     ACLEngine.sortBySequence(acl);
+    return true;
   }
 
   removeNamedACLEntryBySequence(name: string, seq: number): boolean {
@@ -288,10 +360,33 @@ export class ACLEngine {
     }
   }
 
+  /**
+   * IOS attribue au nouvel ACE « le numéro du dernier + 10 ». L'ancien
+   * calcul arrondissait au multiple de 10 suivant : après un ACE écrit en
+   * 15, IOS donne 25 et ce moteur donnait 20.
+   */
   private static nextSequence(acl: AccessList): number {
     if (acl.entries.length === 0) return 10;
     const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
-    return Math.floor(maxSeq / 10) * 10 + 10;
+    return maxSeq + 10;
+  }
+
+  /** Ce numéro de séquence est-il déjà pris ? IOS refuse les doublons. */
+  hasSequence(name: string, seq: number): boolean {
+    const acl = this.accessLists.find(a => a.name === name);
+    return !!acl && acl.entries.some(e => e.sequence === seq);
+  }
+
+  /**
+   * Crée la liste nommée si elle n'existe pas encore, sans y mettre
+   * d'entrée. `ip access-list extended FOO` doit produire une liste VIDE
+   * mais RÉELLE : sur IOS elle figure dans `running-config` dès sa
+   * création, et ce moteur ne la matérialisait qu'au premier ACE.
+   */
+  ensureNamedAccessList(name: string, type: 'standard' | 'extended'): void {
+    if (!this.accessLists.some(a => a.name === name)) {
+      this.accessLists.push({ name, type, entries: [] });
+    }
   }
 
   private static sortBySequence(acl: AccessList): void {
@@ -349,13 +444,27 @@ export class ACLEngine {
   }
 
   /** Evaluate a named/numbered ACL by name — used by IPSecEngine for crypto ACL matching. */
-  evaluateACLByName(name: string, ipPkt: IPv4Packet, now: Date = new Date()): 'permit' | 'deny' | null {
+  evaluateACLByName(
+    name: string, ipPkt: IPv4Packet, now: Date = new Date(), countMatches = true,
+  ): 'permit' | 'deny' | null {
     const ref: number | string = /^\d+$/.test(name) ? parseInt(name, 10) : name;
-    return this.evaluateACL(ref, ipPkt, now);
+    return this.evaluateACL(ref, ipPkt, now, countMatches);
   }
 
-  /** Evaluate an ACL against a packet. Returns 'permit', 'deny', or null (no ACL). */
-  evaluateACL(aclRef: number | string | null, ipPkt: IPv4Packet, now: Date = new Date()): 'permit' | 'deny' | null {
+  /**
+   * Le verdict d'une liste sur un paquet : `permit`, `deny`, ou `null`
+   * quand aucune liste ne s'applique.
+   *
+   * `countMatches` à `false` évalue SANS toucher aux compteurs. Toute
+   * évaluation les incrémentait, y compris celle du filtre d'affichage de
+   * `debug ip packet` : taper `debug ip packet 101` faisait monter les
+   * compteurs de l'ACL 101, et `show access-lists` cessait de mesurer le
+   * trafic pour mesurer l'activité de l'observateur.
+   */
+  evaluateACL(
+    aclRef: number | string | null, ipPkt: IPv4Packet,
+    now: Date = new Date(), countMatches = true,
+  ): 'permit' | 'deny' | null {
     if (aclRef === null) return null;
 
     const acl = typeof aclRef === 'number'
@@ -373,7 +482,17 @@ export class ACLEngine {
         continue; // inactive time-range → skip ACE (next-rule semantics)
       }
       if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
+        if (!countMatches) return entry.action;
         entry.matchCount++;
+        if (this.logSink && (entry.log || entry.logInput)) {
+          this.logSink({
+            aclLabel: acl.name ?? String(acl.id ?? ''),
+            action: entry.action,
+            entry,
+            packet: ipPkt,
+            wantsInput: !!entry.logInput,
+          });
+        }
         return entry.action;
       }
     }
@@ -392,6 +511,9 @@ export class ACLEngine {
    * `Ipv6AclEngine` applique déjà, et qui vaut ici aussi.
    */
   private aclEntryMatches(aclType: 'standard' | 'extended', entry: ACLEntry, ipPkt: IPv4Packet): boolean {
+    // Sans adresse source, aucune ACE ne peut se prononcer.
+    if (!ipPkt?.sourceIP) return false;
+
     // Un commentaire n'est pas une règle. Sans ce test il correspondait à
     // tout — étant stocké comme un `permit` de source `any` — et toute
     // liste commentée devenait une liste ouverte.
@@ -410,6 +532,9 @@ export class ACLEngine {
     }
 
     if (entry.dstIP && entry.dstWildcard) {
+      // Une sonde peut ne pas porter de destination. Le critère est alors
+      // intranchable — il échoue, il ne fait pas planter l'évaluation.
+      if (!ipPkt.destinationIP) return false;
       if (!this.wildcardMatch(ipPkt.destinationIP, entry.dstIP, entry.dstWildcard)) {
         return false;
       }
@@ -433,13 +558,19 @@ export class ACLEngine {
         if (!ACLEngine.tcpFlagsMatch(entry, ipPkt)) return false;
       }
 
-      if (entry.protocol === 'icmp' && entry.icmpType) {
-        const expected = ACL_ICMP_KEYWORD_TO_TYPE[entry.icmpType];
-        // Mot-clé qu'on ne sait pas traduire : critère non tranchable.
-        if (expected === undefined) return false;
+      if (entry.protocol === 'icmp' && (entry.icmpType || entry.icmpCode !== undefined)) {
         const icmp = ipPkt.payload as ICMPPacket | undefined;
-        const pktType = icmp && icmp.type === 'icmp' ? icmp.icmpType : undefined;
-        if (pktType === undefined || expected !== pktType) return false;
+        const pkt = icmp && icmp.type === 'icmp' ? icmp : undefined;
+        if (!pkt) return false;
+        if (entry.icmpType) {
+          const spec = ACL_ICMP_KEYWORDS[entry.icmpType];
+          // Mot-clé qu'on ne sait pas traduire : critère non tranchable.
+          if (spec === undefined) return false;
+          if (spec.type !== pkt.icmpType) return false;
+          if (spec.code !== undefined && pkt.code !== spec.code) return false;
+        }
+        // `deny icmp any any 3 13` — code écrit à la main par l'opérateur.
+        if (entry.icmpCode !== undefined && pkt.code !== entry.icmpCode) return false;
       }
     }
 
@@ -570,33 +701,4 @@ export class ACLEngine {
 
   /** @internal Direct access to bindings for CLI shells */
   getInterfaceACLBindingsInternal(): Map<string, InterfaceACLBinding> { return this.interfaceACLBindings; }
-}
-
-function formatPortSpecTokens(spec: PortSpec): string[] {
-  if (spec.op === 'range') return ['range', String(spec.port), String(spec.endPort ?? spec.port)];
-  return [spec.op, String(spec.port)];
-}
-
-/**
- * Render a VRP `display acl` rule line — action, protocol, source/destination
- * (with wildcard), ports, and a trailing `(N matches)` once traffic has hit
- * the entry. Shared by the router and switch shells so both surfaces show
- * the same fields the engine actually evaluates on.
- */
-export function formatHuaweiAclEntry(entry: ACLEntry, opts: { showCounts?: boolean } = {}): string {
-  const parts: string[] = [entry.action];
-  if (entry.protocol && entry.protocol !== 'ip') parts.push(entry.protocol);
-  if (entry.srcIP.toString() !== '0.0.0.0') {
-    parts.push('source', entry.srcIP.toString(), entry.srcWildcard.toString());
-  }
-  if (entry.dstIP && entry.dstWildcard && entry.dstIP.toString() !== '0.0.0.0') {
-    parts.push('destination', entry.dstIP.toString(), entry.dstWildcard.toString());
-  }
-  if (entry.srcPortSpec) parts.push('source-port', ...formatPortSpecTokens(entry.srcPortSpec));
-  if (entry.dstPortSpec) parts.push('destination-port', ...formatPortSpecTokens(entry.dstPortSpec));
-  let line = parts.join(' ');
-  if (opts.showCounts !== false && entry.matchCount > 0) {
-    line += ` (${entry.matchCount} matche${entry.matchCount === 1 ? '' : 's'})`;
-  }
-  return line;
 }

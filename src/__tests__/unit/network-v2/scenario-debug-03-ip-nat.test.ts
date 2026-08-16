@@ -76,6 +76,9 @@ describe('Scénario 3 (debug) — debug ip nat', () => {
   async function natAvecMasqueCorrect(): Promise<void> {
     await run('configure terminal');
     await run('ip access-list standard ACL-LAN-INTERNE');
+    // IOS refuse un numero de sequence deja pris (« % Duplicate sequence
+    // number. ») : corriger un masque impose de retirer l'ACE d'abord.
+    await run('no 10');
     await run('10 permit 192.168.10.0 0.0.0.255');
     await run('exit');
     await run(`ip nat inside source list ACL-LAN-INTERNE interface ${gOut} overload`);

@@ -1,16 +1,17 @@
 /**
- * AUDIT ACL CISCO — banc de preuves.
+ * AUDIT ACL CISCO — non-régression des dix-neuf constats.
  *
- * Deux blocs, deux régimes de lecture :
+ * Ce fichier a commencé comme un banc de preuves : chaque test y assoyait
+ * le comportement FAUTIF, pour que le rapport repose sur une mesure et
+ * non sur une lecture. Les dix-neuf constats ayant été corrigés, il a
+ * changé de nature — **chaque test assoit désormais le comportement
+ * JUSTE, et un échec est une régression.**
  *
- *   1. « PALIER 0 — CORRIGÉ » assoit le comportement JUSTE. Ce sont de
- *      vrais tests de non-régression : un échec est une régression.
- *
- *   2. « CONSTATS OUVERTS » assoit le comportement ACTUEL, donc fautif,
- *      des constats non encore traités (paliers 1 à 3). Un test qui
- *      PASSE = un défaut TOUJOURS PRÉSENT ; un test qui ÉCHOUE signale
- *      une correction : le déplacer vers le bloc 1 et rayer la ligne
- *      correspondante du rapport.
+ * La règle qui les unit, et qu'il faut tenir : *un critère que le moteur
+ * ne sait pas trancher fait échouer la correspondance.* Jamais réussir,
+ * jamais « sauter le critère ». Un nouveau critère d'ACE se teste dans
+ * les deux sens : il correspond quand il doit, et il ne correspond pas
+ * quand on ne peut pas le vérifier.
  *
  * Référence des identifiants F-xx : AUDIT-ACL-CISCO.md, tableau §3.
  */
@@ -44,13 +45,13 @@ function tcpPkt(src: string, dst: string, dport: number, flags?: Record<string, 
   } as unknown as IPv4Packet;
 }
 
-function icmpPkt(src: string, dst: string, icmpType: string): IPv4Packet {
+function icmpPkt(src: string, dst: string, icmpType: string, code?: number): IPv4Packet {
   return {
     version: 4, ihl: 5, dscp: 0, ecn: 0, tos: 0, totalLength: 28,
     identification: 0, flags: 0, fragmentOffset: 0, ttl: 64,
     protocol: IP_PROTO_ICMP, headerChecksum: 0,
     sourceIP: new IPAddress(src), destinationIP: new IPAddress(dst),
-    payload: { type: 'icmp', icmpType },
+    payload: { type: 'icmp', icmpType, code },
   } as unknown as IPv4Packet;
 }
 
@@ -65,7 +66,7 @@ function tcpPktSansL4(src: string, dst: string): IPv4Packet {
 }
 
 // ════════════════════════════════════════════════════════════════════
-describe('PALIER 0 — CORRIGÉ (non-régression)', () => {
+describe('ACL Cisco — non-régression des constats d\'audit', () => {
 
   it('F-01 un remark ne filtre rien : la liste garde son sens', async () => {
     const r = new CiscoRouter('R');
@@ -236,89 +237,20 @@ describe('PALIER 0 — CORRIGÉ (non-régression)', () => {
     expect(e.evaluateACL('Q', tcpPktSansL4('1.1.1.1', '2.2.2.2'))).toBe('permit');
   });
 
-  it('F-01 rayon de souffle : les VACL de commutateur héritent du correctif', () => {
-    const e = new ACLEngine();
-    e.addNamedAccessListEntry('SW', 'extended', 'permit', { protocol: 'ip', ...ANY(), remark: 'politique de port' });
-    e.addNamedAccessListEntry('SW', 'extended', 'deny', { protocol: 'ip', ...ANY() });
-    expect(e.evaluateACL('SW', tcpPkt('1.1.1.1', '2.2.2.2', 80))).toBe('deny');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════
-describe('CONSTATS OUVERTS (paliers 1 à 3)', () => {
-
-  it('F-07 [ouvert] ACL étendue + sonde source seule → TypeError', () => {
+  it('F-07 une ACL étendue en access-class ne plante plus', () => {
     const r = new CiscoRouter('R');
     r.addNamedAccessListEntry('MGMT', 'extended', 'permit', {
       protocol: 'ip',
       srcIP: new IPAddress('10.0.0.0'), srcWildcard: new SubnetMask('0.0.0.255'),
       dstIP: new IPAddress('0.0.0.0'), dstWildcard: new SubnetMask('255.255.255.255'),
     });
-    let err: unknown = null;
-    try {
-      (r as unknown as { evaluateAclPermit(a: string, s: string): boolean })
-        .evaluateAclPermit('MGMT', '10.0.0.5');
-    } catch (e) { err = e; }
-    expect(err).toBeInstanceOf(TypeError);
+    const ev = (r as unknown as { evaluateAclPermit(a: string, s: string): boolean });
+    expect(() => ev.evaluateAclPermit('MGMT', '10.0.0.5')).not.toThrow();
+    expect(ev.evaluateAclPermit('MGMT', '10.0.0.5')).toBe(true);
+    expect(ev.evaluateAclPermit('MGMT', '192.168.1.5')).toBe(false);
   });
 
-  it('F-05 [ouvert] icmpCode jamais évalué → unreachable confondus', () => {
-    const e = new ACLEngine();
-    e.addNamedAccessListEntry('Y', 'extended', 'deny', {
-      protocol: 'icmp', ...ANY(), icmpType: 'host-unreachable',
-    });
-    expect(e.evaluateACL('Y', icmpPkt('1.1.1.1', '2.2.2.2', 'destination-unreachable'))).toBe('deny');
-  });
-
-  it('F-08 [ouvert] le CLI refuse 1300-1999 et 2000-2699', async () => {
-    const r = new CiscoRouter('R');
-    const out = await cfg(r, [
-      'enable', 'configure terminal',
-      'access-list 1500 permit host 10.0.0.1',
-      'access-list 2500 permit ip any any',
-    ]);
-    expect(out[2]).toContain('Invalid');
-    expect(out[3]).toContain('Invalid');
-  });
-
-  it('F-11 [ouvert] séquence auto ≠ dernier + 10', () => {
-    const e = new ACLEngine();
-    const mk = (seq?: number) => e.addNamedAccessListEntry('S', 'standard', 'permit', {
-      sequence: seq, srcIP: new IPAddress('1.1.1.1'), srcWildcard: new SubnetMask('0.0.0.0'),
-    });
-    mk(15);
-    mk(); // IOS → 25
-    expect(e.findByName('S')!.entries.map(x => x.sequence)).toEqual([15, 20]);
-  });
-
-  it('F-12 [ouvert] numéros de séquence dupliqués acceptés', () => {
-    const e = new ACLEngine();
-    for (const a of ['permit', 'deny'] as const) {
-      e.addNamedAccessListEntry('D', 'standard', a, {
-        sequence: 10, srcIP: new IPAddress('1.1.1.1'), srcWildcard: new SubnetMask('0.0.0.0'),
-      });
-    }
-    expect(e.findByName('D')!.entries.length).toBe(2);
-  });
-
-  it('F-13 [ouvert] ACL nommée vide absente de running-config', async () => {
-    const r = new CiscoRouter('R');
-    await cfg(r, ['enable', 'configure terminal', 'ip access-list extended EMPTY', 'exit', 'exit']);
-    expect((await r.executeCommand('show running-config')).includes('EMPTY')).toBe(false);
-  });
-
-  it('F-14 [ouvert] "no permit ..." non géré', async () => {
-    const r = new CiscoRouter('R');
-    await cfg(r, [
-      'enable', 'configure terminal',
-      'ip access-list extended T',
-      'permit tcp any any eq 80',
-      'no permit tcp any any eq 80',
-    ]);
-    expect(r.getAccessLists().find(a => a.name === 'T')?.entries.length).toBe(1);
-  });
-
-  it('F-15 [ouvert] re-entrer ipv6 access-list efface les règles', async () => {
+  it('F-15 ré-entrer dans une ACL IPv6 l\'ouvre en ajout', async () => {
     const r = new CiscoRouter('R');
     await cfg(r, [
       'enable', 'configure terminal',
@@ -326,32 +258,167 @@ describe('CONSTATS OUVERTS (paliers 1 à 3)', () => {
     ]);
     expect(r.getIpv6AccessLists().find(a => a.name === 'V6')!.entries.length).toBe(2);
     await cfg(r, ['ipv6 access-list V6']);
-    expect(r.getIpv6AccessLists().find(a => a.name === 'V6')!.entries.length).toBe(0);
+    expect(r.getIpv6AccessLists().find(a => a.name === 'V6')!.entries.length).toBe(2);
+    // et l'ajout se poursuit à la suite
+    await cfg(r, ['deny tcp any any']);
+    expect(r.getIpv6AccessLists().find(a => a.name === 'V6')!.entries.length).toBe(3);
   });
 
-  it('F-16 [ouvert] jetons inconnus avalés en silence', async () => {
+  it('F-16 un jeton inconnu est refusé, et rien n\'est enregistré', async () => {
     const r = new CiscoRouter('R');
     const out = await cfg(r, [
       'enable', 'configure terminal',
       'ip access-list extended TYPO',
       'permit tcp any any eq 80 estalbished',
     ]);
-    expect(out[3]).toBe('');
+    expect(out[3]).toContain('Invalid input');
+    // La liste existe (creee a l'entree en mode, cf. F-13) mais l'ACE
+    // fautive n'y a PAS ete enregistree.
+    expect(r.getAccessLists().find(a => a.name === 'TYPO')?.entries.length).toBe(0);
   });
 
-  it('F-17 [ouvert] log / log-input n\'émettent jamais rien', async () => {
+  it('F-16 une ACE correcte reste acceptée', async () => {
+    const r = new CiscoRouter('R');
+    const out = await cfg(r, [
+      'enable', 'configure terminal',
+      'ip access-list extended OK',
+      'permit tcp any any eq 80 established log',
+      'deny icmp any any echo log-input',
+    ]);
+    expect(out[3]).toBe('');
+    expect(out[4]).toBe('');
+    expect(r.getAccessLists().find(a => a.name === 'OK')?.entries.length).toBe(2);
+  });
+
+  it('F-05 le code ICMP distingue enfin les variantes d\'unreachable', () => {
+    const e = new ACLEngine();
+    e.addNamedAccessListEntry('Y', 'extended', 'deny', {
+      protocol: 'icmp', ...ANY(), icmpType: 'host-unreachable',
+    });
+    e.addNamedAccessListEntry('Y', 'extended', 'permit', { protocol: 'ip', ...ANY() });
+    // code 1 = host-unreachable -> refuse
+    expect(e.evaluateACL('Y', icmpPkt('1.1.1.1', '2.2.2.2', 'destination-unreachable', 1))).toBe('deny');
+    // code 3 = port-unreachable -> ne correspond plus
+    expect(e.evaluateACL('Y', icmpPkt('1.1.1.1', '2.2.2.2', 'destination-unreachable', 3))).toBe('permit');
+  });
+
+  it('F-05 `unreachable` nu couvre toujours toutes les variantes', () => {
+    const e = new ACLEngine();
+    e.addNamedAccessListEntry('U', 'extended', 'deny', {
+      protocol: 'icmp', ...ANY(), icmpType: 'unreachable',
+    });
+    for (const code of [0, 1, 3, 13]) {
+      expect(e.evaluateACL('U', icmpPkt('1.1.1.1', '2.2.2.2', 'destination-unreachable', code))).toBe('deny');
+    }
+  });
+
+  it('F-08 les quatre plages IOS sont acceptees, et le message dit vrai', async () => {
+    const r = new CiscoRouter('R');
+    const out = await cfg(r, [
+      'enable', 'configure terminal',
+      'access-list 1500 permit host 10.0.0.1',
+      'access-list 2500 permit ip any any',
+      'access-list 3000 permit ip any any',
+    ]);
+    expect(out[2]).toBe('');
+    expect(out[3]).toBe('');
+    expect(r.getAccessLists().find(a => a.id === 1500)?.type).toBe('standard');
+    expect(r.getAccessLists().find(a => a.id === 2500)?.type).toBe('extended');
+    expect(out[4]).toContain('1-99, 100-199, 1300-1999, 2000-2699');
+  });
+
+  it('F-11 la sequence auto est « dernier + 10 », comme IOS', () => {
+    const e = new ACLEngine();
+    const mk = (seq?: number) => e.addNamedAccessListEntry('S', 'standard', 'permit', {
+      sequence: seq, srcIP: new IPAddress('1.1.1.1'), srcWildcard: new SubnetMask('0.0.0.0'),
+    });
+    mk(15); mk();
+    expect(e.findByName('S')!.entries.map(x => x.sequence)).toEqual([15, 25]);
+  });
+
+  it('F-12 un numero de sequence deja pris est refuse', async () => {
+    const r = new CiscoRouter('R');
+    const out = await cfg(r, [
+      'enable', 'configure terminal',
+      'ip access-list extended D',
+      'sequence 10 permit ip any any',
+      'sequence 10 deny ip any any',
+    ]);
+    expect(out[4]).toContain('Duplicate sequence number');
+    expect(r.getAccessLists().find(a => a.name === 'D')?.entries.length).toBe(1);
+  });
+
+  it('F-13 une ACL nommee vide figure dans running-config', async () => {
+    const r = new CiscoRouter('R');
+    await cfg(r, ['enable', 'configure terminal', 'ip access-list extended EMPTY', 'exit', 'exit']);
+    expect(await r.executeCommand('show running-config')).toContain('ip access-list extended EMPTY');
+  });
+
+  it('F-19 le show d\'une ACL standard rend l\'IP nue', async () => {
+    const r = new CiscoRouter('R');
+    await cfg(r, ['enable', 'configure terminal', 'access-list 1 permit host 10.0.0.1', 'exit']);
+    const show = await r.executeCommand('show access-lists');
+    expect(show).toContain('permit 10.0.0.1');
+    expect(show).not.toContain('host 10.0.0.1');
+  });
+
+  it('F-17 `log` emet un IPACCESSLOGP, et son absence n\'emet rien', async () => {
+    const mk = async (ace: string) => {
+      const r = new CiscoRouter('R');
+      await cfg(r, [
+        'enable', 'configure terminal',
+        `access-list 100 ${ace}`,
+        'logging buffered 8000 debugging', 'end',
+      ]);
+      r.evaluateACLByName('100', tcpPkt('10.0.0.1', '10.0.0.2', 22));
+      return r.executeCommand('show logging');
+    };
+    expect(await mk('deny tcp any any eq 22 log')).toMatch(/IPACCESSLOGP: list 100 denied tcp/);
+    expect(await mk('deny tcp any any eq 22')).not.toContain('IPACCESSLOGP');
+  });
+
+  it('F-14 "no permit ..." supprime l\'ACE decrite', async () => {
+    const r = new CiscoRouter('R');
+    const out = await cfg(r, [
+      'enable', 'configure terminal',
+      'ip access-list extended T',
+      'permit tcp any any eq 80',
+      'permit tcp any any eq 443',
+      'no permit tcp any any eq 80',
+    ]);
+    expect(out[5]).toBe('');
+    const acl = r.getAccessLists().find(a => a.name === 'T')!;
+    expect(acl.entries.length).toBe(1);
+    expect(acl.entries[0].dstPortSpec?.port).toBe(443);
+  });
+
+  it('F-14 supprimer une ACE absente le dit, au lieu de "Incomplete"', async () => {
+    const r = new CiscoRouter('R');
+    const out = await cfg(r, [
+      'enable', 'configure terminal',
+      'ip access-list extended T',
+      'permit tcp any any eq 80',
+      'no permit udp any any eq 53',
+    ]);
+    expect(out[4]).toContain('does not exist');
+    expect(r.getAccessLists().find(a => a.name === 'T')?.entries.length).toBe(1);
+  });
+
+  it('F-14 la suppression par numero de sequence marche toujours', async () => {
     const r = new CiscoRouter('R');
     await cfg(r, [
       'enable', 'configure terminal',
-      'ip access-list extended L', 'deny ip any any log', 'exit', 'exit',
+      'ip access-list standard S',
+      'permit host 10.0.0.1',
+      'no 10',
     ]);
-    // le mot-clé survit à l'affichage — c'est tout ce qu'il fait
-    expect(await r.executeCommand('show access-lists')).toContain('log');
+    expect(r.getAccessLists().find(a => a.name === 'S')?.entries.length).toBe(0);
   });
 
-  it('F-19 [ouvert] ACL standard affiche "host X" au lieu de l\'IP nue', async () => {
-    const r = new CiscoRouter('R');
-    await cfg(r, ['enable', 'configure terminal', 'access-list 1 permit host 10.0.0.1', 'exit']);
-    expect(await r.executeCommand('show access-lists')).toContain('host 10.0.0.1');
+  it('F-01 rayon de souffle : les VACL de commutateur héritent du correctif', () => {
+    const e = new ACLEngine();
+    e.addNamedAccessListEntry('SW', 'extended', 'permit', { protocol: 'ip', ...ANY(), remark: 'politique de port' });
+    e.addNamedAccessListEntry('SW', 'extended', 'deny', { protocol: 'ip', ...ANY() });
+    expect(e.evaluateACL('SW', tcpPkt('1.1.1.1', '2.2.2.2', 80))).toBe('deny');
   });
 });

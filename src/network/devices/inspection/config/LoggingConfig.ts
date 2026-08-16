@@ -1335,10 +1335,15 @@ export class LoggingConfig {
       if (!once.firstSight(e)) return;
       const p = e.payload as unknown as { source: string; level: string; event: string; message: string };
       if (p.source !== deviceId) return;
-      if (p.event.startsWith('router:acl-deny')) {
+      // IOS n'ecrit un `%SEC-*-IPACCESSLOGP` que si l'ACE porte `log` ou
+      // `log-input` ; un refus non marque ne journalise rien. L'ancien
+      // mappage se declenchait sur TOUT refus, ce qui rendait le mot-cle
+      // `log` sans effet observable : marque ou non, la ligne sortait.
+      if (p.event === 'router:acl-log') {
         this.append('warnings', 'sec', p.message, true, 'IPACCESSLOGP');
         return;
       }
+      if (p.event.startsWith('router:acl-deny')) return;
       if (p.event === 'cdp:native-vlan-mismatch') return;
       const mnemonic = mnemonicFromEvent(p.event);
       if (!mnemonic) return;

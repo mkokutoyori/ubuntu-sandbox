@@ -445,7 +445,7 @@
 <div class="wrap">
 
   <header class="masthead">
-    <p class="eyebrow">Audit de sécurité · Ubuntu Sandbox</p>
+    <p class="eyebrow">Audit de sécurité · Ubuntu Sandbox · corrigé</p>
     <h1>Le filtre ouvert</h1>
     <p class="standfirst">
       L'implémentation des listes de contrôle d'accès Cisco de ce simulateur
@@ -461,39 +461,40 @@
   </header>
 
   <div class="status">
-    <span class="tag">Palier 0 corrigé · 16 août 2026</span>
+    <span class="tag">Les dix-neuf constats corrigés · 16 août 2026</span>
     <p>
-      Les <strong>sept constats qui ouvraient le filtre</strong> — F-01, F-02, F-03,
-      F-04, F-06, F-09, F-10 — sont traités, ainsi que F-18 par effet de bord.
-      Une <strong>règle d'échec</strong> unique a été posée et documentée en tête de la
-      fonction de correspondance&nbsp;: <em>un critère que le moteur ne sait pas trancher
-      fait échouer la correspondance — jamais réussir, jamais «&nbsp;sauter le critère&nbsp;».</em>
+      Paliers 0 à 3 traités. Pas dix-neuf rustines&nbsp;: <strong>une règle</strong> —
+      <em>un critère que le moteur ne sait pas trancher fait échouer la correspondance</em>,
+      jamais réussir, jamais «&nbsp;sauter le critère&nbsp;». Les sept défauts d'ouverture en
+      découlaient tous. Elle est désormais écrite dans <code>CLAUDE.md</code>, et non plus
+      seulement dans un commentaire — c'est ce qui empêche le prochain critère d'ACE de
+      rouvrir la liste.
     </p>
     <p>
-      <strong>Onze constats restent ouverts</strong>, dont le plantage <code>TypeError</code>
-      sur VTY/NTP/NAT (F-07) et la perte de configuration IPv6 (F-15).
       Le corps du rapport ci-dessous décrit l'état <strong>au moment de l'audit</strong>&nbsp;;
-      il est conservé tel quel comme constat daté. La colonne «&nbsp;État&nbsp;» du tableau
-      et la section Remédiation donnent la situation à jour.
+      il est conservé tel quel comme constat daté, parce qu'un audit réécrit après coup ne
+      vaut plus rien. Le banc de preuves, lui, a changé de nature avec le code&nbsp;: il
+      assoyait le comportement fautif, il assoit désormais le comportement juste —
+      <strong>33 tests de non-régression</strong>, plus aucune sonde de défaut ouvert.
     </p>
   </div>
 
   <div class="scoreboard">
-    <div class="score is-crit">
+    <div class="score is-ok">
       <span class="n">19</span>
-      <span class="l">constats, chacun adossé à un test exécutable</span>
+      <span class="l">constats — tous corrigés, paliers 0 à 3</span>
     </div>
     <div class="score is-ok">
-      <span class="n">8</span>
-      <span class="l">corrigés — dont les 7 qui inversaient la règle écrite</span>
-    </div>
-    <div class="score is-high">
-      <span class="n">11</span>
-      <span class="l">encore ouverts, paliers 1 à 3</span>
+      <span class="n">7</span>
+      <span class="l">chemins qui inversaient la règle écrite, refermés</span>
     </div>
     <div class="score is-flat">
-      <span class="n">83</span>
-      <span class="l">tests ACL au vert qui n'en détectaient aucun</span>
+      <span class="n">33</span>
+      <span class="l">tests de non-régression, là où il n'y en avait aucun</span>
+    </div>
+    <div class="score is-flat">
+      <span class="n">1</span>
+      <span class="l">règle d'échec, écrite — la racine des sept</span>
     </div>
   </div>
 
@@ -614,18 +615,18 @@
           <tr class="fixed"><td class="id">F-04</td><td class="desc">Mot-clé ICMP inconnu → critère abandonné en silence</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
           <tr class="fixed"><td class="id">F-06</td><td class="desc">Mot-clé DSCP / precedence inconnu → critère abandonné</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
           <tr class="fixed"><td class="id">F-10</td><td class="desc">Charge utile L4 absente → critères de port ignorés</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
-          <tr><td class="id">F-07</td><td class="desc">ACL étendue + sonde source seule → <code>TypeError</code>, routeur planté</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-15</td><td class="desc">Re-entrer <code>ipv6 access-list NOM</code> efface toutes les règles</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-05</td><td class="desc"><code>icmpCode</code> jamais évalué → tous les <em>unreachable</em> confondus</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-08</td><td class="desc">CLI refuse 1300–1999 et 2000–2699, pourtant valides sur IOS</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-11</td><td class="desc">Séquence auto = <code>floor(max/10)*10+10</code> au lieu de <code>max+10</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-12</td><td class="desc">Numéros de séquence dupliqués acceptés en silence</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-13</td><td class="desc">ACL nommée vide absente de <code>running-config</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-14</td><td class="desc"><code>no permit &lt;ace&gt;</code> non géré, erreur trompeuse</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-16</td><td class="desc">Jetons inconnus avalés en silence — aucun <code>% Invalid input</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="open">⬜ ouvert</span></td></tr>
-          <tr><td class="id">F-17</td><td class="desc"><code>log</code> / <code>log-input</code> analysés, affichés, n'émettent jamais rien</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="open">⬜ ouvert</span></td></tr>
+          <tr class="fixed"><td class="id">F-07</td><td class="desc">ACL étendue + sonde source seule → <code>TypeError</code>, routeur planté</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-15</td><td class="desc">Re-entrer <code>ipv6 access-list NOM</code> efface toutes les règles</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-05</td><td class="desc"><code>icmpCode</code> jamais évalué → tous les <em>unreachable</em> confondus</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-08</td><td class="desc">CLI refuse 1300–1999 et 2000–2699, pourtant valides sur IOS</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-11</td><td class="desc">Séquence auto = <code>floor(max/10)*10+10</code> au lieu de <code>max+10</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-12</td><td class="desc">Numéros de séquence dupliqués acceptés en silence</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-13</td><td class="desc">ACL nommée vide absente de <code>running-config</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-14</td><td class="desc"><code>no permit &lt;ace&gt;</code> non géré, erreur trompeuse</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-16</td><td class="desc">Jetons inconnus avalés en silence — aucun <code>% Invalid input</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-17</td><td class="desc"><code>log</code> / <code>log-input</code> analysés, affichés, n'émettent jamais rien</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
           <tr class="fixed"><td class="id">F-18</td><td class="desc"><code>remark</code> porte un compteur et affiche <code>(N matches)</code></td><td><span class="sev low">Faible</span></td><td class="nat">Forme</td><td><span class="done">✅ corrigé</span></td></tr>
-          <tr><td class="id">F-19</td><td class="desc">Affichage ACL standard&nbsp;: <code>host X</code> au lieu de l'IP nue</td><td><span class="sev low">Faible</span></td><td class="nat">Forme</td><td><span class="open">⬜ ouvert</span></td></tr>
+          <tr class="fixed"><td class="id">F-19</td><td class="desc">Affichage ACL standard&nbsp;: <code>host X</code> au lieu de l'IP nue</td><td><span class="sev low">Faible</span></td><td class="nat">Forme</td><td><span class="done">✅ corrigé</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -902,40 +903,42 @@ evaluateAclPermit(acl: string, srcIp: string): boolean {
       </p>
     </div>
 
-    <div class="tier">
+    <div class="tier" style="border-left:4px solid var(--ok)">
       <div class="h">
-        <span class="num">Palier 1</span>
-        <span class="when">court terme</span>
+        <span class="num" style="background:var(--ok)">Palier 1 · fait</span>
+        <span class="when">plantage, perte de données, silence</span>
       </div>
       <ol start="6">
-        <li><strong>F-07</strong> — sonde complète pour VTY/NTP/NAT&nbsp;; supprimer <code>as never</code> et <code>as any</code>, puis réparer ce que le typage révélera.</li>
-        <li><strong>F-15</strong> — ré-entrée en ajout, jamais en écrasement.</li>
-        <li><strong>F-16</strong> — <code>% Invalid input detected</code> sur tout jeton inconnu. <strong>À faire avant les paliers suivants</strong>&nbsp;: sans cela, aucune correction ne sera visible pour l'utilisateur qui se trompe.</li>
-        <li><strong>F-17</strong> — journaliser sur <code>log</code>/<code>log-input</code>, ou retirer les mots-clés du CLI.</li>
+        <li><strong>F-07</strong> — une sonde COMPLÈTE (<code>sourceProbePacket</code>) remplace l'objet source-seul de VTY / NTP / NAT, et les <code>as never</code> / <code>as any</code> qui faisaient taire le vérificateur sont retirés. Le moteur traite en outre un champ manquant comme un critère intranchable&nbsp;: il échoue, il ne plante plus.</li>
+        <li><strong>F-15</strong> — ré-entrer dans une ACL IPv6 l'ouvre en ajout. Le détour par une entrée bidon suivie d'un effacement a disparu avec la fonction qui le portait.</li>
+        <li><strong>F-16</strong> — tout jeton inconnu rend <code>% Invalid input detected at '^' marker.</code> et <strong>rien n'est enregistré</strong>.</li>
+        <li><strong>F-17</strong> — <code>log</code> émet un vrai <code>%SEC-4-IPACCESSLOGP: list 100 denied tcp …</code>. Le mappage syslog est corrigé au passage&nbsp;: IOS ne journalise <em>que</em> les ACE marquées, là où toute ACE refusée produisait la ligne — ce qui privait précisément <code>log</code> de tout effet observable.</li>
       </ol>
     </div>
 
-    <div class="tier">
+    <div class="tier" style="border-left:4px solid var(--ok)">
       <div class="h">
-        <span class="num">Palier 2</span>
+        <span class="num" style="background:var(--ok)">Palier 2 · fait</span>
         <span class="when">fidélité IOS</span>
       </div>
       <ol start="10">
-        <li>F-05, F-08, F-11, F-12, F-13, F-14, F-18, F-19.</li>
+        <li><strong>F-05</strong> — le code ICMP discrimine enfin les variantes&nbsp;: <code>host-unreachable</code> ne bloque plus les <code>port-unreachable</code>.</li>
+        <li><strong>F-08</strong> — les quatre plages IOS acceptées, et le message d'erreur les énonce exactement au lieu d'affirmer une règle fausse.</li>
+        <li><strong>F-11, F-12, F-13, F-14, F-19</strong> — séquence auto en «&nbsp;dernier + 10&nbsp;», doublon refusé, liste vide visible dans <code>running-config</code>, <code>no permit &lt;ace&gt;</code> par texte, IP nue à l'affichage.</li>
       </ol>
     </div>
 
-    <div class="tier">
+    <div class="tier" style="border-left:4px solid var(--ok)">
       <div class="h">
-        <span class="num">Palier 3</span>
-        <span class="when">structure · le seul qui empêche la récidive</span>
+        <span class="num" style="background:var(--ok)">Palier 3 · fait</span>
+        <span class="when">la racine — ce qui empêche la récidive</span>
       </div>
-      <ol start="11">
-        <li><strong>Écrire la règle d'échec</strong> dans <code>CLAUDE.md</code>&nbsp;: <em>tout critère ACL non évaluable fait échouer la correspondance.</em> Sans règle écrite, F-01 reviendra sous un autre nom.</li>
-        <li><strong>Séparer moteur et politique vendeur</strong>&nbsp;; sortir <code>formatHuaweiAclEntry</code> du moteur.</li>
-        <li><strong>Supprimer le code mort</strong> et <strong>réactiver <code>no-unused-vars</code></strong> au moins sur <code>src/network/**</code> — c'est le détecteur automatique des champs-façades.</li>
-        <li><strong>Étendre le seuil de couverture</strong> au moteur ACL.</li>
-        <li><strong>Convertir le banc de preuves en suite de non-régression</strong>&nbsp;: chaque test inversé devient la garantie que le défaut ne revient pas.</li>
+      <ol start="13">
+        <li><strong>La règle d'échec est écrite dans <code>CLAUDE.md</code></strong>, pas seulement dans un commentaire — avec sa conséquence&nbsp;: <em>ne jamais stocker un critère qu'on n'évalue pas ; l'appliquer, ou le refuser à l'analyse.</em></li>
+        <li><strong>Moteur et présentation vendeur séparés</strong>&nbsp;: <code>formatHuaweiAclEntry</code> quitte le moteur, et la numérotation devient une politique injectée.</li>
+        <li><strong>Code mort supprimé</strong> — dont la boucle de 99 tours — et l'affirmation fausse de <code>CLAUDE.md</code> sur <code>no-unused-vars</code> rectifiée.</li>
+        <li><strong>Le moteur ACL passe sous seuil de couverture</strong>, lui qui n'y était soumis par aucun.</li>
+        <li><strong>Compteurs dépollués</strong>&nbsp;: <code>debug ip packet</code> observe sans compter. <code>show access-lists</code> remesure le trafic, pas l'observateur.</li>
       </ol>
     </div>
   </section>
@@ -972,28 +975,33 @@ evaluateAclPermit(acl: string, srcIp: string): boolean {
     <h3 style="margin:38px 0 14px">Suite donnée — 16 août 2026</h3>
     <div class="col">
       <p>
-        Le palier 0 est traité. Les sept chemins qui inversaient la règle écrite sont
-        fermés, et la règle d'échec est posée noir sur blanc en tête de la fonction de
-        correspondance. Une liste commentée filtre à nouveau, <code>match-all</code> veut
-        dire <code>match-all</code>, et le moteur ne devine plus la convention de
-        numérotation d'un vendeur.
+        Les dix-neuf constats sont corrigés, paliers 0 à 3 compris.
       </p>
       <p>
-        <strong>Ce que cela ne règle pas.</strong> Onze constats restent ouverts, dont deux
-        sérieux&nbsp;: le plantage <code>TypeError</code> sur toute ACL étendue évaluée par
-        VTY, NTP ou NAT (F-07), et la perte silencieuse de configuration à la ré-entrée dans
-        une ACL IPv6 (F-15). Et <strong>F-16 reste le multiplicateur</strong>&nbsp;: tant
-        qu'un jeton inconnu est avalé sans un mot, une faute de frappe continue de produire
-        une ACE silencieusement différente de ce qui a été tapé — un correctif de sémantique
-        ne protège pas contre une commande mal lue.
+        <strong>Ce qui a réellement changé.</strong> Pas dix-neuf rustines&nbsp;: une règle.
+        <em>Un critère que le moteur ne sait pas trancher fait échouer la correspondance</em> —
+        jamais réussir, jamais «&nbsp;sauter le critère&nbsp;». Les sept défauts d'ouverture en
+        découlaient tous, et c'est cette règle, désormais écrite dans <code>CLAUDE.md</code>
+        et non plus seulement dans un commentaire, qui empêche le prochain critère d'ACE de
+        rouvrir la liste. Sa conséquence est écrite avec elle&nbsp;: <strong>ne jamais stocker
+        un critère qu'on n'évalue pas</strong> — l'appliquer, ou le refuser à l'analyse.
       </p>
       <p>
-        <strong>Ce qui reste le vrai risque.</strong> Le défaut racine est structurel, pas
-        ponctuel. La règle d'échec vit aujourd'hui dans un commentaire de
-        <code>ACLEngine.ts</code> — soit exactement la situation qui prévalait dans
-        <code>Ipv6AclEngine.ts</code> avant cet audit, et qui n'a pas empêché le moteur v4 de
-        faire quatre fois le choix inverse. Tant que la règle n'est pas promue en convention
-        de projet, rien ne garantit que le prochain critère ajouté à une ACE échouera fermé.
+        <strong>Ce que l'audit a corrigé de lui-même.</strong> Deux affirmations du rapport
+        initial étaient fausses, et ont été rectifiées en place plutôt qu'effacées.
+        <code>no-unused-vars</code> n'est <em>pas</em> désactivé&nbsp;: la règle tourne, elle
+        signalait nommément le code mort trouvé ici, et elle était ignorée — un constat plus
+        dur que celui d'un outil éteint. Et la correction des doublons de séquence a cassé un
+        scénario de test qui supposait qu'un numéro réutilisé <em>remplace</em> l'entrée&nbsp;;
+        vérification faite, IOS refuse en IPv4 et n'accepte le remplacement qu'en IPv6 — le
+        scénario a été aligné sur IOS, pas l'inverse.
+      </p>
+      <p>
+        <strong>Ce qui reste vrai.</strong> Le dispositif de test garde son angle mort
+        d'origine&nbsp;: 83 tests ACL verts n'avaient vu aucun des dix-neuf défauts, faute de
+        sonder les cas dégradés. Les 33 tests du banc ne le comblent que pour les défauts
+        connus. La discipline qui manquait n'était pas l'écriture de tests, mais l'habitude
+        de tester <strong>ce qui cède</strong> plutôt que ce qui marche.
       </p>
     </div>
   </section>
@@ -1001,12 +1009,11 @@ evaluateAclPermit(acl: string, srcIp: string): boolean {
   <footer>
     <p style="margin:0 0 10px">
       <strong>Reproduction —</strong> <code>npx vitest run src/__tests__/audit/</code><br>
-      28 tests, en deux blocs qui ne se lisent pas de la même façon.
-      <em>PALIER 0 — CORRIGÉ</em> (17 tests) assoit le comportement <strong>juste</strong>&nbsp;:
-      un échec y est une régression.
-      <em>CONSTATS OUVERTS</em> (11 sondes) assoit le comportement <strong>actuel</strong>, donc
-      fautif&nbsp;: un test qui <em>passe</em> est un défaut toujours présent, un test qui
-      <em>échoue</em> signale une correction.
+      33 tests. Le fichier a commencé comme un banc de preuves — chaque test y assoyait le
+      comportement <strong>fautif</strong>, pour que le rapport repose sur une mesure et non
+      sur une lecture. Les dix-neuf constats corrigés, il a changé de nature&nbsp;: chaque
+      test assoit désormais le comportement <strong>juste</strong>, et un échec est une
+      régression.
     </p>
     <p style="margin:0">
       Comportement IOS de référence vérifié sur la documentation Cisco&nbsp;:

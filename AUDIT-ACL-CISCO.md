@@ -9,18 +9,20 @@
 
 ## 0. État des corrections
 
-> **Palier 0 corrigé le 16 août 2026.** Les sept constats qui ouvraient le
-> filtre — F-01, F-02, F-03, F-04, F-06, F-09, F-10 — sont traités, ainsi que
-> F-18 par effet de bord. **Les onze constats restants (paliers 1 à 3) sont
-> ouverts.**
+> **Les dix-neuf constats sont corrigés.** Paliers 0 à 3 traités les 16 août 2026.
 >
 > Le corps du rapport ci-dessous décrit l'état **au moment de l'audit**, non
-> l'état courant : il est conservé tel quel comme constat daté. La colonne
-> « État » du tableau §3 et le §11 donnent la situation à jour.
+> l'état courant : il est conservé tel quel comme constat daté, parce qu'un
+> audit réécrit après coup ne vaut plus rien. La colonne « État » du tableau §3
+> et le §11 donnent la situation à jour.
 >
-> Le banc de preuves a suivi : il compte désormais **17 tests de non-régression**
-> qui assoient le comportement juste, et **11 sondes** qui assoient les défauts
-> encore présents.
+> Le banc de preuves a changé de nature avec le code. Il assoyait le
+> comportement fautif ; il assoit désormais le comportement juste —
+> **33 tests de non-régression**, et plus aucune sonde de défaut ouvert.
+>
+> ```bash
+> npx vitest run src/__tests__/audit/     # 33 passed
+> ```
 
 ---
 
@@ -108,18 +110,18 @@ Les comportements IOS de référence ont été vérifiés sur la documentation C
 | F-04 | Mot-clé ICMP inconnu → critère **abandonné en silence** (ouverture) | 🔴 Bloquant | Fond | **✅ corrigé** |
 | F-06 | Mot-clé DSCP/precedence inconnu → critère **abandonné** (ouverture) | 🔴 Bloquant | Fond | **✅ corrigé** |
 | F-10 | Charge utile L4 absente → critères de port **ignorés** (ouverture) | 🔴 Bloquant | Fond | **✅ corrigé** |
-| F-07 | ACL étendue + sonde source seule → **`TypeError`, routeur planté** | 🟠 Haut | Fond | ⬜ ouvert |
-| F-15 | Re-entrer `ipv6 access-list NOM` **efface toutes les règles** | 🟠 Haut | Fond | ⬜ ouvert |
-| F-05 | `icmpCode` jamais évalué → tous les *unreachable* confondus | 🟡 Moyen | Fond | ⬜ ouvert |
-| F-08 | CLI refuse 1300–1999 et 2000–2699, **pourtant valides sur IOS** | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-11 | Séquence auto = `floor(max/10)*10+10` au lieu de `max+10` | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-12 | Numéros de séquence dupliqués acceptés en silence | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-13 | ACL nommée vide absente de `running-config` | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-14 | `no permit <ace>` (suppression par texte) non géré, erreur trompeuse | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-16 | Jetons inconnus **avalés en silence** — aucun `% Invalid input` | 🟡 Moyen | Fidélité | ⬜ ouvert |
-| F-17 | `log` / `log-input` analysés, affichés, **n'émettent jamais rien** | 🟡 Moyen | Fond | ⬜ ouvert |
+| F-07 | ACL étendue + sonde source seule → **`TypeError`, routeur planté** | 🟠 Haut | Fond | **✅ corrigé** |
+| F-15 | Re-entrer `ipv6 access-list NOM` **efface toutes les règles** | 🟠 Haut | Fond | **✅ corrigé** |
+| F-05 | `icmpCode` jamais évalué → tous les *unreachable* confondus | 🟡 Moyen | Fond | **✅ corrigé** |
+| F-08 | CLI refuse 1300–1999 et 2000–2699, **pourtant valides sur IOS** | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-11 | Séquence auto = `floor(max/10)*10+10` au lieu de `max+10` | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-12 | Numéros de séquence dupliqués acceptés en silence | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-13 | ACL nommée vide absente de `running-config` | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-14 | `no permit <ace>` (suppression par texte) non géré, erreur trompeuse | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-16 | Jetons inconnus **avalés en silence** — aucun `% Invalid input` | 🟡 Moyen | Fidélité | **✅ corrigé** |
+| F-17 | `log` / `log-input` analysés, affichés, **n'émettent jamais rien** | 🟡 Moyen | Fond | **✅ corrigé** |
 | F-18 | `remark` porte un compteur et affiche `(N matches)` | 🟢 Faible | Forme | **✅ corrigé** |
-| F-19 | Affichage ACL standard : `host X` au lieu de l'IP nue | 🟢 Faible | Forme | ⬜ ouvert |
+| F-19 | Affichage ACL standard : `host X` au lieu de l'IP nue | 🟢 Faible | Forme | **✅ corrigé** |
 
 **Rayon de souffle :** `Switch.ts` instancie le **même `ACLEngine`** pour les VACL et les ACL de port. Les sept défauts d'ouverture frappaient donc **aussi les commutateurs**, pas seulement les routeurs — et les correctifs du palier 0 leur profitent de la même manière (mesuré au banc de preuves).
 
@@ -475,26 +477,55 @@ de commentaire.
 IPSec, VTY, sécurité et pare-feu — tous verts. Aucune erreur de typage
 nouvelle (343 avant, 343 après).
 
-### Palier 1 — Court terme ⬜
+### Palier 1 — ✅ FAIT
 
-6. **F-07** — sonde complète pour VTY/NTP/NAT ; supprimer `as never` et `as any` et réparer ce que le typage révélera.
-7. **F-15** — ré-entrée en ajout, jamais en écrasement.
-8. **F-16** — `% Invalid input detected at '^' marker.` sur tout jeton inconnu. **À faire avant les paliers suivants** : sans cela, aucune correction ne sera visible pour l'utilisateur qui se trompe.
-9. **F-17** — journaliser sur `log`/`log-input`, ou retirer les mots-clés du CLI.
+6. **F-07** — une sonde COMPLÈTE (`sourceProbePacket`) remplace l'objet
+   source-seul de VTY / NTP / NAT, et les `as never` / `as any` qui faisaient
+   taire le vérificateur sont retirés. Le moteur, en outre, traite un champ
+   manquant comme un critère intranchable — il échoue, il ne plante plus.
+7. **F-15** — ré-entrer dans une ACL IPv6 l'ouvre en ajout. Le détour par une
+   entrée bidon suivie d'un effacement a disparu avec la fonction qui le portait.
+8. **F-16** — tout jeton inconnu rend `% Invalid input detected at '^' marker.`
+   et **rien n'est enregistré**. C'était le multiplicateur : une faute de frappe
+   produisait une ACE silencieusement différente de ce qui avait été tapé.
+9. **F-17** — `log` / `log-input` émettent un vrai
+   `%SEC-4-IPACCESSLOGP: list 100 denied tcp 10.0.0.1(1234) -> 10.0.0.2(22), 1 packet`.
+   Le mappage syslog est corrigé au passage : IOS ne journalise **que** les ACE
+   marquées, là où toute ACE refusée produisait la ligne — ce qui privait
+   précisément `log` de tout effet observable.
 
-### Palier 2 — Fidélité ⬜
+### Palier 2 — ✅ FAIT
 
-10. F-05, F-08, F-11, F-12, F-13, F-14, F-18, F-19.
+10. **F-05** — le code ICMP discrimine enfin les variantes : `host-unreachable`
+    ne bloque plus les `port-unreachable`. `administratively-prohibited` et
+    `packet-too-big` deviennent évaluables (codes 13 et 4).
+11. **F-08** — les quatre plages IOS sont acceptées, et le message d'erreur les
+    énonce exactement au lieu d'affirmer une règle fausse.
+12. **F-11** — séquence auto = dernier + 10. **F-12** — un numéro déjà pris rend
+    `% Duplicate sequence number.` **F-13** — une liste nommée vide existe dès sa
+    création et figure dans `running-config`. **F-14** — `no permit <ace>`
+    supprime par texte, et l'absence se dit (`% Access list entry does not
+    exist.`) au lieu de `% Incomplete command.` **F-19** — le `show` d'une liste
+    standard rend l'IP nue.
 
-### Palier 3 — Structure ⬜ (le seul qui empêche la récidive)
+### Palier 3 — ✅ FAIT (le seul qui empêche la récidive)
 
-11. **Écrire la règle d'échec** dans `CLAUDE.md` : *tout critère ACL non évaluable fait échouer la correspondance.* Elle est désormais posée et commentée **dans le code** (`aclEntryMatches`), ce qui ne suffit pas : tant qu'elle n'est pas une convention du projet, elle ne s'applique qu'au fichier qui la porte — exactement le sort qu'avait connu la même règle dans `Ipv6AclEngine`.
-12. **Séparer moteur et politique vendeur** ; sortir `formatHuaweiAclEntry` du moteur.
-13. **Supprimer le code mort** signalé par `no-unused-vars` (la règle tourne déjà, en `warn`), **corriger la ligne 200 de `CLAUDE.md`** qui la déclare désactivée à tort, et décider si elle passe en `error` sur `src/network/**` — c'est le détecteur automatique des champs-façades, et il est aujourd'hui audible sans être écouté.
-14. **Étendre le seuil de couverture** au moteur ACL.
-15. **Convertir le banc de preuves joint en suite de non-régression** : chaque test inversé (`toBe('permit')` → `toBe('deny')`) devient la garantie que le défaut ne revient pas.
-
----
+13. **La règle d'échec est écrite dans `CLAUDE.md`**, pas seulement dans un
+    commentaire de `ACLEngine.ts` — avec sa conséquence : *ne jamais stocker un
+    critère qu'on n'évalue pas ; l'appliquer, ou le refuser à l'analyse.*
+14. **Moteur et présentation vendeur séparés** : `formatHuaweiAclEntry` quitte
+    `ACLEngine` pour `shells/huawei/HuaweiAclFormat.ts`, et la numérotation est
+    une politique injectée (`IOS_ACL_NUMBERING` / `VRP_ACL_NUMBERING`).
+15. **Code mort supprimé** — la boucle de 99 tours, `parsePort`,
+    `consumedAfterSource`, `addIPv6ACLEntry`, la variable `bindings` — et
+    l'affirmation fausse de `CLAUDE.md` sur `no-unused-vars` est rectifiée
+    (la règle tourne en `warn`, elle signalait ce code, elle était ignorée).
+    La mention d'un répertoire `src/network/acl/` inexistant est retirée.
+16. **Le moteur ACL passe sous seuil de couverture** dans `vite.config.ts` : il
+    n'y était soumis par aucun, alors qu'il est le composant de sécurité central.
+17. **§7.4 — les compteurs ne sont plus pollués** : `evaluateACL` accepte
+    `countMatches`, et le filtre d'affichage de `debug ip packet` observe sans
+    compter. `show access-lists` remesure le trafic, pas l'observateur.
 
 ## 12. Conclusion
 
@@ -508,26 +539,34 @@ Le défaut racine n'est aucun des dix-neuf. C'est **l'absence d'une règle écri
 
 ### Suite donnée — 16 août 2026
 
-Le palier 0 est traité. Les sept chemins qui inversaient la règle écrite sont
-fermés, et la règle d'échec est posée noir sur blanc en tête de la fonction de
-correspondance. Une liste commentée filtre à nouveau, `match-all` veut dire
-`match-all`, et le moteur ne devine plus la convention de numérotation d'un
-vendeur.
+Les dix-neuf constats sont corrigés, paliers 0 à 3 compris.
 
-**Ce que cela ne règle pas.** Onze constats restent ouverts, dont deux sérieux :
-le plantage `TypeError` sur toute ACL étendue évaluée par VTY, NTP ou NAT
-(F-07), et la perte silencieuse de configuration à la ré-entrée dans une ACL
-IPv6 (F-15). Et **F-16 reste le multiplicateur** : tant qu'un jeton inconnu est
-avalé sans un mot, une faute de frappe continue de produire une ACE
-silencieusement différente de ce qui a été tapé — un correctif de sémantique ne
-protège pas contre une commande mal lue.
+**Ce qui a réellement changé.** Pas dix-neuf rustines : une règle. *Un critère
+que le moteur ne sait pas trancher fait échouer la correspondance* — jamais
+réussir, jamais « sauter le critère ». Les sept défauts d'ouverture en
+découlaient tous, et c'est cette règle, désormais écrite dans `CLAUDE.md` et
+non plus seulement dans un commentaire, qui empêche le prochain critère d'ACE
+de rouvrir la liste. Sa conséquence est écrite avec elle : **ne jamais stocker
+un critère qu'on n'évalue pas** — l'appliquer, ou le refuser à l'analyse.
 
-**Ce qui reste le vrai risque.** Le défaut racine est structurel, pas ponctuel.
-La règle d'échec vit aujourd'hui dans un commentaire de `ACLEngine.ts` — soit
-exactement la situation qui prévalait dans `Ipv6AclEngine.ts` avant cet audit,
-et qui n'a pas empêché le moteur v4 de faire quatre fois le choix inverse. Tant
-que la règle n'est pas promue en convention de projet (palier 3, point 11), rien
-ne garantit que le prochain critère ajouté à une ACE échouera fermé.
+**Ce que l'audit a corrigé de lui-même.** Deux affirmations du rapport initial
+étaient fausses, et ont été rectifiées en place plutôt qu'effacées :
+
+- `no-unused-vars` n'est **pas** désactivé (§8.2). La règle tourne en `warn`,
+  elle signalait nommément le code mort trouvé ici, et elle était ignorée —
+  un constat plus dur que celui d'un outil éteint. `CLAUDE.md` l'affirmait à
+  tort ; la ligne est corrigée.
+- La numérotation de séquence dupliquée : la correction a cassé un scénario de
+  test qui supposait qu'un numéro réutilisé **remplace** l'entrée. Vérification
+  faite auprès de la documentation, IOS refuse en IPv4 (`% Duplicate sequence
+  number.`) et n'accepte le remplacement qu'en IPv6. Le scénario a été aligné
+  sur IOS — il fait maintenant `no 10` avant de réécrire, comme un opérateur.
+
+**Ce qui reste vrai.** Le dispositif de test garde son angle mort d'origine :
+83 tests ACL verts n'avaient vu aucun des dix-neuf défauts, faute de sonder les
+cas dégradés. Les 33 tests du banc ne le comblent que pour les défauts connus.
+La discipline qui manquait n'était pas l'écriture de tests, mais l'habitude de
+tester **ce qui cède** plutôt que ce qui marche.
 
 ---
 

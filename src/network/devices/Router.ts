@@ -126,7 +126,7 @@ import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
-import { ACLEngine, type AclNumbering } from './router/ACLEngine';
+import { ACLEngine, formatAclLogMessage, sourceProbePacket, type AclNumbering } from './router/ACLEngine';
 import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/CiscoSecurityConfig';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
@@ -366,6 +366,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // `time-range NAME` consult getSecurityConfig().timeRanges to know
     // whether they are currently active. Done lazily so the security
     // config is created on demand by the security-CLI handlers.
+    // `log` / `log-input` : le moteur signale la correspondance, l'equipement
+    // la met en forme comme IOS et la pousse dans le journal.
+    e.setLogSink((ev) => {
+      Logger.info(this.id, 'router:acl-log', formatAclLogMessage(ev));
+    });
     e.setTimeRangeResolver((name, now) => {
       const sec = (this as unknown as Record<symbol, CiscoSecurityConfig | undefined>)[
         Symbol.for('CiscoSecurityConfig')
@@ -538,7 +543,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.natEngine.setEventBus(this.getBus());
     this.dhcpServer.setEventBus(this.getBus());
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
-      const pkt = realPkt ?? ({ type: 'ipv4', sourceIP: new IPAddress(srcIP) } as any);
+      const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
       // Undefined ACL = no interesting traffic, so require an explicit permit.
       return this.aclEngine.evaluateACLByName(String(aclId), pkt) === 'permit';
     });
@@ -4142,7 +4147,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       payload: ports,
     } as unknown as IPv4Packet;
 
-    return this.aclEngine.evaluateACL(ref, probe) !== 'deny';
+    // Filtre d'AFFICHAGE : il observe, il ne compte pas.
+    return this.aclEngine.evaluateACL(ref, probe, new Date(), false) !== 'deny';
   }
 
   /**
@@ -4458,8 +4464,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * finiraient par repondre differemment pour la meme liste.
    */
   evaluateAclPermit(acl: string, srcIp: string): boolean {
+    // Sonde COMPLÈTE : une liste étendue cherche la destination, et
+    // l'objet source-seul d'avant la faisait planter (`as never` avait
+    // fait taire le vérificateur qui l'annonçait).
+    const dst = this.getPorts().map(p => p.getIPAddress()).find(ip => !!ip) ?? undefined;
     return this.aclEngine.evaluateACLByName(
-      acl, { type: 'ipv4', sourceIP: new IPAddress(srcIp) } as never) === 'permit';
+      acl, sourceProbePacket(new IPAddress(srcIp), dst ?? undefined)) === 'permit';
   }
 
   private _huaweiBfdService: HuaweiBfdService | null = null;
@@ -5554,6 +5564,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
   evaluateACLByName(name: string, ipPkt: IPv4Packet) { return this.aclEngine.evaluateACLByName(name, ipPkt); }
 
+  _ensureNamedAccessList(name: string, type: 'standard' | 'extended') { this.aclEngine.ensureNamedAccessList(name, type); }
+  _aclHasSequence(name: string, seq: number) { return this.aclEngine.hasSequence(name, seq); }
   _getAccessListsInternal() { return this.aclEngine.getAccessListsInternal(); }
   _getInterfaceACLBindingsInternal() { return this.aclEngine.getInterfaceACLBindingsInternal(); }
   _removeNamedACLEntryBySequence(name: string, seq: number) { return this.aclEngine.removeNamedACLEntryBySequence(name, seq); }

@@ -17,7 +17,7 @@ import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import type { PortOperator, PortSpec } from '../../router/ACLEngine';
-import { formatHuaweiAclEntry } from '../../router/ACLEngine';
+import { formatHuaweiAclEntry } from './HuaweiAclFormat';
 import { rendreErreurVrp } from '../cli-utils';
 import { analyserAcl } from './HuaweiAclGrammar';
 

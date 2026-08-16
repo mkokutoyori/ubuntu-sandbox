@@ -57,7 +57,7 @@ import {
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
-import { formatHuaweiAclEntry } from '../router/ACLEngine';
+import { formatHuaweiAclEntry } from './huawei/HuaweiAclFormat';
 import {
   AUCUN_GROUPE, analyserVrrp, appliquerVrrp, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
