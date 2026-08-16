@@ -1,6 +1,6 @@
 import type { DeviceType } from './types';
 
-export type DeviceOSType = 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp';
+export type DeviceOSType = 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp' | 'asa';
 
 export type DeviceCategoryId = 'computers' | 'servers' | 'switches' | 'routers' | 'security';
 
@@ -77,7 +77,7 @@ export const DEVICE_CATALOG: Record<DeviceType, DeviceDefinition> = {
   },
   'firewall-cisco': {
     label: 'Cisco ASA', description: 'Cisco Adaptive Security Appliance',
-    osType: 'linux', namePrefix: 'FW',
+    osType: 'asa', namePrefix: 'FW',
     hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
   },
   'firewall-fortinet': {

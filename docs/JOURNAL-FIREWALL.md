@@ -50,10 +50,12 @@
 | 3 | `packet-tracer` (rendu ASA) | 19 | ✅ |
 | 3 | Sections NAT (socle) + `object network … nat` (ASA) | 29 | ✅ |
 | 3 | `show conn` / `show xlate` / `clear` sur trafic réel | 18 | ✅ |
+| 3 | L'ASA devient un équipement déposable et ouvrable | 17 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 650 cas verts sur 24 fichiers.**
+**Total actuel : 667 cas verts sur 25 fichiers** (1446 avec les suites
+connexes : palette, terminal, terminal-core).
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1260,6 +1262,49 @@ pour être traité pour lui-même.
 
 ---
 
+### E27 — L'ASA devient un équipement qu'on dépose et qu'on ouvre
+
+Tout le module était juste, et **rien n'en était atteignable**. La palette
+construisait un `LinuxPC` sous le nom `firewall-cisco` : déposer un
+pare-feu Cisco donnait une machine Ubuntu avec un `bash`. C'est le défaut
+que le badge « Limited » de `DevicePalette` signale honnêtement — et qu'il
+signalerait indéfiniment tant que rien ne le remplace.
+
+Trois choses devaient tenir ensemble, et chacune pouvait échouer seule :
+`DeviceFactory` construit un vrai `AsaFirewall` ; l'équipement expose une
+CLI (`ICLIDevice` — sinon le terminal n'a rien à interroger) ;
+`createSessionForDevice` ouvre un terminal au lieu de rendre `null`, ce
+qu'il faisait pour tout `getOSType()` inconnu.
+
+**`AsaFirewall` porte désormais son shell**, comme `Router` porte le sien,
+et délègue `getPrompt`/`executeCommand`/`cliHelp`/`cliTabComplete`. Le
+point qui comptait : `?` et la complétion **lisent le vocabulaire du mode
+courant** (`AsaVocabulary.ts`) plutôt qu'une liste figée — un cas vérifie
+que les candidats changent après `enable`, sans quoi l'aide décrirait un
+mode où l'on n'est pas.
+
+`ICLIDevice` s'est révélé être exactement la bonne prise : six méthodes,
+aucune dépendance à `Router`. `AsaTerminalSession` tient en 59 lignes sur
+`CLITerminalSession`, qui apporte l'amorçage, le pager et l'aide en ligne
+— rien n'a été réécrit.
+
+#### Encore un défaut dans mon propre test
+
+`createDevice(type, x, y)` prend des **coordonnées**, pas un nom : la
+fabrique nomme elle-même depuis le préfixe du catalogue. J'avais passé
+`'ASA1'` à la place de `x`. Le cas le vérifie maintenant explicitement,
+parce que passer une chaîne où l'on attend une coordonnée est le genre
+d'erreur qui ne se voit jamais.
+
+#### Limite assumée, écrite plutôt que tue
+
+**SSH vers l'ASA n'est pas servi** : `Firewall` n'installe aucun démon,
+donc la connexion est refusée — franc, et non un `bash` silencieux qui
+serait le pire des deux. `primaryShellKindFor` n'a donc pas été touché ;
+il le sera avec le démon, pas avant.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1307,14 +1352,15 @@ pour être traité pour lui-même.
 | B27 | Mon propre témoin visait une destination sans route : il s'arrêtait avant l'étape mesurée | E25 | Destination routable ; le cas mesure enfin ce qu'il annonce |
 | B28 | Témoin d'octets ne lisant que la PREMIÈRE ligne de `show conn` | E26 | Somme de toutes les lignes |
 | B29 | Témoin attendant qu'une règle de refus bloque un RETOUR établi | E26 | C'est l'inverse d'un pare-feu à états ; remplacé par une destination qui ne répond pas |
+| B30 | `firewall-cisco` construisait un `LinuxPC` : le pare-feu était injoignable | E27 | `DeviceFactory` → `AsaFirewall` ; `ICLIDevice` ; `AsaTerminalSession` |
+| B31 | Mon test passait un NOM là où `createDevice` attend une coordonnée | E27 | Vraie signature, et un cas qui pin le nommage par la fabrique |
 
 ## Prochaines étapes
 
 Phase 3 (ASA), reste à faire :
 
-1. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
-   cesse d'être un `LinuxPC`. C'est ce qui rend l'ASA atteignable depuis la
-   toile, et donc réellement utilisable.
+1. Démon SSH sur le pare-feu, puis `ShellFactory.register('asa', …)` — la
+   CLI est là, il lui manque le transport (E27).
 2. NAT manuel (`nat (a,b) source static … destination static …`), qui est
    la section 1 dont l'ordonnancement vient d'être posé — aujourd'hui elle
    n'est remplissable que par l'API, pas par la CLI.

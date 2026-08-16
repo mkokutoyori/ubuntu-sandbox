@@ -8,6 +8,7 @@ import type { FirewallSession } from '../../session/SessionTable';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../core/types';
 import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
 import { renderPacketTracer } from './AsaPacketTracer';
+import { ASA_COMMAND_HELP, ASA_VOCABULARY } from './AsaVocabulary';
 import {
   ASA_INVALID_INPUT,
   ASA_UNIMPLEMENTED_REASONS,
@@ -173,6 +174,23 @@ export class AsaShell {
 
   getMode(): AsaMode {
     return this.mode;
+  }
+
+  completions(input: string): readonly string[] {
+    const prefix = input.trimStart();
+    return this.vocabulary().filter(word => word.startsWith(prefix) && word !== prefix);
+  }
+
+  help(inputBeforeQuestion: string): readonly string[] {
+    const prefix = inputBeforeQuestion.trimStart();
+    const words = prefix.length === 0
+      ? this.vocabulary()
+      : this.vocabulary().filter(word => word.startsWith(prefix));
+    return words.map(word => `  ${word.padEnd(24)}${ASA_COMMAND_HELP[word] ?? ''}`.trimEnd());
+  }
+
+  private vocabulary(): readonly string[] {
+    return ASA_VOCABULARY[this.mode];
   }
 
   execute(rawLine: string): string {

@@ -15,6 +15,7 @@ import { GenericSwitch } from './GenericSwitch';
 import { Hub } from './Hub';
 import { CiscoRouter } from './CiscoRouter';
 import { HuaweiRouter } from './HuaweiRouter';
+import { AsaFirewall } from './firewall/vendors/asa/AsaFirewall';
 // eslint-disable-next-line no-restricted-imports -- the factory resets the registry it fills; it is not a device discovering peers
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
@@ -61,7 +62,7 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Firewalls (stub as LinuxPC for now)
     case 'firewall-cisco':
-      return new LinuxPC('firewall-cisco', name, x, y);
+      return new AsaFirewall('firewall-cisco', name, x, y);
     case 'firewall-fortinet':
       return new LinuxPC('firewall-fortinet', name, x, y);
     case 'firewall-paloalto':

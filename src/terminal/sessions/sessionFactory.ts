@@ -5,6 +5,7 @@ import { LinuxTerminalSession } from './LinuxTerminalSession';
 import { CiscoTerminalSession } from './CiscoTerminalSession';
 import { HuaweiTerminalSession } from './HuaweiTerminalSession';
 import { WindowsTerminalSession } from './WindowsTerminalSession';
+import { AsaTerminalSession } from './AsaTerminalSession';
 
 export function createSessionForDevice(device: Equipment, sessionId: string): TerminalSession | null {
   switch (device.getOSType()) {
@@ -14,6 +15,8 @@ export function createSessionForDevice(device: Equipment, sessionId: string): Te
       return new CiscoTerminalSession(sessionId, device as ICLIDevice);
     case 'huawei-vrp':
       return new HuaweiTerminalSession(sessionId, device as ICLIDevice);
+    case 'asa':
+      return new AsaTerminalSession(sessionId, device as ICLIDevice);
     case 'windows':
       return new WindowsTerminalSession(sessionId, device);
     default:
