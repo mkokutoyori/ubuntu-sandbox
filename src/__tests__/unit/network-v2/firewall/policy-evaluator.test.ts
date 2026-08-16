@@ -288,6 +288,74 @@ describe('PolicyEvaluator — niveaux de securite, le modele ASA', () => {
 
     expect(decision.action).toBe('deny');
   });
+
+  it('APPLIQUER une ACL a l\'interface ANNULE le permit implicite haut vers bas', () => {
+    const e = evaluator({
+      implicitPolicy: 'security-level',
+      policyKeyedBy: 'interface',
+      securityLevelOf: (zone: string) => levels[zone as keyof typeof levels],
+      interfaceHasBoundPolicy: (iface: string) => iface === 'port1',
+    });
+
+    const decision = e.evaluate([], probe({
+      ingressZone: 'trust', egressZone: 'untrust', ingressInterface: 'port1',
+    }));
+
+    expect(decision.action).toBe('deny');
+  });
+
+  it('le temoin : la MEME topologie sans ACL liee autorise haut vers bas', () => {
+    const e = evaluator({
+      implicitPolicy: 'security-level',
+      policyKeyedBy: 'interface',
+      securityLevelOf: (zone: string) => levels[zone as keyof typeof levels],
+      interfaceHasBoundPolicy: () => false,
+    });
+
+    const decision = e.evaluate([], probe({
+      ingressZone: 'trust', egressZone: 'untrust', ingressInterface: 'port1',
+    }));
+
+    expect(decision.action).toBe('allow');
+  });
+
+  it('l\'annulation est PAR INTERFACE, pas globale', () => {
+    const e = evaluator({
+      implicitPolicy: 'security-level',
+      policyKeyedBy: 'interface',
+      securityLevelOf: (zone: string) => levels[zone as keyof typeof levels],
+      interfaceHasBoundPolicy: (iface: string) => iface === 'port1',
+    });
+
+    const liee = e.evaluate([], probe({
+      ingressZone: 'trust', egressZone: 'untrust', ingressInterface: 'port1',
+    }));
+    const libre = e.evaluate([], probe({
+      ingressZone: 'dmz', egressZone: 'untrust', ingressInterface: 'port9',
+    }));
+
+    expect(liee.action).toBe('deny');
+    expect(libre.action).toBe('allow');
+  });
+
+  it('une ACL liee qui AUTORISE explicitement laisse passer', () => {
+    const e = evaluator({
+      implicitPolicy: 'security-level',
+      policyKeyedBy: 'interface',
+      securityLevelOf: (zone: string) => levels[zone as keyof typeof levels],
+      interfaceHasBoundPolicy: () => true,
+    });
+    const r = rule({ from: ['port1'], to: ['port2'], action: 'allow' });
+
+    expect(e.evaluate([r], probe({ ingressZone: 'trust', egressZone: 'untrust' })).action)
+      .toBe('allow');
+  });
+
+  it('sous deny-all, la liaison d\'ACL ne change rien — elle ne concerne que le modele ASA', () => {
+    const e = evaluator({ interfaceHasBoundPolicy: () => true });
+
+    expect(e.evaluate([], probe()).action).toBe('deny');
+  });
 });
 
 describe('PolicyEvaluator — horaire', () => {

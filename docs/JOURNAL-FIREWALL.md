@@ -42,8 +42,12 @@
 | 2 | Conformité RFC 4787 (REQ-1, REQ-3) | 6 | ✅ |
 | 2 | Câblage NAT dans le pipeline (§12.4) | 15 | ✅ |
 | 2 | Sonde de phase 2 (publication sur le fil) | 10 | ✅ |
+| **3** | Règle ASA « une ACL annule le permit implicite » | 6 | ✅ |
+| 3 | `FirewallProfile` + `AsaProfile` + `AsaFirewall` | — | ⏳ |
+| 3 | `AsaShell` | — | ⏳ |
+| 3 | `AsaRenderer` + `packet-tracer` | — | ⏳ |
 
-**Total actuel : 470 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
+**Total actuel : 475 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
 
 ---
 
@@ -710,6 +714,32 @@ Un paquet adressé à notre propre adresse mais appartenant à une session
 existante est du transit, pas du trafic local. C'est le comportement réel, et
 il n'est pas devinable depuis les tests unitaires — il fallait un PAT complet
 sur un vrai câble.
+
+---
+
+### E20 — La recherche corrige encore le socle : l'ACL annule le permit implicite
+
+Avant d'écrire le profil ASA, vérification documentaire du point que le BRD
+§27.3 signalait comme « mal dit par beaucoup de cours ». Il l'était aussi
+dans mon évaluateur.
+
+**Fait établi** : dès qu'un `access-group` est appliqué à une interface, le
+*permit* implicite haut→bas **cesse d'être actif** pour le trafic entrant
+sur cette interface. Le trafic est alors gouverné exclusivement par l'ACL, et
+ce qui n'y est pas explicitement autorisé est refusé.
+
+C'est la source du symptôme le plus fréquent en formation ASA — « j'ai
+ajouté une ACL et tout s'est arrêté » — et mon évaluateur laissait passer le
+haut→bas quoi qu'il arrive.
+
+Corrigé par une dépendance injectée, `interfaceHasBoundPolicy`, consultée
+avant la règle de niveau de sécurité. **L'annulation est par interface, pas
+globale**, et un cas l'épingle : une interface avec ACL refuse pendant qu'une
+interface sans ACL autorise, sur le même équipement au même instant.
+
+Six cas, dont le témoin (même topologie sans ACL liée) et le contrôle que
+cette dépendance ne change **rien** sous `deny-all` — elle ne concerne que
+le modèle ASA.
 
 ---
 

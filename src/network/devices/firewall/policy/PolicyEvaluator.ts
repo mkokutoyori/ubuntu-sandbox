@@ -20,6 +20,7 @@ export interface PolicyEvaluatorDeps {
   implicitPolicy?: ImplicitPolicyMode;
   applicationShift?: boolean;
   securityLevelOf?: (zone: string) => number | undefined;
+  interfaceHasBoundPolicy?: (iface: string) => boolean;
   scheduleActive?: (schedule: string, at: number) => boolean;
   userOf?: (ip: string) => string | undefined;
   userGroupsOf?: (user: string) => readonly string[];
@@ -80,6 +81,7 @@ export class PolicyEvaluator {
 
   private securityLevelAllows(probe: PolicyProbe): boolean {
     if (this.implicitMode !== 'security-level') return false;
+    if (this.deps.interfaceHasBoundPolicy?.(probe.ingressInterface)) return false;
 
     const from = this.deps.securityLevelOf?.(probe.ingressZone);
     const to = this.deps.securityLevelOf?.(probe.egressZone);
