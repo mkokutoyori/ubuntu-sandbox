@@ -251,8 +251,8 @@ describe('PacketContext', () => {
     ctx.packet = { ...ctx.packet, ttl: 63 } as IPv4Packet;
 
     expect(ctx.originalPacket).toBe(original);
-    expect(ctx.originalPacket.ttl).toBe(64);
-    expect(ctx.packet.ttl).toBe(63);
+    expect((ctx.originalPacket as IPv4Packet).ttl).toBe(64);
+    expect((ctx.packet as IPv4Packet).ttl).toBe(63);
   });
 
   it('demarre en premier paquet', () => {

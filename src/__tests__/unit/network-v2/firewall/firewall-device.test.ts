@@ -97,6 +97,47 @@ describe('Firewall — l\'equipement', () => {
 
     expect(fw.getRouteTable().all()).toHaveLength(2);
   });
+
+  it('la table L3 connait TOUS les ports, meme ceux qu\'on n\'a pas adresses', async () => {
+    const { fw } = await buildLab();
+
+    expect(fw.getInterfaceTable().names()).toEqual(fw.getPortNames());
+  });
+
+  it('un port jamais touche est declare UP, comme le port lui-meme', async () => {
+    const { fw } = await buildLab();
+    const vierge = fw.getPortNames()[fw.getPortNames().length - 1];
+
+    expect(fw.getInterfaceTable().isUp(vierge)).toBe(fw.getPort(vierge)!.getIsUp());
+  });
+
+  it('`shutdown` abaisse le PORT et pas seulement la ligne de la table', async () => {
+    const { fw } = await buildLab();
+
+    fw.setInterfaceUp('ethernet1/1', false);
+
+    expect(fw.getInterfaceTable().isUp('ethernet1/1')).toBe(false);
+    expect(fw.getPort('ethernet1/1')!.isOperationallyUp()).toBe(false);
+  });
+
+  it('`no shutdown` releve les deux', async () => {
+    const { fw } = await buildLab();
+    fw.setInterfaceUp('ethernet1/1', false);
+
+    fw.setInterfaceUp('ethernet1/1', true);
+
+    expect(fw.getInterfaceTable().isUp('ethernet1/1')).toBe(true);
+    expect(fw.getPort('ethernet1/1')!.isOperationallyUp()).toBe(true);
+  });
+
+  it('une interface abaissee ne route plus — c\'est la consequence, pas l\'affichage', async () => {
+    const { fw } = await buildLab();
+    const avant = fw.getRouteTable().all().length;
+
+    fw.setInterfaceUp('ethernet1/1', false);
+
+    expect(fw.getRouteTable().all().length).toBe(avant - 1);
+  });
 });
 
 describe('Firewall — UC-1 SUR LE FIL', () => {

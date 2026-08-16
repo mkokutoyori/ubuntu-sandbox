@@ -70,8 +70,12 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   ]),
 });
 
+export const ASA_IMPLICIT_SECURITY_LEVEL = 0;
+
 export const ASA_DEFAULT_SECURITY_LEVELS: Readonly<Record<string, number>> = Object.freeze({
   inside: 100,
-  dmz: 50,
-  outside: 0,
 });
+
+export function asaDefaultSecurityLevel(zoneName: string): number {
+  return ASA_DEFAULT_SECURITY_LEVELS[zoneName] ?? ASA_IMPLICIT_SECURITY_LEVEL;
+}

@@ -45,10 +45,13 @@
 | **3** | Règle ASA « une ACL annule le permit implicite » | 6 | ✅ |
 | 3 | `FirewallProfile` + `AsaProfile` + `AsaFirewall` | 21 | ✅ |
 | 3 | Garde-fous d'architecture (G1, G2, G3, G5) | 12 | ✅ |
-| 3 | `AsaShell` | — | ⏳ |
+| 3 | `AsaShell` (grammaire CLI) | 45 | ✅ |
 | 3 | `AsaRenderer` + `packet-tracer` | — | ⏳ |
+| 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
+| 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 508 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
+**Total actuel : 561 cas verts sur 20 fichiers** (687 avec les suites
+connexes). **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
 
@@ -990,6 +993,91 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 
 ---
 
+### E23 — `AsaShell`, et trois défauts que la CLI a révélés
+
+`AsaShell.ts` (341 lignes) — le troisième des cinq artefacts vendeur : la
+**grammaire**. Modes et invites (`ASA1>`, `ASA1#`, `ASA1(config)#`,
+`ASA1(config-if)#`, `ASA1(config-network-object)#`), `nameif`,
+`security-level`, `ip address`, `shutdown`, `object network` +
+`host`/`subnet`/`range`, `object-group network`, `access-list … extended`,
+`access-group … in interface`, `same-security-traffic`, et les vues
+`show nameif` / `show conn` / `show running-config` / `show version` /
+`show access-list`. Les trois familles de messages de P4 sont éprouvées :
+une commande implémentée agit, une commande qu'un ASA connaît mais que ce
+build ne simule pas nomme la brique manquante, une commande inexistante
+reçoit le message d'IOS.
+
+Le shell ne décide du sort d'aucun paquet — il traduit des mots en mutations
+de magasins, et G1 le vérifie mécaniquement.
+
+#### La CLI a trouvé ce que 500 tests unitaires ne voyaient pas
+
+Deux cas sont tombés au premier jet, et **aucun des deux n'était un défaut
+du shell** :
+
+- **`no shutdown` ne relevait rien.** `InterfaceTable.setUp()` ne mute
+  qu'un enregistrement EXISTANT, et la table n'était peuplée que par
+  `configureInterface()` : une interface qu'on n'avait pas adressée n'y
+  figurait pas. `isUp()` répondait donc `false` pour un port qui existe
+  physiquement et n'est pas éteint — pendant que `getPort(nom)` le
+  déclarait présent et actif. **Deux magasins qui se contredisent sur la
+  même machine au même instant**, exactement le défaut que ce dépôt referme
+  partout. La table L3 est désormais peuplée depuis les ports à la
+  construction, et `Firewall.setInterfaceUp()` déplace **les deux** — la
+  ligne de la table et le port lui-même, par `setAdminShutdown()`, la
+  primitive que le dépôt porte déjà. Conséquence mesurée plutôt
+  qu'affichée : une interface abaissée perd sa route connectée.
+
+- **`show running-config` ne rendait aucune interface**, même nommée. Même
+  cause. Cela dépasse l'affichage : dans ce dépôt une configuration rendue
+  est **rejouée à l'import d'une topologie**.
+
+#### Un défaut de fidélité, trouvé en vérifiant plutôt qu'en supposant
+
+`ASA_DEFAULT_SECURITY_LEVELS` portait `dmz: 50`. C'est faux : sur un vrai
+ASA **seul `inside` reçoit 100 automatiquement**, tout autre nom reçoit 0 —
+50 pour une DMZ est une **convention d'enseignement**, pas un défaut de la
+machine, et l'administrateur doit le poser lui-même. Le pire est ce que
+cela faisait à mon propre test : « un nom quelconque prend le niveau 0 »
+passait parce que la valeur finale était 50 des deux côtés — **il ne
+discriminait rien**. Coupé en deux cas, dont le premier tombe sans le
+correctif.
+
+Ajouté au passage, parce que la même vérification l'a montré : l'ASA
+**annonce** le niveau qu'il a choisi (`INFO: Security level for "outside"
+set to 0 by default.`), et il écrit `security-level` dans sa configuration
+**même au défaut**. Le rendu conditionnel que j'avais écrit était une
+troisième invention.
+
+`ZoneTable.setSecurityLevel()` manquait — la table avait
+`setIntraZoneAction()` et rien pour le niveau, si bien que `security-level`
+passait par `nameif()`, qui ne modifie pas une zone existante.
+
+#### Un troisième faux positif de mes garde-fous, et ce que j'en fais
+
+G1 a signalé `AsaShell.ts` sur le motif `verdict\s*=`. Le code visé était
+`const verdict = l.action === 'allow' ? 'permit' : 'deny'` — le **mot-clé
+d'une ACE qu'on rend**, pas le sort d'un paquet. Comme pour B15, j'ai
+**précisé** au lieu de relâcher, et des deux côtés : les variables se
+nomment `keyword` (c'est ce qu'elles sont), et le garde-fou vise
+`.verdict =` — la mutation d'un contexte — plutôt qu'un identifiant. Un cas
+neuf teste le garde-fou lui-même sur les trois formes.
+
+Trouvé en typant le module : `'firewall-generic'` avait été ajouté à
+`DeviceType` sans entrée dans `DEVICE_CATALOG`, qui est un
+`Record<DeviceType, …>` — un type d'équipement que la palette ne savait pas
+décrire. Entrée ajoutée avec `paletteCategory: null`, comme
+`switch-generic` et pour la même raison : c'est une **base dont les
+constructeurs se déclinent**, pas un équipement à déposer sur la toile — il
+n'a pas de terminal. Un badge de plus dans la palette aurait fait tomber un
+garde-fou existant, et l'ajuster pour accommoder un équipement à moitié
+câblé aurait été le mauvais correctif.
+
+**561 cas verts sur 20 fichiers** dans le module, 687 avec les suites
+connexes (GUI/palette), lint propre.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1023,11 +1111,27 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B13 | Test utilisant un port hors de la plage PAT | E16 | Corrigé + cas dédié à la règle |
 | B14 | Réponse PAT consommée localement au lieu d'être dé-NATée | E19 | La recherche de session précède le test « pour nous ? » |
 | B15 | Garde-fous trop larges : méthode `setTimeout`, séparateurs `// ───` | E22 | Garde-fous précisés + cas testant les garde-fous |
+| B16 | `InterfaceTable` ignorait les ports jamais adressés → `isUp()` niait un port présent et actif | E23 | Table peuplée depuis les ports ; `setInterfaceUp()` déplace la ligne ET le port |
+| B17 | `dmz: 50` posé comme défaut ASA (c'est une convention, pas un défaut) | E23 | `{ inside: 100 }` seul ; le test qui « passait » ne discriminait rien, coupé en deux |
+| B18 | `security-level` rendu conditionnellement ; un vrai ASA l'écrit toujours | E23 | Rendu inconditionnel + message `INFO:` que la vraie machine émet |
+| B19 | Garde-fou G1 déclenché par un local nommé `verdict` dans un rendu | E23 | Variables renommées `keyword` ; garde-fou visant `.verdict =` ; cas testant le garde-fou |
+| B20 | `'firewall-generic'` absent de `DEVICE_CATALOG` (`Record<DeviceType, …>`) | E23 | Entrée ajoutée, `paletteCategory: null` — c'est une base, pas un équipement à déposer |
 
 ## Prochaines étapes
 
-1. `SessionTable` — le cœur du module.
-2. `PolicyEvaluator` puis `PolicyStore`.
-3. `PacketContext` + `FirewallPipeline` sur `FilterChain`.
-4. Services L3 (`l3/`) — audit de non-duplication à faire contre `Router`.
-5. Façade `Firewall` sur `Equipment`.
+Phase 3 (ASA), reste à faire :
+
+1. `AsaRenderer` — le quatrième artefact, extrait de `AsaShell` une fois
+   `packet-tracer` écrit (les deux rendent la même matière).
+2. `packet-tracer input <if> <proto> <src> <sport> <dst> <dport>` — il doit
+   lire `ctx.trace` du **vrai** pipeline (invariant I-F3), sinon il décrit
+   un pare-feu qui n'est pas celui qui filtre.
+3. NAT objet ASA : `nat (dmz,outside) static …` sous `object network`.
+4. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque).
+5. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
+   cesse d'être un `LinuxPC`.
+
+Puis phases 4 à 15 : diagnostics et journaux, FortiOS, cadre ALG, PAN-OS
+(configuration candidate), écrans et profils, Junos (validation du contrat,
+AC-C1), modes de déploiement, VPN, haute disponibilité, virtualisation,
+identification, QoS.

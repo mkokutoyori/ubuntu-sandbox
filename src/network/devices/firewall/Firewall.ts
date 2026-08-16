@@ -63,7 +63,9 @@ export class Firewall extends Equipment {
 
     const first = profile.portFirstIndex;
     for (let index = first; index < first + profile.portCount; index++) {
-      this.addPort(new Port(`${profile.portPrefix}${index}`, 'ethernet'));
+      const port = new Port(`${profile.portPrefix}${index}`, 'ethernet');
+      this.addPort(port);
+      this.interfaces.configure(port.getName(), { up: port.getIsUp() });
     }
 
     const now = options.now ?? (() => Date.now());
@@ -126,6 +128,11 @@ export class Firewall extends Equipment {
     if (port && iface?.ip && iface.mask) {
       port.configureIP(new IPAddress(iface.ip), new SubnetMask(iface.mask));
     }
+  }
+
+  setInterfaceUp(name: string, up: boolean): void {
+    this.interfaces.setUp(name, up);
+    this.getPort(name)?.setAdminShutdown(!up);
   }
 
   getInterfaceTable(): InterfaceTable { return this.interfaces; }

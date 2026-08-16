@@ -105,6 +105,14 @@ export class ZoneTable {
     return ZONE_OK;
   }
 
+  setSecurityLevel(zoneName: string, level: number): ZoneMutation {
+    const zone = this.zones.get(zoneName);
+    if (!zone) return zoneFailure({ kind: 'unknown-zone', zone: zoneName });
+
+    zone.securityLevel = level;
+    return ZONE_OK;
+  }
+
   getZone(name: string): SecurityZone | undefined {
     const zone = this.zones.get(name);
     return zone ? freezeZone(zone) : undefined;

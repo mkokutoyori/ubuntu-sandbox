@@ -281,6 +281,26 @@ describe('ZoneTable — proprietes de zone', () => {
   it('refuse de modifier une zone inconnue', () => {
     expect(table().setIntraZoneAction('fantome', 'allow').ok).toBe(false);
   });
+
+  it('modifie le niveau de securite d\'une zone existante', () => {
+    const t = table();
+    t.createZone('dmz', { securityLevel: 0 });
+
+    expect(t.setSecurityLevel('dmz', 50).ok).toBe(true);
+    expect(t.getZone('dmz')?.securityLevel).toBe(50);
+  });
+
+  it('pose un niveau sur une zone qui n\'en avait aucun', () => {
+    const t = withZones('trust');
+
+    t.setSecurityLevel('trust', 80);
+
+    expect(t.getZone('trust')?.securityLevel).toBe(80);
+  });
+
+  it('refuse un niveau sur une zone inconnue', () => {
+    expect(table().setSecurityLevel('fantome', 50).ok).toBe(false);
+  });
 });
 
 describe('ZoneTable — immuabilite de la vue', () => {

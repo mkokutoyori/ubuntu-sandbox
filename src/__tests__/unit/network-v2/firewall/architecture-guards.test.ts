@@ -38,6 +38,8 @@ const ALL_FILES = filesUnder(MODULE_ROOT);
 const VENDOR_FILES = filesUnder(VENDORS_ROOT);
 const SOCLE_FILES = ALL_FILES.filter(f => !f.startsWith(VENDORS_ROOT));
 
+const PACKET_VERDICT = /\bDrop\(|\bReject\(|\.verdict\s*=[^=]/;
+
 const ENGINE_MARKERS = [
   'class SessionTable',
   'class PolicyEvaluator',
@@ -71,10 +73,16 @@ describe('G1 — aucun moteur dans la couche vendeur', () => {
     const offenders: string[] = [];
     for (const file of VENDOR_FILES) {
       const text = readFileSync(file, 'utf8');
-      if (/\bDrop\(|\bReject\(|verdict\s*=/.test(text)) offenders.push(relative(file));
+      if (PACKET_VERDICT.test(text)) offenders.push(relative(file));
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  it('le garde-fou vise le verdict d\'un CONTEXTE, pas un mot du meme nom', () => {
+    expect(PACKET_VERDICT.test('const keyword = permit ? 1 : 2;')).toBe(false);
+    expect(PACKET_VERDICT.test('ctx.verdict = \'dropped\';')).toBe(true);
+    expect(PACKET_VERDICT.test('return Drop(ctx, \'policy-deny\');')).toBe(true);
   });
 
   it('un fichier vendeur reste petit — il assemble, il ne calcule pas', () => {

@@ -70,6 +70,11 @@ export const DEVICE_CATALOG: Record<DeviceType, DeviceDefinition> = {
     osType: 'huawei-vrp', namePrefix: 'Router',
     hasTerminal: true, fullyImplemented: true, paletteCategory: 'routers',
   },
+  'firewall-generic': {
+    label: 'Generic Firewall', description: 'Vendor-neutral stateful firewall base',
+    osType: 'linux', namePrefix: 'FW',
+    hasTerminal: false, fullyImplemented: false, paletteCategory: null,
+  },
   'firewall-cisco': {
     label: 'Cisco ASA', description: 'Cisco Adaptive Security Appliance',
     osType: 'linux', namePrefix: 'FW',

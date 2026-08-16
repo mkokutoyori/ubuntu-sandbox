@@ -21,6 +21,12 @@ export class AsaFirewall extends Firewall {
     zones.assignInterface(zoneName, iface);
   }
 
+  setSecurityLevel(iface: string, level: number): boolean {
+    const zone = this.getZoneTable().zoneOf(iface);
+    if (zone === undefined) return false;
+    return this.getZoneTable().setSecurityLevel(zone, level).ok;
+  }
+
   securityLevelOf(iface: string): number | undefined {
     const zone = this.getZoneTable().zoneOf(iface);
     return zone === undefined ? undefined : this.getZoneTable().getZone(zone)?.securityLevel;
