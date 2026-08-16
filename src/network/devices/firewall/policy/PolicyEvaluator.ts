@@ -21,6 +21,7 @@ export interface PolicyEvaluatorDeps {
   applicationShift?: boolean;
   securityLevelOf?: (zone: string) => number | undefined;
   interfaceHasBoundPolicy?: (iface: string) => boolean;
+  sameSecurityInterAllowed?: () => boolean;
   scheduleActive?: (schedule: string, at: number) => boolean;
   userOf?: (ip: string) => string | undefined;
   userGroupsOf?: (user: string) => readonly string[];
@@ -86,6 +87,7 @@ export class PolicyEvaluator {
     const from = this.deps.securityLevelOf?.(probe.ingressZone);
     const to = this.deps.securityLevelOf?.(probe.egressZone);
     if (from === undefined || to === undefined) return false;
+    if (from === to) return this.deps.sameSecurityInterAllowed?.() ?? false;
     return from > to;
   }
 

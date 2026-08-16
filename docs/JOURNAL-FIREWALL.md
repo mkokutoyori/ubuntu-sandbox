@@ -43,11 +43,12 @@
 | 2 | Câblage NAT dans le pipeline (§12.4) | 15 | ✅ |
 | 2 | Sonde de phase 2 (publication sur le fil) | 10 | ✅ |
 | **3** | Règle ASA « une ACL annule le permit implicite » | 6 | ✅ |
-| 3 | `FirewallProfile` + `AsaProfile` + `AsaFirewall` | — | ⏳ |
+| 3 | `FirewallProfile` + `AsaProfile` + `AsaFirewall` | 21 | ✅ |
+| 3 | Garde-fous d'architecture (G1, G2, G3, G5) | 12 | ✅ |
 | 3 | `AsaShell` | — | ⏳ |
 | 3 | `AsaRenderer` + `packet-tracer` | — | ⏳ |
 
-**Total actuel : 475 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
+**Total actuel : 508 cas, verts. PHASES 1 ET 2 FONCTIONNELLES.**
 
 ---
 
@@ -743,6 +744,60 @@ le modèle ASA.
 
 ---
 
+### E21 — `FirewallProfile` et sa première instance, ASA
+
+`FirewallProfile.ts` + `vendors/asa/` — 21 cas.
+
+**Le profil EST le contrat** (BRD §26.2), et ce fichier vérifie deux choses
+distinctes : que le profil *déclare* ce qu'un ASA fait, et que l'équipement
+*construit depuis ce profil* se comporte en conséquence. Un profil déclaratif
+que rien ne lirait serait exactement le défaut « accepté et inerte ».
+
+D'où la moitié du fichier sur le fil : **inside → outside passe sans aucune
+règle, outside → inside non**. C'est ce qui distingue un ASA de tous les
+autres pare-feux du BRD.
+
+**Le socle est devenu paramétrable sans un seul branchement vendeur** :
+nommage et nombre de ports, pipeline, ordre NAT, clé de politique, politique
+implicite et niveaux de sécurité viennent tous du profil. `AsaFirewall` fait
+**46 lignes** et ne contient aucune décision.
+
+`same-security-traffic permit inter-interface` est un troisième mode de la
+même règle de niveau, pas un mécanisme séparé : même niveau refusé par
+défaut, autorisé quand le drapeau est posé.
+
+---
+
+### E22 — Les garde-fous d'architecture
+
+`architecture-guards.test.ts` — 12 cas. Ils ne testent aucun comportement :
+ils testent des **contraintes**. Les affirmations du BRD sur la
+maintenabilité ne valent que si quelque chose les vérifie ; sans cela elles
+se dégradent au premier raccourci et personne ne s'en aperçoit avant la
+troisième déclinaison.
+
+Écrits **maintenant**, alors qu'il n'y a qu'un vendeur, parce qu'un
+garde-fou ajouté après coup constate les dégâts au lieu de les empêcher.
+
+G1 (aucun moteur ni verdict dans la couche vendeur), G2 (aucun branchement
+vendeur ni import de `vendors/` dans le socle), G3 (≤ 800 lignes, NFR-M3),
+G5 (aucun minuteur global).
+
+#### Deux faux positifs de mes propres garde-fous (B15)
+
+Les deux ont échoué au premier jet, et **le code avait raison les deux
+fois** :
+
+- `setTimeout` est une **méthode** de `SessionTable`, pas le minuteur global.
+- Les `// ───` sont des **séparateurs de section**, convention établie du
+  dépôt (`Equipment.ts`, `Port.ts`, `core/types.ts`), pas des explications.
+
+J'ai **précisé** les garde-fous plutôt que de les relâcher, et ajouté deux
+cas qui testent **le garde-fou lui-même** — un contrôle qui ne sait pas
+distinguer ce qu'il cherche finit par être désactivé.
+
+---
+
 ## Audit de non-duplication
 
 > **Procédure obligatoire, appliquée à chaque élément du module.** Avant
@@ -967,6 +1022,7 @@ un fichier et 8080 dans un autre serait exactement le défaut de départ.
 | B12 | Test affirmant qu'un PAT change toujours le port source | E16 | Un vrai PAT le *préserve* quand il est libre ; moteur correct |
 | B13 | Test utilisant un port hors de la plage PAT | E16 | Corrigé + cas dédié à la règle |
 | B14 | Réponse PAT consommée localement au lieu d'être dé-NATée | E19 | La recherche de session précède le test « pour nous ? » |
+| B15 | Garde-fous trop larges : méthode `setTimeout`, séparateurs `// ───` | E22 | Garde-fous précisés + cas testant les garde-fous |
 
 ## Prochaines étapes
 

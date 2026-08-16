@@ -28,18 +28,10 @@ import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipe
 import { makePacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
-
-const DEFAULT_PIPELINE = [
-  'ingress-zone', 'session-lookup', 'tcp-state-check', 'nat-destination',
-  'route-lookup', 'egress-zone', 'policy-lookup', 'nat-source', 'session-install',
-];
-
-const DEFAULT_PORT_COUNT = 8;
+import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
 
 export interface FirewallOptions {
-  portCount?: number;
-  portPrefix?: string;
-  pipeline?: readonly string[];
+  profile?: FirewallProfile;
   now?: () => number;
 }
 
@@ -56,15 +48,22 @@ export class Firewall extends Equipment {
   private readonly evaluator: PolicyEvaluator;
   private readonly pipeline: FirewallPipeline;
   private readonly services: FirewallServices;
+  protected readonly profile: FirewallProfile;
+  private readonly boundPolicyInterfaces = new Set<string>();
+  private sameSecurityInter = false;
+  private sameSecurityIntra = false;
 
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
   ) {
     super(deviceType, name, x, y);
 
-    const prefix = options.portPrefix ?? 'ethernet1/';
-    for (let index = 1; index <= (options.portCount ?? DEFAULT_PORT_COUNT); index++) {
-      this.addPort(new Port(`${prefix}${index}`, 'ethernet'));
+    const profile = options.profile ?? GENERIC_PROFILE;
+    this.profile = profile;
+
+    const first = profile.portFirstIndex;
+    for (let index = first; index < first + profile.portCount; index++) {
+      this.addPort(new Port(`${profile.portPrefix}${index}`, 'ethernet'));
     }
 
     const now = options.now ?? (() => Date.now());
@@ -80,7 +79,16 @@ export class Firewall extends Equipment {
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
     });
-    this.evaluator = new PolicyEvaluator({ objects: this.objects });
+    this.evaluator = new PolicyEvaluator({
+      objects: this.objects,
+      policyKeyedBy: profile.policyKeyedBy,
+      implicitPolicy: profile.implicitPolicy,
+      applicationShift: profile.applicationShift,
+      securityLevelOf: (zone) => this.zones.getZone(zone)?.securityLevel,
+      interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
+      sameSecurityInterAllowed: () => this.sameSecurityInter,
+      now,
+    });
     this.nat = new FirewallNatEngine({
       objects: this.objects,
       policy: this.natPolicy,
@@ -97,14 +105,17 @@ export class Firewall extends Equipment {
       sessions: this.sessions,
       natPolicy: this.natPolicy,
       nat: this.nat,
-      natOrder: { policySeesPreNatSource: true, policySeesPreNatDestination: true },
+      natOrder: {
+        policySeesPreNatSource: profile.natOrder.policySeesPreNatSource,
+        policySeesPreNatDestination: profile.natOrder.policySeesPreNatDestination,
+      },
       now,
     };
 
     const registry = new PipelineStageRegistry();
     for (const stage of createCoreStages(this.services)) registry.register(stage);
     this.pipeline = FirewallPipeline.fromStageNames(
-      options.pipeline ?? DEFAULT_PIPELINE, registry, `firewall.${this.id}`);
+      profile.pipeline, registry, `firewall.${this.id}`);
   }
 
   configureInterface(name: string, config: InterfaceConfig): void {
@@ -126,6 +137,20 @@ export class Firewall extends Equipment {
   getArpService(): ArpService { return this.arp; }
   getNatPolicy(): NatPolicyStore { return this.natPolicy; }
   getNatEngine(): FirewallNatEngine { return this.nat; }
+  getProfile(): FirewallProfile { return this.profile; }
+
+  bindPolicyToInterface(iface: string): void { this.boundPolicyInterfaces.add(iface); }
+  unbindPolicyFromInterface(iface: string): void { this.boundPolicyInterfaces.delete(iface); }
+  hasPolicyBound(iface: string): boolean { return this.boundPolicyInterfaces.has(iface); }
+
+  setSameSecurityTraffic(kind: 'inter-interface' | 'intra-interface', enabled: boolean): void {
+    if (kind === 'inter-interface') this.sameSecurityInter = enabled;
+    else this.sameSecurityIntra = enabled;
+  }
+
+  sameSecurityTrafficEnabled(kind: 'inter-interface' | 'intra-interface'): boolean {
+    return kind === 'inter-interface' ? this.sameSecurityInter : this.sameSecurityIntra;
+  }
   getPipeline(): FirewallPipeline { return this.pipeline; }
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
