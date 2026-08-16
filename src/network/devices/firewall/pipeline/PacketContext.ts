@@ -71,6 +71,7 @@ export interface PacketContext {
 
   verdict?: FirewallVerdict;
 
+  readonly simulated: boolean;
   readonly trace: PipelineTraceEntry[];
 }
 
@@ -80,6 +81,7 @@ export interface PacketContextInit {
   arrivedAt: number;
   ingressZone?: string;
   isFirstPacket?: boolean;
+  simulated?: boolean;
 }
 
 let nextContextId = 1;
@@ -93,6 +95,7 @@ export function makePacketContext(init: PacketContextInit): PacketContext {
     packet: init.packet,
     originalPacket: init.packet,
     isFirstPacket: init.isFirstPacket ?? true,
+    simulated: init.simulated ?? false,
     trace: [],
   };
 }

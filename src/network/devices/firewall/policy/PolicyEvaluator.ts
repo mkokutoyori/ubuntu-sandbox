@@ -1,5 +1,5 @@
 import type { ObjectStore } from '../model/ObjectStore';
-import { makeRule, type RuleAction, type SecurityRule } from '../model/SecurityRule';
+import { IMPLICIT_RULE_ID, makeRule, type RuleAction, type SecurityRule } from '../model/SecurityRule';
 import type { PolicyProbe } from './PolicyProbe';
 
 export type PolicyKeyedBy = 'zone' | 'interface';
@@ -47,7 +47,7 @@ export class PolicyEvaluator {
     this.applicationShift = deps.applicationShift ?? false;
     this.now = deps.now ?? (() => Date.now());
     this.implicit = makeRule({
-      id: '__implicit__', seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
+      id: IMPLICIT_RULE_ID, seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
       from: [ANY], to: [ANY], source: [ANY], destination: [ANY], service: [ANY],
       action: 'deny', implicit: true,
     });

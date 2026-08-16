@@ -1,4 +1,4 @@
-import { makeRule, type SecurityRule, type SecurityRuleInit } from './SecurityRule';
+import { IMPLICIT_RULE_ID, makeRule, type SecurityRule, type SecurityRuleInit } from './SecurityRule';
 
 export type PolicyError =
   | { kind: 'duplicate-rule'; id: string }
@@ -43,7 +43,7 @@ export class PolicyStore {
   constructor(deps: { now?: () => number; implicitAction?: SecurityRule['action'] } = {}) {
     this.now = deps.now ?? (() => Date.now());
     this.implicit = makeRule({
-      id: '__implicit__', seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
+      id: IMPLICIT_RULE_ID, seq: Number.MAX_SAFE_INTEGER, name: 'implicit',
       action: deps.implicitAction ?? 'deny', implicit: true,
     });
   }

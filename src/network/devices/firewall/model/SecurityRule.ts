@@ -78,6 +78,8 @@ export interface SecurityRuleInit {
   createdAt?: number;
 }
 
+export const IMPLICIT_RULE_ID = '__implicit__';
+
 export const DENY_ACTIONS: readonly RuleAction[] = Object.freeze([
   'deny', 'drop', 'reset-client', 'reset-server', 'reset-both',
 ]);

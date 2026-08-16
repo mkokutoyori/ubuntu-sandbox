@@ -42,9 +42,11 @@ const DISCARD_TIMEOUT_SEC = 5;
 const tcpMachines = new WeakMap<object, TcpStateMachine>();
 const pendingTranslations = new WeakMap<object, SessionTranslation>();
 
-function deny(context: PacketContext, stage: string, reason: VerdictReason): FilterVerdict<PacketContext> {
-  context.verdict = Object.freeze({ action: 'deny' as const, reason, stage });
-  context.trace.push({ stage, verdict: 'drop', detail: reason });
+function deny(
+  context: PacketContext, stage: string, reason: VerdictReason, ruleId?: string,
+): FilterVerdict<PacketContext> {
+  context.verdict = Object.freeze({ action: 'deny' as const, reason, stage, ruleId });
+  context.trace.push({ stage, verdict: 'drop', detail: reason, matchedRuleId: ruleId });
   return Drop(reason);
 }
 
@@ -175,6 +177,7 @@ function natContextOf(context: PacketContext) {
     egressZone: context.egressZone ?? '',
     ingressInterface: context.ingressPort,
     egressInterface: context.egressPort ?? '',
+    simulated: context.simulated,
   };
 }
 
@@ -291,7 +294,8 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       if (isDenyAction(decision.action)) {
         installDiscard(services, context, packet);
         return deny(context, 'policy-lookup',
-          decision.implicit ? 'implicit-deny' : 'policy-deny');
+          decision.implicit ? 'implicit-deny' : 'policy-deny',
+          decision.implicit ? undefined : decision.rule.id);
       }
 
       context.trace.push({
@@ -309,6 +313,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'session-install', 'not-ipv4');
       if (!context.isFirstPacket) return proceed(context, 'session-install', 'already');
+      if (context.simulated) return proceed(context, 'session-install', 'simulated');
 
       if (!services.sessions.hasRoom()) {
         return deny(context, 'session-install', 'session-table-full');
@@ -342,6 +347,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
 function installDiscard(
   services: FirewallServices, context: PacketContext, packet: IPv4Packet,
 ): void {
+  if (context.simulated) return;
   if (!context.isFirstPacket || !services.sessions.hasRoom()) return;
 
   services.sessions.installDiscard(flowKeyFromPacket(packet), {

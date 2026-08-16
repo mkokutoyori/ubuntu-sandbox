@@ -17,6 +17,7 @@ export interface NatContext {
   readonly egressZone: string;
   readonly ingressInterface: string;
   readonly egressInterface: string;
+  readonly simulated?: boolean;
 }
 
 export interface NatOutcome {
@@ -74,7 +75,8 @@ export class FirewallNatEngine {
     if (target === undefined) return { packet, matchedRuleId: rule.id, failure: 'nat-no-rule' };
 
     const originalPort = getPacketSrcPort(packet);
-    const port = this.mapEndpoint(target, packet.sourceIP.toString(), originalPort);
+    const port = this.mapEndpoint(
+      target, packet.sourceIP.toString(), originalPort, context.simulated === true);
     if (port === null) {
       this.portExhaustions++;
       return { packet, matchedRuleId: rule.id, failure: 'nat-port-exhausted' };
@@ -198,30 +200,41 @@ export class FirewallNatEngine {
     return undefined;
   }
 
-  private mapEndpoint(address: string, sourceIP: string, sourcePort: number): number | null {
+  private mapEndpoint(
+    address: string, sourceIP: string, sourcePort: number, simulated: boolean,
+  ): number | null {
     const key = endpointKey(address, sourceIP, sourcePort);
     const existing = this.endpointMappings.get(key);
     if (existing !== undefined) return existing;
 
-    const port = this.allocatePort(address, sourcePort);
-    if (port === null) return null;
+    const port = this.allocatePort(address, sourcePort, simulated);
+    if (port === null || simulated) return port;
 
     this.endpointMappings.set(key, port);
     return port;
   }
 
-  private allocatePort(address: string, preferred: number): number | null {
+  private allocatePort(address: string, preferred: number, simulated = false): number | null {
     let ports = this.usedPorts.get(address);
-    if (!ports) { ports = new Set(); this.usedPorts.set(address, ports); }
+    if (!ports) {
+      if (simulated) return this.freePortFrom(new Set(), preferred);
+      ports = new Set();
+      this.usedPorts.set(address, ports);
+    }
 
+    const port = this.freePortFrom(ports, preferred);
+    if (port !== null && !simulated) ports.add(port);
+    return port;
+  }
+
+  private freePortFrom(taken: ReadonlySet<number>, preferred: number): number | null {
     if (preferred >= this.portRange.from && preferred <= this.portRange.to
-      && !ports.has(preferred)) {
-      ports.add(preferred);
+      && !taken.has(preferred)) {
       return preferred;
     }
 
     for (let port = this.portRange.from; port <= this.portRange.to; port++) {
-      if (!ports.has(port)) { ports.add(port); return port; }
+      if (!taken.has(port)) return port;
     }
     return null;
   }

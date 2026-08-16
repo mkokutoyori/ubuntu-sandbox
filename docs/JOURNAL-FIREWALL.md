@@ -46,11 +46,12 @@
 | 3 | `FirewallProfile` + `AsaProfile` + `AsaFirewall` | 21 | ✅ |
 | 3 | Garde-fous d'architecture (G1, G2, G3, G5) | 12 | ✅ |
 | 3 | `AsaShell` (grammaire CLI) | 45 | ✅ |
-| 3 | `AsaRenderer` + `packet-tracer` | — | ⏳ |
+| 3 | Simulation d'un paquet (socle de `packet-tracer`) | 19 | ✅ |
+| 3 | `packet-tracer` (rendu ASA) | 19 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 561 cas verts sur 20 fichiers** (687 avec les suites
+**Total actuel : 603 cas verts sur 22 fichiers** (729 avec les suites
 connexes). **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1078,6 +1079,77 @@ connexes (GUI/palette), lint propre.
 
 ---
 
+### E24 — `packet-tracer` : simuler sans rien laisser derrière
+
+Invariant I-F3 du BRD : un outil de diagnostic doit lire le **vrai**
+pipeline. C'est la commande où la tentation de tricher est la plus forte —
+il serait facile de rendre un texte plausible sans jamais consulter le
+moteur, et le jour où les deux divergent, c'est le diagnostic qu'on croit,
+pas la machine.
+
+Le socle est `Firewall.simulate()` : il construit un paquet
+(`pipeline/SimulatedPacket.ts`), le fait traverser le **même** pipeline que
+le trafic du câble, et rend la trace telle quelle. Le rendu ASA
+(`vendors/asa/AsaPacketTracer.ts`) n'est qu'un formateur — il traduit les
+noms de nos étapes vers ceux d'IOS (`ACCESS-LIST`, `ROUTE-LOOKUP`, `NAT`,
+`FLOW-CREATION`), parce qu'un opérateur cherche `ACCESS-LIST` dans sa
+sortie, pas `policy-lookup`.
+
+**Ce que la sonde interdit** n'est pas seulement « le code lit le
+moteur » : elle **change la politique** et vérifie que le rendu change avec
+elle. Un texte fabriqué ne pourrait pas suivre.
+
+#### « Il ne crée ni connexion ni traduction » — vérifié, pas supposé
+
+La documentation Cisco est explicite : `packet-tracer` simule. Le contexte
+porte donc `simulated`, honoré en deux points et **deux seulement** :
+`session-install` n'installe rien (ni session, ni session de rejet), et
+l'allocateur PAT **calcule** le port sans le **réserver**.
+
+Le second point a demandé une précaution qui n'était pas évidente et qui
+est gardée par un témoin : une simulation ne doit pas non plus **effacer**
+une traduction vivante. Un `release()` après coup l'aurait fait — la
+recherche trouve d'abord une correspondance existante, et la relâcher
+aurait détruit le flux d'un autre. La règle est donc « ne pose rien » et
+non « défais ce que tu as posé ».
+
+Choix assumé et écrit : les compteurs de règles (`hitCount`) **sont**
+incrémentés par une simulation, comme sur un vrai ASA, où c'est un travers
+connu de la commande.
+
+#### Trois défauts trouvés en écrivant ceci
+
+- **`FirewallVerdict.ruleId` était déclaré et jamais écrit.** Un refus ne
+  nommait donc pas la règle qui l'avait prononcé — précisément ce qu'on
+  vient chercher dans un diagnostic. Le champ existait depuis la phase 1 ;
+  rien ne le remplissait.
+- **`__implicit__` fuyait jusqu'à l'opérateur.** Le rendu affichait
+  `Config: access-list __implicit__` — un marqueur interne. Il est
+  désormais nommé une fois (`IMPLICIT_RULE_ID`, dans `SecurityRule.ts`, là
+  où les deux magasins qui l'utilisaient le réécrivaient chacun en dur) et
+  rendu `Implicit Rule`, ce qu'écrit la vraie machine.
+- **Mes propres spécifications de règle NAT dans les tests étaient
+  fausses** (`kind: 'dynamic-pat'`, `address:`) : ni le bon variant ni le
+  bon champ. Les cas passaient par le repli `?? interfaceAddress(sortie)`,
+  qui donnait la bonne réponse **par accident**. Corrigés sur la vraie
+  forme, et le typage strict les aurait attrapés plus tôt — il le fait
+  maintenant, `type` étant obligatoire sur `NatRuleDraft`.
+
+#### Un trait d'ASA que la CLI n'avait pas, et qui n'est pas cosmétique
+
+Tous les cas du rendu échouaient au premier jet avec `% Invalid input`,
+et la cause n'était pas le rendu : **le laboratoire finit en mode
+configuration**, et mon shell n'y acceptait que les commandes de
+configuration. Vérification faite contre la référence CLI de Cisco : sur un
+ASA « all lower commands can be entered in higher modes » — un `show` (ou
+un `packet-tracer`) fonctionne **depuis la configuration, sans `do`**,
+contrairement à IOS. C'est une différence que tout opérateur venant d'IOS
+remarque au premier jour. La règle est désormais dans `dispatch()` : le
+mode courant a la priorité, et ce qu'il refuse retombe sur l'EXEC.
+L'inverse reste faux, et un cas le vérifie.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1116,19 +1188,21 @@ connexes (GUI/palette), lint propre.
 | B18 | `security-level` rendu conditionnellement ; un vrai ASA l'écrit toujours | E23 | Rendu inconditionnel + message `INFO:` que la vraie machine émet |
 | B19 | Garde-fou G1 déclenché par un local nommé `verdict` dans un rendu | E23 | Variables renommées `keyword` ; garde-fou visant `.verdict =` ; cas testant le garde-fou |
 | B20 | `'firewall-generic'` absent de `DEVICE_CATALOG` (`Record<DeviceType, …>`) | E23 | Entrée ajoutée, `paletteCategory: null` — c'est une base, pas un équipement à déposer |
+| B21 | `FirewallVerdict.ruleId` déclaré depuis la phase 1, jamais écrit | E24 | `deny()` porte la règle ; un refus nomme enfin ce qui l'a prononcé |
+| B22 | `__implicit__`, marqueur interne, rendu à l'opérateur | E24 | `IMPLICIT_RULE_ID` nommé une fois ; rendu `Implicit Rule` |
+| B23 | Mes règles NAT de test : ni le bon variant ni le bon champ, passant par un repli | E24 | Vraie forme ; `type` obligatoire, donc le typage l'attrape désormais |
+| B24 | Un `show` depuis la configuration était refusé — sur ASA il est légal sans `do` | E24 | `dispatch()` : le mode courant d'abord, repli sur l'EXEC |
 
 ## Prochaines étapes
 
 Phase 3 (ASA), reste à faire :
 
-1. `AsaRenderer` — le quatrième artefact, extrait de `AsaShell` une fois
-   `packet-tracer` écrit (les deux rendent la même matière).
-2. `packet-tracer input <if> <proto> <src> <sport> <dst> <dport>` — il doit
-   lire `ctx.trace` du **vrai** pipeline (invariant I-F3), sinon il décrit
-   un pare-feu qui n'est pas celui qui filtre.
-3. NAT objet ASA : `nat (dmz,outside) static …` sous `object network`.
-4. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque).
-5. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
+1. NAT objet ASA : `nat (inside,outside) static …` sous `object network`,
+   et `nat (inside,outside) dynamic interface` — la syntaxe 8.3+ que le
+   moteur sait déjà exécuter et que la CLI ne sait pas encore écrire.
+2. `show conn` sur des sessions vivantes (le rendu existe, la sonde manque)
+   et `show xlate`, son jumeau côté traduction.
+3. `ShellFactory.register('asa', …)` puis `DeviceFactory` : `firewall-cisco`
    cesse d'être un `LinuxPC`.
 
 Puis phases 4 à 15 : diagnostics et journaux, FortiOS, cadre ALG, PAN-OS

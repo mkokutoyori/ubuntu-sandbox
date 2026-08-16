@@ -391,6 +391,38 @@ describe('AsaShell — vues', () => {
   });
 });
 
+describe('AsaShell — « toute commande inferieure est disponible plus haut »', () => {
+  it('un `show` fonctionne DEPUIS la configuration, sans `do` — c\'est un ASA, pas IOS', () => {
+    const { shell } = lab();
+    run(shell, ...ENTER_CONFIG, 'interface GigabitEthernet0/0', 'nameif inside', 'exit');
+
+    expect(run(shell, 'show nameif')).toContain('inside');
+  });
+
+  it('il fonctionne aussi depuis un SOUS-mode', () => {
+    const { shell } = lab();
+    run(shell, ...ENTER_CONFIG, 'interface GigabitEthernet0/0', 'nameif inside');
+
+    expect(run(shell, 'show nameif')).toContain('inside');
+  });
+
+  it('la commande du sous-mode garde la priorite sur celle du dessus', () => {
+    const { fw, shell } = lab();
+
+    run(shell, ...ENTER_CONFIG, 'interface GigabitEthernet0/0',
+      'ip address 10.9.9.1 255.255.255.0');
+
+    expect(fw.getInterfaceTable().get('GigabitEthernet0/0')?.ip).toBe('10.9.9.1');
+  });
+
+  it('l\'inverse n\'est pas vrai : une commande de configuration reste refusee en EXEC', () => {
+    const { shell } = lab();
+
+    expect(run(shell, 'enable', 'access-list L extended permit ip any any'))
+      .toContain('Invalid input');
+  });
+});
+
 describe('AsaShell — P4, les trois familles de messages', () => {
   it('famille 3 : une commande INEXISTANTE recoit le message d\'IOS', () => {
     const { shell } = lab();

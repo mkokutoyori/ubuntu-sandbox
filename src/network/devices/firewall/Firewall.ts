@@ -28,6 +28,13 @@ import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipe
 import { makePacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
+import { buildSimulatedPacket } from './pipeline/SimulatedPacket';
+import {
+  UnknownSimulationInterfaceError,
+  summariseSimulation,
+  type SimulationRequest,
+  type SimulationResult,
+} from './pipeline/Simulation';
 import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
 
 export interface FirewallOptions {
@@ -128,6 +135,22 @@ export class Firewall extends Equipment {
     if (port && iface?.ip && iface.mask) {
       port.configureIP(new IPAddress(iface.ip), new SubnetMask(iface.mask));
     }
+  }
+
+  simulate(request: SimulationRequest): SimulationResult {
+    if (!this.getPort(request.ingressPort)) {
+      throw new UnknownSimulationInterfaceError(request.ingressPort);
+    }
+
+    const context = makePacketContext({
+      ingressPort: request.ingressPort,
+      packet: buildSimulatedPacket(request),
+      arrivedAt: this.services.now(),
+      simulated: true,
+    });
+
+    const outcome = this.pipeline.process(context);
+    return summariseSimulation(context, outcome.verdict === 'accepted');
   }
 
   setInterfaceUp(name: string, up: boolean): void {

@@ -1,7 +1,9 @@
 import { subnetAddress, hostAddress, rangeAddress } from '../../model/AddressObject';
 import type { RuleAction } from '../../model/SecurityRule';
 import type { AsaFirewall } from './AsaFirewall';
+import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
 import { ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
+import { renderPacketTracer } from './AsaPacketTracer';
 import {
   ASA_INVALID_INPUT,
   ASA_UNIMPLEMENTED_REASONS,
@@ -18,6 +20,38 @@ interface AclLine {
   readonly source: string;
   readonly destination: string;
   readonly port?: string;
+}
+
+function parseTracerFlow(args: string[]): SimulatedFlow | undefined {
+  const protocol = args[0];
+  if (protocol === 'icmp') {
+    if (args.length < 5) return undefined;
+    return numericFlow('icmp', args[1], args[4], 0, args[2], args[3]);
+  }
+  if (protocol !== 'tcp' && protocol !== 'udp') return undefined;
+  if (args.length < 5) return undefined;
+
+  return numericFlow(protocol, args[1], args[3], undefined, args[2], undefined, args[4]);
+}
+
+function numericFlow(
+  protocol: SimulatedProtocol, sourceIP: string, destinationIP: string,
+  sourcePort: number | undefined, sourceField: string,
+  icmpCode?: string, destinationField?: string,
+): SimulatedFlow | undefined {
+  const first = Number(sourceField);
+  const second = destinationField === undefined ? 0 : Number(destinationField);
+  if (!Number.isInteger(first) || !Number.isInteger(second)) return undefined;
+
+  if (protocol === 'icmp') {
+    const code = Number(icmpCode);
+    if (!Number.isInteger(code)) return undefined;
+    return {
+      protocol, sourceIP, destinationIP,
+      sourcePort: sourcePort ?? 0, destinationPort: first, icmpCode: code,
+    };
+  }
+  return { protocol, sourceIP, destinationIP, sourcePort: first, destinationPort: second };
 }
 
 export class AsaShell {
@@ -60,18 +94,25 @@ export class AsaShell {
     const navigated = this.navigate(tokens, negated);
     if (navigated !== null) return navigated;
 
+    return this.dispatch(tokens, negated);
+  }
+
+  private dispatch(tokens: string[], negated: boolean): string {
+    if (this.mode === 'exec' || this.mode === 'privileged') return this.execCommand(tokens);
+
+    const answer = this.configFamilyCommand(tokens, negated);
+    if (answer !== ASA_INVALID_INPUT) return answer;
+
+    return this.execCommand(tokens);
+  }
+
+  private configFamilyCommand(tokens: string[], negated: boolean): string {
     switch (this.mode) {
-      case 'exec':
-      case 'privileged':
-        return this.execCommand(tokens);
-      case 'config':
-        return this.configCommand(tokens, negated);
-      case 'config-if':
-        return this.interfaceCommand(tokens, negated);
-      case 'config-object':
-        return this.objectCommand(tokens);
-      case 'config-group':
-        return this.groupCommand(tokens);
+      case 'config': return this.configCommand(tokens, negated);
+      case 'config-if': return this.interfaceCommand(tokens, negated);
+      case 'config-object': return this.objectCommand(tokens);
+      case 'config-group': return this.groupCommand(tokens);
+      default: return ASA_INVALID_INPUT;
     }
   }
 
@@ -140,6 +181,7 @@ export class AsaShell {
 
   private execCommand(tokens: string[]): string {
     const [head, ...rest] = tokens;
+    if (head === 'packet-tracer') return this.packetTracer(rest);
     if (head !== 'show') return ASA_INVALID_INPUT;
 
     switch (rest[0]) {
@@ -265,6 +307,20 @@ export class AsaShell {
 
   private interfaceNamed(zoneName: string): string | undefined {
     return this.fw.getZoneTable().interfacesOf(zoneName)[0];
+  }
+
+  private packetTracer(rest: string[]): string {
+    if (this.mode === 'exec') return ASA_INVALID_INPUT;
+    if (rest[0] !== 'input') return ASA_INVALID_INPUT;
+
+    const ingressPort = this.interfaceNamed(rest[1]);
+    if (!ingressPort) return ASA_INVALID_INPUT;
+
+    const flow = parseTracerFlow(rest.slice(2));
+    if (!flow) return ASA_INVALID_INPUT;
+
+    const result = this.fw.simulate({ ingressPort, ...flow });
+    return renderPacketTracer(result, iface => this.fw.getZoneTable().zoneOf(iface));
   }
 
   private showNameif(): string {
