@@ -19,6 +19,7 @@
 
 import type { ExecScope } from './cisco/CiscoExecScope';
 import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
@@ -106,6 +107,8 @@ import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands,
+  setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
+  setOspfv3InterfaceAuthentication,
 } from './cisco/CiscoOspfCommands';
 import {
   buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
@@ -146,8 +149,141 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
-      ...this.ipv6NdSpecs(),
+      ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(),
     ];
+  }
+
+  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+    return [
+      ...super.socleLegends(),
+      [['ipv6'], 'IPv6 interface subcommands'],
+      [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
+      [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
+      [['ipv6', 'nd', 'ra'], 'Router advertisement control'],
+    ];
+  }
+
+  private ipv6OspfSpecs(): CommandSpec[] {
+    const reglage = (
+      keyword: string, description: string, argument: ArgumentSpec,
+      champ: string,
+    ): CommandSpec => ({
+      id: `ipv6-ospf-${keyword}`,
+      path: ['ipv6', 'ospf', keyword, argument],
+      description,
+      modes: ['config-if', 'config-subif'], minPrivilege: 15,
+      run: (_session, args) => this.appliquerOspfv3({
+        [champ]: argument.type === 'INT' ? parseInt(args[argument.name], 10)
+          : args[argument.name].toLowerCase(),
+      }),
+    });
+
+    return [
+      reglage('cost', 'Set OSPFv3 cost', {
+        name: 'cout', type: 'INT', range: [1, 65535], description: 'Cost',
+      }, 'cost'),
+      reglage('priority', 'Set OSPFv3 priority', {
+        name: 'priorite', type: 'INT', range: [0, 255], description: 'Priority',
+      }, 'priority'),
+      reglage('hello-interval', 'Set OSPFv3 hello interval', {
+        name: 'secondes', type: 'INT', range: [1, 65535], description: 'Seconds',
+      }, 'helloInterval'),
+      reglage('dead-interval', 'Set OSPFv3 dead interval', {
+        name: 'secondes', type: 'INT', range: [1, 65535], description: 'Seconds',
+      }, 'deadInterval'),
+      reglage('network', 'Set OSPFv3 network type', {
+        name: 'type', type: 'ENUM', description: 'Network type',
+        values: [
+          { keyword: 'broadcast', description: 'Specify OSPFv3 broadcast multi-access network' },
+          { keyword: 'non-broadcast', description: 'Specify OSPFv3 NBMA network' },
+          { keyword: 'point-to-multipoint', description: 'Specify OSPFv3 point-to-multipoint network' },
+          { keyword: 'point-to-point', description: 'Specify OSPFv3 point-to-point network' },
+        ],
+      }, 'networkType'),
+      {
+        id: 'ipv6-ospf-authentication-ipsec',
+        path: ['ipv6', 'ospf', 'authentication', 'ipsec', 'spi',
+          {
+            name: 'spi', type: 'INT', range: [256, 4294967295],
+            description: 'Security Policy Index',
+          },
+          {
+            name: 'algorithme', type: 'ENUM', description: 'Authentication algorithm',
+            values: [
+              { keyword: 'md5', description: 'Use MD5 authentication' },
+              { keyword: 'sha1', description: 'Use SHA-1 authentication' },
+            ],
+          },
+          {
+            name: 'cle', type: 'REST',
+            description: 'Key (32 hex digits for MD5, 40 for SHA-1)',
+            alternatives: [
+              { keyword: '0', description: 'The key is unencrypted' },
+              { keyword: '7', description: 'The key is hidden' },
+              { keyword: 'WORD', description: 'The key itself' },
+            ],
+          }],
+        description: 'Enable authentication',
+        undoDescription: 'Disable authentication',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, true);
+          return '';
+        },
+        undo: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, false);
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-ospf-authentication-null',
+        path: ['ipv6', 'ospf', 'authentication', 'null'],
+        description: 'Use no authentication',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, false);
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-ospf-area',
+        path: ['ipv6', 'ospf',
+          {
+            name: 'processus', type: 'INT', range: [1, 65535],
+            description: 'Process ID',
+          },
+          'area',
+          {
+            name: 'aire', type: 'WORD',
+            description: 'OSPFv3 area ID as a decimal value or as an IP address',
+          }],
+        description: 'Enable OSPFv3 on this interface',
+        undoDescription: 'Remove this interface from the OSPFv3 process',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const iface = this.selectedInterfaceName();
+          if (iface) {
+            enableOspfv3OnInterface(
+              this.d(), iface, parseInt(args.processus, 10), args.aire);
+          }
+          return '';
+        },
+        undo: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) disableOspfv3OnInterface(this.d(), iface);
+          return '';
+        },
+      },
+    ];
+  }
+
+  private appliquerOspfv3(patch: Record<string, unknown>): string {
+    const iface = this.selectedInterfaceName();
+    if (iface) setOspfv3InterfaceParams(this.d(), iface, patch);
+    return '';
   }
 
 

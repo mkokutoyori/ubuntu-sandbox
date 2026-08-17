@@ -245,7 +245,12 @@ describe('the command that carries the timer', () => {
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/0');
     expect(await r.executeCommand('ipv6 ospf hello-interval')).toContain('Incomplete');
-    expect(await r.executeCommand('ipv6 ospf hello-interval 0')).toContain('% Invalid value');
+    // `% Invalid value` n'est pas une phrase d'IOS : c'est le refus que
+    // le gestionnaire rendait a la main, faute de plage declaree. La
+    // plage vit desormais sur l'argument, donc le refus est celui d'IOS
+    // et il MONTRE ou l'on s'est trompe.
+    expect(await r.executeCommand('ipv6 ospf hello-interval 0'))
+      .toContain('% Invalid input detected');
     expect(await r.executeCommand('ipv6 ospf dead-interval 40')).toBe('');
   });
 });

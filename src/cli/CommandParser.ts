@@ -10,7 +10,10 @@ export type ParseResult =
   }
   | { readonly status: 'ambiguous'; readonly candidates: string[]; readonly token: string }
   | { readonly status: 'incomplete'; readonly consumed: number }
-  | { readonly status: 'invalid'; readonly token: string; readonly position: number };
+  | {
+    readonly status: 'invalid'; readonly token: string; readonly position: number;
+    readonly refusePar?: 'argument';
+  };
 
 export function tokenize(input: string): string[] {
   return input.trim().split(/\s+/).filter(Boolean);
@@ -60,6 +63,9 @@ export function parseCommand(
 
   const spec = node.spec;
   if (!spec) return { status: 'incomplete', consumed: tokens.length };
+  if (spec.existsOnlyNegated && !negated) {
+    return { status: 'incomplete', consumed: tokens.length };
+  }
   if (!table.isReachable(spec, session)) {
     return { status: 'invalid', token: tokens[tokens.length - 1], position: tokens.length - 1 };
   }

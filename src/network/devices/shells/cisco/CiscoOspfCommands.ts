@@ -27,6 +27,62 @@ import { iosShortInterfaceName, iosInterfaceStatus }
  * `area 00` all name the same area — a check on the literal text would
  * be defeated by the second spelling.
  */
+export function setOspfv3InterfaceParams(
+  router: Router, ifName: string, updates: Record<string, unknown>,
+): void {
+  const extra = router._getOSPFExtraConfig();
+  const pending = extra.pendingV3IfConfig.get(ifName) || {};
+  Object.assign(pending, updates);
+  extra.pendingV3IfConfig.set(ifName, pending);
+
+  const engine = router._getOSPFv3EngineInternal();
+  const iface = engine?.getInterface(ifName);
+  if (!iface) return;
+
+  const live = iface as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined && key in live) live[key] = value;
+  }
+}
+
+export function enableOspfv3OnInterface(
+  router: Router, ifName: string, processId: number, areaId: string,
+): void {
+  if (!router._getOSPFv3EngineInternal()) router._enableOSPFv3(processId);
+  const engine = router._getOSPFv3EngineInternal();
+  if (!engine) return;
+
+  const port = router._getPortsInternal().get(ifName);
+  if (!port) return;
+
+  const globalAddr = port.getIPv6Addresses().find(a => a.origin !== 'link-local');
+  const pending = router._getOSPFExtraConfig().pendingV3IfConfig.get(ifName);
+  if (engine.getInterface(ifName)) return;
+
+  engine.activateInterface(ifName, areaId, {
+    ipAddress: globalAddr ? globalAddr.address.toString() : '::',
+    cost: pending?.cost,
+    priority: pending?.priority,
+    networkType: pending?.networkType as never,
+    helloInterval: pending?.helloInterval,
+    deadInterval: pending?.deadInterval,
+  });
+}
+
+export function disableOspfv3OnInterface(router: Router, ifName: string): void {
+  router._getOSPFv3EngineInternal()?.deactivateInterface(ifName);
+  router._getOSPFExtraConfig().pendingV3IfConfig.delete(ifName);
+}
+
+export function setOspfv3InterfaceAuthentication(
+  router: Router, ifName: string, protege: boolean,
+): void {
+  const extra = router._getOSPFExtraConfig();
+  const pending = extra.pendingV3IfConfig.get(ifName) || {};
+  pending.ipsecAuth = protege;
+  extra.pendingV3IfConfig.set(ifName, pending);
+}
+
 function isBackboneArea(areaId: string): boolean {
   const t = areaId.trim();
   if (/^\d+$/.test(t)) return Number(t) === 0;
@@ -964,121 +1020,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     else if (sub === 'echo') (pending as any).bfdEcho = true;
     else (pending as any).bfd = args.join(' ');
     extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
-
-  // IPv6 OSPF interface commands - store pending config + apply if exists
-  const setPendingV3If = (ifName: string, updates: Record<string, any>) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingV3IfConfig.get(ifName) || {};
-    Object.assign(pending, updates);
-    extra.pendingV3IfConfig.set(ifName, pending);
-
-    const v3 = ctx.r()._getOSPFv3EngineInternal();
-    if (v3) {
-      const iface = v3.getInterface(ifName);
-      if (iface) {
-        if (updates.cost !== undefined) iface.cost = updates.cost;
-        if (updates.priority !== undefined) iface.priority = updates.priority;
-        if (updates.networkType !== undefined) iface.networkType = updates.networkType;
-        if (updates.helloInterval !== undefined) iface.helloInterval = updates.helloInterval;
-        if (updates.deadInterval !== undefined) iface.deadInterval = updates.deadInterval;
-      }
-    }
-  };
-
-  configIfTrie.registerGreedy('ipv6 ospf cost', 'Set OSPFv3 cost', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    setPendingV3If(ifName, { cost: parseInt(args[0], 10) });
-    return '';
-  });
-
-  configIfTrie.registerGreedy('ipv6 ospf priority', 'Set OSPFv3 priority', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    setPendingV3If(ifName, { priority: parseInt(args[0], 10) });
-    return '';
-  });
-
-  // Refused while no Hello travelled: storing a value nobody reads would
-  // have been decoration. Now that adjacency forms on real frames,
-  // `processHello` reads these and a mismatch really prevents it.
-  configIfTrie.registerGreedy('ipv6 ospf hello-interval', 'Set OSPFv3 hello interval', (args) => {
-    const val = parseInt(args[0], 10);
-    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    setPendingV3If(ifName, { helloInterval: val });
-    return '';
-  });
-
-  configIfTrie.registerGreedy('ipv6 ospf dead-interval', 'Set OSPFv3 dead interval', (args) => {
-    const val = parseInt(args[0], 10);
-    if (isNaN(val) || val < 1 || val > 65535) return '% Invalid value';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    setPendingV3If(ifName, { deadInterval: val });
-    return '';
-  });
-
-  // Arity is declared on the trie rather than refused in the handler:
-  // that is the single-exit diagnostic mechanism.
-  configIfTrie.requireArgs('ipv6 ospf hello-interval', 1);
-  configIfTrie.requireArgs('ipv6 ospf dead-interval', 1);
-
-  configIfTrie.registerGreedy('ipv6 ospf network', 'Set OSPFv3 network type', (args) => {
-    if (args.length < 1) return '';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    setPendingV3If(ifName, { networkType: args[0].toLowerCase() });
-    return '';
-  });
-
-  configIfTrie.registerGreedy('ipv6 ospf authentication', 'Set OSPFv3 authentication', (_args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingV3IfConfig.get(ifName) || {};
-    pending.ipsecAuth = true;
-    extra.pendingV3IfConfig.set(ifName, pending);
-    return '';
-  });
-
-  // ipv6 ospf <process-id> area <area-id>
-  configIfTrie.registerGreedy('ipv6 ospf', 'Enable OSPFv3 on interface', (args) => {
-    // ipv6 ospf <id> area <area-id>
-    if (args.length < 3) return '% Incomplete command.';
-    const processId = parseInt(args[0], 10);
-    if (isNaN(processId)) return '% Invalid process ID';
-    if (args[1].toLowerCase() !== 'area') return '';
-    const areaId = args[2];
-    const router = ctx.r();
-    if (!router._getOSPFv3EngineInternal()) {
-      router._enableOSPFv3(processId);
-    }
-    const v3 = router._getOSPFv3EngineInternal()!;
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = router._getPortsInternal().get(ifName);
-    if (port) {
-      const ipv6Addrs = port.getIPv6Addresses();
-      const globalAddr = ipv6Addrs.find(a => a.origin !== 'link-local');
-      const addr = globalAddr ? globalAddr.address.toString() : '::';
-      const v3Pending = router._getOSPFExtraConfig().pendingV3IfConfig.get(ifName);
-      if (!v3.getInterface(ifName)) {
-        v3.activateInterface(ifName, areaId, {
-          ipAddress: addr,
-          cost: v3Pending?.cost,
-          priority: v3Pending?.priority,
-          networkType: v3Pending?.networkType as any,
-          helloInterval: v3Pending?.helloInterval,
-          deadInterval: v3Pending?.deadInterval,
-        });
-      }
-    }
     return '';
   });
 

@@ -91,6 +91,7 @@ function suggestionsAt(
   }
 
   if (trigger === 'QUESTION_MARK' && cursor.node.spec && cursor.prefix.length === 0
+    && !cursor.node.spec.existsOnlyNegated
     && table.isReachable(cursor.node.spec, session)) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }

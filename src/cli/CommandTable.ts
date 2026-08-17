@@ -24,6 +24,8 @@ export interface CommandSpec {
   readonly run: CommandHandler;
   readonly undo?: CommandHandler;
   readonly hidden?: boolean;
+  readonly existsOnlyNegated?: boolean;
+  readonly undoDescription?: string;
 }
 
 export class DuplicateCommandError extends Error {

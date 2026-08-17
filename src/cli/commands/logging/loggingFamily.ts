@@ -43,6 +43,8 @@ export interface LoggingEntry {
    * apres l'adresse n'annoncerait rien.
    */
   readonly continuations?: readonly LoggingContinuation[];
+  readonly continuationsReplaceArgument?: boolean;
+  readonly undoWithoutArgument?: boolean;
 }
 
 export interface LoggingHost {
@@ -90,6 +92,18 @@ export function loggingFamily(
         ...valueOf(args, entry.argument), ...valueOf(args, entry.second),
       ], host));
 
+    if (entry.undoWithoutArgument) {
+      specs.push({
+        ...specFor(
+          `logging-${entry.keyword}-undo`, ['logging', entry.keyword],
+          entry.description, () => [entry.keyword], host),
+        existsOnlyNegated: true,
+      });
+    }
+
+    const remplace = entry.continuationsReplaceArgument
+      ?? entry.argument?.optional === true;
+
     for (const suite of entry.continuations ?? []) {
       // Un argument OPTIONNEL et un mot-cle qui le suit sont deux
       // CHOIX, pas une sequence : IOS accepte `logging console 5` ou
@@ -97,7 +111,7 @@ export function loggingFamily(
       // chemin de la continuation saute donc l'argument — le declarer
       // apres ferait accepter une forme qu'aucune machine reelle ne
       // prend, ce qui est pire qu'en refuser une vraie.
-      const amont: Array<string | ArgumentSpec> = entry.argument?.optional
+      const amont: Array<string | ArgumentSpec> = remplace
         ? ['logging', entry.keyword, suite.keyword]
         : [...base, suite.keyword];
       const path = suite.argument ? [...amont, suite.argument] : amont;
@@ -106,7 +120,7 @@ export function loggingFamily(
         `logging-${entry.keyword}-${suite.keyword}`, path, suite.description,
         (args) => [
           entry.keyword,
-          ...(entry.argument?.optional ? [] : valueOf(args, entry.argument)),
+          ...(remplace ? [] : valueOf(args, entry.argument)),
           suite.keyword, ...valueOf(args, suite.argument),
         ], host));
     }

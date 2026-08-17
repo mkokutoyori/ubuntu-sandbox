@@ -332,11 +332,10 @@ export class CommandTrie {
       // Supprimer le noeud emportait son sous-arbre : migrer
       // `clear logging` effacait `clear logging persistent`, une commande
       // que personne n'avait migree et que plus rien n'annoncait.
-      if (target.children.size === 0) { node.children.delete(last); continue; }
-
       delete target.action;
       delete target.greedy;
       delete target.minArgs;
+      delete target.hintSuggestions;
       target.params = [];
       // Le noeud reste pour ses enfants, mais il n'est plus une
       // COMMANDE : sans ce drapeau, la marche s'y arrete et rend
@@ -603,7 +602,9 @@ export class CommandTrie {
         // precedence (e.g., "display interface brief" over "display interface <name>").
         if (node.greedy && i < tokens.length - 1) {
           const nextTk = tokens[i + 1].toLowerCase();
-          const childMatch = node.children.get(nextTk) || this.prefixMatch(node, nextTk);
+          const exactSuite = node.children.get(nextTk);
+          const childMatch = (exactSuite && !this.estMigre(exactSuite) ? exactSuite : undefined)
+            || this.prefixMatch(node, nextTk);
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
@@ -624,7 +625,9 @@ export class CommandTrie {
         // Same child-first check for greedy nodes
         if (node.greedy && i < tokens.length - 1) {
           const nextTk = tokens[i + 1].toLowerCase();
-          const childMatch = node.children.get(nextTk) || this.prefixMatch(node, nextTk);
+          const exactSuite = node.children.get(nextTk);
+          const childMatch = (exactSuite && !this.estMigre(exactSuite) ? exactSuite : undefined)
+            || this.prefixMatch(node, nextTk);
           const hasChildMatch = Array.isArray(childMatch) ? childMatch.length > 0 : !!childMatch;
           if (!hasChildMatch) {
             args.push(...tokens.slice(i + 1));
@@ -904,6 +907,10 @@ export class CommandTrie {
       return false;
     };
     return walk(depart, racine);
+  }
+
+  private estMigre(node: CommandNode): boolean {
+    return node._hintOnly === true && !node.action && !this.porteUneSuite(node);
   }
 
   private porteUneSuite(node: CommandNode): boolean {

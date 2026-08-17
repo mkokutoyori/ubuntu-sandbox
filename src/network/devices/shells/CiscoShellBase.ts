@@ -15,7 +15,8 @@
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
-import { parseCommand } from '@/cli/CommandParser';
+import { parseCommand, uniqueChild } from '@/cli/CommandParser';
+import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
@@ -3110,12 +3111,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'exception', description: 'Limit size of exception flush output',
+        undoWithoutArgument: true,
         argument: {
           name: 'size', type: 'INT', range: [BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX],
         },
       },
       {
         keyword: 'facility', description: 'Facility parameter for syslog messages',
+        undoWithoutArgument: true,
         argument: {
           name: 'facility', type: 'ENUM',
           values: FACILITY_NAMES.map(name => ({
@@ -3136,6 +3139,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'origin-id', description: 'Add origin ID to syslog messages',
+        undoWithoutArgument: true,
         argument: {
           name: 'mode', type: 'ENUM',
           values: [
@@ -3148,15 +3152,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'snmp-trap', description: 'Set syslog level for sending snmp trap',
+        undoWithoutArgument: true,
         argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
       },
       {
         keyword: 'source-interface',
         description: 'Specify interface for source address in logging transactions',
+        undoWithoutArgument: true,
         argument: { name: 'interface', type: 'INTERFACE' },
       },
       {
         keyword: 'trap', description: 'Set syslog server logging level',
+        undoWithoutArgument: true,
         argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
       },
       {
@@ -3177,7 +3184,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'history', description: 'Configure syslog history table',
-        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites },
+        continuationsReplaceArgument: true,
+        undoWithoutArgument: true,
         continuations: [{
           keyword: 'size', description: 'Set history table size',
           argument: {
@@ -3206,6 +3215,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
       {
         keyword: 'queue-limit', description: 'Set logger message queue size',
+        undoWithoutArgument: true,
         argument: {
           name: 'taille', type: 'INT', range: [1, 2147483647],
           values: [
@@ -3949,10 +3959,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
+  /**
+   * Ce qu'un noeud INTERMEDIAIRE du socle merite comme intitule.
+   *
+   * Sans lui, `?` herite de la description du premier descendant :
+   * `ipv6 ?` annoncait « Set OSPFv3 cost » pour le mot `ipv6`, c'est-a-dire
+   * la description d'UNE des branches pour le nom de TOUTES.
+   */
+  protected socleLegends(): ReadonlyArray<[readonly string[], string]> {
+    return [];
+  }
+
   protected socleTable(): CommandTable | null {
     if (!this.socleInstance) {
       this.socleInstance = new CommandTable();
       for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
+      for (const [path, legend] of this.socleLegends()) {
+        this.socleInstance.describePath(path, legend);
+      }
     }
     return this.socleInstance;
   }
@@ -4054,6 +4078,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     absorbe: boolean,
   ): boolean {
     if (typed.length === 0) return false;
+    if (CiscoShellBase.trieSpellsWhatSocleAbbreviates(typed, words, canonical)) return true;
     // Un chemin du trie PLUS COURT que la frappe reste un concurrent
     // quand il est plus precis que les mots-cles du socle : `debug ip
     // ospf` est enregistre pour lui-meme et absorbe sa propre suite, donc
@@ -4069,6 +4094,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (typed[index] === canonical[index] && words[index] !== typed[index]) return false;
     }
     return true;
+  }
+
+  private static trieSpellsWhatSocleAbbreviates(
+    typed: readonly string[], words: readonly string[], canonical: readonly string[],
+  ): boolean {
+    const commun = Math.min(typed.length, words.length, canonical.length);
+
+    for (let index = 0; index < commun; index++) {
+      if (!words[index].startsWith(typed[index])) return false;
+      if (words[index] === typed[index] && canonical[index] !== typed[index]) return true;
+      if (canonical[index] !== typed[index]) return false;
+    }
+    return false;
   }
 
   private static extendsPath(words: readonly string[], canonical: readonly string[]): boolean {
@@ -4104,13 +4142,64 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * `clock` attrape `clock set …` faute de mieux — et le laisser gagner
    * ferait perdre le diagnostic PRECIS que le socle sait rendre.
    */
+  /**
+   * `ip` n'est pas une abreviation d'`ipv6` — le trie l'ecrit en entier.
+   *
+   * Chaque moteur ne connait que la MOITIE du vocabulaire d'un noeud :
+   * le socle porte `ipv6`, le trie porte `ip`, et aucun des deux ne peut
+   * juger seul qu'un mot est ambigu. Le socle, ne voyant qu'`ipv6`,
+   * resolvait `ip ospf cost 50` en `ipv6 ospf cost 50` — une commande
+   * qui existe, sur l'autre famille d'adresses. Le pont est le seul
+   * endroit qui voit les deux vocabulaires, donc le seul qui puisse
+   * arbitrer : un mot que le trie ecrit en toutes lettres n'est
+   * l'abreviation de rien.
+   *
+   * Le mot EN COURS DE FRAPPE en est exclu : `ip?` demande ce qui
+   * commence par `ip`, et `ipv6` en fait partie.
+   */
+  private socleAbregeCeQueLeTrieEcrit(input: string): boolean {
+    const table = this.socleTable();
+    if (!table) return false;
+
+    const mots = input.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const parcourus = input.endsWith(' ') ? mots : mots.slice(0, -1);
+
+    let node = table.rootNode();
+    for (let index = 0; index < parcourus.length; index++) {
+      const enfants = [...node.children.values()];
+      const exact = enfants.find(c => c.keyword?.toLowerCase() === parcourus[index]);
+      if (exact) { node = exact; continue; }
+
+      const prefixes = enfants.filter(
+        c => c.keyword?.toLowerCase().startsWith(parcourus[index]));
+      if (prefixes.length !== 1) return false;
+      if (this.trieEcritEnEntier(parcourus.slice(0, index + 1))) return true;
+      node = prefixes[0];
+    }
+    return false;
+  }
+
+  private trieEcritEnEntier(mots: readonly string[]): boolean {
+    const cible = mots.join(' ');
+
+    return this.getActiveTrie().enumerateCommandPaths()
+      .some(path => {
+        const bas = path.toLowerCase();
+        return bas === cible || bas.startsWith(`${cible} `);
+      });
+  }
+
   private trieConnait(cmdPart: string, minMots: number): boolean {
     const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
 
     for (const path of this.getActiveTrie().enumerateExecutablePaths()) {
       const words = path.toLowerCase().split(' ');
       if (words.length > typed.length || words.length < minMots) continue;
-      if (words.every((word, index) => typed[index]?.startsWith(word))) return true;
+      // C'est l'operateur qui abrege, jamais le registre : un mot du trie
+      // doit COMMENCER par ce qui a ete tape. La comparaison inverse
+      // faisait de `ip ospf cost` — un vrai chemin du trie — la reponse
+      // a `ipv6 ospf cost`, parce qu'`ipv6` commence par `ip`.
+      if (words.every((word, index) => word.startsWith(typed[index] ?? ''))) return true;
     }
     return false;
   }
@@ -4162,6 +4251,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const table = this.socleTable();
     if (!table) return [];
 
+    // `no` et `default` sont des verbes de CONFIGURATION : les honorer
+    // en EXEC ferait repondre `default ?` sur une machine qui refuse
+    // `default`.
+    const negation = this.isConfigMode() ? CiscoShellBase.motDeNegation(input) : null;
+    const ligne = negation === null ? input : input.slice(negation.length);
+    // La tabulation ne DEPLIE pas une branche entiere : `no ` suivi d'un
+    // blanc ne complete rien, comme `ip ` ou `interface `. C'est `?` qui
+    // liste.
+    if (negation !== null && trigger === 'TAB' && ligne.trim() === '') return [];
+    if (this.socleAbregeCeQueLeTrieEcrit(ligne)) return [];
+
     const precedent = this.deviceRef;
     if (device) this.deviceRef = device;
     try {
@@ -4169,12 +4269,108 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // la tabulation ne les complete pas, n'ayant rien a deviner. Les
       // filtrer des deux cotes rendait le socle muet la ou il est le
       // mieux renseigne — il connait le type, le trie ne l'avait pas.
-      return socleComplete(table, input, this.socleSession(table), trigger).suggestions
+      const brutes = socleComplete(table, ligne, this.socleSession(table), trigger).suggestions
         .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument)
         .map(s => ({ keyword: s.value, description: s.description }));
+
+      return negation === null ? brutes : this.suggestionsNegatives(table, ligne, brutes);
     } finally {
       this.deviceRef = precedent;
     }
+  }
+
+  private static motDeNegation(input: string): string | null {
+    const match = /^\s*(no|default)\s+/i.exec(input);
+    return match ? match[0] : null;
+  }
+
+  /**
+   * Ce que `no ?` doit rendre : les commandes qui savent se DEFAIRE.
+   *
+   * Le pont ne traversait que dans le sens positif : `logging ?` lisait
+   * le socle, `no logging ?` ne lisait que le trie. Une famille migree
+   * perdait donc l'aide de sa negation d'un seul coup — `no ntp ?`,
+   * `no clock ?`, `no tunnel ?` et `no ipv6 nd ?` repondaient toutes
+   * `% Invalid input detected`, le message d'une commande qui n'existe
+   * pas, pour des negations qui s'executent tres bien.
+   *
+   * Une commande sans `undo` n'y figure pas : l'annoncer promettrait une
+   * negation que l'execution refuse.
+   */
+  private suggestionsNegatives(
+    table: CommandTable, ligne: string,
+    brutes: Array<{ keyword: string; description: string }>,
+  ): Array<{ keyword: string; description: string }> {
+    const amont = this.cheminCanonique(table, ligne);
+    if (amont === null || !CiscoShellBase.negationSous(table, amont)) return [];
+
+    return brutes.flatMap(suggestion => {
+      if (!/^[A-Za-z]/.test(suggestion.keyword)) return [suggestion];
+
+      const chemin = [...amont, suggestion.keyword.toLowerCase()];
+      const spec = CiscoShellBase.negationSous(table, chemin);
+      if (!spec) return [];
+
+      const nomme = CiscoShellBase.keywordPathOf(spec).length === chemin.length;
+      return [{
+        keyword: suggestion.keyword,
+        description: nomme && spec.undoDescription
+          ? spec.undoDescription : suggestion.description,
+      }];
+    });
+  }
+
+  private static keywordPathOf(spec: CommandSpec): string[] {
+    return spec.path
+      .filter((step): step is string => typeof step === 'string')
+      .map(word => word.toLowerCase());
+  }
+
+  private static negationSous(
+    table: CommandTable, chemin: readonly string[],
+  ): CommandSpec | null {
+    let dessous: CommandSpec | null = null;
+
+    for (const spec of table.specs()) {
+      if (!spec.undo) continue;
+      const mots = CiscoShellBase.keywordPathOf(spec);
+      if (mots.length < chemin.length) continue;
+      if (!chemin.every((mot, rang) => mots[rang] === mot)) continue;
+      if (mots.length === chemin.length) return spec;
+      dessous ??= spec;
+    }
+    return dessous;
+  }
+
+  /**
+   * Les mots-cles franchis, ecrits en entier, les arguments retires.
+   *
+   * `logging host 10.0.0.1 ` a pour chemin `logging host` : l'adresse
+   * occupe une place mais n'en nomme aucune, et la comparer a un chemin
+   * de mots-cles ne designerait rien.
+   */
+  private cheminCanonique(table: CommandTable, ligne: string): string[] | null {
+    const mots = ligne.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const parcourus = ligne.endsWith(' ') ? mots : mots.slice(0, -1);
+    const session = this.socleSession(table);
+
+    let node = table.rootNode();
+    const canonique: string[] = [];
+    for (const mot of parcourus) {
+      const enfant = uniqueChild(node, mot, table, session);
+      if (enfant?.keyword) {
+        node = enfant;
+        canonique.push(enfant.keyword.toLowerCase());
+        continue;
+      }
+      const argument = node.argumentChild;
+      if (argument?.argument && argumentAccepts(argument.argument, mot)) {
+        node = argument;
+        continue;
+      }
+      return null;
+    }
+    return canonique;
   }
 
   private tryMigratedCommand(cmdPart: string): string | null {
