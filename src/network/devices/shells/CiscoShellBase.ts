@@ -1593,7 +1593,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     trie.register('pwd', 'Display current working directory', () => 'flash:');
 
-    trie.register('show bootvar', 'Display boot variables', () => this.fs().renderBootvar());
     // Greedy comme l'inscription figée qu'elle remplace, pour que
     // `show boot` suivi d'un mot continue de résoudre.
     trie.registerGreedy('show boot', 'Display boot variables', () => this.fs().renderBootvar());
@@ -3791,6 +3790,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       vue(['show', 'snmp', 'view'], 'Display SNMP views', 15, () => showSnmpView(this.cs())),
       vue(['show', 'snmp', 'engineID'], 'Display SNMP engine ID', 15,
         () => showSnmpEngineId(this.cs())),
+      vue(['show', 'bootvar'], 'Display boot variables', 15,
+        () => this.fs().renderBootvar()),
+      vue(['show', 'clock'], 'Display the system clock', 1,
+        () => showClock(this.cs())),
+      vue(['show', 'users'], 'Display active lines', 1,
+        () => showUsers(this.registreSessions())),
+      // `show who` est le SYNONYME historique de `show users` sur IOS :
+      // une seule declaration par nom, mais le MEME rendu, sinon les
+      // deux finiraient par decrire deux etats de la meme machine.
+      vue(['show', 'who'], 'Display active lines', 1,
+        () => showUsers(this.registreSessions())),
+      vue(['show', 'sessions'], 'Display open outgoing connections', 1,
+        () => renderSessions(this.outgoingSessions)),
+      vue(['show', 'inventory'], 'Display hardware inventory', 1,
+        () => showInventory(this.d().getHostname(), this.getChassisProfile(),
+          (this.deviceRef as unknown as { id?: string } | null)?.id)),
+      vue(['show', 'processes'], 'Display active processes', 1,
+        () => showProcessesCpu()),
+      vue(['show', 'processes', 'cpu'], 'Display CPU utilisation', 1,
+        () => showProcessesCpu()),
+      vue(['show', 'license', 'feature'], 'Display technology package licenses', 15,
+        () => licenseTable(
+          this.getChassisProfile() === 'router-isr2911' ? 'c2900' : 'c2960').join('\n')),
     ];
   }
 
@@ -4971,15 +4993,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   /** IOS show/util commands common to every Cisco device + mode (DRY). */
   private registerCommonShowCommands(target: CommandTrie, scope: ExecScope = 'privileged'): void {
     const trie = scopedTrie(target, scope);
-    trie.register('show clock', 'Display the system clock', () => showClock(this.cs()));
-    trie.register('show users', 'Display active lines', () => showUsers(this.registreSessions()));
     // `show who` est le SYNONYME historique de `show users` sur IOS, et
     // la sequence de collecte de preuves d'un auditeur les enchaine.
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    trie.register('show who', 'Display active lines', () => showUsers(this.registreSessions()));
-    trie.register('show sessions', 'Display open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.register('where', 'List open outgoing connections', () => renderSessions(this.outgoingSessions));
     trie.registerGreedy('disconnect', 'Close an outgoing connection', (args) => {
       if (!args[0]) {
@@ -5002,13 +5020,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.outgoingSessions.touch(n);
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
-    trie.register('show inventory', 'Display hardware inventory', () =>
-      showInventory(this.d().getHostname(), this.getChassisProfile(),
-        (this.deviceRef as unknown as { id?: string } | null)?.id));
-    trie.register('show processes', 'Display active processes', () =>
-      showProcessesCpu());
-    trie.register('show processes cpu', 'Display CPU utilisation', () =>
-      showProcessesCpu());
     trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>
       showProcessesCpu());
     trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
@@ -5062,8 +5073,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // celle de `show license`, qui liste les licences par
     // fonctionnalite ; les confondre ferait croire qu'un routeur sans
     // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
-    trie.register('show license feature', 'Display technology package licenses', () =>
-      licenseTable(this.getChassisProfile() === 'router-isr2911' ? 'c2900' : 'c2960').join('\n'));
     trie.register('show license udi', 'Display Unique Device Identifier', () => {
       const profile = this.getChassisProfile();
       const sn = this.numeroDeSerie();

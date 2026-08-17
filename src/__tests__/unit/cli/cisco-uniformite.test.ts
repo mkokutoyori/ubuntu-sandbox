@@ -742,3 +742,37 @@ describe('les VUES suivent la famille qu\'elles montrent', () => {
     expect(longue).not.toBe(courte);
   });
 });
+
+describe('les vues d\'EXEC utilisateur gardent leur NIVEAU', () => {
+  async function nonPrivilegie() {
+    const machines = await toutes();
+    const routeur = machines.get('routeur')!;
+    await routeur.executeCommand('disable');
+    return routeur;
+  }
+
+  it('celles qu\'IOS laisse en EXEC utilisateur y repondent', async () => {
+    const routeur = await nonPrivilegie();
+
+    for (const vue of ['show clock', 'show users', 'show sessions', 'show inventory',
+      'show processes cpu']) {
+      expect(await routeur.executeCommand(vue), vue).not.toContain('Invalid input');
+    }
+  });
+
+  it('et celles qui portent un secret restent PRIVILEGIEES — le temoin', async () => {
+    const routeur = await nonPrivilegie();
+
+    for (const vue of ['show snmp community', 'show ntp authentication-keys', 'show bootvar']) {
+      expect(await routeur.executeCommand(vue), vue).toContain('Invalid input');
+    }
+  });
+
+  it('`show who` rend EXACTEMENT ce que rend `show users`', async () => {
+    const machines = await toutes();
+    const routeur = machines.get('routeur')!;
+
+    expect(await routeur.executeCommand('show who'))
+      .toBe(await routeur.executeCommand('show users'));
+  });
+});
