@@ -3127,11 +3127,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const canonical = spec.path
       .filter((step): step is string => typeof step === 'string')
       .map(word => word.toLowerCase());
+    // Une spec qui finit par un argument GLOUTON absorbe tout ce qui
+    // suit ses mots-cles : une commande plus longue du trie est alors une
+    // rivale, pas une continuation. `debug ip` avalerait `debug ip ospf`
+    // et `clear logging` avalerait `clear logging persistent`.
+    const glouton = spec.path.some(
+      step => typeof step === 'object' && step !== null
+        && (step as { type?: string }).type === 'REST');
+    // Il n'absorbe que ce qui a ete TAPE au-dela de ses mots-cles :
+    // `clear logging` seul reste au socle, `clear logging persistent`
+    // revient au trie qui le declare pour lui-meme.
+    const absorbe = glouton && typed.length > canonical.length;
 
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
-      if (CiscoShellBase.prefixMatches(typed, words, canonical)) return false;
+      if (CiscoShellBase.prefixMatches(typed, words, canonical, absorbe)) return false;
     }
     return true;
   }
@@ -3173,9 +3184,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   private static prefixMatches(
     typed: readonly string[], words: readonly string[], canonical: readonly string[],
+    absorbe: boolean,
   ): boolean {
-    if (words.length < typed.length || typed.length === 0) return false;
-    if (CiscoShellBase.extendsPath(words, canonical)) return false;
+    if (typed.length === 0) return false;
+    // Un chemin du trie PLUS COURT que la frappe reste un concurrent
+    // quand il est plus precis que les mots-cles du socle : `debug ip
+    // ospf` est enregistre pour lui-meme et absorbe sa propre suite, donc
+    // `debug ip ospf adj` lui revient et non au `debug ip` du socle.
+    if (words.length < typed.length) {
+      return absorbe && words.length > canonical.length
+        && CiscoShellBase.extendsPath(typed, words);
+    }
+    if (!absorbe && CiscoShellBase.extendsPath(words, canonical)) return false;
 
     for (let index = 0; index < typed.length; index++) {
       if (!words[index].startsWith(typed[index])) return false;
