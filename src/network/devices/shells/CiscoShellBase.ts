@@ -1595,7 +1595,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     // Greedy comme l'inscription figée qu'elle remplace, pour que
     // `show boot` suivi d'un mot continue de résoudre.
-    trie.registerGreedy('show boot', 'Display boot variables', () => this.fs().renderBootvar());
   }
 
   /** `dir nvram:` — deux entrées, comme sur le vrai. */
@@ -3885,6 +3884,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             : 'Building configuration...';
         },
       },
+      {
+        id: 'show-boot', description: 'Display boot variables',
+        path: ['show', 'boot',
+          { name: 'reste', type: 'REST', optional: true, description: 'Boot view' }],
+        modes: exec, minPrivilege: 15, run: () => this.fs().renderBootvar(),
+      },
+      {
+        id: 'show-flash', description: 'Display flash filesystem',
+        path: ['show', 'flash:',
+          { name: 'reste', type: 'REST', optional: true, description: 'Flash view' }],
+        modes: exec, minPrivilege: 15, run: () => this.fs().renderShowFlash(),
+      },
+      {
+        id: 'show-controllers', description: 'Display controller status',
+        path: ['show', 'controllers',
+          { name: 'interface', type: 'REST', optional: true, description: 'Interface to show' }],
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => showControllers(this.cs(), (args.interface ?? '').trim()),
+      },
+      {
+        id: 'show-environment', description: 'Display environment',
+        path: ['show', 'environment',
+          { name: 'reste', type: 'REST', optional: true, description: 'Environment view' }],
+        modes: exec, minPrivilege: 1, run: () => showEnvironment(),
+      },
     ];
   }
 
@@ -5114,7 +5138,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return rows.join('\n');
     });
-    trie.registerGreedy('show flash:', 'Display flash filesystem', () => this.fs().renderShowFlash());
     this.registerFileSystemCommands(target);
     // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
     // au demarrage — n'avait aucune commande pour la relire : elle
@@ -5212,10 +5235,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'interface', description: 'LLDP interface status and configuration' },
     ]);
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
-    trie.registerGreedy('show controllers', 'Display controller status', (a) =>
-      showControllers(this.cs(), a.join(' ')));
-    trie.registerGreedy('show environment', 'Display environment', () =>
-      showEnvironment());
     trie.registerGreedy('show line', 'Display TTY lines', (a) =>
       showLine(this.cs(), a));
     /**
