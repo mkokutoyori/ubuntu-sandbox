@@ -1,5 +1,5 @@
 import type { CliSession } from './CliSession';
-import type { CommandTable } from './CommandTable';
+import type { CommandSpec, CommandTable } from './CommandTable';
 import { parseCommand } from './CommandParser';
 import { complete, type CompletionResult, type CompletionTrigger } from './CompletionEngine';
 
@@ -8,6 +8,17 @@ export const IOS_INCOMPLETE = '% Incomplete command.';
 
 export function iosAmbiguous(token: string): string {
   return `% Ambiguous command:  "${token}"`;
+}
+
+function applyTransition(
+  spec: CommandSpec, args: Readonly<Record<string, string>>, session: CliSession,
+): void {
+  if (spec.enters === undefined) return;
+
+  session.enter(spec.enters);
+  if (spec.contextField && spec.contextFrom) {
+    session.fields[spec.contextField] = args[spec.contextFrom];
+  }
 }
 
 export class CliEngine {
@@ -21,7 +32,11 @@ export class CliEngine {
       case 'ambiguous': return iosAmbiguous(parsed.token);
       case 'incomplete': return IOS_INCOMPLETE;
       case 'invalid': return IOS_INVALID_INPUT;
-      case 'ok': return parsed.spec.run(session, parsed.args);
+      case 'ok': {
+        const output = await parsed.spec.run(session, parsed.args);
+        applyTransition(parsed.spec, parsed.args, session);
+        return output;
+      }
     }
   }
 

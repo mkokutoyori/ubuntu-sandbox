@@ -18,7 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import { CliEngine, IOS_INCOMPLETE, IOS_INVALID_INPUT } from '@/cli/CliEngine';
 import { CommandTable } from '@/cli/CommandTable';
-import { CliMode, type CliSession } from '@/cli/CliSession';
+import { newSession, type CliSession } from '@/cli/CliSession';
 import { SHOW_RUNNING_CONFIG } from '@/cli/commands/showRunningConfig';
 
 const CONFIG = [
@@ -35,20 +35,16 @@ function engine(): CliEngine {
   table.declare(SHOW_RUNNING_CONFIG);
   table.declare({
     id: 'show-version', path: ['show', 'version'], description: 'Version',
-    modes: [CliMode.USER_EXEC, CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+    modes: ['user', 'privileged'], minPrivilege: 1,
     run: () => 'Cisco IOS Software',
   });
   return new CliEngine(table);
 }
 
-function session(over: Partial<CliSession> = {}): CliSession {
-  return {
-    mode: CliMode.PRIVILEGED_EXEC,
-    privilegeLevel: 15,
-    hostname: 'R1',
-    device: { getRunningConfig: () => CONFIG },
-    ...over,
-  };
+function session(over: { mode?: string; privilegeLevel?: number; device?: unknown } = {}): CliSession {
+  const s = newSession('R1', over.device ?? { getRunningConfig: () => CONFIG },
+    { privilegeLevel: over.privilegeLevel ?? 15, initialMode: over.mode ?? 'privileged' });
+  return s;
 }
 
 describe('les quatre reponses d\'IOS sont DISTINCTES', () => {
@@ -68,11 +64,11 @@ describe('les quatre reponses d\'IOS sont DISTINCTES', () => {
     const table = new CommandTable();
     table.declare({
       id: 'a', path: ['show', 'ip'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
     table.declare({
       id: 'b', path: ['show', 'interfaces'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
 
     const out = await new CliEngine(table).execute('show i', session());
@@ -121,13 +117,13 @@ describe('`show running-config` lit la machine', () => {
 
   it('elle n\'existe pas en EXEC utilisateur', async () => {
     const out = await engine().execute(
-      'show running-config', session({ mode: CliMode.USER_EXEC }));
+      'show running-config', session({ mode: 'user' }));
 
     expect(out).toBe(IOS_INVALID_INPUT);
   });
 
   it('mais `show version` y existe — le temoin', async () => {
-    const out = await engine().execute('show version', session({ mode: CliMode.USER_EXEC }));
+    const out = await engine().execute('show version', session({ mode: 'user' }));
 
     expect(out).toBe('Cisco IOS Software');
   });
@@ -138,7 +134,7 @@ describe('ajouter une commande ne touche pas le moteur', () => {
     const table = new CommandTable();
     table.declare({
       id: 'show-clock', path: ['show', 'clock'], description: 'Display the system clock',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+      modes: ['privileged'], minPrivilege: 1,
       run: () => '*00:00:01.000 UTC Mon Jan 1 1900',
     });
 
@@ -149,7 +145,7 @@ describe('ajouter une commande ne touche pas le moteur', () => {
     const table = new CommandTable();
     table.declare({
       id: 'show-clock', path: ['show', 'clock'], description: 'Display the system clock',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
 
     const result = new CliEngine(table).complete('show ', session(), 'QUESTION_MARK');
@@ -162,7 +158,7 @@ describe('ajouter une commande ne touche pas le moteur', () => {
     table.declare({
       id: 'ping', path: ['ping', { name: 'target', type: 'IP_ADDR' }],
       description: 'Send echo messages',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+      modes: ['privileged'], minPrivilege: 1,
       run: async (_s, args) => `Sending 5, 100-byte ICMP Echos to ${args.target}`,
     });
 

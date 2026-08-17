@@ -3,7 +3,7 @@ import {
   isArgumentSpec,
   type ArgumentSpec,
 } from './ArgumentTypes';
-import type { CliMode, CliSession } from './CliSession';
+import type { CliSession } from './CliSession';
 
 export type CommandStep = string | ArgumentSpec;
 
@@ -16,7 +16,10 @@ export interface CommandSpec {
   readonly id: string;
   readonly path: readonly CommandStep[];
   readonly description: string;
-  readonly modes: readonly CliMode[];
+  readonly modes: readonly string[];
+  readonly enters?: string;
+  readonly contextField?: string;
+  readonly contextFrom?: string;
   readonly minPrivilege: number;
   readonly run: CommandHandler;
   readonly hidden?: boolean;
@@ -112,8 +115,13 @@ export class CommandTable {
   }
 
   isReachable(spec: CommandSpec, session: CliSession): boolean {
-    if (!spec.modes.includes(session.mode)) return false;
+    if (!this.modeAdmits(spec, session)) return false;
     return session.privilegeLevel >= this.requiredPrivilege(spec);
+  }
+
+  private modeAdmits(spec: CommandSpec, session: CliSession): boolean {
+    if (spec.modes.includes(session.mode)) return true;
+    return session.configAncestors().some(mode => spec.modes.includes(mode));
   }
 
   childKeywordsOf(path: readonly string[]): readonly string[] {

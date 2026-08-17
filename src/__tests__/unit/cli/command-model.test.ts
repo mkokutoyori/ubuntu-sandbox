@@ -37,17 +37,13 @@ import {
   DuplicateCommandError,
   UnknownArgumentTypeError,
 } from '@/cli/CommandTable';
-import { CliMode, type CliSession } from '@/cli/CliSession';
+import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand } from '@/cli/CommandParser';
 
-function session(over: Partial<CliSession> = {}): CliSession {
-  return {
-    mode: CliMode.PRIVILEGED_EXEC,
-    privilegeLevel: 15,
-    hostname: 'R1',
-    device: {},
-    ...over,
-  };
+function session(over: { mode?: string; privilegeLevel?: number; device?: unknown } = {}): CliSession {
+  const s = newSession('R1', over.device ?? {},
+    { privilegeLevel: over.privilegeLevel ?? 15, initialMode: over.mode ?? 'privileged' });
+  return s;
 }
 
 function table(): CommandTable {
@@ -57,7 +53,7 @@ function table(): CommandTable {
     id: 'show-running-config',
     path: ['show', 'running-config'],
     description: 'Current operating configuration',
-    modes: [CliMode.PRIVILEGED_EXEC],
+    modes: ['privileged'],
     minPrivilege: 15,
     run: () => 'Building configuration...',
   });
@@ -65,7 +61,7 @@ function table(): CommandTable {
     id: 'show-version',
     path: ['show', 'version'],
     description: 'System hardware and software status',
-    modes: [CliMode.USER_EXEC, CliMode.PRIVILEGED_EXEC],
+    modes: ['user', 'privileged'],
     minPrivilege: 1,
     run: () => 'Cisco IOS Software',
   });
@@ -73,7 +69,7 @@ function table(): CommandTable {
     id: 'shutdown',
     path: ['shutdown'],
     description: 'Shutdown the selected interface',
-    modes: [CliMode.INTERFACE_CONFIG],
+    modes: ['config-if'],
     minPrivilege: 15,
     run: () => '',
   });
@@ -81,7 +77,7 @@ function table(): CommandTable {
     id: 'ip-address',
     path: ['ip', 'address', { name: 'address', type: 'IP_ADDR' }, { name: 'mask', type: 'SUBNET_MASK' }],
     description: 'Set the IP address of an interface',
-    modes: [CliMode.INTERFACE_CONFIG],
+    modes: ['config-if'],
     minPrivilege: 15,
     run: (_ctx, args) => `${args.address}/${args.mask}`,
   });
@@ -103,7 +99,7 @@ describe('CommandTable — un seul arbre, construit une fois', () => {
 
     expect(() => t.declare({
       id: 'autre', path: ['show', 'version'], description: 'x',
-      modes: [CliMode.USER_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['user'], minPrivilege: 1, run: () => '',
     })).toThrow(DuplicateCommandError);
   });
 
@@ -112,7 +108,7 @@ describe('CommandTable — un seul arbre, construit une fois', () => {
 
     expect(() => t.declare({
       id: 'x', path: ['foo', { name: 'a', type: 'ZORGLUB' as never }],
-      description: 'x', modes: [CliMode.USER_EXEC], minPrivilege: 1, run: () => '',
+      description: 'x', modes: ['user'], minPrivilege: 1, run: () => '',
     })).toThrow(UnknownArgumentTypeError);
   });
 
@@ -147,11 +143,11 @@ describe('parseCommand — abreviation et ambiguite, un seul mecanisme', () => {
     const t = new CommandTable();
     t.declare({
       id: 'court', path: ['ip'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => 'court',
+      modes: ['privileged'], minPrivilege: 1, run: () => 'court',
     });
     t.declare({
       id: 'long', path: ['ipv6'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => 'long',
+      modes: ['privileged'], minPrivilege: 1, run: () => 'long',
     });
 
     const result = parseCommand(t, 'ip', session());
@@ -163,11 +159,11 @@ describe('parseCommand — abreviation et ambiguite, un seul mecanisme', () => {
     const t = new CommandTable();
     t.declare({
       id: 'a', path: ['show', 'ip'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
     t.declare({
       id: 'b', path: ['show', 'interfaces'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
 
     const result = parseCommand(t, 'show i', session());
@@ -196,7 +192,7 @@ describe('parseCommand — abreviation et ambiguite, un seul mecanisme', () => {
 
 describe('parseCommand — un argument type est PARSE', () => {
   function interfaceSession() {
-    return session({ mode: CliMode.INTERFACE_CONFIG });
+    return session({ mode: 'config-if' });
   }
 
   it('des arguments valides sont acceptes et NOMMES', () => {
@@ -240,7 +236,7 @@ describe('l\'acces est une DONNEE de la commande', () => {
 
   it('dans le bon mode, elle existe', () => {
     const result = parseCommand(
-      table(), 'shutdown', session({ mode: CliMode.INTERFACE_CONFIG }));
+      table(), 'shutdown', session({ mode: 'config-if' }));
 
     expect(result.status).toBe('ok');
   });
@@ -290,7 +286,7 @@ describe('le gestionnaire peut etre asynchrone', () => {
     t.declare({
       id: 'ping', path: ['ping', { name: 'target', type: 'IP_ADDR' }],
       description: 'Send echo messages',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+      modes: ['privileged'], minPrivilege: 1,
       run: async (_ctx, args) => `pinging ${args.target}`,
     });
 

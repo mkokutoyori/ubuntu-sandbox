@@ -1,4 +1,3 @@
-import { CliMode } from '../CliSession';
 import type { CommandSpec } from '../CommandTable';
 
 export interface RunningConfigSource {
@@ -13,7 +12,7 @@ export const SHOW_RUNNING_CONFIG: CommandSpec = {
   id: 'show-running-config',
   path: ['show', 'running-config'],
   description: 'Current operating configuration',
-  modes: [CliMode.PRIVILEGED_EXEC],
+  modes: ['privileged'],
   minPrivilege: 15,
   run: (session) => {
     if (!isRunningConfigSource(session.device)) return '';

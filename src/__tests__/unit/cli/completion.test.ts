@@ -19,14 +19,13 @@
 
 import { describe, it, expect } from 'vitest';
 import { CommandTable } from '@/cli/CommandTable';
-import { CliMode, type CliSession } from '@/cli/CliSession';
+import { newSession, type CliSession } from '@/cli/CliSession';
 import { complete, locateCursor } from '@/cli/CompletionEngine';
 
-function session(over: Partial<CliSession> = {}): CliSession {
-  return {
-    mode: CliMode.PRIVILEGED_EXEC, privilegeLevel: 15,
-    hostname: 'R1', device: {}, ...over,
-  };
+function session(over: { mode?: string; privilegeLevel?: number; device?: unknown } = {}): CliSession {
+  const s = newSession('R1', over.device ?? {},
+    { privilegeLevel: over.privilegeLevel ?? 15, initialMode: over.mode ?? 'privileged' });
+  return s;
 }
 
 function table(): CommandTable {
@@ -34,25 +33,25 @@ function table(): CommandTable {
   t.declare({
     id: 'show-version', path: ['show', 'version'],
     description: 'System hardware and software status',
-    modes: [CliMode.USER_EXEC, CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+    modes: ['user', 'privileged'], minPrivilege: 1,
     run: () => '',
   });
   t.declare({
     id: 'show-run', path: ['show', 'running-config'],
     description: 'Current operating configuration',
-    modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 15,
+    modes: ['privileged'], minPrivilege: 15,
     run: () => '',
   });
   t.declare({
     id: 'show-ip-route', path: ['show', 'ip', 'route'],
     description: 'IP routing table',
-    modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+    modes: ['privileged'], minPrivilege: 1,
     run: () => '',
   });
   t.declare({
     id: 'ping', path: ['ping', { name: 'target', type: 'IP_ADDR' }],
     description: 'Send echo messages',
-    modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1,
+    modes: ['privileged'], minPrivilege: 1,
     run: () => '',
   });
   return t;
@@ -142,11 +141,11 @@ describe('TAB complete', () => {
     const t = new CommandTable();
     t.declare({
       id: 'a', path: ['show', 'ip'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
     t.declare({
       id: 'b', path: ['show', 'interfaces'], description: 'x',
-      modes: [CliMode.PRIVILEGED_EXEC], minPrivilege: 1, run: () => '',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
     });
 
     expect(complete(t, 'show i', session(), 'TAB').completion).toBeUndefined();
@@ -174,7 +173,7 @@ describe('la completion ne montre que l\'ATTEIGNABLE', () => {
 
   it('un mode qui ne convient a rien ne propose rien', () => {
     const result = complete(
-      table(), 'show ', session({ mode: CliMode.LINE_CONFIG }), 'QUESTION_MARK');
+      table(), 'show ', session({ mode: 'config-line' }), 'QUESTION_MARK');
 
     expect(result.suggestions).toHaveLength(0);
   });
