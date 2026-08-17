@@ -3486,6 +3486,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }));
   }
 
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -5415,6 +5416,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // delegation `privilege exec level 7 clear counters` qui cessait de
     // refuser au niveau 3. La regle posee pour `ntp` vaut ici : quand
     // une famille coute plus qu'elle ne rapporte, on la rend.
+    this.privilegedTrie.registerGreedy('clock set', 'Set the system clock',
+      (args) => this.applyClockSet(args));
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', () => '');
     this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
       const dev = this.d() as unknown as {
@@ -5533,8 +5536,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // est appelée une fois par arbre (utilisateur puis privilégié) : y
     // toucher au `privilegedTrie` l'enregistrerait deux fois, ce que
     // `command-trie-hygiene.test.ts` signale à juste titre.
-    this.privilegedTrie.registerGreedy('clock set', 'Set the system clock',
-      (args) => this.applyClockSet(args));
 
     // ARP commands (shared between router and switch)
     registerArpShowCommands(this.privilegedTrie, () => this.d());
@@ -6054,6 +6055,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.configTrie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
 
 
+    // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
+    // pour une seule commande finiraient par se contredire sur la même
+    // date.
+    // `clock` reste au TRIE. Migre puis ANNULE : ses refus perdaient le
+    // CARET d'IOS, qui pointe le jeton fautif. Il ne vient pas du
+    // gestionnaire — `parseClockSetArgs` rend un message nu — mais de la
+    // validation d'ARGUMENT du trie, que le socle ne sait pas encore
+    // faire : il lui manque un motif sur l'argument (`hh:mm:ss`) et le
+    // report de son propre refus. Sans les deux, la migration echange un
+    // diagnostic qui montre ou l'on s'est trompe contre un qui dit
+    // seulement qu'on s'est trompe.
     this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
       const mgmt = getManagementService(this.d());
       if (mgmt && args[0] && args[1]) {
@@ -6061,7 +6073,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         const offsetMin = parseInt(args[2] ?? '0', 10);
         const cfg = mgmt.getClock();
         cfg.timezone = args[0];
-        cfg.offsetMin = (isNaN(offsetHrs) ? 0 : offsetHrs) * 60 + (isNaN(offsetMin) ? 0 : offsetMin) * (offsetHrs < 0 ? -1 : 1);
+        cfg.offsetMin = (isNaN(offsetHrs) ? 0 : offsetHrs) * 60
+          + (isNaN(offsetMin) ? 0 : offsetMin) * (offsetHrs < 0 ? -1 : 1);
       }
       return '';
     });
@@ -6077,9 +6090,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return '';
     });
-    // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
-    // pour une seule commande finiraient par se contredire sur la même
-    // date.
     this.configTrie.registerGreedy('clock set', 'Set system clock',
       (args) => this.applyClockSet(args));
     this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
