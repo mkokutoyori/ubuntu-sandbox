@@ -27,6 +27,14 @@ export interface LoggingEntry {
   readonly description: string;
   readonly argument?: ArgumentSpec;
   /**
+   * Un SECOND argument optionnel, quand la commande en prend deux.
+   *
+   * `logging buffered 8192 7` donne la taille puis la severite, et les
+   * deux places acceptent les memes valeurs — l'ambiguite est voulue par
+   * IOS et resolue par la valeur, pas par la position.
+   */
+  readonly second?: ArgumentSpec;
+  /**
    * Les mots-cles qui SUIVENT l'argument.
    *
    * `logging host <ip> transport tcp` en est le cas type : la place de
@@ -56,7 +64,12 @@ function specFor(
 function valueOf(args: Record<string, string>, argument?: ArgumentSpec): string[] {
   if (!argument) return [];
   const value = args[argument.name];
-  return value === undefined ? [] : [value];
+  if (value === undefined) return [];
+  // Un `REST` porte PLUSIEURS mots en une chaine : le gestionnaire les
+  // attend separes, comme le trie les lui donnait. Le passer entier
+  // ferait de `drops X` un seul argument que rien ne sait lire.
+  if (argument.type === 'REST') return value.trim().split(/\s+/).filter(Boolean);
+  return [value];
 }
 
 export function loggingFamily(
@@ -68,10 +81,14 @@ export function loggingFamily(
     const base: Array<string | ArgumentSpec> = entry.argument
       ? ['logging', entry.keyword, entry.argument]
       : ['logging', entry.keyword];
+    const complet = entry.second ? [...base, entry.second] : base;
 
     specs.push(specFor(
-      `logging-${entry.keyword}`, base, entry.description,
-      (args) => [entry.keyword, ...valueOf(args, entry.argument)], host));
+      `logging-${entry.keyword}`, complet, entry.description,
+      (args) => [
+        entry.keyword,
+        ...valueOf(args, entry.argument), ...valueOf(args, entry.second),
+      ], host));
 
     for (const suite of entry.continuations ?? []) {
       // Un argument OPTIONNEL et un mot-cle qui le suit sont deux
