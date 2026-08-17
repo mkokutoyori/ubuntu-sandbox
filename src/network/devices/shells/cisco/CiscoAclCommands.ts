@@ -15,7 +15,7 @@ import { CommandTrie } from '../CommandTrie';
 import { IOS_ACL_NUMBERING } from '../../router/ACLEngine';
 
 /** Les quatre plages de numéros qu'IOS accepte pour une liste IP. */
-function isValidIosAclNumber(num: number): boolean {
+export function isValidIosAclNumber(num: number): boolean {
   return (num >= 1 && num <= 99) || (num >= 100 && num <= 199)
     || (num >= 1300 && num <= 1999) || (num >= 2000 && num <= 2699);
 }
@@ -232,9 +232,98 @@ function isTerminatorKeyword(tok: string): boolean {
 }
 
 /** Le resultat d'une analyse d'ACE : les options, ou le message d'erreur. */
-type AceParse =
+export type AceParse =
   | { opts: import('../../router/ACLEngine').ACLEntryOptions }
   | { error: string };
+
+/**
+ * L'analyse d'une ACE IOS, pour les DEUX plateformes.
+ *
+ * Le commutateur en avait un troisieme exemplaire (`parseSwitchAclLine`)
+ * qui ne lisait que protocole + source + destination : tout le reste --
+ * ports, `established`, `icmp-type`, `log`, `dscp`, `time-range` -- etait
+ * jete en silence, de sorte que `deny tcp any any eq 22` refusait TOUT le
+ * TCP. Il n'y en a plus qu'une.
+ */
+export function parseCiscoAce(
+  args: string[], type: 'standard' | 'extended', sequence?: number,
+): AceParse {
+  return type === 'standard'
+    ? parseStandardAce(args, sequence)
+    : parseExtendedAce(args, sequence);
+}
+
+function parseStandardAce(args: string[], sequence?: number): AceParse {
+  const src = parseStandardSource(args);
+  if (!src) return { error: '% Incomplete command.' };
+  const tail = parseTrailingOptions(args, src.consumed, 'ip');
+  if (tail.rejected) return { error: CISCO_INVALID_INPUT };
+  return {
+    opts: {
+      sequence,
+      srcIP: src.ip,
+      srcWildcard: src.wildcard,
+      log: tail.log,
+      logInput: tail.logInput,
+      timeRange: tail.timeRange,
+    },
+  };
+}
+
+function parseExtendedAce(args: string[], sequence?: number): AceParse {
+  if (args.length < 1) return { error: '% Incomplete command.' };
+  const protocol = args[0].toLowerCase();
+  let offset = 1;
+
+  const src = parseAddressWildcard(args, offset);
+  if (!src) return { error: '% Incomplete command.' };
+  offset += src.consumed;
+
+  const srcPortSpec = parsePortSpec(args, offset);
+  if (srcPortSpec) offset += srcPortSpec.consumed;
+
+  const dst = parseAddressWildcard(args, offset);
+  if (!dst) return { error: '% Incomplete command.' };
+  offset += dst.consumed;
+
+  const dstPortSpec = parsePortSpec(args, offset);
+  if (dstPortSpec) offset += dstPortSpec.consumed;
+
+  const tail = parseTrailingOptions(args, offset, protocol);
+  if (tail.rejected) return { error: CISCO_INVALID_INPUT };
+  const { rejected: _r, ...tailOpts } = tail;
+
+  return {
+    opts: {
+      sequence,
+      protocol,
+      srcIP: src.ip,
+      srcWildcard: src.wildcard,
+      dstIP: dst.ip,
+      dstWildcard: dst.wildcard,
+      srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
+      dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
+      srcPortSpec: srcPortSpec?.spec,
+      dstPortSpec: dstPortSpec?.spec,
+      ...tailOpts,
+    },
+  };
+}
+
+/** Le texte canonique d'une ACE deja enregistree. */
+export function formatCiscoAclEntry(
+  type: 'standard' | 'extended', entry: import('../../Router').ACLEntry,
+): string {
+  return formatACLEntry(type, entry);
+}
+
+/** Le texte canonique d'une ACE, pour la comparer ou la rendre. */
+export function renderCiscoAce(
+  action: 'permit' | 'deny', type: 'standard' | 'extended',
+  opts: import('../../router/ACLEngine').ACLEntryOptions,
+): string {
+  return formatACLEntry(type, asEntry(action, opts));
+}
 
 /** Une ACE detachee, juste pour la rendre en texte canonique. */
 function asEntry(
@@ -432,22 +521,8 @@ export function buildACLInterfaceCommands(trie: CommandTrie, ctx: CiscoACLShellC
 // ─── Named Standard ACL Config Mode ──────────────────────────────────
 
 export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
-  const parseStd = (args: string[], sequence?: number): AceParse => {
-    const src = parseStandardSource(args);
-    if (!src) return { error: '% Incomplete command.' };
-    const tail = parseTrailingOptions(args, src.consumed, 'ip');
-    if (tail.rejected) return { error: CISCO_INVALID_INPUT };
-    return {
-      opts: {
-        sequence,
-        srcIP: src.ip,
-        srcWildcard: src.wildcard,
-        log: tail.log,
-        logInput: tail.logInput,
-        timeRange: tail.timeRange,
-      },
-    };
-  };
+  const parseStd = (args: string[], sequence?: number): AceParse =>
+    parseCiscoAce(args, 'standard', sequence);
   const handle = (action: 'permit' | 'deny', args: string[], sequence?: number): string => {
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
@@ -527,46 +602,8 @@ function registerSequenceEdits(
 // ─── Named Extended ACL Config Mode ──────────────────────────────────
 
 export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
-  const parseExt = (args: string[], sequence?: number): AceParse => {
-    if (args.length < 1) return { error: '% Incomplete command.' };
-
-    const protocol = args[0].toLowerCase();
-    let offset = 1;
-
-    const src = parseAddressWildcard(args, offset);
-    if (!src) return { error: '% Incomplete command.' };
-    offset += src.consumed;
-
-    const srcPortSpec = parsePortSpec(args, offset);
-    if (srcPortSpec) offset += srcPortSpec.consumed;
-
-    const dst = parseAddressWildcard(args, offset);
-    if (!dst) return { error: '% Incomplete command.' };
-    offset += dst.consumed;
-
-    const dstPortSpec = parsePortSpec(args, offset);
-    if (dstPortSpec) offset += dstPortSpec.consumed;
-
-    const tail = parseTrailingOptions(args, offset, protocol);
-    if (tail.rejected) return { error: CISCO_INVALID_INPUT };
-    const { rejected: _r, ...tailOpts } = tail;
-
-    return {
-      opts: {
-        sequence,
-        protocol,
-        srcIP: src.ip,
-        srcWildcard: src.wildcard,
-        dstIP: dst.ip,
-        dstWildcard: dst.wildcard,
-        srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
-        dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
-        srcPortSpec: srcPortSpec?.spec,
-        dstPortSpec: dstPortSpec?.spec,
-        ...tailOpts,
-      },
-    };
-  };
+  const parseExt = (args: string[], sequence?: number): AceParse =>
+    parseCiscoAce(args, 'extended', sequence);
   const addEntry = (action: 'permit' | 'deny', args: string[], sequence?: number): string => {
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
@@ -614,7 +651,20 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
 // ─── Show Commands ────────────────────────────────────────────────────
 
 export function showAccessLists(router: Router, ref?: string): string {
-  const all = router._getAccessListsInternal();
+  return showAccessListsFrom(router._getAccessListsInternal(), ref);
+}
+
+/**
+ * `show access-lists`, rendu depuis les listes elles-memes.
+ *
+ * Le commutateur avait son propre rendu, qui echoait le TEXTE tape et
+ * deduisait le type de « est-ce un nombre ? » : `access-list 100` s'y
+ * annoncait « Standard IP access list 100 » alors que 100 est etendue.
+ * Un seul rendu, qui lit le type de la liste.
+ */
+export function showAccessListsFrom(
+  all: import('../../router/ACLEngine').AccessList[], ref?: string,
+): string {
   let acls = all;
   if (ref) {
     const num = parseInt(ref, 10);

@@ -34,6 +34,11 @@ import {
 } from './cisco/CiscoShowCommands';
 import { orderCiscoConfigBlocks } from './cisco/ciscoConfigSerializer';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import {
+  parseCiscoAce, renderCiscoAce, formatCiscoAclEntry,
+  showAccessListsFrom, isValidIosAclNumber,
+} from './cisco/CiscoAclCommands';
+import { IOS_ACL_NUMBERING } from '../router/ACLEngine';
 import { CISCO_ERRORS } from './cli-utils';
 import { estTypeSansNumero } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
@@ -141,7 +146,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private selectedAcl: string | null = null;
   private selectedAclType: 'standard' | 'extended' = 'extended';
   private selectedArpAcl: string | null = null;
-  private acls = new Map<string, string[]>();
   private configAccessMapTrie = new CommandTrie();
   private selectedAccessMap: { name: string; seq: number } | null = null;
 
@@ -427,18 +431,22 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerStpCommands();
 
     // ── ACL + DAI (switch-only; router has its own ACL impl) ──
+    // Le moteur est le SEUL magasin. Il y en avait deux : un echo du texte
+    // tape, affiche par `show access-lists`, et les entrees du moteur, qui
+    // seules filtrent. Ils divergeaient -- la vue montrait `eq 443` que le
+    // moteur n'avait jamais enregistre.
     this.configTrie.registerGreedy('access-list', 'Numbered ACL entry', (args) => {
-      const n = args[0] ?? '?';
-      const l = this.acls.get(n) ?? [];
-      l.push(`access-list ${args.join(' ')}`);
-      this.acls.set(n, l);
-      const id = parseInt(n, 10);
-      const action = args[1]?.toLowerCase();
-      if (!isNaN(id) && (action === 'permit' || action === 'deny')) {
-        const type = (id < 100 || (id >= 1300 && id <= 1999)) ? 'standard' : 'extended';
-        const opts = this.parseSwitchAclLine(args.slice(2), type);
-        if (opts) this.d().getVaclEngine().addAccessListEntry(id, action, opts);
+      const id = parseInt(args[0] ?? '', 10);
+      if (isNaN(id)) return '% Invalid access-list number.';
+      if (!isValidIosAclNumber(id)) {
+        return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
       }
+      const action = args[1]?.toLowerCase();
+      if (action !== 'permit' && action !== 'deny') return CISCO_ERRORS.INCOMPLETE;
+      const type = IOS_ACL_NUMBERING(id);
+      const parsed = parseCiscoAce(args.slice(2), type);
+      if ('error' in parsed) return parsed.error;
+      this.d().getVaclEngine().addAccessListEntry(id, action, parsed.opts);
       return '';
     });
 
@@ -505,10 +513,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configTrie.registerGreedy('ip access-list', 'Named ACL', (args) => {
       // ip access-list {standard|extended} <name>
       const kind = args[0]?.toLowerCase();
-      this.selectedAclType = kind === 'standard' ? 'standard' : 'extended';
-      const name = args[1] ?? args[0] ?? 'ACL';
+      if (kind !== 'standard' && kind !== 'extended') return CISCO_ERRORS.INVALID_INPUT;
+      // Le nom etait facultatif par accident (`args[1] ?? args[0]`), de
+      // sorte que `ip access-list standard` creait une liste NOMMEE
+      // « standard ».
+      const name = args[1];
+      if (!name) return CISCO_ERRORS.INCOMPLETE;
+      this.selectedAclType = kind;
       this.selectedAcl = name;
-      if (!this.acls.has(name)) this.acls.set(name, []);
+      this.d().getVaclEngine().ensureNamedAccessList(name, kind);
       this.mode = 'config-acl';
       return '';
     });
@@ -521,42 +534,32 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerMonitorSessionCommands();
     for (const kw of ['permit', 'deny', 'remark', 'no', 'evaluate']) {
       this.configAclTrie.registerGreedy(kw, `ACL ${kw}`, (args) => {
-        if (this.selectedArpAcl) {
-          return this.handleArpAclLine(kw, args);
-        }
-        if (this.selectedAcl) {
-          this.acls.get(this.selectedAcl)!.push(`${kw} ${args.join(' ')}`.trim());
-          if (kw === 'permit' || kw === 'deny') {
-            const opts = this.parseSwitchAclLine(args, this.selectedAclType);
-            if (opts) {
-              this.d().getVaclEngine().addNamedAccessListEntry(this.selectedAcl, this.selectedAclType, kw, opts);
-            }
-          }
-        }
-        return '';
+        if (this.selectedArpAcl) return this.handleArpAclLine(kw, args);
+        if (!this.selectedAcl) return '';
+        return this.handleNamedAclLine(kw, args);
       });
     }
-    // numbered sequence entries (e.g. "10 permit ip any any")
-    this.configAclTrie.registerGreedy('', 'Sequenced ACL entry', (args) => {
-      if (this.selectedAcl && args.length) {
-        this.acls.get(this.selectedAcl)!.push(args.join(' '));
-      }
-      return '';
+    // `10 permit ip any any` — une entree numerotee. Elle etait poussee
+    // dans le magasin de texte et n'atteignait NI le moteur NI, en fait,
+    // la vue : elle disparaissait entierement, en silence.
+    //
+    // `CiscoShellBase` reecrit deja un chiffre initial en `sequence <…>`
+    // dans une sous-vue d'ACL ; il fallait que le mode du commutateur en
+    // soit une (voir `isAclSubMode` plus bas) et que `sequence` existe.
+    this.configAclTrie.registerGreedy('sequence', 'Sequence number', (args) => {
+      if (!this.selectedAcl) return '';
+      const seq = parseInt(args[0] ?? '', 10);
+      if (isNaN(seq)) return '% Invalid sequence number.';
+      const kw = args[1]?.toLowerCase();
+      if (kw !== 'permit' && kw !== 'deny') return CISCO_ERRORS.INVALID_INPUT;
+      return this.handleNamedAclLine(kw, args.slice(2), seq);
     });
     this.registerL3Commands();
     for (const t of [this.userTrie, this.privilegedTrie]) {
       t.register('show ip interface brief', 'Display IP interface brief', () =>
         this.showIpInterfaceBrief());
-      t.registerGreedy('show access-lists', 'Display ACLs', () => {
-        if (this.acls.size === 0) return '';
-        const out: string[] = [];
-        for (const [k, rules] of this.acls) {
-          out.push(/^\d+$/.test(k)
-            ? `Standard IP access list ${k}` : `Extended IP access list ${k}`);
-          for (const r of rules) out.push(`    ${r}`);
-        }
-        return out.join('\n');
-      });
+      t.registerGreedy('show access-lists', 'Display ACLs', (args) =>
+        showAccessListsFrom(this.d().getVaclEngine().getAccessListsInternal(), args[0]));
       t.registerGreedy('show port-security', 'Display port security', (args) => {
         if (args[0]?.toLowerCase() === 'interface' && args[1]) {
           return this.showPortSecurityInterface(this.d(), args.slice(1).join(' '));
@@ -5446,36 +5449,77 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return vlans;
   }
 
-  private parseAclAddressSpec(args: string[], offset: number): { ip: IPAddress; wc: SubnetMask; consumed: number } | null {
-    const t = args[offset]?.toLowerCase();
-    if (!t) return null;
-    if (t === 'any') {
-      return { ip: new IPAddress('0.0.0.0'), wc: new SubnetMask('255.255.255.255'), consumed: 1 };
-    }
-    if (t === 'host') {
-      if (!args[offset + 1] || !IPAddress.isValid(args[offset + 1])) return null;
-      return { ip: new IPAddress(args[offset + 1]), wc: new SubnetMask('0.0.0.0'), consumed: 2 };
-    }
-    if (!IPAddress.isValid(args[offset])) return null;
-    if (args[offset + 1] && IPAddress.isValid(args[offset + 1])) {
-      return { ip: new IPAddress(args[offset]), wc: new SubnetMask(args[offset + 1]), consumed: 2 };
-    }
-    return { ip: new IPAddress(args[offset]), wc: new SubnetMask('0.0.0.0'), consumed: 1 };
+  /**
+   * Une ligne de la vue d'ACL nommee, ecrite dans le MOTEUR.
+   *
+   * Les cinq mots-cles poussaient une ligne de TEXTE dans un magasin
+   * parallele, et seuls `permit`/`deny` atteignaient le moteur -- par un
+   * analyseur qui ne lisait que protocole, source et destination. `no`
+   * n'atteignait rien du tout : la regle disparaissait de la vue et
+   * continuait de filtrer.
+   */
+  /**
+   * Le commutateur nomme sa sous-vue d'ACL `config-acl` la ou le routeur
+   * a `config-{std,ext}-nacl`. Le socle ne reconnaissait donc pas la
+   * sienne, et la forme numerotee nue d'IOS -- `10 permit ip any any`,
+   * celle qu'on tape -- y etait refusee alors qu'elle marchait sur le
+   * routeur. La regle appartient au shell, pas au socle : elle est
+   * surchargee ici plutot qu'ajoutee a `CiscoShellBase`.
+   */
+  protected override isAclSubMode(): boolean {
+    return super.isAclSubMode() || this.mode === 'config-acl';
   }
 
-  private parseSwitchAclLine(args: string[], type: 'standard' | 'extended'): import('../router/ACLEngine').ACLEntryOptions | null {
-    if (type === 'standard') {
-      const src = this.parseAclAddressSpec(args, 0);
-      if (!src) return null;
-      return { srcIP: src.ip, srcWildcard: src.wc };
+  private handleNamedAclLine(kw: string, args: string[], sequence?: number): string {
+    const name = this.selectedAcl;
+    if (!name) return '';
+    const engine = this.d().getVaclEngine();
+    const type = this.selectedAclType;
+    const anyOpts = () => ({
+      srcIP: new IPAddress('0.0.0.0'), srcWildcard: new SubnetMask('255.255.255.255'),
+      ...(type === 'extended'
+        ? {
+          protocol: 'ip',
+          dstIP: new IPAddress('0.0.0.0'), dstWildcard: new SubnetMask('255.255.255.255'),
+        }
+        : {}),
+    });
+
+    if (kw === 'remark') {
+      engine.addNamedAccessListEntry(name, type, 'permit',
+        { ...anyOpts(), remark: args.join(' ') });
+      return '';
     }
-    const protocol = args[0]?.toLowerCase();
-    if (!protocol) return null;
-    const src = this.parseAclAddressSpec(args, 1);
-    if (!src) return null;
-    const dst = this.parseAclAddressSpec(args, 1 + src.consumed);
-    if (!dst) return null;
-    return { protocol, srcIP: src.ip, srcWildcard: src.wc, dstIP: dst.ip, dstWildcard: dst.wc };
+    if (kw === 'evaluate') {
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
+      engine.addNamedAccessListEntry(name, type, 'permit',
+        { ...anyOpts(), evaluate: args[0] });
+      return '';
+    }
+    if (kw === 'no') {
+      const seq = parseInt(args[0] ?? '', 10);
+      if (!isNaN(seq) && args.length === 1) {
+        return engine.removeEntryBySequence(name, seq) ? '' : '% Sequence number not found';
+      }
+      const action = args[0]?.toLowerCase();
+      if (action !== 'permit' && action !== 'deny') return CISCO_ERRORS.INCOMPLETE;
+      const parsed = parseCiscoAce(args.slice(1), type);
+      if ('error' in parsed) return parsed.error;
+      const cible = renderCiscoAce(action, type, parsed.opts);
+      const acl = engine.findByName(name);
+      const idx = acl
+        ? acl.entries.findIndex((e) => formatCiscoAclEntry(type, e) === cible)
+        : -1;
+      if (idx === -1) return '% Access list entry does not exist.';
+      acl!.entries.splice(idx, 1);
+      return '';
+    }
+
+    const parsed = parseCiscoAce(args, type, sequence);
+    if ('error' in parsed) return parsed.error;
+    const ok = engine.addNamedAccessListEntry(
+      name, type, kw as 'permit' | 'deny', parsed.opts);
+    return ok ? '' : '% Duplicate sequence number.';
   }
 
   private abbreviateInterface(name: string): string {
