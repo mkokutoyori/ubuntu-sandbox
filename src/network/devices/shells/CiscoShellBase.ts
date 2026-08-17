@@ -3155,6 +3155,26 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         keyword: 'trap', description: 'Set syslog server logging level',
         argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
       },
+      {
+        keyword: 'host', description: 'Set syslog server IP address and parameters',
+        argument: { name: 'ip', type: 'IP_ADDR' },
+        continuations: [
+          {
+            keyword: 'transport', description: 'Specify the transport protocol',
+            argument: {
+              name: 'protocole', type: 'ENUM',
+              values: [
+                { keyword: 'tcp', description: 'Send messages over TCP' },
+                { keyword: 'udp', description: 'Send messages over UDP' },
+              ],
+            },
+          },
+          {
+            keyword: 'discriminator', description: 'Establish MD-Host association',
+            argument: { name: 'nom', type: 'WORD' },
+          },
+        ],
+      },
     ];
   }
 

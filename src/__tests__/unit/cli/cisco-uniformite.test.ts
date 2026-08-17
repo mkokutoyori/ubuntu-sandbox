@@ -220,3 +220,50 @@ describe('les commandes communes existent partout', () => {
     }
   });
 });
+
+describe('`logging host` garde ses deux formes sur les deux plateformes IOS', () => {
+  it('la forme courte pose le serveur', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand('logging host 10.0.0.9');
+      await d.executeCommand('end');
+    });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('show running-config'), nom)
+        .toContain('10.0.0.9');
+    }
+  });
+
+  it('la forme longue traverse l\'adresse pour atteindre le transport', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+    });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging host 10.0.0.9 transport tcp'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('l\'aide APRES l\'adresse annonce ce qui peut suivre', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+    });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('logging host 10.0.0.9 ');
+
+      expect(aide, nom).toContain('transport');
+    }
+  });
+
+  it('un transport inconnu reste refuse', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+    });
+
+    expect(await machines.get('routeur')!.executeCommand('logging host 10.0.0.9 transport sctp'))
+      .toContain('Invalid input');
+  });
+});
