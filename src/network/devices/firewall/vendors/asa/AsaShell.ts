@@ -21,7 +21,7 @@ import { buildPrompt } from '../../../shells/PromptBuilder';
 import {
   AsaSocle, mergeHelpLines, stemOf,
   wordwiseCandidates, uniqueWordCompletion, knownCommandLines,
-  renderContinuationHelp, type HelpLine,
+  renderContinuationHelp, helpOrRefusal, type HelpLine,
 } from '@/cli/vendors/asa/asaSocle';
 import { resolveAbbreviation, expandsTo } from '@/cli/vendors/asa/asaAbbreviation';
 import {
@@ -289,8 +289,9 @@ export class AsaShell implements AsaShowHost {
   }
 
   help(inputBeforeQuestion: string): readonly string[] {
-    return renderContinuationHelp(inputBeforeQuestion, mergeHelpLines(
-      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion)));
+    return helpOrRefusal(renderContinuationHelp(inputBeforeQuestion, mergeHelpLines(
+      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion))),
+      ASA_INVALID_INPUT);
   }
 
   private vocabulary(): readonly string[] {

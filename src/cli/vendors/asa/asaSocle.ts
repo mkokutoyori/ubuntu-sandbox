@@ -226,3 +226,17 @@ export function renderContinuationHelp(
   return [...seen.entries()].sort((left, right) => left[0].localeCompare(right[0]))
     .map(([suite, description]) => `  ${suite.padEnd(large + 2)}${description}`.trimEnd());
 }
+
+/**
+ * Une aide qui ne trouve rien REFUSE, elle ne se tait pas.
+ *
+ * L'ASA rendait une liste vide pour une commande inconnue, donc un
+ * terminal qui appelle `cliHelp` directement n'affichait rien du tout,
+ * la ou un routeur et un commutateur du meme depot repondent
+ * `% Invalid input detected at '^' marker.`. Le silence est la pire des
+ * trois reponses : il ne distingue pas « je ne connais pas » de « je
+ * n'ai rien a proposer ici ».
+ */
+export function helpOrRefusal(lines: readonly string[], refusal: string): string[] {
+  return lines.length > 0 ? [...lines] : [refusal];
+}
