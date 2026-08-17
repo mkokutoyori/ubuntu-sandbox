@@ -1,5 +1,5 @@
 import {
-  attributeMap, childMap, typeArity,
+  attributeMap, childMap, attributeArity,
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
 } from '../schema/types';
 import { FortiTable } from './FortiTable';
@@ -107,7 +107,7 @@ export class FortiObject implements FortiObjectView {
 
   arityOf(name: string): number {
     const attribute = this.attributes.get(name);
-    return attribute ? typeArity(attribute) : 1;
+    return attribute ? attributeArity(attribute) : 1;
   }
 
   snapshot(): FortiObjectSnapshot {

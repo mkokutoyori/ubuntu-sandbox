@@ -656,3 +656,162 @@ describe('le commit vers le socle', () => {
     expect(rule.schedule).toBeUndefined();
   });
 });
+
+/**
+ * Ce que le moteur de commandes PARTAGE apporte, et que la phase 1
+ * n'avait pas.
+ *
+ * La grammaire etait servie par une aide et une completion ecrites dans
+ * `FortiShell` : une liste de verbes par contexte, un filtre par prefixe,
+ * un rendu en deux colonnes. Cela fonctionnait — et c'etait un SECOND
+ * moteur, alors que `src/cli/` en porte un, ecrit pour Cisco et l'ASA,
+ * qui fait davantage.
+ *
+ * Les cinq acquis mesures ici n'etaient possibles ni l'un ni l'autre
+ * avant la migration :
+ *
+ *   1. **Les abreviations** non ambigues, parce qu'une CLI qui les refuse
+ *      n'est pas une CLI qu'on peut utiliser.
+ *   2. **L'ambiguite nommee** plutot que le premier de la liste : un
+ *      prefixe qui designe plusieurs commandes n'en designe aucune.
+ *   3. **Les bornes reelles** dans l'aide — `<0-32>` et non le nom de
+ *      l'attribut. Une plage annoncee fausse envoie chercher la vraie
+ *      dans la documentation.
+ *   4. **`<cr>`** quand la commande est complete, ce qui distingue « il
+ *      manque quelque chose » de « on peut valider ».
+ *   5. **Les references se completent pour de bon** : `set srcaddr ?`
+ *      liste les objets qui EXISTENT. C'est le gain qui n'etait pas
+ *      prevu, et il vient de ce que la table est batie par contexte.
+ */
+describe('le moteur de commandes partage', () => {
+  it('une abreviation non ambigue est acceptee', () => {
+    const { fw, sh } = shell();
+
+    run(sh, 'conf firewall address', 'edit "ABREGE"',
+      'set sub 10.0.0.0 255.255.255.0', 'next', 'end');
+
+    expect(fw.getObjectStore().getAddress('ABREGE')).toBeDefined();
+  });
+
+  it('une abreviation ambigue est refusee en nommant les candidats', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'se action accept');
+
+    expect(dit).toContain('ambigu');
+    expect(dit).toContain('select');
+  });
+
+  it('`?` annonce la plage REELLE d\'un entier', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set color ?')).toContain('<0-32>');
+  });
+
+  it('`?` annonce le type d\'une adresse', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set subnet ?')).toContain('A.B.C.D');
+  });
+
+  it('`?` rend `<cr>` quand la commande est complete', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'set action accept ?')).toContain('<cr>');
+  });
+
+  it('les references se completent sur ce qui EXISTE', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "SRV_WEB"',
+      'set subnet 10.0.0.5 255.255.255.255', 'next',
+      'edit "SRV_MAIL"', 'set subnet 10.0.0.6 255.255.255.255', 'next', 'end');
+
+    run(sh, 'config firewall policy', 'edit 1');
+    const aide = run(sh, 'set srcaddr ?');
+
+    expect(aide).toContain('SRV_WEB');
+    expect(aide).toContain('SRV_MAIL');
+  });
+
+  it('un objet cree APRES la premiere aide y apparait — le cache suit', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+    expect(run(sh, 'set srcaddr ?')).not.toContain('TARDIF');
+
+    run(sh, 'end', 'config firewall address', 'edit "TARDIF"',
+      'set subnet 10.9.9.0 255.255.255.0', 'next', 'end');
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'set srcaddr ?')).toContain('TARDIF');
+  });
+
+  it('`edit ?` propose les cles qui existent', () => {
+    const { sh } = shell();
+    politique(sh, '1');
+    politique(sh, '7');
+
+    run(sh, 'config firewall policy');
+
+    const aide = run(sh, 'edit ?');
+    expect(aide).toContain('1');
+    expect(aide).toContain('7');
+  });
+
+  it('`move` n\'est propose que sur une table ordonnee', () => {
+    const { sh } = shell();
+
+    run(sh, 'config firewall policy');
+    expect(run(sh, '?')).toContain('move');
+
+    run(sh, 'end', 'config firewall address');
+    expect(run(sh, '?')).not.toContain('move');
+  });
+
+  it('l\'aide d\'un objet ne propose que les verbes qui s\'y appliquent', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const aide = run(sh, '?');
+
+    expect(aide).toContain('set');
+    expect(aide).toContain('next');
+    expect(aide).toContain('abort');
+    expect(aide).not.toContain('edit');
+    expect(aide).not.toContain('purge');
+  });
+
+  it('`append` n\'est propose que pour un attribut de LISTE', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'append ?')).toContain('srcaddr');
+    expect(run(sh, 'append ?')).not.toContain('action');
+  });
+
+  it('`set ?` decrit chaque attribut, pas son nom', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const aide = run(sh, 'set ?');
+
+    expect(aide).toContain('Incoming (ingress) interface.');
+    expect(aide).toContain('Enable/disable source NAT.');
+  });
+
+  it('`config ?` decrit la BRANCHE et non sa premiere table', () => {
+    const { sh } = shell();
+
+    expect(run(sh, '?')).toContain('Configure object.');
+  });
+
+  it('la completion `TAB` rend le mot unique', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(sh.completions('set srcin')).toContain('set srcintf');
+  });
+});

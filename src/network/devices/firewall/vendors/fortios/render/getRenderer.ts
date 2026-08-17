@@ -1,5 +1,5 @@
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
-import { typeIsQuoted, type FortiAttributeSpec } from '../schema/types';
+import { isQuoted, type FortiAttributeSpec } from '../schema/types';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import type { FortiObject } from '../runtime/FortiObject';
 import type { FortiTable } from '../runtime/FortiTable';
@@ -13,7 +13,7 @@ interface FieldRow {
 
 function fieldValue(spec: FortiAttributeSpec, values: readonly string[]): string {
   if (values.length === 0) return '';
-  if (!typeIsQuoted(spec.type)) return values.join(' ');
+  if (!isQuoted(spec)) return values.join(' ');
   return values.map(v => `"${v}"`).join(' ');
 }
 

@@ -1,4 +1,4 @@
-import { typeIsQuoted, type FortiAttributeSpec, type FortiTableSpec } from '../schema/types';
+import { isQuoted, type FortiAttributeSpec, type FortiTableSpec } from '../schema/types';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import type { FortiObject } from '../runtime/FortiObject';
 import type { FortiTable } from '../runtime/FortiTable';
@@ -10,7 +10,7 @@ export interface ShowOptions {
 }
 
 export function renderValue(spec: FortiAttributeSpec, values: readonly string[]): string {
-  if (!typeIsQuoted(spec.type)) return values.join(' ');
+  if (!isQuoted(spec)) return values.join(' ');
   return values.map(v => `"${v}"`).join(' ');
 }
 

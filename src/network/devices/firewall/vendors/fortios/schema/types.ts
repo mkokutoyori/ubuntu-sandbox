@@ -1,33 +1,12 @@
+import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentTypes';
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
-
-export type FortiValueType =
-  | 'string'
-  | 'integer'
-  | 'ipv4-address'
-  | 'ipv4-netmask'
-  | 'ipv4-address-mask'
-  | 'ipv4-range'
-  | 'mac-address'
-  | 'enum'
-  | 'reference'
-  | 'time'
-  | 'password'
-  | 'user-name'
-  | 'boolean-enable'
-  | 'port-range'
-  | 'uuid';
 
 export type FortiAccessGroup =
   | 'sysgrp' | 'netgrp' | 'fwgrp' | 'utmgrp' | 'vpngrp'
   | 'loggrp' | 'authgrp' | 'secfabgrp' | 'ftviewgrp';
 
 export type FortiScope = 'global' | 'vdom' | 'both';
-
-export interface FortiEnumValue {
-  readonly value: string;
-  readonly help: string;
-}
 
 export interface FortiObjectView {
   key: string;
@@ -37,16 +16,12 @@ export interface FortiObjectView {
 
 export interface FortiAttributeSpec {
   readonly name: string;
-  readonly type: FortiValueType;
   readonly help: string;
-  readonly enumValues?: readonly FortiEnumValue[];
-  readonly referenceTo?: readonly string[];
+  readonly parts: readonly ArgumentSpec[];
   readonly multiValue?: boolean;
+  readonly referenceTo?: readonly string[];
+  readonly quoted?: boolean;
   readonly defaultValue?: readonly string[];
-  readonly min?: number;
-  readonly max?: number;
-  readonly maxLength?: number;
-  readonly arity?: number;
   readonly availableWhen?: (object: FortiObjectView) => boolean;
   readonly unimplemented?: string;
   readonly readOnly?: boolean;
@@ -75,20 +50,6 @@ export interface FortiTableSpec {
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;
 }
 
-const QUOTED_TYPES: ReadonlySet<FortiValueType> = new Set<FortiValueType>([
-  'string', 'reference', 'user-name', 'password',
-]);
-
-export function typeIsQuoted(type: FortiValueType): boolean {
-  return QUOTED_TYPES.has(type);
-}
-
-export function typeArity(spec: FortiAttributeSpec): number {
-  if (spec.arity !== undefined) return spec.arity;
-  if (spec.type === 'ipv4-address-mask' || spec.type === 'ipv4-range') return 2;
-  return 1;
-}
-
 export function pathKey(path: readonly string[]): string {
   return path.join(' ');
 }
@@ -109,41 +70,138 @@ export function childMap(spec: FortiTableSpec): ReadonlyMap<string, FortiTableSp
   return map;
 }
 
-export function enable(name: string, help: string, byDefault = false): FortiAttributeSpec {
+export function attributeArity(spec: FortiAttributeSpec): number {
+  return spec.parts.length;
+}
+
+export function isQuoted(spec: FortiAttributeSpec): boolean {
+  if (spec.quoted !== undefined) return spec.quoted;
+  return spec.referenceTo !== undefined
+    || spec.parts.every(part => part.type === 'WORD' || part.type === 'LINE');
+}
+
+const ENABLE_VALUES: readonly EnumValue[] = Object.freeze([
+  { keyword: 'enable', description: 'Enable setting.' },
+  { keyword: 'disable', description: 'Disable setting.' },
+]);
+
+export function enable(
+  name: string, help: string, byDefault = false,
+): FortiAttributeSpec {
   return {
     name,
-    type: 'boolean-enable',
     help,
-    enumValues: [
-      { value: 'enable', help: 'Enable setting.' },
-      { value: 'disable', help: 'Disable setting.' },
-    ],
+    quoted: false,
+    parts: [{ name, type: 'ENUM', description: help, values: ENABLE_VALUES }],
     defaultValue: [byDefault ? 'enable' : 'disable'],
   };
 }
 
 export function text(
-  name: string, help: string, maxLength: number, defaultValue = '',
+  name: string, help: string, defaultValue = '',
 ): FortiAttributeSpec {
-  return { name, type: 'string', help, maxLength, defaultValue: [defaultValue] };
+  return {
+    name,
+    help,
+    quoted: true,
+    parts: [{ name, type: 'LINE', description: help }],
+    defaultValue: [defaultValue],
+  };
+}
+
+export function word(
+  name: string, help: string, defaultValue = '',
+): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: true,
+    parts: [{ name, type: 'WORD', description: help }],
+    defaultValue: [defaultValue],
+  };
 }
 
 export function choice(
-  name: string, help: string, values: readonly FortiEnumValue[], byDefault: string,
+  name: string, help: string, values: readonly EnumValue[], byDefault: string,
 ): FortiAttributeSpec {
-  return { name, type: 'enum', help, enumValues: values, defaultValue: [byDefault] };
-}
-
-export function refList(
-  name: string, help: string, targets: readonly string[],
-): FortiAttributeSpec {
-  return { name, type: 'reference', help, referenceTo: targets, multiValue: true };
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [{ name, type: 'ENUM', description: help, values }],
+    defaultValue: [byDefault],
+  };
 }
 
 export function count(
   name: string, help: string, min: number, max: number, byDefault: number,
 ): FortiAttributeSpec {
   return {
-    name, type: 'integer', help, min, max, defaultValue: [String(byDefault)],
+    name,
+    help,
+    quoted: false,
+    parts: [{ name, type: 'INT', description: help, range: [min, max] }],
+    defaultValue: [String(byDefault)],
+  };
+}
+
+export function refList(
+  name: string, help: string, targets: readonly string[],
+): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: true,
+    multiValue: true,
+    referenceTo: targets,
+    parts: [{ name, type: 'WORD', description: help }],
+  };
+}
+
+export function reference(
+  name: string, help: string, targets: readonly string[], defaultValue?: string,
+): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: true,
+    referenceTo: targets,
+    parts: [{ name, type: 'WORD', description: help }],
+    defaultValue: defaultValue === undefined ? undefined : [defaultValue],
+  };
+}
+
+export function address(name: string, help: string, byDefault?: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [{ name, type: 'IP_ADDR', description: help }],
+    defaultValue: byDefault === undefined ? undefined : [byDefault],
+  };
+}
+
+export function addressMask(
+  name: string, help: string, byDefault?: readonly string[],
+): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [
+      { name, type: 'IP_ADDR', description: help },
+      { name: `${name}-mask`, type: 'SUBNET_MASK', description: 'Subnet mask.' },
+    ],
+    defaultValue: byDefault === undefined ? undefined : [...byDefault],
+  };
+}
+
+export function clock(name: string, help: string, byDefault?: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [{ name, type: 'WORD', description: help, literal: 'hh:mm' }],
+    defaultValue: byDefault === undefined ? undefined : [byDefault],
   };
 }

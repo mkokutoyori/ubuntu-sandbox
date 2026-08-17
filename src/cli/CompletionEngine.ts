@@ -99,6 +99,7 @@ function suggestionsAt(
 }
 
 function describe(node: TreeNode): string {
+  if (node.legend) return node.legend;
   if (node.spec) return node.spec.description;
 
   for (const child of node.children.values()) {

@@ -53,6 +53,17 @@ export interface TreeNode {
   readonly children: Map<string, TreeNode>;
   argumentChild?: TreeNode;
   spec?: CommandSpec;
+  /**
+   * Ce que `?` ecrit d'un noeud qui n'est PAS une commande.
+   *
+   * Sans elle, un noeud intermediaire herite de la description de son
+   * premier descendant : `config ?` annoncait « Configure IPv4
+   * addresses. » pour le mot `config`, c'est-a-dire la description
+   * d'UNE des branches pour le nom de TOUTES. L'heritage reste le
+   * defaut — il convient quand la branche est unique — et cette
+   * legende le remplace quand le noeud merite le sien.
+   */
+  legend?: string;
 }
 
 function newNode(keyword?: string, argument?: ArgumentSpec): TreeNode {
@@ -103,6 +114,12 @@ export class CommandTable {
   }
 
   rootNode(): TreeNode { return this.root; }
+
+  describePath(path: readonly string[], legend: string): void {
+    let node = this.root;
+    for (const keyword of path) node = this.descendKeyword(node, keyword);
+    node.legend = legend;
+  }
 
   specs(): readonly CommandSpec[] { return [...this.byId.values()]; }
 

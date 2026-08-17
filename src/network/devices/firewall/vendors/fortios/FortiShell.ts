@@ -1,11 +1,12 @@
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
+import type { EnumValue } from '../../../../../cli/ArgumentTypes';
+import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
-import {
-  FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled,
-} from './FortiMessages';
+import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
+import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
-import type { FortiAttributeSpec, FortiCommitContext, FortiTableSpec } from './schema/types';
+import type { FortiCommitContext } from './schema/types';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
 import { FortiNavigator, unquote } from './runtime/FortiNavigator';
 import { FortiValidator } from './runtime/FortiValidator';
@@ -14,53 +15,31 @@ import { renderGet } from './render/getRenderer';
 
 export { FORTI_COMMAND_FAIL };
 
-const ROOT_VERBS: ReadonlyArray<{ word: string; help: string }> = Object.freeze([
-  { word: 'config', help: 'Configure object.' },
-  { word: 'diagnose', help: 'Diagnose facility.' },
-  { word: 'execute', help: 'Execute static commands.' },
-  { word: 'get', help: 'Get dynamic and system information.' },
-  { word: 'show', help: 'Show configuration.' },
-]);
-
-const TABLE_VERBS: ReadonlyArray<{ word: string; help: string }> = Object.freeze([
-  { word: 'clone', help: 'Clone an object instance.' },
-  { word: 'delete', help: 'Delete a table value.' },
-  { word: 'edit', help: 'Add/edit a table value.' },
-  { word: 'end', help: 'End and save.' },
-  { word: 'get', help: 'Get dynamic and system information.' },
-  { word: 'move', help: 'Move an object instance.' },
-  { word: 'purge', help: 'Purge all the table entries.' },
-  { word: 'rename', help: 'Rename a table value.' },
-  { word: 'show', help: 'Show configuration.' },
-]);
-
-const OBJECT_VERBS: ReadonlyArray<{ word: string; help: string }> = Object.freeze([
-  { word: 'abort', help: 'Exit without saving.' },
-  { word: 'append', help: 'Append a value to a list.' },
-  { word: 'config', help: 'Configure a sub-table.' },
-  { word: 'end', help: 'End and save.' },
-  { word: 'get', help: 'Get dynamic and system information.' },
-  { word: 'next', help: 'Save and exit the object.' },
-  { word: 'select', help: 'Select a value from a list.' },
-  { word: 'set', help: 'Set a field value.' },
-  { word: 'show', help: 'Show configuration.' },
-  { word: 'unselect', help: 'Remove a value from a list.' },
-  { word: 'unset', help: 'Reset a field to its default.' },
-]);
-
 export class FortiShell {
   private readonly tree: FortiConfigTree;
   private readonly nav: FortiNavigator;
-  private readonly validator: FortiValidator;
+  private readonly socle: FortiSocle;
   private vdom = 'root';
 
   constructor(private readonly fw: FortiGate) {
     this.tree = new FortiConfigTree(schemaIndex());
-    this.validator = new FortiValidator((target, name) => this.referenceExists(target, name));
+    const validator = new FortiValidator(
+      (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({
       tree: this.tree,
-      validator: this.validator,
+      validator,
       commitContext: () => this.commitContext(),
+    });
+    this.socle = new FortiSocle({
+      tree: this.tree,
+      nav: this.nav,
+      hostname: () => this.fw.getName(),
+      device: this.fw,
+      candidatesFor: (targets) => this.candidatesFor(targets),
+      view: (rest, full) => this.show(rest, full),
+      inspect: (rest) => this.get(rest),
+      diagnose: (rest) => this.diagnose(rest),
+      runExecute: (rest) => this.executeVerb(rest),
     });
   }
 
@@ -76,44 +55,96 @@ export class FortiShell {
 
   completions(input: string): readonly string[] {
     const prefix = input.trimStart();
-    return this.candidates(prefix).filter(w => w.startsWith(prefix) && w !== prefix);
+    const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
+    return this.socle.suggestions(prefix, 'TAB')
+      .filter(s => !s.isArgument)
+      .map(s => `${head}${s.value}`)
+      .filter(w => w.startsWith(prefix) && w !== prefix);
   }
 
   help(): readonly string[] {
-    return this.describe(this.helpEntries());
+    return this.describe(this.socle.suggestions('', 'QUESTION_MARK'));
   }
 
   execute(rawLine: string): string {
     const line = rawLine.trim();
     if (line.length === 0) return '';
-    if (line.endsWith('?')) return this.helpFor(line.slice(0, -1)).join('\n');
+    if (line.endsWith('?')) {
+      return this.describe(
+        this.socle.suggestions(line.slice(0, -1), 'QUESTION_MARK')).join('\n');
+    }
 
+    if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
+    if (/^show\s+full-configuration\b/.test(line)) {
+      return this.show(splitTokens(line).slice(2), true);
+    }
+
+    const outcome = this.socle.execute(line);
+    if (outcome.handled) return outcome.output;
+    return this.refusal(line);
+  }
+
+  private refusal(line: string): string {
     const tokens = splitTokens(line);
-    const verb = tokens[0];
-    const rest = tokens.slice(1);
+    const object = this.nav.currentObject();
 
-    switch (verb) {
-      case 'config':   return this.nav.descend(rest);
-      case 'edit':     return this.nav.edit(rest[0]);
-      case 'set':      return this.nav.set(rest[0], rest.slice(1));
-      case 'unset':    return this.nav.unset(rest[0]);
-      case 'append':   return this.nav.append(rest[0], rest.slice(1));
-      case 'select':   return this.nav.select(rest[0], rest.slice(1));
-      case 'unselect': return this.nav.unselect(rest[0], rest.slice(1));
-      case 'next':     return this.nav.next();
-      case 'end':      return this.nav.end();
-      case 'abort':    return this.nav.abort();
-      case 'delete':   return this.nav.delete(rest[0]);
-      case 'purge':    return this.nav.purge();
-      case 'clone':    return this.nav.clone(rest);
-      case 'rename':   return this.nav.rename(rest);
-      case 'move':     return this.nav.move(rest);
-      case 'show':     return this.show(rest, false);
-      case 'get':      return this.get(rest);
-      case 'diagnose': return this.diagnose(rest);
-      case 'execute':  return this.executeVerb(rest);
-      case 'write':    return FortiMessages.noSaveNeeded();
-      default:         return FortiMessages.unknownCommand(verb);
+    if ((tokens[0] === 'set' || tokens[0] === 'unset' || tokens[0] === 'append'
+      || tokens[0] === 'select' || tokens[0] === 'unselect')) {
+      if (!object) return FortiMessages.setOutside(this.nav.currentTable());
+      if (tokens[1] === undefined) return FortiMessages.incomplete('un attribut');
+
+      const attribute = object.attribute(tokens[1]);
+      if (!attribute) {
+        return FortiMessages.unknownAttribute(tokens[1], object.spec.path.join(' '));
+      }
+      if (attribute.unimplemented) {
+        return FortiMessages.unimplemented(tokens[1], attribute.unimplemented);
+      }
+      if (!object.isAvailable(attribute)) {
+        return FortiMessages.commandFail(
+          `\`${tokens[1]}\` ne s'applique pas dans la configuration courante de cet objet.`);
+      }
+      if (tokens[0] !== 'set' && !attribute.multiValue) {
+        return FortiMessages.notMultiValue(tokens[0], tokens[1]);
+      }
+      return this.nav.set(tokens[1], tokens.slice(2));
+    }
+
+    if (tokens[0] === 'config') {
+      return FortiMessages.unknownPath(tokens.slice(1).join(' '));
+    }
+    if (tokens[0] === 'edit') {
+      return object
+        ? FortiMessages.notATable(object.spec.path.join(' '))
+        : FortiMessages.outsideTable('edit');
+    }
+    if (tokens[0] === 'move') {
+      const table = this.nav.currentTable();
+      if (table && !table.spec.ordered) {
+        return FortiMessages.notOrdered('move', table.spec.path.join(' '));
+      }
+      return this.nav.move(tokens.slice(1));
+    }
+    if (tokens[0] === 'delete' || tokens[0] === 'purge' || tokens[0] === 'clone'
+      || tokens[0] === 'rename') {
+      if (!this.nav.currentTable()) return FortiMessages.outsideTable(tokens[0]);
+      return this.applyTableVerb(tokens);
+    }
+    if (tokens[0] === 'next' || tokens[0] === 'abort') {
+      return FortiMessages.outsideObject(tokens[0]);
+    }
+    if (tokens[0] === 'end') return this.nav.end();
+
+    return FortiMessages.unknownCommand(tokens[0]);
+  }
+
+  private applyTableVerb(tokens: readonly string[]): string {
+    switch (tokens[0]) {
+      case 'delete': return this.nav.delete(tokens[1]);
+      case 'purge': return this.nav.purge();
+      case 'clone': return this.nav.clone(tokens.slice(1));
+      case 'rename': return this.nav.rename(tokens.slice(1));
+      default: return FORTI_COMMAND_FAIL;
     }
   }
 
@@ -126,31 +157,55 @@ export class FortiShell {
     };
   }
 
+  private candidatesFor(targets: readonly string[]): readonly EnumValue[] {
+    const out: EnumValue[] = [];
+    const seen = new Set<string>();
+    const push = (keyword: string, description: string): void => {
+      if (seen.has(keyword)) return;
+      seen.add(keyword);
+      out.push({ keyword, description });
+    };
+
+    for (const target of targets) {
+      const path = target.split(' ');
+      const spec = this.tree.spec(path);
+      for (const name of spec?.predefined ?? []) push(name, 'Predefined object.');
+
+      const table = this.tree.existingTable(path);
+      for (const key of table?.keys() ?? []) push(key, `Configured ${path[1] ?? target}.`);
+
+      if (target === 'system interface') {
+        for (const port of this.fw.getPortNames()) push(port, 'Physical interface.');
+      }
+      if (target === 'system zone') {
+        for (const zone of this.fw.getZoneTable().list()) push(zone.name, 'Security zone.');
+      }
+      if (target === 'firewall service custom' || target === 'firewall service group') {
+        push('ALL', 'All services.');
+      }
+      if (target.startsWith('firewall schedule')) push('always', 'Always active.');
+    }
+    return out;
+  }
+
   private referenceExists(target: string, name: string): boolean {
     if (name === 'all' || name === 'any' || name === 'ALL') return true;
-
-    const path = target.split(' ');
-    const spec = this.tree.spec(path);
-    if (spec && (spec.predefined ?? []).includes(name)) return true;
-
-    const table = this.tree.existingTable(path);
-    if (table?.has(name)) return true;
-
-    if (target === 'system interface') return this.fw.getPort(name) !== undefined;
-    if (target === 'system zone') return this.fw.getZoneTable().getZone(name) !== undefined;
-    if (target === 'firewall service custom' || target === 'firewall service group') {
-      return this.fw.getObjectStore().getService(name) !== undefined || name === 'ALL';
-    }
-    if (target.startsWith('firewall schedule')) return name === 'always';
-    return false;
+    return this.candidatesFor([target]).some(c => c.keyword === name);
   }
 
   private show(rest: readonly string[], full: boolean): string {
     const words = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
-    const wantsFull = full || rest[0] === 'full-configuration';
-    const options = { full: wantsFull };
+    const options = { full: full || rest[0] === 'full-configuration' };
 
-    if (words.length === 0) return renderWholeConfig(this.tree, options).join('\n');
+    if (words.length === 0) {
+      const object = this.nav.currentObject();
+      if (object) {
+        return (renderPath(this.tree, object.spec.path, options) ?? []).join('\n');
+      }
+      const table = this.nav.currentTable();
+      if (table) return (renderPath(this.tree, table.spec.path, options) ?? []).join('\n');
+      return renderWholeConfig(this.tree, options).join('\n');
+    }
 
     const lines = renderPath(this.tree, words, options);
     if (lines === null) return FortiMessages.unknownPath(words.join(' '));
@@ -189,14 +244,9 @@ export class FortiShell {
   }
 
   private diagnose(rest: readonly string[]): string {
-    if (rest[0] !== 'sys' || rest[1] !== 'session') {
-      return FortiMessages.commandFail('seul `diagnose sys session` est disponible en phase 1.');
-    }
     if (rest[2] === 'stat') {
       return `misc info: session_count=${this.fw.getSessionTable().count()}`;
     }
-    if (rest[2] !== 'list') return FORTI_COMMAND_FAIL;
-
     return this.fw.getSessionTable().view().all().map(session =>
       `session info: proto=${session.c2s.protocol} proto_state=00`
       + ` duration=0 expire=${session.timeoutSec} timeout=${session.timeoutSec}\n`
@@ -212,90 +262,18 @@ export class FortiShell {
     );
   }
 
-  private helpFor(input: string): readonly string[] {
-    const words = splitTokens(input.trim());
-    if (words.length === 0) return this.describe(this.helpEntries());
-
-    const verb = words[0];
-    if (verb === 'config' && this.nav.currentObject() === undefined) {
-      return this.describeBranches(words.slice(1));
-    }
-    if (verb === 'set' || verb === 'unset' || verb === 'append'
-      || verb === 'select' || verb === 'unselect') {
-      return this.describeAttributes(words.slice(1));
-    }
-    return this.describe(this.helpEntries());
-  }
-
-  private helpEntries(): ReadonlyArray<{ word: string; help: string }> {
-    if (this.nav.currentObject()) return OBJECT_VERBS;
-    if (this.nav.currentTable()) return TABLE_VERBS;
-    return ROOT_VERBS;
-  }
-
-  private describeBranches(prefix: readonly string[]): readonly string[] {
-    const names = this.tree.branchNames(prefix);
-    if (names.length === 0) return [FORTI_COMMAND_FAIL];
-
-    return this.describe(names.map(name => {
-      const spec = this.tree.spec([...prefix, name]);
-      return { word: name, help: spec ? spec.help : `Configure ${name}.` };
-    }));
-  }
-
-  private describeAttributes(words: readonly string[]): readonly string[] {
-    const object = this.nav.currentObject();
-    if (!object) return [FORTI_COMMAND_FAIL];
-
-    if (words.length >= 1 && words[0].length > 0) {
-      const spec = object.attribute(words[0]);
-      if (spec?.enumValues) {
-        return this.describe(spec.enumValues.map(e => ({ word: e.value, help: e.help })));
-      }
-      if (spec) return this.describe([{ word: spec.name, help: spec.help }]);
-    }
-    return this.describe(object.availableAttributes()
-      .filter(a => !a.readOnly)
-      .map(a => ({ word: a.name, help: a.help })));
-  }
-
-  private describe(entries: ReadonlyArray<{ word: string; help: string }>): readonly string[] {
-    if (entries.length === 0) return [];
-    const width = Math.max(20, ...entries.map(e => e.word.length + 2));
-    return renderTable(entries, [
-      { header: '', width, value: e => e.word },
-      { header: '', width: 0, value: e => e.help },
+  private describe(suggestions: readonly Suggestion[]): readonly string[] {
+    if (suggestions.length === 0) return [];
+    const width = Math.max(20, ...suggestions.map(s => s.value.length + 2));
+    return renderTable(suggestions, [
+      { header: '', width, value: s => s.value },
+      { header: '', width: 0, value: s => s.description },
     ], FIXED_TABLE).slice(1);
-  }
-
-  private candidates(prefix: string): readonly string[] {
-    const words = splitTokens(prefix);
-    const verbs = this.helpEntries().map(e => e.word);
-
-    if (words.length <= 1 && !prefix.endsWith(' ')) return verbs;
-
-    const verb = words[0];
-    if (verb === 'config' && this.nav.currentObject() === undefined) {
-      const typed = prefix.endsWith(' ') ? words.slice(1) : words.slice(1, -1);
-      return this.tree.branchNames(typed).map(n => ['config', ...typed, n].join(' '));
-    }
-    if (verb === 'set' || verb === 'unset') {
-      const object = this.nav.currentObject();
-      if (!object) return [];
-      return object.availableAttributes()
-        .filter(a => !a.readOnly)
-        .map(a => `${verb} ${a.name}`);
-    }
-    return verbs;
   }
 
   setHints(enabled: boolean): void {
     setHintsEnabled(enabled);
   }
-}
-
-export function attributesOf(spec: FortiTableSpec): readonly FortiAttributeSpec[] {
-  return spec.attributes;
 }
 
 function splitTokens(line: string): string[] {
