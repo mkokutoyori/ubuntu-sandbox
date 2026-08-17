@@ -1740,6 +1740,32 @@ module ; lint propre.
 
 ---
 
+## Périmètre pris — FortiOS phase 5 (VDOM et modes de déploiement)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle, et c'est l'essentiel de la phase** :
+`vdom/VdomRegistry.ts` + `VdomContext` (BRD-FortiGate §10.3, qui exige
+explicitement que cela vive au SOCLE et non dans `vendors/fortios/`,
+PAN-OS et Junos en bénéficiant à l'identique). `Firewall.ts` déplace
+ses magasins par VDOM dans le registre ; `FirewallServices` les résout
+par VDOM au lieu de les porter en dur. **Un seul VDOM `root` reste le
+cas particulier du cas général, sans branche conditionnelle**
+(FGT-VDM-2).
+
+`FirewallProfile.pipeline` devient un **dictionnaire par mode**
+(FGT-DEP-6) ; `pipeline/stages/` gagne `vdom-bind`, `mac-lookup` et
+`switch-bridge`.
+
+**Fichiers FortiOS pris** : `schema/{system,index,types}.ts`,
+`FortiShell.ts`, `FortiSocle.ts`, `FortiProfile.ts`.
+
+**Ce que la phase ne prend PAS** : le laboratoire L9 (FortiGate vs ASA)
+est une comparaison documentaire, pas un mécanisme ; il est écrit dans
+le BRD et non dans le code.
+
+---
+
 ## Périmètre pris — FortiOS phase 4 (diagnostic et journaux)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
