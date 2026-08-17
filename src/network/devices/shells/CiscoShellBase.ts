@@ -14,8 +14,9 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
-import { newSession } from '@/cli/CliSession';
+import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand } from '@/cli/CommandParser';
+import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
@@ -2626,6 +2627,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return true;
   }
 
+  /**
+   * Ce qui precede le mot en cours de frappe.
+   *
+   * `show crypto ipsec s` a pour amont `show crypto ipsec` ; le meme
+   * texte suivi d'un blanc est deja son propre amont. La tabulation rend
+   * des LIGNES completes, la completion du socle des MOTS-CLES : sans
+   * cette moitie, un mot-cle du socle arriverait seul dans une liste de
+   * lignes et se ferait juger comme s'il etait une commande racine.
+   */
+  private static completionStem(input: string): string {
+    const trimmed = input.trim();
+    if (input.endsWith(' ') || trimmed === '') return trimmed;
+    return trimmed.slice(0, trimmed.lastIndexOf(' ') + 1).trim();
+  }
+
   private static sameKeywords(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length && left.every((word, i) => word === right[i]);
   }
@@ -2639,10 +2655,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return typed.length > 0;
   }
 
-  private tryMigratedCommand(cmdPart: string): string | null {
-    const table = this.socleTable();
-    if (!table) return null;
-
+  private socleSession(table: CommandTable): CliSession {
     table.attachAuthorization({
       authorizes: (commandText, defaultLevel) => this.autorisation().authorize({
         principal: this.mandataire(),
@@ -2652,10 +2665,44 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }) !== 'absent',
     });
 
-    const session = newSession(this.d().getHostname?.() ?? 'Router', this, {
+    return newSession(this.d().getHostname?.() ?? 'Router', this, {
       initialMode: this.mode,
       privilegeLevel: this.currentPrivilegeLevel,
     });
+  }
+
+  /**
+   * Ce que le socle DECLARE, l'aide et la tabulation doivent le voir.
+   *
+   * Le pont n'allait que dans un sens : l'execution consultait le socle,
+   * `?` et la tabulation lisaient les arbres seuls. Une famille migree
+   * etait donc elaguee du trie sans que rien la remette dans l'aide, et
+   * la machine se contredisait — `tunnel source Loopback0` s'executait
+   * pendant que `tunnel ?` repondait `% Invalid input detected`, le
+   * message d'une commande qui n'existe pas.
+   */
+  protected socleSuggestions(
+    input: string, trigger: CompletionTrigger, device?: TDevice,
+  ): Array<{ keyword: string; description: string }> {
+    const table = this.socleTable();
+    if (!table) return [];
+
+    const precedent = this.deviceRef;
+    if (device) this.deviceRef = device;
+    try {
+      return socleComplete(table, input, this.socleSession(table), trigger).suggestions
+        .filter(s => !s.isArgument)
+        .map(s => ({ keyword: s.value, description: s.description }));
+    } finally {
+      this.deviceRef = precedent;
+    }
+  }
+
+  private tryMigratedCommand(cmdPart: string): string | null {
+    const table = this.socleTable();
+    if (!table) return null;
+
+    const session = this.socleSession(table);
     const parsed = parseCommand(table, cmdPart, session);
     if (parsed.status !== 'ok') return null;
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
@@ -3361,6 +3408,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const base = surMotPartiel ? brut.slice(0, brut.lastIndexOf(' ') + 1).trim() : brut;
       const completions = trie.getCompletions(input)
         .filter((c) => filtreNiveau(`${base} ${c.keyword}`.trim()));
+      for (const c of this.socleSuggestions(input, 'QUESTION_MARK', device)) {
+        if (!completions.some((x) => x.keyword.toLowerCase() === c.keyword.toLowerCase())) {
+          completions.push(c);
+        }
+      }
       for (const c of this.completionsAccordeesParNiveau(input, device)) {
         if (!completions.some((x) => x.keyword.toLowerCase() === c.keyword.toLowerCase())) {
           completions.push(c);
@@ -3432,6 +3484,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       try {
         const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
           .filter((c) => this.laSessionVoit(c));
+        const amont = CiscoShellBase.completionStem(input);
+        for (const { keyword } of this.socleSuggestions(input, 'TAB', device)) {
+          const ligne = `${amont} ${keyword}`.trim();
+          if (!base.includes(ligne)) base.push(ligne);
+        }
         const prefixe = input.trim().toLowerCase();
         // Une commande DESCENDUE depuis l'arbre privilegie n'est pas
         // dans l'arbre utilisateur : la marche du trie ne peut pas la

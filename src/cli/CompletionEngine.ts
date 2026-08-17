@@ -103,5 +103,5 @@ function describe(node: TreeNode): string {
     const inherited = describe(child);
     if (inherited) return inherited;
   }
-  return '';
+  return node.argumentChild ? describe(node.argumentChild) : '';
 }

@@ -105,6 +105,20 @@ describe('`?` decrit', () => {
     expect(ip?.description).toBe('IP routing table');
   });
 
+  it('un noeud dont la suite est un ARGUMENT herite aussi sa description', () => {
+    const t = new CommandTable();
+    t.declare({
+      id: 'tunnel-source', path: ['tunnel', 'source', { name: 'iface', type: 'INTERFACE' }],
+      description: 'Source of tunnel packets',
+      modes: ['privileged'], minPrivilege: 1, run: () => '',
+    });
+
+    const result = complete(t, 'tunnel ', session(), 'QUESTION_MARK');
+    const source = result.suggestions.find(s => s.value === 'source');
+
+    expect(source?.description).toBe('Source of tunnel packets');
+  });
+
   it('il annonce le TYPE attendu quand la suite est un argument', () => {
     const result = complete(table(), 'ping ', session(), 'QUESTION_MARK');
 
