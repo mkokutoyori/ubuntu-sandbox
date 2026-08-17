@@ -338,6 +338,12 @@ export class CommandTrie {
       delete target.greedy;
       delete target.minArgs;
       target.params = [];
+      // Le noeud reste pour ses enfants, mais il n'est plus une
+      // COMMANDE : sans ce drapeau, la marche s'y arrete et rend
+      // `% Incomplete command.` la ou la commande est simplement
+      // absente — deux diagnostics qui envoient l'operateur a deux
+      // endroits differents.
+      target._hintOnly = true;
     }
   }
 
@@ -580,7 +586,13 @@ export class CommandTrie {
 
       // Try exact match first, then prefix match
       const exactChildRaw = node.children.get(tokenLower);
-      const exactChild = exactChildRaw && !exactChildRaw._hintOnly ? exactChildRaw : undefined;
+      // Un noeud qui n'est pas une commande reste TRAVERSABLE tant qu'il
+      // porte des enfants : `clear logging` elague garde
+      // `clear logging persistent`, et refuser d'y entrer rendrait la
+      // fille inatteignable en meme temps que le parent.
+      const exactChild = exactChildRaw
+        && (!exactChildRaw._hintOnly || exactChildRaw.children.size > 0)
+        ? exactChildRaw : undefined;
       if (exactChild) {
         node = exactChild;
         matchedKeywords.push(node.keyword);
