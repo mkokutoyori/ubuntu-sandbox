@@ -39,6 +39,7 @@ import {
 } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand } from '@/cli/CommandParser';
+import { legacyFamily, legacySpec } from '@/cli/LegacyDeclaration';
 
 function session(over: { mode?: string; privilegeLevel?: number; device?: unknown } = {}): CliSession {
   const s = newSession('R1', over.device ?? {},
@@ -441,5 +442,62 @@ describe('un argument OPTIONNEL laisse la commande complete sans lui', () => {
     });
 
     expect(parseCommand(t, 'ping', session()).status).toBe('incomplete');
+  });
+});
+
+describe('l\'adaptateur de declaration — le handler reste, la DECLARATION migre', () => {
+  it('il rend une spec dont le chemin est celui du trie', () => {
+    const spec = legacySpec('show ip route', 'IP routing table', () => 'ok',
+      { modes: ['privileged'], minPrivilege: 1 });
+
+    expect(spec.path.slice(0, 3)).toEqual(['show', 'ip', 'route']);
+  });
+
+  it('le handler recoit les arguments POSITIONNELS, comme avant', () => {
+    const vus: string[][] = [];
+    const spec = legacySpec('clear counters', 'x', (args) => { vus.push(args); return ''; },
+      { modes: ['privileged'], minPrivilege: 1 });
+    const t = new CommandTable();
+    t.declare(spec);
+
+    const parsed = parseCommand(t, 'clear counters GigabitEthernet0/0', session());
+    if (parsed.status === 'ok') parsed.spec.run(session(), parsed.args);
+
+    expect(vus).toEqual([['GigabitEthernet0/0']]);
+  });
+
+  it('sans argument, il recoit un tableau VIDE et non `undefined`', () => {
+    const vus: string[][] = [];
+    const spec = legacySpec('show clock', 'x', (args) => { vus.push(args); return ''; },
+      { modes: ['privileged'], minPrivilege: 1 });
+    const t = new CommandTable();
+    t.declare(spec);
+
+    const parsed = parseCommand(t, 'show clock', session());
+    if (parsed.status === 'ok') parsed.spec.run(session(), parsed.args);
+
+    expect(vus).toEqual([[]]);
+  });
+
+  it('la ligne brute reconstituee porte le chemin ET la suite', () => {
+    const lignes: string[] = [];
+    const spec = legacySpec('ping', 'x', (_a, line) => { lignes.push(line); return ''; },
+      { modes: ['privileged'], minPrivilege: 1 });
+    const t = new CommandTable();
+    t.declare(spec);
+
+    const parsed = parseCommand(t, 'ping 10.0.0.1 repeat 5', session());
+    if (parsed.status === 'ok') parsed.spec.run(session(), parsed.args);
+
+    expect(lignes).toEqual(['ping 10.0.0.1 repeat 5']);
+  });
+
+  it('`legacyFamily` declare un fichier entier d\'un coup', () => {
+    const specs = legacyFamily([
+      ['show a', 'A', () => 'a'],
+      ['show b', 'B', () => 'b'],
+    ], { modes: ['privileged'], minPrivilege: 1 });
+
+    expect(specs.map(s => s.id)).toEqual(['show-a', 'show-b']);
   });
 });
