@@ -56,6 +56,15 @@ export interface ArgumentSpec {
    * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
    */
   readonly literal?: string;
+  /**
+   * La FORME que la valeur doit avoir, quand le type ne suffit pas.
+   *
+   * `clock set hh:mm:ss` en est le cas type : un `WORD` accepte
+   * `99:99:99`, donc le refus arrive au fond du gestionnaire et ne peut
+   * plus dire OU l'operateur s'est trompe. Valider a la place de
+   * l'argument est ce qui rend le caret d'IOS possible.
+   */
+  readonly pattern?: RegExp;
 }
 
 export interface ArgumentTypeDefinition {
@@ -101,9 +110,29 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
  * refaire le controle, ce qui est exactement le critere range et jamais
  * evalue que ce depot passe son temps a refermer.
  */
+/**
+ * La valeur enumeree que designe ce mot, abreviations comprises.
+ *
+ * IOS abrege TOUT, y compris les valeurs : `logging console warn` vaut
+ * `warnings`. Un exact l'emporte sur un prefixe — sans quoi `serve`
+ * serait ambigu avec `serve-only` alors qu'il existe pour lui-meme — et
+ * un prefixe partage par plusieurs ne designe rien.
+ */
+export function resolveEnumValue(
+  spec: ArgumentSpec, token: string,
+): string | undefined {
+  const bas = token.toLowerCase();
+  const exact = spec.values?.find(value => value.keyword.toLowerCase() === bas);
+  if (exact) return exact.keyword;
+
+  const prefixes = spec.values?.filter(
+    value => value.keyword.toLowerCase().startsWith(bas)) ?? [];
+  return prefixes.length === 1 ? prefixes[0].keyword : undefined;
+}
+
 export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
-  const named = spec.values?.some(
-    value => value.keyword.toLowerCase() === token.toLowerCase()) ?? false;
+  const named = spec.values !== undefined
+    && resolveEnumValue(spec, token) !== undefined;
   if (named) return true;
   // Une place a plusieurs FORMES : ce sont des types, pas des valeurs, et
   // c'est la forme qui decide de l'acceptation, jamais son intitule.
@@ -115,6 +144,7 @@ export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
   // celle que l'operateur a tapee.
   if (spec.values && !spec.range) return false;
   if (!ARGUMENT_TYPES[spec.type].accepts(token)) return false;
+  if (spec.pattern && !spec.pattern.test(token)) return false;
   if (!spec.range) return true;
 
   const value = Number(token);

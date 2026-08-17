@@ -44,6 +44,16 @@ export interface SequenceEntry {
    * est la reponse honnete tant que le moteur ne sait pas defaire.
    */
   readonly negatable?: boolean;
+  /**
+   * Les modes ou la commande existe, quand ce n'est pas la seule
+   * configuration globale.
+   *
+   * `clock set` vit en EXEC privilegie ET en configuration : le trie
+   * l'enregistre donc DEUX fois, avec deux fois le meme gestionnaire.
+   * Une declaration unique portant ses deux modes est precisement ce que
+   * la migration achete.
+   */
+  readonly modes?: readonly string[];
 }
 
 export interface SequenceHost {
@@ -74,7 +84,7 @@ function specFor(
     id: entry.path.join('-') + suffixe,
     path: [...entry.path, ...specs],
     description: entry.description,
-    modes: ['config'],
+    modes: entry.modes ?? ['config'],
     minPrivilege: 15,
     run: (_session, args) => host().apply(words(args), false),
   };

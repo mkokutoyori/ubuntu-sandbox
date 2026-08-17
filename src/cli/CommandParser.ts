@@ -1,4 +1,4 @@
-import { argumentAccepts } from './ArgumentTypes';
+import { argumentAccepts, resolveEnumValue } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
 
@@ -44,9 +44,16 @@ export function parseCommand(
       break;
     }
     if (argument?.argument && argumentAccepts(argument.argument, token)) {
-      args[argument.argument.name] = token;
+      // La valeur RANGEE est la canonique : le gestionnaire recevrait
+      // sinon `warn` la ou il attend `warnings`, et une abreviation
+      // acceptee qui ne fait rien serait pire qu'un refus.
+      args[argument.argument.name] =
+        resolveEnumValue(argument.argument, token) ?? token;
       node = argument;
       continue;
+    }
+    if (argument?.argument) {
+      return { status: 'invalid', token, position: index, refusePar: 'argument' };
     }
     return { status: 'invalid', token, position: index };
   }
