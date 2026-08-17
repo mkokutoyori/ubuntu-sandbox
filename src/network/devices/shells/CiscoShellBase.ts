@@ -3081,11 +3081,39 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
 
   protected loggingEntries(): LoggingEntry[] {
+    // Un filtre s'ecrit `drops X` ou `includes Y` : deux mots dont le
+    // second est libre. Le socle n'a pas de type pour une paire, et
+    // inventer un ENUM sur le premier laisserait le second sans place —
+    // `REST` decrit ce qu'on sait : la suite est du texte.
+    const LIGNE_FILTRE = { name: 'filtre', type: 'REST' as const };
+
     // Les phrases d'IOS viennent de la table qui les porte deja : les
     // retaper ici en ferait une seconde, et la premiere divergence
     // passerait inapercue. Le `<0-7>` en tete est un TYPE, pas une
     // valeur — c'est la plage qui le rend.
     const severites = severityValues().filter(value => !value.keyword.startsWith('<'));
+
+    // L'argument de `logging buffered` est AMBIGU par conception et
+    // resolu par sa VALEUR : `0-7` est une severite, `4096-2147483647`
+    // une taille. La plage couvre les deux, les noms couvrent la severite
+    // ecrite en toutes lettres.
+    const tailleOuSeverite = (name: string) => ({
+      name, type: 'INT' as const,
+      range: [0, BUFFERED_SIZE_MAX] as const,
+      // Les DEUX intervalles sont nommes, parce que la place accepte
+      // deux choses differentes selon la valeur : une severite en bas,
+      // une taille de tampon en haut. Une seule plage fusionnee ferait
+      // croire que tout ce qui est entre les deux est admis.
+      alternatives: [
+        { keyword: '<0-7>', description: 'Logging severity level' },
+        {
+          keyword: `<${BUFFERED_SIZE_MIN}-${BUFFERED_SIZE_MAX}>`,
+          description: 'Logging buffer size',
+        },
+      ],
+      values: severites,
+      optional: true,
+    });
 
     return [
       { keyword: 'count', description: 'Count every log message and timestamp last occurrence' },
@@ -3181,6 +3209,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             name: 'entries', type: 'INT', range: [HISTORY_SIZE_MIN, HISTORY_SIZE_MAX],
           },
         }],
+      },
+      {
+        keyword: 'persistent', description: 'Set persistent logging parameters',
+        // `logging persistent url X size Y filesize Z` enchaine PLUSIEURS
+        // paires sur une ligne : c'est une structure repetee qu'un chemin
+        // fixe ne peut pas decrire. Le `REST` est donc fidele, et ses
+        // FORMES nomment les six mots-cles pour que `?` les annonce
+        // quand meme — l'acceptation reste permissive, l'aide non.
+        argument: {
+          name: 'options', type: 'REST', optional: true,
+          alternatives: [
+            { keyword: 'url', description: 'Location to store the persistent log' },
+            { keyword: 'size', description: 'Total size of the persistent log' },
+            { keyword: 'filesize', description: 'Size of an individual log file' },
+            { keyword: 'immediate', description: 'Write each message as it is logged' },
+            { keyword: 'batch', description: 'Write messages in batches of this size' },
+            { keyword: 'threshold', description: 'Percentage of the log that triggers a notice' },
+          ],
+        },
+      },
+      {
+        keyword: 'queue-limit', description: 'Set logger message queue size',
+        argument: {
+          name: 'taille', type: 'INT', range: [1, 2147483647],
+          values: [
+            { keyword: 'esm', description: 'Queue size for ESM filtered messages' },
+            { keyword: 'trap', description: 'Queue size for messages sent to syslog servers' },
+          ],
+        },
+      },
+      {
+        keyword: 'buffered', description: 'Set buffered logging parameters',
+        argument: tailleOuSeverite('taille-ou-severite'),
+        second: tailleOuSeverite('severite-ou-taille'),
+        continuations: [{
+          keyword: 'discriminator', description: 'Establish MD-Buffer association',
+          argument: { name: 'nom', type: 'WORD' },
+        }],
+      },
+      {
+        keyword: 'discriminator', description: 'Create or modify a message discriminator',
+        argument: { name: 'nom', type: 'WORD' },
+        continuations: [
+          { keyword: 'severity', description: 'Set severity filter', argument: LIGNE_FILTRE },
+          { keyword: 'facility', description: 'Set facility filter', argument: LIGNE_FILTRE },
+          { keyword: 'mnemonics', description: 'Set mnemonic filter', argument: LIGNE_FILTRE },
+          { keyword: 'msg-body', description: 'Set message body filter', argument: LIGNE_FILTRE },
+          {
+            keyword: 'rate-limit', description: 'Set rate limit for this discriminator',
+            argument: LIGNE_FILTRE,
+          },
+        ],
       },
       {
         keyword: 'reload', description: 'Set reload logging level',

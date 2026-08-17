@@ -120,7 +120,12 @@ export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
   const out: EnumValue[] = [];
   for (const form of spec.alternatives ?? []) out.push(form);
   if (spec.values) {
-    if (spec.range) out.push({ keyword: argumentPlaceholder(spec), description: spec.name });
+    // Des FORMES declarees decrivent deja ce que la place accepte : y
+    // ajouter la plage brute annoncerait un intervalle plus large que
+    // celui qu'elles nomment.
+    if (spec.range && out.length === 0) {
+      out.push({ keyword: argumentPlaceholder(spec), description: spec.name });
+    }
     for (const value of spec.values) out.push(value);
     return out;
   }
