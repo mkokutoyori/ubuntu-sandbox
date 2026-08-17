@@ -70,4 +70,4 @@ export const SHOW_SLICE_PATHS: readonly string[] =
 
 export const MIGRATION_LEDGER: readonly string[] = Object.freeze([]);
 
-export const MIGRATION_BLOCKER = 'authorization';
+export const MIGRATION_BLOCKER = 'whole-family-at-once';

@@ -58,10 +58,15 @@ function newNode(keyword?: string, argument?: ArgumentSpec): TreeNode {
   return { keyword, argument, children: new Map() };
 }
 
+export interface AuthorizationPort {
+  authorizes(commandText: string, defaultLevel: number, session: CliSession): boolean;
+}
+
 export class CommandTable {
   private readonly root: TreeNode = newNode();
   private readonly byId = new Map<string, CommandSpec>();
   private readonly privilegeOverrides = new Map<string, number>();
+  private authorization: AuthorizationPort | null = null;
 
   declare(spec: CommandSpec): void {
     if (spec.path.length === 0) throw new EmptyCommandPathError(spec.id);
@@ -114,9 +119,18 @@ export class CommandTable {
     return this.privilegeOverrides.get(keywords.join(' ')) ?? spec.minPrivilege;
   }
 
+  attachAuthorization(port: AuthorizationPort | null): void {
+    this.authorization = port;
+  }
+
   isReachable(spec: CommandSpec, session: CliSession): boolean {
     if (!this.modeAdmits(spec, session)) return false;
-    return session.privilegeLevel >= this.requiredPrivilege(spec);
+
+    const required = this.requiredPrivilege(spec);
+    if (this.authorization) {
+      return this.authorization.authorizes(pathTextOf(spec), required, session);
+    }
+    return session.privilegeLevel >= required;
   }
 
   private modeAdmits(spec: CommandSpec, session: CliSession): boolean {
@@ -132,6 +146,10 @@ export class CommandTable {
     }
     return [...node.children.keys()];
   }
+}
+
+export function pathTextOf(spec: CommandSpec): string {
+  return spec.path.filter((step): step is string => !isArgumentSpec(step)).join(' ');
 }
 
 function pathText(path: readonly CommandStep[]): string {

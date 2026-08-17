@@ -2604,6 +2604,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const table = this.socleTable();
     if (!table) return null;
 
+    table.attachAuthorization({
+      authorizes: (commandText, defaultLevel) => this.autorisation().authorize({
+        principal: this.mandataire(),
+        scope: scopeForMode(this.mode),
+        command: commandText,
+        defaultLevel,
+      }) !== 'absent',
+    });
+
     const session = newSession(this.d().getHostname?.() ?? 'Router', this, {
       initialMode: this.mode,
       privilegeLevel: this.currentPrivilegeLevel,

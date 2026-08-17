@@ -296,3 +296,66 @@ describe('le gestionnaire peut etre asynchrone', () => {
     expect(await result.spec.run(session(), result.args)).toBe('pinging 10.0.0.1');
   });
 });
+
+describe('le port d\'autorisation — le socle DEMANDE, il ne decide pas', () => {
+  it('sans port, la regle simple du socle s\'applique', () => {
+    const t = table();
+
+    expect(parseCommand(t, 'show running-config', session({ privilegeLevel: 5 })).status)
+      .toBe('invalid');
+  });
+
+  it('un port branche REMPLACE la comparaison de niveau', () => {
+    const t = table();
+    t.attachAuthorization({ authorizes: () => true });
+
+    expect(parseCommand(t, 'show running-config', session({ privilegeLevel: 1 })).status)
+      .toBe('ok');
+  });
+
+  it('et il peut REFUSER ce que le niveau aurait permis', () => {
+    const t = table();
+    t.attachAuthorization({ authorizes: () => false });
+
+    expect(parseCommand(t, 'show version', session({ privilegeLevel: 15 })).status)
+      .toBe('invalid');
+  });
+
+  it('le port recoit le chemin CANONIQUE et le niveau requis', () => {
+    const t = table();
+    const vus: Array<[string, number]> = [];
+    t.attachAuthorization({
+      authorizes: (command, level) => { vus.push([command, level]); return true; },
+    });
+
+    parseCommand(t, 'show version', session());
+
+    expect(vus).toContainEqual(['show version', 1]);
+  });
+
+  it('le MODE reste decide par le socle, jamais par le port', () => {
+    const t = table();
+    t.attachAuthorization({ authorizes: () => true });
+
+    expect(parseCommand(t, 'shutdown', session()).status).toBe('invalid');
+  });
+
+  it('`privilege exec level` passe au port comme niveau requis', () => {
+    const t = table();
+    const vus: number[] = [];
+    t.setPrivilegeOverride(['show', 'running-config'], 5);
+    t.attachAuthorization({ authorizes: (_c, level) => { vus.push(level); return true; } });
+
+    parseCommand(t, 'show running-config', session());
+
+    expect(vus).toContain(5);
+  });
+
+  it('le detacher rend la regle simple', () => {
+    const t = table();
+    t.attachAuthorization({ authorizes: () => false });
+    t.attachAuthorization(null);
+
+    expect(parseCommand(t, 'show version', session()).status).toBe('ok');
+  });
+});
