@@ -3014,19 +3014,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private discoveryValue(
-    path: readonly string[], description: string, refus: string,
+    path: readonly string[], description: string,
     low: number, high: number, apply: (value: number) => void,
   ): CommandSpec {
     return {
       id: path.join('-'),
-      path: [...path, { name: 'value', type: 'INT' as const }],
+      path: [...path, { name: 'value', type: 'INT' as const, range: [low, high] }],
       description, modes: ['config'], minPrivilege: 15,
-      run: (_session, args) => {
-        const value = parseInt(args.value ?? '', 10);
-        if (isNaN(value) || value < low || value > high) return refus;
-        apply(value);
-        return '';
-      },
+      run: (_session, args) => { apply(parseInt(args.value ?? '', 10)); return ''; },
     };
   }
 
@@ -3056,25 +3051,25 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, false)))),
 
       this.discoveryValue(['cdp', 'timer'], 'Advertisement period (sec)',
-        '% Invalid timer value (5-254)', 5, 254,
+        5, 254,
         value => this.applyToCdpAgent(a => a.setTimerSec(value))),
       this.discoveryValue(['cdp', 'holdtime'], 'Hold-time advertised to peers (sec)',
-        '% Invalid holdtime value (10-255)', 10, 255,
+        10, 255,
         value => this.applyToCdpAgent(a => a.setHoldtimeSec(value))),
       this.discoveryValue(['lldp', 'timer'], 'Advertisement period (sec)',
-        '% Invalid timer value (5-32768)', 5, 32768,
+        5, 32768,
         value => this.applyToLldpAgent(a => a.setTimerSec(value))),
       this.discoveryValue(['lldp', 'holdtime-multiplier'], 'TTL = timer x multiplier',
-        '% Invalid multiplier (2-10)', 2, 10,
+        2, 10,
         value => this.applyToLldpAgent(a => a.setHoldtimeMultiplier(value))),
       this.discoveryValue(['lldp', 'holdtime'], 'Holdtime in seconds',
-        '% Invalid holdtime value (10-3600)', 10, 3600,
+        10, 3600,
         value => this.applyToLldpAgent(a => {
           const config = a.getConfig();
           a.setHoldtimeMultiplier(Math.max(2, Math.min(10, Math.round(value / config.timerSec))));
         })),
       this.discoveryValue(['lldp', 'reinit'], 'Re-init delay (sec)',
-        '% Invalid reinit delay (1-10)', 1, 10,
+        1, 10,
         value => this.applyToLldpAgent(a => a.setReinitDelaySec(value))),
     ];
   }

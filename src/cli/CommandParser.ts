@@ -1,4 +1,4 @@
-import { ARGUMENT_TYPES } from './ArgumentTypes';
+import { argumentAccepts } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
 
@@ -43,7 +43,7 @@ export function parseCommand(
       node = argument;
       break;
     }
-    if (argument?.argument && ARGUMENT_TYPES[argument.argument.type].accepts(token)) {
+    if (argument?.argument && argumentAccepts(argument.argument, token)) {
       args[argument.argument.name] = token;
       node = argument;
       continue;

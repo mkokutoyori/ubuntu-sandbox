@@ -71,11 +71,18 @@ describe('un reglage garde sa borne', () => {
     expect(await r.executeCommand('cdp timer 30')).toBe('');
   });
 
-  it('une valeur HORS plage est refusee, en nommant la plage', async () => {
+  it('une valeur HORS plage est refusee par l\'ANALYSE, dans les mots d\'IOS', async () => {
     const r = await inConfig('router-cisco');
 
-    expect(await r.executeCommand('cdp timer 3')).toContain('5-254');
-    expect(await r.executeCommand('lldp holdtime-multiplier 99')).toContain('2-10');
+    expect(await r.executeCommand('cdp timer 3')).toContain('Invalid input');
+    expect(await r.executeCommand('lldp holdtime-multiplier 99')).toContain('Invalid input');
+  });
+
+  it('et l\'aide, elle, NOMME la plage — c\'est la qu\'on l\'apprend', async () => {
+    const r = await inConfig('router-cisco');
+
+    expect(await r.executeCommand('cdp timer ?')).toContain('<5-254>');
+    expect(await r.executeCommand('lldp holdtime-multiplier ?')).toContain('<2-10>');
   });
 
   it('un mot qui n\'est pas un nombre ne passe pas pour une valeur', async () => {
@@ -94,9 +101,5 @@ describe('un reglage garde sa borne', () => {
     expect(aide).toContain('holdtime');
   });
 
-  it('l\'aide annonce le TYPE attendu derriere le reglage', async () => {
-    const r = await inConfig('router-cisco');
 
-    expect(await r.executeCommand('cdp timer ?')).toMatch(/<|value/);
-  });
 });

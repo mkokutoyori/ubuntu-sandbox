@@ -1,4 +1,4 @@
-import { ARGUMENT_TYPES } from './ArgumentTypes';
+import { argumentAccepts, argumentPlaceholder } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
@@ -36,7 +36,7 @@ export function locateCursor(
     if (child) { node = child; continue; }
 
     const argument = node.argumentChild;
-    if (argument?.argument && ARGUMENT_TYPES[argument.argument.type].accepts(token)) {
+    if (argument?.argument && argumentAccepts(argument.argument, token)) {
       node = argument;
       continue;
     }
@@ -80,12 +80,22 @@ function suggestionsAt(
   }
 
   const argument = cursor.node.argumentChild?.argument;
-  if (argument && trigger === 'QUESTION_MARK' && cursor.prefix.length === 0) {
-    out.push({
-      value: ARGUMENT_TYPES[argument.type].placeholder,
-      description: argument.name,
-      isArgument: true,
-    });
+  if (argument && trigger === 'QUESTION_MARK') {
+    // Un argument ENUMERE a un domaine fini : l'aide le DECRIT valeur par
+    // valeur au lieu d'annoncer un type muet, ce qui est tout l'interet
+    // de `logging console ?` — les huit severites avec leur numero.
+    if (argument.values) {
+      for (const value of argument.values) {
+        if (!value.keyword.toLowerCase().startsWith(lowered)) continue;
+        out.push({ value: value.keyword, description: value.description, isArgument: true });
+      }
+    } else if (cursor.prefix.length === 0) {
+      out.push({
+        value: argumentPlaceholder(argument),
+        description: argument.name,
+        isArgument: true,
+      });
+    }
   }
 
   if (trigger === 'QUESTION_MARK' && cursor.node.spec && cursor.prefix.length === 0
