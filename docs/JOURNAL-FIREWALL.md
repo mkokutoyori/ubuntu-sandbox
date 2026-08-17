@@ -1656,6 +1656,28 @@ veut dire.
 
 ---
 
+## Périmètre pris — FortiOS phase 4 (diagnostic et journaux)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Fichiers pris** : `vendors/fortios/diag/*` (nouveau répertoire),
+`vendors/fortios/schema/log.ts` (nouveau), `vendors/fortios/FortiShell.ts`,
+`schema/{index,types,firewallPolicy}.ts`.
+
+**Prélèvements sur le socle** : `logging/FirewallLogStore.ts` (nouveau —
+un journal STRUCTURÉ, circulaire et borné, sans lequel
+`execute log filter field srcip` ne peut filtrer sur rien) ;
+`Firewall.ts` branche `SessionTable.onClosed`, jamais câblé, sans lequel
+`set logtraffic all` — qui journalise à la FERMETURE — ne peut rien
+écrire ; `Firewall.ts` porte aussi la capture de trames pour
+`diagnose sniffer packet`.
+
+**Ce que la phase ne prend PAS** : `execute backup/restore/revision`
+(§29.4-29.5), qui appartiennent au chapitre `execute` et non au
+diagnostic.
+
+---
+
 ## Périmètre pris — FortiOS phase 3 (NAT complet)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
