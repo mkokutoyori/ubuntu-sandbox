@@ -3836,6 +3836,28 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
         return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${this.numeroDeSerie()}`;
       }),
+      vue(['show', 'privilege'], 'Display current privilege level', 1,
+        () => showPrivilege(this.currentPrivilegeLevel)),
+      vue(['show', 'history'], 'Display command history', 1,
+        () => this.cmdHistory.slice(-this.terminalHistorySize).join('\n')),
+      {
+        id: 'show-memory', description: 'Display memory statistics',
+        // La forme glouton d'origine laissait passer `show memory
+        // statistics`, que la suite d'EXEC utilisateur tape : une queue
+        // libre la garde, et ses FORMES la nomment dans l'aide.
+        path: ['show', 'memory', {
+          name: 'vue', type: 'REST', optional: true, description: 'Memory view',
+          alternatives: [{ keyword: 'statistics', description: 'Memory statistics' }],
+        }],
+        modes: exec, minPrivilege: 1,
+        run: () => showMemoryStatistics(this.getChassisProfile()),
+      },
+      {
+        id: 'clear-ntp-statistics', path: ['clear', 'ntp', 'statistics'],
+        description: 'Clear NTP packet statistics',
+        modes: exec, minPrivilege: 15,
+        run: () => { getNtpAgent(this.d())?.clearCounters(); return ''; },
+      },
     ];
   }
 
@@ -5064,8 +5086,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return rows.join('\n');
     });
-    trie.registerGreedy('show memory', 'Display memory statistics', () =>
-      showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash:', 'Display flash filesystem', () => this.fs().renderShowFlash());
     this.registerFileSystemCommands(target);
     // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
@@ -5117,16 +5137,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const cfg = dev.getRunningConfig?.() ?? '';
       return cfg.length > 0 ? `Building configuration...\n${cfg}` : 'Building configuration...';
     });
-    trie.register('show privilege', 'Display current privilege level', () =>
-      showPrivilege(this.currentPrivilegeLevel));
-    trie.register('show history', 'Display command history', () =>
-      this.cmdHistory.slice(-this.terminalHistorySize).join('\n'));
     // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
     // un diagnostic commence par effacer, provoquer, relire.
-    trie.register('clear ntp statistics', 'Clear NTP packet statistics', () => {
-      getNtpAgent(this.d())?.clearCounters();
-      return '';
-    });
     trie.register('clear history', 'Clear command history buffer', () => {
       this.cmdHistory = [];
       return '';
