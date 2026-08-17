@@ -82,9 +82,9 @@ export const DEVICE_CATALOG: Record<DeviceType, DeviceDefinition> = {
     hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
   },
   'firewall-fortinet': {
-    label: 'FortiGate', description: 'Fortinet firewall',
+    label: 'FortiGate', description: 'Fortinet FortiOS firewall',
     osType: 'fortios', namePrefix: 'FW',
-    hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
+    hasTerminal: true, fullyImplemented: true, paletteCategory: 'security',
   },
   'firewall-paloalto': {
     label: 'Palo Alto', description: 'Palo Alto firewall',

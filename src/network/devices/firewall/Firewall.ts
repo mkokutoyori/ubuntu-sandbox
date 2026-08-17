@@ -43,6 +43,7 @@ import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
 import { PacketCapture } from './diag/PacketCapture';
 import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
+import type { SecurityRule } from './model/SecurityRule';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import {
@@ -61,6 +62,12 @@ export interface FirewallOptions {
 }
 
 const TRACE_HISTORY = 32;
+
+export interface TrafficLogger {
+  onSessionOpened(session: FirewallSession, rule?: SecurityRule): void;
+  onSessionClosed(session: FirewallSession, reason: SessionCloseReason): void;
+  onDenied(context: PacketContext): void;
+}
 
 export interface ProxyArpEntry {
   readonly from: string;
@@ -94,6 +101,7 @@ export class Firewall extends Equipment {
   private readonly capture = new PacketCapture();
   private readonly traces: PacketContext[] = [];
   private sessionObserver?: (session: FirewallSession, reason: SessionCloseReason) => void;
+  private trafficLogger?: TrafficLogger;
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
   private centralNat = false;
@@ -117,7 +125,10 @@ export class Firewall extends Equipment {
     this.syslog = new SyslogAgent(this, () => this.getBus());
     this.sessions = new SessionTable({
       now,
-      onClosed: (session, reason) => this.sessionObserver?.(session, reason),
+      onClosed: (session, reason) => {
+        this.trafficLogger?.onSessionClosed(session, reason);
+        this.sessionObserver?.(session, reason);
+      },
     });
     this.routes = new RouteTable({
       connectedRoutes: () => this.interfaces.connectedRoutes(),
@@ -352,6 +363,10 @@ export class Firewall extends Equipment {
     this.sessionObserver = observer;
   }
 
+  setTrafficLogger(logger: TrafficLogger): void {
+    this.trafficLogger = logger;
+  }
+
   recentTraces(limit = TRACE_HISTORY): readonly PacketContext[] {
     return Object.freeze(this.traces.slice(-Math.max(1, limit)));
   }
@@ -422,10 +437,12 @@ export class Firewall extends Equipment {
       this.logFirewallEvent('policy-deny', {
         ...facts, ruleId: context.matchedPolicy?.id, reason: context.verdict?.reason,
       });
+      this.trafficLogger?.onDenied(context);
       return;
     }
     if (context.session === undefined || !context.isFirstPacket) return;
 
+    this.trafficLogger?.onSessionOpened(context.session, context.matchedPolicy);
     this.logFirewallEvent('session-built', { ...facts, sessionId: context.session.id });
     if (context.session.translation) {
       this.logFirewallEvent('translation-created', { ...facts, sessionId: context.session.id });

@@ -148,7 +148,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
         ? object.effective('match-vip')[0] !== 'disable'
         : undefined,
       logStart: object.effective('logtraffic-start')[0] === 'enable',
-      logEnd: object.effective('logtraffic')[0] !== 'disable',
+      logEnd: object.effective('logtraffic')[0] === 'all',
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
       comment: comment === '' ? undefined : comment,
     });

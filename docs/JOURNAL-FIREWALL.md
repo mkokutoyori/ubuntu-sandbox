@@ -58,10 +58,13 @@
 | **F1** | **FortiOS phase 1 — la grammaire se déclare** | 70 | ✅ |
 | **F2** | **FortiOS phase 2 — système, objets, laboratoire L1** | 29 | ✅ |
 | **F3** | **FortiOS phase 3 — NAT complet (VIP, pools, PBR)** | 34 | ✅ |
+| **F3b** | `?` descend dans l'arbre ; l'interface passe en anglais | 13 | ✅ |
+| **F4** | **FortiOS phase 4 — diagnostic et journaux** | 44 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 887 cas verts sur 32 fichiers** du module.
+**Total actuel : 944 cas verts sur 34 fichiers** du module
+(1070 avec `unit/gui`).
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1653,6 +1656,87 @@ veut dire.
 **Mesures.** 887 cas verts sur 32 fichiers du module ; 262 cas de
 `unit/cli` + garde-fous verts ; 5 specs Playwright vertes. Typecheck 350
 (base 351), aucune erreur dans le module ; lint propre.
+
+---
+
+### E34 — FortiOS phase 4 : le diagnostic lit ce que le paquet a vécu
+
+`vendors/fortios/diag/` et `vendors/fortios/log/` (neufs),
+`logging/FirewallLogStore.ts` et `diag/PacketCapture.ts` sur le socle —
+**44 cas** neufs, plus 7 specs Playwright. **40 des 44 tombent avant
+correctif** ; les 4 restants sont nommés dans l'en-tête du fichier.
+
+**Ce que la phase livre** : `diagnose sys session list` au format
+complet avec ses filtres et son `clear`, `diagnose debug flow`,
+`diagnose firewall iprope`, `diagnose sniffer packet`, les vues `get`
+(`system status`, `system performance status`, `system arp`,
+`system interface`, `router info routing-table all`), `config log *`
+avec ses quatre collecteurs et ses quatre formats, et
+`execute log filter|display|delete-all`. **Le badge « Limited
+simulation » est retiré du FortiGate** — critère de sortie annoncé par
+le BRD §39.
+
+**Deux affirmations écrites à l'aveugle, renversées par la mesure**, et
+les deux fois c'est la sonde qui avait tort, jamais le produit :
+
+- **les champs d'un journal FortiOS sont entre guillemets**
+  (`type="traffic"`, `action="deny"`), les numériques exceptés — la
+  sonde attendait `type=traffic` ;
+- **la règle implicite ne journalise PAS par défaut.** Fortinet laisse
+  `fwpolicy-implicit-log` désactivé pour ne pas noyer le collecteur ;
+  la sonde tenait le refus implicite pour journalisé d'office. Le
+  réglage existe donc, sous `config log setting`, et c'est lui qui
+  décide.
+
+**B47 — `logtraffic utm` journalisait TOUT.** `logEnd` était commis
+depuis `logtraffic !== 'disable'`, donc la valeur par défaut — `utm`,
+qui ne journalise que ce qu'un profil a déclenché — écrivait une ligne
+pour chaque session. Un opérateur qui n'a rien demandé recevait le
+journal complet de sa passerelle. `logEnd` vaut désormais
+`logtraffic === 'all'`, et `utm` se tait tant qu'aucun profil n'existe.
+
+**B48 — le filtre de session ne pouvait pas trouver l'adresse
+d'origine.** `sessionMatchesFilter` lisait `session.c2s`, qui porte le
+tuple **traduit** puisque la session est installée après le NAT : sur
+un laboratoire avec `set nat enable` — le cas normal —
+`diagnose sys session filter src 192.168.1.10` ne trouvait jamais rien,
+alors que c'est exactement l'adresse qu'un opérateur connaît.
+`originalFlow()` rend le tuple d'origine quand une traduction existe, et
+le rendu comme le filtre le lisent tous les deux.
+
+**B49 — l'expression du renifleur était coupée aux espaces.** Le moteur
+de commandes découpe un `REST` en mots, donc
+`diagnose sniffer packet any 'host 192.168.1.10' 4 10` arrivait avec
+`'host` pour filtre et `192.168.1.10` pour verbosité.
+`splitSnifferArguments()` rend sa forme à l'expression entre
+apostrophes avant de lire les deux nombres qui la suivent.
+
+**Le garde-fou d'architecture a fait son travail, et il avait
+raison.** G1 (« un fichier vendeur reste petit — il assemble, il ne
+calcule pas ») est tombé quand `FortiShell` a dépassé 800 lignes en
+absorbant le dispatch du diagnostic. La correction n'est pas de
+desserrer le seuil mais de sortir le calcul :
+`diag/FortiDiagCommands.ts` porte les commandes, le shell les appelle.
+G6 est tombé sur un `new Set([…])` littéral dans le formateur de
+journaux, nommé depuis par une constante.
+
+**Ce que la phase ne fait PAS, mesuré et écrit plutôt que tu** :
+`get system performance status` ne rend ni CPU ni mémoire — ce
+simulateur n'a aucun modèle de charge, et publier « 100% idle » serait
+une constante affichée là où la vue promet une mesure. Les lignes
+antivirus, IPS et licence sont omises pour la même raison, comme
+`show ip http server status` l'avait déjà décidé côté Cisco.
+
+**Correction du BRD.** §30.6 FGT-DIA-8 demandait que
+`get firewall policy` rende les compteurs de coups. Un vrai FortiGate
+n'en met pas : cette vue est un vidage de champs, et les compteurs
+vivent dans `diagnose firewall iprope list`. La sonde a d'ailleurs
+attrapé ma propre tentative — trois cas de `fortios-grammar` sont
+tombés quand une vue écrite à la main a déplacé le rendu du schéma.
+
+**Mesures.** 1070 cas verts sur 50 fichiers (module pare-feu +
+`unit/gui`) ; 7 specs Playwright ; aucune erreur de typecheck dans le
+module ; lint propre.
 
 ---
 

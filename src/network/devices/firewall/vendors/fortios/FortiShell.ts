@@ -18,13 +18,26 @@ import { vipAddress } from '../../model/AddressObject';
 import { proxyOwnerKey, type Firewall } from '../../Firewall';
 import type { PolicyRoutePrefix } from '../../l3/PolicyRouteTable';
 import type { FortiCentralSnatPatch, FortiVipPatch } from './schema/types';
+import { FortiDiagnostics } from './diag/FortiDiagnostics';
+import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
+import {
+  renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
+  renderRoutingTable, renderSystemStatus,
+} from './diag/getViews';
+import type { FortiLogFormat } from './log/fortiLogFormat';
+import {
+  shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
+} from './log/trafficLog';
 
 export { FORTI_COMMAND_FAIL };
+
+export const FORTI_BUILD = '2662';
 
 export class FortiShell {
   private readonly tree: FortiConfigTree;
   private readonly nav: FortiNavigator;
   private readonly socle: FortiSocle;
+  private readonly diagnostics = new FortiDiagnostics();
   private vdom = 'root';
 
   constructor(private readonly fw: FortiGate) {
@@ -46,6 +59,28 @@ export class FortiShell {
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
+    });
+    this.fw.setTrafficLogger({
+      onSessionOpened: (session, rule) => {
+        if (!shouldLogTrafficStart(rule)) return;
+        this.fw.getLogStore().append(
+          trafficStartLog({ session, rule, now: this.fw.now() }));
+      },
+      onSessionClosed: (session, reason) => {
+        const rule = session.policyId === undefined
+          ? undefined
+          : this.fw.getPolicyStore().byId(session.policyId);
+        if (!shouldLogTraffic(rule)) return;
+        this.fw.getLogStore().append(
+          trafficCloseLog({ session, rule, now: this.fw.now() }, reason));
+      },
+      onDenied: (context) => {
+        const rule = context.matchedPolicy;
+        if (rule?.implicit === true && !this.logsImplicitDeny()) return;
+        if (rule !== undefined && rule.implicit === false
+          && !shouldLogTraffic(rule)) return;
+        this.fw.getLogStore().append(deniedLog(context, this.fw.now()));
+      },
     });
   }
 
@@ -242,6 +277,10 @@ export class FortiShell {
       removePolicyRoute(id) {
         fw.getPolicyRoutes().remove(id);
       },
+      applyMemoryLog(patch) {
+        if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
+        if (patch.enabled === false) fw.getLogStore().clear();
+      },
     };
   }
 
@@ -314,7 +353,8 @@ export class FortiShell {
       return FortiMessages.incomplete('a path');
     }
 
-    if (rest[0] === 'system' && rest[1] === 'status') return this.systemStatus();
+    const view = this.getView(rest);
+    if (view !== null) return view;
 
     for (let take = Math.min(rest.length, 4); take >= 1; take--) {
       const path = rest.slice(0, take);
@@ -327,32 +367,91 @@ export class FortiShell {
     return FortiMessages.unknownPath(rest.join(' '));
   }
 
+  private getView(rest: readonly string[]): string | null {
+    const path = rest.join(' ');
+
+    if (path === 'system status') return this.systemStatus();
+    if (path === 'system performance status') {
+      return renderPerformanceStatus({
+        sessions: this.fw.getSessionTable().view().statistics(),
+        uptimeMs: this.fw.getUptimeMs(),
+      });
+    }
+    if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system interface' || path === 'system interface physical') {
+      return renderInterfaceStatus(this.fw.getInterfaceTable());
+    }
+    if (path === 'router info routing-table all') {
+      return renderRoutingTable(this.fw.getRouteTable());
+    }
+    return null;
+  }
+
   private systemStatus(): string {
-    return [
-      `Version: FortiGate-VM64 v${FORTIOS_PROFILE.defaultVersion},build2662`,
-      `Hostname: ${this.fw.getName()}`,
-      'Operation Mode: NAT',
-      `Current virtual domain: ${this.vdom}`,
-    ].join('\n');
+    const settings = this.tree.setting('system settings', 'opmode')[0] ?? 'nat';
+    const vdomMode = this.tree.setting('system global', 'vdom-mode')[0] ?? 'no-vdom';
+
+    return renderSystemStatus({
+      version: FORTIOS_PROFILE.defaultVersion,
+      build: FORTI_BUILD,
+      serial: this.serialNumber(),
+      hostname: this.fw.getName(),
+      operationMode: settings === 'transparent' ? 'Transparent' : 'NAT',
+      vdom: this.vdom,
+      maxVdoms: 10,
+      vdomsInNat: settings === 'transparent' ? 0 : 1,
+      vdomsInTransparent: settings === 'transparent' ? 1 : 0,
+      vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
+      haMode: 'standalone',
+      systemTime: new Date(this.fw.now()).toUTCString(),
+    });
+  }
+
+  private serialNumber(): string {
+    const digits = this.fw.getName().split('').reduce(
+      (total, letter) => (total * 31 + letter.charCodeAt(0)) % 100000000, 7);
+    return `FGVMEV${String(digits).padStart(10, '0')}`;
+  }
+
+  private diagDeps() {
+    return {
+      fw: this.fw,
+      state: this.diagnostics,
+      vdom: () => this.vdom,
+      logFormat: () => this.logFormat(),
+      logContext: () => this.logContext(),
+    };
   }
 
   private diagnose(rest: readonly string[]): string {
-    if (rest[2] === 'stat') {
-      return `misc info: session_count=${this.fw.getSessionTable().count()}`;
-    }
-    return this.fw.getSessionTable().view().all().map(session =>
-      `session info: proto=${session.c2s.protocol} proto_state=00`
-      + ` duration=0 expire=${session.timeoutSec} timeout=${session.timeoutSec}\n`
-      + 'hook=post dir=org act=noop'
-      + ` ${session.c2s.sourceIP}:${session.c2s.sourcePort}`
-      + `->${session.c2s.destIP}:${session.c2s.destPort}`).join('\n');
+    return runDiagnose(rest, this.diagDeps());
   }
 
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
+    if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
     return FortiMessages.commandFail(
-      `\`execute ${rest[0]}\` arrive en phase 4 ; la phase 1 ne livre que la grammaire.`,
+      `\`execute ${rest[0]}\` is not implemented in this simulator.`,
     );
+  }
+
+  private logsImplicitDeny(): boolean {
+    return this.tree.setting('log setting', 'fwpolicy-implicit-log')[0] === 'enable';
+  }
+
+  private logFormat(): FortiLogFormat {
+    const declared = this.tree.setting('log syslogd', 'format')[0];
+    if (declared === 'csv' || declared === 'cef' || declared === 'rfc5424') return declared;
+    return 'default';
+  }
+
+  private logContext() {
+    return {
+      hostname: this.fw.getName(),
+      serial: this.serialNumber(),
+      version: FORTIOS_PROFILE.defaultVersion,
+      facility: 23,
+    };
   }
 
   private describe(suggestions: readonly Suggestion[]): readonly string[] {

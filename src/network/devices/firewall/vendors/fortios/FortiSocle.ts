@@ -160,17 +160,60 @@ export class FortiSocle {
       ));
     }
     out.push(...this.viewSpecs());
-    out.push(this.plain('diagnose sys session list',
-      ['diagnose', 'sys', 'session', 'list'], 'List the session table.',
-      () => this.deps.diagnose(['sys', 'session', 'list'])));
-    out.push(this.plain('diagnose sys session stat',
-      ['diagnose', 'sys', 'session', 'stat'], 'Session table statistics.',
-      () => this.deps.diagnose(['sys', 'session', 'stat'])));
+    out.push(...this.diagnoseSpecs());
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
       'Execute static commands.',
       (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
     return out;
+  }
+
+  private diagnoseSpecs(): CommandSpec[] {
+    const rest = (name: string, description: string): ArgumentSpec => ({
+      name, type: 'REST', optional: true, description,
+    });
+    const run = (words: readonly string[]) =>
+      (_s: CliSession, args: Readonly<Record<string, string>>): string =>
+        this.deps.diagnose([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
+
+    return [
+      this.withArgument('diagnose sys session list',
+        ['diagnose', 'sys', 'session', 'list'], 'List the session table.',
+        run(['sys', 'session', 'list'])),
+      this.plain('diagnose sys session stat',
+        ['diagnose', 'sys', 'session', 'stat'], 'Session table statistics.',
+        () => this.deps.diagnose(['sys', 'session', 'stat'])),
+      this.withArgument('diagnose sys session filter',
+        ['diagnose', 'sys', 'session', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the session table filter.', run(['sys', 'session', 'filter'])),
+      this.plain('diagnose sys session clear',
+        ['diagnose', 'sys', 'session', 'clear'], 'Clear sessions matching the filter.',
+        () => this.deps.diagnose(['sys', 'session', 'clear'])),
+      this.plain('diagnose debug reset', ['diagnose', 'debug', 'reset'],
+        'Reset the debug settings.', () => this.deps.diagnose(['debug', 'reset'])),
+      this.plain('diagnose debug enable', ['diagnose', 'debug', 'enable'],
+        'Enable debug output.', () => this.deps.diagnose(['debug', 'enable'])),
+      this.plain('diagnose debug disable', ['diagnose', 'debug', 'disable'],
+        'Disable debug output.', () => this.deps.diagnose(['debug', 'disable'])),
+      this.withArgument('diagnose debug flow filter',
+        ['diagnose', 'debug', 'flow', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the flow trace filter.', run(['debug', 'flow', 'filter'])),
+      this.withArgument('diagnose debug flow trace',
+        ['diagnose', 'debug', 'flow', 'trace', rest('rest', '`start <count>` or `stop`.')],
+        'Start or stop the flow trace.', run(['debug', 'flow', 'trace'])),
+      this.withArgument('diagnose debug flow show',
+        ['diagnose', 'debug', 'flow', 'show', rest('rest', 'Display option.')],
+        'Choose what the flow trace displays.', run(['debug', 'flow', 'show'])),
+      this.withArgument('diagnose firewall iprope list',
+        ['diagnose', 'firewall', 'iprope', 'list', rest('rest', 'Policy group.')],
+        'List the compiled policies.', run(['firewall', 'iprope', 'list'])),
+      this.withArgument('diagnose firewall iprope show',
+        ['diagnose', 'firewall', 'iprope', 'show', rest('rest', '<group> <index>')],
+        'Show one compiled policy.', run(['firewall', 'iprope', 'show'])),
+      this.withArgument('diagnose sniffer packet',
+        ['diagnose', 'sniffer', 'packet', rest('rest', '<interface> <filter> [verbose] [count]')],
+        'Capture packets on an interface.', run(['sniffer', 'packet'])),
+    ];
   }
 
   private tableSpecs(table: FortiTable): CommandSpec[] {

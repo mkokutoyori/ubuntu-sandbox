@@ -139,6 +139,11 @@ export interface FortiVdomSettings {
   readonly centralNat: boolean;
 }
 
+export interface FortiMemoryLogPatch {
+  readonly enabled?: boolean;
+  readonly capacity?: number;
+}
+
 export interface FortiCommitDevice {
   applyInterface(name: string, patch: FortiInterfacePatch): void;
   applyZone(name: string, members: readonly string[], intrazone: string): void;
@@ -156,6 +161,7 @@ export interface FortiCommitDevice {
   removeCentralSnat(id: string): void;
   applyPolicyRoute(route: FortiPolicyRoutePatch): void;
   removePolicyRoute(id: string): void;
+  applyMemoryLog(patch: FortiMemoryLogPatch): void;
 }
 
 export interface FortiCommitContext {

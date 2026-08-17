@@ -9,6 +9,7 @@ import {
 } from './firewallNat';
 import { SYSTEM_SPECS } from './system';
 import { ROUTER_SPECS } from './router';
+import { LOG_SPECS } from './log';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...SYSTEM_SPECS,
@@ -22,6 +23,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...ROUTER_SPECS,
   FIREWALL_POLICY,
   FIREWALL_CENTRAL_SNAT_MAP,
+  ...LOG_SPECS,
 ]);
 
 export function schemaIndex(

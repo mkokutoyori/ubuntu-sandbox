@@ -4895,7 +4895,7 @@ La sonde est donc une **vue** sur un mécanisme existant.
 | **FGT-DIA-5** | Un refus par politique implicite affiche `policy 0` |
 | **FGT-DIA-6** | Les noms de fonction sont ceux de FortiOS ; les numéros de ligne sont constants et la limite est dite |
 | **FGT-DIA-7** | `get system status` lit chaque ligne d'une source réelle |
-| **FGT-DIA-8** | `get firewall policy` rend les compteurs de coups |
+| **FGT-DIA-8** | Les compteurs de coups d'une politique sont rendus par `diagnose firewall iprope list`. **Corrigé** : ce document demandait `get firewall policy`, qui sur un vrai FortiGate est un vidage de champs sans compteur |
 | **FGT-DIA-9** | `diagnose sniffer packet` lit le bus de trames et honore le filtre |
 | **FGT-DIA-10** | Toute sortie tabulaire passe par `TextTable` |
 
@@ -5600,20 +5600,35 @@ la même VIP vue depuis l'intérieur.
   défaut est `enable` depuis la 7.2.3 et il n'existe que sur une règle
   `deny`.
 
-### Phase 4 — Le diagnostic et les journaux
+### Phase 4 — Le diagnostic et les journaux — ✅ livrée
 
-| Livrable | Cas |
-|---|---|
-| `diagnose sys session list` complet + filtres | 30 |
-| `diagnose debug flow` | 30 |
-| `diagnose firewall iprope list` | 15 |
-| `get system status` lu de sources réelles | 15 |
-| `get system performance`, `arp`, `interface` | 20 |
-| `config log *` + formateur FortiOS | 30 |
-| `execute log filter/display` | 15 |
-| `diagnose sniffer packet` | 20 |
-| **Laboratoires L4, L5, L6** | 25 |
-| **Retrait du badge « Limited simulation »** | — |
+Livrée en **44 cas** (`fortios-diagnostic.test.ts`) plus 7 specs
+Playwright, 40 des 44 discriminés par `git stash`.
+
+| Livrable | Cas prévus | État |
+|---|---|---|
+| `diagnose sys session list` complet + filtres | 30 | ✅ |
+| `diagnose debug flow` | 30 | ✅ |
+| `diagnose firewall iprope list` | 15 | ✅ |
+| `get system status` lu de sources réelles | 15 | ✅ |
+| `get system performance`, `arp`, `interface` | 20 | ✅ sauf CPU/mémoire — aucun modèle de charge |
+| `config log *` + formateur FortiOS | 30 | ✅ quatre collecteurs, quatre formats ; l'émission vers un vrai collecteur reste à brancher |
+| `execute log filter/display` | 15 | ✅ |
+| `diagnose sniffer packet` | 20 | ✅ |
+| **Laboratoires L4, L5, L6** | 25 | ✅ |
+| **Retrait du badge « Limited simulation »** | — | ✅ |
+
+**Une exigence corrigée par la mesure.** §30.6 **FGT-DIA-8** demandait
+que `get firewall policy` rende les compteurs de coups. Un vrai
+FortiGate n'en met pas : cette vue est un vidage de champs
+(`== [ 1 ]`, `srcintf : "port1"`), et les compteurs vivent dans
+`diagnose firewall iprope list`. L'exigence est déplacée là.
+
+**Deux points ajoutés que ce document ne nommait pas** :
+`config log setting` / `set fwpolicy-implicit-log` — sans lui la règle
+implicite ne journalise pas, et c'est le défaut de Fortinet ; et le
+fait que les champs d'un journal sont **entre guillemets**, les
+numériques exceptés.
 
 ### Phase 5 — VDOM et modes
 

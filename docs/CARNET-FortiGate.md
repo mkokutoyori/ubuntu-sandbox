@@ -29,7 +29,7 @@
 | **1b** | **Migration sur le moteur de commandes partagé `src/cli/`** | ✅ livrée |
 | **2** | Système et objets : `system *`, `addrgrp`, `service`, `schedule`, `router static` | ✅ livrée |
 | **3** | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ✅ livrée (E33) |
-| 4 | Diagnostic et journaux | ⏳ |
+| **4** | Diagnostic et journaux | ✅ livrée (E34) |
 | 5 | VDOM et modes de déploiement | ⏳ |
 | 6 | Inspection et UTM | ⏳ |
 | 7 | Utilisateurs et authentification | ⏳ |
@@ -37,10 +37,11 @@
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 887 cas verts sur 32 fichiers du module
-pare-feu ; 155 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
-système + 34 de NAT) ; 9 specs Playwright ; typecheck 350 contre une base
-de 351, aucune erreur dans le module ; lint propre.
+**Mesures au dernier commit** : 944 cas verts sur 34 fichiers du module
+pare-feu (1070 avec `unit/gui`) ; 212 cas FortiOS (32 d'origine + 60 de
+grammaire + 29 de système + 34 de NAT + 13 d'aide/langue + 44 de
+diagnostic) ; 19 specs Playwright ; aucune erreur de typecheck dans le
+module ; lint propre. **Le badge « Limited simulation » est retiré.**
 
 ---
 
@@ -65,6 +66,13 @@ qui reprend doit les connaître avant de toucher au code.
 | **D12** | **`match-vip` vaut `enable` par défaut** (Fortinet l'a inversé en 7.2.3, et ce simulateur annonce 7.4.4) et n'existe que sur une règle `deny` | E33 |
 | **D13** | `availableWhen` peut consulter un **autre objet** via `FortiObjectView.setting(chemin, attribut)`, servi par `FortiConfigTree` lui-même — jamais par un second magasin | E33, `central-nat` |
 | **D14** | L'**ARP mandataire** est une propriété du socle (`Firewall.setProxyArpEntries`), consultée par `ArpService.answersFor` ; une VIP ou un pool le déclare, il ne le réimplémente pas | E33 |
+| **D15** | **L'interface est en ANGLAIS** — messages de refus, notes du simulateur, motifs `unimplemented`. Un FortiGate ne parle pas français | Demande explicite, E33b |
+| **D16** | `cliHelp(input)` **passe le texte tel quel**, espace de fin compris : c'est lui qui distingue « liste les enfants » de « filtre par préfixe » | E33b |
+| **D17** | **`diagnose debug flow` lit `ctx.trace`** — la trace que le paquet a suivie, jamais une seconde écrite pour l'affichage | E34, OT-6 |
+| **D18** | Un journal est **structuré** (`FirewallLogStore`), pas une ligne de texte : sans champs, `execute log filter field` ne peut filtrer sur rien | E34 |
+| **D19** | Les champs d'un journal FortiOS sont **entre guillemets**, les numériques exceptés | E34, mesuré |
+| **D20** | **La règle implicite ne journalise pas par défaut** ; `config log setting` / `set fwpolicy-implicit-log enable` la fait parler | E34, mesuré |
+| **D21** | Une vue ne publie **que ce qui est mesuré** : pas de CPU ni de mémoire dans `get system performance status`, faute de modèle de charge | E34 |
 
 ---
 
@@ -166,6 +174,10 @@ Un agent qui reprend gagnera du temps à les connaître.
 | **P9** | Une traduction posée écrase la précédente | Une session qui subit DNAT **puis** SNAT perd la moitié destination si `applyPolicyNat` ne **fusionne** pas : la réponse repart avec l'adresse interne et le client la refuse. Toujours `mergeTranslations`. |
 | **P10** | La livraison locale précède le NAT | Une VIP posée sur l'adresse **de l'interface** — le renvoi de port le plus courant — est servie par la pile locale et jamais traduite. `Firewall.handleIpv4Frame` consulte `hasInboundRule` d'abord. |
 | **P11** | Un laboratoire de sortie sans route par défaut | `route-lookup` refuse, la politique n'est jamais atteinte, et le symptôme lu est « le NAT ne traduit pas ». Quatre cas de la sonde de phase 3 sont tombés là-dessus. |
+| **P12** | `session.c2s` porte le tuple **traduit** | La session est installée APRÈS le NAT. Filtrer ou afficher `c2s` montre l'adresse publique là où l'opérateur cherche la privée. Utiliser `originalFlow(session)`. |
+| **P13** | Un argument `REST` est découpé aux espaces | `diagnose sniffer packet any 'host 1.2.3.4' 4 10` arrive en cinq mots : l'expression entre apostrophes doit être recollée avant lecture (`splitSnifferArguments`). |
+| **P14** | Le garde-fou G1 borne un fichier vendeur à 800 lignes | Absorber un dispatch dans `FortiShell` le fait tomber. La réponse est d'extraire le calcul (`diag/FortiDiagCommands.ts`), jamais de desserrer le seuil. |
+| **P15** | G6 interdit un `new Set(['…'])` littéral hors du schéma | Même pour une liste qui n'est pas des attributs de configuration. Nommer une constante `readonly string[]` et construire le `Set` à partir d'elle. |
 
 ---
 
@@ -278,7 +290,34 @@ pipeline, et `match-vip`.
 - `pba-timeout` est stocké et ne périme rien : l'allocateur de blocs n'a
   pas d'horloge (`nat/IpPool.ts`).
 
-### 6.5 Après
+### 6.5 Phase 4 — diagnostic et journaux — ✅ livrée
+
+Livrée : `diagnose sys session list|filter|clear|stat`,
+`diagnose debug flow` (filtres, `trace start`, `show function-name`),
+`diagnose firewall iprope list|show`, `diagnose sniffer packet`, les
+vues `get` (`system status`, `system performance status`, `system arp`,
+`system interface`, `router info routing-table all`), `config log
+syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
+`config log setting`, les quatre formats (`default`, `csv`, `cef`,
+`rfc5424`) et `execute log filter|display|delete-all`. **Le badge
+« Limited simulation » est retiré du FortiGate.**
+
+**Ce qui reste de la phase 4, nommé plutôt que tu** :
+
+- `get system performance status` ne rend **ni CPU ni mémoire** : aucun
+  modèle de charge n'existe, et une constante affichée là où la vue
+  promet une mesure est précisément le défaut que ce dépôt referme ;
+- les collecteurs syslog sont **configurables et n'émettent pas encore**
+  vers un vrai collecteur — `SyslogAgent` existe sur le socle, le
+  branchement du formateur FortiOS vers lui reste à faire ;
+- `diagnose sniffer packet` lit le tampon de capture du pare-feu, pas le
+  bus de trames global : il voit ce qui traverse CE pare-feu, ce qui est
+  le périmètre de la commande, mais un `any` n'inclut pas les trames
+  qu'un autre équipement échange ;
+- `execute backup|restore|revision` (BRD §29.4-29.5) appartient au
+  chapitre `execute` et n'a pas été pris.
+
+### 6.6 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -316,3 +355,4 @@ comparer, jamais le supposer).
 |---|---|---|
 | 2026-08-17 | agent `mandeng` | Création. État après phase 1, décision D10, plan de phase 1b et 2. |
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
+| 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |

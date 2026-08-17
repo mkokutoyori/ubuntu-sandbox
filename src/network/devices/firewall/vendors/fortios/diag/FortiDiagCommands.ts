@@ -1,0 +1,269 @@
+import type { IPv4Packet } from '../../../../../core/types';
+import type { Firewall } from '../../../Firewall';
+import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
+import type { PacketContext } from '../../../pipeline/PacketContext';
+import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
+import { FortiMessages } from '../FortiMessages';
+import { unquote } from '../runtime/FortiNavigator';
+import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
+import { trafficDenyLog } from '../log/trafficLog';
+import type { FortiDiagnostics } from './FortiDiagnostics';
+import { renderDebugFlow } from './debugFlowRenderer';
+import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
+import { renderSniffer } from './snifferRenderer';
+import {
+  filterIsEmpty, renderSessionList, sessionMatchesFilter,
+} from './sessionListRenderer';
+
+export interface FortiDiagDeps {
+  readonly fw: Firewall;
+  readonly state: FortiDiagnostics;
+  readonly vdom: () => string;
+  readonly logFormat: () => FortiLogFormat;
+  readonly logContext: () => FortiLogContext;
+}
+
+export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
+  const [family, ...tail] = rest;
+  if (family === 'sys') return diagnoseSession(tail, deps);
+  if (family === 'debug') return diagnoseDebug(tail, deps);
+  if (family === 'firewall') return diagnoseIprope(tail, deps);
+  if (family === 'sniffer') return diagnoseSniffer(tail, deps);
+  return FortiMessages.unknownPath(rest.join(' '));
+}
+
+export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
+  const view = deps.state.logFilter;
+
+  if (rest[0] === 'delete-all') {
+    return `${deps.fw.getLogStore().clear()} log entries deleted`;
+  }
+  if (rest[0] === 'filter') return setLogFilter(rest.slice(1), deps);
+  if (rest[0] !== 'display') return FortiMessages.unknownPath(`log ${rest.join(' ')}`);
+
+  const records = deps.fw.getLogStore().select({
+    type: view.category,
+    level: view.level,
+    fields: view.fields,
+    viewLines: view.viewLines,
+  });
+  if (records.length === 0) return 'No matching log data.';
+
+  const context = deps.logContext();
+  const format = deps.logFormat();
+  return records.map(record => formatLogRecord(record, format, context)).join('\n');
+}
+
+export function deniedLog(context: PacketContext, now: number): FirewallLogDraft {
+  const packet = context.originalPacket as IPv4Packet;
+  const ports = portsOf(packet);
+
+  return trafficDenyLog({
+    now,
+    sourceIP: packet.sourceIP.toString(),
+    sourcePort: ports.source,
+    destIP: packet.destinationIP.toString(),
+    destPort: ports.destination,
+    protocol: packet.protocol,
+    ingressInterface: context.ingressPort,
+    egressInterface: context.egressPort ?? '',
+    policyId: context.matchedPolicy?.implicit === false
+      ? context.matchedPolicy.id
+      : '0',
+  });
+}
+
+function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
+  const verb = rest[1];
+  const filter = deps.state.sessionFilter;
+
+  if (verb === 'stat') {
+    const statistics = deps.fw.getSessionTable().view().statistics();
+    return `misc info: session_count=${statistics.active}`
+      + ' setup_rate=0 exp_count=0 clash=0\n'
+      + `sessions created=${statistics.created} closed=${statistics.closed}`;
+  }
+
+  if (verb === 'filter') return setSessionFilter(rest.slice(2), deps);
+
+  if (verb === 'clear') {
+    const cleared = deps.fw.getSessionTable().clearMatching(
+      session => sessionMatchesFilter(session, filter));
+    return filterIsEmpty(filter)
+      ? `${cleared} sessions cleared (no filter set: the whole table)`
+      : `${cleared} sessions cleared`;
+  }
+
+  const matching = deps.fw.getSessionTable().view()
+    .find(session => sessionMatchesFilter(session, filter));
+
+  return renderSessionList(matching, {
+    now: () => deps.fw.now(),
+    interfaces: deps.fw.getInterfaceTable(),
+    routes: deps.fw.getRouteTable(),
+    vdom: 0,
+  });
+}
+
+function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
+  const [name, value] = words;
+  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === 'clear') { deps.state.clearSessionFilter(); return ''; }
+  if (value === undefined) return FortiMessages.incomplete('the filter value');
+
+  const filter = deps.state.sessionFilter;
+  switch (name) {
+    case 'src': filter.src = value; return '';
+    case 'dst': filter.dst = value; return '';
+    case 'sport': filter.sport = Number.parseInt(value, 10); return '';
+    case 'dport': filter.dport = Number.parseInt(value, 10); return '';
+    case 'proto': filter.proto = Number.parseInt(value, 10); return '';
+    case 'policy': filter.policy = value; return '';
+    case 'vd': filter.vd = Number.parseInt(value, 10); return '';
+    default:
+      return FortiMessages.parseError(name,
+        'known filters: src, dst, sport, dport, proto, policy, vd, clear.');
+  }
+}
+
+function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
+  const state = deps.state.debugFlow;
+
+  if (rest[0] === 'reset') { deps.state.resetDebug(); return ''; }
+  if (rest[0] === 'enable') {
+    state.enabled = true;
+    const text = renderDebugFlow(deps.fw.recentTraces(), state, deps.vdom());
+    state.nextTraceId += Math.max(1, countTraces(text));
+    return text;
+  }
+  if (rest[0] === 'disable') { state.enabled = false; return ''; }
+  if (rest[0] !== 'flow') return FortiMessages.unknownPath(rest.join(' '));
+
+  if (rest[1] === 'filter') return setFlowFilter(rest.slice(2), deps);
+  if (rest[1] === 'show') {
+    state.showFunctionName = rest[3] !== 'disable';
+    return '';
+  }
+  if (rest[1] === 'trace') {
+    if (rest[2] === 'stop') { state.traceCount = 0; return ''; }
+    const count = Number.parseInt(rest[3] ?? '', 10);
+    state.traceCount = Number.isFinite(count) ? count : 1;
+    return '';
+  }
+  return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
+  const [name, value] = words;
+  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === 'clear') { deps.state.debugFlow.filter = {}; return ''; }
+  if (value === undefined) return FortiMessages.incomplete('the filter value');
+
+  const filter = deps.state.debugFlow.filter;
+  switch (name) {
+    case 'addr': filter.addr = value; return '';
+    case 'saddr': filter.saddr = value; return '';
+    case 'daddr': filter.daddr = value; return '';
+    case 'port': filter.port = Number.parseInt(value, 10); return '';
+    case 'proto': filter.proto = Number.parseInt(value, 10); return '';
+    default:
+      return FortiMessages.parseError(name,
+        'known filters: addr, saddr, daddr, port, proto, clear.');
+  }
+}
+
+function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
+
+  const options = { zones: deps.fw.getZoneTable(), vdom: 0 };
+  const rules = deps.fw.getPolicyStore().ordered();
+
+  if (rest[1] === 'list') return renderIpropeList(rules, options);
+  if (rest[1] === 'show') {
+    const shown = renderIpropeShow(rest[2] ?? '', rest[3] ?? '', rules, options);
+    return shown ?? FortiMessages.unknownKey(`${rest[2] ?? ''} ${rest[3] ?? ''}`.trim());
+  }
+  return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'packet') return FortiMessages.unknownPath(rest.join(' '));
+
+  const iface = rest[1];
+  if (iface === undefined) return FortiMessages.incomplete('an interface name');
+  if (iface !== 'any' && deps.fw.getPort(iface) === undefined) {
+    return FortiMessages.unknownKey(iface);
+  }
+
+  const parsed = splitSnifferArguments(rest.slice(2));
+  const filter = parseCaptureFilter(parsed.expression);
+  if (filter === null) {
+    return FortiMessages.valueError(
+      parsed.expression, 'unsupported sniffer filter expression.');
+  }
+
+  const { expression, verbosity, count } = parsed;
+  const frames = deps.fw.getPacketCapture().select({ iface, filter, limit: count });
+  const startedAt = frames[0]?.at ?? deps.fw.now();
+
+  return renderSniffer({ iface, expression, verbosity, count }, frames, startedAt);
+}
+
+function setLogFilter(words: readonly string[], deps: FortiDiagDeps): string {
+  const view = deps.state.logFilter;
+  const [name, ...tail] = words;
+
+  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === 'reset') { deps.state.clearLogFilter(); return ''; }
+
+  if (name === 'category') {
+    const category = tail[0];
+    if (category !== 'traffic' && category !== 'event' && category !== 'utm') {
+      return FortiMessages.valueError(category ?? '',
+        'known categories: traffic, event, utm.');
+    }
+    view.category = category;
+    return '';
+  }
+  if (name === 'view-lines') {
+    const lines = Number.parseInt(tail[0] ?? '', 10);
+    if (!Number.isFinite(lines)) {
+      return FortiMessages.valueError(tail[0] ?? '', 'a line count is expected.');
+    }
+    view.viewLines = lines;
+    return '';
+  }
+  if (name === 'field') {
+    const [field, value] = tail;
+    if (field === undefined) return FortiMessages.incomplete('a field name');
+    if (value === undefined) { view.fields.delete(field); return ''; }
+    view.fields.set(field, unquote(value));
+    return '';
+  }
+  return FortiMessages.parseError(name,
+    'known filters: category, field, view-lines, reset.');
+}
+
+export function splitSnifferArguments(
+  words: readonly string[],
+): { expression: string; verbosity: number; count: number } {
+  const joined = words.join(' ');
+  const quoted = /^\s*(['"])([\s\S]*?)\1\s*/.exec(joined);
+
+  const expression = quoted
+    ? quoted[2]
+    : (words[0] === undefined ? '' : unquote(words[0]));
+  const tail = quoted
+    ? joined.slice(quoted[0].length).split(/\s+/).filter(Boolean)
+    : words.slice(1);
+
+  const verbosity = Number.parseInt(tail[0] ?? '1', 10) || 1;
+  const count = Number.parseInt(tail[1] ?? '0', 10) || 0;
+  return { expression: expression === 'none' ? '' : expression, verbosity, count };
+}
+
+function countTraces(rendered: string): number {
+  const seen = new Set<string>();
+  for (const match of rendered.matchAll(/trace_id=(\d+)/g)) seen.add(match[1]);
+  return seen.size;
+}

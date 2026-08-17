@@ -30,10 +30,32 @@ const TCP_PROTO_STATE: Readonly<Record<string, string>> = Object.freeze({
   closed: '00',
 });
 
+export interface OriginalFlow {
+  readonly sourceIP: string;
+  readonly sourcePort: number;
+  readonly destIP: string;
+  readonly destPort: number;
+  readonly protocol: number;
+}
+
+export function originalFlow(session: FirewallSession): OriginalFlow {
+  const flow = session.c2s;
+  const translation = session.translation;
+  if (translation === undefined) return flow;
+
+  return {
+    sourceIP: translation.originalSource,
+    sourcePort: translation.originalSourcePort,
+    destIP: translation.originalDest,
+    destPort: translation.originalDestPort,
+    protocol: flow.protocol,
+  };
+}
+
 export function sessionMatchesFilter(
   session: FirewallSession, filter: SessionFilter,
 ): boolean {
-  const flow = session.c2s;
+  const flow = originalFlow(session);
   if (filter.src !== undefined && flow.sourceIP !== filter.src) return false;
   if (filter.dst !== undefined && flow.destIP !== filter.dst) return false;
   if (filter.sport !== undefined && flow.sourcePort !== filter.sport) return false;
@@ -57,7 +79,7 @@ export function renderSessionList(
 }
 
 function renderSession(session: FirewallSession, deps: SessionRenderDeps): string[] {
-  const flow = session.c2s;
+  const flow = originalFlow(session);
   const duration = Math.max(0, Math.floor((deps.now() - session.createdAt) / 1000));
   const expire = Math.max(0, Math.floor((session.expiresAt - deps.now()) / 1000));
   const counters = session.counters;
@@ -88,7 +110,7 @@ function renderSession(session: FirewallSession, deps: SessionRenderDeps): strin
 }
 
 function hooks(session: FirewallSession): string[] {
-  const flow = session.c2s;
+  const flow = originalFlow(session);
   const translation = session.translation;
   const original = `${flow.sourceIP}:${flow.sourcePort}->${flow.destIP}:${flow.destPort}`;
 
