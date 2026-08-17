@@ -1,3 +1,4 @@
+import type { FirewallSyslogCatalog } from './logging/SyslogCatalog';
 import type { RuleAction } from './model/SecurityRule';
 import type { ZoneType, IntraZoneAction } from './model/SecurityZone';
 
@@ -28,6 +29,7 @@ export interface SessionTimeoutProfile {
 }
 
 export interface FirewallProfile {
+  readonly syslogCatalog?: FirewallSyslogCatalog;
   readonly vendor: VendorId;
   readonly displayName: string;
   readonly osName: string;

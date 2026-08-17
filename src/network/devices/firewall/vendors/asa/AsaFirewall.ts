@@ -12,6 +12,7 @@ export class AsaFirewall extends Firewall {
     options: Omit<FirewallOptions, 'profile'> = {},
   ) {
     super(deviceType, name, x, y, { ...options, profile: ASA_PROFILE });
+    this.getLoggingConfig().enabled = false;
   }
 
   getShell(): AsaShell {

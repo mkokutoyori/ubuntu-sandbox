@@ -25,7 +25,7 @@ import { SessionTable } from './session/SessionTable';
 import { NatPolicyStore } from './nat/NatPolicyStore';
 import { FirewallNatEngine } from './nat/FirewallNatEngine';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
-import { makePacketContext } from './pipeline/PacketContext';
+import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
 import { buildSimulatedPacket } from './pipeline/SimulatedPacket';
@@ -36,6 +36,12 @@ import {
   type SimulationResult,
 } from './pipeline/Simulation';
 import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
+import { LoggingConfig } from '../inspection/config/LoggingConfig';
+import {
+  firewallLogText,
+  type FirewallLogEvent,
+  type FirewallLogFacts,
+} from './logging/SyslogCatalog';
 
 export interface FirewallOptions {
   profile?: FirewallProfile;
@@ -56,6 +62,7 @@ export class Firewall extends Equipment {
   private readonly pipeline: FirewallPipeline;
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
+  private readonly logging = new LoggingConfig();
   private readonly boundPolicyInterfaces = new Set<string>();
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
@@ -160,6 +167,17 @@ export class Firewall extends Equipment {
 
   now(): number { return this.services.now(); }
 
+  getLoggingConfig(): LoggingConfig { return this.logging; }
+
+  logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
+    const message = this.profile.syslogCatalog?.[event];
+    if (!message) return;
+
+    this.logging.append(
+      message.severity, this.profile.osName, firewallLogText(event, facts),
+      false, message.id);
+  }
+
   clearTranslations(): number {
     let cleared = 0;
     for (const session of this.sessions.view().all()) {
@@ -232,11 +250,29 @@ export class Firewall extends Equipment {
       ingressPort: portName, packet, arrivedAt: this.services.now(),
     });
     const outcome = this.pipeline.process(context);
+    this.logPipelineOutcome(context, outcome.verdict === 'accepted');
     if (outcome.verdict !== 'accepted') return;
 
     const forwarded = outcome.payload ?? context;
     if (forwarded.egressPort === undefined) return;
     this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet);
+  }
+
+  private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
+    const facts = logFactsOf(context, this.zones);
+
+    if (!accepted) {
+      this.logFirewallEvent('policy-deny', {
+        ...facts, ruleId: context.matchedPolicy?.id, reason: context.verdict?.reason,
+      });
+      return;
+    }
+    if (context.session === undefined || !context.isFirstPacket) return;
+
+    this.logFirewallEvent('session-built', { ...facts, sessionId: context.session.id });
+    if (context.session.translation) {
+      this.logFirewallEvent('translation-created', { ...facts, sessionId: context.session.id });
+    }
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
@@ -296,4 +332,31 @@ export class Firewall extends Equipment {
   private portMac(iface: string) {
     return this.getPort(iface)!.getMAC();
   }
+}
+
+function logFactsOf(context: PacketContext, zones: ZoneTable): FirewallLogFacts {
+  const packet = context.originalPacket as IPv4Packet;
+  const payload = packet.payload as {
+    type?: string; sourcePort?: number; destinationPort?: number;
+  } | null;
+  const ported = payload?.type === 'tcp' || payload?.type === 'udp';
+
+  return {
+    protocol: protocolLabel(packet.protocol),
+    ingressZone: zones.zoneOf(context.ingressPort) ?? context.ingressPort,
+    egressZone: context.egressPort === undefined
+      ? (context.egressZone ?? 'any')
+      : zones.zoneOf(context.egressPort) ?? context.egressPort,
+    sourceIP: packet.sourceIP.toString(),
+    sourcePort: ported ? payload?.sourcePort ?? 0 : 0,
+    destinationIP: packet.destinationIP.toString(),
+    destinationPort: ported ? payload?.destinationPort ?? 0 : 0,
+  };
+}
+
+function protocolLabel(protocol: number): string {
+  if (protocol === 6) return 'TCP';
+  if (protocol === 17) return 'UDP';
+  if (protocol === IP_PROTO_ICMP) return 'ICMP';
+  return String(protocol);
 }

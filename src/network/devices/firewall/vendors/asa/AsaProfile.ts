@@ -63,6 +63,13 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 0,
 
+  syslogCatalog: Object.freeze({
+    'session-built': Object.freeze({ id: '302013', severity: 'informational' as const }),
+    'session-torn-down': Object.freeze({ id: '302014', severity: 'informational' as const }),
+    'policy-deny': Object.freeze({ id: '106023', severity: 'warnings' as const }),
+    'translation-created': Object.freeze({ id: '305011', severity: 'informational' as const }),
+  }),
+
   unimplemented: Object.freeze([
     'show module',
     'verify /md5',

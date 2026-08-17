@@ -12,7 +12,7 @@ const SEVERITIES = [
   'emergencies', 'alerts', 'critical', 'errors', 'warnings',
   'notifications', 'informational', 'debugging',
 ] as const;
-type Severity = typeof SEVERITIES[number];
+export type Severity = typeof SEVERITIES[number];
 
 /**
  * Le mnémonique d'une ligne de `debug`, c'est-à-dire aucun : la sortie

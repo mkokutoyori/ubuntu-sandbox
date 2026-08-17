@@ -52,10 +52,11 @@
 | 3 | `show conn` / `show xlate` / `clear` sur trafic réel | 18 | ✅ |
 | 3 | L'ASA devient un équipement déposable et ouvrable | 17 | ✅ |
 | 3 | NAT manuel (« twice NAT »), section 1 et `after-auto` | 17 | ✅ |
+| **4** | **Journalisation : le pare-feu émet, `show logging`** | 16 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 684 cas verts sur 26 fichiers** (1446 avec les suites
+**Total actuel : 700 cas verts sur 27 fichiers** (1446 avec les suites
 connexes : palette, terminal, terminal-core).
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
@@ -1347,6 +1348,53 @@ l'ordre obtenu dans les deux sens.
 
 ---
 
+### E29 — Le pare-feu journalise, sans second moteur de journal
+
+Phase 4. L'audit de non-duplication a été fait **avant** d'écrire une
+ligne, et il a décidé du travail : `LoggingConfig` existe, il est mûr
+(sévérités, tampon, collecteurs, horodatage, discriminateurs), et son rendu
+produit **déjà** le format d'un ASA — `%${tag}-${niveau}-${mnémonique}`
+donne `%ASA-6-302013` sans qu'une ligne du moteur change. Écrire un second
+journal aurait été le doublon que ce dépôt passe son temps à refermer.
+
+Ce qui manquait n'était donc pas un moteur mais deux choses : le pare-feu
+**n'émettait rien** — or c'est le journal qu'on lit pour savoir pourquoi
+une application ne passe pas, donc un pare-feu muet est inexploitable ; et
+les **numéros de message sont propres au constructeur**, donc ils sont une
+DONNÉE du profil (`syslogCatalog`), conformément au §26 du BRD.
+
+Les identifiants sont ceux d'un vrai ASA — 302013 (connexion ouverte),
+302014 (fermeture), 106023 (refus par ACL), 305011 (traduction créée) —
+parce que ce sont eux qu'un opérateur cherche ; les inventer aurait rendu
+le journal illisible pour quiconque connaît la machine.
+
+#### Trois divergences ASA / IOS, chacune réelle
+
+- **`logging enable`** (ASA) contre **`logging on`** (IOS) : le shell
+  traduit le mot et passe le reste au parseur du moteur. Traduire du
+  vocabulaire est exactement le rôle de la couche vendeur ; réimplémenter
+  le parseur ne l'aurait pas été.
+- **La journalisation est COUPÉE par défaut sur un ASA**, allumée sur IOS.
+  `AsaFirewall` pose donc `enabled = false` à la construction, et la
+  configuration rendue porte `logging enable` — ce qui est correct dans les
+  deux sens, la ligne décrivant un écart au défaut.
+- **`clear logging buffer`** existe là où IOS écrit `clear logging`.
+
+#### Mon test se trompait de seuil, pas le catalogue
+
+« un tampon réglé sur `errors` retient quand même un refus » est faux :
+`errors` vaut 3 et `warnings` 4, donc `errors` est le seuil le PLUS strict
+et écarte les avertissements. La sévérité 4 du message 106023 est celle du
+vrai ASA — le catalogue avait raison. La paire de cas est réécrite sur
+`warnings`, qui discrimine vraiment : elle écarte l'ouverture (6) et
+retient le refus (4).
+
+Trouvé au passage : le type `Severity` de `LoggingConfig` était **déclaré
+et non exporté**, alors que `SEVERITY_NAMES` l'était. Exporté plutôt que
+redéfini.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1398,6 +1446,9 @@ l'ordre obtenu dans les deux sens.
 | B31 | Mon test passait un NOM là où `createDevice` attend une coordonnée | E27 | Vraie signature, et un cas qui pin le nommage par la fabrique |
 | B32 | Le dé-NAT exigeait une zone de SORTIE pas encore décidée : aucune règle de destination ne pouvait correspondre | E28 | Critère appliqué seulement quand la zone est connue |
 | B33 | La destination était réécrite avec le NOM de l'objet, pas son adresse | E28 | `resolveAddress()`, la même que le chemin bidirectionnel |
+| B34 | Le pare-feu n'émettait aucun message : ni connexion, ni refus | E29 | `logFirewallEvent` sur le point de décision ; catalogue dans le profil |
+| B35 | `Severity` déclaré et non exporté par `LoggingConfig` | E29 | Exporté plutôt que redéfini |
+| B36 | Mon test prenait `errors` pour un seuil plus permissif que `warnings` | E29 | Paire réécrite sur `warnings`, qui discrimine vraiment |
 
 ## Prochaines étapes
 
@@ -1405,9 +1456,13 @@ Phase 3 (ASA), reste à faire :
 
 1. Démon SSH sur le pare-feu, puis `ShellFactory.register('asa', …)` — la
    CLI est là, il lui manque le transport (E27).
-2. Phase 4 du BRD : diagnostics et journaux (`show logging`, syslog),
-   puis les constructeurs suivants — FortiOS, PAN-OS, Junos — dont le
-   contrat de profil est désormais éprouvé par une déclinaison complète.
+2. Suite de la phase 4 : `logging host` vers un vrai collecteur syslog
+   (le moteur sait le faire, le pare-feu ne lui a pas encore donné de
+   transport), et `%ASA-6-302014` à la fermeture d'une session — le
+   catalogue le porte, la table des sessions n'a pas encore de crochet de
+   fermeture branché.
+3. Constructeurs suivants — FortiOS, PAN-OS, Junos — dont le contrat de
+   profil est désormais éprouvé par une déclinaison complète.
 
 Hors périmètre de ce module, mesuré ici et à traiter pour lui-même :
 `EndHost.pingIdCounter` incrémenté par sonde plutôt que par processus

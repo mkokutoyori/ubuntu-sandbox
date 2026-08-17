@@ -360,6 +360,7 @@ export class AsaShell {
       case 'running-config': return this.showRunningConfig();
       case 'access-list': return this.showAccessList();
       case 'nat': return this.showNat();
+      case 'logging': return this.fw.getLoggingConfig().render();
       default: return ASA_INVALID_INPUT;
     }
   }
@@ -367,6 +368,7 @@ export class AsaShell {
   private configCommand(tokens: string[], negated: boolean): string {
     const [head, ...rest] = tokens;
 
+    if (head === 'logging') return this.loggingCommand(tokens.slice(1), negated);
     if (head === 'nat') return this.manualNat(tokens);
     if (head === 'access-list') return this.accessList(rest);
     if (head === 'access-group') return this.accessGroup(rest, negated);
@@ -598,11 +600,21 @@ export class AsaShell {
   private clearCommand(rest: string[]): string {
     if (rest[0] === 'conn') { this.fw.getSessionTable().clear(); return ''; }
     if (rest[0] === 'xlate') { this.fw.clearTranslations(); return ''; }
+    if (rest[0] === 'logging' && rest[1] === 'buffer') {
+      this.fw.getLoggingConfig().clearBuffer();
+      return '';
+    }
     if (rest[0] === 'nat' && rest[1] === 'counters') {
       this.fw.getNatPolicy().resetCounters();
       return '';
     }
     return ASA_INVALID_INPUT;
+  }
+
+  private loggingCommand(args: string[], negated: boolean): string {
+    const translated = args[0] === 'enable' ? ['on', ...args.slice(1)] : args;
+    const error = this.fw.getLoggingConfig().applyLogging(translated, negated);
+    return error === null ? '' : ASA_INVALID_INPUT;
   }
 
   private zoneName(iface: string): string {
@@ -691,6 +703,11 @@ export class AsaShell {
       const port = line.port ? ` eq ${line.port}` : '';
       lines.push(`access-list ${line.acl} extended ${keyword} `
         + `${line.protocol} ${line.source} ${line.destination}${port}`);
+    }
+
+    if (this.fw.getLoggingConfig().enabled) lines.push('logging enable');
+    for (const line of this.fw.getLoggingConfig().asRunningConfigLines()) {
+      if (line !== 'no logging on') lines.push(line);
     }
 
     if (this.fw.sameSecurityTrafficEnabled('inter-interface')) {

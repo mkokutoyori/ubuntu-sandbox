@@ -5,10 +5,10 @@ export const ASA_VOCABULARY: Readonly<Record<AsaMode, readonly string[]>> = Obje
   privileged: Object.freeze([
     'clear', 'configure terminal', 'disable', 'exit', 'packet-tracer',
     'show access-list', 'show conn', 'show nameif', 'show nat',
-    'show running-config', 'show version', 'show xlate',
+    'show logging', 'show running-config', 'show version', 'show xlate',
   ]),
   config: Object.freeze([
-    'access-group', 'access-list', 'end', 'exit', 'hostname', 'interface',
+    'access-group', 'access-list', 'end', 'exit', 'hostname', 'interface', 'logging',
     'object network', 'object-group network', 'same-security-traffic',
   ]),
   'config-if': Object.freeze([
@@ -22,6 +22,8 @@ export const ASA_COMMAND_HELP: Readonly<Record<string, string>> = Object.freeze(
   'access-group': 'Bind an access list to an interface',
   'access-list': 'Add an access list entry',
   clear: 'Reset connection, translation or counter tables',
+  logging: 'Configure syslog',
+  'show logging': 'Display the syslog buffer and settings',
   'configure terminal': 'Enter configuration mode',
   disable: 'Return to user EXEC mode',
   enable: 'Enter privileged EXEC mode',
