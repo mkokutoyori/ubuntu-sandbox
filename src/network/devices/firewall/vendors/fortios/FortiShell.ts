@@ -39,9 +39,11 @@ export class FortiShell {
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
   private vdom = 'root';
+  private globalScope = false;
 
   constructor(private readonly fw: FortiGate) {
     this.tree = new FortiConfigTree(schemaIndex());
+    this.tree.bindScope(() => this.vdom);
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({
@@ -59,6 +61,7 @@ export class FortiShell {
       inspect: (rest) => this.get(rest),
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
+      enterGlobal: () => this.enterGlobal(),
     });
     this.fw.setTrafficLogger({
       onSessionOpened: (session, rule) => {
@@ -87,7 +90,8 @@ export class FortiShell {
   getPrompt(): string {
     const host = this.fw.getName();
     const label = this.nav.label();
-    return label === null ? `${host} # ` : `${host} (${label}) # `;
+    if (label !== null) return `${host} (${label}) # `;
+    return this.globalScope ? `${host} (global) # ` : `${host} # `;
   }
 
   getConfigTree(): FortiConfigTree {
@@ -121,8 +125,34 @@ export class FortiShell {
     }
 
     const outcome = this.socle.execute(line);
-    if (outcome.handled) return outcome.output;
-    return this.refusal(line);
+    const text = outcome.handled ? outcome.output : this.refusal(line);
+    this.syncActiveVdom();
+    return text;
+  }
+
+  private enterGlobal(): string {
+    if (!this.fw.multiVdomEnabled()) {
+      return FortiMessages.commandFail(
+        '`config global` only exists once `set vdom-mode multi-vdom` is applied.');
+    }
+
+    this.nav.abortToRoot();
+    this.globalScope = true;
+    this.fw.setActiveVdom('root');
+    return '';
+  }
+
+  private syncActiveVdom(): void {
+    let active = 'root';
+    for (const frame of this.nav.frames()) {
+      if (frame.kind !== 'object') continue;
+      if (frame.object.spec.path.join(' ') !== 'vdom') continue;
+      active = frame.object.key;
+    }
+
+    if (active !== 'root') this.globalScope = false;
+    this.vdom = active;
+    this.fw.setActiveVdom(active);
   }
 
   private refusal(line: string): string {
@@ -203,6 +233,7 @@ export class FortiShell {
     const fw = this.fw;
     return {
       applyInterface(name, patch) {
+        if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
@@ -235,6 +266,32 @@ export class FortiShell {
       },
       applyVdomSettings(settings) {
         fw.setCentralNat(settings.centralNat);
+        fw.setOperationMode(settings.opmode);
+        if (settings.manageIP && settings.manageIP !== '0.0.0.0') {
+          fw.setManagementAddress(settings.manageIP,
+            settings.manageMask ?? '255.255.255.0', settings.gateway);
+        }
+      },
+      applyGlobalSettings(settings) {
+        fw.setMultiVdom(settings.multiVdom);
+      },
+      applyVdom(name) {
+        fw.getVdomRegistry().create(name);
+      },
+      removeVdom(name) {
+        fw.getVdomRegistry().remove(name);
+      },
+      applyVdomLink(name) {
+        fw.createVdomLink(name);
+      },
+      removeVdomLink(name) {
+        fw.removeVdomLink(name);
+      },
+      applySwitchInterface(name, members) {
+        fw.setSwitchInterface(name, members);
+      },
+      removeSwitchInterface(name) {
+        fw.removeSwitchInterface(name);
       },
       applyIpPool(pool) {
         fw.setIpPool(makeIpPool({ ...pool, type: pool.type as IpPoolType }));

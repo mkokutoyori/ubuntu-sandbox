@@ -13,7 +13,15 @@ const ACCESS_SERVICES = [
 ];
 
 function isStatic(object: FortiObjectView): boolean {
-  return object.effective('mode')[0] === 'static';
+  return object.effective('mode')[0] === 'static' && isRouted(object);
+}
+
+function isRouted(object: FortiObjectView): boolean {
+  return object.setting('system settings', 'opmode')[0] !== 'transparent';
+}
+
+function isTransparent(object: FortiObjectView): boolean {
+  return object.effective('opmode')[0] === 'transparent';
 }
 
 function isVlan(object: FortiObjectView): boolean {
@@ -57,7 +65,12 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       unimplemented: 'this simulator has no hardware acceleration model.',
     },
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyGlobalSettings({
+      hostname: object.effective('hostname')[0],
+      multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
+    });
+  },
 };
 
 export const SYSTEM_SETTINGS: FortiTableSpec = {
@@ -80,13 +93,21 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
       { keyword: 'profile-based', description: 'Security profiles applied to policies.' },
       { keyword: 'policy-based', description: 'Application and URL are policy criteria.' },
     ], 'profile-based'),
-    enable('central-nat', 'Enable/disable central NAT.'),
-    address('manageip', 'Transparent mode management IP address.'),
-    address('gateway', 'Transparent mode default gateway.'),
+    { ...enable('central-nat', 'Enable/disable central NAT.'),
+      availableWhen: (object) => !isTransparent(object) },
+    { ...addressMask('manageip', 'Transparent mode management IP address and mask.'),
+      availableWhen: isTransparent },
+    { ...address('gateway', 'Transparent mode default gateway.'),
+      availableWhen: isTransparent },
   ],
   onCommit(object, context) {
+    const management = object.effective('manageip');
     context.device.applyVdomSettings({
       centralNat: object.effective('central-nat')[0] === 'enable',
+      opmode: object.effective('opmode')[0] === 'transparent' ? 'transparent' : 'nat',
+      manageIP: management[0],
+      manageMask: management[1],
+      gateway: object.effective('gateway')[0] || undefined,
     });
   },
 };
@@ -102,7 +123,8 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
   help: 'Configure interfaces.',
   attributes: [
     { ...word('name', 'Interface name.'), readOnly: true },
-    word('vdom', 'Interface is in this virtual domain.', 'root'),
+    { ...word('vdom', 'Interface is in this virtual domain.', 'root'),
+      referenceTo: ['vdom'] },
     word('alias', 'Alias will be displayed with the interface name.'),
     text('description', 'Description.'),
     choice('role', 'Interface role.', [
@@ -148,8 +170,9 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
   ],
   onCommit(object, context) {
     const mode = object.effective('mode')[0];
-    const ip = mode === 'static' ? object.effective('ip') : [];
+    const ip = mode === 'static' && isRouted(object) ? object.effective('ip') : [];
     context.device.applyInterface(object.key, {
+      vdom: object.effective('vdom')[0],
       ip: ip[0],
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',

@@ -30,17 +30,17 @@
 | **2** | Système et objets : `system *`, `addrgrp`, `service`, `schedule`, `router static` | ✅ livrée |
 | **3** | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ✅ livrée (E33) |
 | **4** | Diagnostic et journaux | ✅ livrée (E34) |
-| 5 | VDOM et modes de déploiement | ⏳ |
+| **5** | VDOM et modes de déploiement | ✅ livrée (E35) |
 | 6 | Inspection et UTM | ⏳ |
 | 7 | Utilisateurs et authentification | ⏳ |
 | 8 | VPN | ⏳ |
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 944 cas verts sur 34 fichiers du module
-pare-feu (1070 avec `unit/gui`) ; 212 cas FortiOS (32 d'origine + 60 de
-grammaire + 29 de système + 34 de NAT + 13 d'aide/langue + 44 de
-diagnostic) ; 19 specs Playwright ; aucune erreur de typecheck dans le
+**Mesures au dernier commit** : 971 cas verts sur 35 fichiers du module
+pare-feu ; 239 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
+VDOM) ; 25 specs Playwright ; aucune erreur de typecheck dans le
 module ; lint propre. **Le badge « Limited simulation » est retiré.**
 
 ---
@@ -73,6 +73,12 @@ qui reprend doit les connaître avant de toucher au code.
 | **D19** | Les champs d'un journal FortiOS sont **entre guillemets**, les numériques exceptés | E34, mesuré |
 | **D20** | **La règle implicite ne journalise pas par défaut** ; `config log setting` / `set fwpolicy-implicit-log enable` la fait parler | E34, mesuré |
 | **D21** | Une vue ne publie **que ce qui est mesuré** : pas de CPU ni de mémoire dans `get system performance status`, faute de modèle de charge | E34 |
+| **D22** | **Un FortiGate multi-VDOM est UNE machine.** Jamais N objets `Firewall` : un registre de `VdomContext` sur un seul châssis | BRD §10.2, E35 |
+| **D23** | Le **mono-VDOM est le cas particulier** du multi-VDOM, pas une branche : `FirewallServices` résout toujours par VDOM | FGT-VDM-2, E35 |
+| **D24** | Un VDOM est une **PORTÉE** (`FortiTableSpec.scopeOnly`), pas un conteneur : l'arbre complet se rouvre dessous | Défaut B50 |
+| **D25** | L'arbre de configuration est **indexé par portée** pour un spec `scope: 'vdom'` — sinon deux VDOM éditent la même table | Défaut B51 |
+| **D26** | Le mode transparent est un **PIPELINE**, pas un drapeau : `FirewallProfile.pipeline` est un dictionnaire par mode | FGT-DEP-6, E35 |
+| **D27** | `vdom-link` est un **vrai `Cable`** entre deux `Port` : c'est ce qui fait traverser les deux politiques pour de bon | BRD §10.5, E35 |
 
 ---
 
@@ -317,7 +323,28 @@ syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
 - `execute backup|restore|revision` (BRD §29.4-29.5) appartient au
   chapitre `execute` et n'a pas été pris.
 
-### 6.6 Après
+### 6.6 Phase 5 — VDOM et modes de déploiement — ✅ livrée
+
+Livrée : `VdomRegistry`/`VdomContext` au socle, étape `vdom-bind`,
+`config vdom`, `config global`, `set vdom-mode multi-vdom`, `set vdom`
+sur une interface, `config system vdom-link` (vrai câble interne),
+`config system switch-interface` (étape `switch-bridge`),
+`set opmode transparent` + `manageip`/`gateway` (étape `mac-lookup` et
+pipeline par mode), et l'invite qui indique le VDOM courant.
+
+**Ce qui reste de la phase 5, nommé plutôt que tu** :
+
+- les **comptes administrateurs** ne sont pas encore une portée globale
+  (`config global` existe, `config system admin` n'a pas de schéma) ;
+- `vdom-mode split-vdom` est accepté et se comporte comme `multi-vdom` :
+  la séparation gestion/trafic n'a pas de mécanisme derrière ;
+- le **laboratoire L9** (FortiGate vs ASA) est une comparaison
+  documentaire, pas un mécanisme ; il n'a pas été écrit en code ;
+- l'apprentissage MAC du mode transparent est une table simple sur le
+  châssis, sans vieillissement ni STP — `Switch` en a une plus complète,
+  et la partager serait le prochain pas.
+
+### 6.7 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -356,3 +383,4 @@ comparer, jamais le supposer).
 | 2026-08-17 | agent `mandeng` | Création. État après phase 1, décision D10, plan de phase 1b et 2. |
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
 | 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |
+| 2026-08-17 | agent `mandeng` | Phase 5 livrée (E35). Décisions D22 à D27, §6.6 (ce qui reste de la phase 5). |

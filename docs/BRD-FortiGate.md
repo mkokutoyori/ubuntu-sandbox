@@ -5630,17 +5630,33 @@ implicite ne journalise pas, et c'est le défaut de Fortinet ; et le
 fait que les champs d'un journal sont **entre guillemets**, les
 numériques exceptés.
 
-### Phase 5 — VDOM et modes
+### Phase 5 — VDOM et modes — ✅ livrée
 
-| Livrable | Cas |
-|---|---|
-| `VdomRegistry` + `VdomContext` (socle) | 30 |
-| Étape `vdom-bind` | 15 |
-| `config vdom`, `config global`, portées | 30 |
-| `vdom-link` | 15 |
-| Mode transparent + pipeline par mode | 30 |
-| `switch-interface` | 15 |
-| **Laboratoires L7, L9** | 25 |
+Livrée en **27 cas** (`fortios-vdom.test.ts`) plus 6 specs Playwright.
+Les **944 cas antérieurs sont restés verts sans qu'un seul ait été
+touché** : c'est la preuve que le mono-VDOM est le cas particulier du
+multi-VDOM et non une branche (FGT-VDM-2).
+
+| Livrable | Cas prévus | État |
+|---|---|---|
+| `VdomRegistry` + `VdomContext` (socle) | 30 | ✅ |
+| Étape `vdom-bind` | 15 | ✅ |
+| `config vdom`, `config global`, portées | 30 | ✅ sauf `config system admin`, sans schéma |
+| `vdom-link` | 15 | ✅ vrai `Cable` interne |
+| Mode transparent + pipeline par mode | 30 | ✅ |
+| `switch-interface` | 15 | ✅ étape `switch-bridge` |
+| **Laboratoire L7** | 25 | ✅ étanchéité mesurée sur des noms identiques |
+| **Laboratoire L9** | — | ⏳ comparaison documentaire, pas un mécanisme |
+
+**Deux points que ce document ne nommait pas, et que la réalisation a
+imposés** : un VDOM est une **portée** et non un conteneur — l'arbre de
+configuration complet se rouvre sous `config vdom` / `edit <nom>` — et
+cet arbre doit être **indexé par portée**, sans quoi deux VDOM éditent
+la même table et `show` rend les deux mélangés.
+
+`vdom-mode split-vdom` est accepté et se comporte comme `multi-vdom` :
+la séparation gestion/trafic n'a pas de mécanisme derrière, et c'est
+écrit plutôt que laissé à découvrir.
 
 ### Phase 6 — Inspection et UTM
 

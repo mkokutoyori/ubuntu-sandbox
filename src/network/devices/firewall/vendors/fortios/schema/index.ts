@@ -10,8 +10,10 @@ import {
 import { SYSTEM_SPECS } from './system';
 import { ROUTER_SPECS } from './router';
 import { LOG_SPECS } from './log';
+import { VDOM_SPECS } from './vdom';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
+  ...VDOM_SPECS,
   ...SYSTEM_SPECS,
   FIREWALL_ADDRESS,
   FIREWALL_ADDRGRP,

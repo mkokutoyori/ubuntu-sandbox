@@ -72,9 +72,9 @@ export class FortiNavigator {
     if (words.length === 0) return FortiMessages.incomplete('a configuration path');
 
     const parent = this.currentObject();
-    if (parent) return this.descendChild(parent, words);
+    if (parent && !parent.spec.scopeOnly) return this.descendChild(parent, words);
 
-    if (this.currentTable()) {
+    if (!parent && this.currentTable()) {
       return FortiMessages.commandFail(
         '`config` from inside a table needs an object opened with `edit` first.',
       );
@@ -230,6 +230,10 @@ export class FortiNavigator {
 
     this.stack.pop();
     return EMPTY;
+  }
+
+  abortToRoot(): void {
+    while (this.stack.length > 0) this.end();
   }
 
   abort(): string {

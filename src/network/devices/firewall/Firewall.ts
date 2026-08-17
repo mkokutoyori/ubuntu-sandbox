@@ -1,5 +1,6 @@
 import { Equipment } from '../../equipment/Equipment';
 import { Port } from '../../hardware/Port';
+import { Cable } from '../../hardware/Cable';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
@@ -21,7 +22,6 @@ import { ArpService } from './l3/ArpService';
 import { ZoneTable } from './model/ZoneTable';
 import { ObjectStore } from './model/ObjectStore';
 import { PolicyStore } from './model/PolicyStore';
-import { PolicyEvaluator } from './policy/PolicyEvaluator';
 import { SessionTable } from './session/SessionTable';
 import { NatPolicyStore } from './nat/NatPolicyStore';
 import { FirewallNatEngine } from './nat/FirewallNatEngine';
@@ -88,6 +88,7 @@ export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new Map<string, ReadonlySet<string>>();
+  private readonly vdomLinks = new Map<string, readonly string[]>();
   private readonly macTable = new Map<string, string>();
   private readonly proxyArp = new Map<string, readonly ProxyArpEntry[]>();
   private readonly arp: ArpService;
@@ -295,6 +296,44 @@ export class Firewall extends Equipment {
 
   vdomOfInterface(iface: string): string {
     return this.vdoms.vdomOfInterface(iface);
+  }
+
+  createVdomLink(name: string): readonly string[] {
+    const ends = [`${name}0`, `${name}1`];
+    if (this.getPort(ends[0])) return Object.freeze(ends);
+
+    const left = new Port(ends[0], 'ethernet');
+    const right = new Port(ends[1], 'ethernet');
+    this.addPort(left);
+    this.addPort(right);
+    for (const end of ends) this.interfaces.configure(end, { up: true });
+
+    new Cable(`vdom-link:${this.id}:${name}`).connect(left, right);
+    this.vdomLinks.set(name, Object.freeze(ends));
+    return Object.freeze(ends);
+  }
+
+  removeVdomLink(name: string): boolean {
+    const ends = this.vdomLinks.get(name);
+    if (!ends) return false;
+
+    for (const end of ends) {
+      this.interfaces.remove(end);
+      this.vdoms.releaseInterface(end);
+    }
+    return this.vdomLinks.delete(name);
+  }
+
+  vdomLinkEnds(name: string): readonly string[] {
+    return this.vdomLinks.get(name) ?? [];
+  }
+
+  vdomLinkPeer(iface: string): string | undefined {
+    for (const ends of this.vdomLinks.values()) {
+      if (ends[0] === iface) return ends[1];
+      if (ends[1] === iface) return ends[0];
+    }
+    return undefined;
   }
 
   setSwitchInterface(name: string, members: readonly string[]): void {

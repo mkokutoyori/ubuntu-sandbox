@@ -60,11 +60,11 @@
 | **F3** | **FortiOS phase 3 — NAT complet (VIP, pools, PBR)** | 34 | ✅ |
 | **F3b** | `?` descend dans l'arbre ; l'interface passe en anglais | 13 | ✅ |
 | **F4** | **FortiOS phase 4 — diagnostic et journaux** | 44 | ✅ |
+| **F5** | **FortiOS phase 5 — VDOM et modes de deploiement** | 27 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 944 cas verts sur 34 fichiers** du module
-(1070 avec `unit/gui`).
+**Total actuel : 971 cas verts sur 35 fichiers** du module.
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1737,6 +1737,73 @@ tombés quand une vue écrite à la main a déplacé le rendu du schéma.
 **Mesures.** 1070 cas verts sur 50 fichiers (module pare-feu +
 `unit/gui`) ; 7 specs Playwright ; aucune erreur de typecheck dans le
 module ; lint propre.
+
+---
+
+### E35 — FortiOS phase 5 : un châssis, plusieurs pare-feu logiques
+
+`vdom/VdomRegistry.ts` (socle, neuf), `vendors/fortios/schema/vdom.ts`
+(neuf) — **27 cas** neufs, plus 6 specs Playwright.
+
+**Le piège que le BRD nommait « à éviter absolument » (§10.2) a été
+évité, et c'est le cœur de la phase.** Un FortiGate multi-VDOM est UNE
+machine : un châssis, des ports physiques, une pile, une horloge, un
+cache ARP. Instancier deux `Firewall` aurait créé deux jeux de ports
+qu'il aurait ensuite fallu recoller. `Firewall` porte donc un
+**registre** de `VdomContext`, chacun tenant ce qui lui est propre —
+zones, objets, politique, NAT, routes, sessions, horaires, journaux,
+réglages — et `FirewallServices` les **résout** par VDOM
+(`vdomOf(iface)`) au lieu de les porter en dur.
+
+**Ce que la mesure prouve, et qui n'était pas acquis** : les **944 cas**
+antérieurs sont restés verts sans qu'un seul ait été touché pour la
+forme. Le mono-VDOM n'est pas une branche conditionnelle du
+multi-VDOM : c'est son cas particulier, un registre à une entrée
+(FGT-VDM-2).
+
+**B50 — un VDOM est une PORTÉE, pas un conteneur.** `FortiNavigator`
+traitait tout objet ouvert comme un parent dont on ne peut descendre que
+vers ses enfants déclarés ; `config vdom` / `edit VENTES` /
+`config firewall address` échouait donc, alors que c'est la séquence
+normale d'un FortiGate. `FortiTableSpec.scopeOnly` nomme la différence,
+et `FortiSocle` rouvre l'arbre complet sous un objet de portée.
+
+**B51 — l'arbre de configuration était partagé entre VDOM.**
+`FortiConfigTree` indexait ses tables par chemin seul : `VENTES` et
+`TECHNIQUE` auraient édité la MÊME table, et `show` aurait rendu la
+configuration des deux mélangée. La clé de rangement compose désormais
+le chemin avec la portée pour un spec `scope: 'vdom'`, et le laisse nu
+pour un spec global — la déclaration existante décide, aucune liste ne
+s'ajoute.
+
+**Le mode transparent est un autre PIPELINE, pas un drapeau.**
+`FirewallProfile.pipeline` devient un dictionnaire par mode
+(FGT-DEP-6) : la liste transparente n'a ni `route-lookup` ni `nat-*`, et
+a `mac-lookup`. Un drapeau dans une étape aurait laissé les étapes de
+NAT s'exécuter pour ne rien faire — et la trace de `diagnose debug flow`
+aurait montré des étapes que le paquet n'a pas vraiment subies.
+
+**`vdom-link` est un vrai câble.** Le BRD le demandait explicitement —
+« deux `Port` reliés par un `Cable` interne, le dépôt a déjà tout ce
+qu'il faut » — et c'est ce qui fait qu'un paquet traverse VRAIMENT les
+deux politiques : il sort par `lien10`, arrive par `lien11`, et
+retraverse le pipeline dans l'autre VDOM. Un appel direct entre les deux
+bouts aurait été le raccourci que ce dépôt refuse.
+
+**`switch-interface` court-circuite la politique**, et le témoin le
+mesure : hors du groupe, la même topologie passe par `policy-lookup` et
+se fait refuser. C'est la confusion classique (« pourquoi ma règle ne
+s'applique pas ? ») rendue observable.
+
+**Le garde-fou anti-commentaires a servi une fois de plus** : un bloc
+`/** */` explicatif ajouté dans `FortiShell` a fait tomber la
+convention du dépôt, et il a été retiré.
+
+**Mesures.** 971 cas verts sur 35 fichiers du module ; 6 specs
+Playwright ; typecheck sans erreur dans le module ; lint propre.
+Discrimination : 19 des 27 cas tombent — la mesure porte sur la moitié
+CLI, le socle ayant été poussé dans un commit antérieur, ce qui est dit
+dans l'en-tête du fichier plutôt que laissé à supposer.
 
 ---
 

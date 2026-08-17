@@ -55,6 +55,7 @@ export interface SocleDeps {
   readonly inspect: (rest: readonly string[]) => string;
   readonly diagnose: (rest: readonly string[]) => string;
   readonly runExecute: (rest: readonly string[]) => string;
+  readonly enterGlobal: () => string;
 }
 
 export interface FortiOutcome {
@@ -149,16 +150,29 @@ export class FortiSocle {
     return this.rootSpecs();
   }
 
-  private rootSpecs(): CommandSpec[] {
+  private branchSpecs(): CommandSpec[] {
     const out: CommandSpec[] = [];
     for (const path of this.deps.tree.specPaths()) {
       const spec = this.deps.tree.spec(path);
-      if (!spec) continue;
+      if (!spec || spec.scopeOnly) continue;
       out.push(this.plain(
         `config ${path.join(' ')}`, ['config', ...path], spec.help,
         () => this.deps.nav.descend(path),
       ));
     }
+    return out;
+  }
+
+  private rootSpecs(): CommandSpec[] {
+    const out: CommandSpec[] = [
+      this.plain('config global', ['config', 'global'],
+        'Enter the global configuration scope.',
+        () => this.deps.enterGlobal()),
+      this.plain('config vdom', ['config', 'vdom'],
+        'Configure virtual domain.',
+        () => this.deps.nav.descend(['vdom'])),
+    ];
+    out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
     out.push(this.withArgument('execute', ['execute',
@@ -285,6 +299,8 @@ export class FortiSocle {
       out.push(this.plain(`config ${name}`, ['config', name], child.spec.help,
         () => this.deps.nav.descend([name])));
     }
+
+    if (object.spec.scopeOnly) out.push(...this.branchSpecs());
 
     out.push(...this.viewSpecs());
     return out;

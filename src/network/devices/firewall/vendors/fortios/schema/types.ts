@@ -37,6 +37,7 @@ export interface FortiAttributeSpec {
 }
 
 export interface FortiInterfacePatch {
+  readonly vdom?: string;
   readonly ip?: string;
   readonly mask?: string;
   readonly up?: boolean;
@@ -135,8 +136,17 @@ export interface FortiPolicyRoutePatch {
   readonly comment?: string;
 }
 
+export interface FortiGlobalSettings {
+  readonly hostname?: string;
+  readonly multiVdom: boolean;
+}
+
 export interface FortiVdomSettings {
   readonly centralNat: boolean;
+  readonly opmode: 'nat' | 'transparent';
+  readonly manageIP?: string;
+  readonly manageMask?: string;
+  readonly gateway?: string;
 }
 
 export interface FortiMemoryLogPatch {
@@ -162,6 +172,13 @@ export interface FortiCommitDevice {
   applyPolicyRoute(route: FortiPolicyRoutePatch): void;
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
+  applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyVdom(name: string): void;
+  removeVdom(name: string): void;
+  applyVdomLink(name: string): void;
+  removeVdomLink(name: string): void;
+  applySwitchInterface(name: string, members: readonly string[]): void;
+  removeSwitchInterface(name: string): void;
 }
 
 export interface FortiCommitContext {
@@ -184,6 +201,7 @@ export interface FortiTableSpec {
   readonly attributes: readonly FortiAttributeSpec[];
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
+  readonly scopeOnly?: boolean;
   readonly onCommit?: (object: FortiObjectView, context: FortiCommitContext) => void;
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;
 }
