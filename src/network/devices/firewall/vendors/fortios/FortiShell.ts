@@ -60,6 +60,8 @@ export class FortiShell {
     const line = rawLine.trim();
     if (line.length === 0) return '';
 
+    if (line.endsWith('?')) return this.help().join('\n');
+
     const tokens = line.split(/\s+/);
     switch (tokens[0]) {
       case 'config': return this.enterTable(tokens.slice(1));

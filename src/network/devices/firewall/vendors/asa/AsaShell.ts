@@ -15,6 +15,13 @@ import {
   asaNotImplemented,
   asaSecurityLevelNotice,
 } from './AsaMessages';
+import { CLIStateMachine } from '../../../shells/CLIStateMachine';
+import { buildPrompt } from '../../../shells/PromptBuilder';
+import { AsaSocle, mergeHelpLines } from '@/cli/vendors/asa/asaSocle';
+import {
+  ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL,
+} from '@/cli/vendors/asa/asaModes';
+import type { AsaShowHost, AsaShowView } from '@/cli/vendors/asa/asaShowFamily';
 
 export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group';
 
@@ -199,8 +206,11 @@ function parseObjectNat(tokens: string[]): ObjectNatSpec | undefined {
   };
 }
 
-export class AsaShell {
-  private mode: AsaMode = 'exec';
+export class AsaShell implements AsaShowHost {
+  private readonly fsm = new CLIStateMachine<AsaMode>(
+    'exec', ASA_MODES, ASA_TOP_LEVEL as AsaMode, ASA_EXEC_LEVEL as AsaMode,
+  );
+  private socleInstance?: AsaSocle;
   private negatedLine = false;
   private readonly objectNatLines = new Map<string, string>();
   private readonly manualNatLines = new Map<string, string>();
@@ -214,33 +224,56 @@ export class AsaShell {
 
   constructor(private readonly fw: AsaFirewall) {}
 
+  private get mode(): AsaMode { return this.fsm.mode; }
+  private set mode(value: AsaMode) { this.fsm.mode = value; }
+
   getPrompt(): string {
-    const host = this.fw.getName();
-    switch (this.mode) {
-      case 'exec': return `${host}>`;
-      case 'privileged': return `${host}#`;
-      case 'config': return `${host}(config)#`;
-      case 'config-if': return `${host}(config-if)#`;
-      case 'config-object': return `${host}(config-network-object)#`;
-      case 'config-group': return `${host}(config-network-object-group)#`;
-    }
+    return buildPrompt(this.mode, this.fw.getName(), ASA_PROMPTS);
   }
 
   getMode(): AsaMode {
     return this.mode;
   }
 
+  private socle(): AsaSocle {
+    if (!this.socleInstance) {
+      this.socleInstance = new AsaSocle(() => this.fw.getName(), this.fw, () => this);
+    }
+    return this.socleInstance;
+  }
+
+  showView(view: AsaShowView): string {
+    switch (view) {
+      case 'nameif': return this.showNameif();
+      case 'conn': return this.showConn(true);
+      case 'conn-count': return this.showConn(false);
+      case 'xlate': return this.showXlate();
+      case 'version': return this.showVersion();
+      case 'running-config': return this.showRunningConfig();
+      case 'access-list': return this.showAccessList();
+      case 'nat': return this.showNat();
+      case 'logging': return this.fw.getLoggingConfig().render();
+    }
+  }
+
+  private lines(input: string): Array<{ keyword: string; description: string }> {
+    const prefix = input.trimStart();
+    const legacy = this.vocabulary()
+      .filter(word => word.startsWith(prefix))
+      .map(word => ({ keyword: word, description: ASA_COMMAND_HELP[word] ?? '' }));
+
+    return mergeHelpLines(
+      legacy, this.socle().suggestions(input, this.mode, 'QUESTION_MARK'));
+  }
+
   completions(input: string): readonly string[] {
     const prefix = input.trimStart();
-    return this.vocabulary().filter(word => word.startsWith(prefix) && word !== prefix);
+    return this.lines(input).map(l => l.keyword).filter(word => word !== prefix);
   }
 
   help(inputBeforeQuestion: string): readonly string[] {
-    const prefix = inputBeforeQuestion.trimStart();
-    const words = prefix.length === 0
-      ? this.vocabulary()
-      : this.vocabulary().filter(word => word.startsWith(prefix));
-    return words.map(word => `  ${word.padEnd(24)}${ASA_COMMAND_HELP[word] ?? ''}`.trimEnd());
+    return this.lines(inputBeforeQuestion)
+      .map(l => `  ${l.keyword.padEnd(24)}${l.description}`.trimEnd());
   }
 
   private vocabulary(): readonly string[] {
@@ -251,8 +284,15 @@ export class AsaShell {
     const line = rawLine.trim();
     if (line.length === 0) return '';
 
+    if (line.endsWith('?')) {
+      return this.help(line.slice(0, -1)).join('\n') || ASA_INVALID_INPUT;
+    }
+
     const unimplemented = this.unimplementedMatch(line);
     if (unimplemented) return asaNotImplemented(unimplemented, ASA_UNIMPLEMENTED_REASONS[unimplemented]);
+
+    const fromSocle = this.socle().run(line, this.mode);
+    if (fromSocle !== null) return fromSocle;
 
     const negated = line.startsWith('no ');
     const body = negated ? line.slice(3).trim() : line;
@@ -301,17 +341,14 @@ export class AsaShell {
     }
 
     if (head === 'end') {
-      this.mode = this.mode === 'exec' ? 'exec' : 'privileged';
+      this.fsm.end();
       this.clearSubMode();
       return '';
     }
 
     if (head === 'exit') {
-      if (this.mode === 'config-if' || this.mode === 'config-object' || this.mode === 'config-group') {
-        this.mode = 'config';
-        this.clearSubMode();
-      } else if (this.mode === 'config') this.mode = 'privileged';
-      else if (this.mode === 'privileged') this.mode = 'exec';
+      this.fsm.exit();
+      this.clearSubMode();
       return '';
     }
 
@@ -351,19 +388,7 @@ export class AsaShell {
     const [head, ...rest] = tokens;
     if (head === 'packet-tracer') return this.packetTracer(rest);
     if (head === 'clear') return this.clearCommand(rest);
-    if (head !== 'show') return ASA_INVALID_INPUT;
-
-    switch (rest[0]) {
-      case 'nameif': return this.showNameif();
-      case 'conn': return this.showConn(rest[1] !== 'count');
-      case 'xlate': return this.showXlate();
-      case 'version': return this.showVersion();
-      case 'running-config': return this.showRunningConfig();
-      case 'access-list': return this.showAccessList();
-      case 'nat': return this.showNat();
-      case 'logging': return this.fw.getLoggingConfig().render();
-      default: return ASA_INVALID_INPUT;
-    }
+    return ASA_INVALID_INPUT;
   }
 
   private configCommand(tokens: string[], negated: boolean): string {
