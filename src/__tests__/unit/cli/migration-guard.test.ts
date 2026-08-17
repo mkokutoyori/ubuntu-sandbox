@@ -135,3 +135,39 @@ describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
     expect(trie.enumerateExecutablePaths()).not.toContain('show version');
   });
 });
+
+describe('un descendant n\'est pas un CONCURRENT', () => {
+  it('`show crypto ipsec sa` s\'execute malgre `show crypto ipsec sa interface`', async () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const cli = router as unknown as { executeCommand(c: string): Promise<string> };
+    await cli.executeCommand('enable');
+
+    const out = await cli.executeCommand('show crypto ipsec sa');
+
+    expect(out).not.toContain('Incomplete');
+    expect(out).not.toContain('Invalid input');
+  });
+
+  it('le descendant EXISTE bien dans le trie — sans lui le cas ne prouve rien', () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const shell = router.getShell() as unknown as { enumerateAllCommandPaths(): string[] };
+
+    expect(shell.enumerateAllCommandPaths()).toContain('show crypto ipsec sa interface');
+  });
+
+  it('une correspondance EXACTE l\'emporte sur un prefixe concurrent', async () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const cli = router as unknown as { executeCommand(c: string): Promise<string> };
+    await cli.executeCommand('enable');
+
+    const exact = await cli.executeCommand('show crypto ipsec sa');
+    const autre = await cli.executeCommand('show crypto ipsec security-association lifetime');
+
+    expect(exact).not.toContain('Incomplete');
+    expect(autre).not.toContain('Incomplete');
+    expect(exact).not.toBe(autre);
+  });
+});

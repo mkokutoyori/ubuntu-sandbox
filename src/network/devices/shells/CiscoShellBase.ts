@@ -3131,7 +3131,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
       const words = path.toLowerCase().split(' ');
       if (CiscoShellBase.sameKeywords(words, canonical)) continue;
-      if (CiscoShellBase.prefixMatches(typed, words)) return false;
+      if (CiscoShellBase.prefixMatches(typed, words, canonical)) return false;
     }
     return true;
   }
@@ -3155,13 +3155,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return left.length === right.length && left.every((word, i) => word === right[i]);
   }
 
-  private static prefixMatches(typed: readonly string[], words: readonly string[]): boolean {
-    if (words.length < typed.length) return false;
+  /**
+   * Un chemin du trie CONCURRENCE-t-il vraiment la commande du socle ?
+   *
+   * Deux cas ne sont pas des ambiguites, et les compter comme telles
+   * rendait la commande du socle inatteignable.
+   *
+   * Une commande PLUS LONGUE sous le meme prefixe est une continuation,
+   * pas une rivale : `show crypto ipsec sa interface` ne rend pas
+   * `show crypto ipsec sa` ambigu, il la prolonge. Le defaut ne s'est vu
+   * qu'une fois l'elagage repare — le descendant etait supprime avec son
+   * parent, donc il n'y avait rien pour concurrencer.
+   *
+   * Et une correspondance EXACTE l'emporte sur un prefixe, comme partout
+   * ailleurs dans cette CLI : `sa` tape en toutes lettres designe `sa`,
+   * meme si `security-association` commence par ces deux lettres.
+   */
+  private static prefixMatches(
+    typed: readonly string[], words: readonly string[], canonical: readonly string[],
+  ): boolean {
+    if (words.length < typed.length || typed.length === 0) return false;
+    if (CiscoShellBase.extendsPath(words, canonical)) return false;
 
     for (let index = 0; index < typed.length; index++) {
       if (!words[index].startsWith(typed[index])) return false;
+      if (typed[index] === canonical[index] && words[index] !== typed[index]) return false;
     }
-    return typed.length > 0;
+    return true;
+  }
+
+  private static extendsPath(words: readonly string[], canonical: readonly string[]): boolean {
+    if (words.length < canonical.length) return false;
+    return canonical.every((word, index) => words[index] === word);
   }
 
   private static keywordCount(spec: { path: readonly unknown[] }): number {

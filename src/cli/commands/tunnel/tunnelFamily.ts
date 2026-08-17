@@ -1,4 +1,5 @@
 import type { CommandSpec } from '../../CommandTable';
+import type { ArgumentSpec } from '../../ArgumentTypes';
 
 export interface TunnelHost {
   selectedInterfaceName(): string | null;
@@ -21,14 +22,17 @@ function assign(device: unknown, key: string, value: string): string {
   return '';
 }
 
-function setter(id: string, keyword: string, field: string, description: string): CommandSpec {
+function setter(
+  id: string, keyword: string, field: string, description: string,
+  argument: ArgumentSpec = { name: 'value', type: 'REST' },
+): CommandSpec {
   return {
     id,
-    path: ['tunnel', keyword, { name: 'value', type: 'REST' }],
+    path: ['tunnel', keyword, argument],
     description,
     modes: ['config-if', 'config-subif'],
     minPrivilege: 15,
-    run: (session, args) => assign(session.device, field, args.value),
+    run: (session, args) => assign(session.device, field, args[argument.name]),
   };
 }
 
@@ -69,11 +73,20 @@ const PATH_MTU_DISCOVERY: CommandSpec = {
 
 export const TUNNEL_FAMILY: readonly CommandSpec[] = Object.freeze([
   PATH_MTU_DISCOVERY,
-  setter('tunnel-source', 'source', 'tunnelSource', 'Set tunnel source'),
-  setter('tunnel-destination', 'destination', 'tunnelDest', 'Set tunnel destination'),
+  // `tunnel source` prend une adresse OU un nom d'interface : le socle
+  // ne sait pas encore declarer une union, et annoncer une seule des deux
+  // decrirait faux la moitie des usages. `WORD` dit ce qu'on sait.
+  setter('tunnel-source', 'source', 'tunnelSource', 'Set tunnel source',
+    { name: 'value', type: 'WORD' }),
+  setter('tunnel-destination', 'destination', 'tunnelDest', 'Set tunnel destination',
+    { name: 'value', type: 'IP_ADDR' }),
+  // Le mode s'ecrit en DEUX mots (`gre multipoint`, `ipsec ipv4`), donc
+  // il n'est pas un jeton unique enumerable.
   setter('tunnel-mode', 'mode', 'tunnelMode', 'Set tunnel encapsulation mode'),
-  setter('tunnel-key', 'key', 'tunnelKey', 'Set tunnel key'),
-  setter('tunnel-vrf', 'vrf', 'tunnelVrf', 'Set tunnel VRF'),
+  setter('tunnel-key', 'key', 'tunnelKey', 'Set tunnel key',
+    { name: 'value', type: 'INT', range: [0, 4294967295] }),
+  setter('tunnel-vrf', 'vrf', 'tunnelVrf', 'Set tunnel VRF',
+    { name: 'value', type: 'WORD' }),
 ]);
 
 
