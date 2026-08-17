@@ -18,3 +18,7 @@ export const ASA_UNIMPLEMENTED_REASONS: Readonly<Record<string, string>> = Objec
   'inspect h323': 'no H.323 protocol engine exists',
   'failover': 'high availability is not implemented yet',
 });
+
+export function asaAmbiguous(typed: string): string {
+  return `% Ambiguous command:  "${typed}"`;
+}

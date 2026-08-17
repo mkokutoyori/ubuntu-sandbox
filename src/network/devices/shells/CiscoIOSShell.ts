@@ -18,7 +18,7 @@
  */
 
 import type { ExecScope } from './cisco/CiscoExecScope';
-import { CommandTable } from '@/cli/CommandTable';
+import type { CommandSpec } from '@/cli/CommandTable';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
@@ -142,19 +142,11 @@ import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContin
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
-  private socle?: CommandTable;
-
-  protected override migratedPaths(): readonly string[] {
-    return this.socleTable().specs().map(spec =>
-      spec.path.filter((step): step is string => typeof step === 'string').join(' '));
-  }
-
-  protected override socleTable(): CommandTable {
-    if (!this.socle) {
-      this.socle = new CommandTable();
-      for (const spec of [...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY]) this.socle.declare(spec);
-    }
-    return this.socle;
+  protected override socleSpecs(): readonly CommandSpec[] {
+    return [
+      ...super.socleSpecs(),
+      ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
+    ];
   }
 
   selectedInterfaceName(): string | null {

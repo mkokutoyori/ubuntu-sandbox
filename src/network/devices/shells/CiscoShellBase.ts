@@ -16,6 +16,8 @@ import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand } from '@/cli/CommandParser';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
@@ -2600,9 +2602,370 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     console.error(`[CLI] handler crashed on "${cmdPart}":`, detail);
   }
 
-  protected socleTable(): CommandTable | null { return null; }
+  private socleInstance?: CommandTable;
 
-  protected migratedPaths(): readonly string[] { return []; }
+  /**
+   * Ce que cette plateforme declare sur le socle.
+   *
+   * La base porte ce qu'un routeur ET un commutateur savent faire, chaque
+   * shell ajoute le sien. Sans ce partage, une famille declaree dans
+   * `CiscoShellBase` serait migree sur une plateforme et laissee dans le
+   * trie sur l'autre, pour un code source unique.
+   */
+
+  private debugServiceRef(): {
+    enable(c: string, scope?: string, detail?: boolean): string;
+    disable(c: string): string;
+    addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
+    removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
+    removeConditionById(id: number): string;
+    clearConditions(): void;
+  } | undefined {
+    return (this.d() as unknown as {
+      getDebugService?: () => {
+        enable(c: string, scope?: string, detail?: boolean): string;
+        disable(c: string): string;
+        addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
+        removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
+        removeConditionById(id: number): string;
+        clearConditions(): void;
+      };
+    }).getDebugService?.();
+  }
+
+  private simpleDebugPair(
+    word: string, category: string, description: string,
+  ): DebugPair {
+    return {
+      path: ['debug', word], description, undoDescription: `Disable ${description}`,
+      takesArguments: true,
+      enable: () => this.debugServiceRef()?.enable(category) ?? '',
+      disable: () => this.debugServiceRef()?.disable(category) ?? '',
+    };
+  }
+
+  protected debugPairs(): DebugPair[] {
+    const svc = () => this.debugServiceRef();
+    const pairs: DebugPair[] = [
+      {
+        path: ['debug', 'arp'], description: 'Enable ARP debug',
+        undoDescription: 'Disable ARP debug', takesArguments: false,
+        enable: () => svc()?.enable('ip.arp') ?? 'ARP packet debugging is on',
+        disable: () => svc()?.disable('ip.arp') ?? 'ARP packet debugging is off',
+      },
+      {
+        path: ['debug', 'domain'], description: 'Debug DNS name resolution',
+        undoDescription: 'Stop DNS debugging', takesArguments: false,
+        enable: () => svc()?.enable('ip.domain') ?? 'Domain Name System debugging is on',
+        disable: () => svc()?.disable('ip.domain') ?? '',
+      },
+      {
+        path: ['debug', 'dhcp'], description: 'Debug DHCP',
+        undoDescription: 'Stop DHCP debugging', takesArguments: false,
+        enable: () => svc()?.enable('ip.dhcp.server') ?? '',
+        disable: () => svc()?.disable('ip.dhcp.server') ?? '',
+      },
+      {
+        path: ['debug', 'ip'], description: 'Enable IP debug',
+        undoDescription: 'Disable IP debug', takesArguments: true,
+        subKeywords: [
+          { keyword: 'arp', description: 'Debug ARP packets' },
+          { keyword: 'bgp', description: 'Debug BGP' },
+          { keyword: 'dhcp', description: 'Debug DHCP' },
+          { keyword: 'domain', description: 'Debug DNS name resolution' },
+          { keyword: 'eigrp', description: 'Debug EIGRP' },
+          { keyword: 'icmp', description: 'Debug ICMP packets' },
+          { keyword: 'nat', description: 'Debug NAT' },
+          { keyword: 'nhrp', description: 'Debug NHRP' },
+          { keyword: 'packet', description: 'Debug all IP packets' },
+          { keyword: 'pim', description: 'Debug PIM' },
+          { keyword: 'rip', description: 'Debug RIP' },
+          { keyword: 'routing', description: 'Debug routing table changes' },
+          { keyword: 'ssh', description: 'Debug SSH' },
+          { keyword: 'tcp', description: 'Debug TCP special events' },
+          { keyword: 'udp', description: 'Debug UDP packets' },
+        ],
+        enable: (args) => this.enableIpDebug(args),
+        disable: (args) => this.disableIpDebug(args),
+      },
+      {
+        path: ['debug', 'standby'], description: 'Debug HSRP',
+        undoDescription: 'Disable HSRP debug', takesArguments: true,
+        enable: () => svc()?.enable('standby') ?? '',
+        disable: () => svc()?.disable('standby') ?? '',
+      },
+      {
+        path: ['debug', 'eigrp'], description: 'Debug EIGRP',
+        undoDescription: 'Disable EIGRP debug', takesArguments: true,
+        enable: (args) => {
+          const sujet = (args[0] ?? '').toLowerCase();
+          const annonce = EIGRP_DEBUG_SUBJECTS[sujet];
+          if (sujet && !annonce) throw new CliInvalidInput({ token: args[0] });
+          svc()?.enable('ip.eigrp');
+          return annonce ?? 'EIGRP debugging is on';
+        },
+        disable: () => svc()?.disable('ip.eigrp') ?? '',
+      },
+      {
+        path: ['debug', 'interface'], description: 'Debug interface state changes',
+        undoDescription: 'Disable interface debug', takesArguments: true,
+        enable: (args) => {
+          const service = svc();
+          const iface = args.join(' ').trim();
+          if (!service) return 'Interface debugging is on';
+          return service.enable('interface', iface || undefined);
+        },
+        disable: () => svc()?.disable('interface') ?? '',
+      },
+      {
+        path: ['debug', 'lldp'], description: 'Debug LLDP',
+        undoDescription: 'Disable LLDP debug', takesArguments: true,
+        enable: () => svc()?.enable('lldp.packets') ?? 'LLDP packets debugging is on',
+        disable: () => svc()?.disable('lldp.packets') ?? '',
+      },
+      {
+        path: ['debug', 'cdp'], description: 'Debug CDP',
+        undoDescription: 'Disable CDP debug', takesArguments: true,
+        enable: () => svc()?.enable('cdp.packets') ?? 'CDP packets debugging is on',
+        disable: () => svc()?.disable('cdp.packets') ?? '',
+      },
+      {
+        path: ['debug', 'ipv6'], description: 'Debug IPv6',
+        undoDescription: 'Disable IPv6 debug', takesArguments: true,
+        subKeywords: [
+          { keyword: 'icmp', description: 'ICMPv6 messages' },
+          { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery' },
+          { keyword: 'packet', description: 'IPv6 packets' },
+        ],
+        enable: (args) => this.enableIpv6Debug(args),
+        disable: (args) => {
+          const category = CiscoShellBase.ipv6DebugCategory((args[0] ?? '').toLowerCase());
+          if (!category) throw new CliInvalidInput({ token: args[0] });
+          return svc()?.disable(category) ?? '';
+        },
+      },
+      {
+        path: ['debug', 'condition'], description: 'Restrict every debug to a condition',
+        undoDescription: 'Remove a debug condition', takesArguments: true,
+        enable: (args) => this.addDebugCondition(args),
+        disable: (args) => this.removeDebugCondition(args),
+      },
+      this.simpleDebugPair('vrrp', 'vrrp', 'Debug VRRP'),
+      this.simpleDebugPair('glbp', 'glbp', 'Debug GLBP'),
+      this.simpleDebugPair('radius', 'radius', 'Debug RADIUS'),
+      this.simpleDebugPair('tacacs', 'tacacs', 'Debug TACACS+'),
+      {
+        path: ['debug', 'ntp'], description: 'Debug NTP',
+        undoDescription: 'Disable NTP debug', takesArguments: true,
+        subKeywords: [
+          { keyword: 'events', description: 'NTP events' },
+          { keyword: 'packets', description: 'NTP packets' },
+        ],
+        enable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, true),
+        disable: (args) => CiscoShellBase.ntpDebugSwitch(svc(), args, false),
+      },
+      {
+        path: ['debug', 'aaa'], description: 'Debug AAA',
+        undoDescription: 'Disable AAA debug', takesArguments: true,
+        subKeywords: [
+          { keyword: 'accounting', description: 'AAA accounting' },
+          { keyword: 'authentication', description: 'AAA authentication' },
+          { keyword: 'authorization', description: 'AAA authorization' },
+        ],
+        enable: (args) => CiscoShellBase.aaaDebugSwitch(svc(), args, true),
+        disable: (args) => CiscoShellBase.aaaDebugSwitch(svc(), args, false),
+      },
+    ];
+
+    if (this.hasVxlanHardware()) {
+      pairs.push({
+        path: ['debug', 'vxlan'], description: 'Debug VXLAN',
+        undoDescription: 'Disable VXLAN debug', takesArguments: true,
+        enable: () => svc()?.enable('vxlan') ?? 'VXLAN debugging is on',
+        disable: () => svc()?.disable('vxlan') ?? '',
+      });
+    }
+    if (this.hasSwitchingHardware()) {
+      pairs.push({
+        path: ['debug', 'port-security'], description: 'Debug port security',
+        undoDescription: 'Disable port-security debug', takesArguments: true,
+        enable: () => svc()?.enable('port-security') ?? 'Port security debugging is on',
+        disable: () => svc()?.disable('port-security') ?? '',
+      });
+    }
+    return pairs;
+  }
+
+  private enableIpDebug(args: string[]): string {
+    const sub = args.join(' ').toLowerCase();
+    const svc = this.debugServiceRef();
+    if (!svc) return 'IP debugging is on';
+    if (sub === 'packet') return svc.enable('ip.packet');
+    if (sub.startsWith('packet ')) {
+      const detail = args.some((a) => /^detail$/i.test(a));
+      const aclName = args.slice(1).find((a) => !/^detail$/i.test(a));
+      if (!aclName) return svc.enable('ip.packet', undefined, detail);
+      svc.enable('ip.packet', aclName, detail);
+      return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
+    }
+    if (sub === 'icmp') return svc.enable('ip.icmp');
+    if (sub === 'domain') return svc.enable('ip.domain');
+    if (sub === 'tcp' || sub.startsWith('tcp ')) {
+      const reste = args.slice(1).filter(a => !/^transactions$/i.test(a));
+      const acl = reste[0];
+      svc.enable('ip.tcp', acl);
+      return acl
+        ? `TCP special event debugging is on for access list ${acl}`
+        : 'TCP special event debugging is on';
+    }
+    if (sub === 'udp' || sub.startsWith('udp ')) {
+      const acl = args.slice(1)[0];
+      svc.enable('ip.udp', acl);
+      return acl
+        ? `UDP packet debugging is on for access list ${acl}`
+        : 'UDP packet debugging is on';
+    }
+    if (sub === 'nat') return svc.enable('ip.nat');
+    if (sub === 'arp') return svc.enable('ip.arp');
+    if (sub === 'routing') return svc.enable('ip.routing');
+    if (sub.startsWith('dhcp server') || sub === 'dhcp') return svc.enable('ip.dhcp.server');
+    if (sub === 'ssh') return svc.enable('ip.ssh');
+    if (sub === 'rip') return svc.enable('ip.rip');
+    if (sub === 'eigrp') return svc.enable('ip.eigrp');
+    if (sub === 'bgp') return svc.enable('ip.bgp');
+    if (sub === 'nhrp') return svc.enable('ip.nhrp');
+    if (sub === 'pim') return svc.enable('ip.pim');
+    throw new CliInvalidInput({ token: args[0] });
+  }
+
+  private disableIpDebug(args: string[]): string {
+    const sub = args.join(' ').toLowerCase();
+    const svc = this.debugServiceRef();
+    if (!svc) return 'IP debugging is off';
+    if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
+    if (sub === 'icmp') return svc.disable('ip.icmp');
+    if (sub === 'domain') return svc.disable('ip.domain');
+    if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
+    if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
+    if (sub === 'nat') return svc.disable('ip.nat');
+    if (sub === 'arp') return svc.disable('ip.arp');
+    if (sub === 'routing') return svc.disable('ip.routing');
+    if (sub.startsWith('dhcp server') || sub === 'dhcp') return svc.disable('ip.dhcp.server');
+    if (sub === 'ssh') return svc.disable('ip.ssh');
+    if (sub === 'rip') return svc.disable('ip.rip');
+    if (sub === 'eigrp') return svc.disable('ip.eigrp');
+    if (sub === 'bgp') return svc.disable('ip.bgp');
+    if (sub === 'nhrp') return svc.disable('ip.nhrp');
+    if (sub === 'pim') return svc.disable('ip.pim');
+    throw new CliInvalidInput({ token: args[0] });
+  }
+
+  private static ipv6DebugCategory(mot: string): 'ipv6.packet' | 'ipv6.nd' | 'ipv6.icmp' | null {
+    if (mot === '' || mot.startsWith('packet')) return 'ipv6.packet';
+    if ('nd'.startsWith(mot) || mot === 'nd') return 'ipv6.nd';
+    if ('icmp'.startsWith(mot)) return 'ipv6.icmp';
+    return null;
+  }
+
+  private enableIpv6Debug(args: string[]): string {
+    const svc = this.debugServiceRef();
+    const mots = args.map((a) => a.toLowerCase());
+    const category = CiscoShellBase.ipv6DebugCategory(mots[0] ?? '');
+    if (!category) throw new CliInvalidInput({ token: args[0] });
+    if (!svc) return 'IPv6 packet debugging is on';
+    const acl = category === 'ipv6.packet' ? args.slice(1).join(' ') : '';
+    return acl ? svc.enable(category, acl) : svc.enable(category);
+  }
+
+  private static ntpDebugSwitch(
+    svc: { enable(c: string): string; disable(c: string): string } | undefined,
+    args: string[], on: boolean,
+  ): string {
+    if (!svc) return '';
+    const sub = (args[0] ?? 'events').toLowerCase();
+    const apply = (c: string) => (on ? svc.enable(c) : svc.disable(c));
+    if ('events'.startsWith(sub)) return apply('ntp.events');
+    if ('packets'.startsWith(sub)) return apply('ntp.packets');
+    throw new CliInvalidInput({ token: args[0] });
+  }
+
+  private static aaaDebugSwitch(
+    svc: { enable(c: string): string; disable(c: string): string } | undefined,
+    args: string[], on: boolean,
+  ): string {
+    if (!svc) return '';
+    const sub = (args[0] ?? '').toLowerCase();
+    const apply = (c: string) => (on ? svc.enable(c) : svc.disable(c));
+    if (sub && 'authentication'.startsWith(sub)) return apply('aaa.authentication');
+    if (sub && 'authorization'.startsWith(sub)) return apply('aaa.authorization');
+    if (sub && 'accounting'.startsWith(sub)) return apply('aaa.accounting');
+    throw new CliInvalidInput({ token: args[0] });
+  }
+
+  private addDebugCondition(args: string[]): string {
+    const svc = this.debugServiceRef();
+    if (!svc) return '';
+    const kind = (args[0] ?? '').toLowerCase();
+    const value = args.slice(1).join(' ').trim();
+    if (kind === '') return CISCO_ERRORS.INCOMPLETE;
+    if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
+    if (!value) return CISCO_ERRORS.INCOMPLETE;
+    const resolved = kind === 'interface'
+      ? (this.resolveInterfaceNameForDebug(value) ?? value)
+      : value;
+    return svc.addCondition(kind, resolved);
+  }
+
+  private removeDebugCondition(args: string[]): string {
+    const svc = this.debugServiceRef();
+    if (!svc) return '';
+    const kind = (args[0] ?? '').toLowerCase();
+    if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
+    if (/^\d+$/.test(kind)) return svc.removeConditionById(parseInt(kind, 10));
+    const value = args.slice(1).join(' ').trim();
+    if (kind === '') return CISCO_ERRORS.INCOMPLETE;
+    if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
+    if (!value) return CISCO_ERRORS.INCOMPLETE;
+    const resolved = kind === 'interface'
+      ? (this.resolveInterfaceNameForDebug(value) ?? value)
+      : value;
+    return svc.removeCondition(kind, resolved);
+  }
+
+  protected socleSpecs(): readonly CommandSpec[] {
+    return debugFamily(this.debugPairs());
+  }
+
+  protected socleTable(): CommandTable | null {
+    if (!this.socleInstance) {
+      this.socleInstance = new CommandTable();
+      for (const spec of this.socleSpecs()) this.socleInstance.declare(spec);
+    }
+    return this.socleInstance;
+  }
+
+  /**
+   * Un chemin migre emmene sa NEGATION avec lui.
+   *
+   * Le trie enregistre `no debug arp` comme un chemin a part entiere ; le
+   * socle le porte comme la moitie `undo` d'une seule declaration. Ne
+   * nommer que la forme positive laisserait la negation dans le trie,
+   * donc deux moteurs pour la meme frappe — exactement ce que le
+   * garde-fou de migration existe pour empecher.
+   */
+  protected migratedPaths(): readonly string[] {
+    const table = this.socleTable();
+    if (!table) return [];
+
+    const paths: string[] = [];
+    for (const spec of table.specs()) {
+      const text = spec.path
+        .filter((step): step is string => typeof step === 'string').join(' ');
+      paths.push(text);
+      if (spec.undo) paths.push(`no ${text}`);
+    }
+    return paths;
+  }
 
   protected pruneMigratedFromTries(): void {
     const paths = this.migratedPaths();
@@ -2653,6 +3016,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (!words[index].startsWith(typed[index])) return false;
     }
     return typed.length > 0;
+  }
+
+  private static keywordCount(spec: { path: readonly unknown[] }): number {
+    return spec.path.filter(step => typeof step === 'string').length;
   }
 
   private socleSession(table: CommandTable): CliSession {
@@ -2709,16 +3076,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (!this.prefixIsUnambiguous(bare, parsed.spec)) return null;
 
     const handler = parsed.negated && parsed.spec.undo ? parsed.spec.undo : parsed.spec.run;
-    const output: unknown = handler(session, parsed.args);
-    return typeof output === 'string' ? output : null;
+    // Un gestionnaire migre leve les MEMES diagnostics qu'avant : ils
+    // doivent donc etre rendus par le meme traducteur. Sans cela une
+    // commande refusee remontait son exception a travers le repartiteur
+    // au lieu de rendre le message d'IOS.
+    try {
+      const output: unknown = handler(session, parsed.args);
+      return typeof output === 'string' ? output : null;
+    } catch (err) {
+      if (err instanceof CliInvalidInput) {
+        if (err.motAbsent()) return renderCliDiagnostic('incomplete', { line: cmdPart });
+        return renderCliDiagnostic('invalid', {
+          line: cmdPart,
+          tokenOffset: offsetForInvalidInput(cmdPart, CiscoShellBase.keywordCount(parsed.spec), err),
+        });
+      }
+      if (err instanceof CliIncomplete) return renderCliDiagnostic('incomplete', { line: cmdPart });
+      throw err;
+    }
   }
 
   protected executeOnTrie(cmdPart: string): string {
-    const migrated = this.tryMigratedCommand(cmdPart);
-    if (migrated !== null) return migrated;
-
+    // `undebug X` EST `no debug X`, donc la reecriture precede les deux
+    // moteurs. Placee apres le socle, elle laissait `undebug` chercher
+    // dans un trie dont la famille venait d'etre elaguee.
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
+
+    const migrated = this.tryMigratedCommand(cmdPart);
+    if (migrated !== null) return migrated;
     // UNE seule question, posee a UN seul endroit : cette session
     // voit-elle cette commande ? Cinq predicats y repondaient a la
     // suite, chacun relisant la table des regles a sa facon ; leur ordre
@@ -4389,270 +4775,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
-    this.privilegedTrie.register('debug arp', 'Enable ARP debug', () => {
-      const svc = (this.d() as unknown as { getDebugService?: () => { enable: (c: string, scope?: string) => string } }).getDebugService?.();
-      return svc ? svc.enable('ip.arp') : 'ARP packet debugging is on';
-    });
-    this.privilegedTrie.register('no debug arp', 'Disable ARP debug', () => {
-      const svc = (this.d() as unknown as { getDebugService?: () => { disable: (c: string) => string } }).getDebugService?.();
-      return svc ? svc.disable('ip.arp') : 'ARP packet debugging is off';
-    });
-    this.privilegedTrie.register('debug domain', 'Debug DNS name resolution', () => {
-      const svc = (this.d() as unknown as {
-        getDebugService?: () => { enable: (c: 'ip.domain') => string };
-      }).getDebugService?.();
-      return svc ? svc.enable('ip.domain') : 'Domain Name System debugging is on';
-    });
-    // `undebug X` est REECRIT en `no debug X` par le repartiteur, donc
-    // `undebug domain` ne pouvait aboutir qu'une fois `no debug domain`
-    // enregistre : la commande existait, sa negation non, et l'aide
-    // proposait pourtant `domain` sous `undebug`.
-    const arreterDebugDomain = () => {
-      const svc = (this.d() as unknown as {
-        getDebugService?: () => { disable: (c: 'ip.domain') => string };
-      }).getDebugService?.();
-      return svc ? svc.disable('ip.domain') : '';
-    };
-    this.privilegedTrie.register('undebug domain', 'Stop DNS debugging', arreterDebugDomain);
-    this.privilegedTrie.register('no debug domain', 'Stop DNS debugging', arreterDebugDomain);
-    // `debug dhcp` etait offert par `debug ?` et n'existait pas. Il vise
-    // la meme categorie que `debug ip dhcp server` — c'est la que le
-    // service publie deja les changements d'etat du CLIENT DHCP
-    // (`dhcp.client.state-changed`), donc en creer une seconde ferait
-    // deux interrupteurs pour un seul flux.
-    const debugDhcp = (actif: boolean) => () => {
-      const svc = (this.d() as unknown as {
-        getDebugService?: () => {
-          enable: (c: 'ip.dhcp.server') => string;
-          disable: (c: 'ip.dhcp.server') => string;
-        };
-      }).getDebugService?.();
-      if (!svc) return '';
-      return actif ? svc.enable('ip.dhcp.server') : svc.disable('ip.dhcp.server');
-    };
-    this.privilegedTrie.register('debug dhcp', 'Debug DHCP', debugDhcp(true));
-    this.privilegedTrie.register('no debug dhcp', 'Stop DHCP debugging', debugDhcp(false));
-    this.privilegedTrie.registerGreedy('debug ip', 'Enable IP debug', (args) => {
-      const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.domain' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim', scope?: string, detail?: boolean) => string } };
-      const svc = dev.getDebugService?.();
-      if (!svc) return 'IP debugging is on';
-      if (sub === 'packet') return svc.enable('ip.packet');
-      if (sub.startsWith('packet ')) {
-        const detail = args.some((a) => /^detail$/i.test(a));
-        const aclName = args.slice(1).find((a) => !/^detail$/i.test(a));
-        if (!aclName) return svc.enable('ip.packet', undefined, detail);
-        svc.enable('ip.packet', aclName, detail);
-        return `IP packet debugging is on for access list ${aclName}${detail ? ' (detailed)' : ''}`;
-      }
-      if (sub === 'icmp') return svc.enable('ip.icmp');
-      if (sub === 'domain') return svc.enable('ip.domain');
-      if (sub === 'tcp' || sub.startsWith('tcp ')) {
-        const reste = args.slice(1).filter(a => !/^transactions$/i.test(a));
-        const acl = reste[0];
-        svc.enable('ip.tcp', acl);
-        return acl
-          ? `TCP special event debugging is on for access list ${acl}`
-          : 'TCP special event debugging is on';
-      }
-      if (sub === 'udp' || sub.startsWith('udp ')) {
-        const acl = args.slice(1)[0];
-        svc.enable('ip.udp', acl);
-        return acl
-          ? `UDP packet debugging is on for access list ${acl}`
-          : 'UDP packet debugging is on';
-      }
-      if (sub === 'nat') return svc.enable('ip.nat');
-      if (sub === 'arp') return svc.enable('ip.arp');
-      if (sub === 'routing') return svc.enable('ip.routing');
-      if (sub.startsWith('dhcp server')) return svc.enable('ip.dhcp.server');
-      if (sub === 'ssh') return svc.enable('ip.ssh');
-      if (sub === 'rip') return svc.enable('ip.rip');
-      if (sub === 'eigrp') return svc.enable('ip.eigrp');
-      if (sub === 'bgp') return svc.enable('ip.bgp');
-      if (sub === 'nhrp') return svc.enable('ip.nhrp');
-      if (sub === 'pim') return svc.enable('ip.pim');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    this.privilegedTrie.registerGreedy('no debug ip', 'Disable IP debug', (args) => {
-      const sub = args.join(' ').toLowerCase();
-      const dev = this.d() as unknown as { getDebugService?: () => { disable: (c: 'ip.icmp' | 'ip.packet' | 'ip.tcp' | 'ip.udp' | 'ip.nat' | 'ip.arp' | 'ip.routing' | 'ip.dhcp.server' | 'ip.ssh' | 'ip.domain' | 'ip.rip' | 'ip.eigrp' | 'ip.bgp' | 'ip.nhrp' | 'ip.pim') => string } };
-      const svc = dev.getDebugService?.();
-      if (!svc) return 'IP debugging is off';
-      if (sub === 'packet' || sub.startsWith('packet ')) return svc.disable('ip.packet');
-      if (sub === 'icmp') return svc.disable('ip.icmp');
-      if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
-      if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
-      if (sub === 'nat') return svc.disable('ip.nat');
-      if (sub === 'arp') return svc.disable('ip.arp');
-      if (sub === 'routing') return svc.disable('ip.routing');
-      if (sub.startsWith('dhcp server')) return svc.disable('ip.dhcp.server');
-      if (sub === 'ssh') return svc.disable('ip.ssh');
-      if (sub === 'rip') return svc.disable('ip.rip');
-      if (sub === 'eigrp') return svc.disable('ip.eigrp');
-      if (sub === 'bgp') return svc.disable('ip.bgp');
-      if (sub === 'nhrp') return svc.disable('ip.nhrp');
-      if (sub === 'pim') return svc.disable('ip.pim');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    const debugSvc = () => {
-      const dev = this.d() as unknown as { getDebugService?: () => { enable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string; disable: (c: 'standby' | 'ip.eigrp' | 'ip.bgp') => string } };
-      return dev.getDebugService?.();
-    };
-    this.privilegedTrie.registerGreedy('debug standby', 'Debug HSRP', (_args) =>
-      debugSvc()?.enable('standby') ?? '');
-    this.privilegedTrie.registerGreedy('debug eigrp', 'Debug EIGRP', (args) => {
-      const svc = debugSvc();
-      const sujet = (args[0] ?? '').toLowerCase();
-      const annonce = EIGRP_DEBUG_SUBJECTS[sujet];
-      if (sujet && !annonce) throw new CliInvalidInput({ token: args[0] });
-      svc?.enable('ip.eigrp');
-      return annonce ?? 'EIGRP debugging is on';
-    });
-    this.privilegedTrie.registerGreedy('no debug standby', 'Disable HSRP debug', (_args) =>
-      debugSvc()?.disable('standby') ?? '');
-    this.privilegedTrie.registerGreedy('no debug eigrp', 'Disable EIGRP debug', (_args) =>
-      debugSvc()?.disable('ip.eigrp') ?? '');
-    const genericDebug = () => (this.d() as unknown as {
-      getDebugService?: () => {
-        enable(c: string, scope?: string): string;
-        disable(c: string): string;
-        addCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
-        removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
-        clearConditions(): void;
-      };
-    }).getDebugService?.();
-    this.privilegedTrie.registerGreedy('debug interface', 'Debug interface state changes', (args) => {
-      const svc = genericDebug();
-      const iface = args.join(' ').trim();
-      if (!svc) return 'Interface debugging is on';
-      return svc.enable('interface', iface || undefined);
-    });
-    this.privilegedTrie.registerGreedy('no debug interface', 'Disable interface debug', () =>
-      genericDebug()?.disable('interface') ?? '');
-    this.privilegedTrie.registerGreedy('debug lldp', 'Debug LLDP', () => genericDebug()?.enable('lldp.packets') ?? 'LLDP packets debugging is on');
-    this.privilegedTrie.registerGreedy('debug cdp', 'Debug CDP', () => genericDebug()?.enable('cdp.packets') ?? 'CDP packets debugging is on');
-    this.privilegedTrie.registerGreedy('no debug lldp', 'Disable LLDP debug', () => genericDebug()?.disable('lldp.packets') ?? '');
-    this.privilegedTrie.registerGreedy('no debug cdp', 'Disable CDP debug', () => genericDebug()?.disable('cdp.packets') ?? '');
-    // `nd`, `icmp` and `packet` are three DIFFERENT IOS commands. Taking
-    // the sub-keyword for an access-list name answered `debugging is on
-    // for access list nd` — a filter on a list nobody declared.
-    const ipv6DebugCategory = (mot: string): 'ipv6.packet' | 'ipv6.nd' | 'ipv6.icmp' | null => {
-      if (mot === '' || mot.startsWith('packet')) return 'ipv6.packet';
-      if ('nd'.startsWith(mot) || mot === 'nd') return 'ipv6.nd';
-      if ('icmp'.startsWith(mot)) return 'ipv6.icmp';
-      return null;
-    };
-    this.privilegedTrie.registerGreedy('debug ipv6', 'Debug IPv6', (args) => {
-      const svc = genericDebug();
-      const mots = args.map((a) => a.toLowerCase());
-      const category = ipv6DebugCategory(mots[0] ?? '');
-      if (!category) throw new CliInvalidInput({ token: args[0] });
-      if (!svc) return 'IPv6 packet debugging is on';
-      // Only `packet` takes an access list; the other two filter nothing.
-      // The keyword matches case-insensitively, the LIST NAME does not —
-      // an ACL name is case-sensitive on IOS, and lowercasing it made
-      // the filter name a list nobody declared.
-      const acl = category === 'ipv6.packet' ? args.slice(1).join(' ') : '';
-      return acl ? svc.enable(category, acl) : svc.enable(category);
-    });
-    this.privilegedTrie.addCompletionKeywords('debug ipv6', [
-      { keyword: 'icmp', description: 'ICMPv6 messages' },
-      { keyword: 'nd', description: 'ICMPv6 Neighbor Discovery' },
-      { keyword: 'packet', description: 'IPv6 packets' },
-    ]);
-    this.privilegedTrie.registerGreedy('no debug ipv6', 'Disable IPv6 debug', (args) => {
-      const svc = genericDebug();
-      const category = ipv6DebugCategory((args[0] ?? '').toLowerCase());
-      if (!category) throw new CliInvalidInput({ token: args[0] });
-      return svc?.disable(category) ?? '';
-    });
-    this.privilegedTrie.registerGreedy('debug condition', 'Restrict every debug to a condition', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const kind = (args[0] ?? '').toLowerCase();
-      const value = args.slice(1).join(' ').trim();
-      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
-      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
-      if (!value) return CISCO_ERRORS.INCOMPLETE;
-      const resolved = kind === 'interface'
-        ? (this.resolveInterfaceNameForDebug(value) ?? value)
-        : value;
-      return svc.addCondition(kind, resolved);
-    });
-    this.privilegedTrie.registerGreedy('no debug condition', 'Remove a debug condition', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const kind = (args[0] ?? '').toLowerCase();
-      if (kind === 'all') { svc.clearConditions(); return 'All conditions have been removed'; }
-      // `no debug condition <n>` : la forme par NUMÉRO, celle qu'IOS
-      // annonce lui-même en posant la condition (`Condition 1 set`) et
-      // la seule qui soit praticable — retirer par valeur oblige à
-      // retaper l'ACL ou l'interface au caractère près.
-      if (/^\d+$/.test(kind)) return svc.removeConditionById(parseInt(kind, 10));
-      const value = args.slice(1).join(' ').trim();
-      if (kind === '') return CISCO_ERRORS.INCOMPLETE;
-      if (kind !== 'interface' && kind !== 'vrf' && kind !== 'ip') return CISCO_ERRORS.INVALID_INPUT;
-      if (!value) return CISCO_ERRORS.INCOMPLETE;
-      const resolved = kind === 'interface'
-        ? (this.resolveInterfaceNameForDebug(value) ?? value)
-        : value;
-      return svc.removeCondition(kind, resolved);
-    });
-    const SIMPLE_DEBUG: ReadonlyArray<readonly [string, string, string]> = [
-      ['debug vrrp', 'vrrp', 'Debug VRRP'],
-      ['debug glbp', 'glbp', 'Debug GLBP'],
-      ['debug radius', 'radius', 'Debug RADIUS'],
-      ['debug tacacs', 'tacacs', 'Debug TACACS+'],
-    ];
-    for (const [path, category, description] of SIMPLE_DEBUG) {
-      this.privilegedTrie.registerGreedy(path, description, () =>
-        genericDebug()?.enable(category) ?? '');
-      this.privilegedTrie.registerGreedy(`no ${path}`, `Disable ${description}`, () =>
-        genericDebug()?.disable(category) ?? '');
-    }
-    this.privilegedTrie.registerGreedy('debug ntp', 'Debug NTP', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const sub = (args[0] ?? 'events').toLowerCase();
-      if ('events'.startsWith(sub)) return svc.enable('ntp.events');
-      if ('packets'.startsWith(sub)) return svc.enable('ntp.packets');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    this.privilegedTrie.registerGreedy('no debug ntp', 'Disable NTP debug', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const sub = (args[0] ?? 'events').toLowerCase();
-      if ('events'.startsWith(sub)) return svc.disable('ntp.events');
-      if ('packets'.startsWith(sub)) return svc.disable('ntp.packets');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    this.privilegedTrie.registerGreedy('debug aaa', 'Debug AAA', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const sub = (args[0] ?? '').toLowerCase();
-      if (sub && 'authentication'.startsWith(sub)) return svc.enable('aaa.authentication');
-      if (sub && 'authorization'.startsWith(sub)) return svc.enable('aaa.authorization');
-      if (sub && 'accounting'.startsWith(sub)) return svc.enable('aaa.accounting');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    this.privilegedTrie.registerGreedy('no debug aaa', 'Disable AAA debug', (args) => {
-      const svc = genericDebug();
-      if (!svc) return '';
-      const sub = (args[0] ?? '').toLowerCase();
-      if (sub && 'authentication'.startsWith(sub)) return svc.disable('aaa.authentication');
-      if (sub && 'authorization'.startsWith(sub)) return svc.disable('aaa.authorization');
-      if (sub && 'accounting'.startsWith(sub)) return svc.disable('aaa.accounting');
-      throw new CliInvalidInput({ token: args[0] });
-    });
-    if (this.hasVxlanHardware()) {
-      this.privilegedTrie.registerGreedy('debug vxlan', 'Debug VXLAN', () => genericDebug()?.enable('vxlan') ?? 'VXLAN debugging is on');
-      this.privilegedTrie.registerGreedy('no debug vxlan', 'Disable VXLAN debug', () => genericDebug()?.disable('vxlan') ?? '');
-    }
-    if (this.hasSwitchingHardware()) {
-      this.privilegedTrie.registerGreedy('debug port-security', 'Debug port security', () => genericDebug()?.enable('port-security') ?? 'Port security debugging is on');
-      this.privilegedTrie.registerGreedy('no debug port-security', 'Disable port-security debug', () => genericDebug()?.disable('port-security') ?? '');
-    }
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
     // `clear ip eigrp neighbors` : la commande promet de rejeter les
     // adjacences, elle doit donc vraiment les rejeter — sinon elle serait

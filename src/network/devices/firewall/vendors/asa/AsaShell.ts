@@ -14,10 +14,14 @@ import {
   ASA_UNIMPLEMENTED_REASONS,
   asaNotImplemented,
   asaSecurityLevelNotice,
+  asaAmbiguous,
 } from './AsaMessages';
 import { CLIStateMachine } from '../../../shells/CLIStateMachine';
 import { buildPrompt } from '../../../shells/PromptBuilder';
-import { AsaSocle, mergeHelpLines } from '@/cli/vendors/asa/asaSocle';
+import {
+  AsaSocle, mergeHelpLines, continuationOf, stemOf,
+} from '@/cli/vendors/asa/asaSocle';
+import { resolveAbbreviation, expandsTo } from '@/cli/vendors/asa/asaAbbreviation';
 import {
   ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL,
 } from '@/cli/vendors/asa/asaModes';
@@ -256,24 +260,38 @@ export class AsaShell implements AsaShowHost {
     }
   }
 
-  private lines(input: string): Array<{ keyword: string; description: string }> {
+  private legacyLines(input: string): Array<{ keyword: string; description: string }> {
     const prefix = input.trimStart();
-    const legacy = this.vocabulary()
+    return this.vocabulary()
       .filter(word => word.startsWith(prefix))
       .map(word => ({ keyword: word, description: ASA_COMMAND_HELP[word] ?? '' }));
+  }
 
-    return mergeHelpLines(
-      legacy, this.socle().suggestions(input, this.mode, 'QUESTION_MARK'));
+  private socleLines(input: string): Array<{ keyword: string; description: string }> {
+    const stem = stemOf(input);
+    return this.socle().suggestions(input, this.mode, 'QUESTION_MARK')
+      .map(line => ({
+        keyword: `${stem} ${line.keyword}`.trim(), description: line.description,
+      }));
   }
 
   completions(input: string): readonly string[] {
     const prefix = input.trimStart();
-    return this.lines(input).map(l => l.keyword).filter(word => word !== prefix);
+    return mergeHelpLines(this.legacyLines(input), this.socleLines(input))
+      .map(l => l.keyword).filter(word => word !== prefix);
   }
 
   help(inputBeforeQuestion: string): readonly string[] {
-    return this.lines(inputBeforeQuestion)
-      .map(l => `  ${l.keyword.padEnd(24)}${l.description}`.trimEnd());
+    const seen = new Map<string, string>();
+    for (const line of mergeHelpLines(
+      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion))) {
+      const suite = continuationOf(line.keyword, inputBeforeQuestion);
+      if (suite === null) continue;
+      if (!seen.has(suite) || seen.get(suite) === '') seen.set(suite, line.description);
+    }
+    const large = Math.max(0, ...[...seen.keys()].map(k => k.length));
+    return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([suite, description]) => `  ${suite.padEnd(large + 2)}${description}`.trimEnd());
   }
 
   private vocabulary(): readonly string[] {
@@ -328,14 +346,30 @@ export class AsaShell implements AsaShowHost {
     return Object.keys(ASA_UNIMPLEMENTED_REASONS).find(key => line.startsWith(key));
   }
 
+  private navigationVocabulary(): string[] {
+    const words = ['exit'];
+    if (this.mode !== 'exec' && this.mode !== 'privileged') words.push('end');
+    if (this.mode === 'exec') words.push('enable');
+    if (this.mode === 'privileged') words.push('disable', 'configure');
+    if (this.mode === 'config' || this.mode === 'config-if') words.push('interface');
+    if (this.mode === 'config' || this.mode === 'config-object') words.push('object');
+    if (this.mode === 'config' || this.mode === 'config-group') words.push('object-group');
+    return words;
+  }
+
   private navigate(tokens: string[], negated: boolean): string | null {
-    const [head, ...rest] = tokens;
+    const [typed, ...rest] = tokens;
+    const vocabulary = this.navigationVocabulary();
+    const match = resolveAbbreviation(typed, vocabulary);
+    if (match.kind === 'ambiguous') return asaAmbiguous(typed ?? '');
+    if (match.kind === 'none') return null;
+    const head = match.keyword;
 
-    if (head === 'enable' && this.mode === 'exec') { this.mode = 'privileged'; return ''; }
-    if (head === 'disable' && this.mode === 'privileged') { this.mode = 'exec'; return ''; }
+    if (head === 'enable') { this.mode = 'privileged'; return ''; }
+    if (head === 'disable') { this.mode = 'exec'; return ''; }
 
-    if (head === 'configure' && rest[0] === 'terminal') {
-      if (this.mode !== 'privileged') return ASA_INVALID_INPUT;
+    if (head === 'configure') {
+      if (!expandsTo(rest[0], 'terminal', ['terminal'])) return ASA_INVALID_INPUT;
       this.mode = 'config';
       return '';
     }
@@ -353,22 +387,19 @@ export class AsaShell implements AsaShowHost {
     }
 
     if (head === 'interface' && !negated) {
-      if (this.mode !== 'config' && this.mode !== 'config-if') return ASA_INVALID_INPUT;
       if (!this.fw.getPort(rest[0])) return ASA_INVALID_INPUT;
       this.currentInterface = rest[0];
       this.mode = 'config-if';
       return '';
     }
 
-    if (head === 'object' && rest[0] === 'network' && !negated) {
-      if (this.mode !== 'config' && this.mode !== 'config-object') return ASA_INVALID_INPUT;
+    if (head === 'object' && expandsTo(rest[0], 'network', ['network']) && !negated) {
       this.currentObject = rest[1];
       this.mode = 'config-object';
       return '';
     }
 
-    if (head === 'object-group' && rest[0] === 'network' && !negated) {
-      if (this.mode !== 'config' && this.mode !== 'config-group') return ASA_INVALID_INPUT;
+    if (head === 'object-group' && expandsTo(rest[0], 'network', ['network']) && !negated) {
       this.currentGroup = rest[1];
       this.fw.getObjectStore().addAddressGroup(rest[1], []);
       this.mode = 'config-group';

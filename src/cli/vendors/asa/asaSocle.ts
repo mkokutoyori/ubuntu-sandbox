@@ -50,14 +50,33 @@ export class AsaSocle {
   }
 
   suggestions(input: string, mode: string, trigger: CompletionTrigger): HelpLine[] {
-    const stem = stemOf(input);
     return complete(this.table, input, this.session(mode), trigger).suggestions
       .filter(suggestion => !suggestion.isArgument)
       .map(suggestion => ({
-        keyword: `${stem} ${suggestion.value}`.trim(),
+        keyword: suggestion.value,
         description: suggestion.description,
       }));
   }
+}
+
+/**
+ * Ce que l'aide doit montrer d'une ligne deja connue.
+ *
+ * L'aide d'une CLI Cisco decrit ce qui vient APRES le curseur : ayant
+ * tape `show `, on veut lire `conn`, pas `show conn`. Le vocabulaire
+ * herite de l'ASA etant une liste de LIGNES, il fallait en extraire le
+ * mot suivant — sans quoi l'aide proposait de retaper ce qui etait deja
+ * ecrit, ce que le routeur du meme depot ne fait pas.
+ */
+export function continuationOf(line: string, input: string): string | null {
+  const typed = input.trimStart();
+  const consumed = typed.endsWith(' ') || typed === ''
+    ? typed.trim().split(/\s+/).filter(Boolean).length
+    : typed.split(/\s+/).filter(Boolean).length - 1;
+
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length <= consumed) return null;
+  return words[consumed];
 }
 
 /**
