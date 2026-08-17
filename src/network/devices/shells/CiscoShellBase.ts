@@ -3947,9 +3947,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const brut = input.trim();
       const surMotPartiel = brut.length > 0 && !input.endsWith(' ');
       const base = surMotPartiel ? brut.slice(0, brut.lastIndexOf(' ') + 1).trim() : brut;
-      const completions = trie.getCompletions(input)
-        .filter((c) => filtreNiveau(`${base} ${c.keyword}`.trim()));
-      for (const c of this.socleSuggestions(input, 'QUESTION_MARK', device)) {
+      // Le socle passe EN PREMIER parce que sa description est DECLAREE
+      // sur la commande, la ou celle du trie peut n'etre qu'un repli
+      // generique laisse par un noeud d'aide : apres migration de
+      // `ntp server`, le trie gardait un noeud decrivant ses arguments,
+      // dont l'intitule etait le mot « Server » tire de la table des
+      // descriptions par defaut — l'aide perdait « Configure NTP server ».
+      const completions = this.socleSuggestions(input, 'QUESTION_MARK', device);
+      for (const c of trie.getCompletions(input)
+        .filter((c) => filtreNiveau(`${base} ${c.keyword}`.trim()))) {
         if (!completions.some((x) => x.keyword.toLowerCase() === c.keyword.toLowerCase())) {
           completions.push(c);
         }
