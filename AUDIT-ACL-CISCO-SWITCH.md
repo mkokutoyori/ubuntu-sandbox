@@ -161,6 +161,54 @@ propre au shell du commutateur.
 
 ---
 
+## 6. Note de coordination — l'aide des familles migrées
+
+*Ceci ne concerne pas les ACL. C'est une mesure faite en vérifiant que ce
+lot ne gênait pas la refonte du système de commandes, et elle est
+consignée ici parce qu'elle est utile à l'autre chantier.*
+
+**Rectification d'un message précédent.** Le commit `feda61d7` signalait
+que `cliHelp('tunnel …')` rendait `% Invalid input detected`. Ce n'est
+**plus vrai** depuis les commits `6b250582` / `90a6e4c4` : l'aide répond.
+Elle répond avec le **mauvais type**, ce qui est un constat différent et
+plus précis.
+
+**Mesuré** (`probe-cli-arguments-types.test.ts`, 2 cas rouges) :
+
+| Frappe | Attendu (IOS) | Rendu |
+|---|---|---|
+| `cdp timer ?` | `<5-254>` | `<0-4294967295>` |
+| `tunnel destination ?` | `A.B.C.D` | `LINE` |
+
+**Cause, en deux mécanismes distincts.** `ArgumentType` (`src/cli/ArgumentTypes.ts`)
+compte neuf membres, chacun avec **un placeholder fixe** — `INT` vaut
+toujours `<0-4294967295>`, `REST` et `LINE` valent `LINE`. Il n'existe ni
+entier borné ni placeholder par argument. Dès lors :
+
+1. `tunnelFamily.ts:27` déclare `{ name: 'value', type: 'REST' }` pour
+   tous les mots-clés de la famille — d'où `LINE` sur `tunnel destination`.
+2. `legacyFamily` (`CiscoShellBase.ts:2954`, soit les 106 chemins de
+   `debug`/`clear`/`cdp`/`lldp`) réduit **toute la queue** à un unique
+   argument `REST`. Chaque famille migrée par cette voie perd donc la
+   totalité de son typage d'argument.
+
+C'est exactement la dégradation pour laquelle `ntp` a été retiré de la
+migration — mais elle est en vigueur sur les familles déjà migrées.
+
+**Deux pistes, la première coûte un mot.** `tunnel destination` peut
+prendre `type: 'IP_ADDR'`, qui existe déjà et dont le placeholder est
+`A.B.C.D` : aucun changement de moteur. `cdp timer` demande un entier
+borné — un `placeholder?: string` optionnel sur `ArgumentSpec` (ou
+`min`/`max` sur `INT`), avec `ARGUMENT_TYPES[type].placeholder` comme
+défaut, suffirait et resterait additif.
+
+**Rien de tout cela n'est modifié ici** : `src/cli/**` appartient à l'autre
+chantier. Vérifié au passage — les 106 chemins migrés du commutateur
+(`cdp`, `clear`, `debug`, `lldp`, `no`) ne contiennent **aucun chemin
+d'ACL**, et `migration-guard.test.ts` passe.
+
+---
+
 ## Annexe — Reproduction
 
 ```bash
