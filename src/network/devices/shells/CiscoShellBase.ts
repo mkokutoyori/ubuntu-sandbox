@@ -1136,10 +1136,37 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return !juge;
   }
 
+  /**
+   * Cette commande EXISTE-t-elle dans cet espace de modes ?
+   *
+   * La question doit etre posee aux DEUX moteurs. Elle ne l'etait qu'aux
+   * arbres, si bien qu'une commande migree vers le socle devenait
+   * inconnue de `privilege <mode> level N <commande>` : la delegation
+   * etait refusee, et l'operateur voyait une commande qu'il venait
+   * d'executer traitee comme inexistante par la commande qui sert a la
+   * deleguer. Une famille d'EXEC ne pouvait donc pas migrer sans
+   * emporter ses delegations avec elle.
+   */
   private commandeConnueDansMode(scope: AuthScope, commande: string): boolean {
     for (const trie of this.arbresDe(scope)) {
       const r = trie.match(commande);
       if (r.status === 'ok' || r.status === 'incomplete') return true;
+    }
+    return this.socleConnaitDansPortee(scope, commande);
+  }
+
+  private socleConnaitDansPortee(scope: AuthScope, commande: string): boolean {
+    const table = this.socleTable();
+    if (!table) return false;
+
+    const mots = commande.trim().toLowerCase().split(/\s+/);
+    for (const spec of table.specs()) {
+      const chemin = spec.path
+        .filter((step): step is string => typeof step === 'string')
+        .map(mot => mot.toLowerCase());
+      if (chemin.length < mots.length) continue;
+      if (!mots.every((mot, rang) => chemin[rang].startsWith(mot))) continue;
+      if (spec.modes.some(mode => scopeForMode(mode) === scope)) return true;
     }
     return false;
   }
@@ -3626,6 +3653,104 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return '';
   }
 
+
+  protected clearSpecs(): CommandSpec[] {
+    // Les deux modes d'EXEC, parce que c'est l'AUTORISATION qui tranche :
+    // `privilege exec level 7 clear counters` descend la commande a un
+    // utilisateur qui reste en EXEC utilisateur, invite `>` comprise.
+    const exec = ['user', 'privileged'];
+
+    return sequenceFamily([
+      {
+        path: ['clear', 'counters'], description: 'Clear interface counters',
+        modes: exec, negatable: false,
+        args: [{
+          name: 'interface', type: 'INTERFACE', optional: true,
+          description: 'Interface to clear',
+        }],
+      },
+      {
+        path: ['clear', 'logging'], description: 'Clear the syslog buffer',
+        modes: exec, negatable: false,
+      },
+      {
+        path: ['clear', 'ip', 'arp'], description: 'Clear the ARP cache',
+        modes: exec, negatable: false,
+        args: [{
+          name: 'adresse', type: 'IP_ADDR', optional: true,
+          description: 'Address to remove from the cache',
+        }],
+      },
+      {
+        path: ['clear', 'ip', 'route'], description: 'Delete route table entries',
+        modes: exec, negatable: false,
+        tail: { name: 'cible', type: 'REST', optional: true, description: 'Route to clear' },
+      },
+      {
+        path: ['clear', 'ip', 'bgp'], description: 'Reset BGP sessions',
+        modes: exec, negatable: false,
+        tail: { name: 'cible', type: 'REST', optional: true, description: 'Neighbour to reset' },
+      },
+      {
+        path: ['clear', 'ip', 'eigrp'], description: 'Clear EIGRP neighbours or counters',
+        modes: exec, negatable: false,
+        args: [{
+          name: 'sujet', type: 'ENUM', optional: true, description: 'What to clear',
+          values: [
+            { keyword: 'neighbors', description: 'Drop the adjacencies' },
+            { keyword: 'traffic', description: 'Reset the traffic counters' },
+          ],
+        }],
+      },
+    ], () => ({ apply: (words) => this.applyClear(words) }));
+  }
+
+  private applyClear(words: string[]): string {
+    const [tete, ...reste] = words;
+
+    if (tete === 'counters') {
+      const ports = this.d()._getPortsInternal();
+      const cible = reste[0];
+      let compte = 0;
+      for (const [nom, port] of ports) {
+        if (cible && nom.toLowerCase() !== cible.toLowerCase()) continue;
+        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
+        compte++;
+      }
+      if (compte === 0) return '% No matching interface';
+      return `Clear "show interface" counters on ${cible ? `interface ${cible}` : 'all interfaces'} [confirm]`;
+    }
+
+    if (tete === 'logging') {
+      this.attachLoggingToDevice(this.d());
+      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
+      return '';
+    }
+
+    const dev = this.d() as unknown as {
+      _clearArpEntry?: (ip?: string) => number;
+      arpTable?: Map<string, unknown>;
+      _clearDynamicRoutes?: () => void;
+      getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
+    };
+
+    if (reste[0] === 'arp') {
+      if (reste[1]) {
+        return (dev._clearArpEntry?.(reste[1]) ?? 0) === 0 ? '% No matching ARP entry' : '';
+      }
+      dev.arpTable?.clear();
+      return '';
+    }
+    if (reste[0] === 'route') { dev._clearDynamicRoutes?.(); return ''; }
+    if (reste[0] === 'eigrp') {
+      const moteur = dev.getEIGRPEngine?.();
+      if (!moteur) return '';
+      if ((reste[1] ?? 'neighbors').toLowerCase() === 'traffic') moteur.resetTraffic?.();
+      else moteur.clearNeighbors?.();
+    }
+    return '';
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -3635,6 +3760,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
       ...this.loginSpecs(),
+      ...this.clearSpecs(),
     ];
   }
 
@@ -5605,61 +5731,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         return `Reload scheduled for ${args[1]}`;
       }
       return this.performImmediateReload();
-    });
-    // La famille `clear` reste au TRIE, et le blocage est nomme plutot
-    // que reessaye une cinquieme fois : les delegations
-    // `privilege exec level N <commande>` sont resolues CONTRE LE TRIE.
-    // Une commande d'EXEC migree perd donc sa delegation — mesure faite
-    // sur `privilege exec level 7 clear counters`, refuse a un
-    // utilisateur de niveau 7 qui y a pourtant droit. Les deux portes
-    // consultees se contredisent sur ce cas : `laSessionVoit` rend VRAI
-    // pour toute commande que le trie ignore (donc trop permissif une
-    // fois la commande migree), et `authorize` rend `absent` parce que
-    // la regle ne resout plus. Migrer une famille d'EXEC demande
-    // d'abord que la delegation cesse de dependre du trie.
-    this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', () => '');
-    this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
-      const dev = this.d() as unknown as {
-        getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
-      };
-      const engine = dev.getEIGRPEngine?.();
-      if (!engine) return '';
-      if ((args[0] ?? 'neighbors').toLowerCase() === 'traffic') engine.resetTraffic?.();
-      else engine.clearNeighbors?.();
-      return '';
-    });
-    this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
-      this.attachLoggingToDevice(this.d());
-      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
-      return '';
-    });
-    this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
-      const ports = this.d()._getPortsInternal();
-      const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
-      let count = 0;
-      for (const [name, port] of ports) {
-        if (target && name.toLowerCase() !== target.toLowerCase()) continue;
-        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
-        count++;
-      }
-      if (count === 0) return '% No matching interface';
-      return `Clear "show interface" counters on ${target ? `interface ${target}` : 'all interfaces'} [confirm]`;
-    });
-    this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
-      const dev = this.d() as unknown as {
-        _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown>;
-      };
-      if (args[0]) {
-        const removed = dev._clearArpEntry?.(args[0]) ?? 0;
-        return removed === 0 ? '% No matching ARP entry' : '';
-      }
-      dev.arpTable?.clear();
-      return '';
-    });
-    this.privilegedTrie.registerGreedy('clear ip route', 'Clear routes (dynamic)', () => {
-      const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
-      dev._clearDynamicRoutes?.();
-      return '';
     });
     registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
     // `send` doit EXISTER dans le trie meme si tout son interet est dans

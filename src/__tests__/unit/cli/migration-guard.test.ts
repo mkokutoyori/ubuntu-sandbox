@@ -102,7 +102,7 @@ describe('ce que la migration rapporte, mesure', () => {
 });
 
 describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
-  it('la famille `clear` a ete RENDUE au trie — trois regressions pour six chemins', () => {
+  it('`clear logging persistent` survit a la migration de son PARENT', () => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
     const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
     const shell = router.getShell() as unknown as {
@@ -110,10 +110,8 @@ describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
       migratedPaths(): readonly string[];
     };
 
-    expect(shell.migratedPaths()).not.toContain('clear logging');
-    for (const chemin of ['clear logging', 'clear logging persistent', 'clear counters']) {
-      expect(shell.enumerateAllExecutablePaths(), chemin).toContain(chemin);
-    }
+    expect(shell.migratedPaths()).toContain('clear logging');
+    expect(shell.enumerateAllExecutablePaths()).toContain('clear logging persistent');
   });
 
   it('le noeud parent perd son ACTION, pas ses enfants', () => {
@@ -173,23 +171,31 @@ describe('un descendant n\'est pas un CONCURRENT', () => {
   });
 });
 
-describe('une commande d\'EXEC migree perdrait sa DELEGATION', () => {
-  async function commutateurDelegue() {
+describe('une commande d\'EXEC migree garde sa DELEGATION', () => {
+  function commutateur() {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
-    const device = createDevice('switch-cisco', 0, 0) as unknown as {
+    return createDevice('switch-cisco', 0, 0) as unknown as {
       executeCommand(c: string): Promise<string>;
       loginAs(user: string, secret: string): Promise<boolean>;
     };
+  }
+
+  it('la regle est ACCEPTEE pour une commande du socle', async () => {
+    const device = commutateur();
+    await device.executeCommand('enable');
+    await device.executeCommand('configure terminal');
+
+    expect(await device.executeCommand('privilege exec level 7 clear counters'))
+      .not.toContain('Invalid input');
+  });
+
+  it('et un utilisateur du niveau delegue l\'execute', async () => {
+    const device = commutateur();
     await device.executeCommand('enable');
     await device.executeCommand('configure terminal');
     await device.executeCommand('username noc privilege 7 secret Noc@2026');
     await device.executeCommand('privilege exec level 7 clear counters');
     await device.executeCommand('end');
-    return device;
-  }
-
-  it('`clear counters` delegue au niveau 7 repond a un utilisateur de niveau 7', async () => {
-    const device = await commutateurDelegue();
 
     await device.loginAs('noc', 'Noc@2026');
 
@@ -197,24 +203,26 @@ describe('une commande d\'EXEC migree perdrait sa DELEGATION', () => {
     expect(await device.executeCommand('clear counters')).not.toContain('Invalid input');
   });
 
-  it('et reste refuse SANS la delegation — le temoin', async () => {
-    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
-    const device = createDevice('switch-cisco', 0, 0) as unknown as {
-      executeCommand(c: string): Promise<string>;
-    };
-
-    expect(await device.executeCommand('clear counters')).toContain('Invalid input');
+  it('sans la delegation, elle reste refusee — le temoin', async () => {
+    expect(await commutateur().executeCommand('clear counters')).toContain('Invalid input');
   });
 
-  it('la famille `clear` est donc RESTEE au trie', () => {
+  it('une commande qu\'AUCUN des deux moteurs ne porte reste refusee', async () => {
+    const device = commutateur();
+    await device.executeCommand('enable');
+    await device.executeCommand('configure terminal');
+
+    expect(await device.executeCommand('privilege exec level 7 zorglub'))
+      .toContain('Invalid input');
+  });
+
+  it('la famille `clear` a donc pu MIGRER', () => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
     const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
-    const shell = router.getShell() as unknown as {
-      enumerateAllExecutablePaths(): string[];
-      migratedPaths(): readonly string[];
-    };
+    const shell = router.getShell() as unknown as { migratedPaths(): readonly string[] };
 
-    expect(shell.migratedPaths()).not.toContain('clear counters');
-    expect(shell.enumerateAllExecutablePaths()).toContain('clear counters');
+    for (const chemin of ['clear counters', 'clear logging', 'clear ip arp']) {
+      expect(shell.migratedPaths(), chemin).toContain(chemin);
+    }
   });
 });
