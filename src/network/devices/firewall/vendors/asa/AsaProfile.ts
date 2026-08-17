@@ -3,6 +3,7 @@ import type { ZoneType } from '../../model/SecurityZone';
 import type { FirewallProfile } from '../../FirewallProfile';
 
 export const ASA_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind',
   'ingress-zone',
   'session-lookup',
   'tcp-state-check',
@@ -20,7 +21,7 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
   osName: 'asa',
   defaultVersion: '9.16(1)',
 
-  pipeline: ASA_PIPELINE,
+  pipeline: Object.freeze({ nat: ASA_PIPELINE, transparent: ASA_PIPELINE }),
   natOrder: Object.freeze({
     destinationNatBeforePolicy: true,
     sourceNatBeforePolicy: false,

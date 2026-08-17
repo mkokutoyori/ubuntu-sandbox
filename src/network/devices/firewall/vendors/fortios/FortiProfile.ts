@@ -3,6 +3,8 @@ import type { ZoneType } from '../../model/SecurityZone';
 import type { FirewallProfile } from '../../FirewallProfile';
 
 export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind',
+  'switch-bridge',
   'ingress-zone',
   'session-lookup',
   'tcp-state-check',
@@ -15,13 +17,28 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'session-install',
 ]);
 
+export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind',
+  'switch-bridge',
+  'ingress-zone',
+  'session-lookup',
+  'tcp-state-check',
+  'mac-lookup',
+  'egress-zone',
+  'policy-lookup',
+  'session-install',
+]);
+
 export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   vendor: 'fortios',
   displayName: 'Fortinet FortiGate',
   osName: 'fortios',
   defaultVersion: '7.4.4',
 
-  pipeline: FORTIOS_PIPELINE,
+  pipeline: Object.freeze({
+    nat: FORTIOS_PIPELINE,
+    transparent: FORTIOS_TRANSPARENT_PIPELINE,
+  }),
   natOrder: Object.freeze({
     destinationNatBeforePolicy: true,
     sourceNatBeforePolicy: false,

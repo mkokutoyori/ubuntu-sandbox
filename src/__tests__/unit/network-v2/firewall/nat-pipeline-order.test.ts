@@ -75,10 +75,12 @@ function lab(natOrder: Partial<FirewallServices['natOrder']> = {}) {
     interfaceAddress: (iface) => interfaces.get(iface)?.ip,
   });
 
+  const vdom = {
+    name: 'root', zones, routes, objects, policy, natPolicy, nat,
+    evaluator: new PolicyEvaluator({ objects }), sessions,
+  };
   const services: FirewallServices = {
-    zones, interfaces, routes, objects, policy, natPolicy, nat,
-    evaluator: new PolicyEvaluator({ objects }),
-    sessions, now: () => 1_000_000,
+    interfaces, vdomOf: () => vdom, now: () => 1_000_000,
     natOrder: {
       policySeesPreNatSource: true,
       policySeesPreNatDestination: true,

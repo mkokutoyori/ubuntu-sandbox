@@ -70,7 +70,7 @@ describe('Firewall.simulate — la trace vient du VRAI pipeline', () => {
     const result = fw.simulate({ ingressPort: inside, ...FLOW });
     const traversed = result.trace.map(entry => entry.stage);
 
-    const expected = fw.getProfile().pipeline.filter(name => traversed.includes(name));
+    const expected = fw.getProfile().pipeline.nat.filter(name => traversed.includes(name));
     expect(traversed.filter(name => expected.includes(name))).toEqual(expected);
   });
 

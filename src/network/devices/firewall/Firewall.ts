@@ -38,7 +38,11 @@ import {
   type SimulationRequest,
   type SimulationResult,
 } from './pipeline/Simulation';
-import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
+import {
+  GENERIC_PROFILE, type DeploymentMode, type FirewallProfile,
+} from './FirewallProfile';
+import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
+import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
 import { PacketCapture } from './diag/PacketCapture';
@@ -69,6 +73,11 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
+export interface BridgedFrame {
+  readonly srcMAC: MACAddress;
+  readonly dstMAC: MACAddress;
+}
+
 export interface ProxyArpEntry {
   readonly from: string;
   readonly to?: string;
@@ -77,34 +86,27 @@ export interface ProxyArpEntry {
 
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
-  private readonly zones = new ZoneTable();
-  private readonly objects = new ObjectStore();
-  private readonly policy = new PolicyStore();
-  private readonly natPolicy = new NatPolicyStore();
-  private readonly pools = new IpPoolAllocator();
-  private readonly policyRoutes = new PolicyRouteTable();
+  private readonly vdoms: VdomRegistry;
+  private readonly switchGroups = new Map<string, ReadonlySet<string>>();
+  private readonly macTable = new Map<string, string>();
   private readonly proxyArp = new Map<string, readonly ProxyArpEntry[]>();
-  private readonly nat: FirewallNatEngine;
-  private readonly sessions: SessionTable;
-  private readonly routes: RouteTable;
   private readonly arp: ArpService;
-  private readonly evaluator: PolicyEvaluator;
-  private readonly pipeline: FirewallPipeline;
+  private readonly registry = new PipelineStageRegistry();
+  private readonly pipelines = new Map<string, FirewallPipeline>();
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
   private readonly syslog: SyslogAgent;
   private readonly boundPolicyInterfaces = new Set<string>();
-  private readonly schedules = new ScheduleStore();
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
-  private readonly logStore = new FirewallLogStore();
   private readonly capture = new PacketCapture();
   private readonly traces: PacketContext[] = [];
   private sessionObserver?: (session: FirewallSession, reason: SessionCloseReason) => void;
   private trafficLogger?: TrafficLogger;
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
-  private centralNat = false;
+  private multiVdom = false;
+  private activeVdom = ROOT_VDOM;
 
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
@@ -123,17 +125,29 @@ export class Firewall extends Equipment {
 
     const now = options.now ?? (() => Date.now());
     this.syslog = new SyslogAgent(this, () => this.getBus());
-    this.sessions = new SessionTable({
+    this.vdoms = new VdomRegistry({
       now,
-      onClosed: (session, reason) => {
+      policyKeyedBy: profile.policyKeyedBy,
+      implicitPolicy: profile.implicitPolicy,
+      applicationShift: profile.applicationShift,
+      maxGroupNesting: profile.maxGroupNesting,
+      connectedRoutes: (vdom) => this.interfaces.connectedRoutes()
+        .filter(route => this.vdoms.vdomOfInterface(route.iface) === vdom),
+      interfaceForDestination: (vdom, address) => {
+        const iface = this.interfaces.interfaceForDestination(address);
+        return iface !== undefined && this.vdoms.vdomOfInterface(iface) === vdom
+          ? iface
+          : undefined;
+      },
+      isInterfaceUp: (iface) => this.interfaces.isUp(iface),
+      interfaceAddress: (iface) => this.interfaces.get(iface)?.ip,
+      interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
+      securityLevelOf: (vdom, zone) => this.vdoms.require(vdom).zones.getZone(zone)?.securityLevel,
+      sameSecurityInterAllowed: () => this.sameSecurityInter,
+      onSessionClosed: (_vdom, session, reason) => {
         this.trafficLogger?.onSessionClosed(session, reason);
         this.sessionObserver?.(session, reason);
       },
-    });
-    this.routes = new RouteTable({
-      connectedRoutes: () => this.interfaces.connectedRoutes(),
-      interfaceForDestination: (address) => this.interfaces.interfaceForDestination(address),
-      isInterfaceUp: (iface) => this.interfaces.isUp(iface),
     });
     this.arp = new ArpService({
       interfaces: this.interfaces,
@@ -142,37 +156,13 @@ export class Firewall extends Equipment {
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
       proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
     });
-    this.evaluator = new PolicyEvaluator({
-      objects: this.objects,
-      policyKeyedBy: profile.policyKeyedBy,
-      implicitPolicy: profile.implicitPolicy,
-      applicationShift: profile.applicationShift,
-      securityLevelOf: (zone) => this.zones.getZone(zone)?.securityLevel,
-      interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
-      scheduleActive: (name, at) => this.schedules.activeAt(name, at),
-      sameSecurityInterAllowed: () => this.sameSecurityInter,
-      now,
-    });
-    this.nat = new FirewallNatEngine({
-      objects: this.objects,
-      policy: this.natPolicy,
-      pools: this.pools,
-      interfaceAddress: (iface) => this.interfaces.get(iface)?.ip,
-    });
 
     this.services = {
-      zones: this.zones,
       interfaces: this.interfaces,
-      routes: this.routes,
-      objects: this.objects,
-      policy: this.policy,
-      evaluator: this.evaluator,
-      sessions: this.sessions,
-      natPolicy: this.natPolicy,
-      nat: this.nat,
-      policyRoutes: this.policyRoutes,
-      centralNat: () => this.centralNat,
+      vdomOf: (iface) => vdomServices(this.vdoms.contextOfInterface(iface)),
       policyKeyedBy: profile.policyKeyedBy,
+      bridgedWith: (ingress, egress) => this.sameSwitchInterface(ingress, egress),
+      macLookup: (destination, ingress) => this.lookupMac(destination, ingress),
       natOrder: {
         natIsPolicyField: profile.natIsPolicyField,
         policySeesPreNatSource: profile.natOrder.policySeesPreNatSource,
@@ -181,10 +171,22 @@ export class Firewall extends Equipment {
       now,
     };
 
-    const registry = new PipelineStageRegistry();
-    for (const stage of createCoreStages(this.services)) registry.register(stage);
-    this.pipeline = FirewallPipeline.fromStageNames(
-      profile.pipeline, registry, `firewall.${this.id}`);
+    for (const stage of createCoreStages(this.services)) this.registry.register(stage);
+  }
+
+  private pipelineFor(mode: DeploymentMode): FirewallPipeline {
+    const cached = this.pipelines.get(mode);
+    if (cached) return cached;
+
+    const built = FirewallPipeline.fromStageNames(
+      this.profile.pipeline[mode], this.registry, `firewall.${this.id}.${mode}`);
+    this.pipelines.set(mode, built);
+    return built;
+  }
+
+  private processPipeline(context: PacketContext) {
+    const vdom = this.vdoms.contextOfInterface(context.ingressPort);
+    return this.pipelineFor(vdom.settings.opmode).process(context);
   }
 
   configureInterface(name: string, config: InterfaceConfig): void {
@@ -209,7 +211,7 @@ export class Firewall extends Equipment {
       simulated: true,
     });
 
-    const outcome = this.pipeline.process(context);
+    const outcome = this.processPipeline(context);
     return summariseSimulation(context, outcome.verdict === 'accepted');
   }
 
@@ -242,19 +244,19 @@ export class Firewall extends Equipment {
 
   clearTranslations(): number {
     let cleared = 0;
-    for (const session of this.sessions.view().all()) {
-      if (session.translation === undefined) continue;
-      this.nat.release(session.translation);
-      this.sessions.close(session, 'clear');
-      cleared++;
+    for (const vdom of this.vdoms.all()) {
+      for (const session of vdom.sessions.view().all()) {
+        if (session.translation === undefined) continue;
+        vdom.nat.release(session.translation);
+        vdom.sessions.close(session, 'clear');
+        cleared++;
+      }
     }
     return cleared;
   }
 
-  getScheduleStore(): ScheduleStore { return this.schedules; }
-
-  setSchedule(schedule: ScheduleObject): boolean {
-    return this.schedules.upsert(schedule);
+  setSchedule(schedule: ScheduleObject, vdom?: string): boolean {
+    return this.getVdom(vdom).schedules.upsert(schedule);
   }
 
   setAllowedAccess(iface: string, services: readonly string[]): void {
@@ -271,29 +273,102 @@ export class Firewall extends Equipment {
     return [...(this.allowedAccess.get(iface) ?? [])];
   }
 
+  getVdomRegistry(): VdomRegistry { return this.vdoms; }
+
+  getVdom(name?: string): VdomContext {
+    return this.vdoms.require(name ?? this.activeVdom);
+  }
+
+  setActiveVdom(name: string): void {
+    this.vdoms.require(name);
+    this.activeVdom = name;
+  }
+
+  activeVdomName(): string { return this.activeVdom; }
+
+  setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
+  multiVdomEnabled(): boolean { return this.multiVdom; }
+
+  assignInterfaceToVdom(iface: string, vdom: string): void {
+    this.vdoms.assignInterface(iface, vdom);
+  }
+
+  vdomOfInterface(iface: string): string {
+    return this.vdoms.vdomOfInterface(iface);
+  }
+
+  setSwitchInterface(name: string, members: readonly string[]): void {
+    this.switchGroups.set(name, new Set(members));
+  }
+
+  removeSwitchInterface(name: string): boolean {
+    return this.switchGroups.delete(name);
+  }
+
+  switchInterfaces(): readonly string[] {
+    return Object.freeze([...this.switchGroups.keys()]);
+  }
+
+  switchMembers(name: string): readonly string[] {
+    return Object.freeze([...(this.switchGroups.get(name) ?? [])]);
+  }
+
+  sameSwitchInterface(left: string, right: string): boolean {
+    for (const members of this.switchGroups.values()) {
+      if (members.has(left) && members.has(right)) return true;
+    }
+    return false;
+  }
+
+  setOperationMode(mode: DeploymentMode, vdom?: string): void {
+    this.getVdom(vdom).settings.opmode = mode;
+  }
+
+  operationMode(vdom?: string): DeploymentMode {
+    return this.getVdom(vdom).settings.opmode;
+  }
+
+  setManagementAddress(ip: string, mask: string, gateway?: string, vdom?: string): void {
+    const settings = this.getVdom(vdom).settings;
+    settings.manageIP = ip;
+    settings.manageMask = mask;
+    settings.gateway = gateway;
+  }
+
+  managementAddress(vdom?: string): string | undefined {
+    return this.getVdom(vdom).settings.manageIP;
+  }
+
   getInterfaceTable(): InterfaceTable { return this.interfaces; }
-  getZoneTable(): ZoneTable { return this.zones; }
-  getObjectStore(): ObjectStore { return this.objects; }
-  getPolicyStore(): PolicyStore { return this.policy; }
-  getSessionTable(): SessionTable { return this.sessions; }
-  getRouteTable(): RouteTable { return this.routes; }
+  getZoneTable(vdom?: string): ZoneTable { return this.getVdom(vdom).zones; }
+  getObjectStore(vdom?: string): ObjectStore { return this.getVdom(vdom).objects; }
+  getPolicyStore(vdom?: string): PolicyStore { return this.getVdom(vdom).policy; }
+  getSessionTable(vdom?: string): SessionTable { return this.getVdom(vdom).sessions; }
+  getRouteTable(vdom?: string): RouteTable { return this.getVdom(vdom).routes; }
   getArpService(): ArpService { return this.arp; }
-  getNatPolicy(): NatPolicyStore { return this.natPolicy; }
-  getNatEngine(): FirewallNatEngine { return this.nat; }
-  getIpPools(): IpPoolAllocator { return this.pools; }
-  getPolicyRoutes(): PolicyRouteTable { return this.policyRoutes; }
+  getNatPolicy(vdom?: string): NatPolicyStore { return this.getVdom(vdom).natPolicy; }
+  getNatEngine(vdom?: string): FirewallNatEngine { return this.getVdom(vdom).nat; }
+  getIpPools(vdom?: string): IpPoolAllocator { return this.getVdom(vdom).pools; }
+  getPolicyRoutes(vdom?: string): PolicyRouteTable { return this.getVdom(vdom).policyRoutes; }
+  getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
+  getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
   getProfile(): FirewallProfile { return this.profile; }
 
-  setCentralNat(enabled: boolean): void { this.centralNat = enabled; }
-  centralNatEnabled(): boolean { return this.centralNat; }
+  setCentralNat(enabled: boolean, vdom?: string): void {
+    this.getVdom(vdom).settings.centralNat = enabled;
+  }
 
-  setIpPool(pool: IpPool): void {
-    this.pools.upsert(pool);
+  centralNatEnabled(vdom?: string): boolean {
+    return this.getVdom(vdom).settings.centralNat;
+  }
+
+  setIpPool(pool: IpPool, vdom?: string): void {
+    this.getVdom(vdom).pools.upsert(pool);
     this.publishPoolProxyArp(pool);
   }
 
-  removeIpPool(name: string): void {
-    this.pools.remove(name);
+  removeIpPool(name: string, vdom?: string): void {
+    this.getVdom(vdom).pools.remove(name);
     this.proxyArp.delete(proxyOwnerKey('ippool', name));
   }
 
@@ -352,9 +427,10 @@ export class Firewall extends Equipment {
   sameSecurityTrafficEnabled(kind: 'inter-interface' | 'intra-interface'): boolean {
     return kind === 'inter-interface' ? this.sameSecurityInter : this.sameSecurityIntra;
   }
-  getPipeline(): FirewallPipeline { return this.pipeline; }
+  getPipeline(mode: DeploymentMode = 'nat'): FirewallPipeline {
+    return this.pipelineFor(mode);
+  }
 
-  getLogStore(): FirewallLogStore { return this.logStore; }
   getPacketCapture(): PacketCapture { return this.capture; }
 
   onSessionClosed(
@@ -379,13 +455,20 @@ export class Firewall extends Equipment {
     this.capture.record({
       at: this.services.now(), iface: portName, direction: 'in', frame,
     });
+    this.macTable.set(frame.srcMAC.toString(), portName);
+
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleArpFrame(portName, frame.payload as ARPPacket);
       return;
     }
     if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleIpv4Frame(portName, frame.payload as IPv4Packet);
+      this.handleIpv4Frame(portName, frame.payload as IPv4Packet, frame);
     }
+  }
+
+  private lookupMac(destination: MACAddress, ingress: string): string | undefined {
+    const learned = this.macTable.get(destination.toString());
+    return learned === undefined || learned === ingress ? undefined : learned;
   }
 
   private handleArpFrame(portName: string, packet: ARPPacket): void {
@@ -400,29 +483,39 @@ export class Firewall extends Equipment {
     if (answer) this.emitArp(answer, portName);
   }
 
-  private handleIpv4Frame(portName: string, packet: IPv4Packet): void {
+  private handleIpv4Frame(
+    portName: string, packet: IPv4Packet, frame?: EthernetFrame,
+  ): void {
     if (!packet || packet.type !== 'ipv4') return;
 
-    const belongsToSession = this.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
-    if (!belongsToSession
-      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined
+    const vdom = this.vdoms.contextOfInterface(portName);
+    const belongsToSession = vdom.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
+    if (!belongsToSession && this.destinedToSelf(portName, vdom, packet)
       && !this.destinationIsTranslated(portName, packet)) {
       this.deliverLocally(portName, packet);
       return;
     }
 
     const context = makePacketContext({
-      ingressPort: portName, packet, arrivedAt: this.services.now(),
+      ingressPort: portName,
+      packet,
+      arrivedAt: this.services.now(),
+      ingressFrameDestination: frame?.dstMAC,
     });
-    const outcome = this.pipeline.process(context);
+    const outcome = this.processPipeline(context);
     this.rememberTrace(context);
     this.logPipelineOutcome(context, outcome.verdict === 'accepted');
     if (outcome.verdict !== 'accepted') return;
 
     const forwarded = outcome.payload ?? context;
     if (forwarded.egressPort === undefined) return;
-    this.forward(
-      forwarded.egressPort, forwarded.packet as IPv4Packet, forwarded.policyRouteGateway);
+
+    const bridged = frame !== undefined
+      && (forwarded.bridged === true || vdom.settings.opmode === 'transparent')
+      ? { srcMAC: frame.srcMAC, dstMAC: frame.dstMAC }
+      : undefined;
+    this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet,
+      forwarded.policyRouteGateway, bridged);
   }
 
   private rememberTrace(context: PacketContext): void {
@@ -430,8 +523,18 @@ export class Firewall extends Equipment {
     while (this.traces.length > TRACE_HISTORY) this.traces.shift();
   }
 
+  private destinedToSelf(
+    portName: string, vdom: VdomContext, packet: IPv4Packet,
+  ): boolean {
+    const destination = packet.destinationIP.toString();
+    if (vdom.settings.opmode === 'transparent') {
+      return vdom.settings.manageIP === destination;
+    }
+    return this.interfaces.owningInterface(destination) !== undefined;
+  }
+
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
-    const facts = logFactsOf(context, this.zones);
+    const facts = logFactsOf(context, this.vdoms.contextOfInterface(context.ingressPort).zones);
 
     if (!accepted) {
       this.logFirewallEvent('policy-deny', {
@@ -450,8 +553,9 @@ export class Firewall extends Equipment {
   }
 
   private destinationIsTranslated(portName: string, packet: IPv4Packet): boolean {
-    return this.nat.hasInboundRule(packet, {
-      ingressZone: this.zones.zoneOf(portName) ?? portName,
+    const vdom = this.vdoms.contextOfInterface(portName);
+    return vdom.nat.hasInboundRule(packet, {
+      ingressZone: vdom.zones.zoneOf(portName) ?? portName,
       egressZone: '',
       ingressInterface: portName,
       egressInterface: '',
@@ -477,16 +581,19 @@ export class Firewall extends Equipment {
     this.forward(portName, reply);
   }
 
-  private forward(egressPort: string, packet: IPv4Packet, gateway?: string): void {
+  private forward(
+    egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
+  ): void {
     const destination = packet.destinationIP.toString();
-    const resolved = this.routes.resolveNextHop(destination);
+    const vdom = this.vdoms.contextOfInterface(egressPort);
+    const resolved = vdom.routes.resolveNextHop(destination);
     const nextHop = gateway ?? resolved?.nextHop ?? destination;
 
-    const mac = this.resolveNextHopMac(nextHop, egressPort);
+    const mac = bridged?.dstMAC ?? this.resolveNextHopMac(nextHop, egressPort);
     if (!mac) return;
 
     const frame: EthernetFrame = {
-      srcMAC: this.portMac(egressPort),
+      srcMAC: bridged?.srcMAC ?? this.portMac(egressPort),
       dstMAC: mac,
       etherType: ETHERTYPE_IPV4,
       payload: packet,
@@ -524,6 +631,23 @@ export class Firewall extends Equipment {
 
 export function proxyOwnerKey(kind: string, name: string): string {
   return `${kind}:${name}`;
+}
+
+function vdomServices(context: VdomContext): VdomServices {
+  return {
+    name: context.name,
+    zones: context.zones,
+    routes: context.routes,
+    objects: context.objects,
+    policy: context.policy,
+    evaluator: context.evaluator,
+    sessions: context.sessions,
+    natPolicy: context.natPolicy,
+    nat: context.nat,
+    policyRoutes: context.policyRoutes,
+    centralNat: context.settings.centralNat,
+    opmode: context.settings.opmode,
+  };
 }
 
 function logFactsOf(context: PacketContext, zones: ZoneTable): FirewallLogFacts {

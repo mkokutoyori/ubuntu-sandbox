@@ -1,4 +1,4 @@
-import type { IPv4Packet, IPv6Packet } from '../../../core/types';
+import type { IPv4Packet, IPv6Packet, MACAddress } from '../../../core/types';
 import type { FirewallSession } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
 import type { SecurityRule } from '../model/SecurityRule';
@@ -57,6 +57,9 @@ export interface PacketContext {
   egressPort?: string;
   ingressZone?: string;
   egressZone?: string;
+  vdom?: string;
+  bridged?: boolean;
+  readonly ingressFrameDestination?: MACAddress;
 
   packet: FirewallPacket;
   readonly originalPacket: FirewallPacket;
@@ -86,6 +89,7 @@ export interface PacketContextInit {
   ingressZone?: string;
   isFirstPacket?: boolean;
   simulated?: boolean;
+  ingressFrameDestination?: MACAddress;
 }
 
 let nextContextId = 1;
@@ -100,6 +104,7 @@ export function makePacketContext(init: PacketContextInit): PacketContext {
     originalPacket: init.packet,
     isFirstPacket: init.isFirstPacket ?? true,
     simulated: init.simulated ?? false,
+    ingressFrameDestination: init.ingressFrameDestination,
     trace: [],
   };
 }

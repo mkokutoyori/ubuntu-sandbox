@@ -1,6 +1,8 @@
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
 import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
-import { IP_PROTO_TCP, type IPv4Packet, type TCPPacket } from '../../../../core/types';
+import {
+  IP_PROTO_TCP, type IPv4Packet, type MACAddress, type TCPPacket,
+} from '../../../../core/types';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
 import type { ObjectStore } from '../../model/ObjectStore';
@@ -17,23 +19,35 @@ import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
 
-export interface FirewallServices {
+export interface VdomServices {
+  name: string;
   zones: ZoneTable;
-  interfaces: InterfaceTable;
   routes: RouteTable;
   objects: ObjectStore;
   policy: PolicyStore;
   evaluator: PolicyEvaluator;
   sessions: SessionTable;
-  now: () => number;
   natPolicy?: NatPolicyStore;
   nat?: FirewallNatEngine;
+  policyRoutes?: PolicyRouteTable;
+  centralNat?: boolean;
+  opmode?: 'nat' | 'transparent';
+}
+
+export interface FirewallServices {
+  interfaces: InterfaceTable;
+  now: () => number;
+  vdomOf: (iface: string) => VdomServices;
   natOrder?: NatOrder;
   policyKeyedBy?: 'zone' | 'interface';
-  policyRoutes?: PolicyRouteTable;
-  centralNat?: () => boolean;
+  bridgedWith?: (ingress: string, egress: string) => boolean;
+  macLookup?: (destination: MACAddress, ingress: string) => string | undefined;
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
+}
+
+function vdom(services: FirewallServices, context: PacketContext): VdomServices {
+  return services.vdomOf(context.ingressPort);
 }
 
 export interface NatOrder {
@@ -73,11 +87,14 @@ function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
 
 export function createCoreStages(services: FirewallServices): PipelineStage[] {
   return [
+    vdomBindStage(services),
+    switchBridgeStage(services),
     ingressZoneStage(services),
     sessionLookupStage(services),
     tcpStateCheckStage(services),
     natDestinationStage(services),
     policyRouteStage(services),
+    macLookupStage(services),
     routeLookupStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
@@ -86,8 +103,61 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
   ];
 }
 
+function vdomBindStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'vdom-bind',
+    apply(context) {
+      context.vdom = vdom(services, context).name;
+      return proceed(context, 'vdom-bind', context.vdom);
+    },
+  };
+}
+
+function switchBridgeStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'switch-bridge',
+    apply(context) {
+      const bridged = services.bridgedWith;
+      if (!bridged) return proceed(context, 'switch-bridge', 'no-switch-interface');
+
+      const egress = services.interfaces.names()
+        .find(iface => iface !== context.ingressPort && bridged(context.ingressPort, iface));
+      if (egress === undefined) return proceed(context, 'switch-bridge', 'not-bridged');
+
+      context.egressPort = egress;
+      context.bridged = true;
+      context.trace.push({ stage: 'switch-bridge', verdict: 'bridged', detail: egress });
+      context.verdict = Object.freeze({
+        action: 'accept' as const, reason: 'policy-deny' as VerdictReason,
+        stage: 'switch-bridge',
+      });
+      return { kind: 'accept', payload: context };
+    },
+  };
+}
+
+function macLookupStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'mac-lookup',
+    apply(context) {
+      if (vdom(services, context).opmode !== 'transparent') {
+        return proceed(context, 'mac-lookup', 'not-transparent');
+      }
+
+      const frame = context.ingressFrameDestination;
+      const egress = frame === undefined
+        ? undefined
+        : services.macLookup?.(frame, context.ingressPort);
+      if (egress === undefined) return proceed(context, 'mac-lookup', 'flood');
+
+      context.egressPort = egress;
+      return proceed(context, 'mac-lookup', egress);
+    },
+  };
+}
+
 function zoneNameFor(services: FirewallServices, iface: string): string | undefined {
-  const zone = services.zones.zoneOf(iface);
+  const zone = services.vdomOf(iface).zones.zoneOf(iface);
   if (zone !== undefined) return zone;
   return services.policyKeyedBy === 'interface' ? iface : undefined;
 }
@@ -112,7 +182,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'session-lookup', 'not-ipv4');
 
-      const found = services.sessions.lookup(flowKeyFromPacket(packet));
+      const found = vdom(services, context).sessions.lookup(flowKeyFromPacket(packet));
       if (!found) return proceed(context, 'session-lookup', 'miss');
 
       context.session = found.session;
@@ -138,21 +208,21 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
         }
         found.session.tcpState = machine.state;
         if (machine.state === 'closed') {
-          services.sessions.close(found.session, flags.rst ? 'tcp-rst' : 'tcp-fin');
+          vdom(services, context).sessions.close(found.session, flags.rst ? 'tcp-rst' : 'tcp-fin');
           context.trace.push({ stage: 'session-lookup', verdict: 'closed' });
           context.verdict = Object.freeze({
             action: 'accept' as const, reason: 'policy-deny' as VerdictReason, stage: 'session-lookup',
           });
           return { kind: 'accept', payload: context };
         }
-        services.sessions.setTimeout(found.session, machine.timeoutSec);
+        vdom(services, context).sessions.setTimeout(found.session, machine.timeoutSec);
       }
 
-      services.sessions.recordTraffic(found.session, found.direction, packet.totalLength);
+      vdom(services, context).sessions.recordTraffic(found.session, found.direction, packet.totalLength);
 
       const translation = found.session.translation;
-      if (translation && services.nat) {
-        context.packet = services.nat.reapply(packet, translation, found.direction);
+      if (translation && vdom(services, context).nat) {
+        context.packet = vdom(services, context).nat.reapply(packet, translation, found.direction);
       }
 
       context.trace.push({ stage: 'session-lookup', verdict: 'fastpath' });
@@ -192,8 +262,8 @@ function applyPolicyNat(
   }
 
   const pool = context.matchedPolicy.natPool;
-  if (pool !== undefined && services.nat) {
-    const outcome = services.nat.allocateFromPool(packet, {
+  if (pool !== undefined && vdom(services, context).nat) {
+    const outcome = vdom(services, context).nat.allocateFromPool(packet, {
       pool,
       fixedPort: context.matchedPolicy.fixedPort === true,
       simulated: context.simulated,
@@ -246,9 +316,9 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
     name: 'nat-destination',
     apply(context) {
       const packet = ipv4(context);
-      if (!packet || !services.nat) return proceed(context, 'nat-destination', 'no-nat');
+      if (!packet || !vdom(services, context).nat) return proceed(context, 'nat-destination', 'no-nat');
 
-      const outcome = services.nat.translateInbound(packet, natContextOf(context));
+      const outcome = vdom(services, context).nat.translateInbound(packet, natContextOf(context));
       if (!outcome.translation) return proceed(context, 'nat-destination', 'no-match');
 
       context.packet = outcome.packet;
@@ -264,13 +334,13 @@ function natSourceStage(services: FirewallServices): PipelineStage {
     name: 'nat-source',
     apply(context) {
       const packet = ipv4(context);
-      if (!packet || !services.nat) return proceed(context, 'nat-source', 'no-nat');
+      if (!packet || !vdom(services, context).nat) return proceed(context, 'nat-source', 'no-nat');
 
-      if (services.natOrder?.natIsPolicyField && services.centralNat?.() !== true) {
+      if (services.natOrder?.natIsPolicyField && vdom(services, context).centralNat !== true) {
         return applyPolicyNat(services, context, packet);
       }
 
-      const outcome = services.nat.translateOutbound(packet, natContextOf(context));
+      const outcome = vdom(services, context).nat.translateOutbound(packet, natContextOf(context));
       if (outcome.failure === 'nat-port-exhausted') {
         return deny(context, 'nat-source', 'nat-port-exhausted');
       }
@@ -306,7 +376,7 @@ function policyRouteStage(services: FirewallServices): PipelineStage {
     name: 'policy-route',
     apply(context) {
       const packet = ipv4(context);
-      const table = services.policyRoutes;
+      const table = vdom(services, context).policyRoutes;
       if (!packet || !table || table.size() === 0) {
         return proceed(context, 'policy-route', 'no-policy-route');
       }
@@ -350,7 +420,7 @@ function routeLookupStage(services: FirewallServices): PipelineStage {
         return proceed(context, 'route-lookup', 'policy-routed');
       }
 
-      const resolved = services.routes.resolveNextHop(packet.destinationIP.toString());
+      const resolved = vdom(services, context).routes.resolveNextHop(packet.destinationIP.toString());
       if (!resolved) return deny(context, 'route-lookup', 'no-route');
 
       context.egressPort = resolved.iface;
@@ -381,8 +451,8 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'policy-lookup', 'not-ipv4');
 
-      const decision = services.evaluator.evaluate(
-        services.policy.ordered(),
+      const decision = vdom(services, context).evaluator.evaluate(
+        vdom(services, context).policy.ordered(),
         {
           ingressZone: context.ingressZone ?? '',
           egressZone: context.egressZone ?? '',
@@ -424,11 +494,11 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
       if (!context.isFirstPacket) return proceed(context, 'session-install', 'already');
       if (context.simulated) return proceed(context, 'session-install', 'simulated');
 
-      if (!services.sessions.hasRoom()) {
+      if (!vdom(services, context).sessions.hasRoom()) {
         return deny(context, 'session-install', 'session-table-full');
       }
 
-      const session = services.sessions.install(flowKeyFromPacket(packet), {
+      const session = vdom(services, context).sessions.install(flowKeyFromPacket(packet), {
         ingressZone: context.ingressZone ?? '',
         egressZone: context.egressZone ?? '',
         ingressInterface: context.ingressPort,
@@ -445,7 +515,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         session.natRuleId = translation.natRuleId;
       }
 
-      services.sessions.recordTraffic(session, 'c2s', packet.totalLength);
+      vdom(services, context).sessions.recordTraffic(session, 'c2s', packet.totalLength);
       context.session = session;
       context.sessionDirection = 'c2s';
       return proceed(context, 'session-install', String(session.id));
@@ -457,9 +527,9 @@ function installDiscard(
   services: FirewallServices, context: PacketContext, packet: IPv4Packet,
 ): void {
   if (context.simulated) return;
-  if (!context.isFirstPacket || !services.sessions.hasRoom()) return;
+  if (!context.isFirstPacket || !vdom(services, context).sessions.hasRoom()) return;
 
-  services.sessions.installDiscard(flowKeyFromPacket(packet), {
+  vdom(services, context).sessions.installDiscard(flowKeyFromPacket(packet), {
     ingressZone: context.ingressZone ?? '',
     egressZone: context.egressZone ?? '',
     ingressInterface: context.ingressPort,

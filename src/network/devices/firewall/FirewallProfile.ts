@@ -10,6 +10,8 @@ export type ImplicitPolicyMode = 'deny-all' | 'security-level';
 export type SelfTrafficMode =
   | 'zone-host-inbound' | 'local-in-policy' | 'control-plane-acl' | 'management-profile';
 export type DeploymentScope = 'device' | 'context' | 'interface';
+export type DeploymentMode = 'nat' | 'transparent';
+export type PipelineByMode = Readonly<Record<DeploymentMode, readonly string[]>>;
 
 export interface NatPolicyOrder {
   readonly destinationNatBeforePolicy: boolean;
@@ -35,7 +37,7 @@ export interface FirewallProfile {
   readonly osName: string;
   readonly defaultVersion: string;
 
-  readonly pipeline: readonly string[];
+  readonly pipeline: PipelineByMode;
   readonly natOrder: NatPolicyOrder;
   readonly applicationShift: boolean;
   readonly selfTrafficHandling: SelfTrafficMode;
@@ -69,10 +71,20 @@ export interface FirewallProfile {
 }
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
-  'ingress-zone', 'session-lookup', 'tcp-state-check', 'nat-destination',
-  'policy-route', 'route-lookup', 'egress-zone', 'policy-lookup', 'nat-source',
-  'session-install',
+  'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
+  'nat-destination', 'policy-route', 'route-lookup', 'egress-zone', 'policy-lookup',
+  'nat-source', 'session-install',
 ]);
+
+export const GENERIC_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind', 'switch-bridge', 'ingress-zone', 'session-lookup', 'tcp-state-check',
+  'mac-lookup', 'egress-zone', 'policy-lookup', 'session-install',
+]);
+
+export const GENERIC_PIPELINE_BY_MODE: PipelineByMode = Object.freeze({
+  nat: GENERIC_PIPELINE,
+  transparent: GENERIC_TRANSPARENT_PIPELINE,
+});
 
 export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   vendor: 'generic',
@@ -80,7 +92,7 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   osName: 'generic',
   defaultVersion: '1.0',
 
-  pipeline: GENERIC_PIPELINE,
+  pipeline: GENERIC_PIPELINE_BY_MODE,
   natOrder: Object.freeze({
     destinationNatBeforePolicy: true,
     sourceNatBeforePolicy: false,

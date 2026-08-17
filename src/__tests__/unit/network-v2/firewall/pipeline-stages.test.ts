@@ -64,15 +64,15 @@ function lab() {
   const sessions = new SessionTable({ now: () => clock });
   const evaluator = new PolicyEvaluator({ objects });
 
+  const vdom = { name: 'root', zones, routes, objects, policy, evaluator, sessions };
   const services: FirewallServices = {
-    zones, interfaces, routes, objects, policy, evaluator, sessions,
-    now: () => clock,
+    interfaces, vdomOf: () => vdom, now: () => clock,
   };
 
   const registry = new PipelineStageRegistry();
   for (const stage of createCoreStages(services)) registry.register(stage);
 
-  return { services, pipeline: FirewallPipeline.fromStageNames(CHAIN, registry), policy, sessions };
+  return { services, zones, routes, pipeline: FirewallPipeline.fromStageNames(CHAIN, registry), policy, sessions };
 }
 
 function flags(set: Partial<TCPFlags>): TCPFlags {
@@ -230,9 +230,9 @@ describe('Etapes — P10, cinq refus distincts', () => {
   });
 
   it('absence de route — vers une destination HORS de tout sous-reseau connecte', () => {
-    const { pipeline, policy, services } = lab();
+    const { pipeline, policy, routes } = lab();
     allowAll(policy);
-    services.routes.clearStatics();
+    routes.clearStatics();
 
     const loin = tcpPacket('192.168.1.10', '8.8.8.8', 54321, 53, flags({ syn: true }));
     const outcome = pipeline.process(ctx('port1', loin));
@@ -260,9 +260,9 @@ describe('Etapes — P10, cinq refus distincts', () => {
   });
 
   it('zone d\'entree indeterminee — interface hors zone', () => {
-    const { pipeline, policy, services } = lab();
+    const { pipeline, policy, zones } = lab();
     allowAll(policy);
-    services.zones.removeInterface('port1');
+    zones.removeInterface('port1');
 
     expect(pipeline.process(ctx('port1', OUT_SYN())).reason).toBe('zone-mismatch');
   });

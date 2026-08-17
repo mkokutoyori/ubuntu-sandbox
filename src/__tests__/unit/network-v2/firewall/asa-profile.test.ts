@@ -91,13 +91,13 @@ describe('ASA_PROFILE — ce que le profil DECLARE', () => {
   });
 
   it('le pipeline place le de-NAT AVANT la recherche de politique', () => {
-    const stages = ASA_PROFILE.pipeline;
+    const stages = ASA_PROFILE.pipeline.nat;
 
     expect(stages.indexOf('nat-destination')).toBeLessThan(stages.indexOf('policy-lookup'));
   });
 
   it('le pipeline place le NAT source APRES la politique', () => {
-    const stages = ASA_PROFILE.pipeline;
+    const stages = ASA_PROFILE.pipeline.nat;
 
     expect(stages.indexOf('policy-lookup')).toBeLessThan(stages.indexOf('nat-source'));
   });
