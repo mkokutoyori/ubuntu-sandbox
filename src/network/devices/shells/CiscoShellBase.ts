@@ -3557,6 +3557,75 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
 
+
+  protected loginSpecs(): CommandSpec[] {
+    return sequenceFamily([
+      {
+        path: ['login', 'block-for'], description: 'Set the login blocking period',
+        args: [{
+          name: 'secondes', type: 'INT', range: [1, 65535],
+          description: 'Duration of the blocking period',
+        }],
+        tail: {
+          name: 'options', type: 'REST', optional: true,
+          description: 'Attempt threshold and observation window',
+          alternatives: [
+            { keyword: 'attempts', description: 'Number of failures that triggers the block' },
+            { keyword: 'within', description: 'Window in which the failures are counted' },
+          ],
+        },
+      },
+      {
+        path: ['login', 'delay'], description: 'Set delay between successive login attempts',
+        args: [{
+          name: 'secondes', type: 'INT', range: [1, 65535],
+          description: 'Delay between successive login attempts',
+        }],
+      },
+      {
+        path: ['login', 'quiet-mode', 'access-class'],
+        description: 'Access class applied during the quiet period',
+        args: [{ name: 'liste', type: 'WORD', description: 'Access list name or number' }],
+      },
+      {
+        path: ['login', 'on-failure', 'log'], description: 'Log every failed login',
+      },
+      {
+        path: ['login', 'on-success', 'log'], description: 'Log every successful login',
+      },
+    ], () => ({ apply: (words) => this.applyLogin(words) }));
+  }
+
+  private applyLogin(words: string[]): string {
+    const securite = getSecurityConfig(this.d() as object);
+    const [tete, ...reste] = words;
+
+    if (tete === 'delay') {
+      securite.login.delay = parseInt(reste[0], 10);
+      return '';
+    }
+    if (tete === 'quiet-mode') {
+      securite.login.quietModeAcl = reste[1];
+      return '';
+    }
+    if (tete === 'on-failure') { securite.login.onFailureLog = true; return ''; }
+    if (tete === 'on-success') { securite.login.onSuccessLog = true; return ''; }
+
+    const secondes = parseInt(reste[0], 10);
+    let tentatives = 0;
+    let fenetre = 0;
+    for (let rang = 1; rang < reste.length; rang++) {
+      if (reste[rang] === 'attempts' && reste[rang + 1]) tentatives = parseInt(reste[rang + 1], 10);
+      if (reste[rang] === 'within' && reste[rang + 1]) fenetre = parseInt(reste[rang + 1], 10);
+    }
+    securite.login.blockFor = { seconds: secondes, attempts: tentatives, withinSeconds: fenetre };
+    const routeur = this.d() as unknown as {
+      _configureLoginBlock?: (s: number, a: number, w: number) => void;
+    };
+    routeur._configureLoginBlock?.(secondes, tentatives, fenetre);
+    return '';
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -3565,6 +3634,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.ntpSpecs(),
       ...this.snmpSpecs(),
       ...this.clockSpecs(),
+      ...this.loginSpecs(),
     ];
   }
 

@@ -441,32 +441,6 @@ export function buildIdentityConfigCommands(
     return '';
   });
 
-  trie.registerGreedy('login block-for', 'Login block', (args) => {
-    const seconds = parseInt(args[0], 10);
-    let attempts = 0, withinSeconds = 0;
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'attempts' && args[i + 1]) attempts = parseInt(args[i + 1], 10);
-      if (args[i] === 'within' && args[i + 1]) withinSeconds = parseInt(args[i + 1], 10);
-    }
-    if (!isNaN(seconds)) sec().login.blockFor = { seconds, attempts, withinSeconds };
-    const r = ctx.r() as unknown as { _configureLoginBlock?: (s: number, a: number, w: number) => void };
-    if (r._configureLoginBlock && !isNaN(seconds)) r._configureLoginBlock(seconds, attempts, withinSeconds);
-    return '';
-  });
-
-  trie.registerGreedy('login quiet-mode access-class', 'Quiet mode ACL', (args) => {
-    if (args[0]) sec().login.quietModeAcl = args[0];
-    return '';
-  });
-
-  trie.registerGreedy('login delay', 'Login delay', (args) => {
-    const d = parseInt(args[0], 10);
-    if (!isNaN(d)) sec().login.delay = d;
-    return '';
-  });
-
-  trie.register('login on-failure log', 'Log failures', () => { sec().login.onFailureLog = true; return ''; });
-  trie.register('login on-success log', 'Log successes', () => { sec().login.onSuccessLog = true; return ''; });
 
 
   trie.registerGreedy('crypto key generate rsa', 'Generate RSA key', (args) => {

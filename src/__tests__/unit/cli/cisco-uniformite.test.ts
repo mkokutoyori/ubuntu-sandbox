@@ -637,3 +637,60 @@ describe('`clock` migre, caret compris', () => {
       .not.toContain('Invalid input');
   });
 });
+
+describe('`login` migre — la famille de durcissement de connexion', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('`login ?` NOMME ses sous-commandes', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('login ');
+
+      for (const mot of ['block-for', 'delay', 'quiet-mode', 'on-failure', 'on-success']) {
+        expect(aide, `${nom} / ${mot}`).toContain(mot);
+      }
+    }
+  });
+
+  it('`login block-for` enchaine ses options', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!
+        .executeCommand('login block-for 120 attempts 3 within 60'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('`login delay` borne sa valeur', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('login delay 5'))
+      .not.toContain('Invalid input');
+    expect(await machines.get('routeur')!.executeCommand('login delay 99999'))
+      .toContain('Invalid input');
+  });
+
+  it('`login on-failure log` se relit dans la configuration', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand('login on-failure log');
+      await d.executeCommand('end');
+    });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('show running-config'), nom)
+        .toContain('login on-failure log');
+    }
+  });
+
+  it('une sous-commande inconnue reste refusee', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('login zorglub'))
+      .toContain('Invalid input');
+  });
+});
