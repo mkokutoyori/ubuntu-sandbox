@@ -776,3 +776,45 @@ describe('les vues d\'EXEC utilisateur gardent leur NIVEAU', () => {
       .toBe(await routeur.executeCommand('show users'));
   });
 });
+
+describe('les vues de plateforme rendent ce que la MACHINE porte', () => {
+  it('`show platform` nomme le chassis de chaque plateforme', async () => {
+    const machines = await toutes();
+
+    expect(await machines.get('routeur')!.executeCommand('show platform'))
+      .toContain('ISR 2911');
+    expect(await machines.get('commutateur')!.executeCommand('show platform'))
+      .toContain('Catalyst 2960');
+  });
+
+  it('`show license` liste PLUS de lignes sur un routeur — le temoin', async () => {
+    const machines = await toutes();
+
+    const routeur = (await machines.get('routeur')!.executeCommand('show license')).split('\n');
+    const commutateur = (await machines.get('commutateur')!
+      .executeCommand('show license')).split('\n');
+
+    expect(routeur.length).toBeGreaterThan(commutateur.length);
+  });
+
+  it('`show license udi` porte le numero de serie de la machine', async () => {
+    const machines = await toutes();
+
+    const udi = await machines.get('routeur')!.executeCommand('show license udi');
+    const version = await machines.get('routeur')!.executeCommand('show version');
+    const serie = /board ID (\S+)/.exec(version)?.[1];
+
+    expect(serie, 'le temoin doit exister, sinon le cas ne prouve rien').toBeTruthy();
+    expect(udi).toContain(serie!);
+  });
+
+  it('`show clock detail` ajoute la SOURCE a `show clock`', async () => {
+    const machines = await toutes();
+    const routeur = machines.get('routeur')!;
+
+    const detail = await routeur.executeCommand('show clock detail');
+
+    expect(detail).toContain('Time source is');
+    expect(detail).not.toBe(await routeur.executeCommand('show clock'));
+  });
+});

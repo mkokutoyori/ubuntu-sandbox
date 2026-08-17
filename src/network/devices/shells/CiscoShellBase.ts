@@ -3813,6 +3813,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       vue(['show', 'license', 'feature'], 'Display technology package licenses', 15,
         () => licenseTable(
           this.getChassisProfile() === 'router-isr2911' ? 'c2900' : 'c2960').join('\n')),
+      vue(['show', 'clock', 'detail'], 'Display clock with source', 1, () => {
+        const ntp = getNtpAgent(this.cs());
+        const source = (ntp?.isSynced() ?? false)
+          ? `NTP (${ntp?.getConfig().refIdentifier})`
+          : 'No time source';
+        return [showClock(this.cs()), `Time source is ${source}`].join('\n');
+      }),
+      vue(['show', 'platform'], 'Display platform information', 15, () =>
+        (this.getChassisProfile() === 'router-isr2911'
+          ? `Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: ${this.numeroDeSerie()}`
+          : `Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: ${this.numeroDeSerie()}`)),
+      vue(['show', 'license'], 'Display licenses', 15, () => {
+        const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
+        const row = (rang: number, feature: string) =>
+          `${rang}     ${feature.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
+        if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
+        return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
+      }),
+      vue(['show', 'license', 'udi'], 'Display Unique Device Identifier', 15, () => {
+        const pid = this.getChassisProfile() === 'router-isr2911'
+          ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
+        return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${this.numeroDeSerie()}`;
+      }),
     ];
   }
 
@@ -5041,44 +5064,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return rows.join('\n');
     });
-    trie.register('show clock detail', 'Display clock with source', () => {
-      const ntp = getNtpAgent(this.cs());
-      const synced = ntp?.isSynced() ?? false;
-      const source = synced ? `NTP (${ntp?.getConfig().refIdentifier})` : 'No time source';
-      return [
-        showClock(this.cs()),
-        `Time source is ${source}`,
-      ].join('\n');
-    });
     trie.registerGreedy('show memory', 'Display memory statistics', () =>
       showMemoryStatistics(this.getChassisProfile()));
     trie.registerGreedy('show flash:', 'Display flash filesystem', () => this.fs().renderShowFlash());
     this.registerFileSystemCommands(target);
-    trie.register('show platform', 'Display platform information', () => {
-      const profile = this.getChassisProfile();
-      return profile === 'router-isr2911'
-        ? `Cisco ISR 2911\n  PID: CISCO2911/K9\n  S/N: ${this.numeroDeSerie()}`
-        : `Cisco Catalyst 2960\n  PID: WS-C2960-24TT-L\n  S/N: ${this.numeroDeSerie()}`;
-    });
-    trie.register('show license', 'Display licenses', () => {
-      const head = 'Index Feature                  Period left    Period Used    License Type    License State    License Count    License Priority';
-      const row = (i: number, feat: string) =>
-        `${i}     ${feat.padEnd(25)}Lifetime       0              Permanent       Active, In Use   N/A              Medium`;
-      if (this.getChassisProfile() !== 'router-isr2911') return `${head}\n${row(1, 'ipbasek9')}`;
-      return [head, row(1, 'ipbasek9'), row(2, 'securityk9')].join('\n');
-    });
     // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
     // au demarrage — n'avait aucune commande pour la relire : elle
     // defilait une fois et disparaissait. C'est une AUTRE table que
     // celle de `show license`, qui liste les licences par
     // fonctionnalite ; les confondre ferait croire qu'un routeur sans
     // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
-    trie.register('show license udi', 'Display Unique Device Identifier', () => {
-      const profile = this.getChassisProfile();
-      const sn = this.numeroDeSerie();
-      const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-      return `Device#   PID                   SN\n*0        ${pid.padEnd(22)}${sn}`;
-    });
     trie.register('show diag', 'Display chassis diagnostics', () => {
       const profile = this.getChassisProfile();
       const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
