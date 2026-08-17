@@ -1,4 +1,5 @@
 import { Continue, Drop, type FilterVerdict } from '../../../../core/FilterChain';
+import { getPacketDstPort, getPacketSrcPort, rewriteSrcIP } from '../../../../nat/rewrite';
 import { IP_PROTO_TCP, type IPv4Packet, type TCPPacket } from '../../../../core/types';
 import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
@@ -27,11 +28,13 @@ export interface FirewallServices {
   natPolicy?: NatPolicyStore;
   nat?: FirewallNatEngine;
   natOrder?: NatOrder;
+  policyKeyedBy?: 'zone' | 'interface';
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
 }
 
 export interface NatOrder {
+  natIsPolicyField?: boolean;
   policySeesPreNatSource?: boolean;
   policySeesPreNatDestination?: boolean;
 }
@@ -79,11 +82,17 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
   ];
 }
 
+function zoneNameFor(services: FirewallServices, iface: string): string | undefined {
+  const zone = services.zones.zoneOf(iface);
+  if (zone !== undefined) return zone;
+  return services.policyKeyedBy === 'interface' ? iface : undefined;
+}
+
 function ingressZoneStage(services: FirewallServices): PipelineStage {
   return {
     name: 'ingress-zone',
     apply(context) {
-      const zone = services.zones.zoneOf(context.ingressPort);
+      const zone = zoneNameFor(services, context.ingressPort);
       if (zone === undefined) return deny(context, 'ingress-zone', 'zone-mismatch');
 
       context.ingressZone = zone;
@@ -171,6 +180,33 @@ function tcpStateCheckStage(_services: FirewallServices): PipelineStage {
   };
 }
 
+function applyPolicyNat(
+  services: FirewallServices, context: PacketContext, packet: IPv4Packet,
+): FilterVerdict<PacketContext> {
+  if (context.matchedPolicy?.natEnabled !== true) {
+    return proceed(context, 'nat-source', 'policy-no-nat');
+  }
+
+  const egress = context.egressPort;
+  const address = egress === undefined ? undefined : services.interfaces.get(egress)?.ip;
+  if (address === undefined) return proceed(context, 'nat-source', 'no-egress-address');
+
+  const originalPort = getPacketSrcPort(packet);
+  context.packet = rewriteSrcIP(packet, address, originalPort);
+  pendingTranslations.set(context, {
+    natRuleId: context.matchedPolicy.id,
+    originalSource: packet.sourceIP.toString(),
+    originalSourcePort: originalPort,
+    translatedSource: address,
+    translatedSourcePort: originalPort,
+    originalDest: packet.destinationIP.toString(),
+    originalDestPort: getPacketDstPort(packet),
+    translatedDest: packet.destinationIP.toString(),
+    translatedDestPort: getPacketDstPort(packet),
+  });
+  return proceed(context, 'nat-source', context.matchedPolicy.id);
+}
+
 function natContextOf(context: PacketContext) {
   return {
     ingressZone: context.ingressZone ?? '',
@@ -204,6 +240,10 @@ function natSourceStage(services: FirewallServices): PipelineStage {
     apply(context) {
       const packet = ipv4(context);
       if (!packet || !services.nat) return proceed(context, 'nat-source', 'no-nat');
+
+      if (services.natOrder?.natIsPolicyField) {
+        return applyPolicyNat(services, context, packet);
+      }
 
       const outcome = services.nat.translateOutbound(packet, natContextOf(context));
       if (outcome.failure === 'nat-port-exhausted') {
@@ -257,7 +297,7 @@ function egressZoneStage(services: FirewallServices): PipelineStage {
     apply(context) {
       if (context.egressPort === undefined) return proceed(context, 'egress-zone', 'no-egress');
 
-      const zone = services.zones.zoneOf(context.egressPort);
+      const zone = zoneNameFor(services, context.egressPort);
       if (zone === undefined) return deny(context, 'egress-zone', 'zone-mismatch');
 
       context.egressZone = zone;

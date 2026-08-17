@@ -1,6 +1,7 @@
 import type { DeviceType } from './types';
 
-export type DeviceOSType = 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp' | 'asa';
+export type DeviceOSType =
+  | 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp' | 'asa' | 'fortios';
 
 export type DeviceCategoryId = 'computers' | 'servers' | 'switches' | 'routers' | 'security';
 
@@ -82,7 +83,7 @@ export const DEVICE_CATALOG: Record<DeviceType, DeviceDefinition> = {
   },
   'firewall-fortinet': {
     label: 'FortiGate', description: 'Fortinet firewall',
-    osType: 'linux', namePrefix: 'FW',
+    osType: 'fortios', namePrefix: 'FW',
     hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
   },
   'firewall-paloalto': {

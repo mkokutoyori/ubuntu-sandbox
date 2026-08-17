@@ -6,6 +6,7 @@ import { CiscoTerminalSession } from './CiscoTerminalSession';
 import { HuaweiTerminalSession } from './HuaweiTerminalSession';
 import { WindowsTerminalSession } from './WindowsTerminalSession';
 import { AsaTerminalSession } from './AsaTerminalSession';
+import { FortiTerminalSession } from './FortiTerminalSession';
 
 export function createSessionForDevice(device: Equipment, sessionId: string): TerminalSession | null {
   switch (device.getOSType()) {
@@ -17,6 +18,8 @@ export function createSessionForDevice(device: Equipment, sessionId: string): Te
       return new HuaweiTerminalSession(sessionId, device as ICLIDevice);
     case 'asa':
       return new AsaTerminalSession(sessionId, device as ICLIDevice);
+    case 'fortios':
+      return new FortiTerminalSession(sessionId, device as ICLIDevice);
     case 'windows':
       return new WindowsTerminalSession(sessionId, device);
     default:

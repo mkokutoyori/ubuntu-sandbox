@@ -128,7 +128,9 @@ export class Firewall extends Equipment {
       sessions: this.sessions,
       natPolicy: this.natPolicy,
       nat: this.nat,
+      policyKeyedBy: profile.policyKeyedBy,
       natOrder: {
+        natIsPolicyField: profile.natIsPolicyField,
         policySeesPreNatSource: profile.natOrder.policySeesPreNatSource,
         policySeesPreNatDestination: profile.natOrder.policySeesPreNatDestination,
       },

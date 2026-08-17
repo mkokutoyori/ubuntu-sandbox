@@ -53,10 +53,12 @@
 | 3 | L'ASA devient un équipement déposable et ouvrable | 17 | ✅ |
 | 3 | NAT manuel (« twice NAT »), section 1 et `after-auto` | 17 | ✅ |
 | **4** | **Journalisation : le pare-feu émet, `show logging`** | 16 | ✅ |
+| 4 | `logging host` — les messages quittent la machine | 9 | ✅ |
+| **5** | **FortiOS — deuxième déclinaison** | 32 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 700 cas verts sur 27 fichiers** (1446 avec les suites
+**Total actuel : 737 cas verts sur 29 fichiers** (1446 avec les suites
 connexes : palette, terminal, terminal-core).
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
@@ -1395,6 +1397,66 @@ redéfini.
 
 ---
 
+### E30 — `logging host` : la projection est EXTRAITE, pas recopiée
+
+`SyslogAgent` existe et émet de vrais datagrammes ; son contrat d'hôte ne
+demande que `getHostname`/`getPort`/`getPorts`/`sendFrame`, qu'un
+`Firewall` a tous. Mieux : `CiscoShellBase` portait **déjà** la projection
+`LoggingConfig` → `SyslogAgent`. Elle est extraite dans
+`syslog/loggingProjection.ts` plutôt que recopiée — une seconde projection
+aurait fini par contredire la première sur la sévérité ou la facilité.
+`CiscoShellBase` perd 40 lignes et gagne un appel.
+
+Le test **compte les trames**. Une configuration qui s'affiche sans qu'un
+datagramme parte est le défaut « accepté et inerte », et il ne se voit
+qu'en regardant le fil : témoin sans collecteur (zéro trame), plus de
+trafic donne plus de datagrammes, et `logging trap emergencies` fait taire
+l'émission en laissant le tampon local se remplir — ce qui *est* la
+différence entre les deux seuils.
+
+Divergence ASA réelle : `logging host <nameif> <ip>`, l'interface **avant**
+l'adresse. Le shell traduit et rend la ligne dans la forme tapée — une
+configuration rendue étant rejouée à l'import, la rendre en forme IOS
+l'aurait rendue irrejouable sur un ASA.
+
+---
+
+### E31 — FortiOS : la deuxième déclinaison est l'épreuve du contrat
+
+L'ASA prouvait qu'un profil peut décrire un constructeur. FortiOS prouve
+autre chose : il **diverge de l'ASA sur presque tout** ce que le BRD avait
+isolé comme axe de variation. Si le contrat tient pour lui, il tient.
+
+Trois artefacts, aucun moteur (G1 le vérifie) : `FortiProfile`,
+`FortiGate`, `FortiShell` — 403 lignes en tout, contre 1 300 pour l'ASA
+parce que le socle est désormais en place.
+
+#### Les divergences, et ce que chacune a coûté au socle
+
+- **Le NAT est un CHAMP de la politique** (`set nat enable`), pas une
+  politique à part. `natIsPolicyField` était écrit en phase 3 et **lu par
+  personne** ; `SecurityRule.natEnabled` était dans le même état — trois
+  écritures, aucune lecture. FortiOS est ce qui les rend réels :
+  `applyPolicyNat()` traduit vers l'adresse de l'interface de sortie quand
+  la règle qui a matché porte le drapeau. Le témoin sans `nat enable`
+  vérifie que rien ne bouge.
+- **Aucun niveau de sécurité** : rien ne passe sans règle, même de
+  l'intérieur. C'est l'inverse exact de l'ASA et la première chose qui
+  surprend en passant de l'un à l'autre.
+- **La CLI est hiérarchique** (`config`/`edit`/`set`/`next`/`end`), pas un
+  arbre de mots-clés. `edit 0` attribue le prochain identifiant libre.
+
+#### Un défaut du socle que seul un second constructeur pouvait révéler
+
+L'étape `ingress-zone` **refusait toute interface sans zone**. Sur un ASA
+cela ne se voyait pas : `nameif` crée la zone. Sur FortiOS les interfaces
+s'utilisent nues, donc aucun paquet ne pouvait entrer. `zoneNameFor()`
+retombe sur le nom de l'interface quand le profil déclare
+`policyKeyedBy: 'interface'` — ce qui est honnête pour les deux, la zone de
+l'ASA restant trouvée quand elle existe.
+
+---
+
 ## Décisions prises en cours de route
 
 | # | Décision | Motif |
@@ -1449,6 +1511,9 @@ redéfini.
 | B34 | Le pare-feu n'émettait aucun message : ni connexion, ni refus | E29 | `logFirewallEvent` sur le point de décision ; catalogue dans le profil |
 | B35 | `Severity` déclaré et non exporté par `LoggingConfig` | E29 | Exporté plutôt que redéfini |
 | B36 | Mon test prenait `errors` pour un seuil plus permissif que `warnings` | E29 | Paire réécrite sur `warnings`, qui discrimine vraiment |
+| B37 | La projection `LoggingConfig`→`SyslogAgent` allait être recopiée | E30 | Extraite dans `syslog/loggingProjection.ts`, deux appelants |
+| B38 | `natIsPolicyField` et `SecurityRule.natEnabled` écrits, lus par personne | E31 | `applyPolicyNat()` — FortiOS les rend réels |
+| B39 | `ingress-zone` refusait toute interface sans zone : FortiOS ne pouvait rien recevoir | E31 | Repli sur le nom d'interface quand `policyKeyedBy: 'interface'` |
 
 ## Prochaines étapes
 
@@ -1456,13 +1521,11 @@ Phase 3 (ASA), reste à faire :
 
 1. Démon SSH sur le pare-feu, puis `ShellFactory.register('asa', …)` — la
    CLI est là, il lui manque le transport (E27).
-2. Suite de la phase 4 : `logging host` vers un vrai collecteur syslog
-   (le moteur sait le faire, le pare-feu ne lui a pas encore donné de
-   transport), et `%ASA-6-302014` à la fermeture d'une session — le
-   catalogue le porte, la table des sessions n'a pas encore de crochet de
-   fermeture branché.
-3. Constructeurs suivants — FortiOS, PAN-OS, Junos — dont le contrat de
-   profil est désormais éprouvé par une déclinaison complète.
+2. `%ASA-6-302014` à la fermeture d'une session — le catalogue le porte, la
+   table des sessions n'a pas encore de crochet de fermeture branché.
+3. PAN-OS, qui apporte le seul axe encore inéprouvé du contrat : la
+   **configuration candidate** (`commit`), là où ASA et FortiOS sont tous
+   deux immédiats. Puis Junos.
 
 Hors périmètre de ce module, mesuré ici et à traiter pour lui-même :
 `EndHost.pingIdCounter` incrémenté par sonde plutôt que par processus
