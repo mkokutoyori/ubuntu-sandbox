@@ -169,3 +169,43 @@ describe('une severite IOS s\'ecrit par NOM ou par NUMERO', () => {
       { name: 's', type: 'WORD', values: SEVERITIES }, '3')).toBe(false);
   });
 });
+
+describe('une place peut avoir plusieurs FORMES', () => {
+  function accessGroup(): CommandTable {
+    const t = new CommandTable();
+    t.declare({
+      id: 'ip-access-group',
+      path: ['ip', 'access-group', {
+        name: 'list', type: 'WORD',
+        alternatives: [
+          { keyword: '<1-199>', description: 'Access list number' },
+          { keyword: '<1300-2699>', description: 'Access list number (expanded range)' },
+          { keyword: 'WORD', description: 'Access-list name' },
+        ],
+      }],
+      description: 'Specify access control for packets',
+      modes: ['config-if'], minPrivilege: 15, run: (_s, a) => `list=${a.list}`,
+    });
+    return t;
+  }
+
+  function session2() {
+    return newSession('R1', {}, { initialMode: 'config-if', privilegeLevel: 15 });
+  }
+
+  it('l\'aide rend les TROIS formes, chacune avec sa description', () => {
+    const values = complete(accessGroup(), 'ip access-group ', session2(), 'QUESTION_MARK')
+      .suggestions.map(s => s.value);
+
+    expect(values).toEqual(expect.arrayContaining(['<1-199>', '<1300-2699>', 'WORD']));
+  });
+
+  it('c\'est la FORME qui decide, jamais l\'intitule', () => {
+    expect(parseCommand(accessGroup(), 'ip access-group 101', session2()).status).toBe('ok');
+    expect(parseCommand(accessGroup(), 'ip access-group BUREAU', session2()).status).toBe('ok');
+  });
+
+  it('un rendu LITTERAL remplace le placeholder du type', () => {
+    expect(argumentPlaceholder({ name: 'heure', type: 'WORD', literal: 'hh:mm' })).toBe('hh:mm');
+  });
+});

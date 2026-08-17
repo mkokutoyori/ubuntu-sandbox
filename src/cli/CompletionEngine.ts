@@ -1,4 +1,4 @@
-import { argumentAccepts, argumentPlaceholder } from './ArgumentTypes';
+import { argumentAccepts, argumentSuggestions } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
@@ -80,27 +80,12 @@ function suggestionsAt(
   }
 
   const argument = cursor.node.argumentChild?.argument;
-  if (argument && trigger === 'QUESTION_MARK') {
-    // Un argument ENUMERE a un domaine fini : l'aide le DECRIT valeur par
-    // valeur au lieu d'annoncer un type muet, ce qui est tout l'interet
-    // de `logging console ?` — les huit severites avec leur numero.
-    if (argument.values) {
-      if (argument.range && cursor.prefix.length === 0) {
-        out.push({
-          value: argumentPlaceholder(argument),
-          description: argument.name,
-          isArgument: true,
-        });
-      }
-      for (const value of argument.values) {
-        if (!value.keyword.toLowerCase().startsWith(lowered)) continue;
-        out.push({ value: value.keyword, description: value.description, isArgument: true });
-      }
-    } else if (cursor.prefix.length === 0) {
+  if (argument && trigger === 'QUESTION_MARK'
+    && (argument.values || argument.alternatives || cursor.prefix.length === 0)) {
+    for (const suggestion of argumentSuggestions(argument)) {
+      if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({
-        value: argumentPlaceholder(argument),
-        description: argument.name,
-        isArgument: true,
+        value: suggestion.keyword, description: suggestion.description, isArgument: true,
       });
     }
   }

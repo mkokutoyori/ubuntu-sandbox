@@ -132,3 +132,53 @@ describe('l\'aide decrit la SUITE, la tabulation rend la ligne', () => {
     expect(lignes.every(l => !l.trim().startsWith('show '))).toBe(true);
   });
 });
+
+describe('la tabulation se comporte comme sur les autres equipements Cisco', () => {
+  interface Tab { executeCommand(c: string): Promise<string>; cliTabComplete(i: string): string | null }
+
+  async function trois(): Promise<Record<string, Tab>> {
+    const out: Record<string, Tab> = {};
+    for (const [nom, type] of [
+      ['asa', 'firewall-cisco'], ['routeur', 'router-cisco'], ['commutateur', 'switch-cisco'],
+    ] as const) {
+      const d = createDevice(type, 0, 0) as unknown as Tab;
+      await d.executeCommand('enable');
+      out[nom] = d;
+    }
+    return out;
+  }
+
+  it('`sh` donne `show ` sur les TROIS', async () => {
+    const m = await trois();
+
+    for (const nom of ['asa', 'routeur', 'commutateur']) {
+      expect(m[nom].cliTabComplete('sh'), nom).toBe('show ');
+    }
+  });
+
+  it('`conf t` donne `configure terminal ` sur les TROIS', async () => {
+    const m = await trois();
+
+    for (const nom of ['asa', 'routeur', 'commutateur']) {
+      expect(m[nom].cliTabComplete('conf t'), nom).toBe('configure terminal ');
+    }
+  });
+
+  it('une abreviation se DEVELOPPE, elle ne se recopie pas', async () => {
+    const m = await trois();
+
+    expect(m.asa.cliTabComplete('conf t')).not.toContain('conf t');
+  });
+
+  it('un prefixe qui ne mene nulle part ne complete rien', async () => {
+    const m = await trois();
+
+    expect(m.asa.cliTabComplete('zorglub')).toBeNull();
+  });
+
+  it('`show ver` se complete aussi', async () => {
+    const m = await trois();
+
+    expect(m.asa.cliTabComplete('show ver')).toBe('show version ');
+  });
+});

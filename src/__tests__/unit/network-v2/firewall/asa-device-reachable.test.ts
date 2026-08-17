@@ -103,7 +103,10 @@ describe('AsaFirewall — il expose une CLI', () => {
   it('la completion complete un prefixe non ambigu', () => {
     const device = asa();
 
-    expect(device.cliTabComplete('ena')).toBe('enable');
+    // Le blanc final est ce que rendent le routeur et le commutateur du
+    // meme depot : la tabulation pose le mot ET amene au suivant. L'ASA
+    // le rendait sans, ce qui obligeait a taper l'espace soi-meme.
+    expect(device.cliTabComplete('ena')).toBe('enable ');
   });
 
   it('elle ne devine pas un prefixe ambigu', () => {

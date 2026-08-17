@@ -19,7 +19,9 @@ import {
 import { CLIStateMachine } from '../../../shells/CLIStateMachine';
 import { buildPrompt } from '../../../shells/PromptBuilder';
 import {
-  AsaSocle, mergeHelpLines, continuationOf, stemOf,
+  AsaSocle, mergeHelpLines, stemOf,
+  wordwiseCandidates, uniqueWordCompletion, knownCommandLines,
+  renderContinuationHelp, type HelpLine,
 } from '@/cli/vendors/asa/asaSocle';
 import { resolveAbbreviation, expandsTo } from '@/cli/vendors/asa/asaAbbreviation';
 import {
@@ -247,51 +249,48 @@ export class AsaShell implements AsaShowHost {
   }
 
   showView(view: AsaShowView): string {
-    switch (view) {
-      case 'nameif': return this.showNameif();
-      case 'conn': return this.showConn(true);
-      case 'conn-count': return this.showConn(false);
-      case 'xlate': return this.showXlate();
-      case 'version': return this.showVersion();
-      case 'running-config': return this.showRunningConfig();
-      case 'access-list': return this.showAccessList();
-      case 'nat': return this.showNat();
-      case 'logging': return this.fw.getLoggingConfig().render();
-    }
+    const vues: Record<AsaShowView, () => string> = {
+      nameif: () => this.showNameif(),
+      conn: () => this.showConn(true),
+      'conn-count': () => this.showConn(false),
+      xlate: () => this.showXlate(),
+      version: () => this.showVersion(),
+      'running-config': () => this.showRunningConfig(),
+      'access-list': () => this.showAccessList(),
+      nat: () => this.showNat(),
+      logging: () => this.fw.getLoggingConfig().render(),
+    };
+    return vues[view]();
   }
 
-  private legacyLines(input: string): Array<{ keyword: string; description: string }> {
+  private legacyLines(input: string): HelpLine[] {
     const prefix = input.trimStart();
-    return this.vocabulary()
-      .filter(word => word.startsWith(prefix))
+    return this.vocabulary().filter(word => word.startsWith(prefix))
       .map(word => ({ keyword: word, description: ASA_COMMAND_HELP[word] ?? '' }));
   }
 
-  private socleLines(input: string): Array<{ keyword: string; description: string }> {
+  private socleLines(input: string): HelpLine[] {
     const stem = stemOf(input);
     return this.socle().suggestions(input, this.mode, 'QUESTION_MARK')
-      .map(line => ({
-        keyword: `${stem} ${line.keyword}`.trim(), description: line.description,
-      }));
+      .map(line => ({ keyword: `${stem} ${line.keyword}`.trim(), description: line.description }));
+  }
+
+  private knownLines(input: string): string[] {
+    return knownCommandLines(input, this.vocabulary(),
+      (at) => this.socle().suggestions(at, this.mode, 'QUESTION_MARK'));
   }
 
   completions(input: string): readonly string[] {
-    const prefix = input.trimStart();
-    return mergeHelpLines(this.legacyLines(input), this.socleLines(input))
-      .map(l => l.keyword).filter(word => word !== prefix);
+    return wordwiseCandidates(input, this.knownLines(input));
+  }
+
+  tabComplete(input: string): string | null {
+    return uniqueWordCompletion(input, this.knownLines(input));
   }
 
   help(inputBeforeQuestion: string): readonly string[] {
-    const seen = new Map<string, string>();
-    for (const line of mergeHelpLines(
-      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion))) {
-      const suite = continuationOf(line.keyword, inputBeforeQuestion);
-      if (suite === null) continue;
-      if (!seen.has(suite) || seen.get(suite) === '') seen.set(suite, line.description);
-    }
-    const large = Math.max(0, ...[...seen.keys()].map(k => k.length));
-    return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([suite, description]) => `  ${suite.padEnd(large + 2)}${description}`.trimEnd());
+    return renderContinuationHelp(inputBeforeQuestion, mergeHelpLines(
+      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion)));
   }
 
   private vocabulary(): readonly string[] {

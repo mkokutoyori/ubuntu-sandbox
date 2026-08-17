@@ -51,8 +51,7 @@ export class AsaFirewall extends Firewall {
   }
 
   cliTabComplete(input: string): string | null {
-    const candidates = this.cliTabCandidates(input);
-    return candidates.length === 1 ? candidates[0] : null;
+    return this.getShell().tabComplete(input);
   }
 
   nameif(iface: string, zoneName: string, securityLevel: number): void {

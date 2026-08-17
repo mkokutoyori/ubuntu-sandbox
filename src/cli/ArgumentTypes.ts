@@ -33,6 +33,20 @@ export interface ArgumentSpec {
    * position d'argument, mais son domaine est fini et descriptible.
    */
   readonly values?: readonly EnumValue[];
+  /**
+   * Les FORMES qu'une meme place accepte, quand il y en a plusieurs.
+   *
+   * `ip access-group ?` en rend trois — `<1-199>`, `<1300-2699>`,
+   * `WORD` — et ce ne sont pas des valeurs admises mais des TYPES,
+   * chacun avec sa description. Sans elles, la place est decrite par
+   * une seule de ses formes et les autres passent pour invalides a la
+   * lecture, alors que la machine les accepte.
+   */
+  readonly alternatives?: readonly EnumValue[];
+  /**
+   * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
+   */
+  readonly literal?: string;
 }
 
 export interface ArgumentTypeDefinition {
@@ -72,6 +86,11 @@ export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
   const named = spec.values?.some(
     value => value.keyword.toLowerCase() === token.toLowerCase()) ?? false;
   if (named) return true;
+  // Une place a plusieurs FORMES : ce sont des types, pas des valeurs, et
+  // c'est la forme qui decide de l'acceptation, jamais son intitule.
+  if (spec.alternatives && spec.alternatives.length > 0 && !spec.values) {
+    return ARGUMENT_TYPES[spec.type].accepts(token);
+  }
   // Porter les DEUX veut dire « l'un ou l'autre » : une severite IOS
   // s'ecrit `errors` ou `3`, et n'offrir qu'une des deux formes refuserait
   // celle que l'operateur a tapee.
@@ -84,8 +103,29 @@ export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
 }
 
 export function argumentPlaceholder(spec: ArgumentSpec): string {
+  if (spec.literal) return spec.literal;
   if (spec.range) return `<${spec.range[0]}-${spec.range[1]}>`;
   return ARGUMENT_TYPES[spec.type].placeholder;
+}
+
+/**
+ * Ce que `?` doit ecrire pour une place d'argument.
+ *
+ * Une place peut avoir plusieurs FORMES (`alternatives`), un domaine
+ * fini (`values`), les deux, ou aucun — et l'union des deux derniers
+ * signifie « l'un ou l'autre ». Une seule fonction les rend toutes,
+ * sinon chaque appelant en oublierait une autre.
+ */
+export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
+  const out: EnumValue[] = [];
+  for (const form of spec.alternatives ?? []) out.push(form);
+  if (spec.values) {
+    if (spec.range) out.push({ keyword: argumentPlaceholder(spec), description: spec.name });
+    for (const value of spec.values) out.push(value);
+    return out;
+  }
+  if (out.length > 0) return out;
+  return [{ keyword: argumentPlaceholder(spec), description: spec.name }];
 }
 
 export function isArgumentSpec(step: unknown): step is ArgumentSpec {
