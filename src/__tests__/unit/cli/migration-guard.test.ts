@@ -32,6 +32,7 @@ import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { CommandTrie } from '@/network/devices/shells/CommandTrie';
 
 function socle(): CommandTable {
   const table = new CommandTable();
@@ -44,10 +45,10 @@ function legacyPaths(): Set<string> {
 
   const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
   const shell = router.getShell() as unknown as {
-    enumerateAllCommandPaths?: () => string[];
+    enumerateAllExecutablePaths?: () => string[];
   };
 
-  return new Set(shell.enumerateAllCommandPaths?.() ?? []);
+  return new Set(shell.enumerateAllExecutablePaths?.() ?? []);
 }
 
 describe('un chemin appartient a UN moteur', () => {
@@ -97,5 +98,40 @@ describe('ce que la migration rapporte, mesure', () => {
 
   it('l\'inventaire du trie n\'est pas vide — sinon le garde-fou ne lirait rien', () => {
     expect(legacyPaths().size).toBeGreaterThan(100);
+  });
+});
+
+describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
+  it('migrer `clear logging` laisse `clear logging persistent` au trie', () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const shell = router.getShell() as unknown as {
+      enumerateAllExecutablePaths(): string[];
+      migratedPaths(): readonly string[];
+    };
+
+    expect(shell.migratedPaths()).toContain('clear logging');
+    expect(shell.migratedPaths()).not.toContain('clear logging persistent');
+    expect(shell.enumerateAllExecutablePaths()).toContain('clear logging persistent');
+  });
+
+  it('le noeud parent perd son ACTION, pas ses enfants', () => {
+    const trie = new CommandTrie();
+    trie.register('clear logging', 'Clear the buffer', () => 'tampon');
+    trie.register('clear logging persistent', 'Clear the files', () => 'fichiers');
+
+    trie.prunePaths(['clear logging']);
+
+    expect(trie.enumerateExecutablePaths()).toContain('clear logging persistent');
+    expect(trie.enumerateExecutablePaths()).not.toContain('clear logging');
+  });
+
+  it('une FEUILLE migree disparait pour de bon — le temoin', () => {
+    const trie = new CommandTrie();
+    trie.register('show version', 'Version', () => 'x');
+
+    trie.prunePaths(['show version']);
+
+    expect(trie.enumerateExecutablePaths()).not.toContain('show version');
   });
 });

@@ -18,6 +18,7 @@ import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand } from '@/cli/CommandParser';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
+import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
@@ -576,6 +577,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     for (const value of Object.values(this as unknown as Record<string, unknown>)) {
       if (!(value instanceof CommandTrie)) continue;
       for (const path of value.enumerateCommandPaths()) seen.add(path);
+    }
+    return [...seen];
+  }
+
+  /**
+   * Les chemins qu'un trie EXECUTE, par opposition a ceux qu'il porte.
+   *
+   * Un noeud intermediaire n'execute rien : le compter comme une commande
+   * gonfle l'inventaire, et le compter comme un second moteur ferait
+   * echouer le garde-fou de migration sur un noeud que l'elagage laisse
+   * volontairement debout pour ses enfants non migres.
+   */
+  enumerateAllExecutablePaths(): string[] {
+    const seen = new Set<string>();
+    for (const value of Object.values(this as unknown as Record<string, unknown>)) {
+      if (!(value instanceof CommandTrie)) continue;
+      for (const path of value.enumerateExecutablePaths()) seen.add(path);
     }
     return [...seen];
   }
@@ -2932,8 +2950,59 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return svc.removeCondition(kind, resolved);
   }
 
+  protected clearSpecs(): CommandSpec[] {
+    return legacyFamily([
+      ['clear ip bgp', 'Clear BGP sessions', () => ''],
+      ['clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
+        const dev = this.d() as unknown as {
+          getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
+        };
+        const engine = dev.getEIGRPEngine?.();
+        if (!engine) return '';
+        const quoi = (args[0] ?? 'neighbors').toLowerCase();
+        if (quoi === 'traffic') engine.resetTraffic?.();
+        else engine.clearNeighbors?.();
+        return '';
+      }],
+      ['clear logging', 'Clear the syslog buffer', () => {
+        this.attachLoggingToDevice(this.d());
+        (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
+        return '';
+      }],
+      ['clear counters', 'Clear interface counters', (args) => {
+        const ports = this.d()._getPortsInternal();
+        const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
+        let count = 0;
+        for (const [name, port] of ports) {
+          if (target && name.toLowerCase() !== target.toLowerCase()) continue;
+          (port as unknown as { resetCounters?: () => void }).resetCounters?.();
+          count++;
+        }
+        if (count === 0) return '% No matching interface';
+        const scope = target ? `interface ${target}` : 'all interfaces';
+        return `Clear "show interface" counters on ${scope} [confirm]`;
+      }],
+      ['clear ip arp', 'Clear ARP cache', (args) => {
+        const dev = this.d() as unknown as {
+          _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown>;
+        };
+        if (args[0]) {
+          const removed = dev._clearArpEntry?.(args[0]) ?? 0;
+          return removed === 0 ? '% No matching ARP entry' : '';
+        }
+        dev.arpTable?.clear();
+        return '';
+      }],
+      ['clear ip route', 'Clear routes (dynamic)', () => {
+        const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
+        dev._clearDynamicRoutes?.();
+        return '';
+      }],
+    ], { modes: ['privileged'], minPrivilege: 15 });
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
-    return debugFamily(this.debugPairs());
+    return [...debugFamily(this.debugPairs()), ...this.clearSpecs()];
   }
 
   protected socleTable(): CommandTable | null {
@@ -4775,54 +4844,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
-    this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', (_args) => '');
-    // `clear ip eigrp neighbors` : la commande promet de rejeter les
-    // adjacences, elle doit donc vraiment les rejeter — sinon elle serait
-    // acceptée sans rien faire, ce qui est pire que refusée.
-    this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
-      const dev = this.d() as unknown as {
-        getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
-      };
-      const e = dev.getEIGRPEngine?.();
-      if (!e) return '';
-      const quoi = (args[0] ?? 'neighbors').toLowerCase();
-      if (quoi === 'traffic') e.resetTraffic?.();
-      else e.clearNeighbors?.();
-      return '';
-    });
-    this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
-      this.attachLoggingToDevice(this.d());
-      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
-      return '';
-    });
     registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
-    this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
-      const ports = this.d()._getPortsInternal();
-      const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
-      let count = 0;
-      for (const [name, port] of ports) {
-        if (target && name.toLowerCase() !== target.toLowerCase()) continue;
-        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
-        count++;
-      }
-      if (count === 0) return '% No matching interface';
-      const scope = target ? `interface ${target}` : 'all interfaces';
-      return `Clear "show interface" counters on ${scope} [confirm]`;
-    });
-    this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
-      const dev = this.d() as unknown as { _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown> };
-      if (args[0]) {
-        const n = dev._clearArpEntry?.(args[0]) ?? 0;
-        return n === 0 ? '% No matching ARP entry' : '';
-      }
-      dev.arpTable?.clear();
-      return '';
-    });
-    this.privilegedTrie.registerGreedy('clear ip route', 'Clear routes (dynamic)', () => {
-      const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
-      dev._clearDynamicRoutes?.();
-      return '';
-    });
     // `send` doit EXISTER dans le trie meme si tout son interet est dans
     // le plan interactif : sans noeud, le mot part en resolution DNS et
     // la machine cherche un hote nomme « send ».

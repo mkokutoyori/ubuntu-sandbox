@@ -182,3 +182,64 @@ describe('le registre de migration nomme les DEUX moities', () => {
     expect(restants).toEqual([]);
   });
 });
+
+describe('la famille `clear` migre sans masquer ses voisines', () => {
+  it('`clear counters` compte les interfaces qu\'il a remises a zero', async () => {
+    const r = await router();
+
+    const out = await r.executeCommand('clear counters');
+
+    expect(out).toContain('all interfaces');
+  });
+
+  it('`clear counters <iface>` vise UNE interface', async () => {
+    const r = await router();
+
+    const out = await r.executeCommand('clear counters GigabitEthernet0/0');
+
+    expect(out).toContain('interface GigabitEthernet0/0');
+  });
+
+  it('une interface inconnue est refusee, pas ignoree', async () => {
+    const r = await router();
+
+    expect(await r.executeCommand('clear counters Zorglub0/0')).toContain('No matching');
+  });
+
+  it('`clear logging persistent` reste au TRIE, il n\'est pas avale', async () => {
+    const r = await router();
+    const shell = (r as unknown as {
+      getShell(): { enumerateAllCommandPaths(): string[]; migratedPaths(): readonly string[] };
+    }).getShell();
+
+    const chemins = shell.enumerateAllCommandPaths();
+    const migres = shell.migratedPaths();
+
+    expect(migres).toContain('clear logging');
+    expect(migres).not.toContain('clear logging persistent');
+    expect(chemins).toContain('clear logging persistent');
+  });
+
+  it('et les deux s\'executent, chacune par son moteur', async () => {
+    const r = await router();
+
+    expect(await r.executeCommand('clear logging persistent')).not.toContain('Invalid input');
+    expect(await r.executeCommand('clear logging')).not.toContain('Invalid input');
+  });
+
+  it('`clear ip arp <ip>` inconnue est refusee', async () => {
+    const r = await router();
+
+    expect(await r.executeCommand('clear ip arp 203.0.113.9')).toContain('No matching ARP');
+  });
+
+  it('`clear ?` decrit encore la famille entiere, socle et trie melanges', async () => {
+    const r = await router();
+
+    const aide = await r.executeCommand('clear ?');
+
+    expect(aide).toContain('counters');
+    expect(aide).toContain('logging');
+    expect(aide).toContain('line');
+  });
+});

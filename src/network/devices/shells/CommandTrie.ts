@@ -322,7 +322,22 @@ export class CommandTrie {
         if (!next) { missing = true; break; }
         node = next;
       }
-      if (!missing) node.children.delete(words[words.length - 1]);
+      if (missing) continue;
+
+      const last = words[words.length - 1];
+      const target = node.children.get(last);
+      if (!target) continue;
+
+      // Elaguer un chemin retire CE chemin, pas ce qui pend dessous.
+      // Supprimer le noeud emportait son sous-arbre : migrer
+      // `clear logging` effacait `clear logging persistent`, une commande
+      // que personne n'avait migree et que plus rien n'annoncait.
+      if (target.children.size === 0) { node.children.delete(last); continue; }
+
+      delete target.action;
+      delete target.greedy;
+      delete target.minArgs;
+      target.params = [];
     }
   }
 
