@@ -350,3 +350,54 @@ describe('un argument OPTIONNEL laisse la commande complete sans lui', () => {
       .toContain('Invalid input');
   });
 });
+
+describe('`rate-limit` et `reload` gardent leurs deux formes', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('un nombre ET un mot-cle sont acceptes a la meme place', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging rate-limit 20'), nom)
+        .not.toContain('Invalid input');
+      expect(await machines.get(nom)!.executeCommand('logging rate-limit console'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('l\'aide annonce les DEUX formes', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('logging rate-limit ');
+
+      expect(aide, nom).toContain('console');
+      expect(aide, nom).toMatch(/<\d+-\d+>/);
+    }
+  });
+
+  it('`except` suit la valeur et prend sa propre severite', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('logging rate-limit 20 except errors'))
+      .not.toContain('Invalid input');
+  });
+
+  it('`reload message-limit` saute la severite optionnelle', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging reload message-limit 10'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('une severite hors plage derriere `except` reste refusee', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('logging rate-limit 20 except 9'))
+      .toContain('Invalid input');
+  });
+});

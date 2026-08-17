@@ -22,7 +22,7 @@ import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
-  HISTORY_SIZE_MIN, HISTORY_SIZE_MAX,
+  HISTORY_SIZE_MIN, HISTORY_SIZE_MAX, RATE_LIMIT_MIN, RATE_LIMIT_MAX,
 } from '../inspection/config/LoggingConfig';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
@@ -3180,6 +3180,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           argument: {
             name: 'entries', type: 'INT', range: [HISTORY_SIZE_MIN, HISTORY_SIZE_MAX],
           },
+        }],
+      },
+      {
+        keyword: 'reload', description: 'Set reload logging level',
+        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuations: [{
+          keyword: 'message-limit', description: 'Maximum messages kept across a reload',
+          argument: { name: 'limite', type: 'INT', range: [1, 4294967295] },
+        }],
+      },
+      {
+        keyword: 'rate-limit', description: 'Set messages per second limit',
+        argument: {
+          name: 'limit', type: 'INT', range: [RATE_LIMIT_MIN, RATE_LIMIT_MAX],
+          values: [
+            { keyword: 'all', description: 'Rate limit all messages' },
+            { keyword: 'console', description: 'Rate limit console messages only' },
+          ],
+        },
+        continuations: [{
+          keyword: 'except',
+          description: 'Messages of this severity or higher are not limited',
+          argument: { name: 'severite', type: 'INT', range: [0, 7], values: severites },
         }],
       },
       {
