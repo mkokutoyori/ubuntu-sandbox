@@ -3001,8 +3001,90 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ], { modes: ['privileged'], minPrivilege: 15 });
   }
 
+  private discoveryToggle(
+    path: readonly string[], description: string, mode: string,
+    on: () => void, off: () => void,
+  ): CommandSpec {
+    return {
+      id: path.join('-'), path: [...path], description,
+      modes: [mode], minPrivilege: 15,
+      run: () => { on(); return ''; },
+      undo: () => { off(); return ''; },
+    };
+  }
+
+  private discoveryValue(
+    path: readonly string[], description: string, refus: string,
+    low: number, high: number, apply: (value: number) => void,
+  ): CommandSpec {
+    return {
+      id: path.join('-'),
+      path: [...path, { name: 'value', type: 'INT' as const }],
+      description, modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => {
+        const value = parseInt(args.value ?? '', 10);
+        if (isNaN(value) || value < low || value > high) return refus;
+        apply(value);
+        return '';
+      },
+    };
+  }
+
+  protected discoverySpecs(): CommandSpec[] {
+    const perPort = (apply: (port: string) => void) => () => {
+      for (const port of this.selectedPortsForConfigIf()) apply(port);
+    };
+
+    return [
+      this.discoveryToggle(['cdp', 'run'], 'Enable CDP globally', 'config',
+        () => { this.configState.set('cdp', true); this.applyToCdpAgent(a => a.setEnabled(true)); },
+        () => { this.configState.set('cdp', false); this.applyToCdpAgent(a => a.setEnabled(false)); }),
+      this.discoveryToggle(['cdp', 'advertise-v2'], 'Advertise CDPv2 PDUs', 'config',
+        () => this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(true)),
+        () => this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(false))),
+      this.discoveryToggle(['lldp', 'run'], 'Enable LLDP globally', 'config',
+        () => { this.configState.set('lldp', true); this.applyToLldpAgent(a => a.setEnabled(true)); },
+        () => { this.configState.set('lldp', false); this.applyToLldpAgent(a => a.setEnabled(false)); }),
+      this.discoveryToggle(['cdp', 'enable'], 'Enable CDP on this interface', 'config-if',
+        perPort(port => this.applyToCdpAgent(a => a.setPortEnabled(port, true))),
+        perPort(port => this.applyToCdpAgent(a => a.setPortEnabled(port, false)))),
+      this.discoveryToggle(['lldp', 'transmit'], 'Enable LLDP transmit on this interface', 'config-if',
+        perPort(port => this.applyToLldpAgent(a => a.setPortTransmit(port, true))),
+        perPort(port => this.applyToLldpAgent(a => a.setPortTransmit(port, false)))),
+      this.discoveryToggle(['lldp', 'receive'], 'Enable LLDP receive on this interface', 'config-if',
+        perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, true))),
+        perPort(port => this.applyToLldpAgent(a => a.setPortReceive(port, false)))),
+
+      this.discoveryValue(['cdp', 'timer'], 'Advertisement period (sec)',
+        '% Invalid timer value (5-254)', 5, 254,
+        value => this.applyToCdpAgent(a => a.setTimerSec(value))),
+      this.discoveryValue(['cdp', 'holdtime'], 'Hold-time advertised to peers (sec)',
+        '% Invalid holdtime value (10-255)', 10, 255,
+        value => this.applyToCdpAgent(a => a.setHoldtimeSec(value))),
+      this.discoveryValue(['lldp', 'timer'], 'Advertisement period (sec)',
+        '% Invalid timer value (5-32768)', 5, 32768,
+        value => this.applyToLldpAgent(a => a.setTimerSec(value))),
+      this.discoveryValue(['lldp', 'holdtime-multiplier'], 'TTL = timer x multiplier',
+        '% Invalid multiplier (2-10)', 2, 10,
+        value => this.applyToLldpAgent(a => a.setHoldtimeMultiplier(value))),
+      this.discoveryValue(['lldp', 'holdtime'], 'Holdtime in seconds',
+        '% Invalid holdtime value (10-3600)', 10, 3600,
+        value => this.applyToLldpAgent(a => {
+          const config = a.getConfig();
+          a.setHoldtimeMultiplier(Math.max(2, Math.min(10, Math.round(value / config.timerSec))));
+        })),
+      this.discoveryValue(['lldp', 'reinit'], 'Re-init delay (sec)',
+        '% Invalid reinit delay (1-10)', 1, 10,
+        value => this.applyToLldpAgent(a => a.setReinitDelaySec(value))),
+    ];
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
-    return [...debugFamily(this.debugPairs()), ...this.clearSpecs()];
+    return [
+      ...debugFamily(this.debugPairs()),
+      ...this.clearSpecs(),
+      ...this.discoverySpecs(),
+    ];
   }
 
   protected socleTable(): CommandTable | null {
@@ -3126,8 +3208,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const precedent = this.deviceRef;
     if (device) this.deviceRef = device;
     try {
+      // `?` ANNONCE le type attendu (`<5-254>`, `A.B.C.D`) et `<cr>` ;
+      // la tabulation ne les complete pas, n'ayant rien a deviner. Les
+      // filtrer des deux cotes rendait le socle muet la ou il est le
+      // mieux renseigne — il connait le type, le trie ne l'avait pas.
       return socleComplete(table, input, this.socleSession(table), trigger).suggestions
-        .filter(s => !s.isArgument)
+        .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument)
         .map(s => ({ keyword: s.value, description: s.description }));
     } finally {
       this.deviceRef = precedent;
@@ -5151,108 +5237,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // cdp/lldp follow the `flag` pattern, but the cdp toggle must also
     // start / stop the per-device protocol agent so `show cdp neighbors`
     // reflects real learnt state (and stops learning when disabled).
-    this.configTrie.registerGreedy('cdp run', 'Enable CDP globally', () => {
-      this.configState.set('cdp', true);
-      this.applyToCdpAgent(a => a.setEnabled(true));
-      return '';
-    });
-    this.configTrie.registerGreedy('no cdp run', 'Disable CDP globally', () => {
-      this.configState.set('cdp', false);
-      this.applyToCdpAgent(a => a.setEnabled(false));
-      return '';
-    });
-    this.configTrie.registerGreedy('cdp timer', 'Advertisement period (sec)', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 5 || n > 254) return '% Invalid timer value (5-254)';
-      this.applyToCdpAgent(a => a.setTimerSec(n));
-      return '';
-    });
-    this.configTrie.registerGreedy('cdp holdtime', 'Hold-time advertised to peers (sec)', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 10 || n > 255) return '% Invalid holdtime value (10-255)';
-      this.applyToCdpAgent(a => a.setHoldtimeSec(n));
-      return '';
-    });
-    this.configTrie.register('cdp advertise-v2', 'Advertise CDPv2 PDUs', () => {
-      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(true));
-      return '';
-    });
-    this.configTrie.register('no cdp advertise-v2', 'Use CDPv1 PDUs', () => {
-      this.applyToCdpAgent(a => (a as unknown as { setAdvertiseV2?: (v: boolean) => void }).setAdvertiseV2?.(false));
-      return '';
-    });
-    this.configTrie.registerGreedy('lldp run', 'Enable LLDP globally', () => {
-      this.configState.set('lldp', true);
-      this.applyToLldpAgent(a => a.setEnabled(true));
-      return '';
-    });
-    this.configTrie.registerGreedy('no lldp run', 'Disable LLDP globally', () => {
-      this.configState.set('lldp', false);
-      this.applyToLldpAgent(a => a.setEnabled(false));
-      return '';
-    });
-    this.configTrie.registerGreedy('lldp timer', 'Advertisement period (sec)', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 5 || n > 32768) return '% Invalid timer value (5-32768)';
-      this.applyToLldpAgent(a => a.setTimerSec(n));
-      return '';
-    });
-    this.configTrie.registerGreedy('lldp holdtime-multiplier', 'TTL = timer x multiplier', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 2 || n > 10) return '% Invalid multiplier (2-10)';
-      this.applyToLldpAgent(a => a.setHoldtimeMultiplier(n));
-      return '';
-    });
-    this.configTrie.registerGreedy('lldp holdtime', 'Holdtime in seconds', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 10 || n > 3600) return '% Invalid holdtime value (10-3600)';
-      this.applyToLldpAgent(a => {
-        const cfg = a.getConfig();
-        const mult = Math.max(2, Math.min(10, Math.round(n / cfg.timerSec)));
-        a.setHoldtimeMultiplier(mult);
-      });
-      return '';
-    });
-    this.configTrie.registerGreedy('lldp reinit', 'Re-init delay (sec)', (args) => {
-      const n = parseInt(args[0] ?? '', 10);
-      if (isNaN(n) || n < 1 || n > 10) return '% Invalid reinit delay (1-10)';
-      this.applyToLldpAgent(a => a.setReinitDelaySec(n));
-      return '';
-    });
-
-    // [no] cdp enable — per-interface — needs `selectedInterface` /
-    // `selectedInterfaceRange` from the device-specific shell, but the
-    // applyToSelectedInterfaces helper is implemented per subclass.
-    this.configIfTrie.register('cdp enable', 'Enable CDP on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, true));
-      return '';
-    });
-    this.configIfTrie.register('no cdp enable', 'Disable CDP on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToCdpAgent(a => a.setPortEnabled(p, false));
-      return '';
-    });
-    this.configIfTrie.register('lldp transmit', 'Enable LLDP transmit on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, true));
-      return '';
-    });
-    this.configIfTrie.register('no lldp transmit', 'Disable LLDP transmit on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToLldpAgent(a => a.setPortTransmit(p, false));
-      return '';
-    });
-    this.configIfTrie.register('lldp receive', 'Enable LLDP receive on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, true));
-      return '';
-    });
-    this.configIfTrie.register('no lldp receive', 'Disable LLDP receive on this interface', () => {
-      const ports = this.selectedPortsForConfigIf();
-      for (const p of ports) this.applyToLldpAgent(a => a.setPortReceive(p, false));
-      return '';
-    });
     flag('ip cef', 'ip cef', 'CEF');
     this.registerHttpServerCommands();
     flag('ip source-route', 'ip source-route', 'IP source-route');
