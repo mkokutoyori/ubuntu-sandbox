@@ -22,6 +22,7 @@ export interface CommandSpec {
   readonly contextFrom?: string;
   readonly minPrivilege: number;
   readonly run: CommandHandler;
+  readonly undo?: CommandHandler;
   readonly hidden?: boolean;
 }
 

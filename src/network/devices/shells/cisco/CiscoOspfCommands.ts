@@ -1103,20 +1103,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   // Tunnel commands
-  configIfTrie.registerGreedy('tunnel path-mtu-discovery', 'Tunnel PMTUD', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    const cfg: { enabled: boolean; ageTimer?: number; minMtu?: number } = { enabled: true };
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'age-timer' && args[i + 1]) cfg.ageTimer = parseInt(args[i + 1], 10);
-      if (args[i] === 'min-mtu' && args[i + 1]) cfg.minMtu = parseInt(args[i + 1], 10);
-    }
-    (pending as any).tunnelPathMtuDiscovery = cfg;
-    extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
 
   configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', (args) => {
     const ifName = ctx.getSelectedInterface();

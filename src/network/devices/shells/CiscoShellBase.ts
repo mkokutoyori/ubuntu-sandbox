@@ -2631,9 +2631,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     const parsed = parseCommand(table, cmdPart, session);
     if (parsed.status !== 'ok') return null;
-    if (!this.rootIsUnambiguous(cmdPart, parsed.spec)) return null;
+    const bare = cmdPart.trim().replace(/^no\s+/i, '');
+    if (!this.rootIsUnambiguous(bare, parsed.spec)) return null;
 
-    const output: unknown = parsed.spec.run(session, parsed.args);
+    const handler = parsed.negated && parsed.spec.undo ? parsed.spec.undo : parsed.spec.run;
+    const output: unknown = handler(session, parsed.args);
     return typeof output === 'string' ? output : null;
   }
 

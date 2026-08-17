@@ -4,7 +4,10 @@ import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
 
 export type ParseResult =
   | { readonly status: 'empty' }
-  | { readonly status: 'ok'; readonly spec: CommandSpec; readonly args: Record<string, string> }
+  | {
+    readonly status: 'ok'; readonly spec: CommandSpec;
+    readonly args: Record<string, string>; readonly negated: boolean;
+  }
   | { readonly status: 'ambiguous'; readonly candidates: string[]; readonly token: string }
   | { readonly status: 'incomplete'; readonly consumed: number }
   | { readonly status: 'invalid'; readonly token: string; readonly position: number };
@@ -16,8 +19,11 @@ export function tokenize(input: string): string[] {
 export function parseCommand(
   table: CommandTable, input: string, session: CliSession,
 ): ParseResult {
-  const tokens = tokenize(input);
-  if (tokens.length === 0) return { status: 'empty' };
+  const all = tokenize(input);
+  if (all.length === 0) return { status: 'empty' };
+
+  const negated = all[0].toLowerCase() === 'no' && all.length > 1;
+  const tokens = negated ? all.slice(1) : all;
 
   let node = table.rootNode();
   const args: Record<string, string> = {};
@@ -50,7 +56,10 @@ export function parseCommand(
   if (!table.isReachable(spec, session)) {
     return { status: 'invalid', token: tokens[tokens.length - 1], position: tokens.length - 1 };
   }
-  return { status: 'ok', spec, args };
+  if (negated && spec.undo === undefined) {
+    return { status: 'invalid', token: 'no', position: 0 };
+  }
+  return { status: 'ok', spec, args, negated };
 }
 
 export function keywordMatches(

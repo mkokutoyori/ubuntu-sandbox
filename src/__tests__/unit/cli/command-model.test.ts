@@ -359,3 +359,55 @@ describe('le port d\'autorisation — le socle DEMANDE, il ne decide pas', () =>
     expect(parseCommand(t, 'show version', session()).status).toBe('ok');
   });
 });
+
+describe('la forme `no` est une PROPRIETE, pas une commande jumelle', () => {
+  function withUndo(): CommandTable {
+    const t = new CommandTable();
+    t.declare({
+      id: 'shutdown', path: ['shutdown'], description: 'Shut the interface',
+      modes: ['config-if'], minPrivilege: 15,
+      run: () => 'down', undo: () => 'up',
+    });
+    t.declare({
+      id: 'hostname', path: ['hostname', { name: 'name', type: 'WORD' }],
+      description: 'Set the host name', modes: ['config'], minPrivilege: 15,
+      run: (_s, a) => `set ${a.name}`,
+    });
+    return t;
+  }
+
+  it('`no <commande>` designe la MEME entree de l\'arbre', () => {
+    const result = parseCommand(withUndo(), 'no shutdown', session({ mode: 'config-if' }));
+
+    expect(result.status === 'ok' && result.spec.id).toBe('shutdown');
+  });
+
+  it('elle est marquee comme niee', () => {
+    const result = parseCommand(withUndo(), 'no shutdown', session({ mode: 'config-if' }));
+
+    expect(result.status === 'ok' && result.negated).toBe(true);
+  });
+
+  it('la forme directe ne l\'est pas — le temoin', () => {
+    const result = parseCommand(withUndo(), 'shutdown', session({ mode: 'config-if' }));
+
+    expect(result.status === 'ok' && result.negated).toBe(false);
+  });
+
+  it('une commande SANS forme `no` la refuse, plutot que de l\'ignorer', () => {
+    const result = parseCommand(withUndo(), 'no hostname R2', session({ mode: 'config' }));
+
+    expect(result.status).toBe('invalid');
+  });
+
+  it('l\'abreviation vaut aussi sous `no`', () => {
+    const result = parseCommand(withUndo(), 'no shut', session({ mode: 'config-if' }));
+
+    expect(result.status === 'ok' && result.spec.id).toBe('shutdown');
+  });
+
+  it('`no` seul n\'est pas une negation, c\'est une commande inconnue', () => {
+    expect(parseCommand(withUndo(), 'no', session({ mode: 'config-if' })).status)
+      .toBe('invalid');
+  });
+});

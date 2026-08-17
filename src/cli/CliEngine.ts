@@ -33,8 +33,11 @@ export class CliEngine {
       case 'incomplete': return IOS_INCOMPLETE;
       case 'invalid': return IOS_INVALID_INPUT;
       case 'ok': {
-        const output = await parsed.spec.run(session, parsed.args);
-        applyTransition(parsed.spec, parsed.args, session);
+        const handler = parsed.negated && parsed.spec.undo
+          ? parsed.spec.undo
+          : parsed.spec.run;
+        const output = await handler(session, parsed.args);
+        if (!parsed.negated) applyTransition(parsed.spec, parsed.args, session);
         return output;
       }
     }

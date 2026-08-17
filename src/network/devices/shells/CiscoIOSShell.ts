@@ -19,7 +19,7 @@
 
 import type { ExecScope } from './cisco/CiscoExecScope';
 import { CommandTable } from '@/cli/CommandTable';
-import { TUNNEL_FAMILY } from '@/cli/commands/tunnel/tunnelFamily';
+import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
@@ -145,7 +145,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleTable(): CommandTable {
     if (!this.socle) {
       this.socle = new CommandTable();
-      for (const spec of TUNNEL_FAMILY) this.socle.declare(spec);
+      for (const spec of ALL_TUNNEL) this.socle.declare(spec);
     }
     return this.socle;
   }
@@ -159,6 +159,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const pending = extra.pendingIfConfig.get(iface) ?? {};
     extra.pendingIfConfig.set(iface, pending);
     return pending as Record<string, unknown>;
+  }
+
+  setTunnelProtection(iface: string, profile: string, shared: boolean): void {
+    this.d()._getIPSecEngineInternal()?.setTunnelProtection(iface, profile, shared);
+  }
+
+  removeTunnelProtection(iface: string): void {
+    this.d()._getIPSecEngineInternal()?.removeTunnelProtection(iface);
   }
 
   onTunnelModeSet(iface: string, mode: string): void {

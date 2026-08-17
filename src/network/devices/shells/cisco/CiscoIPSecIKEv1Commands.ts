@@ -692,22 +692,7 @@ export function buildIPSecIfCommands(trie: CommandTrie, ctx: CiscoShellContext):
   });
 
   // tunnel protection ipsec profile NAME [shared]
-  trie.registerGreedy('tunnel protection ipsec profile', 'Apply IPSec profile to tunnel', (args) => {
-    const iface = ctx.getSelectedInterface();
-    if (!iface) return '% No interface selected';
-    if (args.length < 1) return '% Incomplete command.';
-    const profileName = args[0];
-    const shared = args.includes('shared');
-    eng(ctx).setTunnelProtection(iface, profileName, shared);
-    return '';
-  });
 
-  trie.register('no tunnel protection ipsec profile', 'Remove IPSec profile from tunnel', () => {
-    const iface = ctx.getSelectedInterface();
-    if (!iface) return '% No interface selected';
-    eng(ctx).removeTunnelProtection(iface);
-    return '';
-  });
 }
 
 // ─── Privileged mode: clear crypto commands ──────────────────────────
