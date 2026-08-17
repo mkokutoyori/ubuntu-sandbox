@@ -581,3 +581,59 @@ describe('`snmp-server` a un vrai sous-arbre, plus un noeud glouton', () => {
       .toContain('Invalid input');
   });
 });
+
+describe('`clock` migre, caret compris', () => {
+  it('`clock set` existe dans les DEUX modes, par une seule declaration', async () => {
+    const machines = await toutes();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const machine = machines.get(nom)!;
+      expect(await machine.executeCommand('clock set 10:30:00 3 June 2026'), nom)
+        .not.toContain('Invalid input');
+
+      await machine.executeCommand('configure terminal');
+      expect(await machine.executeCommand('clock set 11:30:00 4 June 2026'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('une heure impossible est refusee, et le caret la DESIGNE', async () => {
+    const machines = await toutes();
+
+    const refus = await machines.get('routeur')!.executeCommand('clock set 99:99:99 3 June 2026');
+
+    expect(refus).toContain('Invalid input');
+    expect(refus.split('\n')[0], 'la ligne du caret precede le message').toContain('^');
+  });
+
+  it('le caret DESIGNE le jeton fautif, pas le debut de la ligne', async () => {
+    const machines = await toutes();
+
+    const refus = await machines.get('routeur')!.executeCommand('clock set 99:99:99 3 June 2026');
+    const colonne = refus.split('\n')[0].indexOf('^');
+
+    // Le rendu partage de ce depot pose le caret a la FIN du jeton
+    // refuse ; ce qui compte est qu'il tombe dans sa portee et non au
+    // debut de la ligne ni sur le mot d'apres.
+    expect(colonne).toBeGreaterThanOrEqual('clock set '.length);
+    expect(colonne).toBeLessThanOrEqual('clock set 99:99:99'.length);
+  });
+
+  it('`clock timezone` borne son decalage', async () => {
+    const machines = await toutes(async (d) => { await d.executeCommand('configure terminal'); });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('clock timezone CET 1'), nom)
+        .not.toContain('Invalid input');
+      expect(await machines.get(nom)!.executeCommand('clock timezone CET 99'), nom)
+        .toContain('Invalid input');
+    }
+  });
+
+  it('`clock calendar-valid` reste accepte — le temoin du trie', async () => {
+    const machines = await toutes(async (d) => { await d.executeCommand('configure terminal'); });
+
+    expect(await machines.get('routeur')!.executeCommand('clock calendar-valid'))
+      .not.toContain('Invalid input');
+  });
+});

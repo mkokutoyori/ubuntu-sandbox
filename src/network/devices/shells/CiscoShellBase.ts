@@ -3188,6 +3188,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
             { keyword: 'trap', description: 'Queue size for messages sent to syslog servers' },
           ],
         },
+        second: {
+          name: 'valeur', type: 'INT', range: [1, 2147483647], optional: true,
+          description: 'Number of messages the queue holds',
+        },
       },
       {
         keyword: 'buffered', description: 'Set buffered logging parameters',
@@ -3487,6 +3491,71 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
 
+
+  protected clockSpecs(): CommandSpec[] {
+    return sequenceFamily([
+      {
+        path: ['clock', 'set'], description: 'Set the system clock',
+        modes: ['privileged', 'config'],
+        args: [{
+          name: 'heure', type: 'WORD', literal: 'hh:mm:ss',
+          description: 'Current time', pattern: /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/,
+        }],
+        tail: {
+          name: 'date', type: 'REST', optional: true, description: 'Day, month and year',
+        },
+        negatable: false,
+      },
+      {
+        path: ['clock', 'timezone'], description: 'Set timezone',
+        args: [
+          { name: 'zone', type: 'WORD', description: 'Name of time zone' },
+          { name: 'heures', type: 'INT', range: [-23, 23], description: 'Hours offset from UTC' },
+          {
+            name: 'minutes', type: 'INT', range: [0, 59], optional: true,
+            description: 'Minutes offset from UTC',
+          },
+        ],
+      },
+      {
+        path: ['clock', 'summer-time'], description: 'Configure daylight saving time',
+        args: [{ name: 'zone', type: 'WORD', description: 'Name of time zone in summer' }],
+        tail: {
+          name: 'regle', type: 'REST', optional: true, description: 'Recurrence rule',
+          alternatives: [
+            { keyword: 'date', description: 'Specific date the change occurs' },
+            { keyword: 'recurring', description: 'Recurring summer time' },
+          ],
+        },
+      },
+    ], () => ({ apply: (words) => this.applyClock(words) }));
+  }
+
+  private applyClock(words: string[]): string {
+    const [tete, ...reste] = words;
+    if (tete === 'set') return this.applyClockSet(reste);
+
+    const mgmt = getManagementService(this.d());
+    if (!mgmt) return '';
+    const config = mgmt.getClock();
+
+    if (tete === 'timezone') {
+      const heures = parseInt(reste[1] ?? '', 10);
+      const minutes = parseInt(reste[2] ?? '0', 10);
+      config.timezone = reste[0];
+      config.offsetMin = (isNaN(heures) ? 0 : heures) * 60
+        + (isNaN(minutes) ? 0 : minutes) * (heures < 0 ? -1 : 1);
+      return '';
+    }
+
+    config.summerTimezone = reste[0];
+    if (reste[1]?.toLowerCase() === 'recurring') {
+      config.daylightStart = reste.slice(2, 6).join(' ');
+      config.daylightEnd = reste.slice(6, 10).join(' ');
+    }
+    return '';
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -3494,6 +3563,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),
       ...this.snmpSpecs(),
+      ...this.clockSpecs(),
     ];
   }
 
@@ -3624,6 +3694,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return canonical.every((word, index) => words[index] === word);
   }
 
+  /**
+   * La colonne du n-ieme mot de la ligne, pour y poser le caret.
+   *
+   * Compte les blancs REELS plutot que de supposer un separateur unique :
+   * `clock set   99:99:99` est une ligne qu'un operateur tape, et un
+   * caret pose au mauvais endroit vaut moins qu'aucun caret.
+   */
+  private static offsetOfWord(line: string, index: number): number {
+    const brut = line.replace(/^\s*(no\s+)?/i, '');
+    const decalage = line.length - brut.length;
+    let position = 0;
+
+    for (let rang = 0; rang < index; rang++) {
+      while (position < brut.length && /\s/.test(brut[position])) position++;
+      while (position < brut.length && !/\s/.test(brut[position])) position++;
+    }
+    while (position < brut.length && /\s/.test(brut[position])) position++;
+    return decalage + position;
+  }
+
+  /**
+   * Le trie a-t-il un chemin AUSSI PRECIS que ce que le socle a lu ?
+   *
+   * `minMots` est le nombre de mots que le socle a reconnus avant de
+   * buter. Un chemin plus court est un fourre-tout — le noeud glouton
+   * `clock` attrape `clock set …` faute de mieux — et le laisser gagner
+   * ferait perdre le diagnostic PRECIS que le socle sait rendre.
+   */
+  private trieConnait(cmdPart: string, minMots: number): boolean {
+    const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
+
+    for (const path of this.getActiveTrie().enumerateExecutablePaths()) {
+      const words = path.toLowerCase().split(' ');
+      if (words.length > typed.length || words.length < minMots) continue;
+      if (words.every((word, index) => typed[index]?.startsWith(word))) return true;
+    }
+    return false;
+  }
+
   private trieProlonge(cmdPart: string): boolean {
     const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
 
@@ -3698,6 +3807,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // prolonge la frappe — sinon c'est le trie qui a la suite.
     if (parsed.status === 'incomplete') {
       return this.trieProlonge(cmdPart) ? null : CISCO_ERRORS.INCOMPLETE;
+    }
+    // Un refus du socle MONTRE ou l'on s'est trompe. Se taire ici
+    // laissait le trie rendre un message nu, sans le caret d'IOS : le
+    // diagnostic disait qu'on s'etait trompe sans dire ou. Meme garde
+    // que pour l'incompletude — le trie garde la main s'il a la suite.
+    // `position > 0` : le socle n'a le droit de refuser que s'il a
+    // RECONNU au moins un mot-cle. Une erreur des le premier mot veut
+    // dire que la commande entiere lui est etrangere — et IOS en fait
+    // alors un nom d'hote a joindre, ce qui ne lui appartient pas.
+    if (parsed.status === 'invalid' && parsed.position > 0
+      && parsed.refusePar === 'argument'
+      && !this.trieProlonge(cmdPart)
+      && !this.trieConnait(cmdPart, parsed.position)) {
+      return renderCliDiagnostic('invalid', {
+        line: cmdPart,
+        tokenOffset: CiscoShellBase.offsetOfWord(cmdPart, parsed.position),
+      });
     }
     if (parsed.status !== 'ok') return null;
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
@@ -5416,8 +5542,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // delegation `privilege exec level 7 clear counters` qui cessait de
     // refuser au niveau 3. La regle posee pour `ntp` vaut ici : quand
     // une famille coute plus qu'elle ne rapporte, on la rend.
-    this.privilegedTrie.registerGreedy('clock set', 'Set the system clock',
-      (args) => this.applyClockSet(args));
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', () => '');
     this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
       const dev = this.d() as unknown as {
@@ -6058,48 +6182,20 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
     // pour une seule commande finiraient par se contredire sur la même
     // date.
-    // `clock` reste au TRIE. Migre puis ANNULE : ses refus perdaient le
-    // CARET d'IOS, qui pointe le jeton fautif. Il ne vient pas du
-    // gestionnaire — `parseClockSetArgs` rend un message nu — mais de la
-    // validation d'ARGUMENT du trie, que le socle ne sait pas encore
-    // faire : il lui manque un motif sur l'argument (`hh:mm:ss`) et le
-    // report de son propre refus. Sans les deux, la migration echange un
-    // diagnostic qui montre ou l'on s'est trompe contre un qui dit
-    // seulement qu'on s'est trompe.
-    this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt && args[0] && args[1]) {
-        const offsetHrs = parseInt(args[1], 10);
-        const offsetMin = parseInt(args[2] ?? '0', 10);
-        const cfg = mgmt.getClock();
-        cfg.timezone = args[0];
-        cfg.offsetMin = (isNaN(offsetHrs) ? 0 : offsetHrs) * 60
-          + (isNaN(offsetMin) ? 0 : offsetMin) * (offsetHrs < 0 ? -1 : 1);
-      }
-      return '';
+    // `calendar-valid` est declare pour LUI-MEME, non plus comme le seul
+    // mot qu'un noeud glouton accepte. Le noeud glouton extrayait ses
+    // suites du code de son propre gestionnaire, et proposait donc un
+    // `timezone` sans description depuis que la sous-commande de ce nom
+    // est passee au socle.
+    this.configTrie.register('clock calendar-valid',
+      'Hardware calendar is a valid time source', (_args, raw) => {
+        const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
+        dev._recordUnhandledConfigLine?.(raw ?? 'clock calendar-valid');
+        return '';
+      });
+    this.configTrie.register('clock', 'Configure time-of-day clock', () => {
+      throw new CliIncomplete();
     });
-    this.configTrie.registerGreedy('clock summer-time', 'Configure daylight saving time', (args) => {
-      const mgmt = getManagementService(this.d());
-      if (mgmt && args[0]) {
-        const cfg = mgmt.getClock();
-        cfg.summerTimezone = args[0];
-        if (args[1]?.toLowerCase() === 'recurring') {
-          cfg.daylightStart = args.slice(2, 6).join(' ');
-          cfg.daylightEnd = args.slice(6, 10).join(' ');
-        }
-      }
-      return '';
-    });
-    this.configTrie.registerGreedy('clock set', 'Set system clock',
-      (args) => this.applyClockSet(args));
-    this.configTrie.registerGreedy('clock', 'Configure time-of-day clock', (args, raw) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const sub = args[0].toLowerCase();
-      if (sub !== 'calendar-valid') throw new CliInvalidInput({ argIndex: 0, token: args[0] });
-      const dev = this.d() as unknown as { _recordUnhandledConfigLine?: (l: string) => void };
-      dev._recordUnhandledConfigLine?.(raw ?? `clock ${args.join(' ')}`);
-      return '';
-    }, [{ keyword: 'calendar-valid', description: 'Hardware calendar is a valid time source' }]);
 
     this.configTrie.registerGreedy('enable secret', 'Set enable secret', (args) => {
       const dev = this.d() as unknown as { _setEnableSecretForLevel?: (level: number, s: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7') => void };
