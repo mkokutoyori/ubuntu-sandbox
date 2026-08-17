@@ -353,7 +353,7 @@ describe('les verbes de table', () => {
     const dit = run(sh, 'move "B" before "A"');
 
     expect(dit).toContain('Command fail');
-    expect(dit).toContain("n'est pas ordonnee");
+    expect(dit).toContain('is not ordered');
   });
 
   it('`clone` vers une cle existante est refuse', () => {
@@ -422,7 +422,7 @@ describe('la validation vient du schema', () => {
     const { sh } = shell();
     run(sh, 'config firewall policy', 'edit 1');
 
-    expect(run(sh, 'set policyid 7')).toContain('lecture seule');
+    expect(run(sh, 'set policyid 7')).toContain('read-only');
   });
 });
 
@@ -471,7 +471,7 @@ describe('les trois familles de refus', () => {
     const dit = run(sh, 'set auto-asic-offload enable');
 
     expect(dit).toContain('Command fail');
-    expect(dit).toContain('acceleration materielle');
+    expect(dit).toContain('hardware acceleration');
   });
 
   it('`set application` est refuse plutot que d\'installer une regle inerte', () => {
@@ -480,7 +480,7 @@ describe('les trois familles de refus', () => {
 
     const dit = run(sh, 'set application 15832');
 
-    expect(dit).toContain('signatures');
+    expect(dit).toContain('FortiGuard signature');
   });
 
   it('un attribut inexistant recoit le refus de FortiOS, pas celui-la', () => {
@@ -507,7 +507,7 @@ describe('les trois familles de refus', () => {
 
     const dit = run(sh, 'write memory');
 
-    expect(dit).toContain('automatiquement');
+    expect(dit).toContain('automatically');
   });
 
   it('les notes de simulateur sont supprimables', () => {

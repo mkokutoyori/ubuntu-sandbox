@@ -68,16 +68,16 @@ export class FortiShell {
       .filter(w => w.startsWith(prefix) && w !== prefix);
   }
 
-  help(): readonly string[] {
-    return this.describe(this.socle.suggestions('', 'QUESTION_MARK'));
+  help(inputBeforeQuestion = ''): readonly string[] {
+    return this.describe(
+      this.socle.suggestions(helpPrefix(inputBeforeQuestion), 'QUESTION_MARK'));
   }
 
   execute(rawLine: string): string {
     const line = rawLine.trim();
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
-      return this.describe(
-        this.socle.suggestions(line.slice(0, -1), 'QUESTION_MARK')).join('\n');
+      return this.help(line.slice(0, -1)).join('\n');
     }
 
     if (/^write\b/.test(line)) return FortiMessages.noSaveNeeded();
@@ -97,7 +97,7 @@ export class FortiShell {
     if ((tokens[0] === 'set' || tokens[0] === 'unset' || tokens[0] === 'append'
       || tokens[0] === 'select' || tokens[0] === 'unselect')) {
       if (!object) return FortiMessages.setOutside(this.nav.currentTable());
-      if (tokens[1] === undefined) return FortiMessages.incomplete('un attribut');
+      if (tokens[1] === undefined) return FortiMessages.incomplete('an attribute');
 
       const attribute = object.attribute(tokens[1]);
       if (!attribute) {
@@ -108,7 +108,7 @@ export class FortiShell {
       }
       if (!object.isAvailable(attribute)) {
         return FortiMessages.commandFail(
-          `\`${tokens[1]}\` ne s'applique pas dans la configuration courante de cet objet.`);
+          `\`${tokens[1]}\` does not apply in the current configuration of this object.`);
       }
       if (tokens[0] !== 'set' && !attribute.multiValue) {
         return FortiMessages.notMultiValue(tokens[0], tokens[1]);
@@ -311,7 +311,7 @@ export class FortiShell {
       if (object) return renderGet(this.tree, object.spec.path, object.key)?.join('\n') ?? '';
       const table = this.nav.currentTable();
       if (table) return renderGet(this.tree, table.spec.path)?.join('\n') ?? '';
-      return FortiMessages.incomplete('un chemin');
+      return FortiMessages.incomplete('a path');
     }
 
     if (rest[0] === 'system' && rest[1] === 'status') return this.systemStatus();
@@ -349,7 +349,7 @@ export class FortiShell {
   }
 
   private executeVerb(rest: readonly string[]): string {
-    if (rest.length === 0) return FortiMessages.incomplete('une commande');
+    if (rest.length === 0) return FortiMessages.incomplete('a command');
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` arrive en phase 4 ; la phase 1 ne livre que la grammaire.`,
     );
@@ -468,6 +468,10 @@ function isPrefix(value: PolicyRoutePrefix | null): value is PolicyRoutePrefix {
 function maskOfLength(bits: number): string {
   const value = bits === 0 ? 0 : ((0xffffffff << (32 - bits)) >>> 0);
   return [24, 16, 8, 0].map(shift => (value >>> shift) & 0xff).join('.');
+}
+
+function helpPrefix(input: string): string {
+  return input.replace(/^\s+/, '');
 }
 
 function splitTokens(line: string): string[] {

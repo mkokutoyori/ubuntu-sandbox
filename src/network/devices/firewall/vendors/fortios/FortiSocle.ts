@@ -12,7 +12,28 @@ import type { FortiTable } from './runtime/FortiTable';
 
 const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.freeze([
   [['config'], 'Configure object.'],
+  [['config', 'firewall'], 'Configure firewall.'],
+  [['config', 'firewall', 'service'], 'Configure services.'],
+  [['config', 'firewall', 'schedule'], 'Configure schedules.'],
+  [['config', 'system'], 'Configure system settings.'],
+  [['config', 'system', 'dhcp'], 'Configure DHCP.'],
+  [['config', 'router'], 'Configure router.'],
+  [['config', 'log'], 'Configure logging.'],
+  [['config', 'log', 'syslogd'], 'Configure the first syslog collector.'],
+  [['config', 'log', 'syslogd2'], 'Configure the second syslog collector.'],
+  [['config', 'log', 'memory'], 'Configure memory logging.'],
   [['diagnose'], 'Diagnose facility.'],
+  [['diagnose', 'sys'], 'System diagnostics.'],
+  [['diagnose', 'sys', 'session'], 'Session table diagnostics.'],
+  [['diagnose', 'debug'], 'Debug facility.'],
+  [['diagnose', 'debug', 'flow'], 'Trace the path a packet follows.'],
+  [['diagnose', 'firewall'], 'Firewall diagnostics.'],
+  [['diagnose', 'firewall', 'iprope'], 'Compiled policy table.'],
+  [['diagnose', 'sniffer'], 'Packet sniffer.'],
+  [['execute'], 'Execute static commands.'],
+  [['execute', 'log'], 'Log operations.'],
+  [['execute', 'log', 'filter'], 'Set the log display filter.'],
+  [['get'], 'Get dynamic and system information.'],
   [['set'], 'Set a field value.'],
   [['unset'], 'Reset a field to its default.'],
   [['append'], 'Append a value to a list.'],
@@ -62,7 +83,7 @@ export class FortiSocle {
       case 'ambiguous':
         return done(FortiMessages.ambiguous(parsed.token, parsed.candidates));
       case 'incomplete':
-        return done(FortiMessages.incomplete('la suite de la commande'));
+        return done(FortiMessages.incomplete('the rest of the command'));
       case 'invalid': return UNHANDLED;
       case 'ok': {
         const output = parsed.spec.run(session, parsed.args);

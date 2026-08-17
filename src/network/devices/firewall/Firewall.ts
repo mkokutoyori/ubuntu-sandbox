@@ -40,6 +40,9 @@ import {
 } from './pipeline/Simulation';
 import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
+import { FirewallLogStore } from './logging/FirewallLogStore';
+import { PacketCapture } from './diag/PacketCapture';
+import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import {
@@ -56,6 +59,8 @@ export interface FirewallOptions {
   profile?: FirewallProfile;
   now?: () => number;
 }
+
+const TRACE_HISTORY = 32;
 
 export interface ProxyArpEntry {
   readonly from: string;
@@ -85,6 +90,10 @@ export class Firewall extends Equipment {
   private readonly boundPolicyInterfaces = new Set<string>();
   private readonly schedules = new ScheduleStore();
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
+  private readonly logStore = new FirewallLogStore();
+  private readonly capture = new PacketCapture();
+  private readonly traces: PacketContext[] = [];
+  private sessionObserver?: (session: FirewallSession, reason: SessionCloseReason) => void;
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
   private centralNat = false;
@@ -106,7 +115,10 @@ export class Firewall extends Equipment {
 
     const now = options.now ?? (() => Date.now());
     this.syslog = new SyslogAgent(this, () => this.getBus());
-    this.sessions = new SessionTable({ now });
+    this.sessions = new SessionTable({
+      now,
+      onClosed: (session, reason) => this.sessionObserver?.(session, reason),
+    });
     this.routes = new RouteTable({
       connectedRoutes: () => this.interfaces.connectedRoutes(),
       interfaceForDestination: (address) => this.interfaces.interfaceForDestination(address),
@@ -331,7 +343,27 @@ export class Firewall extends Equipment {
   }
   getPipeline(): FirewallPipeline { return this.pipeline; }
 
+  getLogStore(): FirewallLogStore { return this.logStore; }
+  getPacketCapture(): PacketCapture { return this.capture; }
+
+  onSessionClosed(
+    observer: (session: FirewallSession, reason: SessionCloseReason) => void,
+  ): void {
+    this.sessionObserver = observer;
+  }
+
+  recentTraces(limit = TRACE_HISTORY): readonly PacketContext[] {
+    return Object.freeze(this.traces.slice(-Math.max(1, limit)));
+  }
+
+  clearTraces(): void {
+    this.traces.length = 0;
+  }
+
   protected handleFrame(portName: string, frame: EthernetFrame): void {
+    this.capture.record({
+      at: this.services.now(), iface: portName, direction: 'in', frame,
+    });
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleArpFrame(portName, frame.payload as ARPPacket);
       return;
@@ -368,6 +400,7 @@ export class Firewall extends Equipment {
       ingressPort: portName, packet, arrivedAt: this.services.now(),
     });
     const outcome = this.pipeline.process(context);
+    this.rememberTrace(context);
     this.logPipelineOutcome(context, outcome.verdict === 'accepted');
     if (outcome.verdict !== 'accepted') return;
 
@@ -375,6 +408,11 @@ export class Firewall extends Equipment {
     if (forwarded.egressPort === undefined) return;
     this.forward(
       forwarded.egressPort, forwarded.packet as IPv4Packet, forwarded.policyRouteGateway);
+  }
+
+  private rememberTrace(context: PacketContext): void {
+    this.traces.push(context);
+    while (this.traces.length > TRACE_HISTORY) this.traces.shift();
   }
 
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
@@ -430,12 +468,16 @@ export class Firewall extends Equipment {
     const mac = this.resolveNextHopMac(nextHop, egressPort);
     if (!mac) return;
 
-    this.sendFrame(egressPort, {
+    const frame: EthernetFrame = {
       srcMAC: this.portMac(egressPort),
       dstMAC: mac,
       etherType: ETHERTYPE_IPV4,
       payload: packet,
+    };
+    this.capture.record({
+      at: this.services.now(), iface: egressPort, direction: 'out', frame,
     });
+    this.sendFrame(egressPort, frame);
   }
 
   private resolveNextHopMac(nextHop: string, egressPort: string): MACAddress | undefined {

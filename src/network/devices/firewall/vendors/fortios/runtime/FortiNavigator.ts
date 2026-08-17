@@ -69,14 +69,14 @@ export class FortiNavigator {
   }
 
   descend(words: readonly string[]): string {
-    if (words.length === 0) return FortiMessages.incomplete('un chemin de configuration');
+    if (words.length === 0) return FortiMessages.incomplete('a configuration path');
 
     const parent = this.currentObject();
     if (parent) return this.descendChild(parent, words);
 
     if (this.currentTable()) {
       return FortiMessages.commandFail(
-        '`config` depuis une table demande d\'ouvrir un objet par `edit` d\'abord.',
+        '`config` from inside a table needs an object opened with `edit` first.',
       );
     }
 
@@ -110,7 +110,7 @@ export class FortiNavigator {
     if (frame.kind === 'object') {
       return FortiMessages.notATable(frame.object.spec.path.join(' '));
     }
-    if (key === undefined) return FortiMessages.incomplete('la cle de l\'objet');
+    if (key === undefined) return FortiMessages.incomplete('the object key');
 
     const table = frame.table;
     const spec = table.spec;
@@ -119,7 +119,7 @@ export class FortiNavigator {
       : unquote(key);
 
     if (spec.keyType === 'integer' && !/^\d+$/.test(resolved)) {
-      return FortiMessages.valueError(key, 'la cle de cette table est un entier.');
+      return FortiMessages.valueError(key, 'the key of this table is an integer.');
     }
 
     const existed = table.has(resolved);
@@ -133,7 +133,7 @@ export class FortiNavigator {
   set(attribute: string | undefined, values: readonly string[]): string {
     const object = this.currentObject();
     if (!object) return FortiMessages.setOutside(this.currentTable());
-    if (attribute === undefined) return FortiMessages.incomplete('un attribut');
+    if (attribute === undefined) return FortiMessages.incomplete('an attribute');
 
     const spec = object.attribute(attribute);
     if (!spec) {
@@ -141,7 +141,7 @@ export class FortiNavigator {
     }
     if (!object.isAvailable(spec)) {
       return FortiMessages.commandFail(
-        `\`${attribute}\` ne s'applique pas dans la configuration courante de cet objet.`,
+        `\`${attribute}\` does not apply in the current configuration of this object.`,
       );
     }
 
@@ -156,7 +156,7 @@ export class FortiNavigator {
   unset(attribute: string | undefined): string {
     const object = this.currentObject();
     if (!object) return FortiMessages.outsideObject('unset');
-    if (attribute === undefined) return FortiMessages.incomplete('un attribut');
+    if (attribute === undefined) return FortiMessages.incomplete('an attribute');
     if (!object.attribute(attribute)) {
       return FortiMessages.unknownAttribute(attribute, object.spec.path.join(' '));
     }
@@ -188,12 +188,12 @@ export class FortiNavigator {
   ): string {
     const object = this.currentObject();
     if (!object) return FortiMessages.outsideObject(verb);
-    if (attribute === undefined) return FortiMessages.incomplete('un attribut');
+    if (attribute === undefined) return FortiMessages.incomplete('an attribute');
 
     const spec = object.attribute(attribute);
     if (!spec) return FortiMessages.unknownAttribute(attribute, object.spec.path.join(' '));
     if (!spec.multiValue) return FortiMessages.notMultiValue(verb, attribute);
-    if (values.length === 0) return FortiMessages.incomplete('au moins une valeur');
+    if (values.length === 0) return FortiMessages.incomplete('at least one value');
 
     const cleaned = values.map(unquote);
     if (verb === 'append') {
@@ -209,7 +209,7 @@ export class FortiNavigator {
     const frame = this.top();
     if (!frame) return FortiMessages.outsideObject('next');
     if (frame.kind !== 'object') {
-      return FortiMessages.commandFail('`next` ferme un objet ; utilisez `end`.');
+      return FortiMessages.commandFail('`next` closes an object; use `end` here.');
     }
 
     this.commit(frame.object);
@@ -245,7 +245,7 @@ export class FortiNavigator {
   delete(key: string | undefined): string {
     const table = this.currentTable();
     if (!table) return FortiMessages.outsideTable('delete');
-    if (key === undefined) return FortiMessages.incomplete('la cle a supprimer');
+    if (key === undefined) return FortiMessages.incomplete('the key to delete');
 
     const resolved = unquote(key);
     if (!table.remove(resolved)) return FortiMessages.unknownKey(resolved);
@@ -268,12 +268,12 @@ export class FortiNavigator {
     if (!table) return FortiMessages.outsideTable('clone');
 
     const parsed = parsePair(words, 'to');
-    if (!parsed) return FortiMessages.incomplete('`clone <cle> to <nouvelle-cle>`');
+    if (!parsed) return FortiMessages.incomplete('`clone <key> to <new-key>`');
     if (!table.has(parsed.from)) return FortiMessages.unknownKey(parsed.from);
     if (table.has(parsed.to)) return FortiMessages.duplicate(parsed.to);
 
     const copy = table.clone(parsed.from, parsed.to);
-    if (!copy) return FortiMessages.commandFail('la copie a echoue.');
+    if (!copy) return FortiMessages.commandFail('the copy failed.');
 
     this.commit(copy, table);
     return EMPTY;
@@ -284,7 +284,7 @@ export class FortiNavigator {
     if (!table) return FortiMessages.outsideTable('rename');
 
     const parsed = parsePair(words, 'to');
-    if (!parsed) return FortiMessages.incomplete('`rename <cle> to <nouvelle-cle>`');
+    if (!parsed) return FortiMessages.incomplete('`rename <key> to <new-key>`');
     if (!table.has(parsed.from)) return FortiMessages.unknownKey(parsed.from);
     if (table.has(parsed.to)) return FortiMessages.duplicate(parsed.to);
 
@@ -304,7 +304,7 @@ export class FortiNavigator {
 
     const [key, positionWord, target] = words;
     if (!key || !positionWord || !target) {
-      return FortiMessages.incomplete('`move <cle> {before|after} <cle>`');
+      return FortiMessages.incomplete('`move <key> {before|after} <key>`');
     }
     if (positionWord !== 'before' && positionWord !== 'after') {
       return FortiMessages.valueError(positionWord, 'attendu : `before` ou `after`.');

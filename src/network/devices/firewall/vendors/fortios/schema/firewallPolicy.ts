@@ -104,20 +104,20 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     text('comments', 'Comment.'),
     {
       ...enable('auto-asic-offload', 'Enable/disable policy traffic ASIC offloading.'),
-      unimplemented: 'ce simulateur n\'a aucun modele d\'acceleration materielle, '
-        + 'donc ce reglage n\'aurait aucun effet mesurable.',
+      unimplemented: 'this simulator has no hardware acceleration model, '
+        + 'so the setting would have no measurable effect.',
     },
     {
       name: 'application', help: 'Application ID list.', multiValue: true, quoted: false,
       parts: [{ name: 'application', type: 'INT', description: 'Application ID.' }],
-      unimplemented: "l'identification applicative demande une base de signatures "
-        + 'FortiGuard ; accepter cet attribut installerait une regle qui ne '
-        + 'correspondrait jamais.',
+      unimplemented: 'application identification needs a FortiGuard signature '
+        + 'database; accepting this attribute would install a rule that could '
+        + 'never match.',
     },
     {
       ...reference('av-profile', 'Name of an existing Antivirus profile.',
         ['antivirus profile']),
-      unimplemented: 'les profils de securite arrivent en phase 6.',
+      unimplemented: 'security profiles are not implemented yet.',
     },
   ],
   onCommit(object, context) {

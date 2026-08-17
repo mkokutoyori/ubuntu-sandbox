@@ -40,7 +40,7 @@ export const FortiMessages = {
   unknownCommand(verb: string): string {
     return fail(
       `${FORTI_UNKNOWN_ACTION}\n${FORTI_COMMAND_FAIL}`,
-      `commande « ${verb} » inconnue. Tapez ? pour la liste.`,
+      `unknown command "${verb}". Type ? for the list.`,
     );
   },
 
@@ -55,45 +55,44 @@ export const FortiMessages = {
   unknownPath(path: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `chemin de configuration « ${path} » inconnu. Tapez `
-      + '`config ?` pour la liste des branches.',
+      `unknown configuration path "${path}". Type \`config ?\` for the list of branches.`,
     );
   },
 
   unknownAttribute(attribute: string, path: string): string {
     return this.parseError(
       attribute,
-      `attribut « ${attribute} » inconnu pour \`config ${path}\`. `
-      + 'Tapez `set ?` pour la liste.',
+      `unknown attribute "${attribute}" under \`config ${path}\`. `
+      + 'Type `set ?` for the list.',
     );
   },
 
   unimplemented(attribute: string, reason: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`set ${attribute}\` existe sur un vrai FortiGate ; ${reason}`,
+      `\`set ${attribute}\` exists on a real FortiGate; ${reason}`,
     );
   },
 
   unimplementedPath(path: string, reason: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`config ${path}\` existe sur un vrai FortiGate ; ${reason}`,
+      `\`config ${path}\` exists on a real FortiGate; ${reason}`,
     );
   },
 
   needsEdit(path: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${path}\` est une table : il faut \`edit <cle>\` avant de poser une valeur.`,
+      `"${path}" is a table: use \`edit <key>\` before setting a value.`,
     );
   },
 
   notATable(path: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${path}\` est un objet unique : \`edit\` n'y a pas de sens, `
-      + 'posez directement les valeurs.',
+      `"${path}" is a single object: \`edit\` has no meaning here, `
+      + 'set the values directly.',
     );
   },
 
@@ -101,78 +100,77 @@ export const FortiMessages = {
     if (table) return this.needsEdit(table.spec.path.join(' '));
     return fail(
       FORTI_COMMAND_FAIL,
-      '`set` ne s\'emploie que sur un objet ouvert par `config` puis `edit`.',
+      '`set` only applies to an object opened with `config` then `edit`.',
     );
   },
 
   outsideObject(verb: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${verb}\` ne s'emploie que sur un objet ouvert par \`edit\`.`,
+      `\`${verb}\` only applies to an object opened with \`edit\`.`,
     );
   },
 
   outsideTable(verb: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${verb}\` ne s'emploie que dans une table ouverte par \`config\`.`,
+      `\`${verb}\` only applies inside a table opened with \`config\`.`,
     );
   },
 
   notOrdered(verb: string, path: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `la table « ${path} » n'est pas ordonnee ; \`${verb}\` n'y a pas de sens.`,
+      `table "${path}" is not ordered; \`${verb}\` has no meaning here.`,
     );
   },
 
   notMultiValue(verb: string, attribute: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${attribute}\` ne porte qu'une valeur ; \`${verb}\` ne s'applique `
-      + "qu'a une liste.",
+      `"${attribute}" holds a single value; \`${verb}\` only applies to a list.`,
     );
   },
 
   unknownReference(attribute: string, value: string, target: string): string {
     return fail(
       `${FORTI_NOT_FOUND}\n${FORTI_COMMAND_FAIL}`,
-      `« ${value} » n'existe pas dans \`${target}\` ; `
-      + `\`set ${attribute}\` reference un objet declare.`,
+      `"${value}" does not exist in \`${target}\`; `
+      + `\`set ${attribute}\` references a declared object.`,
     );
   },
 
   duplicate(key: string): string {
-    return fail(`${FORTI_DUPLICATE}\n${FORTI_COMMAND_FAIL}`, `« ${key} » existe deja.`);
+    return fail(`${FORTI_DUPLICATE}\n${FORTI_COMMAND_FAIL}`, `"${key}" already exists.`);
   },
 
   unknownKey(key: string): string {
-    return fail(`${FORTI_NOT_FOUND}\n${FORTI_COMMAND_FAIL}`, `« ${key} » n'existe pas.`);
+    return fail(`${FORTI_NOT_FOUND}\n${FORTI_COMMAND_FAIL}`, `"${key}" does not exist.`);
   },
 
   readOnly(attribute: string): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `\`${attribute}\` est en lecture seule ; la machine le pose elle-meme.`,
+      `"${attribute}" is read-only; the system sets it itself.`,
     );
   },
 
   incomplete(what: string): string {
-    return fail(FORTI_COMMAND_FAIL, `il manque ${what}.`);
+    return this.parseError('', `${what} is missing.`);
   },
 
   ambiguous(word: string, candidates: readonly string[]): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `« ${word} » est ambigu : ${candidates.join(', ')}.`,
+      `"${word}" is ambiguous: ${candidates.join(', ')}.`,
     );
   },
 
   noSaveNeeded(): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      'FortiOS enregistre la configuration automatiquement a chaque `end` ; '
-      + "il n'y a pas de commande d'enregistrement a taper.",
+      'FortiOS saves the configuration automatically on every `end`; '
+      + 'there is no save command to type.',
     );
   },
 };

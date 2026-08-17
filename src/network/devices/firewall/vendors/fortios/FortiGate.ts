@@ -40,8 +40,8 @@ export class FortiGate extends Firewall {
     return '';
   }
 
-  cliHelp(_inputBeforeQuestion: string): string {
-    return this.getShell().help().join('\n');
+  cliHelp(inputBeforeQuestion: string): string {
+    return this.getShell().help(inputBeforeQuestion).join('\n');
   }
 
   cliTabCandidates(input: string): string[] {

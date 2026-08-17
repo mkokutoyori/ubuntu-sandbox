@@ -51,10 +51,10 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     ], 'check-all'),
     count('timezone', 'Time zone index.', 0, 86, 4),
     enable('simulator-hints',
-      '[simulateur] Ajouter une ligne de diagnostic aux refus.', true),
+      '[simulator] Add a diagnostic line to refusals.', true),
     {
       ...enable('auto-asic-offload', 'Enable/disable ASIC offloading.'),
-      unimplemented: 'ce simulateur n\'a aucun modele d\'acceleration materielle.',
+      unimplemented: 'this simulator has no hardware acceleration model.',
     },
   ],
   onCommit() {},
