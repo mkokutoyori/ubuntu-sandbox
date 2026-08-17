@@ -3751,6 +3751,49 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return '';
   }
 
+
+  /**
+   * Les vues des deux familles deja migrees, `ntp` et `snmp-server`.
+   *
+   * Une vue et la commande qu'elle montre lisent le MEME magasin : les
+   * laisser dans deux moteurs differents ferait porter a chacun la
+   * moitie d'une famille, et l'aide de l'une cesserait de decrire ce que
+   * l'autre configure.
+   */
+  protected showSocleSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    // Les deux modes d'EXEC parce que la DELEGATION doit rester
+    // possible, mais le niveau reste celui de la commande : c'est
+    // l'autorisation qui refuse a un utilisateur de niveau 1, et une
+    // chaine de communaute SNMP n'est pas une lecture publique.
+    const vue = (
+      path: readonly string[], description: string,
+      niveau: number, rendu: () => string,
+    ): CommandSpec => ({
+      id: path.join('-'), path: [...path], description,
+      modes: exec, minPrivilege: niveau, run: () => rendu(),
+    });
+
+    return [
+      vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
+        () => showNtpStatus(this.cs())),
+      vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,
+        () => showNtpAuthenticationKeys(this.cs())),
+      vue(['show', 'ntp', 'associations'], 'NTP associations', 1,
+        () => showNtpAssociations(this.cs())),
+      vue(['show', 'ntp', 'associations', 'detail'], 'Detailed NTP association state', 1,
+        () => showNtpAssociationsDetail(this.cs())),
+      vue(['show', 'snmp', 'community'], 'Display SNMP communities', 15,
+        () => showSnmpCommunity(this.cs())),
+      vue(['show', 'snmp', 'host'], 'Display SNMP hosts', 15, () => showSnmpHost(this.cs())),
+      vue(['show', 'snmp', 'group'], 'Display SNMP groups', 15, () => showSnmpGroup(this.cs())),
+      vue(['show', 'snmp', 'user'], 'Display SNMP users', 15, () => showSnmpUser(this.cs())),
+      vue(['show', 'snmp', 'view'], 'Display SNMP views', 15, () => showSnmpView(this.cs())),
+      vue(['show', 'snmp', 'engineID'], 'Display SNMP engine ID', 15,
+        () => showSnmpEngineId(this.cs())),
+    ];
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -3761,6 +3804,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.clockSpecs(),
       ...this.loginSpecs(),
       ...this.clearSpecs(),
+      ...this.showSocleSpecs(),
     ];
   }
 
@@ -5106,13 +5150,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tous le tableau des associations. Chaque sous-commande est
     // desormais un chemin reel, et ce que la plateforme n'a pas est
     // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
-    trie.register('show ntp status', 'Display NTP status', () => showNtpStatus(this.cs()));
-    trie.register('show ntp authentication-keys', 'Display NTP authentication keys',
-      () => showNtpAuthenticationKeys(this.cs()));
-    trie.register('show ntp associations detail', 'Detailed NTP association state',
-      () => showNtpAssociationsDetail(this.cs()));
-    trie.register('show ntp associations', 'NTP associations',
-      () => showNtpAssociations(this.cs()));
     // Refusee au lot N1 faute de compteurs : ils existent (lot N8).
     trie.registerGreedy('show ntp packets', 'NTP packet statistics', (a) => {
       if (a.length === 0) return showNtpPackets(this.cs());
@@ -5135,12 +5172,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'neighbors', description: 'LLDP neighbor entries' },
       { keyword: 'interface', description: 'LLDP interface status and configuration' },
     ]);
-    trie.register('show snmp community', 'Display SNMP communities', () => showSnmpCommunity(this.cs()));
-    trie.register('show snmp host', 'Display SNMP hosts', () => showSnmpHost(this.cs()));
-    trie.register('show snmp group', 'Display SNMP groups', () => showSnmpGroup(this.cs()));
-    trie.register('show snmp user', 'Display SNMP users', () => showSnmpUser(this.cs()));
-    trie.register('show snmp view', 'Display SNMP views', () => showSnmpView(this.cs()));
-    trie.register('show snmp engineID', 'Display SNMP engine ID', () => showSnmpEngineId(this.cs()));
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
     trie.registerGreedy('show controllers', 'Display controller status', (a) =>
       showControllers(this.cs(), a.join(' ')));

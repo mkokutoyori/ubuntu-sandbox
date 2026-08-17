@@ -694,3 +694,51 @@ describe('`login` migre — la famille de durcissement de connexion', () => {
       .toContain('Invalid input');
   });
 });
+
+describe('les VUES suivent la famille qu\'elles montrent', () => {
+  it('`show ntp status` repond sur les deux plateformes IOS', async () => {
+    const machines = await toutes();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('show ntp status'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('`show ntp ?` NOMME ses vues', async () => {
+    const machines = await toutes();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('show ntp ');
+
+      expect(aide, nom).toContain('associations');
+      expect(aide, nom).toContain('status');
+    }
+  });
+
+  it('`show snmp community` reste PRIVILEGIEE — un secret n\'est pas public', async () => {
+    const machines = await toutes();
+    const routeur = machines.get('routeur')!;
+    await routeur.executeCommand('disable');
+
+    expect(await routeur.executeCommand('show snmp community')).toContain('Invalid input');
+  });
+
+  it('mais elle repond en EXEC privilegie — le temoin', async () => {
+    const machines = await toutes();
+
+    expect(await machines.get('routeur')!.executeCommand('show snmp community'))
+      .not.toContain('Invalid input');
+  });
+
+  it('`show ntp associations detail` se distingue de sa forme courte', async () => {
+    const machines = await toutes();
+
+    const courte = await machines.get('routeur')!.executeCommand('show ntp associations');
+    const longue = await machines.get('routeur')!.executeCommand('show ntp associations detail');
+
+    expect(courte).not.toContain('Invalid input');
+    expect(longue).not.toContain('Invalid input');
+    expect(longue).not.toBe(courte);
+  });
+});
