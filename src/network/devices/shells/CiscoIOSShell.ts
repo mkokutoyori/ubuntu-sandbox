@@ -146,7 +146,80 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
+      ...this.ipv6NdSpecs(),
     ];
+  }
+
+
+  /**
+   * `ipv6 nd …` — les controles de l'annonce de routeur.
+   *
+   * Declares ICI et non dans la base : `setRaParams` est une methode du
+   * ROUTEUR, et un commutateur de ce depot n'annonce rien. Les declarer
+   * dans la base les ferait paraitre sur une machine qui ne peut pas y
+   * repondre.
+   */
+  private ipv6NdSpecs(): CommandSpec[] {
+    const drapeau = (
+      path: readonly string[], description: string, undoDescription: string,
+      poser: (valeur: boolean) => Record<string, unknown>,
+    ): CommandSpec => ({
+      id: path.join('-'), path: [...path], description,
+      modes: ['config-if', 'config-subif'], minPrivilege: 15,
+      run: () => this.appliquerRa(poser(true)),
+      undo: () => this.appliquerRa(poser(false)),
+      undoDescription,
+    });
+
+    return [
+      drapeau(['ipv6', 'nd', 'managed-config-flag'],
+        'Set the M flag in router advertisements', 'Clear the M flag',
+        (valeur) => ({ managedFlag: valeur })),
+      drapeau(['ipv6', 'nd', 'other-config-flag'],
+        'Set the O flag in router advertisements', 'Clear the O flag',
+        (valeur) => ({ otherConfigFlag: valeur })),
+      {
+        id: 'ipv6-nd-ra-suppress',
+        // `suppress` tait l'annonce spontanee ; `suppress all` tait aussi
+        // la reponse a une sollicitation. La distinction est celle
+        // d'IOS, et elle est OBSERVABLE : sous `suppress` seul, un hote
+        // qui arrive s'autoconfigure quand meme, parce qu'il sollicite.
+        path: ['ipv6', 'nd', 'ra', 'suppress', {
+          name: 'portee', type: 'ENUM', optional: true,
+          description: 'Extent of the suppression',
+          values: [{ keyword: 'all', description: 'Also suppress solicited advertisements' }],
+        }],
+        description: 'Suppress router advertisements',
+        undoDescription: 'Resume router advertisements',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.appliquerRa({ enabled: false, suppressAll: args.portee === 'all' }),
+        undo: () => this.appliquerRa({ enabled: true, suppressAll: false }),
+      },
+      {
+        id: 'ipv6-nd-ra-lifetime',
+        // Une duree de vie NULLE ne coupe pas l'autoconfiguration
+        // (RFC 4861 §4.2) : l'hote garde son adresse et ne pose pas de
+        // route par defaut. Zero est donc une valeur, pas une absence.
+        path: ['ipv6', 'nd', 'ra', 'lifetime', {
+          name: 'secondes', type: 'INT', range: [0, 9000],
+          description: 'Router lifetime advertised, in seconds',
+        }],
+        description: 'Set the router lifetime advertised in RAs',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.appliquerRa({ routerLifetime: parseInt(args.secondes, 10) }),
+      },
+    ];
+  }
+
+  private appliquerRa(patch: Record<string, unknown>): string {
+    const iface = this.selectedInterfaceName();
+    if (!iface) return '';
+    (this.d() as unknown as {
+      setRaParams?: (iface: string, patch: Record<string, unknown>) => void;
+    }).setRaParams?.(iface, patch);
+    return '';
   }
 
   selectedInterfaceName(): string | null {

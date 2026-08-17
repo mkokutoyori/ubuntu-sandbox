@@ -727,65 +727,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // Both flags used to be stored on an ad-hoc port property nobody
   // read: the advertisement is built from `raConfig`, a different
   // store, so they always went out as zero.
-  trie.register('ipv6 nd managed-config-flag', 'Set IPv6 ND M flag', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    ctx.r().setRaParams(ifName, { managedFlag: true });
-    return '';
-  });
-  trie.register('no ipv6 nd managed-config-flag', 'Clear IPv6 ND M flag', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    ctx.r().setRaParams(ifName, { managedFlag: false });
-    return '';
-  });
-  trie.register('ipv6 nd other-config-flag', 'Set IPv6 ND O flag', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    ctx.r().setRaParams(ifName, { otherConfigFlag: true });
-    return '';
-  });
-  trie.register('no ipv6 nd other-config-flag', 'Clear IPv6 ND O flag', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    ctx.r().setRaParams(ifName, { otherConfigFlag: false });
-    return '';
-  });
-
-  // `suppress` silences the unsolicited advertisement; `suppress all`
-  // silences the answer to a solicitation too. IOS's own distinction,
-  // and an observable one.
-  trie.registerGreedy('ipv6 nd ra suppress', 'Suppress router advertisements', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const tout = (args[0] ?? '').toLowerCase() === 'all';
-    if (args.length > 0 && !tout) return '% Invalid input detected at \'^\' marker.';
-    ctx.r().setRaParams(ifName, { enabled: false, suppressAll: tout });
-    return '';
-  });
-  trie.registerGreedy('no ipv6 nd ra suppress', 'Resume router advertisements', () => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    ctx.r().setRaParams(ifName, { enabled: true, suppressAll: false });
-    return '';
-  });
-
-  // A zero lifetime means "I am not a default router" (RFC 4861 §4.2):
-  // the host still autoconfigures from the prefix and installs no
-  // default route. Reception already did this; the value was just not
-  // settable.
-  trie.registerGreedy('ipv6 nd ra lifetime', 'Set router lifetime in RAs', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const v = parseInt(args[0], 10);
-    if (isNaN(v) || v < 0 || v > 9000) return '% Invalid input detected at \'^\' marker.';
-    ctx.r().setRaParams(ifName, { routerLifetime: v });
-    return '';
-  });
-  trie.requireArgs('ipv6 nd ra lifetime', 1);
-  // A node created along the way carries no label of its own, so
-  // `ipv6 nd ?` would list a bare `ra`.
-  trie.describeNode('ipv6 nd ra', 'Router advertisement parameters');
   trie.registerGreedy('ip rip authentication', 'Configure RIP authentication', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);

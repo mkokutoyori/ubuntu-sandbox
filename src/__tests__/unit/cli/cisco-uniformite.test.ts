@@ -818,3 +818,46 @@ describe('les vues de plateforme rendent ce que la MACHINE porte', () => {
     expect(detail).not.toBe(await routeur.executeCommand('show clock'));
   });
 });
+
+describe('`ipv6 nd` migre — et reste propre au ROUTEUR', () => {
+  async function surInterface(type: 'routeur' | 'commutateur') {
+    const machines = await toutes(async (d, iface) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand(`interface ${iface}`);
+    });
+    return machines.get(type)!;
+  }
+
+  it('`ipv6 nd ?` NOMME ses controles sur un routeur', async () => {
+    const aide = (await surInterface('routeur')).cliHelp('ipv6 nd ');
+
+    expect(aide).toContain('managed-config-flag');
+    expect(aide).toContain('other-config-flag');
+    expect(aide).toContain('ra');
+  });
+
+  it('`ra suppress` distingue `all` — la difference est OBSERVABLE sur IOS', async () => {
+    const routeur = await surInterface('routeur');
+
+    expect(await routeur.executeCommand('ipv6 nd ra suppress')).not.toContain('Invalid input');
+    expect(await routeur.executeCommand('ipv6 nd ra suppress all')).not.toContain('Invalid input');
+    expect(await routeur.executeCommand('ipv6 nd ra suppress zorglub')).toContain('Invalid input');
+  });
+
+  it('`ra lifetime` accepte ZERO — qui a un sens, et borne le reste', async () => {
+    const routeur = await surInterface('routeur');
+
+    expect(await routeur.executeCommand('ipv6 nd ra lifetime 0')).not.toContain('Invalid input');
+    expect(await routeur.executeCommand('ipv6 nd ra lifetime 9000')).not.toContain('Invalid input');
+    expect(await routeur.executeCommand('ipv6 nd ra lifetime 9001')).toContain('Invalid input');
+  });
+
+  it('chaque drapeau a sa NEGATION, par la meme declaration', async () => {
+    const routeur = await surInterface('routeur');
+
+    for (const mot of ['managed-config-flag', 'other-config-flag']) {
+      expect(await routeur.executeCommand(`ipv6 nd ${mot}`), mot).not.toContain('Invalid input');
+      expect(await routeur.executeCommand(`no ipv6 nd ${mot}`), mot).not.toContain('Invalid input');
+    }
+  });
+});
