@@ -204,6 +204,7 @@ export class AsaShell {
   private negatedLine = false;
   private readonly objectNatLines = new Map<string, string>();
   private readonly manualNatLines = new Map<string, string>();
+  private readonly loggingHostInterfaces = new Map<string, string>();
   private manualRuleCounter = 0;
   private currentInterface?: string;
   private currentObject?: string;
@@ -612,9 +613,32 @@ export class AsaShell {
   }
 
   private loggingCommand(args: string[], negated: boolean): string {
-    const translated = args[0] === 'enable' ? ['on', ...args.slice(1)] : args;
+    let translated = args;
+    if (args[0] === 'enable') translated = ['on', ...args.slice(1)];
+
+    if (args[0] === 'host') {
+      const iface = args[1];
+      const address = args[2];
+      if (iface === undefined || address === undefined) return ASA_INVALID_INPUT;
+      if (!this.interfaceNamed(iface)) return ASA_INVALID_INPUT;
+
+      if (negated) this.loggingHostInterfaces.delete(address);
+      else this.loggingHostInterfaces.set(address, iface);
+      translated = ['host', address, ...args.slice(3)];
+    }
     const error = this.fw.getLoggingConfig().applyLogging(translated, negated);
-    return error === null ? '' : ASA_INVALID_INPUT;
+    if (error !== null) return ASA_INVALID_INPUT;
+
+    this.fw.syncSyslogAgent();
+    return '';
+  }
+
+  private asaLoggingLine(line: string): string {
+    const host = /^logging host (\S+)(.*)$/.exec(line);
+    if (!host) return line;
+
+    const iface = this.loggingHostInterfaces.get(host[1]);
+    return iface === undefined ? line : `logging host ${iface} ${host[1]}${host[2]}`;
   }
 
   private zoneName(iface: string): string {
@@ -707,7 +731,8 @@ export class AsaShell {
 
     if (this.fw.getLoggingConfig().enabled) lines.push('logging enable');
     for (const line of this.fw.getLoggingConfig().asRunningConfigLines()) {
-      if (line !== 'no logging on') lines.push(line);
+      if (line === 'no logging on') continue;
+      lines.push(this.asaLoggingLine(line));
     }
 
     if (this.fw.sameSecurityTrafficEnabled('inter-interface')) {

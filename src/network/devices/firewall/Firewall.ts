@@ -37,6 +37,11 @@ import {
 } from './pipeline/Simulation';
 import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
+import { SyslogAgent } from '../../syslog/SyslogAgent';
+import {
+  projectLoggingOntoSyslogAgent,
+  syslogSeverityOf,
+} from '../../syslog/loggingProjection';
 import {
   firewallLogText,
   type FirewallLogEvent,
@@ -63,6 +68,7 @@ export class Firewall extends Equipment {
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
+  private readonly syslog: SyslogAgent;
   private readonly boundPolicyInterfaces = new Set<string>();
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
@@ -83,6 +89,7 @@ export class Firewall extends Equipment {
     }
 
     const now = options.now ?? (() => Date.now());
+    this.syslog = new SyslogAgent(this, () => this.getBus());
     this.sessions = new SessionTable({ now });
     this.routes = new RouteTable({
       connectedRoutes: () => this.interfaces.connectedRoutes(),
@@ -169,13 +176,22 @@ export class Firewall extends Equipment {
 
   getLoggingConfig(): LoggingConfig { return this.logging; }
 
+  getSyslogAgent(): SyslogAgent { return this.syslog; }
+
+  syncSyslogAgent(): void {
+    projectLoggingOntoSyslogAgent(this.logging, this.syslog);
+  }
+
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
     const message = this.profile.syslogCatalog?.[event];
     if (!message) return;
 
+    const text = firewallLogText(event, facts);
     this.logging.append(
-      message.severity, this.profile.osName, firewallLogText(event, facts),
-      false, message.id);
+      message.severity, this.profile.osName, text, false, message.id);
+    this.syslog.sendImmediate(
+      syslogSeverityOf(message.severity), this.profile.osName,
+      `%${this.profile.osName.toUpperCase()}-${message.id}: ${text}`);
   }
 
   clearTranslations(): number {

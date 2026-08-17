@@ -13,6 +13,7 @@
  */
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
@@ -1649,40 +1650,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       getSyslogAgent?: () => import('@/network/syslog/SyslogAgent').SyslogAgent;
     }).getSyslogAgent?.();
     if (!agent) return;
-    const c = this.logging;
-    agent.setEnabled(c.enabled);
-    type Sev = 'emergency' | 'alert' | 'critical' | 'error' | 'warning' | 'notification' | 'informational' | 'debugging';
-    const mapSev = (s: string): Sev => {
-      const m: Record<string, Sev> = {
-        emergencies: 'emergency', alerts: 'alert', critical: 'critical', errors: 'error',
-        warnings: 'warning', notifications: 'notification',
-        informational: 'informational', debugging: 'debugging',
-      };
-      return m[s] ?? 'informational';
-    };
-    const fac = c.facility as 'local0' | 'local1' | 'local2' | 'local3' | 'local4' | 'local5' | 'local6' | 'local7'
-      | 'kern' | 'user' | 'mail' | 'daemon' | 'auth' | 'syslog' | 'lpr' | 'news' | 'uucp' | 'cron' | 'authpriv' | 'ftp';
-    agent.setDefaultFacility(fac);
-    agent.setDefaultSeverityThreshold(mapSev(c.trapSeverity));
-    agent.setSourceInterface(c.sourceInterface);
-    const desired = new Set(c.hosts);
-    for (const s of agent.listServers()) {
-      if (!desired.has(s.ip)) agent.removeServer(s.ip);
-    }
-    // `logging queue-limit [trap] <n>` borne la file de sortie du relais,
-    // qui est la seule file que cet agent possède : `esm` n'a rien
-    // derrière lui ici et ne change donc rien.
-    if (c.queueLimit && c.queueLimit.scope !== 'esm') agent.setQueueLimit(c.queueLimit.size);
-    for (const h of c.hostConfigs) {
-      agent.addServer(h.ip, {
-        facility: fac, severityThreshold: mapSev(c.trapSeverity),
-        port: h.port, transport: h.transport, delimiter: c.delimiterTcp,
-      });
-    }
-    // `logging server-arp` : la résolution a lieu MAINTENANT, pas au
-    // premier message. Sans le mot-clé le chemin ordinaire résout aussi,
-    // mais seulement quand un datagramme attend déjà de partir.
-    if (c.serverArp) agent.arpForServers();
+
+    projectLoggingOntoSyslogAgent(this.logging, agent);
   }
 
   protected syncSnmpAgent(): void {
