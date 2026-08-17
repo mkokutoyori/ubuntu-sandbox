@@ -565,6 +565,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected abstract readonly fsm: CLIStateMachine;
 
   // ─── Command Tries (common modes) ───────────────────────────────
+  enumerateAllCommandPaths(): string[] {
+    const seen = new Set<string>();
+    for (const value of Object.values(this as unknown as Record<string, unknown>)) {
+      if (!(value instanceof CommandTrie)) continue;
+      for (const path of value.enumerateCommandPaths()) seen.add(path);
+    }
+    return [...seen];
+  }
+
   protected userTrie = new CommandTrie();
   protected privilegedTrie = new CommandTrie();
   protected configTrie = new CommandTrie();

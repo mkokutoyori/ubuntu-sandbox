@@ -19,7 +19,7 @@ import { describe, it, expect } from 'vitest';
 import { CliEngine, IOS_INCOMPLETE, IOS_INVALID_INPUT } from '@/cli/CliEngine';
 import { CommandTable } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
-import { SHOW_RUNNING_CONFIG } from '@/cli/commands/showRunningConfig';
+import { SHOW_RUNNING_CONFIG } from '@/cli/commands/show/showSlice';
 
 const CONFIG = [
   '!',
