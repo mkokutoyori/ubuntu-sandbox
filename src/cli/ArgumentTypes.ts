@@ -2,7 +2,7 @@ import { isValidIPv4, isValidSubnetMask } from '../network/core/ip';
 
 export type ArgumentType =
   | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'SUBNET_MASK'
-  | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID';
+  | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST';
 
 export interface ArgumentSpec {
   readonly name: string;
@@ -27,6 +27,7 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
     SUBNET_MASK: { placeholder: 'A.B.C.D', accepts: (t) => isValidSubnetMask(t) },
     MAC_ADDR: { placeholder: 'H.H.H', accepts: (t) => MAC.test(t) },
     INTERFACE: { placeholder: 'IFACE', accepts: (t) => INTERFACE_NAME.test(t) },
+    REST: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
     VLAN_ID: {
       placeholder: '<1-4094>',
       accepts: (t) => /^\d+$/.test(t) && Number(t) >= 1 && Number(t) <= 4094,

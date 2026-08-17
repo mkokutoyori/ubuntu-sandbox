@@ -32,6 +32,11 @@ export function parseCommand(
     if (matches.length === 1) { node = matches[0]; continue; }
 
     const argument = node.argumentChild;
+    if (argument?.argument?.type === 'REST') {
+      args[argument.argument.name] = tokens.slice(index).join(' ');
+      node = argument;
+      break;
+    }
     if (argument?.argument && ARGUMENT_TYPES[argument.argument.type].accepts(token)) {
       args[argument.argument.name] = token;
       node = argument;

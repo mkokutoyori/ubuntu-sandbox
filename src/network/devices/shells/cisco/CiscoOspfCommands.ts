@@ -1103,58 +1103,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   // Tunnel commands
-  configIfTrie.registerGreedy('tunnel source', 'Set tunnel source', (args) => {
-    if (args.length < 1) return '';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    (pending as any).tunnelSource = args[0];
-    extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
-  configIfTrie.registerGreedy('tunnel destination', 'Set tunnel destination', (args) => {
-    if (args.length < 1) return '';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    (pending as any).tunnelDest = args[0];
-    extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
-  configIfTrie.registerGreedy('tunnel mode', 'Set tunnel encapsulation mode', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    const joined = args.join(' ').toLowerCase();
-    (pending as any).tunnelMode = joined;
-    extra.pendingIfConfig.set(ifName, pending);
-    if (joined === 'gre multipoint') {
-      ctx.r().getDmvpnService().registerTunnel({ ifName, role: 'hub', phase: 3 });
-    }
-    return '';
-  });
-  configIfTrie.registerGreedy('tunnel key', 'Set tunnel key', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    (pending as any).tunnelKey = args[0];
-    extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
-  configIfTrie.registerGreedy('tunnel vrf', 'Set tunnel VRF', (args) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const pending = extra.pendingIfConfig.get(ifName) || {};
-    (pending as any).tunnelVrf = args[0];
-    extra.pendingIfConfig.set(ifName, pending);
-    return '';
-  });
   configIfTrie.registerGreedy('tunnel path-mtu-discovery', 'Tunnel PMTUD', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';

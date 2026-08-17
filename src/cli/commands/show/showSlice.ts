@@ -68,6 +68,8 @@ export function pathTextOf(spec: CommandSpec): string {
 export const SHOW_SLICE_PATHS: readonly string[] =
   Object.freeze(SHOW_SLICE.map(pathTextOf));
 
-export const MIGRATION_LEDGER: readonly string[] = Object.freeze([]);
+import { TUNNEL_PATHS } from '../tunnel/tunnelFamily';
+
+export const MIGRATION_LEDGER: readonly string[] = Object.freeze([...TUNNEL_PATHS]);
 
 export const MIGRATION_BLOCKER = 'whole-family-at-once';

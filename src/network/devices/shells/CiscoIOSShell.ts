@@ -18,6 +18,8 @@
  */
 
 import type { ExecScope } from './cisco/CiscoExecScope';
+import { CommandTable } from '@/cli/CommandTable';
+import { TUNNEL_FAMILY } from '@/cli/commands/tunnel/tunnelFamily';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
@@ -138,6 +140,33 @@ import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContin
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
+  private socle?: CommandTable;
+
+  protected override socleTable(): CommandTable {
+    if (!this.socle) {
+      this.socle = new CommandTable();
+      for (const spec of TUNNEL_FAMILY) this.socle.declare(spec);
+    }
+    return this.socle;
+  }
+
+  selectedInterfaceName(): string | null {
+    return this.selectedInterface ?? null;
+  }
+
+  pendingInterfaceConfig(iface: string): Record<string, unknown> {
+    const extra = this.d()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(iface) ?? {};
+    extra.pendingIfConfig.set(iface, pending);
+    return pending as Record<string, unknown>;
+  }
+
+  onTunnelModeSet(iface: string, mode: string): void {
+    if (mode.toLowerCase() === 'gre multipoint') {
+      this.d().getDmvpnService().registerTunnel({ ifName: iface, role: 'hub', phase: 3 });
+    }
+  }
+
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */

@@ -2600,6 +2600,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleTable(): CommandTable | null { return null; }
 
+  private rootIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
+    const typed = cmdPart.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
+    const root = typeof spec.path[0] === 'string' ? spec.path[0].toLowerCase() : '';
+    if (typed === root) return true;
+
+    for (const path of this.getActiveTrie().enumerateCommandPaths()) {
+      const other = path.split(' ')[0].toLowerCase();
+      if (other !== root && other.startsWith(typed)) return false;
+    }
+    return true;
+  }
+
   private tryMigratedCommand(cmdPart: string): string | null {
     const table = this.socleTable();
     if (!table) return null;
@@ -2619,6 +2631,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     });
     const parsed = parseCommand(table, cmdPart, session);
     if (parsed.status !== 'ok') return null;
+    if (!this.rootIsUnambiguous(cmdPart, parsed.spec)) return null;
 
     const output: unknown = parsed.spec.run(session, parsed.args);
     return typeof output === 'string' ? output : null;
