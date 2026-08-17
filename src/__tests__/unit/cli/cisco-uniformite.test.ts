@@ -401,3 +401,65 @@ describe('`rate-limit` et `reload` gardent leurs deux formes', () => {
       .toContain('Invalid input');
   });
 });
+
+describe('la famille `logging` est entiere sur les deux plateformes IOS', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('`logging ?` annonce les sous-commandes migrees', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('logging ');
+
+      for (const mot of ['buffered', 'console', 'host', 'trap', 'persistent', 'discriminator']) {
+        expect(aide, `${nom} / ${mot}`).toContain(mot);
+      }
+    }
+  });
+
+  it('`logging persistent ?` NOMME ses six mots-cles', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('logging persistent ');
+
+      for (const mot of ['url', 'size', 'filesize', 'immediate', 'batch', 'threshold']) {
+        expect(aide, `${nom} / ${mot}`).toContain(mot);
+      }
+    }
+  });
+
+  it('`logging persistent url X size Y` enchaine ses paires', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!
+        .executeCommand('logging persistent url flash:/syslog size 32768'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('`queue-limit` prend un nombre OU un mot-cle', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging queue-limit 200'), nom)
+        .not.toContain('Invalid input');
+      expect(await machines.get(nom)!.executeCommand('logging queue-limit esm 50'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('chaque sous-commande a sa NEGATION, par la meme declaration', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      for (const mot of ['console', 'trap 5', 'buffered', 'persistent', 'rate-limit 20']) {
+        expect(await machines.get(nom)!.executeCommand(`no logging ${mot}`), `${nom} / no ${mot}`)
+          .not.toContain('Invalid input');
+      }
+    }
+  });
+});

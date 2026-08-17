@@ -3211,6 +3211,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         }],
       },
       {
+        keyword: 'persistent', description: 'Set persistent logging parameters',
+        // `logging persistent url X size Y filesize Z` enchaine PLUSIEURS
+        // paires sur une ligne : c'est une structure repetee qu'un chemin
+        // fixe ne peut pas decrire. Le `REST` est donc fidele, et ses
+        // FORMES nomment les six mots-cles pour que `?` les annonce
+        // quand meme — l'acceptation reste permissive, l'aide non.
+        argument: {
+          name: 'options', type: 'REST', optional: true,
+          alternatives: [
+            { keyword: 'url', description: 'Location to store the persistent log' },
+            { keyword: 'size', description: 'Total size of the persistent log' },
+            { keyword: 'filesize', description: 'Size of an individual log file' },
+            { keyword: 'immediate', description: 'Write each message as it is logged' },
+            { keyword: 'batch', description: 'Write messages in batches of this size' },
+            { keyword: 'threshold', description: 'Percentage of the log that triggers a notice' },
+          ],
+        },
+      },
+      {
+        keyword: 'queue-limit', description: 'Set logger message queue size',
+        argument: {
+          name: 'taille', type: 'INT', range: [1, 2147483647],
+          values: [
+            { keyword: 'esm', description: 'Queue size for ESM filtered messages' },
+            { keyword: 'trap', description: 'Queue size for messages sent to syslog servers' },
+          ],
+        },
+      },
+      {
         keyword: 'buffered', description: 'Set buffered logging parameters',
         argument: tailleOuSeverite('taille-ou-severite'),
         second: tailleOuSeverite('severite-ou-taille'),
