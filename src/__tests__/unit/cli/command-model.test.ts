@@ -411,3 +411,35 @@ describe('la forme `no` est une PROPRIETE, pas une commande jumelle', () => {
       .toBe('invalid');
   });
 });
+
+describe('un argument OPTIONNEL laisse la commande complete sans lui', () => {
+  function withOptional(): CommandTable {
+    const t = new CommandTable();
+    t.declare({
+      id: 'clear-session', path: ['clear', 'session', { name: 'who', type: 'REST', optional: true }],
+      description: 'Clear sessions', modes: ['privileged'], minPrivilege: 15,
+      run: (_s, a) => (a.who ? `one:${a.who}` : 'all'),
+    });
+    return t;
+  }
+
+  it('sans l\'argument, la commande est COMPLETE', () => {
+    expect(parseCommand(withOptional(), 'clear session', session()).status).toBe('ok');
+  });
+
+  it('avec l\'argument, elle l\'est aussi et le porte', () => {
+    const result = parseCommand(withOptional(), 'clear session remote 10.0.0.1', session());
+
+    expect(result.status === 'ok' && result.args.who).toBe('remote 10.0.0.1');
+  });
+
+  it('un argument OBLIGATOIRE reste obligatoire — le temoin', () => {
+    const t = new CommandTable();
+    t.declare({
+      id: 'ping', path: ['ping', { name: 'target', type: 'IP_ADDR' }],
+      description: 'x', modes: ['privileged'], minPrivilege: 1, run: () => '',
+    });
+
+    expect(parseCommand(t, 'ping', session()).status).toBe('incomplete');
+  });
+});

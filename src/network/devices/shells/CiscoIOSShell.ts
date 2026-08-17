@@ -20,6 +20,7 @@
 import type { ExecScope } from './cisco/CiscoExecScope';
 import { CommandTable } from '@/cli/CommandTable';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
+import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
@@ -145,7 +146,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleTable(): CommandTable {
     if (!this.socle) {
       this.socle = new CommandTable();
-      for (const spec of ALL_TUNNEL) this.socle.declare(spec);
+      for (const spec of [...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY]) this.socle.declare(spec);
     }
     return this.socle;
   }
@@ -159,6 +160,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     const pending = extra.pendingIfConfig.get(iface) ?? {};
     extra.pendingIfConfig.set(iface, pending);
     return pending as Record<string, unknown>;
+  }
+
+  clearAllSecurityAssociations(): void {
+    this.d()._getIPSecEngineInternal()?.clearAllSAs();
+  }
+
+  clearSecurityAssociationsForPeer(peer: string): void {
+    this.d()._getIPSecEngineInternal()?.clearSAsForPeer(peer);
   }
 
   setTunnelProtection(iface: string, profile: string, shared: boolean): void {

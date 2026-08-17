@@ -69,7 +69,8 @@ export const SHOW_SLICE_PATHS: readonly string[] =
   Object.freeze(SHOW_SLICE.map(pathTextOf));
 
 import { TUNNEL_PATHS } from '../tunnel/tunnelFamily';
+import { CLEAR_CRYPTO_PATHS } from '../clear/clearCrypto';
 
-export const MIGRATION_LEDGER: readonly string[] = Object.freeze([...TUNNEL_PATHS]);
+export const MIGRATION_LEDGER: readonly string[] = Object.freeze([...TUNNEL_PATHS, ...CLEAR_CRYPTO_PATHS]);
 
 export const MIGRATION_BLOCKER = 'whole-family-at-once';

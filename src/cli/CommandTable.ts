@@ -74,6 +74,7 @@ export class CommandTable {
 
     let node = this.root;
     for (const step of spec.path) {
+      if (isArgumentSpec(step) && step.optional && !node.spec) node.spec = spec;
       node = isArgumentSpec(step)
         ? this.descendArgument(node, step)
         : this.descendKeyword(node, step);

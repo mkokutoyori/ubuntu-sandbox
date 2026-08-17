@@ -699,31 +699,9 @@ export function buildIPSecIfCommands(trie: CommandTrie, ctx: CiscoShellContext):
 
 export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 
-  trie.register('clear crypto isakmp sa', 'Clear all IKE SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.register('clear crypto ipsec sa', 'Clear all IPSec SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.register('clear crypto ikev2 sa', 'Clear all IKEv2 SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.registerGreedy('clear crypto session', 'Clear IPSec session', (args) => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
-    if (!engine) return '';
-    if (args.length >= 2 && args[0] === 'remote') {
-      engine.clearSAsForPeer(args[1]);
-    } else {
-      engine.clearAllSAs();
-    }
-    return '';
-  });
 
   // ── debug crypto commands ─────────────────────────────────────────
   const debugSvc = () => ctx.r().getDebugService();

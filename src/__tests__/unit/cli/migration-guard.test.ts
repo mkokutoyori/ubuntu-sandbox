@@ -27,13 +27,14 @@ import {
   MIGRATION_LEDGER, SHOW_SLICE, SHOW_SLICE_PATHS, pathTextOf,
 } from '@/cli/commands/show/showSlice';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
+import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 
 function socle(): CommandTable {
   const table = new CommandTable();
-  for (const spec of [...SHOW_SLICE, ...ALL_TUNNEL]) table.declare(spec);
+  for (const spec of [...SHOW_SLICE, ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY]) table.declare(spec);
   return table;
 }
 
