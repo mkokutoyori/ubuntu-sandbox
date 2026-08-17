@@ -27,9 +27,49 @@ export interface FortiAttributeSpec {
   readonly readOnly?: boolean;
 }
 
+export interface FortiInterfacePatch {
+  readonly ip?: string;
+  readonly mask?: string;
+  readonly up?: boolean;
+  readonly allowAccess?: readonly string[];
+  readonly type?: string;
+  readonly parent?: string;
+  readonly vlanId?: number;
+}
+
+export interface FortiStaticRoute {
+  readonly id: string;
+  readonly destination: string;
+  readonly mask: string;
+  readonly gateway: string;
+  readonly iface: string;
+  readonly distance: number;
+  readonly blackhole: boolean;
+  readonly enabled: boolean;
+}
+
+export interface FortiSchedulePatch {
+  readonly name: string;
+  readonly days: readonly string[];
+  readonly start: string;
+  readonly end: string;
+  readonly onetime: boolean;
+}
+
+export interface FortiCommitDevice {
+  applyInterface(name: string, patch: FortiInterfacePatch): void;
+  applyZone(name: string, members: readonly string[], intrazone: string): void;
+  removeZone(name: string): void;
+  applyStaticRoute(route: FortiStaticRoute): void;
+  removeStaticRoute(id: string): void;
+  applySchedule(schedule: FortiSchedulePatch): void;
+  removeSchedule(name: string): void;
+}
+
 export interface FortiCommitContext {
   readonly policy: PolicyStore;
   readonly objects: ObjectStore;
+  readonly device: FortiCommitDevice;
   readonly vdom: string;
   readonly position: number;
 }
@@ -201,7 +241,7 @@ export function clock(name: string, help: string, byDefault?: string): FortiAttr
     name,
     help,
     quoted: false,
-    parts: [{ name, type: 'WORD', description: help, literal: 'hh:mm' }],
+    parts: [{ name, type: 'TIME', description: help }],
     defaultValue: byDefault === undefined ? undefined : [byDefault],
   };
 }

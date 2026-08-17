@@ -2,7 +2,7 @@ import { isValidIPv4, isValidSubnetMask } from '../network/core/ip';
 
 export type ArgumentType =
   | 'INT' | 'WORD' | 'LINE' | 'IP_ADDR' | 'SUBNET_MASK'
-  | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST' | 'ENUM';
+  | 'MAC_ADDR' | 'INTERFACE' | 'VLAN_ID' | 'REST' | 'ENUM' | 'TIME';
 
 export interface EnumValue {
   readonly keyword: string;
@@ -65,6 +65,15 @@ export interface ArgumentTypeDefinition {
 
 const MAC = /^([0-9a-f]{4}\.){2}[0-9a-f]{4}$|^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
 const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
+/**
+ * Une heure du jour, `hh:mm` ou `hh:mm:ss`.
+ *
+ * Elle etait declaree `WORD` avec un `literal` d'affichage, ce qui
+ * annonce `hh:mm` a l'operateur et accepte n'importe quoi — `25:99`
+ * passait. Le `literal` decrit, il ne verifie pas ; un type qui ne
+ * verifie rien est un critere range et jamais evalue.
+ */
+const TIME_OF_DAY = /^(?:[01]\d|2[0-3]|24):[0-5]\d(?::[0-5]\d)?$/;
 
 export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinition>> =
   Object.freeze({
@@ -77,6 +86,7 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
     INTERFACE: { placeholder: 'IFACE', accepts: (t) => INTERFACE_NAME.test(t) },
     REST: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
     ENUM: { placeholder: 'WORD', accepts: (t) => t.length > 0 },
+    TIME: { placeholder: 'hh:mm', accepts: (t) => TIME_OF_DAY.test(t) },
     VLAN_ID: {
       placeholder: '<1-4094>',
       accepts: (t) => /^\d+$/.test(t) && Number(t) >= 1 && Number(t) <= 4094,

@@ -1814,7 +1814,81 @@ C'est le même raisonnement qui a produit `TextTable.ts` dans ce dépôt
 défaut qu'il ferme est identique : deux écritures d'un même fait finissent
 par se contredire.
 
+### 14.1 bis — Le partage des rôles avec le moteur de commandes
+
+**Révision de ce chapitre, décidée après la livraison de la phase 1 et
+appliquée en phase 1b.** La première rédaction faisait porter au schéma
+la validation, l'aide et la complétion. C'était une écriture de trop :
+`src/cli/` porte déjà un moteur de commandes, écrit pour Cisco et repris
+par l'ASA, qui fait tout cela et davantage.
+
+**La règle est donc :**
+
+| Question | Qui répond |
+|---|---|
+| Qu'est-ce qui **existe** ? | Le schéma FortiOS |
+| Qu'est-ce qui est **légal ici** ? | `src/cli/CommandParser` |
+| Que **proposer** au curseur ? | `src/cli/CompletionEngine` |
+| Quelle **forme** une valeur doit-elle avoir ? | `src/cli/ArgumentTypes` |
+| Que **muter** ? | `FortiNavigator` |
+
+**Ce que le moteur partagé apporte et que le schéma seul n'apportait
+pas** : les abréviations non ambiguës, l'ambiguïté **nommée** plutôt que
+le premier candidat, les bornes réelles dans l'aide (`<0-32>` et non le
+nom de l'attribut), les formes alternatives pour une même place, `<cr>`
+quand la commande est complète, et le filtrage par atteignabilité du
+sous-arbre.
+
+**La difficulté, et sa réponse.** Une `CommandTable` est statique ;
+FortiOS ne l'est pas — les commandes légales dépendent de la position
+dans l'arbre de configuration, et les attributs de l'objet ouvert.
+`FortiSocle` **bâtit une table par contexte**, à partir du schéma, et la
+met en cache sur (chemin, attributs disponibles, empreinte des
+références). Chaque table fait quelques dizaines de nœuds.
+
+**Le gain qui n'était pas prévu** : parce que la table est bâtie à la
+demande, `set srcaddr ?` peut lister les objets adresse **qui existent
+réellement**. Une table statique ne saurait pas le faire.
+
+**Un défaut du moteur partagé fermé en passant** : un nœud intermédiaire
+héritait de la description de son **premier descendant**, donc
+`config ?` annonçait « Configure IPv4 addresses. » pour le mot `config`
+— la description d'une branche pour le nom de toutes. Cisco a
+exactement le même défaut sur `show ?`. `TreeNode.legend` et
+`CommandTable.describePath()` le referment pour les deux, et l'héritage
+reste le comportement par défaut, qui convient quand la branche est
+unique.
+
 ### 14.2 Le modèle
+
+Un attribut FortiOS porte **des `ArgumentSpec` partagés**, un par jeton
+que la valeur occupe — deux pour `set subnet A.B.C.D A.B.C.D`, un pour
+tout le reste — plus ce que `src/cli/` ne connaît pas : la valeur par
+défaut, la disponibilité conditionnelle, la cible d'une référence, et le
+motif d'un refus de famille 2.
+
+```ts
+export interface FortiAttributeSpec {
+  readonly name: string;
+  readonly help: string;
+  readonly parts: readonly ArgumentSpec[];
+  readonly multiValue?: boolean;
+  readonly referenceTo?: readonly string[];
+  readonly quoted?: boolean;
+  readonly defaultValue?: readonly string[];
+  readonly availableWhen?: (object: FortiObjectView) => boolean;
+  readonly unimplemented?: string;
+  readonly readOnly?: boolean;
+}
+```
+
+Les fabriques `enable()`, `choice()`, `count()`, `text()`, `word()`,
+`reference()`, `refList()`, `address()`, `addressMask()` et `clock()`
+composent les cas courants, de sorte qu'une table se lit comme la
+documentation Fortinet plutôt que comme du code.
+
+<details>
+<summary>La première rédaction, conservée pour mémoire</summary>
 
 ```ts
 export type FortiValueType =
@@ -1823,7 +1897,7 @@ export type FortiValueType =
   | 'mac-address' | 'enum' | 'reference' | 'time' | 'password'
   | 'user-name' | 'boolean-enable';
 
-export interface FortiAttributeSpec {
+export interface FortiAttributeSpecV1 {
   readonly name: string;
   readonly type: FortiValueType;
   readonly help: string;
@@ -1860,11 +1934,19 @@ export interface FortiTableSpec {
 }
 ```
 
+</details>
+
+La `FortiTableSpec` livrée est celle de la première rédaction, à ceci
+près que `attributes` et `children` sont des **tableaux** plutôt que des
+`Map` — l'ordre de déclaration est celui du rendu, et une `Map` obligeait
+à le reconstituer — et que `renderOrder`, `scope` et `accessGroup` y sont
+**obligatoires**, le garde-fou G8 le vérifiant.
+
 ### 14.3 Ce que le schéma donne gratuitement
 
 | Fonction | Dérivation |
 |---|---|
-| Validation de `set` | `type`, `enumValues`, `min`/`max`, `maxLength` |
+| Validation de `set` | Les `parts`, via `argumentAccepts` du moteur partagé |
 | Validation de référence | `referenceTo` + le magasin correspondant |
 | `unset` | `defaultValue` |
 | `append`/`select`/`unselect` | `multiValue` |

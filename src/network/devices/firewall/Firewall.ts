@@ -36,6 +36,7 @@ import {
   type SimulationResult,
 } from './pipeline/Simulation';
 import { GENERIC_PROFILE, type FirewallProfile } from './FirewallProfile';
+import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import {
@@ -70,6 +71,8 @@ export class Firewall extends Equipment {
   private readonly logging = new LoggingConfig();
   private readonly syslog: SyslogAgent;
   private readonly boundPolicyInterfaces = new Set<string>();
+  private readonly schedules = new ScheduleStore();
+  private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
 
@@ -109,6 +112,7 @@ export class Firewall extends Equipment {
       applicationShift: profile.applicationShift,
       securityLevelOf: (zone) => this.zones.getZone(zone)?.securityLevel,
       interfaceHasBoundPolicy: (iface) => this.boundPolicyInterfaces.has(iface),
+      scheduleActive: (name, at) => this.schedules.activeAt(name, at),
       sameSecurityInterAllowed: () => this.sameSecurityInter,
       now,
     });
@@ -207,6 +211,26 @@ export class Firewall extends Equipment {
     return cleared;
   }
 
+  getScheduleStore(): ScheduleStore { return this.schedules; }
+
+  setSchedule(schedule: ScheduleObject): boolean {
+    return this.schedules.upsert(schedule);
+  }
+
+  setAllowedAccess(iface: string, services: readonly string[]): void {
+    this.allowedAccess.set(iface, new Set(services.map(s => s.toLowerCase())));
+  }
+
+  allowsAccess(iface: string, service: string): boolean {
+    const declared = this.allowedAccess.get(iface);
+    if (declared === undefined) return true;
+    return declared.has(service.toLowerCase());
+  }
+
+  allowedAccessOn(iface: string): readonly string[] {
+    return [...(this.allowedAccess.get(iface) ?? [])];
+  }
+
   getInterfaceTable(): InterfaceTable { return this.interfaces; }
   getZoneTable(): ZoneTable { return this.zones; }
   getObjectStore(): ObjectStore { return this.objects; }
@@ -295,6 +319,7 @@ export class Firewall extends Equipment {
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
     if (packet.protocol !== IP_PROTO_ICMP) return;
+    if (!this.allowsAccess(portName, 'ping')) return;
 
     const icmp = packet.payload as ICMPPacket | undefined;
     if (icmp?.type !== 'icmp' || icmp.icmpType !== 'echo-request') return;

@@ -247,9 +247,14 @@ describe('G7 — tout ce que le schema expose porte une aide', () => {
     const muets: string[] = [];
     for (const spec of FORTIOS_SCHEMA) {
       for (const attribute of spec.attributes) {
-        for (const value of attribute.enumValues ?? []) {
-          if (value.help.trim().length === 0) {
-            muets.push(`${spec.path.join(' ')} / ${attribute.name} / ${value.value}`);
+        for (const part of attribute.parts) {
+          for (const value of part.values ?? []) {
+            if (value.description.trim().length === 0) {
+              muets.push(`${spec.path.join(' ')} / ${attribute.name} / ${value.keyword}`);
+            }
+          }
+          if ((part.description ?? '').trim().length === 0) {
+            muets.push(`${spec.path.join(' ')} / ${attribute.name} / ${part.name}`);
           }
         }
       }

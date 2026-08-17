@@ -6,12 +6,13 @@ import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
 import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
-import type { FortiCommitContext } from './schema/types';
+import type { FortiCommitContext, FortiCommitDevice } from './schema/types';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
 import { FortiNavigator, unquote } from './runtime/FortiNavigator';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
 import { renderGet } from './render/getRenderer';
+import { makeSchedule } from '../../model/ScheduleObject';
 
 export { FORTI_COMMAND_FAIL };
 
@@ -152,8 +153,46 @@ export class FortiShell {
     return {
       policy: this.fw.getPolicyStore(),
       objects: this.fw.getObjectStore(),
+      device: this.commitDevice(),
       vdom: this.vdom,
       position: -1,
+    };
+  }
+
+  private commitDevice(): FortiCommitDevice {
+    const fw = this.fw;
+    return {
+      applyInterface(name, patch) {
+        if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
+        if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
+        if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
+      },
+      applyZone(name, members, intrazone) {
+        const zones = fw.getZoneTable();
+        if (!zones.getZone(name)) {
+          zones.createZone(name, { intraZoneAction: intrazone === 'allow' ? 'allow' : 'deny' });
+        }
+        for (const member of members) zones.assignInterface(name, member);
+      },
+      removeZone(name) {
+        fw.getZoneTable().deleteZone(name);
+      },
+      applyStaticRoute(route) {
+        const routes = fw.getRouteTable();
+        routes.removeStatic(route.destination, route.mask);
+        if (!route.enabled || route.blackhole) return;
+        routes.addStatic(route.destination, route.mask,
+          route.gateway === '0.0.0.0' ? undefined : route.gateway,
+          { iface: route.iface || undefined, distance: route.distance });
+      },
+      removeStaticRoute() {},
+      applySchedule(schedule) {
+        const built = makeSchedule(schedule.name, schedule.days, schedule.start, schedule.end);
+        if (built) fw.setSchedule(built);
+      },
+      removeSchedule(name) {
+        fw.getScheduleStore().remove(name);
+      },
     };
   }
 
@@ -183,7 +222,9 @@ export class FortiShell {
       if (target === 'firewall service custom' || target === 'firewall service group') {
         push('ALL', 'All services.');
       }
-      if (target.startsWith('firewall schedule')) push('always', 'Always active.');
+      if (target.startsWith('firewall schedule')) {
+        for (const name of this.fw.getScheduleStore().names()) push(name, 'Schedule.');
+      }
     }
     return out;
   }

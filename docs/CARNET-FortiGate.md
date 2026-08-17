@@ -27,7 +27,7 @@
 | — | Déclinaison initiale : profil, shell à deux tables, 32 cas | ✅ livrée (E31) |
 | **1** | **La grammaire : schéma déclaratif, navigateur, trois rendus** | ✅ livrée (E32) |
 | **1b** | **Migration sur le moteur de commandes partagé `src/cli/`** | ✅ livrée |
-| **2** | Système et objets : `system *`, `addrgrp`, `service`, `schedule`, `router static` | ⏳ suivant |
+| **2** | Système et objets : `system *`, `addrgrp`, `service`, `schedule`, `router static` | ✅ livrée |
 | 3 | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ⏳ |
 | 4 | Diagnostic et journaux | ⏳ |
 | 5 | VDOM et modes de déploiement | ⏳ |
@@ -185,7 +185,45 @@ adresse réellement déclarés), parce que la table est bâtie à la demande.
 74 cas de grammaire, 1054 cas verts sur `firewall/` + `cli/`, typecheck
 **348** contre une base à **351**.
 
-### 6.2 Phase 2 — système et objets
+### 6.2 Phase 2 — système et objets — ✅ livrée
+
+**Onze chemins de configuration** : `system global`, `system settings`,
+`system interface` (+ VLAN, `allowaccess`), `system zone`, `system dns`,
+`system dhcp server` (+ `ip-range`), `firewall addrgrp`,
+`firewall service custom`, `firewall service group`,
+`firewall schedule recurring`, `router static`. Plus le catalogue de
+36 services d'usine (`schema/predefined.ts`).
+
+**Deux prélèvements sur le socle**, les premiers des treize (BRD §31.2) :
+
+- **`model/ScheduleObject.ts`** — l'objet horaire que `BRD-Firewall` §8.5
+  spécifiait et que personne n'avait écrit, avec `ScheduleStore` et la
+  règle de franchissement de minuit ;
+- le branchement de **`PolicyEvaluator.scheduleActive`**, qui existait
+  comme dépendance et **n'était câblé par personne** — une règle horaire
+  était donc soit inévaluable, soit ignorée ;
+- **`Firewall.setAllowedAccess` / `allowsAccess`**, et le filtre appliqué
+  dans `deliverLocally`. Une interface qui n'admet pas `ping` ne répond
+  pas à l'écho. Une interface **jamais configurée** répond, sans quoi
+  chaque autre constructeur aurait perdu son ping.
+
+**Défaut trouvé par la suite à l'aveugle, dans le moteur partagé** :
+un horaire déclaré `WORD` avec un `literal: 'hh:mm'` annonçait `hh:mm` à
+l'opérateur et **acceptait n'importe quoi** — `set start 25:99` passait.
+Le `literal` décrit, il ne vérifie pas. `src/cli/ArgumentTypes.ts` gagne
+le type **`TIME`**, qui sert aussi à IOS (`clock set`, `time-range`).
+
+**Mesures** : 29 cas, **24 tombent** avant correctif. 1102 verts sur
+`firewall/` + `cli/`. Typecheck **347** contre une base à **351**.
+
+### 6.2 bis — Phase 2, ce qui reste
+
+`config system ntp`, `config firewall schedule onetime`,
+`config firewall schedule group`, `config system dhcp server` côté
+data-plane (le schéma existe, le serveur DHCP réel n'est pas encore
+branché), et `config system interface` avec `mode dhcp` (client DHCP).
+
+### 6.3 Phase 2 — le plan d'origine, pour mémoire
 
 | Chemin | Fichier |
 |---|---|
