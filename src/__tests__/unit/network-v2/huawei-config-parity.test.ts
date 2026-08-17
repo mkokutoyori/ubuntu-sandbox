@@ -1200,8 +1200,11 @@ describe('Batch 47: ACL show equivalence', () => {
     expect(result).toContain('Basic ACL 2000');
     expect(result).toContain('permit');
     expect(result).toContain('deny');
-    expect(result).toContain('rule 0');
+    // VRP numerote la premiere regle auto au PAS (5 par defaut), pas a 0.
+    // L'ancien affichage calculait `index * 5` au moment du rendu, ce qui
+    // donnait 0 et 5 et ne correspondait a aucun numero stocke.
     expect(result).toContain('rule 5');
+    expect(result).toContain('rule 10');
   });
 });
 

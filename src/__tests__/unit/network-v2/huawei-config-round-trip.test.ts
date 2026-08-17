@@ -138,8 +138,11 @@ describe('ce que l\'operateur a ecrit revient tel quel', () => {
       'rule permit source 192.168.0.0 0.0.0.255',
       'rule deny source 10.0.0.0 0.0.0.255', 'quit']);
     const vue = await r.executeCommand('display acl 2001');
-    expect(vue).toContain('rule 0');
+    // Le numero attribue est bien « le sien » : il est STOCKE et affiche
+    // tel quel. VRP part du pas (5), l'ancien rendu partait de 0 et
+    // recalculait a chaque affichage.
     expect(vue).toContain('rule 5');
+    expect(vue).toContain('rule 10');
   });
 
   it('`undo summary` et le `service-type` sont rendus', async () => {

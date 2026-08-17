@@ -126,7 +126,7 @@ import { DHCPv6Server } from '../dhcpv6/DHCPv6Server';
 import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
 import { IPSecEngine } from '../ipsec/IPSecEngine';
 import type { NetFlowAgent, NetFlowRecordInput } from '../netflow/NetFlowAgent';
-import { ACLEngine, formatAclLogMessage, sourceProbePacket, type AclNumbering } from './router/ACLEngine';
+import { ACLEngine, formatAclLogMessage, sourceProbePacket, type AclNumbering, type AclSequencing } from './router/ACLEngine';
 import { isTimeRangeActive, type CiscoSecurityConfig } from './router/security/CiscoSecurityConfig';
 export type { ACLEntry, AccessList, InterfaceACLBinding } from './router/ACLEngine';
 import { RouterRIPEngine } from './router/RouterRIPEngine';
@@ -2327,7 +2327,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private deniedByInboundACL(inPort: string, ipPkt: IPv4Packet): boolean {
     const inboundACL = this.aclEngine.getInterfaceACL(inPort, 'in');
     if (inboundACL === null) return false;
-    if (this.aclEngine.evaluateACL(inboundACL, ipPkt) !== 'deny') return false;
+    if (this.aclEngine.evaluateForDataPlane(inboundACL, ipPkt) !== 'deny') return false;
 
     Logger.info(this.id, 'router:acl-deny-in',
       `${this.name}: ACL denied inbound on ${inPort}: ${ipPkt.sourceIP} → ${ipPkt.destinationIP}`);
@@ -2732,7 +2732,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Phase E.2b: Outbound ACL check
     const outboundACL = this.aclEngine.getInterfaceACL(route.iface, 'out');
     if (outboundACL !== null) {
-      const verdict = this.aclEngine.evaluateACL(outboundACL, fwdPkt);
+      const verdict = this.aclEngine.evaluateForDataPlane(outboundACL, fwdPkt);
       if (verdict === 'deny') {
         Logger.info(this.id, 'router:acl-deny-out',
           `${this.name}: ACL denied outbound on ${route.iface}: ${fwdPkt.sourceIP} → ${fwdPkt.destinationIP}`);
@@ -5555,6 +5555,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * contredisant sur 2000-2699.
    */
   _setAclNumberingPolicy(fn: AclNumbering) { this.aclEngine.setNumberingPolicy(fn); }
+  _setAclSequencingPolicy(fn: AclSequencing, step: number) { this.aclEngine.setSequencingPolicy(fn, step); }
+  _setAclUnmatchedDataPlaneAction(a: 'permit' | 'deny') { this.aclEngine.setUnmatchedDataPlaneAction(a); }
+  _aclEnsure(id: number) { this.aclEngine.ensureAccessList(id); }
+  _aclSetStep(ref: number | string, step: number) { return this.aclEngine.setStep(ref, step); }
+  _aclSetDescription(ref: number | string, t: string) { return this.aclEngine.setDescription(ref, t); }
+  _aclRemoveEntry(ref: number | string, seq: number) { return this.aclEngine.removeEntryBySequence(ref, seq); }
+  _aclFind(ref: number | string) { return this.aclEngine.findRef(ref); }
+  _aclDefaultStep() { return this.aclEngine.getDefaultStep(); }
+  _aclEvaluateDataPlane(ref: number | string, pkt: IPv4Packet) { return this.aclEngine.evaluateForDataPlane(ref, pkt); }
   addAccessListEntry(...args: Parameters<ACLEngine['addAccessListEntry']>) { this.aclEngine.addAccessListEntry(...args); }
   addNamedAccessListEntry(...args: Parameters<ACLEngine['addNamedAccessListEntry']>) { this.aclEngine.addNamedAccessListEntry(...args); }
   removeAccessList(id: number) { this.aclEngine.removeAccessList(id); }

@@ -8,7 +8,7 @@
  */
 
 import { Router } from './Router';
-import { VRP_ACL_NUMBERING } from './router/ACLEngine';
+import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
@@ -85,6 +85,12 @@ export class HuaweiRouter extends Router {
     // « advanced ». Sans cette pose, le moteur appliquerait les plages
     // IOS, où 2000-2699 sont des listes ÉTENDUES.
     this._setAclNumberingPolicy(VRP_ACL_NUMBERING);
+    // VRP numerote les regles par multiples du pas, en partant du pas (5).
+    this._setAclSequencingPolicy(VRP_SEQUENCING, VRP_DEFAULT_STEP);
+    // Et `traffic-filter` LAISSE PASSER un paquet qu'aucune regle
+    // n'apparie, la ou IOS le refuse. Sans ce reglage, une ACL VRP ne
+    // contenant qu'un `deny` bloquait tout le reste du trafic.
+    this._setAclUnmatchedDataPlaneAction('permit');
     const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),

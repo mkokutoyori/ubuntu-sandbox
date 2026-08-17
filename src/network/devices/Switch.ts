@@ -1355,7 +1355,7 @@ export abstract class Switch extends Equipment {
     if (frame.etherType !== ETHERTYPE_IPV4) return true;
     const ip = frame.payload as IPv4Packet | undefined;
     if (!ip || ip.type !== 'ipv4') return true;
-    return this.vaclEngine.evaluateACL(aclRef, ip) !== 'deny';
+    return this.vaclEngine.evaluateForDataPlane(aclRef, ip) !== 'deny';
   }
 
   // ─── MQC (Huawei traffic classifier/behavior/policy) API ──────────

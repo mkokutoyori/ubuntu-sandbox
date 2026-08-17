@@ -91,6 +91,29 @@ export const IOS_ACL_NUMBERING: AclNumbering = (id) =>
 export const VRP_ACL_NUMBERING: AclNumbering = (id) =>
   (id >= 2000 && id <= 2999) ? 'standard' : 'extended';
 
+// ─── Numérotation des ENTRÉES, par vendeur ──────────────────────
+
+/**
+ * Quel numéro attribuer à une entrée que l'opérateur n'a pas numérotée ?
+ * `maxSeq` est le plus grand numéro déjà pris, `null` si la liste est vide.
+ */
+export type AclSequencing = (maxSeq: number | null, step: number) => number;
+
+/** IOS : « le dernier + 10 », en partant de 10. */
+export const IOS_SEQUENCING: AclSequencing = (maxSeq) => (maxSeq === null ? 10 : maxSeq + 10);
+
+/**
+ * VRP : le MULTIPLE DU PAS suivant, en partant du pas lui-même. Une liste
+ * contenant les règles 5 et 7 avec un pas de 5 numérote la suivante 10,
+ * et non 17 — ce n'est pas la formule d'IOS.
+ */
+export const VRP_SEQUENCING: AclSequencing = (maxSeq, step) =>
+  maxSeq === null ? step : Math.floor(maxSeq / step) * step + step;
+
+/** Le pas par défaut de chaque plateforme. VRP l'expose par `step`. */
+export const IOS_DEFAULT_STEP = 10;
+export const VRP_DEFAULT_STEP = 5;
+
 // ─── Sonde « adresse source » ───────────────────────────────────
 
 /**
@@ -211,6 +234,15 @@ export interface AccessList {
   name?: string;
   /** ACL type */
   type: 'standard' | 'extended';
+  /**
+   * Le pas de renumérotation (`step` sur VRP). Il décide du numéro
+   * attribué aux règles suivantes, et il est AFFICHÉ — il était stocké
+   * dans une propriété ad hoc du routeur que personne ne lisait, pendant
+   * que la vue annonçait « ACL's step is 5 » en dur.
+   */
+  step?: number;
+  /** `description` — VRP la rend dans la vue et dans la configuration. */
+  description?: string;
   /** Ordered list of entries (first match wins) */
   entries: ACLEntry[];
 }
@@ -262,6 +294,33 @@ export class ACLEngine {
   private numbering: AclNumbering = IOS_ACL_NUMBERING;
   setNumberingPolicy(fn: AclNumbering): void { this.numbering = fn; }
 
+  private sequencing: AclSequencing = IOS_SEQUENCING;
+  private defaultStep: number = IOS_DEFAULT_STEP;
+  /** Comment numéroter une entrée non numérotée, et quel pas par défaut. */
+  setSequencingPolicy(fn: AclSequencing, step: number): void {
+    this.sequencing = fn;
+    this.defaultStep = step;
+  }
+  getDefaultStep(): number { return this.defaultStep; }
+
+  /**
+   * Que devient, DANS LE PLAN DE DONNÉES, un paquet qu'aucune règle
+   * n'apparie ?
+   *
+   * IOS répond « refusé » : c'est le deny implicite. **VRP répond
+   * autrement, et la réponse dépend du service qui applique la liste** —
+   * `traffic-filter` laisse passer un paquet non apparié, là où le
+   * contrôle d'accès d'une vty le refuse. Le moteur imposait la réponse
+   * d'IOS à tout le monde, de sorte qu'une ACL VRP ne contenant qu'un
+   * `deny` bloquait TOUT le reste du trafic au lieu de ce qu'elle nomme.
+   *
+   * Seul le plan de données lit ce réglage (`evaluateForDataPlane`). NAT,
+   * vty et IPSec continuent d'exiger un `permit` explicite, ce qui est
+   * juste pour eux sur les deux plateformes.
+   */
+  private unmatchedDataPlaneAction: 'permit' | 'deny' = 'deny';
+  setUnmatchedDataPlaneAction(a: 'permit' | 'deny'): void { this.unmatchedDataPlaneAction = a; }
+
   /**
    * Puits de journalisation des ACE marquées `log` / `log-input`.
    *
@@ -292,7 +351,7 @@ export class ACLEngine {
       acl = { id, type, entries: [] };
       this.accessLists.push(acl);
     }
-    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    const seq = opts.sequence ?? this.nextSequence(acl);
     acl.entries.push({
       action, ...opts, sequence: seq, sequenceConfigured: opts.sequence !== undefined,
       matchCount: 0,
@@ -315,7 +374,7 @@ export class ACLEngine {
     if (opts.sequence !== undefined && acl.entries.some(e => e.sequence === opts.sequence)) {
       return false;
     }
-    const seq = opts.sequence ?? ACLEngine.nextSequence(acl);
+    const seq = opts.sequence ?? this.nextSequence(acl);
     acl.entries.push({
       action, ...opts, sequence: seq, sequenceConfigured: opts.sequence !== undefined,
       matchCount: 0,
@@ -370,14 +429,89 @@ export class ACLEngine {
   }
 
   /**
-   * IOS attribue au nouvel ACE « le numéro du dernier + 10 ». L'ancien
-   * calcul arrondissait au multiple de 10 suivant : après un ACE écrit en
-   * 15, IOS donne 25 et ce moteur donnait 20.
+   * Le numéro d'une entrée que l'opérateur n'a pas numérotée. La règle
+   * appartient au vendeur : IOS fait « dernier + 10 », VRP « multiple du
+   * pas suivant ». Le pas est celui de la liste quand `step` l'a posé.
    */
-  private static nextSequence(acl: AccessList): number {
-    if (acl.entries.length === 0) return 10;
+  private nextSequence(acl: AccessList): number {
+    const step = acl.step ?? this.defaultStep;
+    if (acl.entries.length === 0) return this.sequencing(null, step);
     const maxSeq = acl.entries.reduce((m, e) => Math.max(m, e.sequence ?? 0), 0);
-    return maxSeq + 10;
+    return this.sequencing(maxSeq, step);
+  }
+
+  /** `step <n>` — le pas de renumérotation de cette liste. */
+  setStep(ref: number | string, step: number): boolean {
+    const acl = this.findRef(ref);
+    if (!acl) return false;
+    acl.step = step;
+    return true;
+  }
+
+  /** `description <texte>` sur une liste. */
+  setDescription(ref: number | string, text: string): boolean {
+    const acl = this.findRef(ref);
+    if (!acl) return false;
+    acl.description = text;
+    return true;
+  }
+
+  /**
+   * La liste designee par `ref`. Une chaine est d'abord cherchee comme
+   * NOM, puis comme numero — une liaison d'interface peut porter l'un ou
+   * l'autre, et `evaluateACLByName` fait deja cette normalisation.
+   */
+  findRef(ref: number | string): AccessList | undefined {
+    if (typeof ref === 'number') return this.accessLists.find(a => a.id === ref);
+    const parNom = this.accessLists.find(a => a.name === ref);
+    if (parNom) return parNom;
+    return /^\d+$/.test(ref)
+      ? this.accessLists.find(a => a.id === parseInt(ref, 10))
+      : undefined;
+  }
+
+  /** Crée la liste numérotée si elle n'existe pas, sans y mettre d'entrée. */
+  ensureAccessList(id: number): void {
+    if (!this.accessLists.some(a => a.id === id)) {
+      this.accessLists.push({ id, type: this.numbering(id), entries: [] });
+    }
+  }
+
+  /** `undo rule <id>` / suppression d'une entrée numérotée d'une liste. */
+  removeEntryBySequence(ref: number | string, seq: number): boolean {
+    const acl = this.findRef(ref);
+    if (!acl) return false;
+    const before = acl.entries.length;
+    acl.entries = acl.entries.filter(e => e.sequence !== seq);
+    return acl.entries.length !== before;
+  }
+
+  /**
+   * Le verdict du PLAN DE DONNÉES, qui applique la règle du vendeur pour
+   * un paquet qu'aucune entrée n'apparie. `null` quand aucune liste ne
+   * s'applique.
+   */
+  evaluateForDataPlane(
+    aclRef: number | string | null, ipPkt: IPv4Packet, now: Date = new Date(),
+  ): 'permit' | 'deny' | null {
+    if (aclRef === null) return null;
+    const acl = this.findRef(aclRef);
+    if (!acl || acl.entries.length === 0) return null;
+    for (const entry of acl.entries) {
+      if (entry.timeRange && this.timeRangeResolver
+          && !this.timeRangeResolver(entry.timeRange, now)) continue;
+      if (this.aclEntryMatches(acl.type, entry, ipPkt)) {
+        entry.matchCount++;
+        if (this.logSink && (entry.log || entry.logInput)) {
+          this.logSink({
+            aclLabel: acl.name ?? String(acl.id ?? ''),
+            action: entry.action, entry, packet: ipPkt, wantsInput: !!entry.logInput,
+          });
+        }
+        return entry.action;
+      }
+    }
+    return this.unmatchedDataPlaneAction;
   }
 
   /** Ce numéro de séquence est-il déjà pris ? IOS refuse les doublons. */

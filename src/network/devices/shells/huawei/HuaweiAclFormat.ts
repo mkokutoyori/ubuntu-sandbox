@@ -22,7 +22,7 @@ function formatPortSpecTokens(spec: PortSpec): string[] {
  */
 export function formatHuaweiAclEntry(entry: ACLEntry, opts: { showCounts?: boolean } = {}): string {
   const parts: string[] = [entry.action];
-  if (entry.protocol && entry.protocol !== 'ip') parts.push(entry.protocol);
+  if (entry.protocol) parts.push(entry.protocol);
   if (entry.srcIP.toString() !== '0.0.0.0') {
     parts.push('source', entry.srcIP.toString(), entry.srcWildcard.toString());
   }

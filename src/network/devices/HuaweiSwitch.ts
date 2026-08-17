@@ -1,11 +1,11 @@
-import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress, type MACAddress } from '../core/types';
+import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
 import { NATEngine } from './router/NATEngine';
-import { VRP_ACL_NUMBERING, sourceProbePacket } from './router/ACLEngine';
+import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP, sourceProbePacket } from './router/ACLEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
@@ -36,6 +36,8 @@ export class HuaweiSwitch extends Switch {
     super(type, name, portCount, x, y);
     // Même raison que sur HuaweiRouter : les plages VRP, pas celles d'IOS.
     this.getVaclEngine().setNumberingPolicy(VRP_ACL_NUMBERING);
+    this.getVaclEngine().setSequencingPolicy(VRP_SEQUENCING, VRP_DEFAULT_STEP);
+    this.getVaclEngine().setUnmatchedDataPlaneAction('permit');
     this.natEngine.setDeviceId(this.id, this.getHostname());
     this.natEngine.setEventBus(this.getBus());
     this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
