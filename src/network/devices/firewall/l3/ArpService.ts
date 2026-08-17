@@ -16,6 +16,7 @@ export interface ArpServiceDeps {
   resolveTimeoutMs?: number;
   onRequestNeeded?: (request: ARPPacket, iface: string) => void;
   onDuplicateAddress?: (report: DuplicateAddressReport) => void;
+  proxyOwns?: (address: string, iface: string) => boolean;
 }
 
 const DEFAULT_AGING_SEC = 14400;
@@ -103,8 +104,7 @@ export class ArpService implements INeighborResolver<string> {
     this.learn(packet.senderIP.toString(), packet.senderMAC, iface);
 
     const target = packet.targetIP.toString();
-    const owning = this.deps.interfaces.owningInterface(target);
-    if (owning !== iface) return undefined;
+    if (!this.answersFor(target, iface)) return undefined;
 
     return {
       type: 'arp',
@@ -114,6 +114,11 @@ export class ArpService implements INeighborResolver<string> {
       targetMAC: packet.senderMAC,
       targetIP: packet.senderIP,
     };
+  }
+
+  answersFor(address: string, iface: string): boolean {
+    if (this.deps.interfaces.owningInterface(address) === iface) return true;
+    return this.deps.proxyOwns?.(address, iface) === true;
   }
 
   handleReply(packet: ARPPacket, iface: string): void {

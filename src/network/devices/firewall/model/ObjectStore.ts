@@ -77,6 +77,17 @@ export class ObjectStore {
     return OBJECT_OK;
   }
 
+  upsertAddress(object: AddressObject): ObjectMutation {
+    if (this.addressGroups.has(object.name)) {
+      return failure({ kind: 'duplicate-name', name: object.name });
+    }
+    if (this.addresses.get(object.name)?.predefined) {
+      return failure({ kind: 'predefined-object', name: object.name });
+    }
+    this.addresses.set(object.name, object);
+    return OBJECT_OK;
+  }
+
   getAddress(name: string): AddressObject | undefined {
     return this.addresses.get(name);
   }

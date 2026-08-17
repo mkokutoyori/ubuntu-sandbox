@@ -13,6 +13,11 @@ import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
 import { renderGet } from './render/getRenderer';
 import { makeSchedule } from '../../model/ScheduleObject';
+import { makeIpPool, type IpPoolType } from '../../nat/IpPool';
+import { vipAddress } from '../../model/AddressObject';
+import { proxyOwnerKey, type Firewall } from '../../Firewall';
+import type { PolicyRoutePrefix } from '../../l3/PolicyRouteTable';
+import type { FortiCentralSnatPatch, FortiVipPatch } from './schema/types';
 
 export { FORTI_COMMAND_FAIL };
 
@@ -193,6 +198,50 @@ export class FortiShell {
       removeSchedule(name) {
         fw.getScheduleStore().remove(name);
       },
+      applyVdomSettings(settings) {
+        fw.setCentralNat(settings.centralNat);
+      },
+      applyIpPool(pool) {
+        fw.setIpPool(makeIpPool({ ...pool, type: pool.type as IpPoolType }));
+      },
+      removeIpPool(name) {
+        fw.removeIpPool(name);
+      },
+      applyVip(vip) {
+        applyVipToFirewall(fw, vip);
+      },
+      removeVip(name) {
+        fw.getNatPolicy().remove(vipRuleId(name));
+        fw.getObjectStore().removeAddress(name);
+        fw.clearProxyArpEntries(proxyOwnerKey('vip', name));
+      },
+      applyCentralSnat(entry) {
+        applyCentralSnatToFirewall(fw, entry);
+      },
+      removeCentralSnat(id) {
+        fw.getNatPolicy().remove(centralSnatRuleId(id));
+      },
+      applyPolicyRoute(route) {
+        fw.getPolicyRoutes().upsert({
+          id: route.id,
+          enabled: route.enabled,
+          action: route.action,
+          inputDevices: route.inputDevices,
+          sourcePrefixes: route.sources.map(toPrefix).filter(isPrefix),
+          destinationPrefixes: route.destinations.map(toPrefix).filter(isPrefix),
+          protocol: route.protocol,
+          startPort: route.startPort,
+          endPort: route.endPort,
+          startSourcePort: route.startSourcePort,
+          endSourcePort: route.endSourcePort,
+          outputDevice: route.outputDevice,
+          gateway: route.gateway,
+          comment: route.comment,
+        }, route.position);
+      },
+      removePolicyRoute(id) {
+        fw.getPolicyRoutes().remove(id);
+      },
     };
   }
 
@@ -224,6 +273,9 @@ export class FortiShell {
       }
       if (target.startsWith('firewall schedule')) {
         for (const name of this.fw.getScheduleStore().names()) push(name, 'Schedule.');
+      }
+      if (target === 'firewall ippool') {
+        for (const name of this.fw.getIpPools().names()) push(name, 'IP pool.');
       }
     }
     return out;
@@ -315,6 +367,107 @@ export class FortiShell {
   setHints(enabled: boolean): void {
     setHintsEnabled(enabled);
   }
+}
+
+export function vipRuleId(name: string): string {
+  return `vip:${name}`;
+}
+
+export function centralSnatRuleId(id: string): string {
+  return `csnat:${id}`;
+}
+
+function applyVipToFirewall(fw: Firewall, vip: FortiVipPatch): void {
+  const interfaces = vip.externalInterfaces.filter(name => name !== 'any');
+
+  fw.getNatPolicy().upsert({
+    id: vipRuleId(vip.name),
+    type: 'static',
+    name: vip.name,
+    fromZone: interfaces.length > 0 ? [...interfaces] : ['any'],
+    originalSource: vip.sourceFilters.length > 0 ? [...vip.sourceFilters] : ['any'],
+    originalDestination: [vip.externalAddress],
+    originalPort: vip.portForward
+      ? {
+        protocol: vip.protocol,
+        from: vip.externalPortFrom,
+        to: vip.externalPortTo === 0 ? vip.externalPortFrom : vip.externalPortTo,
+      }
+      : undefined,
+    destinationTranslation: {
+      kind: 'static-ip',
+      translatedAddress: vip.mappedAddress,
+      translatedEndAddress: vip.mappedEndAddress,
+      translatedPort: vip.portForward && vip.mappedPort > 0 ? vip.mappedPort : undefined,
+    },
+    comment: vip.comment,
+  });
+
+  fw.getObjectStore().upsertAddress(
+    vipAddress(vip.name, vip.mappedAddress, vipRuleId(vip.name), vip.mappedEndAddress));
+
+  const owner = proxyOwnerKey('vip', vip.name);
+  if (!vip.arpReply) { fw.clearProxyArpEntries(owner); return; }
+
+  fw.setProxyArpEntries(owner, interfaces.length === 0
+    ? [{ from: vip.externalAddress, to: vip.externalEndAddress }]
+    : interfaces.map(iface => ({
+      from: vip.externalAddress, to: vip.externalEndAddress, iface,
+    })));
+}
+
+function applyCentralSnatToFirewall(fw: Firewall, entry: FortiCentralSnatPatch): void {
+  fw.getNatPolicy().upsert({
+    id: centralSnatRuleId(entry.id),
+    type: entry.translate ? 'dynamic-pat' : 'no-nat',
+    enabled: entry.enabled,
+    fromZone: listOrAny(entry.sourceInterfaces),
+    toZone: listOrAny(entry.destinationInterfaces),
+    originalSource: listOrAny(entry.originalAddresses),
+    originalDestination: listOrAny(entry.destinationAddresses),
+    sourcePort: entry.sourcePortFrom > 0
+      ? {
+        protocol: entry.protocol,
+        from: entry.sourcePortFrom,
+        to: entry.sourcePortTo === 0 ? entry.sourcePortFrom : entry.sourcePortTo,
+      }
+      : undefined,
+    noTranslation: !entry.translate,
+    sourceTranslation: entry.translate
+      ? {
+        kind: 'dynamic-ip-and-port',
+        pool: entry.pool,
+        fallbackToInterface: entry.pool === undefined,
+        translatedPortFrom: entry.translatedPortFrom,
+        translatedPortTo: entry.translatedPortTo,
+      }
+      : undefined,
+    comment: entry.comment,
+  }, entry.position);
+}
+
+function listOrAny(values: readonly string[]): string[] {
+  const cleaned = values.filter(value => value !== 'any' && value !== 'all');
+  return cleaned.length > 0 ? cleaned : ['any'];
+}
+
+function toPrefix(raw: string): PolicyRoutePrefix | null {
+  const [network, length] = raw.split('/');
+  if (network === undefined) return null;
+  if (length === undefined) return { network, mask: '255.255.255.255' };
+
+  const bits = Number.parseInt(length, 10);
+  if (!Number.isFinite(bits) || bits < 0 || bits > 32) return null;
+  return { network, mask: maskOfLength(bits) };
+}
+
+function isPrefix(value: PolicyRoutePrefix | null): value is PolicyRoutePrefix {
+  return value !== null;
+}
+
+function maskOfLength(bits: number): string {
+  const value = bits === 0 ? 0 : ((0xffffffff << (32 - bits)) >>> 0);
+  return [24, 16, 8, 0].map(shift => (value >>> shift) & 0xff).join('.');
 }
 
 function splitTokens(line: string): string[] {

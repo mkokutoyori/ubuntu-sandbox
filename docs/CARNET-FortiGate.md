@@ -28,7 +28,7 @@
 | **1** | **La grammaire : schéma déclaratif, navigateur, trois rendus** | ✅ livrée (E32) |
 | **1b** | **Migration sur le moteur de commandes partagé `src/cli/`** | ✅ livrée |
 | **2** | Système et objets : `system *`, `addrgrp`, `service`, `schedule`, `router static` | ✅ livrée |
-| 3 | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ⏳ |
+| **3** | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ✅ livrée (E33) |
 | 4 | Diagnostic et journaux | ⏳ |
 | 5 | VDOM et modes de déploiement | ⏳ |
 | 6 | Inspection et UTM | ⏳ |
@@ -37,9 +37,10 @@
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 810 cas verts sur 30 fichiers du module
-pare-feu ; 92 cas FortiOS (32 d'origine + 60 de grammaire) ; 4 specs
-Playwright ; typecheck à la base ; lint identique.
+**Mesures au dernier commit** : 887 cas verts sur 32 fichiers du module
+pare-feu ; 155 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+système + 34 de NAT) ; 9 specs Playwright ; typecheck 350 contre une base
+de 351, aucune erreur dans le module ; lint propre.
 
 ---
 
@@ -60,6 +61,10 @@ qui reprend doit les connaître avant de toucher au code.
 | **D8** | Les notes de simulateur sont préfixées `NOTE:` et **supprimables** | BRD §17.4 |
 | **D9** | La sérialisation de topologie **est** le texte de `show full-configuration` ; d'où l'exigence que cette sortie soit rejouable | BRD §34.2 |
 | **D10** | **Le moteur de commandes est celui de `src/cli/`** — pas un second | §3 ci-dessous |
+| **D11** | **La politique voit la destination APRÈS traduction** (`policySeesPreNatDestination: false`) ; ce qui lui fait quand même nommer la VIP, c'est que l'**objet adresse d'une VIP désigne l'adresse interne** | E33, renversement mesuré |
+| **D12** | **`match-vip` vaut `enable` par défaut** (Fortinet l'a inversé en 7.2.3, et ce simulateur annonce 7.4.4) et n'existe que sur une règle `deny` | E33 |
+| **D13** | `availableWhen` peut consulter un **autre objet** via `FortiObjectView.setting(chemin, attribut)`, servi par `FortiConfigTree` lui-même — jamais par un second magasin | E33, `central-nat` |
+| **D14** | L'**ARP mandataire** est une propriété du socle (`Firewall.setProxyArpEntries`), consultée par `ArpService.answersFor` ; une VIP ou un pool le déclare, il ne le réimplémente pas | E33 |
 
 ---
 
@@ -156,6 +161,11 @@ Un agent qui reprend gagnera du temps à les connaître.
 | **P4** | `strict: false` dans `tsconfig.app.json` | Les unions discriminées **ne se rétrécissent pas**. Un `{ok:true}\|{ok:false}` ne compile pas ; utiliser une forme plate. |
 | **P5** | Les tests unitaires ne voient pas l'interface | `createSessionForDevice` rendait une session pendant que le terminal plantait. **Toute phase doit livrer une spec Playwright.** |
 | **P6** | `FortiTerminalSession.getSessionType()` rend `'linux'` | Choix assumé pour le thème ; c'est ce qui expose P3. Ne pas le changer sans mesurer le thème et le collage. |
+| **P7** | `ObjectStore.matchesAnyAddress` cherche un objet **par nom** | Une règle NAT portant une adresse **en clair** (l'`extip` d'une VIP) ne correspond à rien. Le moteur porte `addressMatches` (nom ou littéral) : c'est lui qu'il faut appeler. |
+| **P8** | `ObjectStore.addAddress` refuse un doublon | Le motif `removeAddress` + `addAddress` laisse **silencieusement l'ancienne valeur** dès que l'objet est membre d'un groupe (le `remove` échoue alors). Utiliser `upsertAddress`. |
+| **P9** | Une traduction posée écrase la précédente | Une session qui subit DNAT **puis** SNAT perd la moitié destination si `applyPolicyNat` ne **fusionne** pas : la réponse repart avec l'adresse interne et le client la refuse. Toujours `mergeTranslations`. |
+| **P10** | La livraison locale précède le NAT | Une VIP posée sur l'adresse **de l'interface** — le renvoi de port le plus courant — est servie par la pile locale et jamais traduite. `Firewall.handleIpv4Frame` consulte `hasInboundRule` d'abord. |
+| **P11** | Un laboratoire de sortie sans route par défaut | `route-lookup` refuse, la politique n'est jamais atteinte, et le symptôme lu est « le NAT ne traduit pas ». Quatre cas de la sonde de phase 3 sont tombés là-dessus. |
 
 ---
 
@@ -250,7 +260,25 @@ branché), et `config system interface` avec `mode dhcp` (client DHCP).
 dans un terminal graphique, et `allowaccess` refuse vraiment une
 connexion.
 
-### 6.3 Après
+### 6.4 Phase 3 — NAT complet — ✅ livrée
+
+Livrée : `config firewall ippool` (les quatre types, `nat/IpPool.ts`),
+`config firewall vip` (statique et renvoi de port), l'ARP mandataire, le
+trafic *hairpin*, `config firewall central-snat-map` avec `set
+central-nat`, `config router policy` avec l'étape `policy-route` du
+pipeline, et `match-vip`.
+
+**Ce qui reste de la phase 3, nommé plutôt que tu** :
+
+- `firewall vip` de type `server-load-balance` (grappe de serveurs réels,
+  moniteurs de santé) — le type `static-nat` est livré, `dns-translation`
+  et `fqdn` sont déclarés et non commis ;
+- `firewall vip6` / `ippool6` (IPv6) — le socle NAT est IPv4 seul ;
+- `central-snat-map` en `type ipv6`, `nat46`/`nat64` ;
+- `pba-timeout` est stocké et ne périme rien : l'allocateur de blocs n'a
+  pas d'horloge (`nat/IpPool.ts`).
+
+### 6.5 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -287,3 +315,4 @@ comparer, jamais le supposer).
 | Date | Auteur | Ce qui change |
 |---|---|---|
 | 2026-08-17 | agent `mandeng` | Création. État après phase 1, décision D10, plan de phase 1b et 2. |
+| 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |

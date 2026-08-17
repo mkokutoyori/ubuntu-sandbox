@@ -56,12 +56,12 @@
 | 4 | `logging host` — les messages quittent la machine | 9 | ✅ |
 | **5** | **FortiOS — deuxième déclinaison** | 32 | ✅ |
 | **F1** | **FortiOS phase 1 — la grammaire se déclare** | 70 | ✅ |
-| **F1** | **FortiOS phase 1 — la grammaire se déclare** | 70 | ✅ |
+| **F2** | **FortiOS phase 2 — système, objets, laboratoire L1** | 29 | ✅ |
+| **F3** | **FortiOS phase 3 — NAT complet (VIP, pools, PBR)** | 34 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
-**Total actuel : 737 cas verts sur 29 fichiers** (1446 avec les suites
-connexes : palette, terminal, terminal-core).
+**Total actuel : 887 cas verts sur 32 fichiers** du module.
 **Phases 1 et 2 fonctionnelles ; phase 3 en cours.**
 
 ---
@@ -1580,6 +1580,104 @@ défaut l'était.
 `unit/terminal*` et 176 de `unit/react` + `unit/gui` verts. Discrimination :
 **43 des 60 cas** de `fortios-grammar.test.ts` tombent avant correctif.
 Typecheck exactement à la base (347), lint identique fichier par fichier.
+
+---
+
+### E33 — FortiOS phase 3 : la traduction d'adresses devient réelle
+
+`vendors/fortios/schema/firewallNat.ts`, `nat/IpPool.ts`,
+`l3/PolicyRouteTable.ts` (neufs) — **34 cas** neufs, plus 5 specs
+Playwright. **27 des 34 tombent avant correctif** (`git stash push --
+src/network/`) ; les 7 restants sont nommés dans l'en-tête du fichier
+plutôt que laissés à découvrir.
+
+**Ce que la phase livre** : `config firewall ippool` (les quatre types),
+`config firewall vip` (avec renvoi de port), l'**ARP mandataire**, le
+trafic *hairpin*, `config firewall central-snat-map` avec son bascule
+`set central-nat`, et `config router policy` avec son étape de pipeline.
+
+**Renversement de la décision annoncée.** Le périmètre pris annonçait
+`policySeesPreNatDestination` passant à `true`. La recherche l'a
+contredit avant qu'une ligne soit écrite : FortiOS traduit la
+destination **avant** de chercher la politique, donc la politique voit
+l'adresse traduite. Ce qui la fait quand même nommer la VIP dans
+`dstaddr`, c'est que l'objet adresse d'une VIP désigne l'adresse
+**interne** — d'où `vipAddress(nom, adresseMappée, …)` et non
+`vipAddress(nom, adresseExterne, …)`. Le profil est resté à `false`.
+
+**B44 — une adresse littérale n'était jamais reconnue par le moteur
+NAT.** `FirewallNatEngine.match()` résolvait `originalSource` et
+`originalDestination` par `ObjectStore.matchesAnyAddress`, qui cherche un
+objet **par nom** ; une règle portant une adresse en clair — ce qu'est
+l'`extip` d'une VIP — ne correspondait donc à rien. Le moteur portait
+déjà le prédicat juste (`addressMatches`, nom **ou** littéral), employé
+par la seule voie bidirectionnelle. Une seule cause pour quatre
+symptômes : la VIP injoignable, le renvoi de port sans effet, le hairpin
+mort et `match-vip` inobservable.
+
+**B45 — le NAT de politique ÉCRASAIT la traduction de destination.**
+`applyPolicyNat` posait une traduction neuve au lieu de la fusionner,
+donc une session qui subit DNAT **puis** SNAT perdait la moitié
+destination : `originalDest` devenait l'adresse déjà traduite, et la
+réponse repartait avec l'adresse **interne** au lieu de l'adresse
+publique appelée. Le client la refusait comme non sollicitée. Le défaut
+est antérieur à cette phase et était **inatteignable** faute de VIP ; la
+branche « pool » écrite ici fusionnait déjà, l'autre non.
+
+**B46 — une VIP posée sur l'adresse de l'interface était servie
+localement.** `Firewall.handleIpv4Frame` livrait au traitement local tout
+paquet dont la destination appartient à une interface, avant tout NAT —
+or le renvoi de port le plus courant met la VIP sur l'adresse même du
+WAN. `hasInboundRule` tranche désormais avant la livraison locale, comme
+un vrai FortiGate qui fait la recherche de VIP en premier.
+
+**`match-vip` : le défaut vaut `enable`, et la version le décide.**
+Fortinet l'a inversé en 7.2.3 ; ce simulateur annonce 7.4.4, donc une
+règle `deny` placée au-dessus **attrape** le trafic d'une VIP. Écrire
+l'inverse aurait été tout aussi naturel et faux. L'attribut n'existe que
+sur une règle `deny`, comme sur la vraie machine.
+
+**Deux magasins ne pouvaient pas se contredire, et l'un manquait.**
+`availableWhen` ne voyait que l'objet en cours ; `set nat` doit
+disparaître de la politique quand `system settings` porte
+`central-nat enable`, ce qui est un autre objet. `FortiObjectView` gagne
+`setting(chemin, attribut)`, servi par `FortiConfigTree` lui-même — pas
+un second magasin, la table elle-même.
+
+**Trouvé au passage** : `ObjectStore.addAddress` refuse un doublon, donc
+le motif `removeAddress` + `addAddress` des `onCommit` laissait
+silencieusement l'ancienne valeur dès que l'objet était membre d'un
+groupe. `upsertAddress` remplace inconditionnellement, ce qu'un `commit`
+veut dire.
+
+**Mesures.** 887 cas verts sur 32 fichiers du module ; 262 cas de
+`unit/cli` + garde-fous verts ; 5 specs Playwright vertes. Typecheck 350
+(base 351), aucune erreur dans le module ; lint propre.
+
+---
+
+## Périmètre pris — FortiOS phase 3 (NAT complet)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Fichiers pris** : `vendors/fortios/schema/firewallNat.ts` (nouveau),
+`schema/{index,types,firewallPolicy}.ts`, `vendors/fortios/FortiShell.ts`,
+`runtime/{FortiObject,FortiTable,FortiConfigTree}.ts`.
+
+**Prélèvements sur le socle**, les suivants des treize (BRD §31.2) :
+`model/AddressObject.ts` gagne le genre **`vip`** (FGT-S5 : une VIP est à
+la fois un objet adresse et une règle NAT) ; `l3/ArpService.ts` gagne
+l'**ARP mandataire**, sans lequel une VIP n'est joignable par personne ;
+`Firewall.ts` porte les adresses mandatées.
+
+**Correction de profil annoncée ici et RENVERSÉE par la mesure** :
+ce périmètre annonçait `policySeesPreNatDestination` passant de `false`
+à `true`. La documentation Fortinet dit l'inverse — la traduction de
+destination a lieu **avant** la recherche de politique, donc la
+politique voit l'adresse **traduite** ; ce qui la fait quand même
+nommer la VIP dans `dstaddr`, c'est que l'objet adresse d'une VIP
+désigne l'adresse **interne**. Le profil reste à `false` et c'est
+`vipAddress()` qui porte la nuance. Voir E33.
 
 ---
 

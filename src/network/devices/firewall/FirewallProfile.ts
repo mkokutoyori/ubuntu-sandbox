@@ -70,7 +70,8 @@ export interface FirewallProfile {
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
   'ingress-zone', 'session-lookup', 'tcp-state-check', 'nat-destination',
-  'route-lookup', 'egress-zone', 'policy-lookup', 'nat-source', 'session-install',
+  'policy-route', 'route-lookup', 'egress-zone', 'policy-lookup', 'nat-source',
+  'session-install',
 ]);
 
 export const GENERIC_PROFILE: FirewallProfile = Object.freeze({

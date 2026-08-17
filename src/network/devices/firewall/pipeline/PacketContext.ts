@@ -10,6 +10,7 @@ export type VerdictReason =
   | 'implicit-deny'
   | 'security-level'
   | 'no-route'
+  | 'policy-route-deny'
   | 'no-session-non-syn'
   | 'invalid-tcp-flags'
   | 'tcp-state-violation'
@@ -65,6 +66,9 @@ export interface PacketContext {
   isFirstPacket: boolean;
 
   matchedPolicy?: SecurityRule;
+  destinationTranslated?: boolean;
+  policyRouteId?: string;
+  policyRouteGateway?: string;
 
   identifiedApplication?: string;
   identifiedUser?: string;

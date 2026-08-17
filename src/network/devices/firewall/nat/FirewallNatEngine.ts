@@ -8,7 +8,11 @@ import {
 import type { ObjectStore } from '../model/ObjectStore';
 import type { SessionTranslation } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
-import type { NatPolicyStore, NatRule } from './NatPolicyStore';
+import { tryIpToUint32, uint32ToIp } from '../../../core/ip';
+import type {
+  DestinationTranslation, NatPolicyStore, NatRule, PortCriterion, SourceTranslation,
+} from './NatPolicyStore';
+import type { IpPoolAllocator } from './IpPool';
 
 export type NatFailure = 'nat-port-exhausted' | 'nat-no-rule';
 
@@ -36,7 +40,16 @@ export interface FirewallNatEngineDeps {
   objects: ObjectStore;
   policy: NatPolicyStore;
   interfaceAddress: (iface: string) => string | undefined;
+  pools?: IpPoolAllocator;
   portRange?: PortRange;
+}
+
+export interface PoolTranslationRequest {
+  readonly pool: string;
+  readonly fixedPort: boolean;
+  readonly simulated: boolean;
+  readonly portFrom?: number;
+  readonly portTo?: number;
 }
 
 export interface NatStatistics {
@@ -68,6 +81,9 @@ export class FirewallNatEngine {
     if (!rule) return { packet };
     if (rule.noTranslation) return { packet, matchedRuleId: rule.id };
 
+    const pool = rule.sourceTranslation?.pool;
+    if (pool !== undefined) return this.translateFromPool(packet, rule, pool, context);
+
     const translated = this.deps.interfaceAddress(context.egressInterface);
     const target = rule.sourceTranslation?.kind === 'interface-address'
       ? translated
@@ -76,7 +92,9 @@ export class FirewallNatEngine {
 
     const originalPort = getPacketSrcPort(packet);
     const port = this.mapEndpoint(
-      target, packet.sourceIP.toString(), originalPort, context.simulated === true);
+      target, packet.sourceIP.toString(),
+      constrainPort(originalPort, rule.sourceTranslation),
+      context.simulated === true);
     if (port === null) {
       this.portExhaustions++;
       return { packet, matchedRuleId: rule.id, failure: 'nat-port-exhausted' };
@@ -103,6 +121,69 @@ export class FirewallNatEngine {
     };
   }
 
+  private translateFromPool(
+    packet: IPv4Packet, rule: NatRule, pool: string, context: NatContext,
+  ): NatOutcome {
+    const outcome = this.allocateFromPool(packet, {
+      pool,
+      fixedPort: rule.sourceTranslation?.kind === 'static-ip',
+      simulated: context.simulated === true,
+      portFrom: rule.sourceTranslation?.translatedPortFrom,
+      portTo: rule.sourceTranslation?.translatedPortTo,
+    });
+    if (outcome.failure) return { ...outcome, matchedRuleId: rule.id };
+
+    rule.hitCount++;
+    rule.byteCount += packet.totalLength;
+    return { ...outcome, matchedRuleId: rule.id };
+  }
+
+  allocateFromPool(packet: IPv4Packet, request: PoolTranslationRequest): NatOutcome {
+    const allocator = this.deps.pools;
+    if (!allocator || allocator.get(request.pool) === undefined) {
+      return { packet, failure: 'nat-no-rule' };
+    }
+
+    const originalPort = getPacketSrcPort(packet);
+    const allocation = allocator.allocate(request.pool, {
+      sourceIP: packet.sourceIP.toString(),
+      sourcePort: constrainPort(originalPort, {
+        kind: 'dynamic-ip-and-port',
+        translatedPortFrom: request.portFrom,
+        translatedPortTo: request.portTo,
+      }),
+      fixedPort: request.fixedPort,
+      simulated: request.simulated,
+    });
+    if (allocation === null) {
+      this.portExhaustions++;
+      return { packet, failure: 'nat-port-exhausted' };
+    }
+
+    this.translationsCreated++;
+    return {
+      packet: rewriteSrcIP(packet, allocation.address, allocation.port),
+      translation: Object.freeze({
+        natRuleId: request.pool,
+        pool: request.pool,
+        originalSource: packet.sourceIP.toString(),
+        originalSourcePort: originalPort,
+        translatedSource: allocation.address,
+        translatedSourcePort: allocation.port,
+        originalDest: packet.destinationIP.toString(),
+        originalDestPort: getPacketDstPort(packet),
+        translatedDest: packet.destinationIP.toString(),
+        translatedDestPort: getPacketDstPort(packet),
+      }),
+    };
+  }
+
+  hasInboundRule(packet: IPv4Packet, context: NatContext): boolean {
+    const rule = this.match(packet, context, 'destination');
+    return rule !== undefined && !rule.noTranslation
+      && rule.destinationTranslation !== undefined;
+  }
+
   translateInbound(packet: IPv4Packet, context: NatContext): NatOutcome {
     const rule = this.match(packet, context, 'destination');
     if (!rule) return this.translateInboundBidirectional(packet, context);
@@ -113,7 +194,7 @@ export class FirewallNatEngine {
 
     const originalPort = getPacketDstPort(packet);
     const port = translation.translatedPort ?? originalPort;
-    const realDest = this.resolveAddress(translation.translatedAddress);
+    const realDest = this.spreadDestination(translation, packet);
 
     rule.hitCount++;
     rule.byteCount += packet.totalLength;
@@ -187,8 +268,26 @@ export class FirewallNatEngine {
     return this.deps.objects.matchesAddress(name, candidate);
   }
 
+  private anyAddressMatches(names: readonly string[], candidate: string): boolean {
+    return names.some(name => name === ANY || this.addressMatches(name, candidate));
+  }
+
   private resolveAddress(name: string): string {
     return this.deps.objects.getAddress(name)?.value ?? name;
+  }
+
+  private spreadDestination(
+    translation: DestinationTranslation, packet: IPv4Packet,
+  ): string {
+    const first = this.resolveAddress(translation.translatedAddress);
+    if (translation.translatedEndAddress === undefined) return first;
+
+    const from = tryIpToUint32(first);
+    const to = tryIpToUint32(this.resolveAddress(translation.translatedEndAddress));
+    const client = tryIpToUint32(packet.sourceIP.toString());
+    if (from === null || to === null || client === null || to < from) return first;
+
+    return uint32ToIp((from + (client % (to - from + 1))) >>> 0);
   }
 
   reapply(
@@ -223,6 +322,10 @@ export class FirewallNatEngine {
     this.usedPorts.get(translation.translatedSource)?.delete(translation.translatedSourcePort);
     this.endpointMappings.delete(endpointKey(
       translation.translatedSource, translation.originalSource, translation.originalSourcePort));
+    if (translation.pool === undefined) return;
+    this.deps.pools?.release(translation.pool, {
+      address: translation.translatedSource, port: translation.translatedSourcePort,
+    }, translation.originalSource);
   }
 
   statistics(): NatStatistics {
@@ -243,10 +346,14 @@ export class FirewallNatEngine {
       if (!rule.enabled) continue;
       this.rulesEvaluated++;
 
-      if (!listMatches(rule.fromZone, context.ingressZone)) continue;
-      if (context.egressZone !== '' && !listMatches(rule.toZone, context.egressZone)) continue;
-      if (!this.deps.objects.matchesAnyAddress(rule.originalSource, packet.sourceIP.toString())) continue;
-      if (!this.deps.objects.matchesAnyAddress(rule.originalDestination, packet.destinationIP.toString())) continue;
+      if (!sideMatches(rule.fromZone, context.ingressZone, context.ingressInterface)) continue;
+      if (context.egressZone !== ''
+        && !sideMatches(rule.toZone, context.egressZone, context.egressInterface)) continue;
+      if (!this.anyAddressMatches(rule.originalSource, packet.sourceIP.toString())) continue;
+      if (!this.anyAddressMatches(
+        rule.originalDestination, packet.destinationIP.toString())) continue;
+      if (!portMatches(rule.originalPort, packet, getPacketDstPort(packet))) continue;
+      if (!portMatches(rule.sourcePort, packet, getPacketSrcPort(packet))) continue;
 
       if (rule.noTranslation) return rule;
       if (side === 'source' && !rule.sourceTranslation) continue;
@@ -302,4 +409,24 @@ function endpointKey(translatedAddress: string, sourceIP: string, sourcePort: nu
 
 function listMatches(list: readonly string[], value: string): boolean {
   return list.includes(ANY) || list.includes(value);
+}
+
+function constrainPort(port: number, translation?: SourceTranslation): number {
+  const from = translation?.translatedPortFrom;
+  const to = translation?.translatedPortTo ?? from;
+  if (from === undefined || to === undefined || to < from) return port;
+  if (port >= from && port <= to) return port;
+  return from + (port % (to - from + 1));
+}
+
+function sideMatches(list: readonly string[], zone: string, iface: string): boolean {
+  return listMatches(list, zone) || (iface !== '' && list.includes(iface));
+}
+
+function portMatches(
+  criterion: PortCriterion | undefined, packet: IPv4Packet, port: number,
+): boolean {
+  if (criterion === undefined) return true;
+  if (criterion.protocol !== 0 && criterion.protocol !== packet.protocol) return false;
+  return port >= criterion.from && port <= criterion.to;
 }

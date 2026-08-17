@@ -98,12 +98,19 @@ export class PolicyEvaluator {
   }
 
   private match(rule: SecurityRule, probe: PolicyProbe): MatchOutcome {
+    if (!this.matchesTranslatedDestination(rule, probe)) return 'no-match';
     if (!this.matchesEndpoints(rule, probe)) return 'no-match';
     if (!this.matchesAddresses(rule, probe)) return 'no-match';
     if (!this.matchesService(rule, probe)) return 'no-match';
     if (!this.matchesSchedule(rule)) return 'no-match';
     if (!this.matchesUser(rule, probe)) return 'no-match';
     return this.matchesApplication(rule, probe);
+  }
+
+  private matchesTranslatedDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
+    if (probe.destinationTranslated !== true) return true;
+    if (rule.matchTranslatedDestination !== false) return true;
+    return rule.destination.some(name => name !== ANY);
   }
 
   private matchesEndpoints(rule: SecurityRule, probe: PolicyProbe): boolean {

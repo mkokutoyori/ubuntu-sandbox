@@ -1,6 +1,7 @@
 import {
-  attributeMap, childMap, attributeArity,
-  type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
+  attributeMap, childMap, attributeArity, EMPTY_ENVIRONMENT,
+  type FortiAttributeSpec, type FortiObjectView, type FortiSchemaEnvironment,
+  type FortiTableSpec,
 } from '../schema/types';
 import { FortiTable } from './FortiTable';
 
@@ -14,11 +15,19 @@ export class FortiObject implements FortiObjectView {
   private readonly childTables = new Map<string, FortiTable>();
   private readonly attributes: ReadonlyMap<string, FortiAttributeSpec>;
 
-  constructor(readonly spec: FortiTableSpec, public key: string) {
+  constructor(
+    readonly spec: FortiTableSpec,
+    public key: string,
+    private readonly env: FortiSchemaEnvironment = EMPTY_ENVIRONMENT,
+  ) {
     this.attributes = attributeMap(spec);
     for (const [name, childSpec] of childMap(spec)) {
-      this.childTables.set(name, new FortiTable(childSpec));
+      this.childTables.set(name, new FortiTable(childSpec, env));
     }
+  }
+
+  setting(path: string, attribute: string): readonly string[] {
+    return this.env.setting(path, attribute);
   }
 
   attribute(name: string): FortiAttributeSpec | undefined {

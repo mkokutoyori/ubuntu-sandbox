@@ -15,6 +15,7 @@ export interface SessionCounters {
 
 export interface SessionTranslation {
   readonly natRuleId: string;
+  readonly pool?: string;
   readonly originalSource: string;
   readonly originalSourcePort: number;
   readonly translatedSource: string;

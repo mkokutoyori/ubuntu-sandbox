@@ -14,6 +14,7 @@ import {
   type IPv4Packet,
 } from '../../core/types';
 import { IP_PROTO_ICMP } from '../../core/types';
+import { tryIpToUint32 } from '../../core/ip';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
 import { RouteTable } from './l3/RouteTable';
 import { ArpService } from './l3/ArpService';
@@ -24,6 +25,8 @@ import { PolicyEvaluator } from './policy/PolicyEvaluator';
 import { SessionTable } from './session/SessionTable';
 import { NatPolicyStore } from './nat/NatPolicyStore';
 import { FirewallNatEngine } from './nat/FirewallNatEngine';
+import { IpPoolAllocator, type IpPool } from './nat/IpPool';
+import { PolicyRouteTable } from './l3/PolicyRouteTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
@@ -54,12 +57,21 @@ export interface FirewallOptions {
   now?: () => number;
 }
 
+export interface ProxyArpEntry {
+  readonly from: string;
+  readonly to?: string;
+  readonly iface?: string;
+}
+
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
   private readonly zones = new ZoneTable();
   private readonly objects = new ObjectStore();
   private readonly policy = new PolicyStore();
   private readonly natPolicy = new NatPolicyStore();
+  private readonly pools = new IpPoolAllocator();
+  private readonly policyRoutes = new PolicyRouteTable();
+  private readonly proxyArp = new Map<string, readonly ProxyArpEntry[]>();
   private readonly nat: FirewallNatEngine;
   private readonly sessions: SessionTable;
   private readonly routes: RouteTable;
@@ -75,6 +87,7 @@ export class Firewall extends Equipment {
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
   private sameSecurityInter = false;
   private sameSecurityIntra = false;
+  private centralNat = false;
 
   constructor(
     deviceType: DeviceType, name: string, x = 0, y = 0, options: FirewallOptions = {},
@@ -104,6 +117,7 @@ export class Firewall extends Equipment {
       macOf: (iface) => this.portMac(iface),
       now,
       onRequestNeeded: (request, iface) => this.emitArp(request, iface),
+      proxyOwns: (address, iface) => this.proxyArpAnswers(address, iface),
     });
     this.evaluator = new PolicyEvaluator({
       objects: this.objects,
@@ -119,6 +133,7 @@ export class Firewall extends Equipment {
     this.nat = new FirewallNatEngine({
       objects: this.objects,
       policy: this.natPolicy,
+      pools: this.pools,
       interfaceAddress: (iface) => this.interfaces.get(iface)?.ip,
     });
 
@@ -132,6 +147,8 @@ export class Firewall extends Equipment {
       sessions: this.sessions,
       natPolicy: this.natPolicy,
       nat: this.nat,
+      policyRoutes: this.policyRoutes,
+      centralNat: () => this.centralNat,
       policyKeyedBy: profile.policyKeyedBy,
       natOrder: {
         natIsPolicyField: profile.natIsPolicyField,
@@ -240,7 +257,65 @@ export class Firewall extends Equipment {
   getArpService(): ArpService { return this.arp; }
   getNatPolicy(): NatPolicyStore { return this.natPolicy; }
   getNatEngine(): FirewallNatEngine { return this.nat; }
+  getIpPools(): IpPoolAllocator { return this.pools; }
+  getPolicyRoutes(): PolicyRouteTable { return this.policyRoutes; }
   getProfile(): FirewallProfile { return this.profile; }
+
+  setCentralNat(enabled: boolean): void { this.centralNat = enabled; }
+  centralNatEnabled(): boolean { return this.centralNat; }
+
+  setIpPool(pool: IpPool): void {
+    this.pools.upsert(pool);
+    this.publishPoolProxyArp(pool);
+  }
+
+  removeIpPool(name: string): void {
+    this.pools.remove(name);
+    this.proxyArp.delete(proxyOwnerKey('ippool', name));
+  }
+
+  setProxyArpEntries(owner: string, entries: readonly ProxyArpEntry[]): void {
+    if (entries.length === 0) { this.proxyArp.delete(owner); return; }
+    this.proxyArp.set(owner, Object.freeze([...entries]));
+  }
+
+  clearProxyArpEntries(owner: string): void {
+    this.proxyArp.delete(owner);
+  }
+
+  proxyArpAnswers(address: string, iface: string): boolean {
+    const value = tryIpToUint32(address);
+    if (value === null) return false;
+
+    for (const entries of this.proxyArp.values()) {
+      for (const entry of entries) {
+        if (entry.iface !== undefined && entry.iface !== iface) continue;
+
+        const from = tryIpToUint32(entry.from);
+        const to = tryIpToUint32(entry.to ?? entry.from);
+        if (from === null || to === null) continue;
+        if (value >= from && value <= to) return true;
+      }
+    }
+    return false;
+  }
+
+  proxyArpAddresses(): readonly ProxyArpEntry[] {
+    const out: ProxyArpEntry[] = [];
+    for (const entries of this.proxyArp.values()) out.push(...entries);
+    return Object.freeze(out);
+  }
+
+  private publishPoolProxyArp(pool: IpPool): void {
+    const owner = proxyOwnerKey('ippool', pool.name);
+    if (!pool.arpReply) { this.proxyArp.delete(owner); return; }
+
+    this.setProxyArpEntries(owner, [{
+      from: pool.startIP,
+      to: pool.endIP,
+      iface: pool.arpInterface ?? pool.associatedInterface,
+    }]);
+  }
 
   bindPolicyToInterface(iface: string): void { this.boundPolicyInterfaces.add(iface); }
   unbindPolicyFromInterface(iface: string): void { this.boundPolicyInterfaces.delete(iface); }
@@ -283,7 +358,8 @@ export class Firewall extends Equipment {
 
     const belongsToSession = this.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
     if (!belongsToSession
-      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
+      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined
+      && !this.destinationIsTranslated(portName, packet)) {
       this.deliverLocally(portName, packet);
       return;
     }
@@ -297,7 +373,8 @@ export class Firewall extends Equipment {
 
     const forwarded = outcome.payload ?? context;
     if (forwarded.egressPort === undefined) return;
-    this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet);
+    this.forward(
+      forwarded.egressPort, forwarded.packet as IPv4Packet, forwarded.policyRouteGateway);
   }
 
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
@@ -315,6 +392,15 @@ export class Firewall extends Equipment {
     if (context.session.translation) {
       this.logFirewallEvent('translation-created', { ...facts, sessionId: context.session.id });
     }
+  }
+
+  private destinationIsTranslated(portName: string, packet: IPv4Packet): boolean {
+    return this.nat.hasInboundRule(packet, {
+      ingressZone: this.zones.zoneOf(portName) ?? portName,
+      egressZone: '',
+      ingressInterface: portName,
+      egressInterface: '',
+    });
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
@@ -336,10 +422,10 @@ export class Firewall extends Equipment {
     this.forward(portName, reply);
   }
 
-  private forward(egressPort: string, packet: IPv4Packet): void {
+  private forward(egressPort: string, packet: IPv4Packet, gateway?: string): void {
     const destination = packet.destinationIP.toString();
     const resolved = this.routes.resolveNextHop(destination);
-    const nextHop = resolved?.nextHop ?? destination;
+    const nextHop = gateway ?? resolved?.nextHop ?? destination;
 
     const mac = this.resolveNextHopMac(nextHop, egressPort);
     if (!mac) return;
@@ -375,6 +461,10 @@ export class Firewall extends Equipment {
   private portMac(iface: string) {
     return this.getPort(iface)!.getMAC();
   }
+}
+
+export function proxyOwnerKey(kind: string, name: string): string {
+  return `${kind}:${name}`;
 }
 
 function logFactsOf(context: PacketContext, zones: ZoneTable): FirewallLogFacts {

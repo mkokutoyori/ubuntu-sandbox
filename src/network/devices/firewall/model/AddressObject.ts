@@ -8,6 +8,7 @@ export type AddressObjectKind =
   | 'wildcard'
   | 'geography'
   | 'dynamic'
+  | 'vip'
   | 'any';
 
 export type AddressFamily = 'ipv4' | 'ipv6';
@@ -22,6 +23,7 @@ export interface AddressObject {
   readonly fqdn?: string;
   readonly countryCode?: string;
   readonly tagFilter?: string;
+  readonly natRuleId?: string;
   readonly predefined: boolean;
   readonly tags: readonly string[];
   readonly comment?: string;
@@ -97,6 +99,16 @@ export function dynamicAddress(
   return build({ name, kind: 'dynamic', tagFilter }, options);
 }
 
+export function vipAddress(
+  name: string, mappedAddress: string, natRuleId: string,
+  mappedEndAddress?: string, options: AddressObjectOptions = {},
+): AddressObject {
+  return build(
+    { name, kind: 'vip', value: mappedAddress, endValue: mappedEndAddress, natRuleId },
+    options,
+  );
+}
+
 export function anyAddress(name = 'any'): AddressObject {
   return build({ name, kind: 'any' }, { predefined: true });
 }
@@ -109,6 +121,10 @@ export function addressObjectMatches(
   switch (object.kind) {
     case 'host':
       return sameAddress(candidate, object.value);
+    case 'vip':
+      return object.endValue === undefined
+        ? sameAddress(candidate, object.value)
+        : matchesRange(candidate, object.value, object.endValue);
     case 'subnet':
     case 'wildcard':
       return matchesCareMask(candidate, object.value, object.careMask);

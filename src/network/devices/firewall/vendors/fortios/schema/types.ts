@@ -12,7 +12,16 @@ export interface FortiObjectView {
   key: string;
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
+  setting(path: string, attribute: string): readonly string[];
 }
+
+export interface FortiSchemaEnvironment {
+  setting(path: string, attribute: string): readonly string[];
+}
+
+export const EMPTY_ENVIRONMENT: FortiSchemaEnvironment = Object.freeze({
+  setting: () => Object.freeze([]),
+});
 
 export interface FortiAttributeSpec {
   readonly name: string;
@@ -56,6 +65,80 @@ export interface FortiSchedulePatch {
   readonly onetime: boolean;
 }
 
+export interface FortiIpPoolPatch {
+  readonly name: string;
+  readonly type: string;
+  readonly startIP: string;
+  readonly endIP: string;
+  readonly sourceStartIP?: string;
+  readonly sourceEndIP?: string;
+  readonly blockSize: number;
+  readonly blocksPerUser: number;
+  readonly permitAnyHost: boolean;
+  readonly arpReply: boolean;
+  readonly arpInterface?: string;
+  readonly associatedInterface?: string;
+  readonly comment?: string;
+}
+
+export interface FortiVipPatch {
+  readonly name: string;
+  readonly externalAddress: string;
+  readonly externalEndAddress?: string;
+  readonly mappedAddress: string;
+  readonly mappedEndAddress?: string;
+  readonly externalInterfaces: readonly string[];
+  readonly sourceFilters: readonly string[];
+  readonly arpReply: boolean;
+  readonly portForward: boolean;
+  readonly protocol: number;
+  readonly externalPortFrom: number;
+  readonly externalPortTo: number;
+  readonly mappedPort: number;
+  readonly natSourceVip: boolean;
+  readonly comment?: string;
+}
+
+export interface FortiCentralSnatPatch {
+  readonly id: string;
+  readonly position: number;
+  readonly enabled: boolean;
+  readonly translate: boolean;
+  readonly sourceInterfaces: readonly string[];
+  readonly destinationInterfaces: readonly string[];
+  readonly originalAddresses: readonly string[];
+  readonly destinationAddresses: readonly string[];
+  readonly protocol: number;
+  readonly sourcePortFrom: number;
+  readonly sourcePortTo: number;
+  readonly translatedPortFrom?: number;
+  readonly translatedPortTo?: number;
+  readonly pool?: string;
+  readonly comment?: string;
+}
+
+export interface FortiPolicyRoutePatch {
+  readonly id: string;
+  readonly position: number;
+  readonly enabled: boolean;
+  readonly action: 'permit' | 'deny';
+  readonly inputDevices: readonly string[];
+  readonly sources: readonly string[];
+  readonly destinations: readonly string[];
+  readonly outputDevice?: string;
+  readonly gateway?: string;
+  readonly protocol: number;
+  readonly startPort: number;
+  readonly endPort: number;
+  readonly startSourcePort: number;
+  readonly endSourcePort: number;
+  readonly comment?: string;
+}
+
+export interface FortiVdomSettings {
+  readonly centralNat: boolean;
+}
+
 export interface FortiCommitDevice {
   applyInterface(name: string, patch: FortiInterfacePatch): void;
   applyZone(name: string, members: readonly string[], intrazone: string): void;
@@ -64,6 +147,15 @@ export interface FortiCommitDevice {
   removeStaticRoute(id: string): void;
   applySchedule(schedule: FortiSchedulePatch): void;
   removeSchedule(name: string): void;
+  applyVdomSettings(settings: FortiVdomSettings): void;
+  applyIpPool(pool: FortiIpPoolPatch): void;
+  removeIpPool(name: string): void;
+  applyVip(vip: FortiVipPatch): void;
+  removeVip(name: string): void;
+  applyCentralSnat(entry: FortiCentralSnatPatch): void;
+  removeCentralSnat(id: string): void;
+  applyPolicyRoute(route: FortiPolicyRoutePatch): void;
+  removePolicyRoute(id: string): void;
 }
 
 export interface FortiCommitContext {

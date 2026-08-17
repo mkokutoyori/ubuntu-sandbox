@@ -8,8 +8,20 @@ const INTERFACE_TARGETS = ['system interface', 'system zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
 const SCHEDULE_TARGETS = ['firewall schedule recurring', 'firewall schedule onetime'];
 
+function centralNatEnabled(object: FortiObjectView): boolean {
+  return object.setting('system settings', 'central-nat')[0] === 'enable';
+}
+
+function policyOwnsNat(object: FortiObjectView): boolean {
+  return !centralNatEnabled(object);
+}
+
 function usesIpPool(object: FortiObjectView): boolean {
-  return object.effective('ippool')[0] === 'enable';
+  return policyOwnsNat(object) && object.effective('ippool')[0] === 'enable';
+}
+
+function denies(object: FortiObjectView): boolean {
+  return object.effective('action')[0] === 'deny';
 }
 
 export const FIREWALL_POLICY: FortiTableSpec = {
@@ -46,13 +58,29 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       { keyword: 'ipsec', description: 'Allow and encrypt IPsec sessions (policy-based VPN).' },
     ], 'deny'),
     enable('status', 'Enable or disable this policy.', true),
-    enable('nat', 'Enable/disable source NAT.'),
-    enable('ippool', 'Enable to use IP Pools for source NAT.'),
+    {
+      ...enable('nat', 'Enable/disable source NAT.'),
+      availableWhen: policyOwnsNat,
+    },
+    {
+      ...enable('ippool', 'Enable to use IP Pools for source NAT.'),
+      availableWhen: policyOwnsNat,
+    },
     {
       ...refList('poolname', 'IP Pool names.', ['firewall ippool']),
       availableWhen: usesIpPool,
     },
-    enable('fixedport', 'Enable to prevent source NAT from changing a session source port.'),
+    {
+      ...enable('fixedport',
+        'Enable to prevent source NAT from changing a session source port.'),
+      availableWhen: policyOwnsNat,
+    },
+    {
+      ...enable('match-vip',
+        'Enable to match packets that have had their destination addresses changed '
+        + 'by a VIP.', true),
+      availableWhen: denies,
+    },
     choice('logtraffic', 'Enable or disable logging.', [
       { keyword: 'all', description: 'Log all sessions accepted or denied by this policy.' },
       { keyword: 'utm', description: 'Log traffic that has a security profile applied to it.' },
@@ -114,6 +142,11 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       action,
       enabled: object.effective('status')[0] !== 'disable',
       natEnabled: object.effective('nat')[0] === 'enable',
+      natPool: usesIpPool(object) ? object.effective('poolname')[0] : undefined,
+      fixedPort: object.effective('fixedport')[0] === 'enable',
+      matchTranslatedDestination: action === 'deny'
+        ? object.effective('match-vip')[0] !== 'disable'
+        : undefined,
       logStart: object.effective('logtraffic-start')[0] === 'enable',
       logEnd: object.effective('logtraffic')[0] !== 'disable',
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),

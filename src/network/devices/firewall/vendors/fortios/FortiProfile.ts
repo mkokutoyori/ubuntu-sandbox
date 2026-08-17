@@ -7,6 +7,7 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'session-lookup',
   'tcp-state-check',
   'nat-destination',
+  'policy-route',
   'route-lookup',
   'egress-zone',
   'policy-lookup',

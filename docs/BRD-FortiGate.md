@@ -5568,17 +5568,37 @@ par le schéma, et `show`/`get` diffèrent.
 | `config router static` | 20 |
 | **Laboratoires L1, L3, L10** | 25 |
 
-### Phase 3 — Le NAT complet
+### Phase 3 — Le NAT complet — ✅ livrée
 
-| Livrable | Cas |
-|---|---|
-| `config firewall ippool` (4 types) | 20 |
-| `config firewall vip` + `AddressObject` de genre `vip` | 35 |
-| ARP proxy pour VIP et pools | 15 |
-| NAT en épingle | 10 |
-| `config firewall central-snat-map` + bascule de mode | 25 |
-| `config router policy` + étape de pipeline | 20 |
-| **Laboratoires L2, L11** | 20 |
+Livrée en **34 cas** (`fortios-nat.test.ts`) plus 5 specs Playwright,
+27 des 34 discriminés par `git stash`. Le découpage prévu ci-dessous est
+conservé pour mémoire ; la livraison couvre les sept lignes dans un seul
+fichier de sonde, la matière étant indissociable — une VIP sans ARP
+mandataire n'est joignable par personne, et le NAT en épingle n'est que
+la même VIP vue depuis l'intérieur.
+
+| Livrable | Cas prévus | État |
+|---|---|---|
+| `config firewall ippool` (4 types) | 20 | ✅ |
+| `config firewall vip` + `AddressObject` de genre `vip` | 35 | ✅ `static-nat` ; `dns-translation` et `fqdn` déclarés, non commis |
+| ARP proxy pour VIP et pools | 15 | ✅ |
+| NAT en épingle | 10 | ✅ |
+| `config firewall central-snat-map` + bascule de mode | 25 | ✅ IPv4 ; `nat46`/`nat64` hors périmètre |
+| `config router policy` + étape de pipeline | 20 | ✅ |
+| **Laboratoires L2, L11** | 20 | ✅ |
+
+**Deux exigences corrigées par la mesure** :
+
+- **§21.4 renversée.** Ce document demandait
+  `policySeesPreNatDestination: true`. FortiOS traduit la destination
+  **avant** de chercher la politique : celle-ci voit donc l'adresse
+  traduite, et le profil reste à `false`. Ce qui lui fait quand même
+  nommer la VIP dans `dstaddr`, c'est que l'objet adresse d'une VIP
+  désigne l'adresse **interne**.
+- **`match-vip` ajouté.** Absent de ce document, il décide pourtant si
+  une règle `deny` placée au-dessus attrape le trafic d'une VIP. Son
+  défaut est `enable` depuis la 7.2.3 et il n'existe que sur une règle
+  `deny`.
 
 ### Phase 4 — Le diagnostic et les journaux
 
@@ -5745,8 +5765,7 @@ src/__tests__/unit/network-v2/firewall/
 ├── fortios-system.test.ts           ← phase 2
 ├── fortios-objects.test.ts          ← phase 2
 ├── fortios-allowaccess.test.ts      ← phase 2
-├── fortios-nat-vip.test.ts          ← phase 3
-├── fortios-central-nat.test.ts      ← phase 3
+├── fortios-nat.test.ts              ← phase 3 (VIP, pools, central-snat, PBR)
 ├── fortios-session-view.test.ts     ← phase 4
 ├── fortios-debug-flow.test.ts       ← phase 4
 ├── fortios-logging.test.ts          ← phase 4

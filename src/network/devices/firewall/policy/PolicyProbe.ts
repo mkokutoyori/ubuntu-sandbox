@@ -12,4 +12,5 @@ export interface PolicyProbe {
   readonly icmpCode?: number;
   readonly application?: string;
   readonly urlCategory?: string;
+  readonly destinationTranslated?: boolean;
 }

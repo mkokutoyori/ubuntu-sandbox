@@ -84,7 +84,11 @@ export const SYSTEM_SETTINGS: FortiTableSpec = {
     address('manageip', 'Transparent mode management IP address.'),
     address('gateway', 'Transparent mode default gateway.'),
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyVdomSettings({
+      centralNat: object.effective('central-nat')[0] === 'enable',
+    });
+  },
 };
 
 export const SYSTEM_INTERFACE: FortiTableSpec = {

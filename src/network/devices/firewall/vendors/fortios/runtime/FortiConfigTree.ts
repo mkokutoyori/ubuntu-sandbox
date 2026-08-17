@@ -1,14 +1,22 @@
-import { pathKey, type FortiTableSpec } from '../schema/types';
+import {
+  pathKey, type FortiSchemaEnvironment, type FortiTableSpec,
+} from '../schema/types';
 import { FortiObject } from './FortiObject';
 import { FortiTable } from './FortiTable';
 
 export type FortiNode = FortiTable | FortiObject;
 
-export class FortiConfigTree {
+export class FortiConfigTree implements FortiSchemaEnvironment {
   private readonly tables = new Map<string, FortiTable>();
   private readonly singletons = new Map<string, FortiObject>();
 
   constructor(private readonly specs: ReadonlyMap<string, FortiTableSpec>) {}
+
+  setting(path: string, attribute: string): readonly string[] {
+    const spec = this.spec(path.split(' '));
+    if (!spec || spec.kind !== 'object') return Object.freeze([]);
+    return this.singleton(spec).effective(attribute);
+  }
 
   spec(path: readonly string[]): FortiTableSpec | undefined {
     return this.specs.get(pathKey(path));
@@ -40,7 +48,7 @@ export class FortiConfigTree {
     const key = pathKey(spec.path);
     let table = this.tables.get(key);
     if (!table) {
-      table = new FortiTable(spec);
+      table = new FortiTable(spec, this);
       this.tables.set(key, table);
     }
     return table;
@@ -50,7 +58,7 @@ export class FortiConfigTree {
     const key = pathKey(spec.path);
     let object = this.singletons.get(key);
     if (!object) {
-      object = new FortiObject(spec, key);
+      object = new FortiObject(spec, key, this);
       this.singletons.set(key, object);
     }
     return object;

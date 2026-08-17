@@ -5,12 +5,21 @@ export interface SourceTranslation {
   readonly pool?: string;
   readonly translatedAddress?: readonly string[];
   readonly fallbackToInterface?: boolean;
+  readonly translatedPortFrom?: number;
+  readonly translatedPortTo?: number;
 }
 
 export interface DestinationTranslation {
   readonly kind: 'static-ip' | 'dynamic-ip';
   readonly translatedAddress: string;
+  readonly translatedEndAddress?: string;
   readonly translatedPort?: number;
+}
+
+export interface PortCriterion {
+  readonly protocol: number;
+  readonly from: number;
+  readonly to: number;
 }
 
 export const DEFAULT_NAT_SECTION = 0;
@@ -28,6 +37,8 @@ export interface NatRule {
   originalSource: string[];
   originalDestination: string[];
   originalService: string[];
+  originalPort?: PortCriterion;
+  sourcePort?: PortCriterion;
 
   sourceTranslation?: SourceTranslation;
   destinationTranslation?: DestinationTranslation;
@@ -51,6 +62,8 @@ export interface NatRuleDraft {
   originalSource?: string[];
   originalDestination?: string[];
   originalService?: string[];
+  originalPort?: PortCriterion;
+  sourcePort?: PortCriterion;
   sourceTranslation?: SourceTranslation;
   destinationTranslation?: DestinationTranslation;
   bidirectional?: boolean;
@@ -78,6 +91,8 @@ export class NatPolicyStore {
       originalSource: [...(draft.originalSource ?? ['any'])],
       originalDestination: [...(draft.originalDestination ?? ['any'])],
       originalService: [...(draft.originalService ?? ['any'])],
+      originalPort: draft.originalPort,
+      sourcePort: draft.sourcePort,
       sourceTranslation: draft.sourceTranslation,
       destinationTranslation: draft.destinationTranslation,
       bidirectional: draft.bidirectional ?? false,
@@ -88,6 +103,16 @@ export class NatPolicyStore {
     });
     this.renumber();
     return true;
+  }
+
+  upsert(draft: NatRuleDraft, position = -1): void {
+    this.remove(draft.id);
+    this.append(draft);
+
+    if (position < 0 || position >= this.rules.length) return;
+    const added = this.rules.pop()!;
+    this.rules.splice(position, 0, added);
+    this.renumber();
   }
 
   remove(id: string): boolean {

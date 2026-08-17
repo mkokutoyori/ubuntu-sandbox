@@ -1,4 +1,6 @@
-import type { FortiTableSpec } from '../schema/types';
+import {
+  EMPTY_ENVIRONMENT, type FortiSchemaEnvironment, type FortiTableSpec,
+} from '../schema/types';
 import { FortiObject, type FortiObjectSnapshot } from './FortiObject';
 
 export type MovePosition = 'before' | 'after';
@@ -12,7 +14,10 @@ export class FortiTable {
   private readonly objects = new Map<string, FortiObject>();
   private order: string[] = [];
 
-  constructor(readonly spec: FortiTableSpec) {}
+  constructor(
+    readonly spec: FortiTableSpec,
+    private readonly env: FortiSchemaEnvironment = EMPTY_ENVIRONMENT,
+  ) {}
 
   has(key: string): boolean {
     return this.objects.has(key);
@@ -26,7 +31,7 @@ export class FortiTable {
     const existing = this.objects.get(key);
     if (existing) return existing;
 
-    const created = new FortiObject(this.spec, key);
+    const created = new FortiObject(this.spec, key, this.env);
     this.objects.set(key, created);
     this.order.push(key);
     return created;
@@ -106,7 +111,7 @@ export class FortiTable {
     for (const key of this.order) {
       const state = snapshot.objects.get(key);
       if (!state) continue;
-      const object = new FortiObject(this.spec, key);
+      const object = new FortiObject(this.spec, key, this.env);
       object.restore(state);
       this.objects.set(key, object);
     }

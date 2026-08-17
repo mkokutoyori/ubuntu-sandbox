@@ -1,5 +1,5 @@
 import {
-  address, addressMask, count, enable, reference, text,
+  address, addressMask, choice, count, enable, reference, refList, text,
   type FortiTableSpec,
 } from './types';
 
@@ -41,4 +41,83 @@ export const ROUTER_STATIC: FortiTableSpec = {
   },
 };
 
-export const ROUTER_SPECS: readonly FortiTableSpec[] = Object.freeze([ROUTER_STATIC]);
+const PREFIX_PART = {
+  type: 'WORD' as const,
+  literal: 'A.B.C.D/M',
+  description: 'IPv4 prefix.',
+};
+
+export const ROUTER_POLICY: FortiTableSpec = {
+  path: ['router', 'policy'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 230,
+  help: 'Configure IPv4 routing policies.',
+  attributes: [
+    {
+      name: 'seq-num', help: 'Sequence number.', readOnly: true, quoted: false,
+      parts: [{ name: 'seq-num', type: 'INT', description: 'Sequence number.' }],
+    },
+    refList('input-device', 'Incoming interface name.', ['system interface']),
+    {
+      name: 'src', help: 'Source IP and mask.', quoted: true, multiValue: true,
+      parts: [{ ...PREFIX_PART, name: 'src' }],
+      defaultValue: [],
+    },
+    {
+      name: 'dst', help: 'Destination IP and mask.', quoted: true, multiValue: true,
+      parts: [{ ...PREFIX_PART, name: 'dst' }],
+      defaultValue: [],
+    },
+    reference('output-device', 'Outgoing interface name.', ['system interface']),
+    address('gateway', 'IP address of the gateway.', '0.0.0.0'),
+    choice('action', 'Action of the policy route.', [
+      { keyword: 'deny', description: 'Deny policy routing, use the routing table.' },
+      { keyword: 'permit', description: 'Permit policy routing.' },
+    ], 'permit'),
+    count('protocol', 'Protocol number (0 - 255).', 0, 255, 0),
+    count('start-port', 'Start destination port number (0 - 65535).', 0, 65535, 0),
+    count('end-port', 'End destination port number (0 - 65535).', 0, 65535, 65535),
+    count('start-source-port', 'Start source port number (0 - 65535).', 0, 65535, 0),
+    count('end-source-port', 'End source port number (0 - 65535).', 0, 65535, 65535),
+    enable('status', 'Enable/disable this policy route.', true),
+    text('comments', 'Optional comments.'),
+  ],
+  onCommit(object, context) {
+    const gateway = object.effective('gateway')[0];
+    const device = object.effective('output-device')[0];
+
+    context.device.applyPolicyRoute({
+      id: object.key,
+      position: context.position,
+      enabled: object.effective('status')[0] !== 'disable',
+      action: object.effective('action')[0] === 'deny' ? 'deny' : 'permit',
+      inputDevices: [...object.effective('input-device')],
+      sources: [...object.effective('src')],
+      destinations: [...object.effective('dst')],
+      outputDevice: device || undefined,
+      gateway: gateway && gateway !== '0.0.0.0' ? gateway : undefined,
+      protocol: integer(object.effective('protocol')[0], 0),
+      startPort: integer(object.effective('start-port')[0], 0),
+      endPort: integer(object.effective('end-port')[0], 65535),
+      startSourcePort: integer(object.effective('start-source-port')[0], 0),
+      endSourcePort: integer(object.effective('end-source-port')[0], 65535),
+      comment: object.effective('comments')[0] || undefined,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removePolicyRoute(key);
+  },
+};
+
+function integer(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export const ROUTER_SPECS: readonly FortiTableSpec[] = Object.freeze([
+  ROUTER_STATIC, ROUTER_POLICY,
+]);

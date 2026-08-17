@@ -13,6 +13,7 @@ import type { SessionTable, SessionTranslation } from '../../session/SessionTabl
 import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
 import type { NatPolicyStore } from '../../nat/NatPolicyStore';
+import type { PolicyRouteTable } from '../../l3/PolicyRouteTable';
 import type { PacketContext, VerdictReason } from '../PacketContext';
 import type { PipelineStage } from '../FirewallPipeline';
 
@@ -29,6 +30,8 @@ export interface FirewallServices {
   nat?: FirewallNatEngine;
   natOrder?: NatOrder;
   policyKeyedBy?: 'zone' | 'interface';
+  policyRoutes?: PolicyRouteTable;
+  centralNat?: () => boolean;
   defaultTimeoutSec?: number;
   discardTimeoutSec?: number;
 }
@@ -74,6 +77,7 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     sessionLookupStage(services),
     tcpStateCheckStage(services),
     natDestinationStage(services),
+    policyRouteStage(services),
     routeLookupStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
@@ -187,13 +191,33 @@ function applyPolicyNat(
     return proceed(context, 'nat-source', 'policy-no-nat');
   }
 
+  const pool = context.matchedPolicy.natPool;
+  if (pool !== undefined && services.nat) {
+    const outcome = services.nat.allocateFromPool(packet, {
+      pool,
+      fixedPort: context.matchedPolicy.fixedPort === true,
+      simulated: context.simulated,
+    });
+    if (outcome.failure === 'nat-port-exhausted') {
+      return deny(context, 'nat-source', 'nat-port-exhausted', context.matchedPolicy.id);
+    }
+    if (outcome.failure) {
+      return deny(context, 'nat-source', 'nat-no-rule', context.matchedPolicy.id);
+    }
+
+    context.packet = outcome.packet;
+    pendingTranslations.set(context,
+      mergeTranslations(pendingTranslations.get(context), outcome.translation!));
+    return proceed(context, 'nat-source', `${context.matchedPolicy.id}:${pool}`);
+  }
+
   const egress = context.egressPort;
   const address = egress === undefined ? undefined : services.interfaces.get(egress)?.ip;
   if (address === undefined) return proceed(context, 'nat-source', 'no-egress-address');
 
   const originalPort = getPacketSrcPort(packet);
   context.packet = rewriteSrcIP(packet, address, originalPort);
-  pendingTranslations.set(context, {
+  pendingTranslations.set(context, mergeTranslations(pendingTranslations.get(context), {
     natRuleId: context.matchedPolicy.id,
     originalSource: packet.sourceIP.toString(),
     originalSourcePort: originalPort,
@@ -203,7 +227,7 @@ function applyPolicyNat(
     originalDestPort: getPacketDstPort(packet),
     translatedDest: packet.destinationIP.toString(),
     translatedDestPort: getPacketDstPort(packet),
-  });
+  }));
   return proceed(context, 'nat-source', context.matchedPolicy.id);
 }
 
@@ -228,6 +252,7 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
       if (!outcome.translation) return proceed(context, 'nat-destination', 'no-match');
 
       context.packet = outcome.packet;
+      context.destinationTranslated = true;
       pendingTranslations.set(context, outcome.translation);
       return proceed(context, 'nat-destination', outcome.matchedRuleId);
     },
@@ -241,7 +266,7 @@ function natSourceStage(services: FirewallServices): PipelineStage {
       const packet = ipv4(context);
       if (!packet || !services.nat) return proceed(context, 'nat-source', 'no-nat');
 
-      if (services.natOrder?.natIsPolicyField) {
+      if (services.natOrder?.natIsPolicyField && services.centralNat?.() !== true) {
         return applyPolicyNat(services, context, packet);
       }
 
@@ -264,6 +289,7 @@ function mergeTranslations(
   if (!existing) return added;
   return Object.freeze({
     natRuleId: existing.natRuleId,
+    pool: added.pool ?? existing.pool,
     originalSource: added.originalSource,
     originalSourcePort: added.originalSourcePort,
     translatedSource: added.translatedSource,
@@ -275,12 +301,54 @@ function mergeTranslations(
   });
 }
 
+function policyRouteStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'policy-route',
+    apply(context) {
+      const packet = ipv4(context);
+      const table = services.policyRoutes;
+      if (!packet || !table || table.size() === 0) {
+        return proceed(context, 'policy-route', 'no-policy-route');
+      }
+
+      const ports = transportPorts(packet);
+      const decision = table.evaluate({
+        ingressInterface: context.ingressPort,
+        sourceIP: packet.sourceIP.toString(),
+        destinationIP: packet.destinationIP.toString(),
+        protocol: packet.protocol,
+        sourcePort: ports.sourcePort ?? 0,
+        destinationPort: ports.destPort ?? 0,
+      });
+      if (!decision) return proceed(context, 'policy-route', 'no-match');
+
+      context.policyRouteId = decision.route.id;
+      if (decision.action === 'deny') {
+        return proceed(context, 'policy-route', `${decision.route.id}:routing-table`);
+      }
+      if (decision.outputDevice === undefined) {
+        return proceed(context, 'policy-route', `${decision.route.id}:no-device`);
+      }
+      if (!services.interfaces.isUp(decision.outputDevice)) {
+        return deny(context, 'policy-route', 'interface-down', decision.route.id);
+      }
+
+      context.egressPort = decision.outputDevice;
+      context.policyRouteGateway = decision.gateway;
+      return proceed(context, 'policy-route', decision.route.id);
+    },
+  };
+}
+
 function routeLookupStage(services: FirewallServices): PipelineStage {
   return {
     name: 'route-lookup',
     apply(context) {
       const packet = ipv4(context);
       if (!packet) return proceed(context, 'route-lookup', 'not-ipv4');
+      if (context.egressPort !== undefined && context.policyRouteId !== undefined) {
+        return proceed(context, 'route-lookup', 'policy-routed');
+      }
 
       const resolved = services.routes.resolveNextHop(packet.destinationIP.toString());
       if (!resolved) return deny(context, 'route-lookup', 'no-route');
@@ -325,6 +393,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           protocol: packet.protocol,
           ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
+          destinationTranslated: context.destinationTranslated === true,
         },
         packet.totalLength,
       );
