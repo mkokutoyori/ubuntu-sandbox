@@ -69,9 +69,13 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
  * evalue que ce depot passe son temps a refermer.
  */
 export function argumentAccepts(spec: ArgumentSpec, token: string): boolean {
-  if (spec.values) {
-    return spec.values.some(value => value.keyword.toLowerCase() === token.toLowerCase());
-  }
+  const named = spec.values?.some(
+    value => value.keyword.toLowerCase() === token.toLowerCase()) ?? false;
+  if (named) return true;
+  // Porter les DEUX veut dire « l'un ou l'autre » : une severite IOS
+  // s'ecrit `errors` ou `3`, et n'offrir qu'une des deux formes refuserait
+  // celle que l'operateur a tapee.
+  if (spec.values && !spec.range) return false;
   if (!ARGUMENT_TYPES[spec.type].accepts(token)) return false;
   if (!spec.range) return true;
 

@@ -85,6 +85,13 @@ function suggestionsAt(
     // valeur au lieu d'annoncer un type muet, ce qui est tout l'interet
     // de `logging console ?` — les huit severites avec leur numero.
     if (argument.values) {
+      if (argument.range && cursor.prefix.length === 0) {
+        out.push({
+          value: argumentPlaceholder(argument),
+          description: argument.name,
+          isArgument: true,
+        });
+      }
       for (const value of argument.values) {
         if (!value.keyword.toLowerCase().startsWith(lowered)) continue;
         out.push({ value: value.keyword, description: value.description, isArgument: true });

@@ -125,3 +125,47 @@ describe('un argument ENUMERE decrit son domaine', () => {
     expect(parseCommand(table(), 'logging console ERRORS', session()).status).toBe('ok');
   });
 });
+
+describe('une severite IOS s\'ecrit par NOM ou par NUMERO', () => {
+  function severite(): CommandTable {
+    const t = new CommandTable();
+    t.declare({
+      id: 'logging-trap',
+      path: ['logging', 'trap', {
+        name: 'severity', type: 'INT', range: [0, 7], values: SEVERITIES,
+      }],
+      description: 'Set syslog server logging level',
+      modes: ['config'], minPrivilege: 15, run: (_s, a) => `trap=${a.severity}`,
+    });
+    return t;
+  }
+
+  it('le NOM est accepte', () => {
+    expect(parseCommand(severite(), 'logging trap errors', session()).status).toBe('ok');
+  });
+
+  it('le NUMERO aussi — porter les deux veut dire l\'un ou l\'autre', () => {
+    expect(parseCommand(severite(), 'logging trap 3', session()).status).toBe('ok');
+  });
+
+  it('un numero HORS plage reste refuse', () => {
+    expect(parseCommand(severite(), 'logging trap 9', session()).status).toBe('invalid');
+  });
+
+  it('un nom inconnu reste refuse', () => {
+    expect(parseCommand(severite(), 'logging trap zorglub', session()).status).toBe('invalid');
+  });
+
+  it('l\'aide annonce la plage ET les noms — c\'est ce qui dispense de la table', () => {
+    const values = complete(severite(), 'logging trap ', session(), 'QUESTION_MARK')
+      .suggestions.map(s => s.value);
+
+    expect(values).toContain('<0-7>');
+    expect(values).toContain('errors');
+  });
+
+  it('un ENUM SANS plage refuse toujours un nombre — le temoin', () => {
+    expect(argumentAccepts(
+      { name: 's', type: 'WORD', values: SEVERITIES }, '3')).toBe(false);
+  });
+});
