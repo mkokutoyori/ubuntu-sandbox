@@ -1774,6 +1774,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     this.registerCommonPrivilegedCommands();
     this.registerCommonConfigCommands();
     this.registerDeviceCommands();
+    this.pruneMigratedFromTries();
     this.privilegedTrie.importMissingFrom(this.userTrie);
     this.privilegedTrie.copySubtreeChildrenInto('show', this.userTrie, PRIVILEGED_ONLY_SHOW_CHILDREN);
     this.userTrie.pruneSubtreeChildren('show', PRIVILEGED_ONLY_SHOW_CHILDREN);
@@ -2599,6 +2600,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected socleTable(): CommandTable | null { return null; }
+
+  protected migratedPaths(): readonly string[] { return []; }
+
+  protected pruneMigratedFromTries(): void {
+    const paths = this.migratedPaths();
+    if (paths.length === 0) return;
+
+    for (const value of Object.values(this as unknown as Record<string, unknown>)) {
+      if (value instanceof CommandTrie) value.prunePaths(paths);
+    }
+  }
 
   private prefixIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
     const typed = cmdPart.trim().toLowerCase().split(/\s+/);

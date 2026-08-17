@@ -70,7 +70,10 @@ export const SHOW_SLICE_PATHS: readonly string[] =
 
 import { TUNNEL_PATHS } from '../tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_PATHS } from '../clear/clearCrypto';
+import { SHOW_CRYPTO_FAMILY } from './showCrypto';
 
-export const MIGRATION_LEDGER: readonly string[] = Object.freeze([...TUNNEL_PATHS, ...CLEAR_CRYPTO_PATHS]);
+export const MIGRATION_LEDGER: readonly string[] = Object.freeze([...TUNNEL_PATHS, ...CLEAR_CRYPTO_PATHS,
+  ...SHOW_CRYPTO_FAMILY.map(s => s.path.filter((w): w is string => typeof w === 'string').join(' ')),
+]);
 
 export const MIGRATION_BLOCKER = 'whole-family-at-once';
