@@ -13,6 +13,9 @@
  */
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
+import { CommandTable } from '@/cli/CommandTable';
+import { newSession } from '@/cli/CliSession';
+import { parseCommand } from '@/cli/CommandParser';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { CommandTrie } from './CommandTrie';
@@ -2595,7 +2598,27 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     console.error(`[CLI] handler crashed on "${cmdPart}":`, detail);
   }
 
+  protected socleTable(): CommandTable | null { return null; }
+
+  private tryMigratedCommand(cmdPart: string): string | null {
+    const table = this.socleTable();
+    if (!table) return null;
+
+    const session = newSession(this.d().getHostname?.() ?? 'Router', this, {
+      initialMode: this.mode,
+      privilegeLevel: this.currentPrivilegeLevel,
+    });
+    const parsed = parseCommand(table, cmdPart, session);
+    if (parsed.status !== 'ok') return null;
+
+    const output: unknown = parsed.spec.run(session, parsed.args);
+    return typeof output === 'string' ? output : null;
+  }
+
   protected executeOnTrie(cmdPart: string): string {
+    const migrated = this.tryMigratedCommand(cmdPart);
+    if (migrated !== null) return migrated;
+
     const asNoDebug = CiscoShellBase.undebugAsNoDebug(cmdPart);
     if (asNoDebug !== null) cmdPart = asNoDebug;
     // UNE seule question, posee a UN seul endroit : cette session

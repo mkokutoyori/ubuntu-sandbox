@@ -69,3 +69,5 @@ export const SHOW_SLICE_PATHS: readonly string[] =
   Object.freeze(SHOW_SLICE.map(pathTextOf));
 
 export const MIGRATION_LEDGER: readonly string[] = Object.freeze([]);
+
+export const MIGRATION_BLOCKER = 'authorization';
