@@ -14,6 +14,15 @@ export interface ArgumentSpec {
   readonly type: ArgumentType;
   readonly optional?: boolean;
   /**
+   * Ce que `?` ecrit en face du type.
+   *
+   * Sans elle, l'aide rendait le NOM de l'argument — `strate` la ou IOS
+   * ecrit « Stratum number ». Un nom est fait pour le code, une
+   * description pour l'operateur ; les confondre donne une aide
+   * redigee en variables.
+   */
+  readonly description?: string;
+  /**
    * Les bornes d'un entier, quand la commande en a.
    *
    * Sans elles un reglage borne se declare `INT` et son gestionnaire
@@ -124,13 +133,17 @@ export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
     // ajouter la plage brute annoncerait un intervalle plus large que
     // celui qu'elles nomment.
     if (spec.range && out.length === 0) {
-      out.push({ keyword: argumentPlaceholder(spec), description: spec.name });
+      out.push({ keyword: argumentPlaceholder(spec), description: describeArgument(spec) });
     }
     for (const value of spec.values) out.push(value);
     return out;
   }
   if (out.length > 0) return out;
-  return [{ keyword: argumentPlaceholder(spec), description: spec.name }];
+  return [{ keyword: argumentPlaceholder(spec), description: describeArgument(spec) }];
+}
+
+export function describeArgument(spec: ArgumentSpec): string {
+  return spec.description ?? spec.name;
 }
 
 export function isArgumentSpec(step: unknown): step is ArgumentSpec {

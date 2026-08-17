@@ -20,6 +20,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
+import { sequenceFamily, type SequenceEntry } from '@/cli/commands/SequenceFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
   HISTORY_SIZE_MIN, HISTORY_SIZE_MAX, RATE_LIMIT_MIN, RATE_LIMIT_MAX,
@@ -3324,12 +3325,112 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }));
   }
 
+
+  protected ntpSpecs(): CommandSpec[] {
+    const cle = {
+      name: 'numero', type: 'INT' as const,
+      range: [1, 4294967295] as const, description: 'Key number',
+    };
+    const serveur: SequenceEntry['tail'] = {
+      name: 'options', type: 'REST', optional: true,
+      alternatives: [
+        { keyword: 'key', description: 'Configure peer authentication key' },
+        { keyword: 'prefer', description: 'Prefer this peer when possible' },
+        { keyword: 'source', description: 'Interface for source address' },
+        { keyword: 'version', description: 'Configure NTP version' },
+      ],
+    };
+
+    return sequenceFamily([
+      { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
+      {
+        path: ['ntp', 'update-calendar'],
+        description: 'Periodically update calendar from NTP',
+      },
+      {
+        path: ['ntp', 'server'], description: 'Configure NTP server',
+        args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
+        tail: serveur,
+      },
+      {
+        path: ['ntp', 'peer'], description: 'Configure NTP peer',
+        args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
+        tail: serveur,
+      },
+      {
+        path: ['ntp', 'master'], description: 'Act as NTP master clock',
+        args: [{
+          name: 'strate', type: 'INT', range: [1, 15],
+          description: 'Stratum number', optional: true,
+        }],
+      },
+      {
+        path: ['ntp', 'source'], description: 'Configure interface for source address',
+        args: [{
+          name: 'interface', type: 'WORD',
+          description: 'Interface to use for source address',
+        }],
+        undoArgs: [],
+      },
+      {
+        path: ['ntp', 'trusted-key'],
+        description: 'Key numbers for trusted time sources',
+        args: [cle],
+      },
+      {
+        path: ['ntp', 'authentication-key'],
+        description: 'Authentication key for trusted time sources',
+        args: [
+          cle,
+          {
+            name: 'algorithme', type: 'ENUM', description: 'Authentication type',
+            values: [{ keyword: 'md5', description: 'MD5 authentication' }],
+          },
+          { name: 'cle', type: 'WORD', description: 'Authentication key' },
+        ],
+        undoArgs: [cle],
+      },
+      {
+        path: ['ntp', 'access-group'], description: 'Control NTP access',
+        args: [
+          {
+            name: 'famille', type: 'ENUM',
+            values: [
+              { keyword: 'peer', description: 'Provide full access' },
+              { keyword: 'query-only', description: 'Allow only control queries' },
+              { keyword: 'serve', description: 'Provide server and query access' },
+              { keyword: 'serve-only', description: 'Provide only server access' },
+            ],
+          },
+          { name: 'liste', type: 'INT', range: [1, 199], description: 'Access list number' },
+        ],
+      },
+      {
+        path: ['ntp', 'allow'], description: 'Allow processing of packets',
+        args: [
+          {
+            name: 'mode', type: 'ENUM',
+            values: [{ keyword: 'mode', description: 'Allow processing of control mode packets' }],
+          },
+          {
+            name: 'controle', type: 'ENUM',
+            values: [{ keyword: 'control', description: 'Control mode packets' }],
+          },
+        ],
+      },
+    ], () => ({
+      apply: (words, negate) =>
+        negate ? this.retirerNtp(words) : this.appliquerNtp(words),
+    }));
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
       ...this.clearSpecs(),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
+      ...this.ntpSpecs(),
     ];
   }
 
@@ -5819,17 +5920,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     //
     // Declarer les vrais enfants les exclut de l'extraction, donne a
     // chacun sa propre aide, et fait refuser ce qui n'existe pas.
-    for (const { mot, desc, args: prendArgs } of NTP_SOUS_COMMANDES) {
-      if (prendArgs === false) {
-        this.configTrie.register(`ntp ${mot}`, desc, () => this.appliquerNtp([mot]));
-        this.configTrie.register(`no ntp ${mot}`, desc, () => this.retirerNtp([mot]));
-        continue;
-      }
-      this.configTrie.registerGreedy(`ntp ${mot}`, desc,
-        (a) => this.appliquerNtp([mot, ...a]));
-      this.configTrie.registerGreedy(`no ntp ${mot}`, desc,
-        (a) => this.retirerNtp([mot, ...a]));
-    }
     this.configTrie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
 
     this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {

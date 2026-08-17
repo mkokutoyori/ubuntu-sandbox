@@ -463,3 +463,54 @@ describe('la famille `logging` est entiere sur les deux plateformes IOS', () => 
     }
   });
 });
+
+describe('`ntp` migre sans perdre ce qui avait fait annuler la premiere tentative', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('`ntp access-group ?` nomme ses QUATRE familles — le cas qui avait bloque', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('ntp access-group ');
+
+      for (const mot of ['peer', 'query-only', 'serve', 'serve-only']) {
+        expect(aide, `${nom} / ${mot}`).toContain(mot);
+      }
+      expect(aide, nom).not.toContain('LINE');
+    }
+  });
+
+  it('un argument porte une PHRASE, pas son nom de variable', async () => {
+    const machines = await enConfig();
+
+    expect(machines.get('routeur')!.cliHelp('ntp master ')).toContain('Stratum number');
+  });
+
+  it('la forme `no` est plus COURTE, comme sur IOS', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      await machines.get(nom)!.executeCommand('ntp source Loopback0');
+      expect(await machines.get(nom)!.executeCommand('no ntp source'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('une famille inconnue reste refusee', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('ntp access-group nomodify 10'))
+      .toContain('Invalid input');
+  });
+
+  it('`ntp server <ip> prefer` accepte sa queue d\'options', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('ntp server 10.0.0.1 prefer'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+});
