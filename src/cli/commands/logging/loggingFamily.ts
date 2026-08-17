@@ -74,13 +74,22 @@ export function loggingFamily(
       (args) => [entry.keyword, ...valueOf(args, entry.argument)], host));
 
     for (const suite of entry.continuations ?? []) {
-      const path: Array<string | ArgumentSpec> = [...base, suite.keyword];
-      if (suite.argument) path.push(suite.argument);
+      // Un argument OPTIONNEL et un mot-cle qui le suit sont deux
+      // CHOIX, pas une sequence : IOS accepte `logging console 5` ou
+      // `logging console discriminator X`, jamais les deux a la fois. Le
+      // chemin de la continuation saute donc l'argument — le declarer
+      // apres ferait accepter une forme qu'aucune machine reelle ne
+      // prend, ce qui est pire qu'en refuser une vraie.
+      const amont: Array<string | ArgumentSpec> = entry.argument?.optional
+        ? ['logging', entry.keyword, suite.keyword]
+        : [...base, suite.keyword];
+      const path = suite.argument ? [...amont, suite.argument] : amont;
 
       specs.push(specFor(
         `logging-${entry.keyword}-${suite.keyword}`, path, suite.description,
         (args) => [
-          entry.keyword, ...valueOf(args, entry.argument),
+          entry.keyword,
+          ...(entry.argument?.optional ? [] : valueOf(args, entry.argument)),
           suite.keyword, ...valueOf(args, suite.argument),
         ], host));
     }

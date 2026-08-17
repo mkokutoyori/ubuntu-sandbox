@@ -267,3 +267,86 @@ describe('`logging host` garde ses deux formes sur les deux plateformes IOS', ()
       .toContain('Invalid input');
   });
 });
+
+describe('un argument OPTIONNEL laisse la commande complete sans lui', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('`logging console` seul est valide — la severite est optionnelle', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging console'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('`logging console 5` l\'est aussi', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging console 5'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('une severite hors plage reste refusee', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('logging console 9'))
+      .toContain('Invalid input');
+  });
+
+  it('un filtre DEFINI s\'attache', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand('logging discriminator FILTRE mnemonics drops X');
+    });
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging console discriminator FILTRE'), nom)
+        .not.toContain('Invalid input');
+      expect(await machines.get(nom)!.executeCommand('logging monitor discriminator FILTRE'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('la severite et le filtre sont deux CHOIX, pas une sequence', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand('logging discriminator FILTRE mnemonics drops X');
+    });
+
+    // IOS prend `logging console 5` OU `logging console discriminator X`,
+    // jamais les deux a la fois : accepter la forme combinee ferait
+    // passer ce qu'une vraie machine refuse.
+    expect(await machines.get('routeur')!.executeCommand('logging console 5 discriminator FILTRE'))
+      .toContain('Invalid input');
+  });
+
+  it('un filtre INCONNU reste refuse — c\'est ce qui prouve que le nom est LU', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+    });
+
+    expect(await machines.get('routeur')!.executeCommand('logging console discriminator ABSENT'))
+      .toMatch(/Invalid input|not|%/);
+  });
+
+  it('un mot-cle apres l\'argument optionnel reste atteignable — `history size`', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('logging history size 100'), nom)
+        .not.toContain('Invalid input');
+    }
+  });
+
+  it('et sa valeur est bornee', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('logging history size 9999'))
+      .toContain('Invalid input');
+  });
+});

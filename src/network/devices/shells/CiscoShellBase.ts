@@ -22,6 +22,7 @@ import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
 import {
   FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
+  HISTORY_SIZE_MIN, HISTORY_SIZE_MAX,
 } from '../inspection/config/LoggingConfig';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
@@ -3154,6 +3155,32 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         keyword: 'trap', description: 'Set syslog server logging level',
         argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
+      },
+      {
+        keyword: 'console', description: 'Set console logging parameters',
+        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuations: [{
+          keyword: 'discriminator', description: 'Establish MD-Console association',
+          argument: { name: 'nom', type: 'WORD' },
+        }],
+      },
+      {
+        keyword: 'monitor', description: 'Set terminal line (monitor) logging parameters',
+        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuations: [{
+          keyword: 'discriminator', description: 'Establish MD-Monitor association',
+          argument: { name: 'nom', type: 'WORD' },
+        }],
+      },
+      {
+        keyword: 'history', description: 'Configure syslog history table',
+        argument: { name: 'level', type: 'INT', range: [0, 7], values: severites, optional: true },
+        continuations: [{
+          keyword: 'size', description: 'Set history table size',
+          argument: {
+            name: 'entries', type: 'INT', range: [HISTORY_SIZE_MIN, HISTORY_SIZE_MAX],
+          },
+        }],
       },
       {
         keyword: 'host', description: 'Set syslog server IP address and parameters',
