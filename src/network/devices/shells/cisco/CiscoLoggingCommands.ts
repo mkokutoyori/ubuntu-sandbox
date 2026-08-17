@@ -68,7 +68,7 @@ const SEVERITY_HELP: Record<string, string> = {
   debugging: 'Debugging messages',
 };
 
-function severityValues(): Array<{ keyword: string; description: string }> {
+export function severityValues(): Array<{ keyword: string; description: string }> {
   return [
     { keyword: '<0-7>', description: 'Logging severity level' },
     ...SEVERITY_NAMES.map((name, i) => ({

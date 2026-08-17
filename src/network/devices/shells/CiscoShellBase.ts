@@ -19,6 +19,10 @@ import { parseCommand } from '@/cli/CommandParser';
 import type { CommandSpec } from '@/cli/CommandTable';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
+import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
+import {
+  FACILITY_NAMES, BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX,
+} from '../inspection/config/LoggingConfig';
 import { complete as socleComplete, type CompletionTrigger } from '@/cli/CompletionEngine';
 import { projectLoggingOntoSyslogAgent } from '@/network/syslog/loggingProjection';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
@@ -104,7 +108,7 @@ import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
-  registerLoggingConfigCommands, registerLoggingShowCommands,
+  registerLoggingConfigCommands, registerLoggingShowCommands, severityValues,
   registerSequenceNumbersCommand, registerLoggingClearCommands,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
@@ -3074,11 +3078,108 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
+
+  protected loggingEntries(): LoggingEntry[] {
+    // Les phrases d'IOS viennent de la table qui les porte deja : les
+    // retaper ici en ferait une seconde, et la premiere divergence
+    // passerait inapercue. Le `<0-7>` en tete est un TYPE, pas une
+    // valeur — c'est la plage qui le rend.
+    const severites = severityValues().filter(value => !value.keyword.startsWith('<'));
+
+    return [
+      { keyword: 'count', description: 'Count every log message and timestamp last occurrence' },
+      { keyword: 'on', description: 'Enable logging to all supported destinations' },
+      {
+        keyword: 'server-arp',
+        description: 'Enable sending ARP requests for syslog servers when first message is sent',
+      },
+      {
+        keyword: 'userinfo',
+        description: 'Enable logging of user info on privileged mode enabling',
+      },
+      {
+        keyword: 'delimiter', description: 'Append delimiter to syslog messages',
+        argument: {
+          name: 'transport', type: 'ENUM',
+          values: [{ keyword: 'tcp', description: 'Append delimiter to TCP syslog messages' }],
+        },
+      },
+      {
+        keyword: 'exception', description: 'Limit size of exception flush output',
+        argument: {
+          name: 'size', type: 'INT', range: [BUFFERED_SIZE_MIN, BUFFERED_SIZE_MAX],
+        },
+      },
+      {
+        keyword: 'facility', description: 'Facility parameter for syslog messages',
+        argument: {
+          name: 'facility', type: 'ENUM',
+          values: FACILITY_NAMES.map(name => ({
+            keyword: name, description: `${name} facility`,
+          })),
+        },
+      },
+      {
+        keyword: 'message-counter', description: 'Configure log message counter',
+        argument: {
+          name: 'class', type: 'ENUM',
+          values: [
+            { keyword: 'debug', description: 'Count debug messages' },
+            { keyword: 'log', description: 'Count log messages' },
+            { keyword: 'syslog', description: 'Count syslog messages' },
+          ],
+        },
+      },
+      {
+        keyword: 'origin-id', description: 'Add origin ID to syslog messages',
+        argument: {
+          name: 'mode', type: 'ENUM',
+          values: [
+            { keyword: 'hostname', description: 'Use hostname as ID' },
+            { keyword: 'ip', description: 'Use IP address as ID' },
+            { keyword: 'ipv6', description: 'Use IPv6 address as ID' },
+            { keyword: 'string', description: 'Use a user-defined string as ID' },
+          ],
+        },
+      },
+      {
+        keyword: 'snmp-trap', description: 'Set syslog level for sending snmp trap',
+        argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
+      },
+      {
+        keyword: 'source-interface',
+        description: 'Specify interface for source address in logging transactions',
+        argument: { name: 'interface', type: 'INTERFACE' },
+      },
+      {
+        keyword: 'trap', description: 'Set syslog server logging level',
+        argument: { name: 'severity', type: 'INT', range: [0, 7], values: severites },
+      },
+    ];
+  }
+
+  protected loggingSpecs(): CommandSpec[] {
+    return loggingFamily(this.loggingEntries(), () => ({
+      applyLogging: (words, negate) => {
+        const ctx = this.loggingCommandContext();
+        ctx.beforeApply?.();
+        const err = ctx.config().applyLogging(words, negate);
+        if (err) {
+          if (err.kind === 'incomplete') throw new CliIncomplete();
+          throw new CliInvalidInput({ token: err.token });
+        }
+        ctx.afterApply?.();
+        return '';
+      },
+    }));
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
       ...this.clearSpecs(),
       ...this.discoverySpecs(),
+      ...this.loggingSpecs(),
     ];
   }
 

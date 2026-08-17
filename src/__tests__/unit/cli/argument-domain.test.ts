@@ -209,3 +209,59 @@ describe('une place peut avoir plusieurs FORMES', () => {
     expect(argumentPlaceholder({ name: 'heure', type: 'WORD', literal: 'hh:mm' })).toBe('hh:mm');
   });
 });
+
+describe('un mot-cle peut suivre un ARGUMENT', () => {
+  function hote(): CommandTable {
+    const t = new CommandTable();
+    t.declare({
+      id: 'logging-host',
+      path: ['logging', 'host', { name: 'ip', type: 'IP_ADDR' }],
+      description: 'Set syslog server IP address',
+      modes: ['config'], minPrivilege: 15, run: (_s, a) => `host=${a.ip}`,
+    });
+    t.declare({
+      id: 'logging-host-transport',
+      path: ['logging', 'host', { name: 'ip', type: 'IP_ADDR' }, 'transport', {
+        name: 'protocole', type: 'ENUM',
+        values: [
+          { keyword: 'tcp', description: 'TCP transport' },
+          { keyword: 'udp', description: 'UDP transport' },
+        ],
+      }],
+      description: 'Specify the transport protocol',
+      modes: ['config'], minPrivilege: 15, run: (_s, a) => `${a.ip}/${a.protocole}`,
+    });
+    return t;
+  }
+
+  function config() {
+    return newSession('R1', {}, { initialMode: 'config', privilegeLevel: 15 });
+  }
+
+  it('la forme courte s\'arrete a l\'argument', () => {
+    const parsed = parseCommand(hote(), 'logging host 10.0.0.1', config());
+
+    expect(parsed.status).toBe('ok');
+    if (parsed.status === 'ok') expect(parsed.spec.run(config(), parsed.args)).toBe('host=10.0.0.1');
+  });
+
+  it('la forme longue traverse l\'argument pour atteindre le mot-cle', () => {
+    const parsed = parseCommand(hote(), 'logging host 10.0.0.1 transport tcp', config());
+
+    expect(parsed.status).toBe('ok');
+    if (parsed.status === 'ok') expect(parsed.spec.run(config(), parsed.args)).toBe('10.0.0.1/tcp');
+  });
+
+  it('l\'aide APRES l\'argument annonce le mot-cle qui suit', () => {
+    const values = complete(hote(), 'logging host 10.0.0.1 ', config(), 'QUESTION_MARK')
+      .suggestions.map(s => s.value);
+
+    expect(values).toContain('transport');
+    expect(values).toContain('<cr>');
+  });
+
+  it('un transport inconnu reste refuse', () => {
+    expect(parseCommand(hote(), 'logging host 10.0.0.1 transport sctp', config()).status)
+      .toBe('invalid');
+  });
+});
