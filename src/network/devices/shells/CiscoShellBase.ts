@@ -3556,6 +3556,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return '';
   }
 
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
@@ -5535,13 +5536,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
-    // La famille `clear` reste au TRIE. Elle y a ete migree puis
-    // ANNULEE : six chemins gagnes contre trois regressions — la fille
-    // `clear logging persistent` emportee par l'elagage de son parent,
-    // le diagnostic de niveau 1 change sur `show ip ssh`, et une
-    // delegation `privilege exec level 7 clear counters` qui cessait de
-    // refuser au niveau 3. La regle posee pour `ntp` vaut ici : quand
-    // une famille coute plus qu'elle ne rapporte, on la rend.
+    // La famille `clear` reste au TRIE, et le blocage est nomme plutot
+    // que reessaye une cinquieme fois : les delegations
+    // `privilege exec level N <commande>` sont resolues CONTRE LE TRIE.
+    // Une commande d'EXEC migree perd donc sa delegation — mesure faite
+    // sur `privilege exec level 7 clear counters`, refuse a un
+    // utilisateur de niveau 7 qui y a pourtant droit. Les deux portes
+    // consultees se contredisent sur ce cas : `laSessionVoit` rend VRAI
+    // pour toute commande que le trie ignore (donc trop permissif une
+    // fois la commande migree), et `authorize` rend `absent` parce que
+    // la regle ne resout plus. Migrer une famille d'EXEC demande
+    // d'abord que la delegation cesse de dependre du trie.
     this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', () => '');
     this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
       const dev = this.d() as unknown as {

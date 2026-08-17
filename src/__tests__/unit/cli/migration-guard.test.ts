@@ -31,7 +31,7 @@ import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { resetCounters, MACAddress } from '@/network/core/types';
-import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { createDevice, resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { CommandTrie } from '@/network/devices/shells/CommandTrie';
 
 function socle(): CommandTable {
@@ -170,5 +170,51 @@ describe('un descendant n\'est pas un CONCURRENT', () => {
     expect(exact).not.toContain('Incomplete');
     expect(autre).not.toContain('Incomplete');
     expect(exact).not.toBe(autre);
+  });
+});
+
+describe('une commande d\'EXEC migree perdrait sa DELEGATION', () => {
+  async function commutateurDelegue() {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const device = createDevice('switch-cisco', 0, 0) as unknown as {
+      executeCommand(c: string): Promise<string>;
+      loginAs(user: string, secret: string): Promise<boolean>;
+    };
+    await device.executeCommand('enable');
+    await device.executeCommand('configure terminal');
+    await device.executeCommand('username noc privilege 7 secret Noc@2026');
+    await device.executeCommand('privilege exec level 7 clear counters');
+    await device.executeCommand('end');
+    return device;
+  }
+
+  it('`clear counters` delegue au niveau 7 repond a un utilisateur de niveau 7', async () => {
+    const device = await commutateurDelegue();
+
+    await device.loginAs('noc', 'Noc@2026');
+
+    expect(await device.executeCommand('show privilege')).toContain('level is 7');
+    expect(await device.executeCommand('clear counters')).not.toContain('Invalid input');
+  });
+
+  it('et reste refuse SANS la delegation — le temoin', async () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const device = createDevice('switch-cisco', 0, 0) as unknown as {
+      executeCommand(c: string): Promise<string>;
+    };
+
+    expect(await device.executeCommand('clear counters')).toContain('Invalid input');
+  });
+
+  it('la famille `clear` est donc RESTEE au trie', () => {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+    const shell = router.getShell() as unknown as {
+      enumerateAllExecutablePaths(): string[];
+      migratedPaths(): readonly string[];
+    };
+
+    expect(shell.migratedPaths()).not.toContain('clear counters');
+    expect(shell.enumerateAllExecutablePaths()).toContain('clear counters');
   });
 });
