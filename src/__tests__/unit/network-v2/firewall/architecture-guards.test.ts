@@ -181,3 +181,111 @@ describe('Convention du depot — pas de commentaires explicatifs en production'
     expect(sectionDivider.test('  // on saute la premiere entree')).toBe(false);
   });
 });
+
+describe('G6 — la grammaire FortiOS ne porte aucune liste blanche hors du schema', () => {
+  const FORTIOS_ROOT = join(VENDORS_ROOT, 'fortios');
+  const FORTIOS_FILES = filesUnder(FORTIOS_ROOT);
+  const SCHEMA_DIR = join(FORTIOS_ROOT, 'schema');
+  const HORS_SCHEMA = FORTIOS_FILES.filter(f => !f.startsWith(SCHEMA_DIR));
+
+  it('trouve bien des fichiers a controler', () => {
+    expect(HORS_SCHEMA.length).toBeGreaterThan(0);
+  });
+
+  it('aucun `Set` littéral d\'attributs hors du schema', () => {
+    const offenders = HORS_SCHEMA
+      .filter(f => /new Set\(\[\s*'/.test(readFileSync(f, 'utf8')))
+      .map(relative);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('aucun nom d\'attribut de politique code en dur hors du schema', () => {
+    const marqueurs = ['srcintf', 'dstintf', 'srcaddr', 'dstaddr', 'utm-status'];
+    const offenders: string[] = [];
+    for (const file of HORS_SCHEMA) {
+      const texte = readFileSync(file, 'utf8');
+      for (const mot of marqueurs) {
+        if (texte.includes(`'${mot}'`)) offenders.push(`${relative(file)} → ${mot}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('aucun verdict de paquet dans la declinaison FortiOS', () => {
+    const offenders = FORTIOS_FILES
+      .filter(f => PACKET_VERDICT.test(readFileSync(f, 'utf8')))
+      .map(relative);
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('G7 — tout ce que le schema expose porte une aide', () => {
+  it('chaque table et chaque attribut ont une aide non vide', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    const muets: string[] = [];
+    for (const spec of FORTIOS_SCHEMA) {
+      if (spec.help.trim().length === 0) muets.push(spec.path.join(' '));
+      for (const attribute of spec.attributes) {
+        if (attribute.help.trim().length === 0) {
+          muets.push(`${spec.path.join(' ')} / ${attribute.name}`);
+        }
+      }
+    }
+
+    expect(muets).toEqual([]);
+  });
+
+  it('chaque valeur d\'enumeration porte une aide', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    const muets: string[] = [];
+    for (const spec of FORTIOS_SCHEMA) {
+      for (const attribute of spec.attributes) {
+        for (const value of attribute.enumValues ?? []) {
+          if (value.help.trim().length === 0) {
+            muets.push(`${spec.path.join(' ')} / ${attribute.name} / ${value.value}`);
+          }
+        }
+      }
+    }
+
+    expect(muets).toEqual([]);
+  });
+});
+
+describe('G8 — toute table du schema declare sa portee et son groupe de droits', () => {
+  it('`scope`, `accessGroup` et `renderOrder` sont poses partout', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    for (const spec of FORTIOS_SCHEMA) {
+      expect(spec.scope, spec.path.join(' ')).toBeDefined();
+      expect(spec.accessGroup, spec.path.join(' ')).toBeDefined();
+      expect(typeof spec.renderOrder, spec.path.join(' ')).toBe('number');
+    }
+  });
+
+  it('deux tables ne partagent pas le meme rang de rendu', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    const rangs = FORTIOS_SCHEMA.map(s => s.renderOrder);
+
+    expect(new Set(rangs).size).toBe(rangs.length);
+  });
+
+  it('une table ordonnee porte une cle entiere — sinon `move` n\'a pas de sens', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    for (const spec of FORTIOS_SCHEMA.filter(s => s.ordered)) {
+      expect(spec.keyType, spec.path.join(' ')).toBe('integer');
+    }
+  });
+});

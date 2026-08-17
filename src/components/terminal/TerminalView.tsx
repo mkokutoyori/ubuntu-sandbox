@@ -320,9 +320,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         <InfoBar theme={theme} session={session} />
       )}
 
-      {/* ── SSH context banner (linux only — BRD SSH-04) ── */}
+      {/* ── SSH context banner (BRD SSH-04) ── */}
       {sessionType === 'linux' && (
-        <SshContextBanner theme={theme} session={session as LinuxTerminalSession} />
+        <SshContextBanner theme={theme} session={session} />
       )}
 
       {/* ── Windows CMD banner ── */}
@@ -570,7 +570,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
  */
 const SshContextBanner: React.FC<{
   theme: TerminalTheme;
-  session: LinuxTerminalSession;
+  session: TerminalSession;
 }> = ({ theme, session }) => {
   const ctx = session.getSshContextInfo();
   if (!ctx.active) return null;
@@ -675,8 +675,7 @@ const ReverseSearchBar: React.FC<{
 /** Render a prompt appropriate to the session type */
 const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; theme: TerminalTheme }> = ({ session, sessionType, theme }) => {
   if (sessionType === 'linux') {
-    const linux = session as LinuxTerminalSession;
-    const p = linux.getPromptParts();
+    const p = session.getPromptParts();
     // Foreign sub-shell (SSH'd into Windows / Cisco / Huawei, sqlplus,
     // sftp, …): the bash-style `user@host:path$` decomposition does not
     // apply. Render the sub-shell's raw prompt verbatim so cmd shows

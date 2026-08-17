@@ -55,6 +55,8 @@
 | **4** | **Journalisation : le pare-feu émet, `show logging`** | 16 | ✅ |
 | 4 | `logging host` — les messages quittent la machine | 9 | ✅ |
 | **5** | **FortiOS — deuxième déclinaison** | 32 | ✅ |
+| **F1** | **FortiOS phase 1 — la grammaire se déclare** | 70 | ✅ |
+| **F1** | **FortiOS phase 1 — la grammaire se déclare** | 70 | ✅ |
 | 3 | NAT objet ASA (`nat (dmz,outside) static`) | — | ⏳ |
 | 3 | `ShellFactory` + `DeviceFactory` | — | ⏳ |
 
@@ -1514,6 +1516,99 @@ l'ASA restant trouvée quand elle existe.
 | B37 | La projection `LoggingConfig`→`SyslogAgent` allait être recopiée | E30 | Extraite dans `syslog/loggingProjection.ts`, deux appelants |
 | B38 | `natIsPolicyField` et `SecurityRule.natEnabled` écrits, lus par personne | E31 | `applyPolicyNat()` — FortiOS les rend réels |
 | B39 | `ingress-zone` refusait toute interface sans zone : FortiOS ne pouvait rien recevoir | E31 | Repli sur le nom d'interface quand `policyKeyedBy: 'interface'` |
+
+### E32 — FortiOS phase 1 : la grammaire se déclare
+
+`vendors/fortios/{schema,runtime,render}/` — **60 cas** neufs, plus 10 de
+garde-fou (G6, G7, G8), plus 4 specs Playwright. Les 32 cas de la phase 5
+restent verts **sans modification**.
+
+**Ce que la phase remplace.** `FortiShell` portait deux `Set<string>`
+littéraux d'attributs et deux fonctions de validation écrites à la main.
+À ce rythme, cent tables font cent listes et cent fonctions, et le
+premier attribut oublié devient un `Command fail` inexplicable. La
+grammaire de FortiOS est régulière, donc elle se **déclare** :
+`FortiTableSpec` porte le chemin, la clé, l'ordre, la portée, le groupe
+de droits, le rang de rendu, les attributs et leurs défauts ; le shell ne
+connaît plus aucune table.
+
+**Ce que le schéma rend possible, et qui ne l'était pas.** `show` ne rend
+que le modifié et `get` rend tout — la distinction la plus employée d'un
+FortiGate — parce que le schéma porte les **valeurs par défaut**. `unset`
+rétablit le défaut au lieu de supprimer, pour la même raison. `append`,
+`select` et `unselect` se distinguent de `set` parce que le schéma dit
+quels attributs sont des listes. `?` et la complétion sortent du même
+schéma que la validation, donc une commande refusée à l'exécution cesse
+d'être proposée.
+
+**B40 — le piège que la sonde à l'aveugle a attrapé.** `onCommit`
+faisait `remove` puis `append` : rééditer la règle 1 d'une table de trois
+la **remontait en fin de liste**, donc changeait l'ordre d'évaluation
+sans que rien ne le demande. Le BRD l'avait nommé (§33.4 c) ; le test
+l'a mesuré. `FortiCommitContext` porte désormais la `position`, et la
+politique est réinsérée là où la table la tient.
+
+**B41 — `always` n'est pas un horaire, c'est l'absence de restriction.**
+Passer `schedule: 'always'` au socle faisait échouer toute correspondance :
+`PolicyEvaluator` refuse une règle dont l'horaire n'est pas évaluable, et
+l'objet horaire n'arrive qu'en phase 2. La traduction juste est
+`undefined` — aucune restriction de temps — et non un nom que personne ne
+sait résoudre.
+
+**B42 et B43 — deux défauts d'INTERFACE, trouvés par la spec Playwright
+et invisibles à toute suite unitaire.** Ouvrir un FortiGate dans le
+canevas **plantait l'arbre React** : `TerminalView` appelle
+`session.getSshContextInfo()` puis `session.getPromptParts()` sous un cast
+`as LinuxTerminalSession`, sur le seul critère
+`getSessionType() === 'linux'`. Le cast est un mensonge dès qu'une
+session non-Linux déclare ce type pour son rendu — un FortiGate le fait —
+et la bannière n'a aucun garde-fou d'erreur, donc le terminal ne
+s'ouvrait pas du tout. `createSessionForDevice` rendait pourtant une
+session, et un cas unitaire l'affirmait. Les deux méthodes descendent
+dans `TerminalSession` avec la réponse par défaut qui convient : « pas de
+session SSH » et « mon invite n'a pas de forme `user@hôte:chemin` ». Les
+deux casts disparaissent, et aucun type de session ne peut plus faire
+tomber le rendu.
+
+**Hors du module, mesuré ici** : `FortiTerminalSession.getSessionType()`
+rend `'linux'` alors qu'un FortiGate est un équipement à CLI comme l'ASA,
+qui rend `'cisco'`. Le corriger changerait le thème et le chemin de
+collage ; le correctif retenu est général plutôt que local, parce que le
+défaut l'était.
+
+**Mesures.** 810 cas verts sur 30 fichiers du module ; 653 cas de
+`unit/terminal*` et 176 de `unit/react` + `unit/gui` verts. Discrimination :
+**43 des 60 cas** de `fortios-grammar.test.ts` tombent avant correctif.
+Typecheck exactement à la base (347), lint identique fichier par fichier.
+
+---
+
+## Périmètre pris — FortiOS phase 2 (système et objets)
+
+**Agent `mandeng`.** BRD dédié : `docs/BRD-FortiGate.md` (6019 lignes,
+44 chapitres, 230 exigences). Phase 1 livrée (E32) ; phase 2 = le système
+et les objets, §39.
+
+**Fichiers que la phase 2 prendra** :
+
+```
+vendors/fortios/schema/system.ts            ← global, settings, interface, zone, dns, ntp, dhcp
+vendors/fortios/schema/firewallObjects.ts   ← addrgrp, service custom/group, schedule
+vendors/fortios/schema/router.ts            ← static
+vendors/fortios/schema/predefined.ts        ← le catalogue d'usine (BRD §44.2)
+```
+
+**Ce qu'elle touchera du socle**, et c'est le premier prélèvement des
+treize que le BRD identifie (§31.2) : l'objet **horaire** (`model/`,
+spécifié par BRD-Firewall §8.5 et jamais implémenté) et le branchement
+de `PolicyEvaluator.scheduleActive`, qui existe comme dépendance et
+n'est câblé par personne.
+
+**Critère de sortie** : le laboratoire L1 du BRD — interfaces, objets,
+route par défaut, politique, `set nat enable` — se joue de bout en bout
+dans un terminal, et `allowaccess` refuse vraiment une connexion.
+
+---
 
 ## Prochaines étapes
 

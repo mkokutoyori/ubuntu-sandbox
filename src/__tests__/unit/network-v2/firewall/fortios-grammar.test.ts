@@ -1,0 +1,658 @@
+/**
+ * La grammaire FortiOS, portee par un SCHEMA et non par du code par table.
+ *
+ * Ce que cette suite eprouve, et pourquoi c'est le sujet de la phase 1 :
+ *
+ * La declinaison livree en phase 5 reconnaissait DEUX chemins de
+ * configuration sur une centaine, avec deux listes blanches d'attributs
+ * ecrites en dur et deux fonctions de validation. A ce rythme, cent tables
+ * font cent listes et cent fonctions, et le premier attribut oublie devient
+ * un `Command fail` inexplicable. La grammaire de FortiOS est REGULIERE —
+ * c'est sa grande qualite — donc elle se declare.
+ *
+ * Trois consequences se mesurent ici, et aucune n'etait possible avant :
+ *
+ *   1. **`show` et `get` different.** Le premier ne rend que ce qui a ete
+ *      MODIFIE, le second rend tout. La distinction est la premiere chose
+ *      qu'un operateur FortiGate emploie, tous les jours — et elle exige
+ *      que le schema porte les valeurs par DEFAUT, faute de quoi les deux
+ *      commandes ne peuvent pas differer.
+ *   2. **`unset` retablit le defaut**, ce qui n'est pas « supprimer ». Sans
+ *      defaut ecrit, les deux sont indiscernables.
+ *   3. **`set` remplace, `append` ajoute, `select` reduit, `unselect`
+ *      retire.** Quatre verbes, quatre comportements. Sur une machine de
+ *      production, `set member` sur un groupe existant est la faute
+ *      classique qui coupe le service ; un simulateur qui ne reproduit pas
+ *      la difference n'enseigne pas le reflexe.
+ *
+ * `abort` est teste separement parce qu'il est le seul verbe qui ANNULE :
+ * il exige que le navigateur retienne l'etat d'avant, et un objet cree
+ * puis abandonne ne doit pas subsister.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShell';
+import { resetCounters, MACAddress } from '@/network/core/types';
+import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
+import { Logger } from '@/network/core/Logger';
+
+function shell(): { fw: FortiGate; sh: FortiShell } {
+  resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+  const fw = new FortiGate('firewall-fortinet', 'FGT1', 0, 0);
+  return { fw, sh: new FortiShell(fw) };
+}
+
+function run(sh: FortiShell, ...lines: string[]): string {
+  let last = '';
+  for (const line of lines) last = sh.execute(line);
+  return last;
+}
+
+function politique(sh: FortiShell, id = '1'): void {
+  run(sh, 'config firewall policy', `edit ${id}`,
+    'set srcintf port1', 'set dstintf port2',
+    'set srcaddr all', 'set dstaddr all',
+    'set action accept', 'set service ALL', 'next', 'end');
+}
+
+beforeEach(() => { Logger.reset(); });
+
+describe('la pile de navigation', () => {
+  it('l\'invite suit le sommet de la pile', () => {
+    const { sh } = shell();
+
+    expect(sh.getPrompt()).toBe('FGT1 # ');
+    run(sh, 'config firewall address');
+    expect(sh.getPrompt()).toBe('FGT1 (address) # ');
+    run(sh, 'edit "SRV"');
+    expect(sh.getPrompt()).toBe('FGT1 (SRV) # ');
+    run(sh, 'next');
+    expect(sh.getPrompt()).toBe('FGT1 (address) # ');
+    run(sh, 'end');
+    expect(sh.getPrompt()).toBe('FGT1 # ');
+  });
+
+  it('`end` depuis un objet vaut `next` puis `end`', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "SRV"');
+
+    run(sh, 'end');
+
+    expect(sh.getPrompt()).toBe('FGT1 # ');
+  });
+
+  it('`edit` sur un chemin inconnu est refuse en nommant le chemin', () => {
+    const { sh } = shell();
+
+    const dit = run(sh, 'config firewall zorglub');
+
+    expect(dit).toContain('Command fail');
+    expect(dit).toContain('zorglub');
+  });
+
+  it('`set` hors d\'un objet dit qu\'il faut `edit` d\'abord', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy');
+
+    const dit = run(sh, 'set srcintf port1');
+
+    expect(dit).toContain('Command fail');
+    expect(dit).toContain('edit');
+  });
+
+  it('un attribut inconnu nomme la table et renvoie a `set ?`', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set zorglub 1');
+
+    expect(dit).toContain('command parse error');
+    expect(dit).toContain('zorglub');
+    expect(dit).toContain('firewall policy');
+  });
+});
+
+describe('`show` rend le MODIFIE, `get` rend TOUT', () => {
+  it('`show` ne rend que les attributs poses', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const vu = run(sh, 'show firewall policy');
+
+    expect(vu).toContain('set srcintf "port1"');
+    expect(vu).toContain('set action accept');
+    expect(vu).not.toContain('set status');
+    expect(vu).not.toContain('set logtraffic');
+  });
+
+  it('`show full-configuration` rend aussi les defauts', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const vu = run(sh, 'show full-configuration firewall policy');
+
+    expect(vu).toContain('set srcintf "port1"');
+    expect(vu).toContain('set status enable');
+    expect(vu).toContain('set logtraffic utm');
+    expect(vu).toContain('set inspection-mode flow');
+  });
+
+  it('les deux vues different sur le meme objet — le point de la phase', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const court = run(sh, 'show firewall policy');
+    const complet = run(sh, 'show full-configuration firewall policy');
+
+    expect(complet.length).toBeGreaterThan(court.length);
+  });
+
+  it('`get` rend `champ : valeur` pour tous les attributs', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const vu = run(sh, 'get firewall policy 1');
+
+    expect(vu).toMatch(/^srcintf\s+: "port1"$/m);
+    expect(vu).toMatch(/^status\s+: enable$/m);
+    expect(vu).toMatch(/^logtraffic\s+: utm$/m);
+  });
+
+  it('`get` sur une table sans cle liste les cles', () => {
+    const { sh } = shell();
+    politique(sh, '1');
+    politique(sh, '2');
+
+    const vu = run(sh, 'get firewall policy');
+
+    expect(vu).toContain('== [ 1 ]');
+    expect(vu).toContain('== [ 2 ]');
+  });
+
+  it('le quotage vient du TYPE : une reference est citee, une enumeration non', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const vu = run(sh, 'show firewall policy');
+
+    expect(vu).toContain('set srcaddr "all"');
+    expect(vu).toContain('set action accept');
+    expect(vu).not.toContain('set action "accept"');
+  });
+
+  it('la sortie de `show` est rejouable telle quelle', () => {
+    const { sh } = shell();
+    politique(sh);
+    const texte = run(sh, 'show firewall policy');
+
+    const rejoue = shell();
+    for (const ligne of texte.split('\n')) rejoue.sh.execute(ligne);
+
+    expect(run(rejoue.sh, 'show firewall policy')).toBe(texte);
+  });
+});
+
+describe('`unset` retablit le DEFAUT, il ne supprime pas', () => {
+  it('apres `unset`, `show` se tait et `get` rend le defaut', () => {
+    const { sh } = shell();
+    politique(sh);
+    run(sh, 'config firewall policy', 'edit 1', 'set logtraffic all', 'next', 'end');
+    expect(run(sh, 'show firewall policy')).toContain('set logtraffic all');
+
+    run(sh, 'config firewall policy', 'edit 1', 'unset logtraffic', 'next', 'end');
+
+    expect(run(sh, 'show firewall policy')).not.toContain('set logtraffic');
+    expect(run(sh, 'get firewall policy 1')).toMatch(/^logtraffic\s+: utm$/m);
+  });
+
+  it('`unset` d\'un attribut inconnu est refuse', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'unset zorglub')).toContain('Command fail');
+  });
+});
+
+describe('les quatre verbes de liste', () => {
+  it('`set` REMPLACE la liste entiere', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1', 'set srcintf port1 port2');
+
+    run(sh, 'set srcintf port3');
+
+    expect(run(sh, 'get')).toMatch(/^srcintf\s+: "port3"$/m);
+  });
+
+  it('`append` AJOUTE sans remplacer', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1', 'set srcintf port1');
+
+    run(sh, 'append srcintf port2');
+
+    expect(run(sh, 'get')).toMatch(/^srcintf\s+: "port1" "port2"$/m);
+  });
+
+  it('`select` REDUIT la liste', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1', 'set srcintf port1 port2 port3');
+
+    run(sh, 'select srcintf port2');
+
+    expect(run(sh, 'get')).toMatch(/^srcintf\s+: "port2"$/m);
+  });
+
+  it('`unselect` RETIRE une valeur', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1', 'set srcintf port1 port2 port3');
+
+    run(sh, 'unselect srcintf port2');
+
+    expect(run(sh, 'get')).toMatch(/^srcintf\s+: "port1" "port3"$/m);
+  });
+
+  it('les trois verbes de liste sont refuses sur un attribut mono-value', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'append action accept')).toContain('Command fail');
+    expect(run(sh, 'select action accept')).toContain('Command fail');
+    expect(run(sh, 'unselect action accept')).toContain('Command fail');
+  });
+});
+
+describe('`abort` annule', () => {
+  it('un objet CREE puis abandonne ne subsiste pas', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "TEMPORAIRE"', 'set subnet 10.0.0.1 255.255.255.255');
+
+    run(sh, 'abort');
+
+    expect(run(sh, 'show firewall address')).not.toContain('TEMPORAIRE');
+    expect(sh.getPrompt()).toBe('FGT1 # ');
+  });
+
+  it('un objet EXISTANT retrouve son etat d\'avant', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    run(sh, 'config firewall policy', 'edit 1', 'set action deny', 'abort');
+
+    expect(run(sh, 'show firewall policy')).toContain('set action accept');
+  });
+
+  it('`abort` remonte a la racine d\'un seul coup', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    run(sh, 'abort');
+
+    expect(sh.getPrompt()).toBe('FGT1 # ');
+  });
+});
+
+describe('les verbes de table', () => {
+  it('`delete` retire l\'objet de la table ET du magasin', () => {
+    const { fw, sh } = shell();
+    politique(sh);
+    expect(fw.getPolicyStore().ordered()).toHaveLength(1);
+
+    run(sh, 'config firewall policy', 'delete 1', 'end');
+
+    expect(fw.getPolicyStore().ordered()).toHaveLength(0);
+    expect(run(sh, 'show firewall policy')).not.toContain('edit 1');
+  });
+
+  it('`purge` vide la table entiere', () => {
+    const { fw, sh } = shell();
+    politique(sh, '1');
+    politique(sh, '2');
+
+    run(sh, 'config firewall policy', 'purge', 'end');
+
+    expect(fw.getPolicyStore().ordered()).toHaveLength(0);
+  });
+
+  it('`clone` duplique, et la copie vit dans le magasin', () => {
+    const { fw, sh } = shell();
+    politique(sh);
+
+    run(sh, 'config firewall policy', 'clone 1 to 5', 'end');
+
+    expect(fw.getPolicyStore().ordered().map(r => r.id)).toEqual(['1', '5']);
+    expect(run(sh, 'show firewall policy')).toContain('edit 5');
+  });
+
+  it('`rename` renomme et met a jour le magasin', () => {
+    const { fw, sh } = shell();
+    run(sh, 'config firewall address', 'edit "AVANT"',
+      'set subnet 10.0.0.0 255.255.255.0', 'next', 'end');
+
+    run(sh, 'config firewall address', 'rename "AVANT" to "APRES"', 'end');
+
+    expect(fw.getObjectStore().getAddress('APRES')).toBeDefined();
+    expect(fw.getObjectStore().getAddress('AVANT')).toBeUndefined();
+  });
+
+  it('`move` reordonne une table ORDONNEE', () => {
+    const { fw, sh } = shell();
+    politique(sh, '1');
+    politique(sh, '2');
+    politique(sh, '3');
+
+    run(sh, 'config firewall policy', 'move 3 before 1', 'end');
+
+    expect(fw.getPolicyStore().ordered().map(r => r.id)).toEqual(['3', '1', '2']);
+  });
+
+  it('`move` est refuse sur une table NON ordonnee, et le dit', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"', 'set subnet 10.0.0.0 255.0.0.0',
+      'next', 'edit "B"', 'set subnet 11.0.0.0 255.0.0.0', 'next');
+
+    const dit = run(sh, 'move "B" before "A"');
+
+    expect(dit).toContain('Command fail');
+    expect(dit).toContain("n'est pas ordonnee");
+  });
+
+  it('`clone` vers une cle existante est refuse', () => {
+    const { sh } = shell();
+    politique(sh, '1');
+    politique(sh, '2');
+
+    expect(run(sh, 'config firewall policy', 'clone 1 to 2')).toContain('duplicate name');
+  });
+});
+
+describe('la validation vient du schema', () => {
+  it('une valeur hors enumeration est refusee en listant les valeurs admises', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set action zorglub');
+
+    expect(dit).toContain('value parse error');
+    expect(dit).toContain('accept');
+    expect(dit).toContain('deny');
+  });
+
+  it('un entier hors bornes est refuse en nommant la borne', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set color 99')).toContain('maximum 32');
+  });
+
+  it('une adresse mal formee est refusee', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set subnet 999.1.1.1 255.255.255.0')).toContain('value parse error');
+  });
+
+  it('un masque manquant est refuse — l\'arite vient du type', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set subnet 10.0.0.0')).toContain('Command fail');
+  });
+
+  it('une reference inexistante est refusee en nommant la table visee', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set srcaddr "FANTOME"');
+
+    expect(dit).toContain('entry not found in datasource');
+    expect(dit).toContain('firewall address');
+  });
+
+  it('une reference qui EXISTE est acceptee — le temoin', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "REEL"',
+      'set subnet 10.0.0.0 255.255.255.0', 'next', 'end');
+
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'set srcaddr "REEL"')).toBe('');
+  });
+
+  it('un attribut en lecture seule est refuse', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'set policyid 7')).toContain('lecture seule');
+  });
+});
+
+describe('les attributs conditionnels', () => {
+  it('`start-ip` n\'existe pas tant que le type n\'est pas `iprange`', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    expect(run(sh, 'set start-ip 10.0.0.1')).toContain('Command fail');
+  });
+
+  it('il apparait des que le type le rend applicable', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"', 'set type iprange');
+
+    expect(run(sh, 'set start-ip 10.0.0.1')).toBe('');
+  });
+
+  it('`get` ne rend pas un attribut inapplicable', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"', 'set subnet 10.0.0.0 255.0.0.0',
+      'next', 'end');
+
+    const vu = run(sh, 'get firewall address A');
+
+    expect(vu).toContain('subnet');
+    expect(vu).not.toContain('start-ip');
+  });
+
+  it('`poolname` n\'apparait que si `ippool` est actif', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+    expect(run(sh, 'get')).not.toContain('poolname');
+
+    run(sh, 'set ippool enable');
+
+    expect(run(sh, 'get')).toContain('poolname');
+  });
+});
+
+describe('les trois familles de refus', () => {
+  it('un attribut connu de FortiOS mais non simule nomme la brique manquante', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set auto-asic-offload enable');
+
+    expect(dit).toContain('Command fail');
+    expect(dit).toContain('acceleration materielle');
+  });
+
+  it('`set application` est refuse plutot que d\'installer une regle inerte', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set application 15832');
+
+    expect(dit).toContain('signatures');
+  });
+
+  it('un attribut inexistant recoit le refus de FortiOS, pas celui-la', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set zorglub 1');
+
+    expect(dit).toContain('command parse error');
+    expect(dit).not.toContain('FortiGate');
+  });
+
+  it('un attribut non simule n\'est rendu par aucune vue', () => {
+    const { sh } = shell();
+    politique(sh);
+
+    const vu = run(sh, 'show full-configuration firewall policy');
+
+    expect(vu).not.toContain('auto-asic-offload');
+  });
+
+  it('`write memory` nomme le comportement reel de FortiOS', () => {
+    const { sh } = shell();
+
+    const dit = run(sh, 'write memory');
+
+    expect(dit).toContain('automatiquement');
+  });
+
+  it('les notes de simulateur sont supprimables', () => {
+    const { sh } = shell();
+    sh.setHints(false);
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const dit = run(sh, 'set zorglub 1');
+
+    expect(dit).not.toContain('NOTE:');
+    expect(dit).toContain('Command fail');
+    sh.setHints(true);
+  });
+});
+
+describe('l\'aide et la completion viennent du schema', () => {
+  it('`?` a la racine liste les verbes de premier niveau', () => {
+    const { sh } = shell();
+
+    const aide = run(sh, '?');
+
+    expect(aide).toContain('config');
+    expect(aide).toContain('Configure object.');
+  });
+
+  it('`config ?` liste les branches declarees', () => {
+    const { sh } = shell();
+
+    const aide = run(sh, 'config ?');
+
+    expect(aide).toContain('firewall');
+  });
+
+  it('`config firewall ?` liste les tables de la branche avec leur aide', () => {
+    const { sh } = shell();
+
+    const aide = run(sh, 'config firewall ?');
+
+    expect(aide).toContain('policy');
+    expect(aide).toContain('address');
+    expect(aide).toContain('Configure IPv4/IPv6 policies.');
+  });
+
+  it('`set ?` sur un objet liste SES attributs', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const aide = run(sh, 'set ?');
+
+    expect(aide).toContain('srcintf');
+    expect(aide).toContain('Incoming (ingress) interface.');
+  });
+
+  it('`set action ?` liste les valeurs de l\'enumeration', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    const aide = run(sh, 'set action ?');
+
+    expect(aide).toContain('accept');
+    expect(aide).toContain('Allow session that match this policy.');
+    expect(aide).toContain('deny');
+  });
+
+  it('`set ?` ne propose pas un attribut inapplicable', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall address', 'edit "A"');
+
+    const aide = run(sh, 'set ?');
+
+    expect(aide).toContain('subnet');
+    expect(aide).not.toContain('start-ip');
+  });
+
+  it('`set ?` ne propose pas un attribut en lecture seule', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'set ?')).not.toContain('policyid');
+  });
+
+  it('la completion propose les branches depuis le schema', () => {
+    const { sh } = shell();
+
+    expect(sh.completions('config firewall ')).toContain('config firewall policy');
+  });
+
+  it('la completion propose les attributs de l\'objet ouvert', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(sh.completions('set src')).toContain('set srcintf');
+  });
+
+  it('aucun attribut du schema n\'est depourvu d\'aide', async () => {
+    const { FORTIOS_SCHEMA } = await import(
+      '@/network/devices/firewall/vendors/fortios/schema');
+
+    for (const spec of FORTIOS_SCHEMA) {
+      expect(spec.help.length, `table ${spec.path.join(' ')}`).toBeGreaterThan(0);
+      for (const attribute of spec.attributes) {
+        expect(attribute.help.length,
+          `${spec.path.join(' ')} / ${attribute.name}`).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('le commit vers le socle', () => {
+  it('rejouer `edit` sur un objet existant ne duplique pas la regle', () => {
+    const { fw, sh } = shell();
+    politique(sh);
+
+    run(sh, 'config firewall policy', 'edit 1', 'set comments "relu"', 'next', 'end');
+
+    expect(fw.getPolicyStore().ordered()).toHaveLength(1);
+  });
+
+  it('`edit` sur une table ordonnee conserve la position', () => {
+    const { fw, sh } = shell();
+    politique(sh, '1');
+    politique(sh, '2');
+    politique(sh, '3');
+
+    run(sh, 'config firewall policy', 'edit 1', 'set comments "relu"', 'next', 'end');
+
+    expect(fw.getPolicyStore().ordered().map(r => r.id)).toEqual(['1', '2', '3']);
+  });
+
+  it('`abort` n\'ecrit rien dans le magasin', () => {
+    const { fw, sh } = shell();
+
+    run(sh, 'config firewall policy', 'edit 9',
+      'set srcintf port1', 'set action accept', 'abort');
+
+    expect(fw.getPolicyStore().ordered()).toHaveLength(0);
+  });
+
+  it('les valeurs par defaut atteignent le magasin', () => {
+    const { fw, sh } = shell();
+    politique(sh);
+
+    const rule = fw.getPolicyStore().ordered()[0];
+
+    expect(rule.enabled).toBe(true);
+    expect(rule.schedule).toBeUndefined();
+  });
+});

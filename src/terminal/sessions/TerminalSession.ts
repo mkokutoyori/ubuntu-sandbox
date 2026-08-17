@@ -1895,6 +1895,44 @@ export abstract class TerminalSession {
   abstract getSessionType(): SessionType;
 
   /**
+   * Le terminal a-t-il ete pousse dans une machine distante par `ssh` ?
+   *
+   * La banniere qui rend cette information etait appelee sous un cast
+   * `session as LinuxTerminalSession`, sur le seul critere
+   * `getSessionType() === 'linux'`. Le cast etait un MENSONGE des qu'une
+   * session non-Linux declarait ce type pour son rendu — un FortiGate le
+   * fait — et la consequence n'etait pas cosmetique : l'appel levait, la
+   * banniere n'a pas de garde-fou d'erreur, et l'arbre React s'effondrait,
+   * donc le terminal ne s'ouvrait pas du tout. La question appartient a la
+   * session ; la reponse par defaut est « non ».
+   */
+  getSshContextInfo(): {
+    active: boolean;
+    chain: readonly { host: string; user: string }[];
+    current: string | null;
+  } {
+    return { active: false, chain: [], current: null };
+  }
+
+  /**
+   * La decomposition `user@hote:chemin$` de l'invite, quand elle a un
+   * sens.
+   *
+   * `foreign: true` est la reponse « mon invite n'a pas cette forme,
+   * rends `getPrompt()` tel quel » — et c'est la reponse JUSTE pour tout
+   * ce qui n'est pas un interprete bash : un FortiGate ecrit
+   * `FGT1 (policy) # `, un ASA `ciscoasa(config)# `. Le rendu appelait
+   * cette methode sous le meme cast que la banniere SSH, avec la meme
+   * consequence : l'appel levait et le terminal ne s'ouvrait pas.
+   */
+  getPromptParts(): {
+    user: string; hostname: string; path: string; promptChar: string;
+    foreign?: boolean;
+  } {
+    return { user: '', hostname: '', path: '', promptChar: '', foreign: true };
+  }
+
+  /**
    * Le nom de la plateforme, tel que la barre de titre le montre.
    *
    * Il etait DEDUIT de `SessionType`, une enumeration a quatre valeurs :
