@@ -1894,6 +1894,17 @@ export abstract class TerminalSession {
   /** Return the session type discriminator. */
   abstract getSessionType(): SessionType;
 
+  /**
+   * Le nom de la plateforme, tel que la barre de titre le montre.
+   *
+   * Il etait DEDUIT de `SessionType`, une enumeration a quatre valeurs :
+   * un ASA et un routeur IOS partagent `'cisco'`, donc la fenetre d'un
+   * pare-feu s'intitulait « Cisco IOS » pendant que sa propre barre
+   * d'information disait « Cisco ASA 5506-X ». Deux vues du meme fait,
+   * dont une devinait. La session sait ce qu'elle est ; elle le dit.
+   */
+  platformLabel(): string | null { return null; }
+
   /** Return info bar text (used by the view). */
   abstract getInfoBarContent(): { left: string; right?: string };
 

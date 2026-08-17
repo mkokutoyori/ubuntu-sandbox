@@ -22,6 +22,8 @@ export class FortiTerminalSession extends CLITerminalSession {
     super(id, device);
   }
 
+  override platformLabel(): string { return 'Fortinet FortiOS'; }
+
   getSessionType(): SessionType { return 'linux'; }
   getTheme(): TerminalTheme { return FORTI_THEME; }
 

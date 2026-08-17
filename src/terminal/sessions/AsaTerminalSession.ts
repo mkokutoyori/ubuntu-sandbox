@@ -22,6 +22,8 @@ export class AsaTerminalSession extends CLITerminalSession {
     super(id, device);
   }
 
+  override platformLabel(): string { return 'Cisco ASA'; }
+
   getSessionType(): SessionType { return 'cisco'; }
   getTheme(): TerminalTheme { return ASA_THEME; }
 

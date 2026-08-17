@@ -45,6 +45,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   const deviceType = device.getDeviceType();
   const isPoweredOn = device.getIsPoweredOn();
   const sessionType = session.getSessionType();
+  const platformLabel = session.platformLabel?.() ?? null;
 
   const isDatabaseDevice = deviceType.startsWith('db-');
   const [showScrollbackConfig, setShowScrollbackConfig] = useState(false);
@@ -163,10 +164,11 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
               {sshContext.chain.map((f) => `${f.user}@${f.host}`).join(' › ')}
             </span>
           )}
-          {sessionType === 'linux' && !isDatabaseDevice && ' — Ubuntu Linux'}
-          {sessionType === 'windows' && (winShellMode === 'powershell' ? ' — Windows PowerShell' : ' — Command Prompt')}
-          {sessionType === 'cisco' && ' — Cisco IOS'}
-          {sessionType === 'huawei' && ' — Huawei VRP'}
+          {platformLabel !== null && ` — ${platformLabel}`}
+          {platformLabel === null && sessionType === 'linux' && !isDatabaseDevice && ' — Ubuntu Linux'}
+          {platformLabel === null && sessionType === 'windows' && (winShellMode === 'powershell' ? ' — Windows PowerShell' : ' — Command Prompt')}
+          {platformLabel === null && sessionType === 'cisco' && ' — Cisco IOS'}
+          {platformLabel === null && sessionType === 'huawei' && ' — Huawei VRP'}
           {isDatabaseDevice && ` — ${
             (deviceType as string) === 'db-oracle' ? 'Oracle' :
             (deviceType as string) === 'db-mysql' ? 'MySQL' :
