@@ -3858,6 +3858,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modes: exec, minPrivilege: 15,
         run: () => { getNtpAgent(this.d())?.clearCounters(); return ''; },
       },
+      {
+        id: 'show-processes-cpu-sorted', description: 'Display CPU utilisation sorted',
+        path: ['show', 'processes', 'cpu', 'sorted', { name: 'critere', type: 'REST' as const, optional: true, description: 'Sort key' }],
+        modes: exec, minPrivilege: 1, run: () => showProcessesCpu(),
+      },
+      {
+        id: 'show-processes-cpu-history', description: 'Display CPU history',
+        path: ['show', 'processes', 'cpu', 'history'],
+        modes: exec, minPrivilege: 1, run: () => showProcessesCpu(),
+      },
+      {
+        id: 'show-processes-memory', description: 'Display per-process memory',
+        path: ['show', 'processes', 'memory', { name: 'vue', type: 'REST' as const, optional: true, description: 'Memory view' }],
+        modes: exec, minPrivilege: 1, run: () => showProcessesMemory(),
+      },
+      {
+        id: 'show-running-config-all', description: 'Show running-config with defaults',
+        path: ['show', 'running-config', 'all'],
+        modes: exec, minPrivilege: 15,
+        run: () => {
+          const dev = this.d() as unknown as { getRunningConfig?: () => string };
+          const config = dev.getRunningConfig?.() ?? '';
+          return config.length > 0
+            ? `Building configuration...\n${config}`
+            : 'Building configuration...';
+        },
+      },
     ];
   }
 
@@ -4114,7 +4141,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // qu'il possede. Il ne le dit que si aucun chemin du trie ne
     // prolonge la frappe — sinon c'est le trie qui a la suite.
     if (parsed.status === 'incomplete') {
-      return this.trieProlonge(cmdPart) ? null : CISCO_ERRORS.INCOMPLETE;
+      // Le trie garde la main s'il PROLONGE la frappe ou s'il la porte
+      // exactement : `show snmp` est un noeud intermediaire du socle,
+      // qui declare `show snmp community`, mais c'est une commande
+      // complete du trie. Ne consulter que le prolongement la rendait
+      // incomplete sur une machine qui sait y repondre.
+      const mots = cmdPart.trim().split(/\s+/).length;
+      const auTrie = this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots);
+      return auTrie ? null : CISCO_ERRORS.INCOMPLETE;
     }
     // Un refus du socle MONTRE ou l'on s'est trompe. Se taire ici
     // laissait le trie rendre un message nu, sans le caret d'IOS : le
@@ -5065,12 +5099,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.outgoingSessions.touch(n);
       return `[Resuming connection ${n} to ${s.host} ... ]`;
     });
-    trie.registerGreedy('show processes cpu sorted', 'Display CPU utilisation sorted', () =>
-      showProcessesCpu());
-    trie.registerGreedy('show processes cpu history', 'Display CPU history', () =>
-      showProcessesCpu());
-    trie.registerGreedy('show processes memory', 'Display per-process memory', () =>
-      showProcessesMemory());
     trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () => {
       const rows = ['Port           Align-Err   FCS-Err  Xmit-Err   Rcv-Err UnderSize OutDiscards'];
       for (const name of this.d().getPortNames()) {
@@ -5132,11 +5160,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // et rien d'autre, pendant que `show running-config` rendait ses 17
     // lignes sur la même machine. La méthode réellement portée par
     // `Router` comme par `Switch` est `getRunningConfig()`.
-    trie.registerGreedy('show running-config all', 'Show running-config with defaults', () => {
-      const dev = this.d() as unknown as { getRunningConfig?: () => string };
-      const cfg = dev.getRunningConfig?.() ?? '';
-      return cfg.length > 0 ? `Building configuration...\n${cfg}` : 'Building configuration...';
-    });
     // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
     // un diagnostic commence par effacer, provoquer, relire.
     trie.register('clear history', 'Clear command history buffer', () => {

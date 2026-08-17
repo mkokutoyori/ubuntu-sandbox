@@ -226,3 +226,35 @@ describe('une commande d\'EXEC migree garde sa DELEGATION', () => {
     }
   });
 });
+
+describe('un noeud INTERMEDIAIRE du socle peut etre une commande du trie', () => {
+  async function routeur() {
+    resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
+    const device = createDevice('router-cisco', 0, 0) as unknown as {
+      executeCommand(c: string): Promise<string>;
+    };
+    await device.executeCommand('enable');
+    return device;
+  }
+
+  it('`show snmp` repond, bien que le socle declare `show snmp community`', async () => {
+    const device = await routeur();
+
+    const out = await device.executeCommand('show snmp');
+
+    expect(out).not.toContain('Incomplete');
+    expect(out).not.toContain('Invalid input');
+  });
+
+  it('et la forme longue repond aussi — le temoin', async () => {
+    const device = await routeur();
+
+    expect(await device.executeCommand('show snmp community')).not.toContain('Invalid input');
+  });
+
+  it('un intermediaire que PERSONNE ne porte reste incomplet', async () => {
+    const device = await routeur();
+
+    expect(await device.executeCommand('show ntp')).toContain('Incomplete');
+  });
+});
