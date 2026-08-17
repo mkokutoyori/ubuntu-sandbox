@@ -56,8 +56,8 @@ import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
-import { parseHuaweiPortSpec } from './huawei/HuaweiAclCommands';
-import { formatHuaweiAclEntry } from './huawei/HuaweiAclFormat';
+import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
+import { analyserRegleVrp } from './huawei/HuaweiAclRule';
 import {
   AUCUN_GROUPE, analyserVrrp, appliquerVrrp, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
@@ -115,13 +115,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private uiLabel = '';
   private selectedUiRange: { first: number; last: number } | null = null;
   private selectedAcl: string | null = null;
-  private acls = new Map<string, {
-    key: string; type: 'basic' | 'adv'; rules: string[];
-    // Ecrits par `description` et `step` en vue ACL, et lus par
-    // personne — ni ici ni ailleurs. Les declarer ne les rend pas
-    // vivants ; cela les rend greppables, ce que le cast empechait.
-    description?: string; step?: number;
-  }>();
+  /**
+   * Le type de la vue ACL ouverte. C'est un etat de VUE, au meme titre
+   * que `selectedVlan` : l'invite se rend hors execution de commande, ou
+   * le shell n'a pas de reference vers l'equipement et ne peut donc pas
+   * interroger le moteur. Les REGLES, elles, ne vivent que dans le moteur.
+   */
+  private selectedAclType: 'basic' | 'adv' = 'basic';
   private localUsers = new Map<string, import('./huawei/HuaweiCommonSecurity').LocalUser>();
 
   private swRef: HuaweiSwitchDevice | null = null;
@@ -458,10 +458,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'port-group': return `[${host}-port-group]`;
       case 'aaa':       return `[${host}-aaa]`;
       case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
-      case 'acl': {
-        const a = this.selectedAcl ? this.acls.get(this.selectedAcl) : undefined;
-        return `[${host}-acl-${a?.type ?? 'basic'}-${this.selectedAcl ?? ''}]`;
-      }
+      case 'acl':
+        return `[${host}-acl-${this.aclTypeCourant()}-${this.selectedAcl ?? ''}]`;
       case 'dhcp-pool': return `[${host}-ip-pool-${this.selectedPool ?? ''}]`;
       case 'traffic-classifier': return `[${host}-classifier-${this.selectedMqcName ?? ''}]`;
       case 'traffic-behavior':   return `[${host}-behavior-${this.selectedMqcName ?? ''}]`;
@@ -811,10 +809,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const a = analyserAcl(args);
       if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `acl ${args.join(' ')}`);
       const key = a.cmd.kind === 'nom' ? a.cmd.nom : String(a.cmd.numero);
-      const type: 'basic' | 'adv' = a.cmd.type === 'advanced' ? 'adv' : 'basic';
-      const existant = this.acls.get(key);
-      if (!existant) this.acls.set(key, { key, type, rules: [] });
+      // La liste nait dans le MOTEUR, seul magasin. Elle naissait dans une
+      // table de texte tenue a cote, d'ou toutes les divergences.
+      const engine = this.swRef?.getVaclEngine();
+      if (engine) {
+        if (a.cmd.kind === 'nom') {
+          engine.ensureNamedAccessList(a.cmd.nom, a.cmd.type === 'advanced' ? 'extended' : 'standard');
+        } else {
+          engine.ensureAccessList(a.cmd.numero);
+        }
+      }
       this.selectedAcl = key;
+      this.selectedAclType = a.cmd.type === 'advanced' ? 'adv' : 'basic';
       this.mode = 'acl';
       return '';
     });
@@ -1819,71 +1825,118 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `user-interface ${this.uiLabel.replace(/(\D)(\d)/, '$1 $2')}`);
   }
 
-  /** ACL sub-view ([host-acl-{basic|adv}-<id>]) — rule list. */
+  /**
+   * La vue ACL du commutateur.
+   *
+   * Elle tenait DEUX magasins : un echo verbatim du texte tape
+   * de la ligne tapee et les entrees du moteur, alimentes par deux
+   * chemins differents. Ils divergeaient de toutes les facons possibles —
+   * `undo rule 5` retirait la ligne du TEXTE sans toucher au moteur, donc
+   * une regle supprimee de la configuration continuait de filtrer ; le
+   * numero ecrit par l'operateur etait jete ; une regle malformee entrait
+   * dans le texte et pas dans le moteur ; et `display this` annoncait
+   * `rule 5` la ou `display acl` annoncait `rule 0` pour la meme regle.
+   *
+   * Il n'y en a plus qu'un : le moteur, celui qui filtre pour de bon.
+   */
   private buildAclCommands(): void {
     const t = this.aclTrie;
-    t.registerGreedy('rule', 'Configure an ACL rule', (args) => {
-      if (!this.selectedAcl) return 'Error: Incomplete command.';
-      const acl = this.acls.get(this.selectedAcl);
-      acl?.rules.push(`rule ${args.join(' ')}`.trim());
-      if (acl) this.parseVrpAclRule(args, acl.key, acl.type);
+    t.registerGreedy('rule', 'Configure an ACL rule', (args, ligne) => {
+      const ref = this.aclRefCourante();
+      if (ref === null) return 'Error: Incomplete command.';
+      const kind = this.aclTypeCourant() === 'adv' ? 'advanced' : 'basic';
+      const a = analyserRegleVrp(args, kind);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, ligne ?? `rule ${args.join(' ')}`);
+      if (!this.swRef) return '';
+      const engine = this.swRef.getVaclEngine();
+      if (typeof ref === 'number') engine.addAccessListEntry(ref, a.action, a.opts);
+      else engine.addNamedAccessListEntry(ref, kind === 'advanced' ? 'extended' : 'standard', a.action, a.opts);
       return '';
     });
     t.registerGreedy('description', 'ACL description', (args) => {
-      if (!this.selectedAcl) return '';
-      const acl = this.acls.get(this.selectedAcl);
-      if (acl) acl.description = args.join(' ');
+      const ref = this.aclRefCourante();
+      if (ref === null) return '';
+      this.swRef?.getVaclEngine().setDescription(ref, args.join(' '));
       return '';
     });
-    t.registerGreedy('step', 'Set ACL rule step', (args) => {
-      if (!this.selectedAcl) return '';
-      const acl = this.acls.get(this.selectedAcl);
-      if (acl) acl.step = parseInt(args[0] ?? '5', 10);
+    t.registerGreedy('step', 'Set ACL rule step', (args, ligne) => {
+      const ref = this.aclRefCourante();
+      if (ref === null) return '';
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n) || n < 1) {
+        return rendreErreurVrp({ kind: 'wrong', token: args[0] ?? 'step' }, ligne ?? `step ${args.join(' ')}`);
+      }
+      this.swRef?.getVaclEngine().setStep(ref, n);
       return '';
     });
     t.registerGreedy('undo', 'ACL undo', (args) => {
-      if (!this.selectedAcl) return '';
-      const acl = this.acls.get(this.selectedAcl);
-      if (!acl) return '';
-      if (args[0] === 'rule' && args[1]) {
-        const seq = parseInt(args[1], 10);
-        if (!isNaN(seq)) {
-          acl.rules = acl.rules.filter(r => !new RegExp(`^rule\\s+${seq}\\b`).test(r));
-        }
+      const ref = this.aclRefCourante();
+      if (ref === null) return '';
+      if (!this.swRef) return '';
+      const engine = this.swRef.getVaclEngine();
+      if (args[0]?.toLowerCase() === 'rule') {
+        const seq = parseInt(args[1] ?? '', 10);
+        if (isNaN(seq)) return 'Error: Incomplete command.';
+        // Supprimer du MOTEUR, seul magasin : le texte disparaissait
+        // pendant que la regle continuait de filtrer.
+        return engine.removeEntryBySequence(ref, seq) ? '' : `Error: Rule ${seq} does not exist.`;
+      }
+      if (args[0]?.toLowerCase() === 'description') { engine.setDescription(ref, ''); return ''; }
+      if (args[0]?.toLowerCase() === 'step') {
+        engine.setStep(ref, engine.getDefaultStep());
+        return '';
       }
       return '';
     });
     t.register('display this', 'Display ACL configuration', () =>
       this.renderAcl(this.selectedAcl));
+    // `display` s'utilise depuis toute vue sur VRP.
+    this.registerAclDisplay(t);
+  }
+
+  /** `display acl {all | <numero|nom>}`, lu sur le moteur. */
+  private registerAclDisplay(trie: CommandTrie): void {
+    trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
+      const engine = this.swRef?.getVaclEngine();
+      const listes = engine?.getAccessListsInternal() ?? [];
+      if (listes.length === 0) return 'Info: No ACL is configured.';
+      const sel = (args[0] ?? 'all').toLowerCase();
+      if (sel === 'all') {
+        return listes.map((a) => this.renderAclOperational(a.name ?? String(a.id ?? ''))).join('\n');
+      }
+      return this.renderAclOperational(args[0]);
+    });
+  }
+
+  /** La liste ouverte, designee comme le moteur la connait. */
+  private aclRefCourante(): number | string | null {
+    if (!this.selectedAcl) return null;
+    const n = parseInt(this.selectedAcl, 10);
+    return /^\d+$/.test(this.selectedAcl) && !isNaN(n) ? n : this.selectedAcl;
+  }
+
+  /** `basic` ou `adv` — le type de la vue ouverte. */
+  private aclTypeCourant(): 'basic' | 'adv' {
+    return this.selectedAclType;
   }
 
   private renderAcl(key: string | null): string {
-    if (!key) return '';
-    const a = this.acls.get(key);
-    if (!a) return `Error: The ACL ${key} does not exist.`;
-    const kind = a.type === 'adv' ? 'advanced' : 'basic';
-    return [`acl ${kind} ${a.key}`, ...a.rules.map(r => ` ${r}`)].join('\n');
+    if (!key || !this.swRef) return '';
+    const engine = this.swRef.getVaclEngine();
+    const n = parseInt(key, 10);
+    const acl = engine.findRef(/^\d+$/.test(key) && !isNaN(n) ? n : key);
+    if (!acl) return `Error: The ACL ${key} does not exist.`;
+    return formatHuaweiAclConfig(acl, engine.getDefaultStep()).join('\n');
   }
 
-  /** Operational `display acl` — rule list rendered from the engine that
-   * actually evaluates traffic (protocol/ports/match counts), unlike
-   * `renderAcl`'s verbatim echo of the configured command text. */
+  /** La vue operationnelle d'une liste — meme formateur que le routeur. */
   private renderAclOperational(key: string | null): string {
     if (!key || !this.swRef) return '';
-    const a = this.acls.get(key);
-    if (!a) return `Error: The ACL ${key} does not exist.`;
     const engine = this.swRef.getVaclEngine();
-    const num = parseInt(key, 10);
-    const acl = !isNaN(num) ? engine.findById(num) : engine.findByName(key);
-    const kind = a.type === 'adv' ? 'Advanced' : 'Basic';
-    if (!acl || acl.entries.length === 0) {
-      return `${kind} ACL ${key}, 0 rule(s)`;
-    }
-    const lines = [`${kind} ACL ${key}, ${acl.entries.length} rule(s)`, `ACL's step is 5`];
-    acl.entries.forEach((entry, idx) => {
-      lines.push(` rule ${idx * 5} ${formatHuaweiAclEntry(entry)}`);
-    });
-    return lines.join('\n');
+    const n = parseInt(key, 10);
+    const acl = engine.findRef(/^\d+$/.test(key) && !isNaN(n) ? n : key);
+    if (!acl) return `Error: The ACL ${key} does not exist.`;
+    return formatHuaweiAcl(acl, engine.getDefaultStep());
   }
 
   private parseVrpVlanTokens(args: string[]): number[] {
@@ -1899,76 +1952,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!isNaN(n)) ids.push(n);
     }
     return ids;
-  }
-
-  private parseVrpAclAddr(args: string[], offset: number): { ip: IPAddress; wc: SubnetMask; consumed: number } | null {
-    const t = args[offset]?.toLowerCase();
-    if (!t) return null;
-    if (t === 'any') {
-      return { ip: new IPAddress('0.0.0.0'), wc: new SubnetMask('255.255.255.255'), consumed: 1 };
-    }
-    if (!IPAddress.isValid(args[offset])) return null;
-    let wcTok = args[offset + 1];
-    if (wcTok === '0') wcTok = '0.0.0.0';
-    if (wcTok && IPAddress.isValid(wcTok)) {
-      return { ip: new IPAddress(args[offset]), wc: new SubnetMask(wcTok), consumed: 2 };
-    }
-    return { ip: new IPAddress(args[offset]), wc: new SubnetMask('0.0.0.0'), consumed: 1 };
-  }
-
-  private parseVrpAclRule(args: string[], aclKey: string, aclType: 'basic' | 'adv'): void {
-    if (!this.swRef) return;
-    let i = 0;
-    if (/^\d+$/.test(args[i] ?? '')) i++;
-    const action = args[i]?.toLowerCase();
-    if (action !== 'permit' && action !== 'deny') return;
-    i++;
-
-    const engine = this.swRef.getVaclEngine();
-    const num = parseInt(aclKey, 10);
-    const anyIp = new IPAddress('0.0.0.0');
-    const anyWc = new SubnetMask('255.255.255.255');
-
-    if (aclType === 'basic') {
-      let srcIP = anyIp, srcWc = anyWc;
-      const si = args.findIndex(a => a.toLowerCase() === 'source');
-      if (si >= 0) {
-        const src = this.parseVrpAclAddr(args, si + 1);
-        if (!src) return;
-        srcIP = src.ip; srcWc = src.wc;
-      }
-      const opts = { srcIP, srcWildcard: srcWc };
-      if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
-      else engine.addNamedAccessListEntry(aclKey, 'standard', action, opts);
-      return;
-    }
-
-    const protocol = args[i]?.toLowerCase();
-    if (!protocol) return;
-    let srcIP = anyIp, srcWc = anyWc, dstIP = anyIp, dstWc = anyWc;
-    const si = args.findIndex(a => a.toLowerCase() === 'source');
-    if (si >= 0) {
-      const src = this.parseVrpAclAddr(args, si + 1);
-      if (!src) return;
-      srcIP = src.ip; srcWc = src.wc;
-    }
-    const di = args.findIndex(a => a.toLowerCase() === 'destination');
-    if (di >= 0) {
-      const dst = this.parseVrpAclAddr(args, di + 1);
-      if (!dst) return;
-      dstIP = dst.ip; dstWc = dst.wc;
-    }
-    const spi = args.findIndex(a => a.toLowerCase() === 'source-port');
-    const srcPortSpec = spi >= 0 ? parseHuaweiPortSpec(args, spi + 1)?.spec : undefined;
-    const dpi = args.findIndex(a => a.toLowerCase() === 'destination-port');
-    const dstPortSpec = dpi >= 0 ? parseHuaweiPortSpec(args, dpi + 1)?.spec : undefined;
-    const opts: Parameters<typeof engine.addAccessListEntry>[2] = {
-      protocol, srcIP, srcWildcard: srcWc, dstIP, dstWildcard: dstWc,
-    };
-    if (srcPortSpec) { opts.srcPortSpec = srcPortSpec; if (srcPortSpec.op === 'eq') opts.srcPort = srcPortSpec.port; }
-    if (dstPortSpec) { opts.dstPortSpec = dstPortSpec; if (dstPortSpec.op === 'eq') opts.dstPort = dstPortSpec.port; }
-    if (!isNaN(num)) engine.addAccessListEntry(num, action, opts);
-    else engine.addNamedAccessListEntry(aclKey, 'extended', action, opts);
   }
 
   // ─── Shared Display Commands ──────────────────────────────────────
@@ -2368,15 +2351,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.register('display dhcp snooping user-bind all', 'Display DHCP snooping binding table', () =>
       this.swRef ? this.displayDhcpSnoopingUserBind(this.swRef) : 'Error: Incomplete command.');
 
-    // display acl {all | <number|name>}
-    trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
-      if (this.acls.size === 0) return 'Info: No ACL is configured.';
-      const sel = (args[0] ?? 'all').toLowerCase();
-      if (sel === 'all') {
-        return [...this.acls.keys()].map(k => this.renderAclOperational(k)).join('\n');
-      }
-      return this.renderAclOperational(this.acls.has(args[0]) ? args[0] : sel);
-    });
+    this.registerAclDisplay(trie);
 
     // reset acl counter { all | name <name> | <number> }
     trie.registerGreedy('reset acl counter', 'Reset ACL match counters', (args) => {

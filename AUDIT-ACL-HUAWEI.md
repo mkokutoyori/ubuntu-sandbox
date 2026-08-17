@@ -17,7 +17,7 @@
 > situation à jour.
 >
 > ```bash
-> npx vitest run src/__tests__/audit/   # 53 tests : 34 Cisco + 19 VRP
+> npx vitest run src/__tests__/audit/   # 68 tests : 34 Cisco + 19 VRP + 15 commutateur
 > ```
 
 ---
@@ -220,9 +220,12 @@ distingués, et testés.
   avant l'audit : aucune n'est évaluable, et la grammaire le dit.
 - **`display acl` ne pagine pas** et n'a pas la forme longue `display acl all`
   de certaines plateformes.
-- **Le commutateur Huawei** partage désormais les trois politiques VRP, mais son
-  shell garde sa propre table de règles (`HuaweiSwitchShell`) à côté du moteur —
-  c'est une divergence connue et antérieure, hors du périmètre de cet audit.
+- ~~**Le commutateur Huawei** garde sa propre table de règles à côté du
+  moteur.~~ **Traité** : voir `AUDIT-ACL-HUAWEI-SWITCH.md`. La mesure a montré
+  que la divergence était bien pire qu'une question de forme — `undo rule`
+  retirait la règle du texte sans toucher au moteur, de sorte qu'une règle
+  supprimée de la configuration **continuait de filtrer**. Le commutateur
+  partage désormais le magasin, l'analyse et le rendu du routeur.
 
 ---
 
@@ -239,7 +242,7 @@ distingués, et testés.
 npx vitest run src/__tests__/audit/
 ```
 
-53 tests : 34 pour Cisco, 19 pour VRP. **Chaque test assoit le comportement
-juste ; un échec est une régression.** Le fichier VRP porte un témoin Cisco sur
+68 tests : 34 pour Cisco, 19 pour le routeur VRP, 15 pour le commutateur.
+**Chaque test assoit le comportement juste ; un échec est une régression.** Le fichier VRP porte un témoin Cisco sur
 la sémantique du paquet non apparié — sans lui, la distinction ne serait pas
 prouvée.

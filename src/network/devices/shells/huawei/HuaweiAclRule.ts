@@ -74,6 +74,15 @@ function refus(token: string): RuleParse {
   return { statut: 'refus', err: { kind: 'unrecognized', token } };
 }
 
+/**
+ * Une adresse malformee doit etre REFUSEE, pas construite : `new
+ * IPAddress('999.999.999.999')` LEVE, et l'exception traversait le
+ * gestionnaire de commande au lieu de rendre un message.
+ */
+function adresseValide(ip: string, wildcard: string): boolean {
+  return IPAddress.isValid(ip) && IPAddress.isValid(wildcard);
+}
+
 export function analyserRegleVrp(args: string[], kind: 'basic' | 'advanced'): RuleParse {
   if (args.length < 1) return { statut: 'refus', err: { kind: 'incomplete' } };
 
@@ -110,13 +119,17 @@ export function analyserRegleVrp(args: string[], kind: 'basic' | 'advanced'): Ru
     if (kw === 'source') {
       if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
       if (!args[i + 1] || !args[i + 2]) return { statut: 'refus', err: { kind: 'incomplete' } };
-      srcIP = args[i + 1]; srcWild = normalizeWildcard(args[i + 2]); i += 3; continue;
+      const wc = normalizeWildcard(args[i + 2]);
+      if (!adresseValide(args[i + 1], wc)) return refus(args[i + 1]);
+      srcIP = args[i + 1]; srcWild = wc; i += 3; continue;
     }
 
     if (kind === 'advanced' && kw === 'destination') {
       if (args[i + 1]?.toLowerCase() === 'any') { i += 2; continue; }
       if (!args[i + 1] || !args[i + 2]) return { statut: 'refus', err: { kind: 'incomplete' } };
-      dstIP = args[i + 1]; dstWild = normalizeWildcard(args[i + 2]); i += 3; continue;
+      const wc = normalizeWildcard(args[i + 2]);
+      if (!adresseValide(args[i + 1], wc)) return refus(args[i + 1]);
+      dstIP = args[i + 1]; dstWild = wc; i += 3; continue;
     }
 
     if (kind === 'advanced' && (kw === 'source-port' || kw === 'destination-port')) {

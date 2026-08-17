@@ -15,7 +15,7 @@
 
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
-import { formatHuaweiAclEntry } from './HuaweiAclFormat';
+import { formatHuaweiAcl, formatHuaweiAclRules } from './HuaweiAclFormat';
 import { rendreErreurVrp } from '../cli-utils';
 import { analyserAcl } from './HuaweiAclGrammar';
 import { analyserRegleVrp, parseHuaweiPortSpec } from './HuaweiAclRule';
@@ -216,37 +216,6 @@ export function registerHuaweiACLInterfaceCommands(
   });
 }
 
-/**
- * L'en-tete d'une liste, tel que VRP l'ecrit. Le type venait du NUMERO
- * (`num >= 3000`) et non du type reel de la liste, de sorte qu'une liste
- * NOMMEE `advance` et une liste 2500 pouvaient etre decrites a tort. Le
- * pas etait ecrit « 5 » en dur alors que `step` le change.
- */
-function enTeteAcl(
-  acl: import('../../router/ACLEngine').AccessList, pasParDefaut: number,
-): string[] {
-  const type = acl.type === 'extended' ? 'Advanced' : 'Basic';
-  const label = acl.name ?? String(acl.id ?? '');
-  const lignes = [`${type} ACL ${label}, ${acl.entries.length} rule(s)`];
-  if (acl.description) lignes.push(`Acl's description is "${acl.description}"`);
-  lignes.push(`ACL's step is ${acl.step ?? pasParDefaut}`);
-  return lignes;
-}
-
-/** Les lignes de regles d'une liste, numerotees par leur VRAIE sequence. */
-function lignesRegles(
-  acl: { entries: import('../../router/ACLEngine').ACLEntry[] },
-  opts: { showCounts?: boolean } = {},
-): string[] {
-  return acl.entries.map(
-    (entry) => ` rule ${entry.sequence ?? 0} ${formatHuaweiAclEntry(entry, opts)}`,
-  );
-}
-
-function rendreAcl(router: Router, acl: import('../../router/ACLEngine').AccessList): string[] {
-  return [...enTeteAcl(acl, router._aclDefaultStep()), ...lignesRegles(acl)];
-}
-
 export function registerHuaweiACLDisplayCommands(
   trie: CommandTrie,
   getRouter: () => Router,
@@ -267,7 +236,7 @@ export function registerHuaweiACLDisplayCommands(
     // inexistante, ce qui confond deux etats distincts et fait chercher
     // une faute de frappe la ou il manque simplement une regle.
     if (!acl) return `Error: ACL ${ref} does not exist.`;
-    return rendreAcl(router, acl).join('\n');
+    return formatHuaweiAcl(acl, router._aclDefaultStep());
   });
 }
 
@@ -275,7 +244,7 @@ function formatAllACLs(router: Router): string {
   const acls = router._getAccessListsInternal();
   if (acls.length === 0) return 'Total 0 ACL(s)';
   const lines: string[] = [];
-  for (const acl of acls) lines.push(...rendreAcl(router, acl));
+  for (const acl of acls) lines.push(formatHuaweiAcl(acl, router._aclDefaultStep()));
   lines.push(`Total ${acls.length} ACL(s)`);
   return lines.join('\n');
 }
@@ -299,7 +268,7 @@ export function runningConfigACL(router: Router): string[] {
       lines.push(` step ${acl.step}`);
     }
     if (acl.description) lines.push(` description ${acl.description}`);
-    lines.push(...lignesRegles(acl, { showCounts: false }));
+    lines.push(...formatHuaweiAclRules(acl, { showCounts: false }));
   }
 
   return lines;

@@ -140,12 +140,28 @@ describe('ce que le cast affirmait et que personne ne fournissait', () => {
     expect(src.match(/\bas any\b/)).toBeNull();
   });
 
-  it('les magasins morts sont declares, donc greppables', () => {
+  it('les magasins de la vue ACL ne sont plus morts : ils vivent sur le moteur', async () => {
+    // Ce test epinglait la DECLARATION de `description?: string; step?:
+    // number;` sur le shell, au motif qu'un magasin mort declare vaut
+    // mieux qu'un magasin mort cache par un cast. Les deux champs sont
+    // desormais VIVANTS, portes par la liste que le moteur evalue -- la
+    // declaration morte n'a plus de raison d'exister, et ce qu'il faut
+    // tenir est qu'ils soient lus. Voir AUDIT-ACL-HUAWEI-SWITCH.md.
+    const s = await sw(['system-view', 'acl 2000', 'step 20', 'description invites',
+      'rule permit source 10.0.0.0 0.0.0.255', 'quit']);
+    const acl = s.getVaclEngine().findById(2000)!;
+    expect(acl.step).toBe(20);
+    expect(acl.description).toBe('invites');
+    expect(acl.entries[0].sequence).toBe(20);
+    expect(await s.executeCommand('display acl 2000')).toContain('invites');
+  });
+
+  it('le shell ne tient plus de table de regles a cote du moteur', () => {
     const src = readFileSync(SHELL, 'utf8');
-    // `description` et `step` de la vue ACL sont ecrits et lus par
-    // personne. Les declarer ne les rend pas vivants ; cela empeche
-    // qu'un cast les rende invisibles a nouveau.
-    expect(src).toContain('description?: string; step?: number;');
+    // Deux magasins pour une regle, c'est `undo rule` qui efface le texte
+    // en laissant la regle filtrer. Il n'y en a plus qu'un.
+    expect(src).not.toContain('rules: string[]');
+    expect(src).not.toContain('parseVrpAclRule');
   });
 });
 
