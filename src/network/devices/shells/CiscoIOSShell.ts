@@ -32,6 +32,7 @@ import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
 import { CliInvalidInput } from './cli/CliDiagnostic';
 import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
+import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -149,7 +150,117 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
-      ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(),
+      ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
+    ];
+  }
+
+  private ipv6ReglagesSpecs(): CommandSpec[] {
+    const port = () => {
+      const iface = this.selectedInterfaceName();
+      return iface ? this.d().getPort(iface) : undefined;
+    };
+    const effacerMtu = (): string => {
+      const p = port() as unknown as { ipv6Mtu?: number } | undefined;
+      if (p) delete p.ipv6Mtu;
+      return '';
+    };
+    const effacerFiltre = (): string => {
+      const iface = this.selectedInterfaceName();
+      if (iface) delete getSecurityConfig(this.d()).ifaceFlags(iface).ipv6TrafficFilter;
+      return '';
+    };
+
+    return [
+      {
+        id: 'ipv6-mtu-undo',
+        path: ['ipv6', 'mtu'],
+        description: 'Set IPv6 MTU',
+        undoDescription: 'Restore the default IPv6 MTU',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: effacerMtu, undo: effacerMtu,
+      },
+      {
+        id: 'ipv6-traffic-filter-undo',
+        path: ['ipv6', 'traffic-filter'],
+        description: 'Apply IPv6 ACL',
+        undoDescription: 'Remove the IPv6 ACL from this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: effacerFiltre, undo: effacerFiltre,
+      },
+      {
+        id: 'ipv6-unicast-routing',
+        path: ['ipv6', 'unicast-routing'],
+        description: 'Enable IPv6 unicast routing',
+        undoDescription: 'Disable IPv6 unicast routing',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { this.d().enableIPv6Routing(); return ''; },
+        undo: () => { this.d().disableIPv6Routing(); return ''; },
+      },
+      {
+        id: 'ipv6-cef',
+        path: ['ipv6', 'cef'],
+        description: 'Enable IPv6 CEF',
+        undoDescription: 'Disable IPv6 CEF',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { getSecurityConfig(this.d()).ipv6Cef = true; return ''; },
+        undo: () => { getSecurityConfig(this.d()).ipv6Cef = false; return ''; },
+      },
+      {
+        id: 'ipv6-enable',
+        path: ['ipv6', 'enable'],
+        description: 'Enable IPv6 on interface',
+        undoDescription: 'Disable IPv6 on interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => { port()?.enableIPv6(); return ''; },
+        undo: () => {
+          const p = port();
+          if (p && !p.getIPv6Addresses().some(e => e.origin === 'static')) p.disableIPv6();
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-mtu',
+        path: ['ipv6', 'mtu', {
+          name: 'octets', type: 'INT', range: [1280, 9216],
+          description: 'IPv6 MTU, in bytes',
+        }],
+        description: 'Set IPv6 MTU',
+        undoDescription: 'Restore the default IPv6 MTU',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const p = port() as unknown as { ipv6Mtu?: number } | undefined;
+          if (p) p.ipv6Mtu = parseInt(args.octets, 10);
+          return '';
+        },
+        undo: effacerMtu,
+      },
+      {
+        id: 'ipv6-traffic-filter',
+        path: ['ipv6', 'traffic-filter',
+          { name: 'liste', type: 'WORD', description: 'Access-list name' },
+          {
+            name: 'sens', type: 'ENUM', description: 'Direction the filter applies to',
+            values: [
+              { keyword: 'in', description: 'Filter incoming packets' },
+              { keyword: 'out', description: 'Filter outgoing packets' },
+            ],
+          }],
+        description: 'Apply IPv6 ACL',
+        undoDescription: 'Remove the IPv6 ACL from this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const iface = this.selectedInterfaceName();
+          if (iface) {
+            getSecurityConfig(this.d()).ifaceFlags(iface).ipv6TrafficFilter = {
+              name: args.liste, direction: args.sens === 'out' ? 'out' : 'in',
+            };
+          }
+          return '';
+        },
+        undo: effacerFiltre,
+      },
     ];
   }
 

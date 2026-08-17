@@ -613,8 +613,6 @@ export function buildSecurityConfigCommands(trie: CommandTrie, ctx: CiscoSecurit
 
   trie.registerGreedy('ip cef', 'Enable CEF', () => { sec().ipCef = true; return ''; });
   trie.registerGreedy('no ip cef', 'Disable CEF', () => { sec().ipCef = false; return ''; });
-  trie.registerGreedy('ipv6 cef', 'Enable IPv6 CEF', () => { sec().ipv6Cef = true; return ''; });
-  trie.registerGreedy('no ipv6 cef', 'Disable IPv6 CEF', () => { sec().ipv6Cef = false; return ''; });
   trie.registerGreedy('ip multicast-routing', 'Enable IP multicast routing', () => {
     sec().ipMulticastRouting = true;
     return '';
@@ -1181,12 +1179,6 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
   trie.registerGreedy('zone-member security', 'Assign zone', (args) => {
     const i = ctx.getSelectedInterface(); if (!i || !args[0]) return '';
     sec().ifaceFlags(i).zoneMember = args[0];
-    return '';
-  });
-  trie.registerGreedy('ipv6 traffic-filter', 'Apply IPv6 ACL', (args) => {
-    const i = ctx.getSelectedInterface(); if (!i || args.length < 2) return '';
-    const dir = args[1] === 'out' ? 'out' : 'in';
-    sec().ifaceFlags(i).ipv6TrafficFilter = { name: args[0], direction: dir };
     return '';
   });
 }

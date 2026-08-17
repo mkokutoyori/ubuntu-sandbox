@@ -147,12 +147,6 @@ export function registerOSPFConfigCommands(configTrie: CommandTrie, ctx: CiscoSh
     return '';
   });
 
-  // ipv6 unicast-routing
-  configTrie.register('ipv6 unicast-routing', 'Enable IPv6 unicast routing', () => {
-    ctx.r().enableIPv6Routing();
-    return '';
-  });
-
   // ip routing
   configTrie.register('ip routing', 'Enable IP routing', () => {
     const r = ctx.r() as unknown as { _setIpRoutingEnabled?: (e: boolean) => void };

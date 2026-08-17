@@ -61,7 +61,7 @@ export interface ArgumentHelpTries {
 function describeArgumentTypes(tries: ArgumentHelpTries): void {
   // ── Commandes sans argument : le `WORD` était une invention ──
   for (const path of [
-    'cdp run', 'ip cef', 'ipv6 cef', 'ip multicast-routing', 'ip source-route',
+    'cdp run', 'ip cef', 'ip multicast-routing', 'ip source-route',
     'lldp run', 'service password-encryption', 'sntp unicast',
   ]) tries.config.takesNoArgument(path);
   for (const path of ['fair-queue']) tries.configIf.takesNoArgument(path);
@@ -304,7 +304,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
     INT('seconds', [30, 600], 'Load calculation interval, in multiples of 30'),
   ]);
   tries.configIf.describeArgs('ip mtu', [INT('bytes', [68, 9216], 'IP MTU, in bytes')]);
-  tries.configIf.describeArgs('ipv6 mtu', [INT('bytes', [1280, 9216], 'IPv6 MTU, in bytes')]);
   tries.configIf.describeArgs('max-reserved-bandwidth', [
     INT('percent', [1, 100], 'Percent of interface bandwidth reservable'),
   ]);
@@ -504,12 +503,12 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   for (const chemin of [
     'class-map', 'class-map match-all', 'class-map match-any',
     'clock', 'crypto map', 'ip community-list', 'ip sla',
-    'logging history', 'no logging', 'policy-map',
+    'no logging', 'policy-map',
     'privilege configure', 'privilege exec', 'privilege interface', 'privilege line',
     'route-map', 'sntp server', 'zone-pair security',
   ]) tries.config.requireArgs(chemin, 1);
   for (const chemin of [
-    'ip access-group', 'ip ospf', 'ipv6 ospf',
+    'ip access-group', 'ip ospf',
     'rate-limit input', 'rate-limit output',
   ]) tries.configIf.requireArgs(chemin, 1);
   for (const chemin of ['show logging last', 'show running-config interface']) {
@@ -1058,9 +1057,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ],
   };
   tries.configIf.describeArgs('ip access-group', [LISTE_IP, DIRECTION]);
-  tries.configIf.describeArgs('ipv6 traffic-filter', [
-    WORD('access-list', 'IPv6 access-list name'), DIRECTION,
-  ]);
   tries.configLine.describeArgs('access-class', [
     { ...LISTE_IP, alternatives: LISTE_IP.alternatives!.filter((a) => a.literal !== '<1300-2699>') },
     DIRECTION,

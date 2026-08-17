@@ -6339,10 +6339,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       this.configState.set('ip routing', false);
       return '';
     });
-    this.configTrie.registerGreedy('no ipv6 unicast-routing', 'Disable IPv6 routing', () => {
-      this.configState.set('ipv6 unicast-routing', false);
-      return '';
-    });
     registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
     this.configTrie.register('ip bootp server', 'Enable BOOTP server', () => {
       const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };

@@ -612,6 +612,11 @@ export function showRunningConfig(router: Router): string {
     lines.push('!');
   }
 
+  if (router.isIPv6RoutingEnabled()) {
+    lines.push('ipv6 unicast-routing');
+    lines.push('!');
+  }
+
   const enableSecret = router.getEnableSecret();
   if (enableSecret) {
     lines.push(`enable secret ${renderSecretField(enableSecret.value, enableSecret.algo, 'enable')}`);
@@ -1233,16 +1238,19 @@ function ipv6AddressStrings(port: import('../../../hardware/Port').Port): string
  * distingue les deux — sans nouvel état à porter.
  */
 function runningConfigInterfaceIPv6(port: import('../../../hardware/Port').Port): string[] {
-  if (!port.isIPv6Enabled()) return [];
-  const derivee = IPv6Address.fromMAC(port.getMAC()).toString();
   const lines: string[] = [];
-  for (const e of port.getIPv6Addresses()) {
-    if (e.origin === 'static') lines.push(` ipv6 address ${e.address}/${e.prefixLength}`);
-    else if (e.origin === 'link-local' && `${e.address.withScopeId(null)}` !== derivee) {
-      lines.push(` ipv6 address ${e.address.withScopeId(null)} link-local`);
+  if (port.isIPv6Enabled()) {
+    const derivee = IPv6Address.fromMAC(port.getMAC()).toString();
+    for (const e of port.getIPv6Addresses()) {
+      if (e.origin === 'static') lines.push(` ipv6 address ${e.address}/${e.prefixLength}`);
+      else if (e.origin === 'link-local' && `${e.address.withScopeId(null)}` !== derivee) {
+        lines.push(` ipv6 address ${e.address.withScopeId(null)} link-local`);
+      }
     }
+    if (lines.length === 0) lines.push(' ipv6 enable');
   }
-  if (lines.length === 0) lines.push(' ipv6 enable');
+  const mtu = (port as unknown as { ipv6Mtu?: number }).ipv6Mtu;
+  if (mtu !== undefined) lines.push(` ipv6 mtu ${mtu}`);
   return lines;
 }
 
