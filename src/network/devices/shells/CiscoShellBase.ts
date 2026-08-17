@@ -2600,16 +2600,31 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected socleTable(): CommandTable | null { return null; }
 
-  private rootIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
-    const typed = cmdPart.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
-    const root = typeof spec.path[0] === 'string' ? spec.path[0].toLowerCase() : '';
-    if (typed === root) return true;
+  private prefixIsUnambiguous(cmdPart: string, spec: { path: readonly unknown[] }): boolean {
+    const typed = cmdPart.trim().toLowerCase().split(/\s+/);
+    const canonical = spec.path
+      .filter((step): step is string => typeof step === 'string')
+      .map(word => word.toLowerCase());
 
     for (const path of this.getActiveTrie().enumerateCommandPaths()) {
-      const other = path.split(' ')[0].toLowerCase();
-      if (other !== root && other.startsWith(typed)) return false;
+      const words = path.toLowerCase().split(' ');
+      if (CiscoShellBase.sameKeywords(words, canonical)) continue;
+      if (CiscoShellBase.prefixMatches(typed, words)) return false;
     }
     return true;
+  }
+
+  private static sameKeywords(left: readonly string[], right: readonly string[]): boolean {
+    return left.length === right.length && left.every((word, i) => word === right[i]);
+  }
+
+  private static prefixMatches(typed: readonly string[], words: readonly string[]): boolean {
+    if (words.length < typed.length) return false;
+
+    for (let index = 0; index < typed.length; index++) {
+      if (!words[index].startsWith(typed[index])) return false;
+    }
+    return typed.length > 0;
   }
 
   private tryMigratedCommand(cmdPart: string): string | null {
@@ -2632,7 +2647,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const parsed = parseCommand(table, cmdPart, session);
     if (parsed.status !== 'ok') return null;
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
-    if (!this.rootIsUnambiguous(bare, parsed.spec)) return null;
+    if (!this.prefixIsUnambiguous(bare, parsed.spec)) return null;
 
     const handler = parsed.negated && parsed.spec.undo ? parsed.spec.undo : parsed.spec.run;
     const output: unknown = handler(session, parsed.args);
