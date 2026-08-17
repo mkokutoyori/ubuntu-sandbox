@@ -3909,6 +3909,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           { name: 'reste', type: 'REST', optional: true, description: 'Environment view' }],
         modes: exec, minPrivilege: 1, run: () => showEnvironment(),
       },
+      {
+        id: 'show-line', description: 'Display TTY lines',
+        path: ['show', 'line',
+          { name: 'ligne', type: 'REST', optional: true, description: 'Line to show' }],
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) =>
+          showLine(this.cs(), (args.ligne ?? '').trim().split(/\s+/).filter(Boolean)),
+      },
+      vue(['show', 'diag'], 'Display chassis diagnostics', 15, () => {
+        const pid = this.getChassisProfile() === 'router-isr2911'
+          ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
+        const serie = this.numeroDeSerie();
+        return [
+          'Slot 0:',
+          `        ${pid} Motherboard Port adapter, 3 ports`,
+          '        Port adapter is analyzed',
+          '        Port adapter insertion time unknown',
+          '        Hardware Revision        : 1.0',
+          `        Part Number              : ${pid}`,
+          '        Board Revision           : 1.0',
+          `        PCB Serial Number        : ${serie}`,
+        ].join('\n');
+      }),
     ];
   }
 
@@ -5145,21 +5168,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // celle de `show license`, qui liste les licences par
     // fonctionnalite ; les confondre ferait croire qu'un routeur sans
     // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
-    trie.register('show diag', 'Display chassis diagnostics', () => {
-      const profile = this.getChassisProfile();
-      const pid = profile === 'router-isr2911' ? 'CISCO2911/K9' : 'WS-C2960-24TT-L';
-      const sn = this.numeroDeSerie();
-      return [
-        'Slot 0:',
-        `        ${pid} Motherboard Port adapter, 3 ports`,
-        '        Port adapter is analyzed',
-        '        Port adapter insertion time unknown',
-        `        Hardware Revision        : 1.0`,
-        `        Part Number              : ${pid}`,
-        `        Board Revision           : 1.0`,
-        `        PCB Serial Number        : ${sn}`,
-      ].join('\n');
-    });
     // `getMacTable` — minuscule — n'est défini sur AUCUN appareil : celui
     // que `Switch` porte s'appelle `getMACTable()`. Le lecteur rendait
     // donc `undefined`, et cette vue répondait « No entries » quoi que le
@@ -5235,8 +5243,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'interface', description: 'LLDP interface status and configuration' },
     ]);
     trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
-    trie.registerGreedy('show line', 'Display TTY lines', (a) =>
-      showLine(this.cs(), a));
     /**
      * `show parser view [all]`.
      *
