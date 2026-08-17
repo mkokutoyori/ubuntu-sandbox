@@ -1,0 +1,131 @@
+import {
+  ARGUMENT_TYPES,
+  isArgumentSpec,
+  type ArgumentSpec,
+} from './ArgumentTypes';
+import type { CliMode, CliSession } from './CliSession';
+
+export type CommandStep = string | ArgumentSpec;
+
+export type CommandHandler = (
+  session: CliSession,
+  args: Readonly<Record<string, string>>,
+) => string | Promise<string>;
+
+export interface CommandSpec {
+  readonly id: string;
+  readonly path: readonly CommandStep[];
+  readonly description: string;
+  readonly modes: readonly CliMode[];
+  readonly minPrivilege: number;
+  readonly run: CommandHandler;
+  readonly hidden?: boolean;
+}
+
+export class DuplicateCommandError extends Error {
+  constructor(readonly path: string) {
+    super(`command already declared: ${path}`);
+    this.name = 'DuplicateCommandError';
+  }
+}
+
+export class UnknownArgumentTypeError extends Error {
+  constructor(readonly type: string) {
+    super(`unknown argument type: ${type}`);
+    this.name = 'UnknownArgumentTypeError';
+  }
+}
+
+export class EmptyCommandPathError extends Error {
+  constructor(readonly id: string) {
+    super(`command '${id}' declares no path`);
+    this.name = 'EmptyCommandPathError';
+  }
+}
+
+export interface TreeNode {
+  readonly keyword?: string;
+  readonly argument?: ArgumentSpec;
+  readonly children: Map<string, TreeNode>;
+  argumentChild?: TreeNode;
+  spec?: CommandSpec;
+}
+
+function newNode(keyword?: string, argument?: ArgumentSpec): TreeNode {
+  return { keyword, argument, children: new Map() };
+}
+
+export class CommandTable {
+  private readonly root: TreeNode = newNode();
+  private readonly byId = new Map<string, CommandSpec>();
+  private readonly privilegeOverrides = new Map<string, number>();
+
+  declare(spec: CommandSpec): void {
+    if (spec.path.length === 0) throw new EmptyCommandPathError(spec.id);
+
+    let node = this.root;
+    for (const step of spec.path) {
+      node = isArgumentSpec(step)
+        ? this.descendArgument(node, step)
+        : this.descendKeyword(node, step);
+    }
+
+    if (node.spec) throw new DuplicateCommandError(pathText(spec.path));
+    node.spec = spec;
+    this.byId.set(spec.id, spec);
+  }
+
+  private descendKeyword(node: TreeNode, keyword: string): TreeNode {
+    const existing = node.children.get(keyword);
+    if (existing) return existing;
+
+    const created = newNode(keyword);
+    node.children.set(keyword, created);
+    return created;
+  }
+
+  private descendArgument(node: TreeNode, argument: ArgumentSpec): TreeNode {
+    if (!(argument.type in ARGUMENT_TYPES)) {
+      throw new UnknownArgumentTypeError(argument.type);
+    }
+    if (!node.argumentChild) node.argumentChild = newNode(undefined, argument);
+    return node.argumentChild;
+  }
+
+  rootNode(): TreeNode { return this.root; }
+
+  specs(): readonly CommandSpec[] { return [...this.byId.values()]; }
+
+  byIdentifier(id: string): CommandSpec | undefined { return this.byId.get(id); }
+
+  setPrivilegeOverride(path: readonly string[], level: number): void {
+    this.privilegeOverrides.set(path.join(' '), level);
+  }
+
+  clearPrivilegeOverride(path: readonly string[]): void {
+    this.privilegeOverrides.delete(path.join(' '));
+  }
+
+  requiredPrivilege(spec: CommandSpec): number {
+    const keywords = spec.path.filter((step): step is string => !isArgumentSpec(step));
+    return this.privilegeOverrides.get(keywords.join(' ')) ?? spec.minPrivilege;
+  }
+
+  isReachable(spec: CommandSpec, session: CliSession): boolean {
+    if (!spec.modes.includes(session.mode)) return false;
+    return session.privilegeLevel >= this.requiredPrivilege(spec);
+  }
+
+  childKeywordsOf(path: readonly string[]): readonly string[] {
+    let node: TreeNode | undefined = this.root;
+    for (const keyword of path) {
+      node = node?.children.get(keyword);
+      if (!node) return [];
+    }
+    return [...node.children.keys()];
+  }
+}
+
+function pathText(path: readonly CommandStep[]): string {
+  return path.map(step => (isArgumentSpec(step) ? `<${step.name}>` : step)).join(' ');
+}
