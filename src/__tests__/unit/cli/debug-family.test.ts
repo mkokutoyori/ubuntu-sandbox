@@ -206,21 +206,7 @@ describe('la famille `clear` migre sans masquer ses voisines', () => {
     expect(await r.executeCommand('clear counters Zorglub0/0')).toContain('No matching');
   });
 
-  it('`clear logging persistent` reste au TRIE, il n\'est pas avale', async () => {
-    const r = await router();
-    const shell = (r as unknown as {
-      getShell(): { enumerateAllCommandPaths(): string[]; migratedPaths(): readonly string[] };
-    }).getShell();
-
-    const chemins = shell.enumerateAllCommandPaths();
-    const migres = shell.migratedPaths();
-
-    expect(migres).toContain('clear logging');
-    expect(migres).not.toContain('clear logging persistent');
-    expect(chemins).toContain('clear logging persistent');
-  });
-
-  it('et les deux s\'executent, chacune par son moteur', async () => {
+  it('`clear logging` et `clear logging persistent` repondent toutes deux', async () => {
     const r = await router();
 
     expect(await r.executeCommand('clear logging persistent')).not.toContain('Invalid input');

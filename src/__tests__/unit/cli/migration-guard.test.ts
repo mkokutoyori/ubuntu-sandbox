@@ -102,7 +102,7 @@ describe('ce que la migration rapporte, mesure', () => {
 });
 
 describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
-  it('migrer `clear logging` laisse `clear logging persistent` au trie', () => {
+  it('la famille `clear` a ete RENDUE au trie — trois regressions pour six chemins', () => {
     resetCounters(); resetDeviceCounters(); MACAddress.resetCounter();
     const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
     const shell = router.getShell() as unknown as {
@@ -110,9 +110,10 @@ describe('elaguer un chemin ne touche PAS ce qui pend dessous', () => {
       migratedPaths(): readonly string[];
     };
 
-    expect(shell.migratedPaths()).toContain('clear logging');
-    expect(shell.migratedPaths()).not.toContain('clear logging persistent');
-    expect(shell.enumerateAllExecutablePaths()).toContain('clear logging persistent');
+    expect(shell.migratedPaths()).not.toContain('clear logging');
+    for (const chemin of ['clear logging', 'clear logging persistent', 'clear counters']) {
+      expect(shell.enumerateAllExecutablePaths(), chemin).toContain(chemin);
+    }
   });
 
   it('le noeud parent perd son ACTION, pas ses enfants', () => {

@@ -2956,57 +2956,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return svc.removeCondition(kind, resolved);
   }
 
-  protected clearSpecs(): CommandSpec[] {
-    return legacyFamily([
-      ['clear ip bgp', 'Clear BGP sessions', () => ''],
-      ['clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
-        const dev = this.d() as unknown as {
-          getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
-        };
-        const engine = dev.getEIGRPEngine?.();
-        if (!engine) return '';
-        const quoi = (args[0] ?? 'neighbors').toLowerCase();
-        if (quoi === 'traffic') engine.resetTraffic?.();
-        else engine.clearNeighbors?.();
-        return '';
-      }],
-      ['clear logging', 'Clear the syslog buffer', () => {
-        this.attachLoggingToDevice(this.d());
-        (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
-        return '';
-      }],
-      ['clear counters', 'Clear interface counters', (args) => {
-        const ports = this.d()._getPortsInternal();
-        const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
-        let count = 0;
-        for (const [name, port] of ports) {
-          if (target && name.toLowerCase() !== target.toLowerCase()) continue;
-          (port as unknown as { resetCounters?: () => void }).resetCounters?.();
-          count++;
-        }
-        if (count === 0) return '% No matching interface';
-        const scope = target ? `interface ${target}` : 'all interfaces';
-        return `Clear "show interface" counters on ${scope} [confirm]`;
-      }],
-      ['clear ip arp', 'Clear ARP cache', (args) => {
-        const dev = this.d() as unknown as {
-          _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown>;
-        };
-        if (args[0]) {
-          const removed = dev._clearArpEntry?.(args[0]) ?? 0;
-          return removed === 0 ? '% No matching ARP entry' : '';
-        }
-        dev.arpTable?.clear();
-        return '';
-      }],
-      ['clear ip route', 'Clear routes (dynamic)', () => {
-        const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
-        dev._clearDynamicRoutes?.();
-        return '';
-      }],
-    ], { modes: ['privileged'], minPrivilege: 15 });
-  }
-
   private discoveryToggle(
     path: readonly string[], description: string, mode: string,
     on: () => void, off: () => void,
@@ -3424,13 +3373,126 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }));
   }
 
+
+  protected snmpSpecs(): CommandSpec[] {
+    const texte = (name: string, description: string) =>
+      ({ name, type: 'LINE' as const, description });
+    const nom = (name: string, description: string) =>
+      ({ name, type: 'WORD' as const, description });
+    const suite = (description: string, mots: ReadonlyArray<[string, string]>) => ({
+      name: 'options', type: 'REST' as const, optional: true, description,
+      alternatives: mots.map(([keyword, d]) => ({ keyword, description: d })),
+    });
+
+    const entries: SequenceEntry[] = [
+      {
+        path: ['snmp-server', 'community'],
+        description: 'Set community string and access privs',
+        args: [nom('communaute', 'SNMP community string')],
+        tail: suite('Access privileges and access list', [
+          ['ro', 'Read-only access'], ['rw', 'Read-write access'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'host'],
+        description: 'Specify hosts to receive SNMP notifications',
+        args: [{
+          name: 'adresse', type: 'IP_ADDR',
+          description: 'IP address of SNMP notification host',
+        }],
+        tail: suite('Notification type, version and community', [
+          ['informs', 'Send Inform requests'], ['traps', 'Send Trap messages'],
+          ['udp-port', 'UDP destination port'], ['version', 'SNMP version to use'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'group'], description: 'Define an SNMP group',
+        args: [nom('groupe', 'SNMP group name')],
+        tail: suite('Version and view association', [
+          ['v1', 'SNMPv1 group'], ['v2c', 'SNMPv2c group'], ['v3', 'SNMPv3 group'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'user'], description: 'Define an SNMP user',
+        args: [nom('utilisateur', 'SNMP user name')],
+        tail: suite('Group, version and authentication', [
+          ['v1', 'SNMPv1 user'], ['v2c', 'SNMPv2c user'], ['v3', 'SNMPv3 user'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'view'], description: 'Define an SNMPv2 MIB view',
+        args: [nom('vue', 'SNMP view name'), nom('oid', 'MIB subtree to include or exclude')],
+        tail: suite('Inclusion of the subtree', [
+          ['excluded', 'Exclude the subtree'], ['included', 'Include the subtree'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'enable', 'traps'], description: 'Enable SNMP traps',
+        tail: suite('Notification type', [
+          ['config', 'Configuration change notifications'],
+          ['snmp', 'Standard SNMP notifications'],
+          ['syslog', 'Syslog notifications'],
+        ]),
+      },
+      {
+        path: ['snmp-server', 'contact'], description: 'Text for mib object sysContact',
+        args: [texte('contact', 'Contact information')],
+      },
+      {
+        path: ['snmp-server', 'location'], description: 'Text for mib object sysLocation',
+        args: [texte('emplacement', 'Physical location of this node')],
+      },
+      {
+        path: ['snmp-server', 'chassis-id'],
+        description: 'String to uniquely identify this chassis',
+        args: [texte('identifiant', 'Chassis identifier')],
+      },
+      {
+        path: ['snmp-server', 'trap-source'],
+        description: 'Assign an interface for the source address of all traps',
+        args: [{
+          name: 'interface', type: 'INTERFACE',
+          description: 'Interface used as the source address',
+        }],
+      },
+      {
+        path: ['snmp-server', 'trap-timeout'],
+        description: 'Set timeout for TRAP message retransmissions',
+        args: [{
+          name: 'secondes', type: 'INT', range: [1, 1000],
+          description: 'Retransmission timeout in seconds',
+        }],
+      },
+      {
+        path: ['snmp-server', 'engineid', 'local'],
+        description: 'Configure a local SNMP engine ID',
+        args: [nom('identifiant', 'Engine ID octet string')],
+      },
+    ];
+
+    // `SnmpService.configure()` ne prend pas de drapeau de negation et
+    // rien n'enregistre `no snmp-server` aujourd'hui : declarer un `undo`
+    // ferait REPOSER ce qu'on demande de retirer.
+    return sequenceFamily(
+      entries.map(entry => ({ ...entry, negatable: false })),
+      () => ({
+        apply: (words) => {
+          const svc = getSnmpService(this.d());
+          if (!svc) return '';
+          svc.configure(words);
+          this.syncSnmpAgent();
+          return '';
+        },
+      }));
+  }
+
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
-      ...this.clearSpecs(),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),
+      ...this.snmpSpecs(),
     ];
   }
 
@@ -3561,6 +3623,17 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return canonical.every((word, index) => words[index] === word);
   }
 
+  private trieProlonge(cmdPart: string): boolean {
+    const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
+
+    for (const path of this.getActiveTrie().enumerateExecutablePaths()) {
+      const words = path.toLowerCase().split(' ');
+      if (words.length <= typed.length) continue;
+      if (typed.every((word, index) => words[index].startsWith(word))) return true;
+    }
+    return false;
+  }
+
   private static keywordCount(spec: { path: readonly unknown[] }): number {
     return spec.path.filter(step => typeof step === 'string').length;
   }
@@ -3618,6 +3691,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     const session = this.socleSession(table);
     const parsed = parseCommand(table, cmdPart, session);
+    // Le socle SAIT qu'il manque un argument : se taire laisserait le
+    // trie repondre `% Invalid input` pour une commande qui existe et
+    // qu'il possede. Il ne le dit que si aucun chemin du trie ne
+    // prolonge la frappe — sinon c'est le trie qui a la suite.
+    if (parsed.status === 'incomplete') {
+      return this.trieProlonge(cmdPart) ? null : CISCO_ERRORS.INCOMPLETE;
+    }
     if (parsed.status !== 'ok') return null;
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
     if (!this.prefixIsUnambiguous(bare, parsed.spec)) return null;
@@ -5328,6 +5408,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       }
       return this.performImmediateReload();
     });
+    // La famille `clear` reste au TRIE. Elle y a ete migree puis
+    // ANNULEE : six chemins gagnes contre trois regressions — la fille
+    // `clear logging persistent` emportee par l'elagage de son parent,
+    // le diagnostic de niveau 1 change sur `show ip ssh`, et une
+    // delegation `privilege exec level 7 clear counters` qui cessait de
+    // refuser au niveau 3. La regle posee pour `ntp` vaut ici : quand
+    // une famille coute plus qu'elle ne rapporte, on la rend.
+    this.privilegedTrie.registerGreedy('clear ip bgp', 'Clear BGP sessions', () => '');
+    this.privilegedTrie.registerGreedy('clear ip eigrp', 'Clear EIGRP neighbours/counters', (args) => {
+      const dev = this.d() as unknown as {
+        getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
+      };
+      const engine = dev.getEIGRPEngine?.();
+      if (!engine) return '';
+      if ((args[0] ?? 'neighbors').toLowerCase() === 'traffic') engine.resetTraffic?.();
+      else engine.clearNeighbors?.();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear logging', 'Clear the syslog buffer', () => {
+      this.attachLoggingToDevice(this.d());
+      (this.logging as unknown as { clearBuffer?: () => void }).clearBuffer?.();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear counters', 'Clear interface counters', (args) => {
+      const ports = this.d()._getPortsInternal();
+      const target = args[0] && !/^\s*$/.test(args[0]) ? args.join(' ') : null;
+      let count = 0;
+      for (const [name, port] of ports) {
+        if (target && name.toLowerCase() !== target.toLowerCase()) continue;
+        (port as unknown as { resetCounters?: () => void }).resetCounters?.();
+        count++;
+      }
+      if (count === 0) return '% No matching interface';
+      return `Clear "show interface" counters on ${target ? `interface ${target}` : 'all interfaces'} [confirm]`;
+    });
+    this.privilegedTrie.registerGreedy('clear ip arp', 'Clear ARP cache', (args) => {
+      const dev = this.d() as unknown as {
+        _clearArpEntry?: (ip?: string) => number; arpTable?: Map<string, unknown>;
+      };
+      if (args[0]) {
+        const removed = dev._clearArpEntry?.(args[0]) ?? 0;
+        return removed === 0 ? '% No matching ARP entry' : '';
+      }
+      dev.arpTable?.clear();
+      return '';
+    });
+    this.privilegedTrie.registerGreedy('clear ip route', 'Clear routes (dynamic)', () => {
+      const dev = this.d() as unknown as { _clearDynamicRoutes?: () => void };
+      dev._clearDynamicRoutes?.();
+      return '';
+    });
     registerLoggingClearCommands(this.privilegedTrie, this.loggingCommandContext());
     // `send` doit EXISTER dans le trie meme si tout son interet est dans
     // le plan interactif : sans noeud, le mot part en resolution DNS et
@@ -5922,13 +6053,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // chacun sa propre aide, et fait refuser ce qui n'existe pas.
     this.configTrie.register('ntp', 'Configure NTP', () => CISCO_ERRORS.INCOMPLETE);
 
-    this.configTrie.registerGreedy('snmp-server', 'SNMP configuration', (args) => {
-      const svc = getSnmpService(this.d());
-      if (!svc) return '';
-      svc.configure(args);
-      this.syncSnmpAgent();
-      return '';
-    });
 
     this.configTrie.registerGreedy('clock timezone', 'Set timezone', (args) => {
       const mgmt = getManagementService(this.d());

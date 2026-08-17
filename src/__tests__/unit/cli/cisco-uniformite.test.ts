@@ -514,3 +514,70 @@ describe('`ntp` migre sans perdre ce qui avait fait annuler la premiere tentativ
     }
   });
 });
+
+describe('`snmp-server` a un vrai sous-arbre, plus un noeud glouton', () => {
+  async function enConfig() {
+    return toutes(async (d) => { await d.executeCommand('configure terminal'); });
+  }
+
+  it('`snmp-server ?` NOMME ses sous-commandes', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      const aide = machines.get(nom)!.cliHelp('snmp-server ');
+
+      for (const mot of ['community', 'host', 'location', 'contact', 'trap-source']) {
+        expect(aide, `${nom} / ${mot}`).toContain(mot);
+      }
+    }
+  });
+
+  it('un mot-cle INCONNU est refuse, la ou le noeud glouton l\'avalait', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('snmp-server zorglub'), nom)
+        .toContain('Invalid input');
+    }
+  });
+
+  it('une communaute se pose et se relit dans la configuration', async () => {
+    const machines = await toutes(async (d) => {
+      await d.executeCommand('configure terminal');
+      await d.executeCommand('snmp-server community LECTURE ro');
+      await d.executeCommand('end');
+    });
+
+    // Le ROUTEUR seul : un commutateur de ce depot n'a pas de service
+    // SNMP derriere la commande, donc il l'accepte et ne retient rien.
+    // Ecart PREEXISTANT — le noeud glouton du trie faisait deja ce
+    // silence — et il n'est pas de ce lot de le combler.
+    expect(await machines.get('routeur')!.executeCommand('show running-config'))
+      .toContain('LECTURE');
+  });
+
+  it('`snmp-server community` seul est INCOMPLET, pas invalide', async () => {
+    const machines = await enConfig();
+
+    for (const nom of ['routeur', 'commutateur']) {
+      expect(await machines.get(nom)!.executeCommand('snmp-server community'), nom)
+        .toContain('Incomplete');
+    }
+  });
+
+  it('`trap-timeout` borne sa valeur', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('snmp-server trap-timeout 30'))
+      .not.toContain('Invalid input');
+    expect(await machines.get('routeur')!.executeCommand('snmp-server trap-timeout 5000'))
+      .toContain('Invalid input');
+  });
+
+  it('`no snmp-server ...` reste REFUSE — le moteur ne sait pas defaire', async () => {
+    const machines = await enConfig();
+
+    expect(await machines.get('routeur')!.executeCommand('no snmp-server community LECTURE'))
+      .toContain('Invalid input');
+  });
+});

@@ -35,6 +35,15 @@ export interface SequenceEntry {
    * negation que tout operateur tape.
    */
   readonly undoArgs?: readonly ArgumentSpec[];
+  /**
+   * Faux quand le moteur derriere n'a AUCUNE notion de negation.
+   *
+   * Declarer un `undo` ferait accepter `no <commande>` pour appeler le
+   * meme gestionnaire, qui REPOSERAIT ce qu'on lui demande de retirer —
+   * une commande qui fait le contraire de ce qu'elle promet. Le refus
+   * est la reponse honnete tant que le moteur ne sait pas defaire.
+   */
+  readonly negatable?: boolean;
 }
 
 export interface SequenceHost {
@@ -61,15 +70,17 @@ function specFor(
   const words = (args: Record<string, string>): string[] =>
     [...entry.path.slice(1), ...valuesOf(args, specs)];
 
-  return {
+  const spec: CommandSpec = {
     id: entry.path.join('-') + suffixe,
     path: [...entry.path, ...specs],
     description: entry.description,
     modes: ['config'],
     minPrivilege: 15,
     run: (_session, args) => host().apply(words(args), false),
-    undo: (_session, args) => host().apply(words(args), true),
   };
+  if (entry.negatable === false) return spec;
+
+  return { ...spec, undo: (_session, args) => host().apply(words(args), true) };
 }
 
 export function sequenceFamily(
@@ -81,7 +92,7 @@ export function sequenceFamily(
     specs.push(specFor(
       entry, [...(entry.args ?? []), ...(entry.tail ? [entry.tail] : [])], '', host));
 
-    if (entry.undoArgs) {
+    if (entry.undoArgs && entry.negatable !== false) {
       specs.push(specFor(entry, entry.undoArgs, '-undo', host));
     }
   }
