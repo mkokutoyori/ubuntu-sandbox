@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-05-etherchannel
-Generated: 2026-08-13T16:28:18.416Z
+Generated: 2026-08-18T19:51:01.255Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=LACP/PAgP/static bundles, port-channel interfaces, load-balance, teardown
 Total steps: 340
@@ -1550,12 +1550,12 @@ Total steps: 340
 
 [266/340] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.262 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.537 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.897 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.662 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.537/1.399/2.262/0.863 ms
+  rtt min/avg/max/mdev = 0.662/1.779/2.897/1.118 ms
 
 [267/340] sw1 SW1# show running-config
   Building configuration...

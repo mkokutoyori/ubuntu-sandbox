@@ -1027,6 +1027,16 @@ export class OSPFEngine implements IProtocolEngine {
     }
   }
 
+  resetInterfaceCost(ifName: string): void {
+    const iface = this.interfaces.get(ifName);
+    if (!iface) return;
+    const bw = OSPFEngine.inferInterfaceBandwidthBps(ifName);
+    iface.cost = bw > 0 ? Math.max(1, Math.floor(this.config.referenceBandwidth / bw)) : 1;
+    iface.costExplicit = false;
+    this.originateRouterLSA(iface.areaId);
+    this.scheduleSPF();
+  }
+
   setInterfacePriority(ifName: string, priority: number): void {
     const iface = this.interfaces.get(ifName);
     if (iface) {

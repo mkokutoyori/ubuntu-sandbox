@@ -935,7 +935,6 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   });
 
   const noOspfIfDefaults: Record<string, Record<string, unknown>> = {
-    'no ip ospf cost': { cost: 1 },
     'no ip ospf priority': { priority: 1 },
     'no ip ospf hello-interval': { helloInterval: 10 },
     'no ip ospf dead-interval': { deadInterval: 40 },
@@ -943,6 +942,13 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     'no ip ospf authentication': { authType: 0 },
     'no ip ospf authentication-key': { authKey: '' },
     'no ip ospf message-digest-key': { authType: 0, authKey: '' },
+    'no ip ospf retransmit-interval': { retransmitInterval: 5 },
+    'no ip ospf transmit-delay': { transmitDelay: 1 },
+    'no ip ospf mtu-ignore': { mtuIgnore: false },
+    'no ip ospf demand-circuit': { demandCircuit: false },
+    'no ip ospf bfd': { bfd: false },
+    'no ip ospf flood-reduction': { floodReduction: false },
+    'no ip ospf database-filter': { databaseFilterAllOut: false },
   };
   for (const [cmd, defaults] of Object.entries(noOspfIfDefaults)) {
     configIfTrie.registerGreedy(cmd, 'Reset OSPF interface setting', () => {
@@ -953,6 +959,16 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       return '';
     });
   }
+
+  configIfTrie.registerGreedy('no ip ospf cost', 'Restore the bandwidth-derived OSPF cost', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '% No interface selected';
+    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
+    if (pending) delete (pending as Record<string, unknown>).cost;
+    ctx.r()._getOSPFEngineInternal()?.resetInterfaceCost(ifName);
+    ctx.r()._ospfAutoConverge?.();
+    return '';
+  });
 
   configIfTrie.registerGreedy('ip ospf demand-circuit', 'Configure demand circuit', (_args) => {
     const ifName = ctx.getSelectedInterface();

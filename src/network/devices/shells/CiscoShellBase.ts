@@ -4770,7 +4770,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // qui declare `show snmp community`, mais c'est une commande
       // complete du trie. Ne consulter que le prolongement la rendait
       // incomplete sur une machine qui sait y repondre.
-      const mots = cmdPart.trim().split(/\s+/).length;
+      const mots = cmdPart.trim().replace(/^no\s+/i, '').split(/\s+/).length;
       const auTrie = this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots);
       return auTrie ? null : CISCO_ERRORS.INCOMPLETE;
     }

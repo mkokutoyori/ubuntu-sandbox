@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-01-cli-basics
-Generated: 2026-08-13T16:25:18.660Z
+Generated: 2026-08-18T19:50:57.627Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=CLI parsing, help, prompts, mode navigation, show family, host inspection
 Total steps: 366
@@ -9,7 +9,7 @@ Total steps: 366
 
 --- [1] § user EXEC help & prompt ---
 [1/366] sw1 SW1> ?
-    clear       Reset functions
+    clear       Clear DHCP address bindings
     delete      Delete a file
     dir         List files on a filesystem
     disconnect  Close an outgoing connection
@@ -22,7 +22,7 @@ Total steps: 366
     pwd         Display current working directory
     resume      Resume an outgoing connection
     rmdir       Remove a directory
-    show        Show running system information
+    show        System hardware and software status
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
     telnet      Open a Telnet session
@@ -31,34 +31,30 @@ Total steps: 366
     where       List open outgoing connections
 
 [2/366] sw1 SW1> show ?
-    aaa            Display AAA state
+    aaa            Display AAA servers
     access-lists   Display ACLs
     accounting     Display accounting records
     adjacency      Display CEF adjacency table
     aliases        Display command aliases
     arp            Display ARP table
-    boot           Display boot variables
-    bootvar        Display boot variables
     buffers        Display buffer pools
     calendar       Display hardware calendar
     cdp            Display CDP information
     clock          Display the system clock
-    configuration  Display saved configuration
     controllers    Display controller status
     current        Show current MST config
     dot1x          Display 802.1X state
     dtp            Display DTP information
     environment    Display environment
-    errdisable     
+    errdisable
     etherchannel   Display EtherChannel
-    file           Display file systems
-    flash:         Display flash filesystem
+    file           Show filesystem information
     glbp           Display GLBP groups on SVIs
     history        Display command history
     hosts          Display host cache
     interfaces     Display interface information
     inventory      Display hardware inventory
-    ip             Internet Protocol
+    ip             DHCP pool information
     lacp           Display LACP state
     line           Display TTY lines
     lldp           Display LLDP information
@@ -66,30 +62,30 @@ Total steps: 366
     mac            MAC configuration
     memory         Display memory statistics
     monitor        Display SPAN sessions
-    ntp            Network Time Protocol
+    ntp            Display NTP status
     pagp           Display PAgP state
     pending        Show pending MST config
     port-security  Display port security
     privilege      Display current privilege level
     processes      Display active processes
-    queuing        
-    radius         RADIUS authentication
+    queuing        Show queueing configuration
+    radius         Display Radius stats
     redundancy     Display redundancy state
     reload         Display reload schedule
     sessions       Display open outgoing connections
-    sntp           Show SNTP
+    sntp           Display SNTP information
     sockets        Display open sockets
     spanning-tree  Display spanning tree state
     stacks         Display process stacks
     standby        Display HSRP groups on SVIs
     storm-control  Display storm-control settings
     tacacs         Display TACACS
-    tcp            Display TCP connections
-    terminal       Display terminal parameters
+    tcp            Status of TCP connections
+    terminal       Display terminal configuration parameters
     track          Display tracked objects
     udld           Display UDLD state
     users          Display active lines
-    version        Display system hardware and software status
+    version        System hardware and software status
     vlan           Display VLAN information
     vrf            Display VRFs
     vrrp           Display VRRP groups on SVIs
@@ -97,31 +93,31 @@ Total steps: 366
     who            Display active lines
 
 [3/366] sw1 SW1> s?
-    show     Show running system information
+    show     System hardware and software status
     squeeze  Squeeze a filesystem
     ssh      Open an SSH connection to a remote host
 
 [4/366] sw1 SW1> sh?
-    show  Show running system information
+    show  System hardware and software status
 
 [5/366] sw1 SW1> en?
     enable  Enter privileged EXEC at a specific level
 
 [6/366] sw1 SW1> enable ?
-    <cr>  
     view  Enter a command-line interface view
+    <cr>
 
 [7/366] sw1 SW1> ping ?
-    <cr>  
     WORD  Send echo messages
+    <cr>
 
 [8/366] sw1 SW1> terminal ?
-    <cr>     
     history  Enable and control the command history function
     length   Set number of lines on a screen
     monitor  Copy debug output to the current terminal line
     no       Negate a command or set its defaults
     width    Set width of the display terminal
+    <cr>
 
 [9/366] sw1 SW1> show version
   Cisco IOS Software, C3560 Software (C3560-IPSERVICESK9-M), Version 12.2(55)SE12, RELEASE SOFTWARE (fc3)
@@ -150,7 +146,7 @@ Total steps: 366
   Configuration register is 0xF
 
 [10/366] sw1 SW1> show clock
-  *16:25:18.000 UTC Thu Aug 13 2026
+  *19:50:57.000 UTC Tue Aug 18 2026
 
 [11/366] sw1 SW1> show users
       Line       User       Host(s)              Idle       Location
@@ -219,17 +215,17 @@ Total steps: 366
 
 [18/366] sw1 SW1# ?
     archive     Archive the configuration
-    clear       Reset functions
-    clock       Configure time-of-day clock
+    clear       Clear DHCP address bindings
+    clock       Set the system clock
     configure   Enter configuration mode
     copy        Copy a file
-    debug       Enable debugging
+    debug       Enable ARP debug
     delete      Delete a file
     dir         List files on a filesystem
     disable     Return to user EXEC mode
     disconnect  Close an outgoing connection
     enable      Turn on privileged commands
-    erase       Erase persistent storage
+    erase       Erase contents of configuration memory
     exit        Exit from the EXEC
     help        Description of the interactive help system
     mkdir       Create a directory
@@ -242,7 +238,7 @@ Total steps: 366
     rmdir       Remove a directory
     send        Send a message to other tty lines
     setup       Run the initial configuration dialog
-    show        Show running system information
+    show        System hardware and software status
     sntp        Configure SNTP
     squeeze     Squeeze a filesystem
     ssh         Open an SSH connection to a remote host
@@ -253,10 +249,10 @@ Total steps: 366
     verify      Verify a file
     vtp         VLAN Trunking Protocol
     where       List open outgoing connections
-    write       Save running-config to startup-config
+    write       Write running configuration to memory
 
 [19/366] sw1 SW1# show ?
-    aaa             Display AAA state
+    aaa             Display AAA servers
     access-lists    Display ACLs
     accounting      Display accounting records
     adjacency       Display CEF adjacency table
@@ -269,7 +265,7 @@ Total steps: 366
     calendar        Display hardware calendar
     cdp             Display CDP information
     clock           Display the system clock
-    configuration   Display saved configuration
+    configuration   Contents of startup configuration
     controllers     Display controller status
     current         Show current MST config
     debugging       Display active debugging
@@ -277,16 +273,16 @@ Total steps: 366
     dot1x           Display 802.1X state
     dtp             Display DTP information
     environment     Display environment
-    errdisable      
+    errdisable      Error-disable configuration
     etherchannel    Display EtherChannel
-    file            Display file systems
+    file            Show filesystem information
     flash:          Display flash filesystem
     glbp            Display GLBP groups on SVIs
     history         Display command history
     hosts           Display host cache
     interfaces      Display interface information
     inventory       Display hardware inventory
-    ip              Internet Protocol
+    ip              DHCP pool information
     lacp            Display LACP state
     license         Display licenses
     line            Display TTY lines
@@ -296,7 +292,7 @@ Total steps: 366
     mac             MAC configuration
     memory          Display memory statistics
     monitor         Display SPAN sessions
-    ntp             Network Time Protocol
+    ntp             Display NTP status
     pagp            Display PAgP state
     parser          Display parser information
     pending         Show pending MST config
@@ -304,28 +300,28 @@ Total steps: 366
     port-security   Display port security
     privilege       Display current privilege level
     processes       Display active processes
-    queuing         
-    radius          RADIUS authentication
+    queuing         Show queueing configuration
+    radius          Display Radius stats
     redundancy      Display redundancy state
     reload          Display reload schedule
-    running-config  Display current running configuration
+    running-config  Current operating configuration
     sessions        Display open outgoing connections
-    snmp            Display SNMP status
-    sntp            Show SNTP
+    snmp            Display SNMP communities
+    sntp            Display SNTP information
     sockets         Display open sockets
     spanning-tree   Display spanning tree state
     ssh             Display SSH sessions
     stacks          Display process stacks
     standby         Display HSRP groups on SVIs
-    startup-config  Display saved configuration
+    startup-config  Contents of startup configuration
     storm-control   Display storm-control settings
     tacacs          Display TACACS
-    tcp             Display TCP connections
-    terminal        Display terminal parameters
+    tcp             Status of TCP connections
+    terminal        Display terminal configuration parameters
     track           Display tracked objects
     udld            Display UDLD state
     users           Display active lines
-    version         Display system information
+    version         System hardware and software status
     vlan            Display VLAN information
     vrf             Display VRFs
     vrrp            Display VRRP groups on SVIs
@@ -337,22 +333,21 @@ Total steps: 366
     terminal  Enter configuration mode
 
 [21/366] sw1 SW1# clear ?
-    aaa            Authentication, Authorization and Accounting
-    arp-cache      Clear ARP cache
+    aaa            Unlock a locally-locked-out user
+    arp-cache      Clear the entire ARP cache
     counters       Clear interface counters
-    errdisable     
-    history        Clear command history buffer
+    errdisable     Error-disable state
+    history        Clear the command history buffer
     host           Delete entries from the host table
-    ip             Internet Protocol
+    ip             Clear DHCP address bindings
     line           Reset a terminal line
     logging        Clear the syslog buffer
     mac            MAC configuration
-    ntp            Network Time Protocol
+    ntp            Clear NTP packet statistics
     port-security  Clear secure MAC entries
-    spanning-tree  
+    spanning-tree  Spanning trees
 
 [22/366] sw1 SW1# debug ?
-    <cr>               
     aaa                Debug AAA
     all                Enable all debugging
     arp                Enable ARP debug
@@ -377,15 +372,15 @@ Total steps: 366
     standby            Debug HSRP
     tacacs             Debug TACACS+
     vrrp               Debug VRRP
+    <cr>
 
 [23/366] sw1 SW1# write ?
-    <cr>      
-    erase     Erase saved configuration
-    memory    Save configuration
-    terminal  Write to terminal (display running-config)
+    erase     Erase NV memory
+    memory    Write to NV memory
+    terminal  Write to terminal
+    <cr>
 
 [24/366] sw1 SW1# copy ?
-    <cr>            
     flash:          Local flash filesystem
     running-config  Current running configuration
     scp:            Secure Copy
@@ -393,11 +388,11 @@ Total steps: 366
     tftp:           Trivial File Transfer Protocol
 
 [25/366] sw1 SW1# reload ?
-    <cr>    
+    LINE    Reload reason
     at      Reload at a specific time/date
     cancel  Cancel pending reload
     in      Reload after a time interval
-    LINE    Reload reason
+    <cr>
 
 
 --- [26] § privileged show family ---
@@ -502,7 +497,7 @@ Total steps: 366
 
 [29/366] sw1 SW1# show inventory
   NAME: "WS-C3560-24TS-S chassis", DESCR: "Cisco Catalyst 3560 Multilayer Switch"
-  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC33568B8M
+  PID: WS-C3560-24TS-S     , VID: V01  , SN: FOC727831YJ
 
 [30/366] sw1 SW1# show flash:
   Directory of flash:/
@@ -1323,7 +1318,7 @@ Total steps: 366
   Timer interval: 300 seconds
 
 [54/366] sw1 SW1# show clock
-  *16:25:18.000 UTC Thu Aug 13 2026
+  *19:50:57.000 UTC Tue Aug 18 2026
 
 [55/366] sw1 SW1# show processes cpu
   CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
@@ -1475,15 +1470,15 @@ Total steps: 366
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:25:18.623: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
-  *Aug 13 16:25:18.623: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
-  *Aug 13 16:25:18.626: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
-  *Aug 13 16:25:18.626: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
-  *Aug 13 16:25:18.628: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
-  *Aug 13 16:25:18.628: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
-  *Aug 13 16:25:18.631: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:25:18.631: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:25:18.649: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:50:57.549: %LINK-3-UPDOWN: Interface FastEthernet0/1, changed state to up
+  *Aug 18 19:50:57.549: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/1, changed state to up
+  *Aug 18 19:50:57.553: %LINK-3-UPDOWN: Interface FastEthernet0/2, changed state to up
+  *Aug 18 19:50:57.553: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/2, changed state to up
+  *Aug 18 19:50:57.556: %LINK-3-UPDOWN: Interface FastEthernet0/3, changed state to up
+  *Aug 18 19:50:57.556: %LINEPROTO-5-UPDOWN: Line protocol on Interface FastEthernet0/3, changed state to up
+  *Aug 18 19:50:57.560: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:50:57.560: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:50:57.589: %SYS-5-CONFIG_I: Configured from console by console
 
 [60/366] sw1 SW1# show boot
   BOOT path-list      : 
@@ -1570,8 +1565,8 @@ Total steps: 366
     arp            Add static ARP entry
     banner         Set a banner
     boot           Boot Commands
-    cdp            CDP global configuration
-    clock          Configure time-of-day clock
+    cdp            Enable CDP globally
+    clock          Set the system clock
     configure      Enter configuration mode
     crypto         Encryption module
     default        Set a command to its defaults
@@ -1587,13 +1582,13 @@ Total steps: 366
     ip             Global IP configuration subcommands
     lacp           Link Aggregation Control Protocol
     line           Enter line configuration
-    lldp           LLDP global configuration
-    logging        Modify message logging facilities
-    login          Login configuration
+    lldp           Enable LLDP globally
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
     mac            MAC address table configuration
     monitor        Monitoring different system events
     no             Negate a command or set its defaults
-    ntp            Configure NTP
+    ntp            Authenticate time sources
     parser         Configure parser
     port-channel   EtherChannel/PortChannel configuration
     priority-list  Legacy PQ list
@@ -1602,8 +1597,8 @@ Total steps: 366
     radius         Radius configuration
     radius-server  Legacy radius host
     security       Security configuration
-    service        Service configuration
-    snmp-server    SNMP configuration
+    service        Modify use of network based services
+    snmp-server    Set community string and access privs
     sntp           Configure SNTP
     spanning-tree  Spanning Tree configuration
     tacacs         TACACS+ configuration
@@ -1712,9 +1707,10 @@ Total steps: 366
 <empty>
 
 [84/366] sw1 SW1(config-if)# ?
-    cdp                Cisco Discovery Protocol
+    cdp                Enable CDP globally
     channel-group      EtherChannel membership
     channel-protocol   Interface channel-protocol
+    clock              Set the system clock
     default            Set a command to its defaults
     description        Interface description
     do                 To run exec commands in config mode
@@ -1728,15 +1724,20 @@ Total steps: 366
     ip                 Internet Protocol
     l2protocol-tunnel  Tunnel a client L2 control protocol across the S-VLAN instead of terminating it locally
     lacp               Link Aggregation Control Protocol
-    lldp               Link Layer Discovery Protocol
+    lldp               Enable LLDP globally
     load-interval      Interface load-interval
+    logging            Count every log message and timestamp last occurrence
+    login              Set the login blocking period
     mdix               Interface mdix
     mls                Multilayer switching
     mtu                Set MTU
     no                 Negate a command or set its defaults
+    ntp                Authenticate time sources
     power              Interface power
     private-vlan       Configure private VLAN
+    service            Modify use of network based services
     shutdown           Disable interface
+    snmp-server        Set community string and access privs
     spanning-tree      Interface STP configuration
     speed              Set interface speed
     srr-queue          Interface srr-queue
@@ -1789,6 +1790,8 @@ Total steps: 366
     accounting        line accounting
     authorization     line authorization
     autocommand       line autocommand
+    cdp               Enable CDP globally
+    clock             Set the system clock
     databits          line databits
     default           Set a command to its defaults
     do                To run exec commands in config mode
@@ -1801,15 +1804,19 @@ Total steps: 366
     help              Description of the interactive help system
     history           line history
     length            line length
-    logging           line logging
-    login             line login
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Set the login blocking period
     login-timeout     Set login timeout
     motd-banner       line motd-banner
     no                line no
+    ntp               Authenticate time sources
     parity            line parity
     password          line password
     privilege         line privilege
+    service           Modify use of network based services
     session-timeout   line session-timeout
+    snmp-server       Set community string and access privs
     speed             line speed
     stopbits          line stopbits
     transport         transport input/output
@@ -2032,6 +2039,7 @@ Total steps: 366
 <empty>
 
 [114/366] sw1 SW1# wr
+  Building configuration...
   [OK]
 
 
@@ -3458,7 +3466,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [256/366] l1 l1$ uptime
-   16:25:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [257/366] w1 w1$ hostname
   W1
@@ -3554,7 +3562,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/13/2026, 4:25:18 PM
+  System Boot Time:          8/18/2026, 7:50:57 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3610,7 +3618,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [269/366] srv1 srv1$ uptime
-   16:25:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [270/366] l2 l2$ hostname
   linux-pc
@@ -3642,7 +3650,7 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [276/366] l2 l2$ uptime
-   16:25:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 [277/366] w2 w2$ hostname
   W2
@@ -3738,7 +3746,7 @@ Total steps: 366
   OS Manufacturer:           Microsoft Corporation
   OS Configuration:          Member Workstation
   OS Build Type:             Multiprocessor Free
-  System Boot Time:          8/13/2026, 4:25:18 PM
+  System Boot Time:          8/18/2026, 7:50:57 PM
   System Manufacturer:       QEMU
   System Model:              Standard PC (i440FX + PIIX, 1996)
   System Type:               x64-based PC
@@ -3794,27 +3802,27 @@ Total steps: 366
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 [289/366] srv2 srv2$ uptime
-   16:25:18 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+   19:50:58 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
 
 
 --- [290] § connectivity smoke test ---
 [290/366] l1 l1$ ping -c 2 192.168.1.12
   PING 192.168.1.12 (192.168.1.12) 56(84) bytes of data.
-  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.179 ms
-  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.619 ms
+  64 bytes from 192.168.1.12: icmp_seq=1 ttl=128 time=2.566 ms
+  64 bytes from 192.168.1.12: icmp_seq=2 ttl=128 time=0.830 ms
   
   --- 192.168.1.12 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.619/1.399/2.179/0.780 ms
+  rtt min/avg/max/mdev = 0.830/1.698/2.566/0.868 ms
 
 [291/366] l1 l1$ ping -c 2 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.667 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.633 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=0.874 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.996 ms
   
   --- 192.168.1.21 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.633/0.650/0.667/0.017 ms
+  rtt min/avg/max/mdev = 0.874/0.935/0.996/0.061 ms
 
 [292/366] l1 l1$ arp -a
   ? (192.168.1.13) at 02:00:00:00:00:57 [ether] on eth0
