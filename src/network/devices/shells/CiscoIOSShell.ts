@@ -62,7 +62,7 @@ import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
 } from './cisco/CiscoIpSlaCommands';
 import {
-  registerIpSlaShowCommands, registerIpSlaClearCommands, ipSlaDebugPairs,
+  ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
 } from './cisco/CiscoIpSlaShowCommands';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
@@ -175,6 +175,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...ipSlaShowSpecs(this),
+      ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
       ...this.clearIpv6Specs(),
@@ -1346,8 +1348,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerPimShowCommands(trie, { r: () => this.d() });
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
-    registerIpSlaShowCommands(trie, this);
-    registerIpSlaClearCommands(trie, this);
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 

@@ -14,6 +14,9 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+
 export function formatIosTimestamp(epochMs: number): string {
   const date = new Date(epochMs);
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -200,8 +203,9 @@ function column(text: string, width: number): string {
   return text.length >= width ? `${text.slice(0, width - 1)} ` : text.padEnd(width);
 }
 
-function renderSummary(engine: IpSlaEngine, nowMs: number): string {
-  const operations = engine.listOperations();
+function renderSummary(engine: IpSlaEngine, nowMs: number, idToken?: string): string {
+  const operations = selectOperations(engine, idToken);
+  if (operations === null) return '% Invalid operation number';
   const lines = [
     'IPSLAs Latest Operation Summary',
     'Codes: * active, ^ inactive, ~ pending',
@@ -351,8 +355,8 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n').trimEnd();
   });
 
-  trie.registerGreedy('show ip sla summary', 'IP SLAs summary', () =>
-    renderSummary(engine(), engine().nowMs()));
+  trie.registerGreedy('show ip sla summary', 'IP SLAs summary', (args) =>
+    renderSummary(engine(), engine().nowMs(), args.find((t) => /^\d+$/.test(t))));
 
   trie.registerGreedy('show ip sla application', 'IP SLAs application', () =>
     renderApplication(engine()));
@@ -475,4 +479,26 @@ function selectOperations(
   if (!/^\d+$/.test(idToken)) return null;
   const runtime = engine.getOperation(parseInt(idToken, 10));
   return runtime ? [runtime] : [];
+}
+
+export function ipSlaShowSpecs(ctx: IpSlaShowContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIpSlaShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1, restDescription: 'Operation number',
+      keywordsFor: (path) => path === 'show ip sla statistics'
+        ? [
+          { keyword: 'aggregated', description: 'Aggregated statistics' },
+          { keyword: 'details', description: 'Detailed information' },
+        ]
+        : undefined,
+    },
+  );
+}
+
+export function ipSlaClearSpecs(ctx: IpSlaShowContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIpSlaClearCommands(collector as unknown as CommandTrie, ctx),
+    { modes: ['privileged'], minPrivilege: 15, restDescription: 'Operation number' },
+  );
 }
