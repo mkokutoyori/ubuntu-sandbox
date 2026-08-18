@@ -21,7 +21,7 @@ import {
   DynamicCryptoMapEntry, IKEv2Proposal, IKEv2Policy, IKEv2Keyring, IKEv2Profile,
   ISAKMPKeyring, ISAKMPProfile,
   IPSecProfile, TunnelProtection,
-  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage,
+  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage, NatTraversalPolicy,
   SecurityPolicy, SPDAction, SPDDirection,
   SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
   MulticastIPSecSA,
@@ -594,6 +594,7 @@ export class IPSecEngine implements IProtocolEngine {
   private natKeepaliveInterval: number = 0;
   private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
   private dpdConfig: DPDConfig | null = null;
+  private natTraversalPolicy: NatTraversalPolicy = 'enable';
   private globalSALifetimeSeconds: number = 3600;
   private globalSALifetimeKB: number = 4608000; // 4608000 KB default
   private replayWindowSize: number = 64;       // RFC 4303 default
@@ -1162,6 +1163,25 @@ export class IPSecEngine implements IProtocolEngine {
 
   setDPD(interval: number, retries: number, mode: 'periodic' | 'on-demand'): void {
     this.dpdConfig = { interval, retries, mode };
+  }
+
+  initiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
+    if (this.getBestIPSecSA(peerIP)) return true;
+    return this.negotiateTunnel(peerIP, entry, egressIface);
+  }
+
+  clearDPD(): void {
+    this.dpdConfig = null;
+  }
+
+  setNatTraversalPolicy(policy: NatTraversalPolicy): void {
+    this.natTraversalPolicy = policy;
+  }
+
+  private natTraversalDecision(detected: boolean): boolean {
+    if (this.natTraversalPolicy === 'disable') return false;
+    if (this.natTraversalPolicy === 'forced') return true;
+    return detected;
   }
 
   getDPDConfig(): DPDConfig | null {
@@ -3457,7 +3477,7 @@ export class IPSecEngine implements IProtocolEngine {
       lifetimeSec: entry.saLifetimeSeconds ?? this.globalSALifetimeSeconds,
       lifetimeKB: this.globalSALifetimeKB,
       ipsecSpiIn: spiInitIn,
-      natTHint: apparentSrcIP !== localIP,
+      natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
     };
     if (this.ikeCertAuth) {
@@ -3661,7 +3681,8 @@ export class IPSecEngine implements IProtocolEngine {
 
     const lifetimeSec = Math.min(offer.lifetimeSec, peerEntry?.saLifetimeSeconds ?? this.globalSALifetimeSeconds);
     const lifetimeKB = Math.min(offer.lifetimeKB, this.globalSALifetimeKB);
-    const natT = offer.natTHint || srcIp !== offer.identity || dstIp !== offer.destination;
+    const natT = this.natTraversalDecision(
+      offer.natTHint || srcIp !== offer.identity || dstIp !== offer.destination);
     const spiRespIn = randomSPI();
     const transforms = chosenTransform.transforms;
     const loSpi = Math.min(offer.ipsecSpiIn, spiRespIn);

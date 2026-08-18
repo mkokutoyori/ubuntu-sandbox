@@ -70,6 +70,8 @@ export interface TransformSet {
   mode: 'tunnel' | 'transport';
 }
 
+export type NatTraversalPolicy = 'enable' | 'disable' | 'forced';
+
 export interface CryptoMapEntry {
   seq: number;
   type: 'ipsec-isakmp';

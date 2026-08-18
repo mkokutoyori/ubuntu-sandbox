@@ -301,6 +301,8 @@ export interface FortiPhase1Patch {
   readonly authMethod: 'psk' | 'signature';
   readonly certificate: string;
   readonly dpd: string;
+  readonly dpdRetryIntervalSeconds: number;
+  readonly dpdRetryCount: number;
   readonly natTraversal: string;
   readonly policyBased: boolean;
   readonly comments?: string;

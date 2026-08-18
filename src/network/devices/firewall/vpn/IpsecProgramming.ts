@@ -47,6 +47,7 @@ export function programIpsecEngine(
 ): void {
   let priority = 10;
   if (certificates) programCertificateAuth(engine, tunnels, certificates, now);
+  programLiveness(engine, tunnels);
 
   for (const tunnel of tunnels.all()) {
     const selectors = tunnels.selectorsOf(tunnel.name);
@@ -92,6 +93,20 @@ function ikeHash(proposals: readonly IpsecProposal[]): string {
   return proposals[0]?.integrity ?? 'sha256';
 }
 
+function programLiveness(engine: IPSecEngine, tunnels: IpsecTunnelTable): void {
+  const declared = tunnels.all();
+  const probing = declared.find(tunnel => tunnel.dpd !== 'disable');
+
+  if (!probing) engine.clearDPD();
+  else {
+    engine.setDPD(probing.dpdRetryIntervalSeconds, probing.dpdRetryCount,
+      probing.dpd === 'on-idle' ? 'periodic' : 'on-demand');
+  }
+
+  const traversal = declared.find(tunnel => tunnel.natTraversal !== 'enable');
+  engine.setNatTraversalPolicy(traversal?.natTraversal ?? 'enable');
+}
+
 function programCertificateAuth(
   engine: IPSecEngine, tunnels: IpsecTunnelTable,
   certificates: CertificateStore, now?: () => number,
@@ -121,10 +136,17 @@ export function bringUpTunnel(
   if (!declared) return false;
 
   programIpsecEngine(engine, tunnels);
-  const established = engine.getIPSecSAs(declared.remoteGateway).length > 0;
-  if (established) tunnels.markUp(name);
-  else tunnels.markDown(name, 'negotiation failed');
-  return established;
+
+  const entry = cryptoEntryFor(engine, name);
+  if (entry && declared.boundInterface.length > 0) {
+    engine.initiateTunnel(declared.remoteGateway, entry, declared.boundInterface);
+  }
+
+  const sas = engine.getIPSecSAs(declared.remoteGateway);
+  if (sas.length === 0) { tunnels.markDown(name, 'negotiation failed'); return false; }
+
+  tunnels.markUp(name, sas[0].natT === true);
+  return true;
 }
 
 export function udpDatagram(

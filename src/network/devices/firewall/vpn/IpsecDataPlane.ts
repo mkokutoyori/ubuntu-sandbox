@@ -56,7 +56,7 @@ export function encryptForTunnel(
     return null;
   }
 
-  tunnels.markUp(tunnelName);
+  tunnels.markUp(tunnelName, engine.getIPSecSAs(tunnel.remoteGateway)[0]?.natT === true);
   tunnels.recordTraffic(tunnelName, 'out', packet.totalLength);
   return { egressInterface: tunnel.boundInterface, packets: encapsulated };
 }
@@ -74,7 +74,7 @@ export function decryptFromTunnel(
     entry => !entry.policyBased && entry.remoteGateway === peer);
   if (!tunnel) return null;
 
-  tunnels.markUp(tunnel.name);
+  tunnels.markUp(tunnel.name, engine.getIPSecSAs(peer)[0]?.natT === true);
   tunnels.recordTraffic(tunnel.name, 'in', inner.totalLength);
   return { tunnel: tunnel.name, inner };
 }

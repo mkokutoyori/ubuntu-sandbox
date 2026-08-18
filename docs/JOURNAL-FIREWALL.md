@@ -1976,6 +1976,41 @@ d'extraire le calcul.
 
 ---
 
+### E41 — `dpd` et `nattraversal` agissent, et `diagnose` rapporte une mesure
+
+`schema/vpn.ts`, `schema/types.ts`, `commit/vpnCommits.ts`,
+`vpn/{IpsecTunnelTable,IpsecProgramming,IpsecDataPlane}.ts`,
+`diag/vpnTunnelRenderer.ts`, `ipsec/{IPSecEngine,IPSecTypes}.ts` —
+**11 cas** neufs. **7 des 11** tombent avant correctif.
+
+Les deux réglages étaient acceptés, rangés, rendus par `show` ET par
+`diagnose vpn tunnel list` — et le moteur ne les recevait pas. Le rendu
+correct est précisément ce qui rendait le décor crédible : la
+configuration relue reproduisait ce qu'on avait tapé, seule la MACHINE
+l'ignorait.
+
+**`natt: mode=` était pire qu'inerte, il était FAUX.** La vue le
+dérivait de la CONFIGURATION (`enable` → `silent`), alors que ce champ
+décrit ce que la session a NÉGOCIÉ. Sur un chemin sans traduction
+d'adresses, un vrai FortiGate écrit `natt: mode=none` quoi qu'on ait
+configuré, NAT-T ne s'employant que lorsqu'une traduction est détectée.
+La vue lit désormais l'état de l'association, et `nattraversal` est une
+POLITIQUE dans le moteur (`disable` interdit, `forced` impose, `enable`
+laisse la détection décider) là où il n'existait que la détection.
+
+**`dpd` atteint le moteur**, dont la détection était complète et
+configurée par personne : `on-idle` arme le mode périodique, `on-demand`
+le mode à la demande, `disable` n'arme rien, et `dpd-retryinterval` /
+`dpd-retrycount` — absents du schéma — portent les défauts de FortiOS
+(15 s, 3 essais). Un pair muet fait tomber les associations après le
+nombre d'essais configuré, ce que la sonde vérifie en coupant le port du
+voisin.
+
+**Défaut trouvé en mesurant** : `diagnose vpn tunnel up` REPROGRAMMAIT le
+moteur et ne NÉGOCIAIT rien — la commande dont le nom est « monte ce
+tunnel » se contentait de constater qu'aucune association n'existait.
+`IPSecEngine.initiateTunnel` est l'entrée publique qui manquait.
+
 ### E40 — `authmethod signature` authentifie, et le certificat entre par la CLI
 
 `vpn/CertificateStore.ts` (neuf), `schema/vpn.ts`, `schema/types.ts`,

@@ -1,6 +1,8 @@
 import type { Firewall } from '../../../Firewall';
 import { parseProposal } from '../../../vpn/IpsecProposals';
-import type { IpsecProposal, Phase1Type, DpdMode } from '../../../vpn/IpsecTunnelTable';
+import type {
+  IpsecProposal, Phase1Type, DpdMode, NatTraversalMode,
+} from '../../../vpn/IpsecTunnelTable';
 import type { FortiCommitDevice } from '../schema/types';
 import { readCertificatePem, readPrivateKeyPem } from '../../../vpn/CertificateStore';
 
@@ -25,7 +27,9 @@ export function vpnCommitHandlers(fw: Firewall): VpnHandlers {
         authMethod: tunnel.authMethod,
         certificate: tunnel.certificate,
         dpd: asDpdMode(tunnel.dpd),
-        natTraversal: tunnel.natTraversal,
+        dpdRetryIntervalSeconds: tunnel.dpdRetryIntervalSeconds,
+        dpdRetryCount: tunnel.dpdRetryCount,
+        natTraversal: asNatTraversalMode(tunnel.natTraversal),
         policyBased: tunnel.policyBased,
         comments: tunnel.comments,
       });
@@ -119,4 +123,9 @@ function asPhase1Type(declared: string): Phase1Type {
 function asDpdMode(declared: string): DpdMode {
   if (declared === 'disable' || declared === 'on-idle') return declared;
   return 'on-demand';
+}
+
+function asNatTraversalMode(declared: string): NatTraversalMode {
+  if (declared === 'disable' || declared === 'forced') return declared;
+  return 'enable';
 }

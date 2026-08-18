@@ -87,6 +87,9 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       { keyword: 'on-idle', description: 'Probe when the link is idle.' },
       { keyword: 'on-demand', description: 'Probe when traffic has no reply.' },
     ], 'on-demand'),
+    count('dpd-retryinterval', 'Seconds between dead peer probes.', 1, 60, 15),
+    count('dpd-retrycount', 'Unanswered probes before the peer is declared dead.',
+      0, 10, 3),
     choice('nattraversal', 'Enable/disable NAT traversal.', [
       { keyword: 'enable', description: 'Use NAT-T when a NAT is detected.' },
       { keyword: 'disable', description: 'Never use NAT-T.' },
@@ -113,6 +116,9 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       authMethod: object.effective('authmethod')[0] === 'signature' ? 'signature' : 'psk',
       certificate: object.effective('certificate')[0] ?? '',
       dpd: object.effective('dpd')[0] ?? 'on-demand',
+      dpdRetryIntervalSeconds:
+        Number.parseInt(object.effective('dpd-retryinterval')[0] ?? '15', 10),
+      dpdRetryCount: Number.parseInt(object.effective('dpd-retrycount')[0] ?? '3', 10),
       natTraversal: object.effective('nattraversal')[0] ?? 'enable',
       policyBased: false,
       comments: object.effective('comments')[0] || undefined,
@@ -201,6 +207,8 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
       authMethod: object.effective('authmethod')[0] === 'signature' ? 'signature' : 'psk',
       certificate: object.effective('certificate')[0] ?? '',
       dpd: 'on-demand',
+      dpdRetryIntervalSeconds: 15,
+      dpdRetryCount: 3,
       natTraversal: 'enable',
       policyBased: true,
     });

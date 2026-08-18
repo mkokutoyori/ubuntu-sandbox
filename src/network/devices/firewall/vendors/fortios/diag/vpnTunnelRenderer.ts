@@ -39,7 +39,7 @@ function renderTunnel(
     + `txb=${state?.counters.sentBytes ?? 0}`,
     `dpd: mode=${tunnel.dpd} on=${tunnel.dpd === 'disable' ? 0 : 1} `
     + `idle=5000ms retry=3 count=0`,
-    `natt: mode=${tunnel.natTraversal === 'disable' ? 'none' : 'silent'} `
+    `natt: mode=${state?.natTraversalUsed ? 'silent' : 'none'} `
     + 'draft=0 interval=0 remote_port=0',
   ];
 

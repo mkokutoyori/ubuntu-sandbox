@@ -4,6 +4,8 @@ export type Phase1Type = 'static' | 'dynamic' | 'ddns';
 
 export type DpdMode = 'disable' | 'on-idle' | 'on-demand';
 
+export type NatTraversalMode = 'enable' | 'disable' | 'forced';
+
 export type TunnelStatus = 'down' | 'up';
 
 export interface IpsecProposal {
@@ -24,7 +26,9 @@ export interface Phase1Tunnel {
   readonly authMethod: 'psk' | 'signature';
   readonly certificate: string;
   readonly dpd: DpdMode;
-  readonly natTraversal: string;
+  readonly dpdRetryIntervalSeconds: number;
+  readonly dpdRetryCount: number;
+  readonly natTraversal: NatTraversalMode;
   readonly policyBased: boolean;
   readonly comments?: string;
 }
@@ -57,6 +61,7 @@ export interface TunnelState {
   lastInboundAt: number | null;
   lastOutboundAt: number | null;
   failure: string | null;
+  natTraversalUsed: boolean;
   readonly counters: TunnelCounters;
 }
 
@@ -114,12 +119,13 @@ export class IpsecTunnelTable {
 
   stateOf(name: string): TunnelState | undefined { return this.states.get(name); }
 
-  markUp(name: string): void {
+  markUp(name: string, natTraversalUsed = false): void {
     const state = this.states.get(name);
     if (!state) return;
     state.status = 'up';
     state.establishedAt = this.now();
     state.failure = null;
+    state.natTraversalUsed = natTraversalUsed;
   }
 
   markDown(name: string, failure: string | null = null): void {
@@ -164,6 +170,7 @@ export class IpsecTunnelTable {
       lastInboundAt: null,
       lastOutboundAt: null,
       failure: null,
+      natTraversalUsed: false,
       counters: {
         receivedPackets: 0, sentPackets: 0, receivedBytes: 0, sentBytes: 0,
       },

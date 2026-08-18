@@ -469,11 +469,15 @@ certificat qu'aucune ancre ne signe fait ÉCHOUER le tunnel. Un `onCommit`
 peut désormais refuser, ce qu'il fallait pour qu'une phase 1 `signature`
 sans certificat soit rejetée à la fermeture, comme sur une vraie machine.
 
+**`dpd` et `nattraversal` sont FERMÉS** (journal E41) : les deux
+atteignent le moteur, `dpd-retryinterval`/`dpd-retrycount` existent, et
+`natt: mode=` rapporte ce que la session a NÉGOCIÉ au lieu de ce qui a
+été configuré — il était faux, pas seulement inerte. Trouvé en chemin :
+`diagnose vpn tunnel up` ne négociait rien.
+
 **Ce qui reste de la phase 8, nommé plutôt que tu** :
 
-- SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma ;
-- `dpd` et `nattraversal` sont déclarés et transmis au moteur, mais
-  aucun test ne les mesure ici.
+- SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma.
 
 ### 6.10 Après
 
