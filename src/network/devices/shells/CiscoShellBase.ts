@@ -3738,6 +3738,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     return sequenceFamily([
       {
+        path: ['clear', 'arp-cache'], description: 'Clear the entire ARP cache',
+        modes: exec, negatable: false,
+      },
+      {
+        path: ['clear', 'history'], description: 'Clear the command history buffer',
+        modes: exec, negatable: false, minPrivilege: 1,
+      },
+      {
+        path: ['clear', 'host'], description: 'Delete entries from the host table',
+        args: [{
+          name: 'nom', type: 'WORD',
+          description: 'Host entry to delete, or * for every learned entry',
+        }],
+        modes: exec, negatable: false, minPrivilege: 1,
+      },
+      {
         path: ['clear', 'aaa', 'local', 'user', 'lockout', 'username'],
         description: 'Unlock a locally-locked-out user',
         args: [{ name: 'nom', type: 'WORD', description: 'Username to unlock' }],
@@ -3789,6 +3805,24 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private applyClear(words: string[]): string {
     const [tete, ...reste] = words;
+
+    if (tete === 'arp-cache') {
+      (this.d() as unknown as { _clearARPCache?: () => void })._clearARPCache?.();
+      return '';
+    }
+
+    if (tete === 'history') {
+      this.cmdHistory = [];
+      return '';
+    }
+
+    if (tete === 'host') {
+      const table = this.dnsCommandContext().hosts();
+      if (!table) return '';
+      if (reste[0] === '*') table.clearLearned();
+      else table.remove(reste[0]);
+      return '';
+    }
 
     if (tete === 'aaa') {
       const nom = reste[reste.length - 1];
@@ -5682,10 +5716,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `Router` comme par `Switch` est `getRunningConfig()`.
     // Un compteur qu'on ne peut pas remettre a zero ne sert qu'a moitie :
     // un diagnostic commence par effacer, provoquer, relire.
-    trie.register('clear history', 'Clear command history buffer', () => {
-      this.cmdHistory = [];
-      return '';
-    });
     trie.registerGreedy('terminal', 'Set terminal parameters', (args) =>
       this.handleTerminalCommand(args), [
       { keyword: 'length',  description: 'Set number of lines on a screen' },

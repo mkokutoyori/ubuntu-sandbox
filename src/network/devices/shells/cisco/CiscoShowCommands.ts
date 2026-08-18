@@ -17,7 +17,10 @@ import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } 
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 
 import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
-import { renderSecretField, renderPasswordField, type SecretAlgo } from './ciscoPasswordRender';
+import {
+  renderSecretField, renderPasswordField, renderCiscoUsernameLines,
+  type SecretAlgo, type CiscoRenderableAccount,
+} from './ciscoPasswordRender';
 import { formatInvalidInputAt } from '../CommandTrie';
 import { iosInterfaceStatus, iosAddressMethod, iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 import { IPv6Address } from '@/network/core/types';
@@ -575,25 +578,14 @@ export function showRunningConfig(router: Router): string {
 
   // Local AAA users (`username NAME privilege N secret …`).
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: SecretAlgo; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<CiscoRenderableAccount>;
   })._listLocalUsers;
   if (listUsers) {
     const users = listUsers.call(router);
     if (users.length > 0) {
       lines.push('!');
       for (const u of users) {
-        const algo = u.secretAlgo ?? 'md5';
-        // `type-7`/`plain-password` come from the `password` keyword
-        // (reversible or cleartext); everything else came from `secret`
-        // (always hashed, or explicitly stored as type 0 by `secret 0`).
-        const field = (algo === 'type-7' || algo === 'plain-password')
-          ? `password ${renderPasswordField(u.secret, algo, serviceEncryption, true, `username:${u.name}`)}`
-          : `secret ${renderSecretField(u.secret, algo, `username:${u.name}`)}`;
-        lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
-        // IOS ecrit la vue sur une ligne SEPAREE : c'est une commande a
-        // part, et la fondre dans la precedente donnerait une ligne
-        // qu'un import ne saurait pas rejouer.
-        if (u.view) lines.push(`username ${u.name} view ${u.view}`);
+        lines.push(...renderCiscoUsernameLines(u, serviceEncryption));
       }
     }
   }

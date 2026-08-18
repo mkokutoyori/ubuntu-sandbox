@@ -144,10 +144,6 @@ export function registerArpPrivilegedCommands(
   trie: CommandTrie,
   getProvider: () => ARPProvider,
 ): void {
-  trie.register('clear arp-cache', 'Clear ARP cache', () => {
-    getProvider()._clearARPCache();
-    return '';
-  });
 }
 
 // ─── Command Registration: Config Commands ──────────────────────────

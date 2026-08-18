@@ -25,7 +25,7 @@ import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
-import { renderSecretField, renderPasswordField } from './cisco/ciscoPasswordRender';
+import { renderSecretField, renderPasswordField, renderCiscoUsernameLines } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
@@ -3345,12 +3345,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // Local AAA users (`username NAME privilege N secret …`).
     const users = sw._listLocalUsers();
     if (users.length > 0) {
-      for (const u of users) {
-        const field = u.secretAlgo === 'type-7'
-          ? `password ${renderPasswordField(u.secret, 'type-7', false, true, `username:${u.name}`)}`
-          : `secret ${renderSecretField(u.secret, u.secretAlgo, `username:${u.name}`)}`;
-        lines.push(`username ${u.name} privilege ${u.privilege} ${field}`);
-      }
+      for (const u of users) lines.push(...renderCiscoUsernameLines(u, false));
       lines.push('!');
     }
 

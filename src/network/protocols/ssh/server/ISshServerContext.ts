@@ -171,7 +171,7 @@ export interface ISshServerContext {
    * Optional rate-limit gate. Returning true makes SshServerHandler refuse
    * authentication attempts from the given IP without consulting `auth`.
    */
-  isClientBlocked?(ip: string): boolean;
+  isClientBlocked?(ip: string, user?: string): boolean;
   /**
    * Optional empty-password gate. Used by the handler before delegating to
    * `auth.checkPassword`. Defaults to "rejected" when not implemented.

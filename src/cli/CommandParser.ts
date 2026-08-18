@@ -36,7 +36,15 @@ export function parseCommand(
     const matches = keywordMatches(node, token, table, session);
 
     if (matches.length > 1) {
-      return { status: 'ambiguous', candidates: matches.map(m => m.keyword!), token };
+      const suivant = tokens[index + 1];
+      const viables = suivant === undefined
+        ? matches
+        : matches.filter(m => accepteEnsuite(m, suivant, table, session));
+      if (viables.length !== 1) {
+        return { status: 'ambiguous', candidates: matches.map(m => m.keyword!), token };
+      }
+      node = viables[0];
+      continue;
     }
     if (matches.length === 1) { node = matches[0]; continue; }
 
@@ -76,6 +84,14 @@ export function parseCommand(
     return { status: 'invalid', token: 'no', position: 0 };
   }
   return { status: 'ok', spec, args, negated };
+}
+
+function accepteEnsuite(
+  node: TreeNode, token: string, table: CommandTable, session: CliSession,
+): boolean {
+  if (keywordMatches(node, token, table, session).length > 0) return true;
+  const argument = node.argumentChild?.argument;
+  return argument !== undefined && argumentAccepts(argument, token);
 }
 
 export function keywordMatches(

@@ -75,7 +75,7 @@ export interface RouterSshServerDeps {
   /** Optional record-login callback when a session is established. */
   recordLogin?(user: string, fromIp: string): void;
   /** Optional rate-limit gate. */
-  isClientBlocked?(ip: string): boolean;
+  isClientBlocked?(ip: string, user?: string): boolean;
   /** Optional auth-failure hook for the audit log. */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
 }
@@ -182,8 +182,8 @@ export class RouterSshServerContext implements ISshServerContext {
     return new SshUserContext(username, 0, 0, [], `/`);
   }
 
-  isClientBlocked(ip: string): boolean {
-    return this.deps.isClientBlocked?.(ip) ?? false;
+  isClientBlocked(ip: string, user?: string): boolean {
+    return this.deps.isClientBlocked?.(ip, user) ?? false;
   }
 
   permitEmptyPasswords(): boolean { return false; }

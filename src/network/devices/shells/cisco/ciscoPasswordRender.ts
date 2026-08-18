@@ -105,3 +105,52 @@ function deriveType9Salt(seed: string, scope: string): string {
 function deriveType7Salt(seed: string, scope: string): number {
   return Number.parseInt(md5Hex(`cisco-type7:${scope}:${seed}`).slice(0, 1), 16);
 }
+
+export interface CiscoRenderableAccount {
+  name: string;
+  privilege: number;
+  secret: string;
+  secretAlgo?: SecretAlgo;
+  noPassword?: boolean;
+  description?: string | null;
+  view?: string | null;
+  autocommand?: string | null;
+  noHangup?: boolean;
+  oneTime?: boolean;
+  accessClassIn?: number | null;
+  maxConcurrentSessions?: number;
+}
+
+function usernameOptionSuffix(a: CiscoRenderableAccount): string {
+  const parts: string[] = [];
+  if (a.accessClassIn !== null && a.accessClassIn !== undefined) {
+    parts.push(`access-class ${a.accessClassIn}`);
+  }
+  if ((a.maxConcurrentSessions ?? 0) > 0) {
+    parts.push(`user-maxlinks ${a.maxConcurrentSessions}`);
+  }
+  if (a.oneTime) parts.push('one-time');
+  if (a.noHangup) parts.push('nohangup');
+  return parts.length > 0 ? ` ${parts.join(' ')}` : '';
+}
+
+export function renderCiscoUsernameLines(
+  a: CiscoRenderableAccount, serviceEncryption: boolean,
+): string[] {
+  const algo = a.secretAlgo ?? 'md5';
+  const credential = a.noPassword
+    ? 'nopassword'
+    : (algo === 'type-7' || algo === 'plain-password')
+      ? `password ${renderPasswordField(a.secret, algo, serviceEncryption, true, `username:${a.name}`)}`
+      : a.secret === ''
+        ? ''
+        : `secret ${renderSecretField(a.secret, algo, `username:${a.name}`)}`;
+
+  const head = `username ${a.name} privilege ${a.privilege}`;
+  const suffix = usernameOptionSuffix(a);
+  const lines = [credential === '' ? `${head}${suffix}` : `${head}${suffix} ${credential}`];
+  if (a.description) lines.push(`username ${a.name} description ${a.description}`);
+  if (a.autocommand) lines.push(`username ${a.name} autocommand ${a.autocommand}`);
+  if (a.view) lines.push(`username ${a.name} view ${a.view}`);
+  return lines;
+}

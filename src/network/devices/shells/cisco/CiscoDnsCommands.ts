@@ -149,12 +149,4 @@ export function registerCiscoDnsCommands(trie: CommandTrie, ctx: DnsCommandConte
 }
 
 export function registerCiscoDnsExecCommands(trie: CommandTrie, ctx: DnsCommandContext): void {
-  trie.registerGreedy('clear host', 'Delete entries from the host table', (args) => {
-    const t = ctx.hosts();
-    if (!t) return '';
-    if (args.length === 0) return INCOMPLETE;
-    if (args[0] === '*') { t.clearLearned(); return ''; }
-    t.remove(args[0]);
-    return '';
-  });
 }

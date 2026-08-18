@@ -120,7 +120,13 @@ export interface CommandNode {
    * décrivait une commande qui n'existe pas. `repeat`, `size`… sont
    * l'inverse : ce sont des options de queue.
    */
-  hintSuggestions?: Array<{ keyword: string; description: string; leadingOnly?: boolean }>;
+  hintSuggestions?: Array<{
+    keyword: string; description: string; leadingOnly?: boolean;
+    valeur?: ReadonlyArray<{
+      keyword: string; description: string;
+      valeur?: ReadonlyArray<{ keyword: string; description: string }>;
+    }>;
+  }>;
   _hintOnly?: boolean;
   /**
    * Ce mot appartient au SOCLE : il n'est plus un argument du parent
@@ -1307,6 +1313,29 @@ export class CommandTrie {
    *   - un mot-clé `leadingOnly` une fois qu'un argument a été donné
    *     (`ping ip 1.1.1.1` existe, `ping 1.1.1.1 ip` non).
    */
+  private valeurAttendue(
+    node: CommandNode, argsSoFar: readonly string[],
+  ): ReadonlyArray<{ keyword: string; description: string }> | null {
+    const suites = node.hintSuggestions;
+    if (!suites) return null;
+
+    let attendu: ReadonlyArray<{
+      keyword: string; description: string;
+      valeur?: ReadonlyArray<{ keyword: string; description: string }>;
+    }> | null = null;
+
+    for (const mot of argsSoFar) {
+      const bas = mot.toLowerCase();
+      if (attendu !== null) {
+        const valeur = attendu.find((v) => v.keyword.toLowerCase() === bas);
+        attendu = valeur?.valeur ?? null;
+        continue;
+      }
+      attendu = suites.find((h) => h.keyword.toLowerCase() === bas)?.valeur ?? null;
+    }
+    return attendu;
+  }
+
   private suggestionsApplicables<T extends { keyword: string; leadingOnly?: boolean }>(
     liste: ReadonlyArray<T>,
     consumedArgs: number,
@@ -1708,6 +1737,9 @@ export class CommandTrie {
      * `show interfaces Gi0/0 ?` garde les six : nommer une interface ne
      * choisit aucune vue.
      */
+    const attendue = this.valeurAttendue(node, argsSoFar);
+    if (attendue) return attendue.map((v) => ({ ...v }));
+
     const dejaSurLaLigne = new Set(argsSoFar.map((a) => a.toLowerCase()));
     const aiguillagePris = this.autoContinuations(node)
       .some((a) => dejaSurLaLigne.has(a.keyword.toLowerCase()));

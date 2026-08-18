@@ -19,14 +19,7 @@ import type { RevocationCheckMode } from '../../../pki/CertificateVerifier';
 
 const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
-const USERNAME_KEYWORDS = new Set([
-  'dnis', 'hidden', 'nocallback-verify', 'noescape', 'nohangup',
-  'nopassword', 'one-time',
-]);
-
-const USERNAME_KEYWORDS_AVEC_ARG = new Set([
-  'access-class', 'common-criteria-policy', 'mac', 'user-maxlinks',
-]);
+const USERNAME_KEYWORDS = new Set(['nohangup', 'nopassword', 'one-time']);
 
 export const RADIUS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }> = [
   { keyword: 'host', description: 'Specify a RADIUS server', leadingOnly: true },
@@ -62,25 +55,87 @@ export const NO_AAA_CONTINUATIONS: ReadonlyArray<{ keyword: string; description:
   { keyword: 'session-id', description: 'Restore the default session ID behaviour' },
 ];
 
-export const USERNAME_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
-  { keyword: 'access-class', description: 'Restrict access by access-class' },
-  { keyword: 'algorithm-type', description: 'Algorithm used to hash the password' },
-  { keyword: 'autocommand', description: 'Automatically issue a command after the user logs in' },
-  { keyword: 'common-criteria-policy', description: 'Password policy to apply to this user' },
-  { keyword: 'description', description: 'Description of the user' },
-  { keyword: 'dnis', description: 'Do not require password when obtained via DNIS' },
-  { keyword: 'hidden', description: 'Hidden user name' },
-  { keyword: 'mac', description: 'Specify a MAC address for this user' },
-  { keyword: 'nocallback-verify', description: 'Callback without requiring authentication' },
-  { keyword: 'noescape', description: 'Prevent the user from using an escape character' },
+interface UsernameValeur {
+  keyword: string;
+  description: string;
+  valeur?: ReadonlyArray<{ keyword: string; description: string }>;
+}
+
+export const USERNAME_CONTINUATIONS: ReadonlyArray<{
+  keyword: string; description: string; valeur?: ReadonlyArray<UsernameValeur>;
+}> = [
+  {
+    keyword: 'access-class', description: 'Restrict access by access-class',
+    valeur: [{ keyword: '<1-199>', description: 'Access-list number' }],
+  },
+  {
+    keyword: 'algorithm-type', description: 'Algorithm used to hash the password',
+    valeur: [
+      { keyword: 'md5', description: 'Select MD5 as the hashing algorithm' },
+      { keyword: 'scrypt', description: 'Select scrypt as the hashing algorithm' },
+      { keyword: 'sha256', description: 'Select PBKDF2 with SHA-256 as the hashing algorithm' },
+    ],
+  },
+  {
+    keyword: 'autocommand',
+    description: 'Automatically issue a command after the user logs in',
+    valeur: [{ keyword: 'LINE', description: 'The command to issue' }],
+  },
+  {
+    keyword: 'description', description: 'Description of the user',
+    valeur: [{ keyword: 'LINE', description: 'Text describing the user' }],
+  },
   { keyword: 'nohangup', description: 'Do not disconnect after an automatic command' },
   { keyword: 'nopassword', description: 'No password is required for this user' },
   { keyword: 'one-time', description: 'Specify a one-time user name' },
-  { keyword: 'password', description: 'Specify the password for the user' },
-  { keyword: 'privilege', description: 'Set the privilege level for the user' },
-  { keyword: 'secret', description: 'Specify the secret for the user' },
-  { keyword: 'user-maxlinks', description: 'Limit the number of connections for this user' },
-  { keyword: 'view', description: 'Set the view attached to the user' },
+  {
+    keyword: 'password', description: 'Specify the password for the user',
+    valeur: [
+      {
+        keyword: '0', description: 'Specifies an UNENCRYPTED password will follow',
+        valeur: [{ keyword: 'LINE', description: 'The password itself' }],
+      },
+      {
+        keyword: '7', description: 'Specifies a HIDDEN password will follow',
+        valeur: [{ keyword: 'LINE', description: 'The password itself' }],
+      },
+      { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user password' },
+    ],
+  },
+  {
+    keyword: 'privilege', description: 'Set the privilege level for the user',
+    valeur: [{ keyword: '<0-15>', description: 'User privilege level' }],
+  },
+  {
+    keyword: 'secret', description: 'Specify the secret for the user',
+    valeur: [
+      {
+        keyword: '0', description: 'Specifies an UNENCRYPTED secret will follow',
+        valeur: [{ keyword: 'LINE', description: 'The secret itself' }],
+      },
+      {
+        keyword: '5', description: 'Specifies a MD5 HASHED secret will follow',
+        valeur: [{ keyword: 'LINE', description: 'The secret itself' }],
+      },
+      {
+        keyword: '8', description: 'Specifies a PBKDF2 HASHED secret will follow',
+        valeur: [{ keyword: 'LINE', description: 'The secret itself' }],
+      },
+      {
+        keyword: '9', description: 'Specifies a SCRYPT HASHED secret will follow',
+        valeur: [{ keyword: 'LINE', description: 'The secret itself' }],
+      },
+      { keyword: 'LINE', description: 'The UNENCRYPTED (cleartext) user secret' },
+    ],
+  },
+  {
+    keyword: 'user-maxlinks', description: 'Limit the number of connections for this user',
+    valeur: [{ keyword: '<0-255>', description: 'Maximum number of connections' }],
+  },
+  {
+    keyword: 'view', description: 'Set the view attached to the user',
+    valeur: [{ keyword: 'WORD', description: 'Name of the view' }],
+  },
 ];
 
 /**
@@ -235,6 +290,11 @@ export function buildIdentityConfigCommands(
     // famille, deux comportements.
     let algoDemande: 'md5' | 'sha256' | 'scrypt' | undefined;
     let vue: string | undefined;
+    let autocommand: string | undefined;
+    let nohangup = false;
+    let oneTime = false;
+    let accessClass: number | undefined;
+    let maxLinks: number | undefined;
     for (let i = 1; i < args.length; i++) {
       const t = args[i];
       if (t === 'privilege' && args[i + 1]) {
@@ -260,6 +320,22 @@ export function buildIdentityConfigCommands(
         vue = args[i + 1]; i++;
       }
       else if (t === 'nopassword') { nopassword = true; }
+      else if (t === 'nohangup') { nohangup = true; }
+      else if (t === 'one-time') { oneTime = true; }
+      else if (t === 'access-class') {
+        const n = Number(args[i + 1]);
+        if (!Number.isInteger(n) || n < 1 || n > 199) {
+          throw new CliInvalidInput({ token: args[i + 1] ?? t });
+        }
+        accessClass = n; i++;
+      }
+      else if (t === 'user-maxlinks') {
+        const n = Number(args[i + 1]);
+        if (!Number.isInteger(n) || n < 0 || n > 255) {
+          throw new CliInvalidInput({ token: args[i + 1] ?? t });
+        }
+        maxLinks = n; i++;
+      }
       else if (t === 'description') { description = args.slice(i + 1).join(' '); break; }
       else if (t === 'secret') {
         const next = args[i + 1];
@@ -286,8 +362,7 @@ export function buildIdentityConfigCommands(
         secret = args.slice(i + 1).join(' '); secretAlgo = 'plain-password';
         plaintextEntered = secret; type0PasswordWarning = true; break;
       }
-      else if (t === 'autocommand') { break; }
-      else if (USERNAME_KEYWORDS_AVEC_ARG.has(t.toLowerCase())) { i++; }
+      else if (t === 'autocommand') { autocommand = args.slice(i + 1).join(' '); break; }
       else if (!USERNAME_KEYWORDS.has(t.toLowerCase())) {
         throw new CliInvalidInput({ token: t });
       }
@@ -304,10 +379,15 @@ export function buildIdentityConfigCommands(
         privilege?: number; secret?: string;
         secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
         nopassword?: boolean; description?: string; view?: string;
+        autocommand?: string; nohangup?: boolean; oneTime?: boolean;
+        accessClass?: number; maxLinks?: number;
       }) => void;
     };
     if (router._upsertCiscoUsername) {
-      router._upsertCiscoUsername(name, { privilege, secret, secretAlgo, nopassword, description, view: vue });
+      router._upsertCiscoUsername(name, {
+        privilege, secret, secretAlgo, nopassword, description, view: vue,
+        autocommand, nohangup, oneTime, accessClass, maxLinks,
+      });
     }
     if (type0PasswordWarning) {
       return "WARNING: Command has been added to the configuration using a type 0\n"

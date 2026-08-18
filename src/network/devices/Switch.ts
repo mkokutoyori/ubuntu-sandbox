@@ -83,8 +83,8 @@ import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore'
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
-import { NetworkOsAccount } from './router/aaa/NetworkOsAccount';
-import type { PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
+import type { CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
 import { isReservedMulticast } from '../igmp/types';
 
@@ -2776,18 +2776,10 @@ export abstract class Switch extends Equipment {
   private readonly dnsHostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.dnsHostsTable; }
   /** @internal `username NAME [privilege N] [secret|password …]`. */
-  _upsertCiscoUsername(name: string, kv: {
-    privilege?: number; secret?: string; secretAlgo?: PasswordHashAlgorithm;
-    nopassword?: boolean; description?: string;
-  }): void {
+  _upsertCiscoUsername(name: string, kv: CiscoUsernamePatch): void {
     const store = this.getCredentialStore();
-    let account = store.get(name) ?? NetworkOsAccount.create({ name });
-    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
-    if (kv.nopassword) account = account.withSecret('', 'plain');
-    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
-    if (kv.description) account = account.withDescription(kv.description);
-    if (account.factoryDefault) account = account.asOperatorOwned();
-    store.upsert(account);
+    store.upsert(applyCiscoUsernamePatch(
+      store.get(name) ?? NetworkOsAccount.create({ name }), kv));
   }
   _removeLocalUser(name: string): void { this.getCredentialStore().remove(name); }
 
@@ -2840,10 +2832,14 @@ export abstract class Switch extends Equipment {
   }
 
   _getVtyLineConfig(): VtyLineConfigStore { return this._vtyLineConfig; }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; factoryDefault: boolean; noPassword: boolean; oneTime: boolean; noHangup: boolean; autocommand: string | null; description: string | null; view?: string; accessClassIn: number | null; maxConcurrentSessions: number }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
       secretAlgo: a.passwordHashAlgorithm, factoryDefault: a.factoryDefault,
+      noPassword: a.noPassword, oneTime: a.oneTime, noHangup: a.noHangup,
+      autocommand: a.autocommand, description: a.description,
+      view: a.view ?? undefined,
+      accessClassIn: a.accessClassIn, maxConcurrentSessions: a.maxConcurrentSessions,
     }));
   }
 

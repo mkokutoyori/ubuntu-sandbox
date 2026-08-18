@@ -91,6 +91,21 @@ export class NetworkOsCredentialStore implements IAccountAuthority {
     if (updated) {
       publishAccountEvent(this.bus, 'router.aaa.account.login.success', this.deviceId, updated, { from, method, at });
     }
+    this.consumeOneTime(name);
+  }
+
+  consumeOneTime(name: string): boolean {
+    if (this.accounts.get(name)?.oneTime !== true) return false;
+    this.remove(name);
+    return true;
+  }
+
+  liveSessionCount: (user: string) => number = () => 0;
+
+  exceedsMaxLinks(name: string): boolean {
+    const account = this.accounts.get(name);
+    if (!account || account.maxConcurrentSessions <= 0) return false;
+    return this.liveSessionCount(name) >= account.maxConcurrentSessions;
   }
 
   recordLoginFailure(name: string, from: string, reason: string, at: number = Date.now()): void {

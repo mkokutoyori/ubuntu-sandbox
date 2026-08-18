@@ -137,7 +137,10 @@ import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { RouterDynamicRouting } from './router/RouterDynamicRouting';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SecurityAuditLog } from './router/aaa/SecurityAuditLog';
-import { NetworkOsAccount, type PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
+import {
+  NetworkOsAccount, applyCiscoUsernamePatch,
+  type CiscoUsernamePatch, type PasswordHashAlgorithm,
+} from './router/aaa/NetworkOsAccount';
 import { LoginBlocker } from './router/aaa/LoginBlocker';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { algorithmesRetenus } from './shells/cisco/CiscoCommonShow';
@@ -1041,7 +1044,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       // LoginBlocker) so real-wire SSH enforces the same security policy a
       // Cisco/Huawei device configures via CLI, instead of losing it when
       // the client stops calling checkPassword() directly.
-      isClientBlocked: (ip) => !this.vtyAdmissionVerdict('ssh', ip).accept,
+      isClientBlocked: (ip, user) => !this.vtyAdmissionVerdict('ssh', ip).accept
+        || (user !== undefined && this.perUserAdmissionRefusal(user, ip) !== null),
       recordAuthFailure: (user, ip) => this.recordSshLogin(user, ip, '', false),
       recordLogin: (user, ip) => this.recordSshLogin(user, ip, '', true),
     });
@@ -3223,6 +3227,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.getCredentialStore().recordLoginFailure(username, '', 'exec authorization failed', Date.now());
       return false;
     }
+    const refus = this.perUserAdmissionRefusal(username, '');
+    if (refus !== null) {
+      this.getCredentialStore().recordLoginFailure(username, '', refus, Date.now());
+      return false;
+    }
     const compte = this.getCredentialStore().lookup(username);
     // La precedence qu'IOS documente : AAA > ligne > compte. Le niveau de
     // la ligne est un REMPLACEMENT et non un plancher, donc il vaut aussi
@@ -3236,6 +3245,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const ouverte = registre.sessionSurLigne('con');
     if (ouverte) registre.noterAuthentification(ouverte.id, username, niveau);
     else registre.open({ user: username, privilege: niveau, fromIp: '', transport: 'console' });
+    const autocommand = this.getCredentialStore().get(username)?.autocommand ?? null;
+    this.getCredentialStore().consumeOneTime(username);
+    if (autocommand) await this.executeCommand(autocommand);
     return true;
   }
 
@@ -3870,6 +3882,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       });
     }
     return this._vtyIncomingPolicy.admit(transport, sourceIp);
+  }
+
+  perUserAdmissionRefusal(user: string, sourceIp: string): string | null {
+    const account = this.getCredentialStore().get(user);
+    if (!account) return null;
+    if (this.getCredentialStore().exceedsMaxLinks(user)) {
+      return `user-maxlinks ${account.maxConcurrentSessions} reached`;
+    }
+    if (account.accessClassIn !== null) {
+      const src = IPAddress.tryParse(sourceIp) ?? new IPAddress('0.0.0.0');
+      const dst = IPAddress.tryParse(this.getPorts()
+        .map(p => p.getIPAddress()?.toString())
+        .find((ip): ip is string => !!ip) ?? '') ?? new IPAddress('0.0.0.0');
+      const verdict = this.aclEngine
+        .evaluateACLByName(String(account.accessClassIn), synthTcpPacket(src, dst));
+      if (verdict === 'deny') return `access-class ${account.accessClassIn} denied ${sourceIp}`;
+    }
+    return null;
   }
   /** Static hostname → IP table (Cisco/Huawei `ip host` directives). */
   consoleLineCount(): number { return 1; }
@@ -4542,6 +4572,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         algorithms: () => this.sshNegotiatedAlgorithms(),
       });
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore.liveSessionCount = (user) =>
+        this._sshSessionRegistry!.list().filter(s => s.user === user && s.state !== 'closed').length;
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
         hostname: this.hostname,
@@ -4586,20 +4618,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.getCredentialStore().upsert(acc);
   }
 
-  _upsertCiscoUsername(name: string, kv: {
-    privilege?: number; secret?: string;
-    secretAlgo?: 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'type-7';
-    autocommand?: string; nopassword?: boolean; description?: string; view?: string;
-  }): void {
+  _upsertCiscoUsername(name: string, kv: CiscoUsernamePatch): void {
     this.getSecurityAuditLog();
     const store = this.getCredentialStore();
-    let account = store.get(name) ?? NetworkOsAccount.create({ name });
-    if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
-    if (kv.nopassword) account = account.withSecret('', 'plain');
-    else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
-    if (kv.description) account = account.withDescription(kv.description);
-    if (kv.view !== undefined) account = account.withView(kv.view);
-    if (account.factoryDefault) account = account.asOperatorOwned();
+    const account = applyCiscoUsernamePatch(store.get(name) ?? NetworkOsAccount.create({ name }), kv);
     store.upsert(account);
   }
   _removeLocalUser(name: string): void {
@@ -4610,12 +4632,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const a = this.getCredentialStore().get(name);
     return a ? { name: a.name, privilege: a.privilege, secret: a.secret } : undefined;
   }
-  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; view?: string; factoryDefault: boolean; serviceTypes: readonly string[] }> {
+  _listLocalUsers(): ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo: PasswordHashAlgorithm; view?: string; factoryDefault: boolean; serviceTypes: readonly string[]; noPassword: boolean; oneTime: boolean; noHangup: boolean; autocommand: string | null; description: string | null; accessClassIn: number | null; maxConcurrentSessions: number }> {
     return this.getCredentialStore().list().map(a => ({
       name: a.name, privilege: a.privilege, secret: a.secret,
       secretAlgo: a.passwordHashAlgorithm,
       view: a.view ?? undefined,
       factoryDefault: a.factoryDefault,
+      noPassword: a.noPassword, oneTime: a.oneTime, noHangup: a.noHangup,
+      autocommand: a.autocommand, description: a.description,
+      accessClassIn: a.accessClassIn, maxConcurrentSessions: a.maxConcurrentSessions,
       // Le `service-type` etait stocke par `withServiceTypes()` et
       // laisse de cote par cette projection, si bien que le rendu
       // ecrivait `ssh` en dur : un compte configure `telnet` revenait
@@ -4866,6 +4891,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     // Going through the bus here would double-book the vty line.
     this.getSecurityAuditLog().record('SEC_LOGIN', 5, 'LOGIN_SUCCESS',
       `Login Success [user: ${user}] [Source: ${fromIp}] [localport: ${localPort}] [Reason: Login Authentication]`);
+    this.getCredentialStore().consumeOneTime(user);
   }
   getSshBanner(): string { return this.sshBannerText; }
   getSshMotd(): string { return ''; }

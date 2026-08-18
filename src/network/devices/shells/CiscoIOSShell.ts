@@ -155,6 +155,23 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...super.socleSpecs(),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
       ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
+      ...this.clearIpv6Specs(),
+    ];
+  }
+
+  private clearIpv6Specs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    const vue = (
+      keyword: string, description: string, effacer: () => void,
+    ): CommandSpec => ({
+      id: `clear-ipv6-${keyword}`, path: ['clear', 'ipv6', keyword], description,
+      modes: exec, minPrivilege: 15,
+      run: () => { effacer(); return ''; },
+    });
+
+    return [
+      vue('neighbors', 'Clear IPv6 neighbour cache', () => this.d()._clearNeighborCache()),
+      vue('traffic', 'Clear IPv6 traffic statistics', () => this.d()._clearIpv6Counters()),
     ];
   }
 
@@ -1141,14 +1158,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
     registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
-    this.privilegedTrie.register('clear ipv6 neighbors', 'Clear IPv6 neighbour cache', () => {
-      this.d()._clearNeighborCache();
-      return '';
-    });
-    this.privilegedTrie.register('clear ipv6 traffic', 'Clear IPv6 traffic statistics', () => {
-      this.d()._clearIpv6Counters();
-      return '';
-    });
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
     registerNATPrivilegedCommands(this.privilegedTrie, () => this.d());
 

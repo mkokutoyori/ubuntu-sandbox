@@ -718,7 +718,7 @@ export class SshServerHandler {
     const password = (payload.password as string | undefined) ?? '';
 
     // Reactive throttler check: refuse before consulting auth.
-    if (this.ctx.isClientBlocked?.(clientIp)) {
+    if (this.ctx.isClientBlocked?.(clientIp, user)) {
       this.eventBus.emit({
         kind: 'auth_failure',
         user,

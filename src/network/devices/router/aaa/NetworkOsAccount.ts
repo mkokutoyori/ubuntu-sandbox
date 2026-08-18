@@ -38,6 +38,10 @@ export interface NetworkOsAccountSnapshot {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  readonly noPassword: boolean;
+  readonly oneTime: boolean;
+  readonly autocommand: string | null;
+  readonly noHangup: boolean;
   /**
    * La vue CLI attachee au compte (`username X view NOC_VIEW`).
    *
@@ -98,6 +102,10 @@ export class NetworkOsAccount {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  readonly noPassword: boolean;
+  readonly oneTime: boolean;
+  readonly autocommand: string | null;
+  readonly noHangup: boolean;
   readonly view: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -130,6 +138,10 @@ export class NetworkOsAccount {
     this.homeDirectory = s.homeDirectory;
     this.publicKeys = s.publicKeys;
     this.description = s.description;
+    this.noPassword = s.noPassword;
+    this.oneTime = s.oneTime;
+    this.autocommand = s.autocommand;
+    this.noHangup = s.noHangup;
     this.createdAt = s.createdAt;
     this.updatedAt = s.updatedAt;
     this.factoryDefault = s.factoryDefault;
@@ -164,6 +176,10 @@ export class NetworkOsAccount {
       homeDirectory: init.homeDirectory ?? null,
       publicKeys: Object.freeze([]),
       description: init.description ?? null,
+      noPassword: false,
+      oneTime: false,
+      autocommand: null,
+      noHangup: false,
       createdAt: now,
       updatedAt: now,
       factoryDefault: init.factoryDefault ?? false,
@@ -192,6 +208,8 @@ export class NetworkOsAccount {
       accessClassOut: this.accessClassOut, ftpDirectory: this.ftpDirectory,
       homeDirectory: this.homeDirectory, publicKeys: this.publicKeys,
       description: this.description, view: this.view,
+      noPassword: this.noPassword, oneTime: this.oneTime,
+      autocommand: this.autocommand, noHangup: this.noHangup,
       createdAt: this.createdAt, updatedAt: this.updatedAt,
       factoryDefault: this.factoryDefault,
     };
@@ -206,7 +224,19 @@ export class NetworkOsAccount {
   }
 
   withSecret(secret: string, algo: PasswordHashAlgorithm = 'plain'): NetworkOsAccount {
-    return this.mutate({ secret, passwordHashAlgorithm: algo });
+    return this.mutate({ secret, passwordHashAlgorithm: algo, noPassword: false });
+  }
+
+  withoutPassword(): NetworkOsAccount {
+    return this.mutate({ noPassword: true, secret: '', passwordHashAlgorithm: 'plain' });
+  }
+
+  withOneTime(oneTime: boolean): NetworkOsAccount {
+    return this.mutate({ oneTime });
+  }
+
+  withAutocommand(line: string | null, noHangup: boolean): NetworkOsAccount {
+    return this.mutate({ autocommand: line, noHangup });
   }
 
   withPasswordExpireAt(at: number | null): NetworkOsAccount {
@@ -331,6 +361,7 @@ export class NetworkOsAccount {
     // continuait de l'ouvrir. Le mecanisme entier ne protegeait rien, et
     // la vue affirmait le contraire.
     if (this.locked || this.disabled) return false;
+    if (this.noPassword) return true;
     if (!this.secret) return false;
     if (this.passwordHashAlgorithm === 'irreversible-cipher') {
       return looksLikeIrreversibleCipher(this.secret)
@@ -360,6 +391,39 @@ export class NetworkOsAccount {
     if (service === 'stelnet' && this.serviceTypes.includes('ssh')) return true;
     return this.serviceTypes.includes(service);
   }
+}
+
+export interface CiscoUsernamePatch {
+  privilege?: number;
+  secret?: string;
+  secretAlgo?: PasswordHashAlgorithm;
+  nopassword?: boolean;
+  description?: string;
+  view?: string;
+  autocommand?: string;
+  nohangup?: boolean;
+  oneTime?: boolean;
+  accessClass?: number;
+  maxLinks?: number;
+}
+
+export function applyCiscoUsernamePatch(
+  base: NetworkOsAccount, kv: CiscoUsernamePatch,
+): NetworkOsAccount {
+  let account = base;
+  if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+  if (kv.nopassword) account = account.withoutPassword();
+  else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+  if (kv.description) account = account.withDescription(kv.description);
+  if (kv.view !== undefined) account = account.withView(kv.view);
+  if (kv.autocommand !== undefined || kv.nohangup) {
+    account = account.withAutocommand(kv.autocommand ?? account.autocommand, kv.nohangup ?? account.noHangup);
+  }
+  if (kv.oneTime) account = account.withOneTime(true);
+  if (kv.accessClass !== undefined) account = account.withAccessClass('in', kv.accessClass);
+  if (kv.maxLinks !== undefined) account = account.withMaxSessions(kv.maxLinks);
+  if (account.factoryDefault) account = account.asOperatorOwned();
+  return account;
 }
 
 export interface NetworkOsAccountEventEnvelope {

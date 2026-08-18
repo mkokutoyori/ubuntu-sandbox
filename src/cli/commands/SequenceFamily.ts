@@ -54,6 +54,7 @@ export interface SequenceEntry {
    * la migration achete.
    */
   readonly modes?: readonly string[];
+  readonly minPrivilege?: number;
 }
 
 export interface SequenceHost {
@@ -85,7 +86,7 @@ function specFor(
     path: [...entry.path, ...specs],
     description: entry.description,
     modes: entry.modes ?? ['config'],
-    minPrivilege: 15,
+    minPrivilege: entry.minPrivilege ?? 15,
     run: (_session, args) => host().apply(words(args), false),
   };
   if (entry.negatable === false) return spec;
