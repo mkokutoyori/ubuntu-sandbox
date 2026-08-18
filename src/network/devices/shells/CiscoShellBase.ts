@@ -18,6 +18,7 @@ import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
+import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
@@ -2759,6 +2760,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }).getDebugService?.();
   }
 
+  protected dhcpViewServer(): DhcpViewServer | undefined {
+    const device = this.d() as unknown as {
+      _getDHCPServerInternal?: () => DhcpViewServer | undefined;
+    };
+    return device._getDHCPServerInternal?.();
+  }
+
   versionText(): string { return ''; }
 
   runningConfigText(): string {
@@ -4196,6 +4204,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [
       ...debugFamily(this.debugPairs()),
       ...showConfigViewSpecs(() => this),
+      ...showIpDhcpSpecs(() => this.dhcpViewServer()),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),

@@ -3687,6 +3687,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         if (ip && pkt.giaddr === ip.toString()) {
           pkt.removeOption(82);
           this.sendDhcpFrameOnPort(name, pkt, new IPAddress('255.255.255.255'), MACAddress.broadcast());
+          this.dhcpServer.countRelayReply();
           this.getBus().publish({
             topic: 'dhcp.relay.reply-forwarded',
             payload: {
@@ -3704,6 +3705,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const inIp = this.ports.get(inPort)?.getIPAddress();
     if (!inIp) return;
     if (pkt.hops >= 16) {
+      this.dhcpServer.countRelayDrop();
       this.getBus().publish({
         topic: 'dhcp.relay.dropped',
         payload: {
@@ -3738,6 +3740,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         etherType: ETHERTYPE_IPV4, payload: relayed,
       });
     }
+    this.dhcpServer.countRelayForward();
     this.getBus().publish({
       topic: 'dhcp.relay.forwarded',
       payload: {

@@ -4497,19 +4497,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         showIpTraffic(this.d()._getPortsInternal().values(), this.d()._getArpStats()));
       t.registerGreedy('show adjacency', 'Display CEF adjacency table', (args) =>
         this.showAdjacency(args));
-      t.registerGreedy('show ip dhcp binding', 'Display DHCP bindings', () =>
-        this.showIpDhcpBinding());
-      t.registerGreedy('show ip dhcp pool', 'Display DHCP pools', (args) =>
-        this.showIpDhcpPool(args[0]));
       const dhcp = () => this.d()._getDHCPServerInternal();
       t.register('show ip dhcp statistics', 'Display DHCP server statistics', () =>
         dhcp().formatStatsShow());
-      t.register('show ip dhcp server statistics', 'Display DHCP server statistics', () =>
-        dhcp().formatStatsShow());
-      t.register('show ip dhcp conflict', 'Display DHCP address conflicts', () =>
-        dhcp().formatConflictShow());
-      t.register('show ip dhcp excluded-address', 'Display DHCP excluded addresses', () =>
-        dhcp().formatExcludedShow());
       t.register('show ip dhcp lease', 'Display DHCP client leases', () =>
         this.showIpDhcpLease());
       t.register('show ip dhcp database', 'Display DHCP database agents', () =>

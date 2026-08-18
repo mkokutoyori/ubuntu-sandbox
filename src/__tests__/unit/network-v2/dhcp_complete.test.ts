@@ -125,7 +125,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       // Check bindings (initially empty)
       const bindings = await router.executeCommand('show ip dhcp binding');
       expect(bindings).toContain('IP address');
-      expect(bindings).toContain('Client-id');
+      expect(bindings).toContain('Client-ID');
       expect(bindings).toContain('Lease expiration');
       
       // Simulate a lease
@@ -206,7 +206,8 @@ describe('Group 2: Functional — DORA Process', () => {
       // Verify router shows binding
       const binding = await router.executeCommand('show ip dhcp binding');
       const clientMac = pc.getMACAddress('eth0');
-      expect(binding).toContain(clientMac.toString());
+      const clientId = `01${clientMac.toString().replace(/[^0-9a-fA-F]/g, '')}`.toLowerCase();
+      expect(binding).toContain((clientId.match(/.{1,4}/g) ?? []).join('.'));
     });
 
     it('should handle multiple clients simultaneously', async () => {

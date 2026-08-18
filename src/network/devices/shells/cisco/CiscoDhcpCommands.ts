@@ -257,21 +257,6 @@ export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellCo
 // ─── DHCP Show Commands (registered on user/privileged show tries) ───
 
 export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.registerGreedy('show ip dhcp pool', 'Display DHCP pool information', (args) =>
-    getRouter()._getDHCPServerInternal().formatPoolShow(args.length > 0 ? args[0] : undefined));
-  trie.registerGreedy('show ip dhcp binding', 'Display DHCP address bindings', (args) => {
-    const full = getRouter()._getDHCPServerInternal().formatBindingsShow();
-    if (!args.length) return full;
-    const lines = full.split('\n');
-    const matched = lines.filter(l => l.includes(args[0]));
-    return matched.length ? [lines[0], ...matched].join('\n') : lines[0];
-  });
-  trie.register('show ip dhcp server statistics', 'Display DHCP server statistics', () =>
-    getRouter()._getDHCPServerInternal().formatStatsShow());
-  trie.register('show ip dhcp conflict', 'Display DHCP address conflicts', () =>
-    getRouter()._getDHCPServerInternal().formatConflictShow());
-  trie.register('show ip dhcp excluded-address', 'Display DHCP excluded addresses', () =>
-    getRouter()._getDHCPServerInternal().formatExcludedShow());
   trie.register('show debug', 'Display debugging flags', () =>
     getRouter().getDebugService().format());
 
@@ -328,8 +313,6 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
     getRouter()._getDHCPServerInternal().formatBindingsShow());
 
-  trie.register('show ip dhcp relay statistics', 'Display DHCP relay statistics', () =>
-    getRouter()._getDHCPServerInternal().formatStatsShow());
 }
 
 // ─── DHCP Privileged Commands (debug, clear) ─────────────────────────
@@ -397,23 +380,4 @@ export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () 
   });
 
   // clear commands
-  trie.registerGreedy('clear ip dhcp binding', 'Clear DHCP bindings', (args) => {
-    const dhcp = getRouter()._getDHCPServerInternal();
-    if (args.length > 0 && args[0] === '*') {
-      dhcp.clearBindings();
-    } else if (args.length > 0) {
-      dhcp.clearBinding(args[0]);
-    } else {
-      return '% Incomplete command.';
-    }
-    return '';
-  });
-  trie.register('clear ip dhcp server statistics', 'Clear DHCP server statistics', () => {
-    getRouter()._getDHCPServerInternal().clearStats();
-    return '';
-  });
-  trie.registerGreedy('clear ip dhcp conflict', 'Clear DHCP address conflicts', () => {
-    getRouter()._getDHCPServerInternal().clearConflicts();
-    return '';
-  });
 }

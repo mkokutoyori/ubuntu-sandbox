@@ -88,6 +88,7 @@ export class DHCPServer implements IProtocolEngine {
 
   /** Server statistics */
   private stats: DHCPServerStats = createDefaultStats();
+  private relayStats = { forwarded: 0, repliesForwarded: 0, dropped: 0 };
 
   /** IP conflict database */
   private conflicts: DHCPConflict[] = [];
@@ -975,6 +976,14 @@ export class DHCPServer implements IProtocolEngine {
 
   clearStats(): void {
     this.stats = createDefaultStats();
+    this.relayStats = { forwarded: 0, repliesForwarded: 0, dropped: 0 };
+  }
+
+  countRelayForward(): void { this.relayStats.forwarded++; }
+  countRelayReply(): void { this.relayStats.repliesForwarded++; }
+  countRelayDrop(): void { this.relayStats.dropped++; }
+  getRelayStats(): Readonly<{ forwarded: number; repliesForwarded: number; dropped: number }> {
+    return { ...this.relayStats };
   }
 
   // ─── Ping-before-offer (`ip dhcp ping packets`/`ip dhcp ping timeout`) ──
@@ -1137,7 +1146,7 @@ export class DHCPServer implements IProtocolEngine {
   formatPoolShow(poolName?: string): string {
     if (poolName) {
       const pool = this.pools.get(poolName);
-      if (!pool) return `% Pool "${poolName}" not found.`;
+      if (!pool) return `% Pool ${poolName} not found.`;
       if ((!pool.network || !pool.mask) && !pool.manual?.host) {
         return `% Incomplete configuration - missing network statement for pool "${poolName}"`;
       }
