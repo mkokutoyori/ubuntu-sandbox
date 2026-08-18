@@ -148,6 +148,22 @@ const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
+  versionText(): string {
+    return Show.showVersion(this.d(), this.getChassisProfile(),
+      this.fs().renderConfigRegisterLine());
+  }
+
+  runningConfigText(): string {
+    return this.filtrerConfigurationParNiveau(Show.showRunningConfig(this.d()));
+  }
+
+  runningConfigInterfaceText(argument: string): string {
+    if (argument.trim().length === 0) return '% Incomplete command.';
+    const ifName = resolveInterfaceName(this.d(), argument);
+    if (!ifName) return '% Invalid interface';
+    return Show.showRunningConfigInterface(this.d(), ifName);
+  }
+
   protected override debugPairs(): DebugPair[] {
     return [
       ...super.debugPairs(),
@@ -1134,7 +1150,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   protected registerDeviceCommands(): void {
     // ── User mode ──
-    this.registerShowCommands(this.userTrie, 'user');
+    this.registerShowCommands(this.userTrie);
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
@@ -1320,7 +1336,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   // ─── Show Commands (Router-specific) ──────────────────────────────
 
-  private registerShowCommands(trie: CommandTrie, scope: ExecScope = 'privileged'): void {
+  private registerShowCommands(trie: CommandTrie): void {
     const getRouter = () => this.d();
     registerRoutingProtoShow(trie, this, this.routingCfg);
     registerHsrpShowCommands(trie, this, this.fhrp);
@@ -1387,14 +1403,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
     trie.register('show ip static route', 'Display static routes', () => Show.showIpRoute(getRouter()));
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    trie.register('show running-config', 'Display running configuration', () =>
-      this.filtrerConfigurationParNiveau(Show.showRunningConfig(getRouter())));
-    // `show startup-config` lit la NVRAM : son en-tête annonce
-    // l'occupation, pas « Building configuration… » qui appartient à
-    // `show running-config`.
-    const startupConfig = () => this.showStartupConfig();
-    trie.register('show startup-config', 'Display saved configuration', startupConfig);
-    trie.register('show configuration', 'Display saved configuration', startupConfig);
     trie.register('show ip rip database', 'Display RIP database',
       () => Show.showIpRipDatabase(getRouter(), this.routingCfg.rip.autoSummary));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
@@ -1418,17 +1426,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // NAT show commands
     registerNATShowCommands(trie, getRouter);
 
-    // show running-config interface <name>
-    trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid interface`;
-      return Show.showRunningConfigInterface(getRouter(), ifName);
-    });
-
-    trie.register('show version', 'Display system hardware and software status',
-      () => Show.showVersion(getRouter(), this.getChassisProfile(),
-        this.fs().renderConfigRegisterLine()));
 
     // `show interface[s] [<name>|description|status|summary]`.
     // Registered under both the singular and plural IOS spellings;

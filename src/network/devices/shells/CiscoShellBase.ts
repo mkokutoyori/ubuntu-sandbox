@@ -18,6 +18,7 @@ import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
+import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
@@ -2430,8 +2431,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     let niveau: number | null = null;
     for (const spec of table.specs()) {
       const chemin = CiscoShellBase.keywordPathOf(spec);
-      if (chemin.length < mots.length) continue;
-      if (!mots.every((mot, rang) => chemin[rang].startsWith(mot))) continue;
+      const absorbeLaSuite = spec.path.length > chemin.length;
+      if (chemin.length < mots.length && !absorbeLaSuite) continue;
+      const compares = Math.min(chemin.length, mots.length);
+      if (!mots.slice(0, compares).every((mot, rang) => chemin[rang].startsWith(mot))) continue;
+      if (compares < chemin.length && mots.length > compares) continue;
       if (!spec.modes.some(mode => scopeForMode(mode) === portee)) continue;
       const declare = table.requiredPrivilege(spec);
       niveau = niveau === null ? declare : Math.min(niveau, declare);
@@ -2753,6 +2757,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         disableAll?(): string;
       };
     }).getDebugService?.();
+  }
+
+  versionText(): string { return ''; }
+
+  runningConfigText(): string {
+    const device = this.d() as unknown as { getRunningConfig?: () => string };
+    return this.filtrerConfigurationParNiveau(device.getRunningConfig?.() ?? '');
+  }
+
+  runningConfigInterfaceText(_argument: string): string { return '% Invalid interface'; }
+
+  startupConfigText(): string { return this.showStartupConfig(); }
+
+  runningConfigAllText(): string {
+    const device = this.d() as unknown as { getRunningConfig?: () => string };
+    return device.getRunningConfig?.() ?? 'Building configuration...';
   }
 
   private debugEngines(): {
@@ -4122,18 +4142,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modes: exec, minPrivilege: 1, run: () => showProcessesMemory(),
       },
       {
-        id: 'show-running-config-all', description: 'Show running-config with defaults',
-        path: ['show', 'running-config', 'all'],
-        modes: exec, minPrivilege: 15,
-        run: () => {
-          const dev = this.d() as unknown as { getRunningConfig?: () => string };
-          const config = dev.getRunningConfig?.() ?? '';
-          return config.length > 0
-            ? `Building configuration...\n${config}`
-            : 'Building configuration...';
-        },
-      },
-      {
         id: 'show-boot', description: 'Display boot variables',
         path: ['show', 'boot',
           { name: 'reste', type: 'REST', optional: true, description: 'Boot view' }],
@@ -4187,6 +4195,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected socleSpecs(): readonly CommandSpec[] {
     return [
       ...debugFamily(this.debugPairs()),
+      ...showConfigViewSpecs(() => this),
       ...this.discoverySpecs(),
       ...this.loggingSpecs(),
       ...this.ntpSpecs(),
@@ -4768,6 +4777,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       && parsed.refusePar !== undefined
       && !this.trieProlonge(cmdPart)
       && !this.trieConnait(cmdPart, parsed.position)) {
+      if (parsed.refusePar === 'niveau') return CISCO_ERRORS.INVALID_INPUT;
       return renderCliDiagnostic('invalid', {
         line: cmdPart,
         tokenOffset: CiscoShellBase.offsetOfWord(cmdPart, parsed.position),

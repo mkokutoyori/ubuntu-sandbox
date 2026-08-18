@@ -19,7 +19,6 @@ import { describe, it, expect } from 'vitest';
 import { CliEngine, IOS_INCOMPLETE, IOS_INVALID_INPUT } from '@/cli/CliEngine';
 import { CommandTable } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
-import { SHOW_RUNNING_CONFIG } from '@/cli/commands/show/showSlice';
 
 const CONFIG = [
   '!',
@@ -29,6 +28,23 @@ const CONFIG = [
   '!',
   'end',
 ].join('\n');
+
+const SHOW_RUNNING_CONFIG = {
+  id: 'show-running-config',
+  path: ['show', 'running-config'],
+  description: 'Current operating configuration',
+  modes: ['privileged'],
+  minPrivilege: 15,
+  run: (session: CliSession) => {
+    const body = (session.device as { getRunningConfig?: () => string })
+      ?.getRunningConfig?.() ?? '';
+    return [
+      'Building configuration...', '',
+      `Current configuration : ${body.length} bytes`,
+      body,
+    ].join('\n');
+  },
+} as const;
 
 function engine(): CliEngine {
   const table = new CommandTable();

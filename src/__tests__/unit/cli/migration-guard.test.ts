@@ -24,7 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { CommandTable } from '@/cli/CommandTable';
 import {
-  MIGRATION_LEDGER, SHOW_SLICE, SHOW_SLICE_PATHS, pathTextOf,
+  MIGRATION_LEDGER, SHOW_SLICE_PATHS, showConfigViewSpecs, pathTextOf,
 } from '@/cli/commands/show/showSlice';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
@@ -36,7 +36,11 @@ import { CommandTrie } from '@/network/devices/shells/CommandTrie';
 
 function socle(): CommandTable {
   const table = new CommandTable();
-  for (const spec of [...SHOW_SLICE, ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY]) table.declare(spec);
+  const vues = showConfigViewSpecs(() => ({
+    versionText: () => '', runningConfigText: () => '', runningConfigAllText: () => '',
+    runningConfigInterfaceText: () => '', startupConfigText: () => '',
+  }));
+  for (const spec of [...vues, ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY]) table.declare(spec);
   return table;
 }
 
@@ -84,16 +88,16 @@ describe('ce que la migration rapporte, mesure', () => {
     expect(multiMode.length).toBeGreaterThan(0);
   });
 
-  it('la tranche couvre quatre commandes, prete a traverser', () => {
-    expect(SHOW_SLICE_PATHS).toHaveLength(4);
+  it('la tranche couvre les six vues de configuration', () => {
+    expect(SHOW_SLICE_PATHS).toHaveLength(6);
   });
 
-  it('elle est ENCORE dans le trie — c\'est le travail qui reste, mesure', () => {
+  it('elle a TRAVERSE — aucune des six ne reste dans un trie', () => {
     const legacy = legacyPaths();
 
     const restants = SHOW_SLICE_PATHS.filter(path => legacy.has(path));
 
-    expect(restants.length).toBeGreaterThan(0);
+    expect(restants).toEqual([]);
   });
 
   it('l\'inventaire du trie n\'est pas vide — sinon le garde-fou ne lirait rien', () => {

@@ -109,6 +109,21 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
 ];
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
+  override versionText(): string {
+    return showSwitchVersion(this.d());
+  }
+
+  override runningConfigText(): string {
+    return this.filtrerConfigurationParNiveau(this.buildRunningConfig(this.d()));
+  }
+
+  override runningConfigInterfaceText(argument: string): string {
+    if (argument.trim().length === 0) return '% Incomplete command.';
+    const name = this.resolveInterfaceName(argument)
+      ?? this.virtualInterfaceName(argument) ?? argument;
+    return this.blocConfigInterface(name);
+  }
+
   /** Ce shell rend la table avec ses filtres — la base ne doit pas la masquer. */
   protected providesOwnMacAddressTableView(): boolean {
     return true;
@@ -2141,10 +2156,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   // ─── User Commands ────────────────────────────────────────────────
 
   private registerUserCommands(): void {
-    this.userTrie.register('show version', 'Display system hardware and software status', () => {
-      return showSwitchVersion(this.d());
-    });
-
     this.userTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
       return this.showDHCPSnooping(this.d());
     });
@@ -2426,31 +2437,8 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showVlanBrief(this.d(), { name: args[0] });
     });
 
-    this.privilegedTrie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
-      const name = this.resolveInterfaceName(args.join(' '))
-        ?? this.virtualInterfaceName(args.join(' ')) ?? args.join(' ');
-      return this.blocConfigInterface(name);
-    });
-
-
-    this.privilegedTrie.register('show running-config', 'Display current running configuration', () => {
-      return this.filtrerConfigurationParNiveau(this.buildRunningConfig(this.d()));
-    });
-
-    for (const chemin of ['show startup-config', 'show configuration']) {
-      this.privilegedTrie.declare({
-        path: chemin,
-        description: 'Display saved configuration',
-        run: () => this.showStartupConfig(),
-      });
-    }
-
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
       return this.d().writeMemory();
-    });
-
-    this.privilegedTrie.register('show version', 'Display system information', () => {
-      return showSwitchVersion(this.d());
     });
 
     this.privilegedTrie.register('show ip dhcp snooping', 'Display DHCP snooping configuration', () => {
