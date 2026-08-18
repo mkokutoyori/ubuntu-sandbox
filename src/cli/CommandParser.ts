@@ -12,7 +12,7 @@ export type ParseResult =
   | { readonly status: 'incomplete'; readonly consumed: number }
   | {
     readonly status: 'invalid'; readonly token: string; readonly position: number;
-    readonly refusePar?: 'argument';
+    readonly refusePar?: 'argument' | 'niveau';
   };
 
 export function tokenize(input: string): string[] {
@@ -67,7 +67,10 @@ export function parseCommand(
     return { status: 'incomplete', consumed: tokens.length };
   }
   if (!table.isReachable(spec, session)) {
-    return { status: 'invalid', token: tokens[tokens.length - 1], position: tokens.length - 1 };
+    return {
+      status: 'invalid', token: tokens[tokens.length - 1],
+      position: tokens.length - 1, refusePar: 'niveau',
+    };
   }
   if (negated && spec.undo === undefined) {
     return { status: 'invalid', token: 'no', position: 0 };

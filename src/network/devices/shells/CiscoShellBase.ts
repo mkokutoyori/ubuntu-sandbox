@@ -17,7 +17,7 @@ import { CommandTable } from '@/cli/CommandTable';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
-import type { CommandSpec } from '@/cli/CommandTable';
+import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
 import { debugFamily, type DebugPair } from '@/cli/commands/debug/debugFamily';
 import { legacyFamily } from '@/cli/LegacyDeclaration';
 import { loggingFamily, type LoggingEntry } from '@/cli/commands/logging/loggingFamily';
@@ -802,8 +802,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (mode !== 'privileged') return null;
 
     const m = this.privilegedTrie.match(line);
-    if (m.status !== 'ok' || !m.node) return null;
-    const path = m.matchedKeywords.join(' ').toLowerCase();
+    // Une commande MIGREE n'est plus dans le trie, donc `match` ne la
+    // reconnait plus : sans ce repli, `erase startup-config` perdait son
+    // dialogue `[confirm]` le jour de sa migration.
+    const migre = m.status === 'ok' && m.node
+      ? null : this.cheminCanoniqueDuSocle(`${line} `);
+    if (migre === null && (m.status !== 'ok' || !m.node)) return null;
+    const path = (migre ?? m.matchedKeywords).join(' ').toLowerCase();
 
     if (path === 'enable view') {
       return this.enableViewInteractionPlan(m.args, ctx?.device);
@@ -2365,10 +2370,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     };
     if (this.mode === 'user' || this.mode === 'privileged') {
       if (connue(this.userTrie)) return 1;
-      return connue(this.privilegedTrie) ? 15 : null;
+      if (connue(this.privilegedTrie)) return 15;
+    } else if (connue(this.getActiveTrie()) || connue(this.configTrie)) {
+      return 15;
     }
-    if (connue(this.getActiveTrie()) || connue(this.configTrie)) return 15;
-    return null;
+    // Une commande MIGREE n'est plus dans aucun trie : sans cette
+    // question au socle, elle passerait pour inconnue et IOS en ferait
+    // un nom d'hote a joindre — donc `do write memory` refuse au niveau
+    // reduit repondait par une resolution de nom.
+    return this.niveauDeclareParLeSocle(cmdPart);
+  }
+
+  private niveauDeclareParLeSocle(cmdPart: string): number | null {
+    const table = this.socleTable();
+    if (!table) return null;
+
+    const mots = cmdPart.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (mots.length === 0) return null;
+
+    const portee = scopeForMode(this.mode);
+    let niveau: number | null = null;
+    for (const spec of table.specs()) {
+      const chemin = CiscoShellBase.keywordPathOf(spec);
+      if (chemin.length < mots.length) continue;
+      if (!mots.every((mot, rang) => chemin[rang].startsWith(mot))) continue;
+      if (!spec.modes.some(mode => scopeForMode(mode) === portee)) continue;
+      const declare = table.requiredPrivilege(spec);
+      niveau = niveau === null ? declare : Math.min(niveau, declare);
+    }
+    return niveau;
   }
 
   /**
@@ -3955,7 +3985,38 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.clockSpecs(),
       ...this.loginSpecs(),
       ...this.clearSpecs(),
+      ...this.writeEraseSpecs(),
       ...this.showSocleSpecs(),
+    ];
+  }
+
+  protected writeEraseSpecs(): CommandSpec[] {
+    const sauver = (): string => this.onSave();
+    const effacer = (): string => {
+      this.onErase();
+      return 'Erasing the nvram filesystem will remove all configuration files!'
+        + ' Continue? [confirm]\n[OK]\nErase of nvram: complete';
+    };
+    const exec = (
+      id: string, path: readonly string[], description: string, run: () => string,
+    ): CommandSpec => ({
+      id, path: [...path], description,
+      // Les deux modes d'EXEC, pour la raison ecrite sur `clearSpecs` :
+      // c'est l'AUTORISATION qui tranche, et `privilege exec level 10
+      // write memory` descend la commande a une session qui reste en
+      // EXEC utilisateur.
+      modes: ['user', 'privileged'], minPrivilege: 15, run,
+    });
+
+    return [
+      exec('write', ['write'], 'Write running configuration to memory', sauver),
+      exec('write-memory', ['write', 'memory'], 'Write to NV memory', sauver),
+      exec('write-erase', ['write', 'erase'], 'Erase NV memory', effacer),
+      exec('write-terminal', ['write', 'terminal'], 'Write to terminal',
+        () => this.executeOnTrie('show running-config')),
+      exec('erase-startup-config', ['erase', 'startup-config'],
+        'Erase contents of configuration memory', effacer),
+      exec('erase-nvram', ['erase', 'nvram:'], 'Filesystem to be erased', effacer),
     ];
   }
 
@@ -4301,7 +4362,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string }>,
   ): Array<{ keyword: string; description: string }> {
-    const amont = this.cheminCanonique(table, ligne);
+    const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
     if (amont === null || !CiscoShellBase.negationSous(table, amont)) return [];
 
     return brutes.flatMap(suggestion => {
@@ -4349,15 +4410,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * occupe une place mais n'en nomme aucune, et la comparer a un chemin
    * de mots-cles ne designerait rien.
    */
-  private cheminCanonique(table: CommandTable, ligne: string): string[] | null {
+  private static enfantUnique(node: TreeNode, mot: string): TreeNode | undefined {
+    const enfants = [...node.children.values()];
+    const exact = enfants.find(child => child.keyword?.toLowerCase() === mot);
+    if (exact) return exact;
+
+    const prefixes = enfants.filter(child => child.keyword?.toLowerCase().startsWith(mot));
+    return prefixes.length === 1 ? prefixes[0] : undefined;
+  }
+
+  private cheminCanoniqueDuSocle(ligne: string): string[] | null {
+    const table = this.socleTable();
+    if (!table) return null;
+
+    const chemin = this.cheminCanonique(table, ligne, null);
+    return chemin !== null && chemin.length > 0 ? chemin : null;
+  }
+
+  private cheminCanonique(
+    table: CommandTable, ligne: string, session: CliSession | null,
+  ): string[] | null {
     const mots = ligne.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const parcourus = ligne.endsWith(' ') ? mots : mots.slice(0, -1);
-    const session = this.socleSession(table);
 
     let node = table.rootNode();
     const canonique: string[] = [];
     for (const mot of parcourus) {
-      const enfant = uniqueChild(node, mot, table, session);
+      const enfant = session
+        ? uniqueChild(node, mot, table, session)
+        : CiscoShellBase.enfantUnique(node, mot);
       if (enfant?.keyword) {
         node = enfant;
         canonique.push(enfant.keyword.toLowerCase());
@@ -4402,7 +4483,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // dire que la commande entiere lui est etrangere — et IOS en fait
     // alors un nom d'hote a joindre, ce qui ne lui appartient pas.
     if (parsed.status === 'invalid' && parsed.position > 0
-      && parsed.refusePar === 'argument'
+      && parsed.refusePar !== undefined
       && !this.trieProlonge(cmdPart)
       && !this.trieConnait(cmdPart, parsed.position)) {
       return renderCliDiagnostic('invalid', {
@@ -4552,6 +4633,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const first = spans[0];
     if (!first || errorPos !== first.offset) return null;
     if (this.privilegedTrie.getCompletions(first.text).length > 0) return null;
+    // Un premier mot que le SOCLE connait n'est pas un nom d'hote : sans
+    // cette question, `erase zorglub` partait en resolution de nom le
+    // jour ou `erase` a quitte le trie.
+    if (this.niveauDeclareParLeSocle(first.text) !== null) return null;
     return renderCliDiagnostic('unknown-exec', { line, token: first.text });
   }
 
@@ -5789,13 +5874,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Sauvegarder DATE la NVRAM : c'est la seconde des deux lignes d'en-tête.
     this.privilegedTrie.describeNode('copy', 'Copy a file');
 
-    this.privilegedTrie.register('write memory', 'Save configuration', () => this.onSave());
-    // `write terminal` etait offert par `write ?` et refuse au caret.
-    // C'est le synonyme historique de `show running-config`, et il rend
-    // donc le MEME texte plutot qu'une seconde version qui pourrait en
-    // diverger.
-    this.privilegedTrie.register('write terminal', 'Write to terminal (display running-config)',
-      () => this.executeOnTrie('show running-config'));
     this.privilegedTrie.register('setup', 'Run the initial configuration dialog', () => '');
 
     // `archive config` / `show archive` — enregistrées ici, donc pour le
@@ -5825,13 +5903,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       },
     );
 
-    const eraseNvram = () => {
-      this.onErase();
-      return 'Erasing the nvram filesystem will remove all configuration files! Continue? [confirm]\n[OK]\nErase of nvram: complete';
-    };
-    this.privilegedTrie.register('write erase', 'Erase saved configuration', eraseNvram);
-    this.privilegedTrie.register('erase startup-config', 'Erase saved configuration', eraseNvram);
-    this.privilegedTrie.register('erase nvram:', 'Erase NVRAM', eraseNvram);
 
     // Single greedy `copy` handler so any source/destination pair is consumed
     // as arguments (an exact `copy running-config startup-config` registration
