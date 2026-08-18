@@ -2738,6 +2738,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
     removeConditionById(id: number): string;
     clearConditions(): void;
+    enableAll?(): string;
+    disableAll?(): string;
   } | undefined {
     return (this.d() as unknown as {
       getDebugService?: () => {
@@ -2747,8 +2749,57 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         removeCondition(kind: 'interface' | 'vrf' | 'ip', value: string): string;
         removeConditionById(id: number): string;
         clearConditions(): void;
+        enableAll?(): string;
+        disableAll?(): string;
       };
     }).getDebugService?.();
+  }
+
+  private debugEngines(): {
+    ipsec?: { setDebug(kind: string, on: boolean): void };
+    nat?: { setDebugEnabled(on: boolean): void; setDebugDetailed(on: boolean): void };
+    dhcp?: { setDebugServerPacket(on: boolean): void; setDebugServerEvents(on: boolean): void };
+  } {
+    const device = this.d() as unknown as {
+      _getIPSecEngineInternal?: () => { setDebug(kind: string, on: boolean): void } | undefined;
+      _getNATEngine?: () => { setDebugEnabled(on: boolean): void; setDebugDetailed(on: boolean): void };
+      _getDHCPServerInternal?: () => {
+        setDebugServerPacket(on: boolean): void; setDebugServerEvents(on: boolean): void;
+      } | undefined;
+    } | undefined;
+    return {
+      ipsec: device?._getIPSecEngineInternal?.(),
+      nat: device?._getNATEngine?.(),
+      dhcp: device?._getDHCPServerInternal?.(),
+    };
+  }
+
+  private natDebugSwitch(on: boolean, detail: boolean): void {
+    const nat = this.debugEngines().nat;
+    nat?.setDebugEnabled(on);
+    nat?.setDebugDetailed(on && detail);
+  }
+
+  protected enableEveryDebug(): string {
+    const { ipsec, nat, dhcp } = this.debugEngines();
+    ipsec?.setDebug('isakmp', true);
+    ipsec?.setDebug('ipsec', true);
+    nat?.setDebugEnabled(true);
+    dhcp?.setDebugServerPacket(true);
+    dhcp?.setDebugServerEvents(true);
+    return this.debugServiceRef()?.enableAll() ?? 'All possible debugging has been turned on';
+  }
+
+  protected disableEveryDebug(): string {
+    const { ipsec, nat, dhcp } = this.debugEngines();
+    ipsec?.setDebug('isakmp', false);
+    ipsec?.setDebug('ipsec', false);
+    ipsec?.setDebug('ikev2', false);
+    nat?.setDebugEnabled(false);
+    nat?.setDebugDetailed(false);
+    dhcp?.setDebugServerPacket(false);
+    dhcp?.setDebugServerEvents(false);
+    return this.debugServiceRef()?.disableAll() ?? 'All possible debugging has been turned off';
   }
 
   private simpleDebugPair(
@@ -2805,6 +2856,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ],
         enable: (args) => this.enableIpDebug(args),
         disable: (args) => this.disableIpDebug(args),
+      },
+      {
+        path: ['debug', 'all'], description: 'Enable all debugging',
+        undoDescription: 'Disable all debugging', takesArguments: false,
+        enable: () => this.enableEveryDebug(),
+        disable: () => this.disableEveryDebug(),
       },
       {
         path: ['debug', 'standby'], description: 'Debug HSRP',
@@ -2943,7 +3000,15 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         ? `UDP packet debugging is on for access list ${acl}`
         : 'UDP packet debugging is on';
     }
-    if (sub === 'nat') return svc.enable('ip.nat');
+    if (sub === 'nat' || sub.startsWith('nat ')) {
+      const detail = args.slice(1).some((a) => /^detailed?$/i.test(a));
+      const acl = args.slice(1).find((a) => !/^detailed?$/i.test(a));
+      this.natDebugSwitch(true, detail);
+      svc.enable('ip.nat', acl, detail);
+      return acl
+        ? `IP NAT debugging is on for access list ${acl}${detail ? ' (detailed)' : ''}`
+        : detail ? 'IP NAT detailed debugging is on' : 'IP NAT debugging is on';
+    }
     if (sub === 'arp') return svc.enable('ip.arp');
     if (sub === 'routing') return svc.enable('ip.routing');
     if (sub.startsWith('dhcp server') || sub === 'dhcp') return svc.enable('ip.dhcp.server');
@@ -2965,7 +3030,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     if (sub === 'domain') return svc.disable('ip.domain');
     if (sub === 'tcp' || sub.startsWith('tcp ')) return svc.disable('ip.tcp');
     if (sub === 'udp' || sub.startsWith('udp ')) return svc.disable('ip.udp');
-    if (sub === 'nat') return svc.disable('ip.nat');
+    if (sub === 'nat' || sub.startsWith('nat ')) {
+      this.natDebugSwitch(false, false);
+      return svc.disable('ip.nat');
+    }
     if (sub === 'arp') return svc.disable('ip.arp');
     if (sub === 'routing') return svc.disable('ip.routing');
     if (sub.startsWith('dhcp server') || sub === 'dhcp') return svc.disable('ip.dhcp.server');

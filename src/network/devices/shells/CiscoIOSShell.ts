@@ -145,9 +145,15 @@ import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContin
 
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
+import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
+
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   protected override debugPairs(): DebugPair[] {
-    return [...super.debugPairs(), ...ipSlaDebugPairs(this)];
+    return [
+      ...super.debugPairs(),
+      ...ipSlaDebugPairs(this),
+      ...routerOnlyDebugPairs(() => this.r() as unknown as RouterDebugHost),
+    ];
   }
 
   protected override socleSpecs(): readonly CommandSpec[] {
