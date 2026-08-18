@@ -3981,8 +3981,8 @@ qui est accepté :
 |---|---|
 | `aes128-sha256`, `aes256-sha256` | ✅ AES-GCM/CBC et SHA-256 réels |
 | `aes128-sha1`, `aes256-sha1` | ✅ SHA-1 réel |
-| `3des-sha1` | ❌ **Refus** — `des.ts` exporte `desCbcEncrypt` et **pas** `desCbcDecrypt` ; un chiffrement qu'on ne sait pas déchiffrer perd les données |
-| `des-md5` | ❌ Idem |
+| `3des-sha1` | ✅ **corrigé en E38** — `desCbcDecrypt`, le triple DES EDE et son mode CBC sont écrits, et ESP les APPLIQUE (un SA annoncé en 3DES-CBC chiffrait en AES jusque-là). Le vecteur FIPS 81 est reproduit |
+| `des-md5` | ✅ Idem |
 | `aes128gcm`, `aes256gcm` | ✅ |
 | `chacha20poly1305` | ❌ Refus famille 2 |
 
@@ -3991,10 +3991,20 @@ documentée dans `CLAUDE.md` pour `openssl enc`. La même raison vaut ici,
 et la cohérence entre les deux commandes est plus importante que la
 couverture.
 
-Groupes Diffie-Hellman : `IMPLEMENTED_GROUPS` de `keyExchange.ts` dit
-lesquels sont réels. Les autres sont **refusés** — c'est exactement le
-correctif décrit dans `CLAUDE.md` (« il ne reste plus rien de simulé »),
-et le réintroduire ici serait une régression.
+Groupes Diffie-Hellman — **ce paragraphe était faux, corrigé en E38.**
+`IMPLEMENTED_GROUPS` appartient à l'échange de clés de **TLS**, qu'IKE
+n'appelait pas : le moteur IKE négociait un groupe, l'appariait entre
+les deux pairs et l'affichait, **sans le calculer pour aucun groupe** —
+le matériel de clé venait de la seule PSK. Appliquer ce refus aurait
+donc rejeté `dhgrp 14`, le groupe du laboratoire L8 de ce même document,
+sur un motif inexact.
+
+Ce qui a été fait à la place : **le calcul est devenu réel**.
+`crypto/dh/modp.ts` porte les groupes 1, 2, 5, 14, 15 et 16, dont les
+nombres premiers sont EXTRAITS du texte des RFC 2409 et 3526 et
+vérifiés ; les groupes 19 et 31 passent par l'échange de clés de TLS.
+Les messages IKE portent une charge KEi/KEr (RFC 7296 §1.2). Un groupe
+hors de cette liste est refusé **en nommant ce qui existe**.
 
 ### 24.5 Les vues
 
@@ -4044,7 +4054,7 @@ tunnel est nommé comme travail identifié en §43.
 | **FGT-VPN-2** | Le tunnel monte pour de vrai : IKE échangé sur le fil, ESP transporté |
 | **FGT-VPN-3** | Le laboratoire L8 fait circuler un ping de bout en bout à travers le tunnel |
 | **FGT-VPN-4** | Une proposition non implémentée est refusée en nommant l'algorithme |
-| **FGT-VPN-5** | Un groupe DH hors `IMPLEMENTED_GROUPS` est refusé |
+| **FGT-VPN-5** | ~~Un groupe DH hors `IMPLEMENTED_GROUPS` est refusé~~ — **prémisse corrigée en E38** : IKE ne calculait AUCUN groupe. Le calcul est maintenant réel (RFC 2409/3526 pour les groupes modulaires, TLS pour les courbes) et un groupe sans implémentation est refusé en nommant ce qui existe |
 | **FGT-VPN-6** | Un secret partagé discordant fait échouer le tunnel, et le diagnostic le dit |
 | **FGT-VPN-7** | `diagnose vpn tunnel list` lit l'état réel |
 | **FGT-VPN-8** | Le mode policy-based est accepté et déconseillé par l'aide |

@@ -33,16 +33,17 @@
 | **5** | VDOM et modes de déploiement | ✅ livrée (E35) |
 | **6** | Inspection et UTM | ✅ livrée (E36) |
 | **7** | Utilisateurs et authentification | ✅ livrée (E37) |
-| 8 | VPN | ⏳ |
+| **8** | VPN | ✅ livrée (E38) |
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 1051 cas verts sur 37 fichiers du module
-pare-feu ; 318 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+**Mesures au dernier commit** : 1094 cas verts sur 38 fichiers du module
+pare-feu ; 361 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
 système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
-VDOM + 36 d'UTM + 43 d'utilisateurs) ; 39 specs Playwright ; aucune
-erreur de typecheck dans le module ; lint propre. **Le badge « Limited
-simulation » est retiré.**
+VDOM + 36 d'UTM + 43 d'utilisateurs + 42 de VPN) ; 45 specs Playwright ;
+aucune erreur de typecheck dans le module ; lint propre. **Le badge
+« Limited simulation » est retiré.** S'y ajoutent 40 cas de socle
+cryptographique (`ike-real-diffie-hellman.test.ts`).
 
 ---
 
@@ -426,7 +427,40 @@ second facteur toujours accepté serait pire que pas de second facteur).
   pare-feu n'a pas encore de serveur SSH ;
 - `two-factor` est refusé, donc `email-to` est stocké sans emploi.
 
-### 6.9 Après
+### 6.9 Phase 8 — VPN — ✅ livrée
+
+Livrée : `config vpn ipsec phase1-interface` / `phase2-interface` (et la
+forme héritée `phase1`), l'interface de tunnel — routable et nommable en
+`srcintf`/`dstintf` —, `diagnose vpn tunnel {list,summary,up}`, et la
+programmation du moteur IKE partagé depuis les déclarations FortiOS.
+
+**Deux chantiers de SOCLE en font partie, et ils dépassent FortiOS** :
+
+- **IKE calcule un vrai Diffie-Hellman** (`crypto/dh/modp.ts`,
+  `ipsec/IkeKeyExchange.ts`). Avant, aucun groupe n'était calculé ; le
+  matériel de clé venait de la seule PSK. Les nombres premiers viennent
+  des RFC 2409 et 3526, extraits du texte et vérifiés. **Cela profite
+  aussi à Cisco et Huawei**, qui partagent ce moteur.
+- **3DES se déchiffre** (`crypto/cipher/des.ts`), et ESP l'applique
+  vraiment.
+
+**`IpsecHost` est le port étroit** qui permet à `Router` ET à `Firewall`
+d'héberger le MÊME moteur IKE. N'en écrivez pas un second.
+
+**Ce qui reste de la phase 8, nommé plutôt que tu** :
+
+- le tunnel se déclare, se programme et se diagnostique, mais **aucun
+  test ne fait encore circuler un ping de bout en bout à travers lui**
+  (FGT-VPN-3) : cela demande un laboratoire à deux FortiGate reliés, et
+  l'étage de chiffrement du pipeline n'est pas branché sur l'interface
+  de tunnel ;
+- `authmethod signature` (certificats) est accepté et ne change rien —
+  le moteur a `IkeCertAuthConfig`, il reste à le brancher ;
+- SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma ;
+- `dpd` et `nattraversal` sont déclarés et transmis au moteur, mais
+  aucun test ne les mesure ici.
+
+### 6.10 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -466,5 +500,6 @@ comparer, jamais le supposer).
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
 | 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |
 | 2026-08-17 | agent `mandeng` | Phase 5 livrée (E35). Décisions D22 à D27, §6.6 (ce qui reste de la phase 5). |
+| 2026-08-18 | agent `mandeng` | Phase 8 livrée (E38). §6.9. **Socle : IKE calcule un vrai DH ; 3DES se déchiffre.** Deux affirmations du BRD corrigées après vérification. |
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |

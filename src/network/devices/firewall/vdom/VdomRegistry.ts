@@ -13,6 +13,7 @@ import { FirewallLogStore } from '../logging/FirewallLogStore';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
+import { IpsecTunnelTable } from '../vpn/IpsecTunnelTable';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -44,6 +45,7 @@ export interface VdomContext {
   readonly utm: UtmProfileStore;
   readonly identities: IdentityTable;
   readonly users: UserDirectory;
+  readonly tunnels: IpsecTunnelTable;
   readonly settings: VdomSettings;
 }
 
@@ -53,6 +55,8 @@ export interface VdomRegistryDeps {
   readonly now: () => number;
   readonly deviceId: string;
   readonly bus: () => IEventBus;
+  readonly onTunnelInterface?: (vdom: string, tunnel: string, boundTo: string) => void;
+  readonly onTunnelRemoved?: (vdom: string, tunnel: string) => void;
   readonly policyKeyedBy: 'zone' | 'interface';
   readonly implicitPolicy: 'deny-all' | 'security-level';
   readonly applicationShift: boolean;
@@ -202,6 +206,12 @@ export class VdomRegistry {
       logs: new FirewallLogStore(),
       utm: new UtmProfileStore(),
       identities: new IdentityTable({ now: this.deps.now }),
+      tunnels: new IpsecTunnelTable({
+        now: this.deps.now,
+        onInterfaceCreated: (tunnel, boundTo) =>
+          this.deps.onTunnelInterface?.(name, tunnel, boundTo),
+        onInterfaceRemoved: (tunnel) => this.deps.onTunnelRemoved?.(name, tunnel),
+      }),
       users: new UserDirectory({
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,

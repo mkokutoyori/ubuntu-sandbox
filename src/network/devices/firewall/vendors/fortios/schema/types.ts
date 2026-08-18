@@ -201,6 +201,10 @@ export interface FortiCommitDevice {
   removeUserGroup(name: string): void;
   applyRemoteAuthServer(server: FortiRemoteServerPatch): void;
   applyLdapServer(server: FortiLdapServerPatch): void;
+  applyPhase1(tunnel: FortiPhase1Patch): void;
+  removePhase1(name: string): void;
+  applyPhase2(tunnel: FortiPhase2Patch): void;
+  removePhase2(name: string): void;
   removeRemoteAuthServer(name: string): void;
   applyAuthSetting(setting: FortiAuthSettingPatch): void;
   applyAccessProfile(profile: FortiAccessProfilePatch): void;
@@ -265,6 +269,36 @@ export interface FortiRemoteServerPatch {
   readonly secret: string;
   readonly port: number;
   readonly authType?: string;
+}
+
+export interface FortiPhase1Patch {
+  readonly name: string;
+  readonly boundInterface: string;
+  readonly ikeVersion: 1 | 2;
+  readonly type: string;
+  readonly remoteGateway: string;
+  readonly proposals: readonly string[];
+  readonly dhGroups: readonly number[];
+  readonly presharedKey: string;
+  readonly keyLifeSeconds: number;
+  readonly dpd: string;
+  readonly natTraversal: string;
+  readonly policyBased: boolean;
+  readonly comments?: string;
+}
+
+export interface FortiPhase2Patch {
+  readonly name: string;
+  readonly phase1Name: string;
+  readonly proposals: readonly string[];
+  readonly sourceSubnet: string;
+  readonly sourceMask: string;
+  readonly destinationSubnet: string;
+  readonly destinationMask: string;
+  readonly pfs: boolean;
+  readonly dhGroups: readonly number[];
+  readonly keyLifeSeconds: number;
+  readonly autoNegotiate: boolean;
 }
 
 export interface FortiLdapServerPatch {

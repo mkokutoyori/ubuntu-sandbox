@@ -5,6 +5,7 @@ import type { PacketContext } from '../../../pipeline/PacketContext';
 import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
+import { renderVpnTunnelList, renderVpnTunnelSummary } from './vpnTunnelRenderer';
 import { unquote } from '../runtime/FortiNavigator';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
 import { trafficDenyLog } from '../log/trafficLog';
@@ -30,6 +31,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'debug') return diagnoseDebug(tail, deps);
   if (family === 'firewall') return diagnoseIprope(tail, deps);
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
+  if (family === 'vpn') return diagnoseVpn(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
@@ -207,6 +209,21 @@ function diagnoseAuth(rest: readonly string[], deps: FortiDiagDeps): string {
     return '';
   }
   return FortiMessages.unknownPath(`firewall auth ${rest.join(' ')}`);
+}
+
+function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'tunnel') return FortiMessages.unknownPath(`vpn ${rest.join(' ')}`);
+
+  const tunnels = deps.fw.getTunnelTable();
+  if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
+  if (rest[1] === 'summary') return renderVpnTunnelSummary(tunnels);
+  if (rest[1] === 'up') {
+    const name = rest[2] ?? '';
+    return deps.fw.bringUpIpsecTunnel(name)
+      ? ''
+      : FortiMessages.commandFail(`tunnel \`${name}\` did not come up.`);
+  }
+  return FortiMessages.unknownPath(`vpn tunnel ${rest.slice(1).join(' ')}`);
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {

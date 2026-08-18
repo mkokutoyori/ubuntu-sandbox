@@ -14,6 +14,7 @@ import { VDOM_SPECS } from './vdom';
 import { UTM_SPECS } from './utm';
 import { USER_SPECS } from './user';
 import { ADMIN_SPECS } from './admin';
+import { VPN_SPECS } from './vpn';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VDOM_SPECS,
@@ -28,6 +29,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...UTM_SPECS,
   ...USER_SPECS,
   ...ADMIN_SPECS,
+  ...VPN_SPECS,
   ...ROUTER_SPECS,
   FIREWALL_POLICY,
   FIREWALL_CENTRAL_SNAT_MAP,

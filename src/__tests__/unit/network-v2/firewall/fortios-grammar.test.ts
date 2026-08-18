@@ -697,10 +697,17 @@ describe('le moteur de commandes partage', () => {
     const { sh } = shell();
     run(sh, 'config firewall policy', 'edit 1');
 
-    const dit = run(sh, 'se action accept');
+    const dit = run(sh, 'se srcaddr "all"');
 
     expect(dit).toContain('ambigu');
     expect(dit).toContain('select');
+  });
+
+  it('mais elle ne l`est PLUS des que l`attribut departage', () => {
+    const { sh } = shell();
+    run(sh, 'config firewall policy', 'edit 1');
+
+    expect(run(sh, 'se action accept')).not.toContain('ambigu');
   });
 
   it('`?` annonce la plage REELLE d\'un entier', () => {

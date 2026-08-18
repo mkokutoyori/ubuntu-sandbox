@@ -1976,6 +1976,73 @@ d'extraire le calcul.
 
 ---
 
+### E38 — FortiOS phase 8 : le tunnel devient une interface, et IKE calcule vraiment
+
+`crypto/dh/modp.ts`, `ipsec/{IkeKeyExchange,IpsecHost}.ts`,
+`vpn/{IpsecTunnelTable,IpsecProposals,IpsecProgramming}.ts`,
+`schema/vpn.ts` (tous neufs) — **42 cas** de phase plus **40 cas** de
+crypto, plus 6 specs Playwright. **20 des 42** et **17 des 40** tombent
+avant correctif.
+
+**Deux affirmations du BRD étaient fausses, et les deux ont été
+VÉRIFIÉES avant d'être suivies.** C'est la même leçon que LDAP en phase
+7, et elle se répète assez pour mériter d'être une règle : un tableau de
+faisabilité vieillit, et il faut le confronter au code avant de refuser
+quoi que ce soit.
+
+**(1) `IMPLEMENTED_GROUPS` ne gouvernait pas IKE.** Le BRD demandait de
+refuser tout groupe Diffie-Hellman hors de cette liste. Or elle
+appartient à l'échange de clés de TLS, qu'IKE n'appelle jamais : le
+moteur NÉGOCIAIT un groupe, l'APPARIAIT entre les deux pairs (un
+désaccord fait vraiment échouer le tunnel) et l'AFFICHAIT — sans le
+CALCULER pour aucun groupe, le matériel de clé venant de la seule PSK à
+travers un vrai PRF+ IKEv2. Appliquer le refus aurait rejeté `dhgrp 14`,
+le groupe du laboratoire L8 de ce même document, sur un motif inexact.
+**Le calcul est devenu réel** plutôt que le refus élargi : les nombres
+premiers des groupes 1, 2, 5, 14, 15 et 16 sont EXTRAITS du texte des
+RFC 2409 et 3526 — pas recopiés de mémoire — puis vérifiés (longueur en
+bits, encadrement par 64 bits à un, `p mod 24 == 23`, primalité). Les
+messages IKE portent une charge KEi/KEr (RFC 7296 §1.2). Mesure : le
+secret est identique des deux côtés, DIFFÉRENT pour un tiers qui a tout
+écouté, différent à chaque échange, et un groupe de 2048 bits coûte
+5 ms.
+
+**(2) 3DES n'était pas irrécupérable.** Le BRD le refusait faute de
+`desCbcDecrypt` — exact — mais `desDecryptBlock` existait déjà, donc le
+mode CBC était à quelques lignes. Il est écrit, le triple DES EDE avec,
+et **ESP les APPLIQUE** : jusque-là un SA annoncé en `3des-cbc`
+chiffrait en AES, ce qui est exactement le défaut « une vue affirme ce
+que rien ne fait ». Le vecteur FIPS 81 est reproduit et 3DES à trois
+clés identiques se réduit bien à DES.
+
+**Le moteur IKE est celui du dépôt, pas un second.** Il était lié à
+`Router` par un simple alias de type, et n'utilisait de lui que SIX
+membres. `IpsecHost` nomme ce port étroit ; `Router` le satisfait sans
+une ligne de changement, et `Firewall` l'implémente. Écrire un second
+moteur aurait donné deux réponses possibles à « ce tunnel est-il
+monté ? ».
+
+**B57 — une interface de tunnel ne pouvait être ni routée ni
+référencée.** C'est le point pédagogique du chapitre (« une fois le
+tunnel monté, il n'y a plus de VPN — il y a une interface, une route et
+une politique ») et il échouait en silence : le résolveur de références
+n'énumérait que les objets de `config system interface`, donc
+`set device "vers_site_b"` répondait « entry not found in datasource ».
+La sonde à l'aveugle l'a attrapé au premier tir.
+
+**Trouvé et corrigé en passant, hors phase** : un cas de
+`fortios-grammar` encodait une prémisse devenue fausse. Le correctif CLI
+d'un autre agent fait désormais entrer l'ATTRIBUT dans la résolution
+d'une abréviation — `se srcaddr` reste ambigu entre `set` et `select`,
+`se action` ne l'est plus puisque seul `set` porte `action`. C'est un
+progrès ; le test le dit maintenant dans les deux sens.
+
+**Quatre extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
+`commit/objectCommits.ts`, `FirewallAgents.ts`, `l3/FirewallEgress.ts`,
+`logging/emitFirewallEvent.ts`.
+
+---
+
 ## Périmètre pris — FortiOS phase 8 (VPN)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.

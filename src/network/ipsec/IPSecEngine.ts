@@ -4800,6 +4800,18 @@ export class IPSecEngine implements IProtocolEngine {
     return removed;
   }
 
+  getISAKMPPolicies(): readonly ISAKMPPolicy[] {
+    return [...this.isakmpPolicies.values()];
+  }
+
+  getTransformSets(): readonly TransformSet[] {
+    return [...this.transformSets.values()];
+  }
+
+  getIPSecSAs(peerIP: string): readonly IPSec_SA[] {
+    return this.ipsecSADB.get(peerIP) ?? [];
+  }
+
   clearAllSAs(): { ikeSAs: number; ikev2SAs: number; ipsecSAs: number } {
     return {
       ikeSAs: this.clearISAKMPSAs(),

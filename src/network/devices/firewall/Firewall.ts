@@ -14,7 +14,9 @@ import {
   type ICMPPacket,
   type IPv4Packet,
 } from '../../core/types';
-import { IP_PROTO_ICMP } from '../../core/types';
+import {
+  IP_PROTO_ICMP, IP_PROTO_UDP, UDP_PORT_IKE, createIPv4Packet, type UDPPacket,
+} from '../../core/types';
 import { tryIpToUint32 } from '../../core/ip';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
 import { RouteTable } from './l3/RouteTable';
@@ -43,7 +45,13 @@ import {
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { logFactsOf } from './logging/logFacts';
-import { TcpStack } from '../../tcp/TcpStack';
+import { emitFirewallEvent } from './logging/emitFirewallEvent';
+import {
+  arpFrame, buildEgressFrame, icmpEchoReply,
+  type BridgedFrame, type EgressDeps,
+} from './l3/FirewallEgress';
+import type { TcpStack } from '../../tcp/TcpStack';
+import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import {
   AuthPortal, buildAuthPortal, AUTH_PORTAL_PORT, AUTH_PORTAL_HTTPS_PORT,
@@ -53,10 +61,14 @@ import {
   applyAdminAccount, adminTrustsSource, authenticateAdmin, ldapBind,
   type AdminAccountDraft, type LdapBindTarget,
 } from './identity/AdminAccounts';
-import { RadiusClientAgent } from '../../radius/RadiusClientAgent';
-import { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
+import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
+import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
+import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
+import type { IPSecEngine } from '../../ipsec/IPSecEngine';
+import { bringUpTunnel, programIpsecEngine, udpDatagram } from './vpn/IpsecProgramming';
+import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
@@ -89,10 +101,6 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
-export interface BridgedFrame {
-  readonly srcMAC: MACAddress;
-  readonly dstMAC: MACAddress;
-}
 
 export interface ProxyArpEntry {
   readonly from: string;
@@ -120,6 +128,8 @@ export class Firewall extends Equipment {
   private readonly access = new AccessMatrix();
   protected readonly tcp: TcpStack;
   private readonly portal: AuthPortal;
+  private readonly ipsec: IPSecEngine;
+  private readonly hostsTable = new RouterHostsTable();
   private readonly radius: RadiusClientAgent;
   private readonly tacacs: TacacsClientAgent;
   private readonly adminSecrets = new Map<string, string>();
@@ -153,6 +163,11 @@ export class Firewall extends Equipment {
       now,
       deviceId: this.id,
       bus: () => this.getBus(),
+      onTunnelInterface: (vdom, tunnel) => {
+        this.interfaces.configure(tunnel, { up: true });
+        this.assignInterfaceToVdom(tunnel, vdom);
+      },
+      onTunnelRemoved: (_vdom, tunnel) => { this.interfaces.remove(tunnel); },
       policyKeyedBy: profile.policyKeyedBy,
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
@@ -199,24 +214,24 @@ export class Firewall extends Equipment {
 
     for (const stage of createCoreStages(this.services)) this.registry.register(stage);
 
-    const netHost = {
-      id: this.id, name: this.name,
-      getHostname: () => this.getHostname(),
-      getPort: (n: string) => this.getPort(n),
-      getPorts: () => this.getPorts(),
-      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
-      resolveMac: (ip: string) => this.arp.resolved(ip) ?? null,
-      sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
-        this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
-    };
-    this.tcp = new TcpStack(netHost, () => this.getBus());
-    this.tcp.start();
-
-    this.radius = new RadiusClientAgent(netHost, () => this.getBus());
-    this.radius.start();
-    this.tacacs = new TacacsClientAgent(
-      netHost, () => this.getBus(), () => this.tcp);
-    this.tacacs.start();
+    const agents = buildFirewallAgents({
+      id: this.id,
+      name: this.name,
+      hostname: () => this.getHostname(),
+      hostsTable: () => this.hostsTable,
+      bus: () => this.getBus(),
+      port: (n) => this.getPort(n),
+      ports: () => this.getPorts(),
+      send: (p, f) => { this.sendFrame(p, f); },
+      resolveMac: (ip) => this.arp.resolved(ip) ?? null,
+      sendArpAware: (p, packet, nextHop) =>
+        this.sendIpv4FrameArpAware(p, packet, nextHop),
+      sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
+    });
+    this.tcp = agents.tcp;
+    this.ipsec = agents.ipsec;
+    this.radius = agents.radius;
+    this.tacacs = agents.tacacs;
 
     this.portal = buildAuthPortal({
       tcp: this.tcp,
@@ -248,9 +263,23 @@ export class Firewall extends Equipment {
 
   getAuthPortal(): AuthPortal { return this.portal; }
 
-  getIdentityTable(vdom?: string): IdentityTable { return this.getVdom(vdom).identities; }
+  getIpsecEngine(): IPSecEngine { return this.ipsec; }
 
-  getUserDirectory(vdom?: string): UserDirectory { return this.getVdom(vdom).users; }
+  syncIpsecTunnels(v?: string) { programIpsecEngine(this.ipsec, this.getVdom(v).tunnels); }
+
+  bringUpIpsecTunnel(name: string, v?: string): boolean {
+    return bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);
+  }
+
+  private sendUdpToPeer(destIp: string, port: number, payload: unknown): boolean {
+    const route = this.getVdom().routes.resolveNextHop(destIp);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destIp);
+    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+    if (iface === undefined || source === undefined) return false;
+
+    this.forward(iface, udpDatagram(source, destIp, port, payload), route?.nextHop);
+    return true;
+  }
 
   sendIpv4FrameArpAware(
     iface: string, packet: IPv4Packet, nextHop: IPAddress,
@@ -345,15 +374,12 @@ export class Firewall extends Equipment {
   }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
-    const message = this.profile.syslogCatalog?.[event];
-    if (!message) return;
-
-    const text = firewallLogText(event, facts);
-    this.logging.append(
-      message.severity, this.profile.osName, text, false, message.id);
-    this.syslog.sendImmediate(
-      syslogSeverityOf(message.severity), this.profile.osName,
-      `%${this.profile.osName.toUpperCase()}-${message.id}: ${text}`);
+    emitFirewallEvent({
+      catalog: this.profile.syslogCatalog,
+      osName: this.profile.osName,
+      logging: this.logging,
+      syslog: this.syslog,
+    }, event, facts);
   }
 
   clearTranslations(): number {
@@ -505,6 +531,9 @@ export class Firewall extends Equipment {
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
   getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
+  getIdentityTable(vdom?: string): IdentityTable { return this.getVdom(vdom).identities; }
+  getUserDirectory(vdom?: string): UserDirectory { return this.getVdom(vdom).users; }
+  getTunnelTable(vdom?: string): IpsecTunnelTable { return this.getVdom(vdom).tunnels; }
   getProfile(): FirewallProfile { return this.profile; }
 
   setCentralNat(enabled: boolean, vdom?: string): void {
@@ -626,11 +655,7 @@ export class Firewall extends Equipment {
 
   private handleArpFrame(portName: string, packet: ARPPacket): void {
     if (!packet || packet.type !== 'arp') return;
-
-    if (packet.operation === 'reply') {
-      this.arp.handleReply(packet, portName);
-      return;
-    }
+    if (packet.operation === 'reply') { this.arp.handleReply(packet, portName); return; }
 
     const answer = this.arp.handleRequest(packet, portName);
     if (answer) this.emitArp(answer, portName);
@@ -716,69 +741,41 @@ export class Firewall extends Equipment {
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
-    if (packet.protocol !== IP_PROTO_ICMP) return;
     if (!this.allowsAccess(portName, 'ping')) return;
 
-    const icmp = packet.payload as ICMPPacket | undefined;
-    if (icmp?.type !== 'icmp' || icmp.icmpType !== 'echo-request') return;
-
-    const reply: IPv4Packet = {
-      ...packet,
-      ttl: 64,
-      headerChecksum: 0,
-      sourceIP: packet.destinationIP,
-      destinationIP: packet.sourceIP,
-      payload: { ...icmp, icmpType: 'echo-reply' },
-    };
-    reply.headerChecksum = computeIPv4Checksum(reply);
-    this.forward(portName, reply);
+    const reply = icmpEchoReply(packet);
+    if (reply) this.forward(portName, reply);
   }
 
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
-    const destination = packet.destinationIP.toString();
-    const vdom = this.vdoms.contextOfInterface(egressPort);
-    const resolved = vdom.routes.resolveNextHop(destination);
-    const nextHop = gateway ?? resolved?.nextHop ?? destination;
+    const frame = buildEgressFrame(this.egressDeps(), egressPort, packet, gateway, bridged);
+    if (!frame) return;
 
-    const mac = bridged?.dstMAC ?? this.resolveNextHopMac(nextHop, egressPort);
-    if (!mac) return;
-
-    const frame: EthernetFrame = {
-      srcMAC: bridged?.srcMAC ?? this.portMac(egressPort),
-      dstMAC: mac,
-      etherType: ETHERTYPE_IPV4,
-      payload: packet,
-    };
     this.capture.record({
       at: this.services.now(), iface: egressPort, direction: 'out', frame,
     });
     this.sendFrame(egressPort, frame);
   }
 
-  private resolveNextHopMac(nextHop: string, egressPort: string): MACAddress | undefined {
-    const known = this.arp.resolved(nextHop);
-    if (known) return known;
-
-    const request = this.arp.buildRequest(nextHop, egressPort);
-    if (!request) return undefined;
-
-    this.emitArp(request, egressPort);
-    return this.arp.resolved(nextHop);
-  }
-
   private emitArp(packet: ARPPacket, iface: string): void {
-    this.sendFrame(iface, {
-      srcMAC: this.portMac(iface),
-      dstMAC: packet.operation === 'request' ? MACAddress.broadcast() : packet.targetMAC,
-      etherType: ETHERTYPE_ARP,
-      payload: packet,
-    });
+    this.sendFrame(iface, arpFrame(this.portMac(iface), packet));
   }
 
   private portMac(iface: string) {
     return this.getPort(iface)!.getMAC();
+  }
+
+  private egressDeps(): EgressDeps {
+    return {
+      nextHopFor: (iface, to) =>
+        this.vdoms.contextOfInterface(iface).routes.resolveNextHop(to)?.nextHop,
+      resolvedMac: (ip) => this.arp.resolved(ip),
+      buildRequest: (ip, iface) => this.arp.buildRequest(ip, iface),
+      emitArp: (request, iface) => this.emitArp(request, iface),
+      portMac: (iface) => this.portMac(iface),
+    };
   }
 }
 
