@@ -597,6 +597,17 @@ export function buildIdentityConfigCommands(
     return '';
   });
 
+  // Sa negation vivait dans le fourre-tout glouton `no service`, qui
+  // rangeait n'importe quel mot ; il a disparu avec lui, et la commande
+  // qui l'ecrivait dans la configuration s'est tue. Elle est declaree ou
+  // sa forme positive l'est, pour que les deux lisent le meme magasin.
+  trie.register('no service password-encryption', 'Disable password encryption', () => {
+    sec().servicePasswordEncryption = false;
+    (ctx.r() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void })
+      ._setServiceFlag?.('password-encryption', false);
+    return '';
+  });
+
   trie.registerGreedy('security passwords min-length', 'Min password length', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) sec().passwords.minLength = n;

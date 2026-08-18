@@ -208,6 +208,42 @@ const HELP_SYSTEM_TEXT = [
   '   (e.g. \'show pr?\'.)',
 ].join('\n');
 
+
+/**
+ * Les services qu'IOS connait, moins les quatre que cette machine
+ * honore par une declaration a elle.
+ *
+ * Liste de la Configuration Fundamentals Command Reference, recoupee
+ * avec le module `cisco.ios.ios_service` d'Ansible — deux sources qui
+ * decrivent la meme commande reelle.
+ */
+const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
+  ['compress-config', 'Compress the configuration file'],
+  ['config', 'TFTP load config files'],
+  ['counters', 'Control aging of interface counters'],
+  ['disable-ip-fast-frag', 'Disable IP particle-based fast fragmentation'],
+  ['exec-callback', 'Enable EXEC callback'],
+  ['exec-wait', 'Delay EXEC startup on noisy lines'],
+  ['finger', 'Allow responses to finger requests'],
+  ['hide-telnet-addresses', 'Hide destination addresses in telnet command'],
+  ['internal', 'Enable/disable internal commands'],
+  ['linenumber', 'Enable line number banner for each EXEC'],
+  ['log', 'Configure logging for a service'],
+  ['nagle', 'Enable Nagle\'s congestion control algorithm'],
+  ['old-slip-prompts', 'Allow old scripts to operate with slip/ppp'],
+  ['pad', 'Enable PAD commands'],
+  ['password-recovery', 'Password recovery'],
+  ['prompt', 'Enable mode specific prompt'],
+  ['pt-vty-logging', 'Log significant VTY-Async events'],
+  ['slave-log', 'Enable log capability of slave IPs'],
+  ['tcp-keepalives-in', 'Generate keepalives on idle incoming network connections'],
+  ['tcp-keepalives-out', 'Generate keepalives on idle outgoing network connections'],
+  ['tcp-small-servers', 'Enable small TCP servers (e.g., ECHO)'],
+  ['telnet-zeroidle', 'Set TCP window 0 when connection is idle'],
+  ['udp-small-servers', 'Enable small UDP servers (e.g., ECHO)'],
+  ['unsupported-transceiver', 'Enable support for third-party transceivers'],
+];
+
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   // ─── State ───────────────────────────────────────────────────────
   protected mode: string = 'user';
@@ -3986,8 +4022,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...this.loginSpecs(),
       ...this.clearSpecs(),
       ...this.writeEraseSpecs(),
+      ...this.serviceSpecs(),
       ...this.showSocleSpecs(),
     ];
+  }
+
+  /**
+   * `service <nom>` — la liste d'IOS, pas n'importe quel mot.
+   *
+   * Le gestionnaire etait glouton et rangeait `args.join(' ')` : donc
+   * `service zorglub` etait accepte et RENDU dans la configuration, que
+   * l'import d'une topologie rejoue ; et `service nagle machin` rangeait
+   * un service dont le nom faisait deux mots. Les quatre services que
+   * cette machine honore vraiment — `dhcp`, `password-encryption`,
+   * `sequence-numbers`, `timestamps` — gardent leur propre declaration
+   * ailleurs et ne figurent pas ici.
+   */
+  protected serviceSpecs(): CommandSpec[] {
+    const drapeau = (nom: string, on: boolean): string => {
+      (this.d() as unknown as { _setServiceFlag?: (n: string, e: boolean) => void })
+        ._setServiceFlag?.(nom, on);
+      return '';
+    };
+
+    return [{
+      id: 'service',
+      path: ['service', {
+        name: 'nom', type: 'ENUM', description: 'Service to enable',
+        values: SERVICES_IOS.map(([keyword, description]) => ({ keyword, description })),
+      }],
+      description: 'Modify use of network based services',
+      undoDescription: 'Disable a network based service',
+      modes: ['config'], minPrivilege: 15,
+      run: (_session, args) => drapeau(args.nom, true),
+      undo: (_session, args) => drapeau(args.nom, false),
+    }];
   }
 
   protected writeEraseSpecs(): CommandSpec[] {
@@ -4332,9 +4401,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // mieux renseigne — il connait le type, le trie ne l'avait pas.
       const brutes = socleComplete(table, ligne, this.socleSession(table), trigger).suggestions
         .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument)
-        .map(s => ({ keyword: s.value, description: s.description }));
+        .map(s => ({
+          keyword: s.value, description: s.description, isArgument: s.isArgument,
+        }));
 
-      return negation === null ? brutes : this.suggestionsNegatives(table, ligne, brutes);
+      return (negation === null ? brutes : this.suggestionsNegatives(table, ligne, brutes))
+        .map(({ keyword, description }) => ({ keyword, description }));
     } finally {
       this.deviceRef = precedent;
     }
@@ -4360,13 +4432,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   private suggestionsNegatives(
     table: CommandTable, ligne: string,
-    brutes: Array<{ keyword: string; description: string }>,
-  ): Array<{ keyword: string; description: string }> {
+    brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
+  ): Array<{ keyword: string; description: string; isArgument: boolean }> {
     const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
     if (amont === null || !CiscoShellBase.negationSous(table, amont)) return [];
 
     return brutes.flatMap(suggestion => {
-      if (!/^[A-Za-z]/.test(suggestion.keyword)) return [suggestion];
+      // Une VALEUR d'argument n'a pas de chemin a elle : c'est la
+      // commande qui la porte qui sait se defaire, et elle vient d'etre
+      // jugee. `no service ?` doit rendre les vingt-quatre services.
+      if (suggestion.isArgument || !/^[A-Za-z]/.test(suggestion.keyword)) return [suggestion];
 
       const chemin = [...amont, suggestion.keyword.toLowerCase()];
       const spec = CiscoShellBase.negationSous(table, chemin);
@@ -4377,6 +4452,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         keyword: suggestion.keyword,
         description: nomme && spec.undoDescription
           ? spec.undoDescription : suggestion.description,
+        isArgument: false,
       }];
     });
   }
@@ -6826,18 +6902,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // `service timestamps` has its own registration above and the trie
     // routes to the more specific one, so the second parser this handler
     // used to carry never ran — it could only ever contradict the first.
-    this.configTrie.registerGreedy('service', 'Service configuration', (args) => {
-      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
-      const name = args.join(' ');
-      if (name) dev._setServiceFlag?.(name, true);
-      return '';
-    });
-    this.configTrie.registerGreedy('no service', 'Disable a service', (args) => {
-      const dev = this.d() as unknown as { _setServiceFlag?: (name: string, on: boolean) => void };
-      const name = args.join(' ');
-      if (name) dev._setServiceFlag?.(name, false);
-      return '';
-    });
     this.configTrie.registerGreedy('no username', 'Remove a local user', (args) => {
       const dev = this.d() as unknown as { _removeLocalUser?: (n: string) => void };
       if (args[0] && typeof dev._removeLocalUser === 'function') dev._removeLocalUser(args[0]);
