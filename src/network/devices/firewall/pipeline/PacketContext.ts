@@ -29,6 +29,7 @@ export type VerdictReason =
   | 'utm-category'
   | 'utm-dns'
   | 'utm-file-type'
+  | 'auth-required'
   | 'application-shift-deny'
   | 'zone-mismatch'
   | 'interface-down'
@@ -81,6 +82,7 @@ export interface PacketContext {
 
   utmVerdict?: UtmVerdict;
   inspectedSni?: string;
+  authenticatedUser?: string;
 
   identifiedApplication?: string;
   identifiedUser?: string;

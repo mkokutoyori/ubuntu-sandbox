@@ -5,6 +5,7 @@ import { parseCommand } from '../../../../../cli/CommandParser';
 import { complete, type CompletionTrigger, type Suggestion } from '../../../../../cli/CompletionEngine';
 import { FortiMessages } from './FortiMessages';
 import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
+import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import type { FortiConfigTree } from './runtime/FortiConfigTree';
 import type { FortiNavigator } from './runtime/FortiNavigator';
 import type { FortiObject } from './runtime/FortiObject';
@@ -56,6 +57,8 @@ export interface SocleDeps {
   readonly diagnose: (rest: readonly string[]) => string;
   readonly runExecute: (rest: readonly string[]) => string;
   readonly enterGlobal: () => string;
+  readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
+  readonly principal?: () => string;
 }
 
 export interface FortiOutcome {
@@ -121,14 +124,18 @@ export class FortiSocle {
   }
 
   private contextKey(): string {
+    const principal = this.deps.principal ? this.deps.principal() : '';
     const object = this.deps.nav.currentObject();
     if (object) {
       const shape = object.availableAttributes().map(a => a.name).join(',');
-      return `object:${object.spec.path.join(' ')}:${shape}:${this.referenceStamp(object)}`;
+      return `object:${principal}:${object.spec.path.join(' ')}:${shape}`
+        + `:${this.referenceStamp(object)}`;
     }
     const table = this.deps.nav.currentTable();
-    if (table) return `table:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
-    return `root:${this.deps.tree.specPaths().length}`;
+    if (table) {
+      return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
+    }
+    return `root:${principal}:${this.deps.tree.specPaths().length}`;
   }
 
   private referenceStamp(object: FortiObject): string {
@@ -155,12 +162,22 @@ export class FortiSocle {
     for (const path of this.deps.tree.specPaths()) {
       const spec = this.deps.tree.spec(path);
       if (!spec || spec.scopeOnly) continue;
+
+      const verdict = this.verdict(spec, 'write');
+      if (verdict === 'absent') continue;
+
       out.push(this.plain(
         `config ${path.join(' ')}`, ['config', ...path], spec.help,
-        () => this.deps.nav.descend(path),
+        () => verdict === 'read-only'
+          ? FortiMessages.noPermission(path.join(' '))
+          : this.deps.nav.descend(path),
       ));
     }
     return out;
+  }
+
+  private verdict(spec: FortiTableSpec, intent: AccessIntent): AccessVerdict {
+    return this.deps.authorize ? this.deps.authorize(spec, intent) : 'run';
   }
 
   private rootSpecs(): CommandSpec[] {
@@ -224,6 +241,18 @@ export class FortiSocle {
       this.withArgument('diagnose firewall iprope show',
         ['diagnose', 'firewall', 'iprope', 'show', rest('rest', '<group> <index>')],
         'Show one compiled policy.', run(['firewall', 'iprope', 'show'])),
+      this.plain('diagnose firewall auth list',
+        ['diagnose', 'firewall', 'auth', 'list'],
+        'List the authenticated users.',
+        () => this.deps.diagnose(['firewall', 'auth', 'list'])),
+      this.plain('diagnose firewall auth clear',
+        ['diagnose', 'firewall', 'auth', 'clear'],
+        'De-authenticate every user.',
+        () => this.deps.diagnose(['firewall', 'auth', 'clear'])),
+      this.withArgument('diagnose firewall auth filter',
+        ['diagnose', 'firewall', 'auth', 'filter', rest('rest', 'Filter criterion.')],
+        'Restrict what the authenticated-user list shows.',
+        run(['firewall', 'auth', 'filter'])),
       this.withArgument('diagnose sniffer packet',
         ['diagnose', 'sniffer', 'packet', rest('rest', '<interface> <filter> [verbose] [count]')],
         'Capture packets on an interface.', run(['sniffer', 'packet'])),
@@ -288,8 +317,10 @@ export class FortiSocle {
       this.plain('abort', ['abort'], 'Exit without saving.', () => this.deps.nav.abort()),
     ];
 
+    const writable = this.verdict(object.spec, 'write') === 'run';
     for (const attribute of object.availableAttributes()) {
       if (attribute.readOnly) continue;
+      if (!writable) continue;
       out.push(...this.attributeSpecs(attribute));
     }
 

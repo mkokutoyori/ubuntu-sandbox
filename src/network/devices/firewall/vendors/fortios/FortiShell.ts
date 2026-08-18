@@ -6,7 +6,10 @@ import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
 import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
-import type { FortiCommitContext, FortiCommitDevice } from './schema/types';
+import type {
+  FortiCommitContext, FortiCommitDevice, FortiTableSpec,
+} from './schema/types';
+import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
 import { FortiConfigTree } from './runtime/FortiConfigTree';
 import { FortiNavigator, unquote } from './runtime/FortiNavigator';
 import { FortiValidator } from './runtime/FortiValidator';
@@ -16,6 +19,7 @@ import { makeSchedule } from '../../model/ScheduleObject';
 import { makeIpPool, type IpPoolType } from '../../nat/IpPool';
 import { vipAddress } from '../../model/AddressObject';
 import { proxyOwnerKey, type Firewall } from '../../Firewall';
+import { identityCommitHandlers } from './commit/identityCommits';
 import type { PolicyRoutePrefix } from '../../l3/PolicyRouteTable';
 import type {
   FortiCategoryFilterPatch, FortiCentralSnatPatch, FortiFilterTablePatch,
@@ -45,6 +49,7 @@ export class FortiShell {
   private readonly socle: FortiSocle;
   private readonly diagnostics = new FortiDiagnostics();
   private vdom = 'root';
+  private adminName: string | null = null;
   private globalScope = false;
 
   constructor(private readonly fw: FortiGate) {
@@ -68,6 +73,8 @@ export class FortiShell {
       diagnose: (rest) => this.diagnose(rest),
       runExecute: (rest) => this.executeVerb(rest),
       enterGlobal: () => this.enterGlobal(),
+      authorize: (spec, intent) => this.authorizeSpec(spec, intent),
+      principal: () => this.adminName ?? '',
     });
     this.fw.setTrafficLogger({
       onSessionOpened: (session, rule) => {
@@ -134,6 +141,21 @@ export class FortiShell {
     const text = outcome.handled ? outcome.output : this.refusal(line);
     this.syncActiveVdom();
     return text;
+  }
+
+  setAdminIdentity(name: string | null): void {
+    this.adminName = name;
+  }
+
+  getAdminIdentity(): string | null { return this.adminName; }
+
+  private authorizeSpec(spec: FortiTableSpec, intent: AccessIntent): AccessVerdict {
+    if (this.adminName === null) return 'run';
+
+    const admin = this.fw.getAccessMatrix().getAdmin(this.adminName);
+    if (!admin) return 'absent';
+
+    return this.fw.getAccessMatrix().authorize(admin.profile, spec.accessGroup, intent);
   }
 
   private enterGlobal(): string {
@@ -381,6 +403,7 @@ export class FortiShell {
       removeProtocolOptions(name) {
         fw.getUtmProfiles().removeProtocolOptions(name);
       },
+      ...identityCommitHandlers(fw),
       applyUrlFilterTable(table) {
         fw.getUtmProfiles().setUrlFilterTable(filterTable(table));
       },

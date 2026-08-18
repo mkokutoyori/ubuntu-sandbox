@@ -74,6 +74,14 @@ export const FortiMessages = {
     );
   },
 
+  noPermission(path: string): string {
+    return fail(
+      FORTI_COMMAND_FAIL,
+      `you do not have permission to change \`${path}\`; this access profile `
+      + 'grants read access only to that group of settings.',
+    );
+  },
+
   unimplementedValue(attribute: string, value: string, reason: string): string {
     return fail(
       FORTI_COMMAND_FAIL,

@@ -2,9 +2,9 @@ import type { ArgumentSpec, EnumValue } from '../../../../../../cli/ArgumentType
 import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
 
-export type FortiAccessGroup =
-  | 'sysgrp' | 'netgrp' | 'fwgrp' | 'utmgrp' | 'vpngrp'
-  | 'loggrp' | 'authgrp' | 'secfabgrp' | 'ftviewgrp';
+import type { AccessGroup } from '../../../authz/AccessMatrix';
+
+export type FortiAccessGroup = AccessGroup;
 
 export type FortiScope = 'global' | 'vdom' | 'both';
 
@@ -195,6 +195,18 @@ export interface FortiCommitDevice {
   removeSslSshProfile(name: string): void;
   applyProtocolOptions(options: FortiProtocolOptionsPatch): void;
   removeProtocolOptions(name: string): void;
+  applyLocalUser(user: FortiLocalUserPatch): void;
+  removeLocalUser(name: string): void;
+  applyUserGroup(group: FortiUserGroupPatch): void;
+  removeUserGroup(name: string): void;
+  applyRemoteAuthServer(server: FortiRemoteServerPatch): void;
+  applyLdapServer(server: FortiLdapServerPatch): void;
+  removeRemoteAuthServer(name: string): void;
+  applyAuthSetting(setting: FortiAuthSettingPatch): void;
+  applyAccessProfile(profile: FortiAccessProfilePatch): void;
+  removeAccessProfile(name: string): void;
+  applyAdminAccount(admin: FortiAdminPatch): void;
+  removeAdminAccount(name: string): void;
   applyUrlFilterTable(table: FortiFilterTablePatch): void;
   removeUrlFilterTable(id: string): void;
   applyDomainFilterTable(table: FortiFilterTablePatch): void;
@@ -221,6 +233,77 @@ export interface FortiCategoryFilterPatch {
   readonly id: string;
   readonly category: number;
   readonly action: string;
+}
+
+export interface FortiLocalUserPatch {
+  readonly name: string;
+  readonly type: string;
+  readonly password?: string;
+  readonly server?: string;
+  readonly enabled: boolean;
+  readonly emailTo?: string;
+}
+
+export interface FortiGroupMatchPatch {
+  readonly id: string;
+  readonly serverName: string;
+  readonly groupName: string;
+}
+
+export interface FortiUserGroupPatch {
+  readonly name: string;
+  readonly groupType: string;
+  readonly members: readonly string[];
+  readonly matches: readonly FortiGroupMatchPatch[];
+  readonly authTimeoutMin: number;
+}
+
+export interface FortiRemoteServerPatch {
+  readonly name: string;
+  readonly kind: 'radius' | 'tacacs+' | 'ldap';
+  readonly address: string;
+  readonly secret: string;
+  readonly port: number;
+  readonly authType?: string;
+}
+
+export interface FortiLdapServerPatch {
+  readonly name: string;
+  readonly address: string;
+  readonly port: number;
+  readonly baseDn: string;
+  readonly cnid: string;
+  readonly bindType: string;
+  readonly username?: string;
+  readonly password?: string;
+}
+
+export interface FortiAuthSettingPatch {
+  readonly timeoutMinutes: number;
+  readonly timeoutType: string;
+  readonly httpPort: number;
+  readonly httpsPort: number;
+}
+
+export interface FortiAccessProfilePatch {
+  readonly name: string;
+  readonly rights: Readonly<Record<string, string>>;
+  readonly comments?: string;
+}
+
+export interface FortiTrustHostPatch {
+  readonly index: number;
+  readonly address: string;
+  readonly mask: string;
+}
+
+export interface FortiAdminPatch {
+  readonly name: string;
+  readonly password?: string;
+  readonly profile: string;
+  readonly vdoms: readonly string[];
+  readonly trustHosts: readonly FortiTrustHostPatch[];
+  readonly comments?: string;
 }
 
 export interface FortiFilterTablePatch {

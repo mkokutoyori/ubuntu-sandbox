@@ -13,6 +13,7 @@ export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
   'route-lookup',
   'egress-zone',
   'policy-lookup',
+  'auth-check',
   'utm-inspect',
   'nat-source',
   'session-install',
@@ -27,6 +28,7 @@ export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
   'mac-lookup',
   'egress-zone',
   'policy-lookup',
+  'auth-check',
   'utm-inspect',
   'session-install',
 ]);

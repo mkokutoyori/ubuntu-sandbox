@@ -1913,6 +1913,93 @@ les plus lus de tous.
 
 ---
 
+### E37 — FortiOS phase 7 : le pare-feu apprend qui parle
+
+`identity/{IdentityTable,UserDirectory,AdminAccounts}.ts`,
+`authz/AccessMatrix.ts`, `auth/AuthPortal.ts` (socle, neufs),
+`schema/{user,admin}.ts` (neufs) — **43 cas** neufs, plus 8 specs
+Playwright. **28 des 43 tombent avant correctif.**
+
+**Le pare-feu n'avait aucune pile TCP, et c'est la brique dont
+l'absence avait fait refuser `deep-inspection` en phase 6.** Il en a une
+maintenant, et l'adaptateur n'est pas écrit : c'est celui de `Router`,
+qui prouve depuis longtemps qu'un équipement non-hôte peut en porter
+une. Le portail d'authentification est un vrai `Http1ServerSession`
+dessus — pas un second moteur HTTP.
+
+**B56 — le mandataire ne faisait pas partie de la clé de cache.**
+`FortiSocle` met en cache la table de commandes par contexte, et la clé
+composait le chemin, les attributs disponibles et l'empreinte des
+références — mais pas QUI demande. Un compte `readonly` héritait donc
+de l'arbre du compte précédent, et la matrice de droits n'avait aucun
+effet observable. Deux cas de la sonde l'ont attrapé ; la correction est
+d'un mot dans la clé, mais sans elle tout le mécanisme d'autorisation
+était décoratif.
+
+**La matrice est une MATRICE**, et c'est le troisième mécanisme
+d'autorisation du dépôt après les niveaux d'IOS (ordre total) et les
+vues d'analyseur (remplacement d'arbre). Un groupe `none` rend le chemin
+ABSENT, un groupe `read` laisse lire et refuse d'écrire — vérifié sur le
+produit, pas seulement sur l'objet.
+
+**LDAP N'ÉTAIT PAS ABSENT, et le BRD se trompait.** Le tableau §23.4
+portait « ❌ Aucun client ni serveur LDAP » et concluait à un refus
+famille 2 ; j'avais écrit ce refus. Or le chantier Active Directory
+avait déjà livré `LdapClient`, `LdapServer`, le codec BER, `LdapDN`,
+`LdapFilter`, StartTLS et le bind GSSAPI — huit fichiers de test.
+`config user ldap` est donc RÉEL : il compose le DN depuis `cnid` et
+`dn`, ouvre une vraie connexion TCP/389 par `dialLdap` et fait un vrai
+bind. **La leçon dépasse LDAP** : une case « ❌ » d'un tableau de
+faisabilité vieillit, et il faut la vérifier dans le code avant de
+refuser — un refus injustifié coûte plus cher qu'une absence, parce
+qu'il ferme la porte ET la documente comme fermée.
+
+**Rien n'est réécrit.** Les comptes passent par
+`NetworkOsCredentialStore` (verrouillage compris), RADIUS par
+`RadiusClientAgent`, TACACS+ par `TacacsClientAgent`, LDAP par
+`LdapClient`, le portail par `Http1ServerSession`, et `trusthost`
+compare l'adresse par `addressObjectMatches` — le même prédicat que les
+objets d'adresse du pare-feu, pour que les deux ne puissent pas rendre
+deux verdicts sur la même adresse. Les deux adaptateurs d'hôte réseau
+que j'avais écrits (un pour TCP, un pour les agents) étaient
+identiques : il n'en reste qu'un.
+
+**L'étage `auth-check` refuse tant que l'adresse n'est pas associée**,
+et l'association EXPIRE — une identité qui ne vieillit pas est une porte
+ouverte pour toujours. `authtimeout` du groupe l'emporte sur le réglage
+global, comme sur un vrai FortiGate.
+
+**Trois extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
+`commit/identityCommits.ts`, `identity/AdminAccounts.ts`,
+`logging/logFacts.ts`. La réponse à un fichier trop gros reste
+d'extraire le calcul.
+
+---
+
+## Périmètre pris — FortiOS phase 7 (utilisateurs et authentification)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `identity/IdentityTable.ts` (neuf — le
+pendant de `SessionTable` pour les identités), `auth/AuthPortal.ts`
+(neuf, monté sur `Http1ServerSession` du dépôt), `authz/AccessMatrix.ts`
+(neuf), une pile TCP sur `Firewall` (adaptateur repris de `Router`),
+étage `auth-check` dans `pipeline/stages/coreStages.ts`.
+
+**Fichiers FortiOS pris** : `schema/user.ts` et `schema/admin.ts`
+(neufs), `schema/{firewallPolicy,index,types}.ts`, `FortiShell.ts`,
+`FortiSocle.ts`, `diag/*`.
+
+**Réutilisations imposées, à ne pas réécrire** :
+`NetworkOsCredentialStore` (comptes, verrouillage), `RadiusClientAgent`,
+`TacacsClientAgent`, `synthTcpPacket`/`VtyIncomingPolicy` (trusthost),
+`Http1ServerSession` (portail), `TcpStack` (adaptateur de `Router`).
+
+**Ce que la phase ne prend PAS** : LDAP, FSSO et SAML sont REFUSÉS
+famille 2 en nommant la brique absente, pas laissés ouverts.
+
+---
+
 ## Périmètre pris — FortiOS phase 6 (inspection et UTM)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.

@@ -32,16 +32,17 @@
 | **4** | Diagnostic et journaux | ✅ livrée (E34) |
 | **5** | VDOM et modes de déploiement | ✅ livrée (E35) |
 | **6** | Inspection et UTM | ✅ livrée (E36) |
-| 7 | Utilisateurs et authentification | ⏳ |
+| **7** | Utilisateurs et authentification | ✅ livrée (E37) |
 | 8 | VPN | ⏳ |
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 1008 cas verts sur 36 fichiers du module
-pare-feu ; 275 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+**Mesures au dernier commit** : 1051 cas verts sur 37 fichiers du module
+pare-feu ; 318 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
 système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
-VDOM + 36 d'UTM) ; 31 specs Playwright ; aucune erreur de typecheck dans
-le module ; lint propre. **Le badge « Limited simulation » est retiré.**
+VDOM + 36 d'UTM + 43 d'utilisateurs) ; 39 specs Playwright ; aucune
+erreur de typecheck dans le module ; lint propre. **Le badge « Limited
+simulation » est retiré.**
 
 ---
 
@@ -385,7 +386,47 @@ et qu'il ne faut donc pas « implémenter » sans fournir la brique :
 server` est aujourd'hui grammaire seule) : le socle DHCP du dépôt est
 `src/network/dhcp/DHCPServer.ts`. N'en écrivez pas un second.
 
-### 6.8 Après
+### 6.8 Phase 7 — utilisateurs et authentification — ✅ livrée
+
+Livrée : `IdentityTable` (le pendant de `SessionTable` pour les
+identités), `UserDirectory`, `AccessMatrix`, `AuthPortal`, une **pile
+TCP sur le pare-feu**, l'étage `auth-check`, `config user
+{local,group,radius,tacacs+,ldap,setting}`, `config system
+{admin,accprofile}` avec `trusthost`, et `diagnose firewall auth
+{list,clear,filter}`.
+
+**La pile TCP du pare-feu est neuve et vaut au-delà de cette phase** :
+c'est la brique dont l'absence avait fait refuser `deep-inspection` en
+phase 6. Elle ne suffit pas à elle seule pour la rouvrir (il faudrait
+aussi terminer ET ré-émettre une session TLS sous un certificat
+re-signé), mais elle en est le premier morceau.
+
+**Réutilisations — ne réécrivez rien de tout cela** :
+`NetworkOsCredentialStore` (comptes, verrouillage), `RadiusClientAgent`,
+`TacacsClientAgent`, **`LdapClient`/`dialLdap`** (chantier AD),
+`Http1ServerSession` (portail), `TcpStack` (adaptateur de `Router`),
+`addressObjectMatches` (comparaison `trusthost`).
+
+**Ce qui est REFUSÉ dans le produit**, en nommant la brique absente :
+FSSO (pas de contrôleur de domaine ni d'agent collecteur), SAML (pas de
+fournisseur d'identité), et la double authentification `fortitoken` /
+`email` / `sms` (pas de graine de jeton ni d'horloge partagée — un
+second facteur toujours accepté serait pire que pas de second facteur).
+
+**Ce qui reste de la phase 7, nommé plutôt que tu** :
+
+- le portail sert le formulaire et traite le POST, mais **rien
+  n'INTERCEPTE encore le premier flux HTTP pour y rediriger** : le
+  laboratoire s'authentifie en appelant le portail, pas en étant
+  détourné vers lui ;
+- `security-mode captive-portal` sur une interface (l'autre forme du
+  portail, par interface au lieu de par politique) n'a pas de schéma ;
+- l'authentification d'un compte administrateur à l'ouverture de session
+  n'est pas branchée sur une vraie connexion SSH au pare-feu — le
+  pare-feu n'a pas encore de serveur SSH ;
+- `two-factor` est refusé, donc `email-to` est stocké sans emploi.
+
+### 6.9 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -425,4 +466,5 @@ comparer, jamais le supposer).
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
 | 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |
 | 2026-08-17 | agent `mandeng` | Phase 5 livrée (E35). Décisions D22 à D27, §6.6 (ce qui reste de la phase 5). |
+| 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |

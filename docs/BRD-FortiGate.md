@@ -3846,16 +3846,20 @@ la **table d'association identité ↔ adresse**, qui est l'analogue du
 |---|---|---|
 | `config user radius` | `radius/` complet (auth, acct, CoA, TCP) | ✅ Réutiliser |
 | `config user tacacs+` | `tacacs/` complet, chiffrement réel | ✅ Réutiliser |
-| `config user ldap` | ❌ Aucun client ni serveur LDAP | Refus famille 2 |
+| `config user ldap` | ✅ `windows/server/ad/ldap/` complet (BER, DN, filtres, StartTLS, GSSAPI) — la ligne « aucun client ni serveur LDAP » etait PERIMEE, elle datait d'avant le chantier Active Directory | ✅ Reutiliser (`LdapClient` + `dialLdap`) |
 | `config user fsso` | ❌ | Refus famille 2 |
 | `config user saml` | ❌ | Refus famille 2 |
 
-**LDAP mérite une phrase** : c'est le connecteur d'annuaire le plus
-courant en entreprise, et son absence est une vraie limite. Mais
-l'écrire suppose un serveur LDAP simulé (schéma, DN, bind, recherche),
-ce qui est un chantier à part entière — comparable à celui d'Oracle ou
-d'Active Directory. Il est nommé en §43 comme travail futur identifié,
-pas comme oubli.
+**LDAP méritait une phrase, et cette phrase était fausse** (corrigé en
+E37). Elle annonçait un chantier à écrire « comparable à celui d'Oracle
+ou d'Active Directory » — alors que c'est précisément le chantier
+Active Directory qui l'avait DÉJÀ écrit : `LdapClient`, `LdapServer`,
+codec BER, `LdapDN`, `LdapFilter`, StartTLS et bind GSSAPI, avec huit
+fichiers de test. `config user ldap` est donc RÉEL : il compose le DN
+depuis `cnid` et `dn`, ouvre une vraie connexion TCP/389 par `dialLdap`
+et fait un vrai bind. La leçon vaut au-delà de LDAP : une case « ❌ »
+d'un tableau de faisabilité vieillit, et il faut la vérifier avant de
+refuser quoi que ce soit.
 
 ### 23.5 Exigences — utilisateurs
 
@@ -3867,7 +3871,7 @@ pas comme oubli.
 | **FGT-USR-4** | Le portail d'authentification est un vrai serveur HTTP/HTTPS |
 | **FGT-USR-5** | L'association identité ↔ adresse expire, et `diagnose firewall auth list` la montre |
 | **FGT-USR-6** | RADIUS et TACACS+ s'appuient sur les agents réels |
-| **FGT-USR-7** | LDAP, FSSO et SAML sont refusés famille 2 |
+| **FGT-USR-7** | ~~LDAP~~, FSSO et SAML : FSSO et SAML sont refusés famille 2 ; **LDAP est réel** (E37), sur le client LDAP du chantier Active Directory |
 
 ---
 

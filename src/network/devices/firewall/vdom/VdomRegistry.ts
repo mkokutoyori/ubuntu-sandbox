@@ -11,7 +11,11 @@ import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { ScheduleStore } from '../model/ScheduleObject';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
+import { IdentityTable } from '../identity/IdentityTable';
+import { UserDirectory } from '../identity/UserDirectory';
+import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
+import type { IEventBus } from '../../../../events/EventBus';
 
 export type DeploymentMode = 'nat' | 'transparent';
 
@@ -38,6 +42,8 @@ export interface VdomContext {
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
   readonly utm: UtmProfileStore;
+  readonly identities: IdentityTable;
+  readonly users: UserDirectory;
   readonly settings: VdomSettings;
 }
 
@@ -45,6 +51,8 @@ export const ROOT_VDOM = 'root';
 
 export interface VdomRegistryDeps {
   readonly now: () => number;
+  readonly deviceId: string;
+  readonly bus: () => IEventBus;
   readonly policyKeyedBy: 'zone' | 'interface';
   readonly implicitPolicy: 'deny-all' | 'security-level';
   readonly applicationShift: boolean;
@@ -193,6 +201,14 @@ export class VdomRegistry {
       schedules,
       logs: new FirewallLogStore(),
       utm: new UtmProfileStore(),
+      identities: new IdentityTable({ now: this.deps.now }),
+      users: new UserDirectory({
+        credentials: new NetworkOsCredentialStore({
+          deviceId: `${this.deps.deviceId}:${name}`,
+          bus: this.deps.bus(),
+        }),
+        now: this.deps.now,
+      }),
       settings,
     });
   }

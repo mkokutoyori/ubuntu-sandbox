@@ -42,6 +42,8 @@ export interface SecurityRule {
   sessionTimeoutOverrideSec?: number;
 
   utmEnabled?: boolean;
+  authGroups?: readonly string[];
+  authUsers?: readonly string[];
   antivirusProfile?: string;
   webFilterProfile?: string;
   dnsFilterProfile?: string;
@@ -87,6 +89,8 @@ export interface SecurityRuleInit {
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
   utmEnabled?: boolean;
+  authGroups?: readonly string[];
+  authUsers?: readonly string[];
   antivirusProfile?: string;
   webFilterProfile?: string;
   dnsFilterProfile?: string;
@@ -138,6 +142,8 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     securityProfileGroup: init.securityProfileGroup,
     sessionTimeoutOverrideSec: init.sessionTimeoutOverrideSec,
     utmEnabled: init.utmEnabled,
+    authGroups: init.authGroups === undefined ? undefined : Object.freeze([...init.authGroups]),
+    authUsers: init.authUsers === undefined ? undefined : Object.freeze([...init.authUsers]),
     antivirusProfile: init.antivirusProfile,
     webFilterProfile: init.webFilterProfile,
     dnsFilterProfile: init.dnsFilterProfile,

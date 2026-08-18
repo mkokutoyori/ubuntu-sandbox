@@ -4,6 +4,7 @@ import type { FirewallLogDraft } from '../../../logging/FirewallLogStore';
 import type { PacketContext } from '../../../pipeline/PacketContext';
 import { parseCaptureFilter, portsOf } from '../../../diag/PacketCapture';
 import { FortiMessages } from '../FortiMessages';
+import { parseAuthFilter, renderAuthList } from './authListRenderer';
 import { unquote } from '../runtime/FortiNavigator';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
 import { trafficDenyLog } from '../log/trafficLog';
@@ -173,6 +174,7 @@ function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
 }
 
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
   if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
 
   const options = { zones: deps.fw.getZoneTable(), vdom: 0 };
@@ -184,6 +186,27 @@ function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
     return shown ?? FortiMessages.unknownKey(`${rest[2] ?? ''} ${rest[3] ?? ''}`.trim());
   }
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseAuth(rest: readonly string[], deps: FortiDiagDeps): string {
+  const identities = deps.fw.getIdentityTable();
+
+  if (rest[0] === 'list') {
+    return renderAuthList(identities, deps.state.authFilter ?? {});
+  }
+  if (rest[0] === 'clear') {
+    identities.clear();
+    return '';
+  }
+  if (rest[0] === 'filter') {
+    if (rest[1] === 'clear') {
+      deps.state.authFilter = {};
+      return '';
+    }
+    deps.state.authFilter = parseAuthFilter(rest.slice(1));
+    return '';
+  }
+  return FortiMessages.unknownPath(`firewall auth ${rest.join(' ')}`);
 }
 
 function diagnoseSniffer(rest: readonly string[], deps: FortiDiagDeps): string {

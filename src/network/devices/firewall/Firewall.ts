@@ -42,6 +42,21 @@ import {
   GENERIC_PROFILE, type DeploymentMode, type FirewallProfile,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
+import { logFactsOf } from './logging/logFacts';
+import { TcpStack } from '../../tcp/TcpStack';
+import { AccessMatrix } from './authz/AccessMatrix';
+import {
+  AuthPortal, buildAuthPortal, AUTH_PORTAL_PORT, AUTH_PORTAL_HTTPS_PORT,
+  type RemoteAuthOutcome,
+} from './auth/AuthPortal';
+import {
+  applyAdminAccount, adminTrustsSource, authenticateAdmin, ldapBind,
+  type AdminAccountDraft, type LdapBindTarget,
+} from './identity/AdminAccounts';
+import { RadiusClientAgent } from '../../radius/RadiusClientAgent';
+import { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
+import type { IdentityTable } from './identity/IdentityTable';
+import type { UserDirectory } from './identity/UserDirectory';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
@@ -102,6 +117,13 @@ export class Firewall extends Equipment {
   private readonly boundPolicyInterfaces = new Set<string>();
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
   private readonly capture = new PacketCapture();
+  private readonly access = new AccessMatrix();
+  protected readonly tcp: TcpStack;
+  private readonly portal: AuthPortal;
+  private readonly radius: RadiusClientAgent;
+  private readonly tacacs: TacacsClientAgent;
+  private readonly adminSecrets = new Map<string, string>();
+  private portalPorts = { http: AUTH_PORTAL_PORT, https: AUTH_PORTAL_HTTPS_PORT };
   private readonly traces: PacketContext[] = [];
   private sessionObserver?: (session: FirewallSession, reason: SessionCloseReason) => void;
   private trafficLogger?: TrafficLogger;
@@ -129,6 +151,8 @@ export class Firewall extends Equipment {
     this.syslog = new SyslogAgent(this, () => this.getBus());
     this.vdoms = new VdomRegistry({
       now,
+      deviceId: this.id,
+      bus: () => this.getBus(),
       policyKeyedBy: profile.policyKeyedBy,
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
@@ -174,6 +198,33 @@ export class Firewall extends Equipment {
     };
 
     for (const stage of createCoreStages(this.services)) this.registry.register(stage);
+
+    const netHost = {
+      id: this.id, name: this.name,
+      getHostname: () => this.getHostname(),
+      getPort: (n: string) => this.getPort(n),
+      getPorts: () => this.getPorts(),
+      sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      resolveMac: (ip: string) => this.arp.resolved(ip) ?? null,
+      sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+    };
+    this.tcp = new TcpStack(netHost, () => this.getBus());
+    this.tcp.start();
+
+    this.radius = new RadiusClientAgent(netHost, () => this.getBus());
+    this.radius.start();
+    this.tacacs = new TacacsClientAgent(
+      netHost, () => this.getBus(), () => this.tcp);
+    this.tacacs.start();
+
+    this.portal = buildAuthPortal({
+      tcp: this.tcp,
+      now,
+      vdom: (name?: string) => this.getVdom(name),
+      remoteAuthenticate: (server, user, password) =>
+        this.remoteAuthenticate(server, user, password),
+    });
   }
 
   private pipelineFor(mode: DeploymentMode): FirewallPipeline {
@@ -189,6 +240,67 @@ export class Firewall extends Equipment {
   private processPipeline(context: PacketContext) {
     const vdom = this.vdoms.contextOfInterface(context.ingressPort);
     return this.pipelineFor(vdom.settings.opmode).process(context);
+  }
+
+  getTcpStack(): TcpStack { return this.tcp; }
+
+  getAccessMatrix(): AccessMatrix { return this.access; }
+
+  getAuthPortal(): AuthPortal { return this.portal; }
+
+  getIdentityTable(vdom?: string): IdentityTable { return this.getVdom(vdom).identities; }
+
+  getUserDirectory(vdom?: string): UserDirectory { return this.getVdom(vdom).users; }
+
+  sendIpv4FrameArpAware(
+    iface: string, packet: IPv4Packet, nextHop: IPAddress,
+  ): void {
+    this.forward(iface, packet, nextHop.toString());
+  }
+
+  private async remoteAuthenticate(
+    server: string, user: string, password: string,
+  ): Promise<RemoteAuthOutcome> {
+    const declared = this.getVdom().users.getServer(server);
+    if (!declared) return { accepted: false };
+
+    if (declared.kind === 'ldap') {
+      return { accepted: this.ldapBind(declared, user, password), server, source: 'ldap' };
+    }
+
+    const agent = declared.kind === 'radius' ? this.radius : this.tacacs;
+    const outcome = await agent.authenticate(user, password, declared.address);
+    const accepted = typeof outcome === 'boolean' ? outcome : outcome.status === 'pass';
+    return { accepted, server, source: declared.kind };
+  }
+
+  private ldapBind(
+    server: LdapBindTarget, user: string, password: string,
+  ): boolean {
+    return ldapBind(this.tcp, server, user, password);
+  }
+
+  setAuthPortalPorts(httpPort: number, httpsPort: number): void {
+    this.portalPorts = { http: httpPort, https: httpsPort };
+    if (!this.portal.isListening()) return;
+    this.portal.stop();
+    this.portal.start(httpPort);
+  }
+
+  getAuthPortalPorts(): { http: number; https: number } { return this.portalPorts; }
+
+  startAuthPortal(): boolean { return this.portal.start(this.portalPorts.http); }
+
+  applyAdminAccount(admin: AdminAccountDraft): void {
+    applyAdminAccount(this.access, this.adminSecrets, admin);
+  }
+
+  authenticateAdmin(name: string, password: string, source?: string): boolean {
+    return authenticateAdmin(this.access, this.adminSecrets, name, password, source);
+  }
+
+  adminTrustsSource(name: string, source: string): boolean {
+    return adminTrustsSource(this.access, name, source);
   }
 
   configureInterface(name: string, config: InterfaceConfig): void {
@@ -676,45 +788,8 @@ export function proxyOwnerKey(kind: string, name: string): string {
 
 function vdomServices(context: VdomContext): VdomServices {
   return {
-    name: context.name,
-    zones: context.zones,
-    routes: context.routes,
-    objects: context.objects,
-    policy: context.policy,
-    evaluator: context.evaluator,
-    sessions: context.sessions,
-    natPolicy: context.natPolicy,
-    nat: context.nat,
-    policyRoutes: context.policyRoutes,
-    utm: context.utm,
+    ...context,
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
   };
-}
-
-function logFactsOf(context: PacketContext, zones: ZoneTable): FirewallLogFacts {
-  const packet = context.originalPacket as IPv4Packet;
-  const payload = packet.payload as {
-    type?: string; sourcePort?: number; destinationPort?: number;
-  } | null;
-  const ported = payload?.type === 'tcp' || payload?.type === 'udp';
-
-  return {
-    protocol: protocolLabel(packet.protocol),
-    ingressZone: zones.zoneOf(context.ingressPort) ?? context.ingressPort,
-    egressZone: context.egressPort === undefined
-      ? (context.egressZone ?? 'any')
-      : zones.zoneOf(context.egressPort) ?? context.egressPort,
-    sourceIP: packet.sourceIP.toString(),
-    sourcePort: ported ? payload?.sourcePort ?? 0 : 0,
-    destinationIP: packet.destinationIP.toString(),
-    destinationPort: ported ? payload?.destinationPort ?? 0 : 0,
-  };
-}
-
-function protocolLabel(protocol: number): string {
-  if (protocol === 6) return 'TCP';
-  if (protocol === 17) return 'UDP';
-  if (protocol === IP_PROTO_ICMP) return 'ICMP';
-  return String(protocol);
 }

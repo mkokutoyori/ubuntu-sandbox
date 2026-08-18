@@ -14,6 +14,7 @@ import {
   type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
 } from '../../inspection/ContentInspector';
 import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfiles';
+import type { IdentityTable } from '../../identity/IdentityTable';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
 import { flowKeyFromPacket, reverseFlowKey } from '../../session/FlowKey';
@@ -37,6 +38,7 @@ export interface VdomServices {
   nat?: FirewallNatEngine;
   policyRoutes?: PolicyRouteTable;
   utm?: UtmProfileStore;
+  identities?: IdentityTable;
   centralNat?: boolean;
   opmode?: 'nat' | 'transparent';
 }
@@ -116,10 +118,58 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     routeLookupStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
+    authCheckStage(services),
     utmInspectStage(services),
     natSourceStage(services),
     sessionInstallStage(services),
   ];
+}
+
+function authCheckStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'auth-check',
+    apply(context) {
+      return checkIdentity(services, context, context.matchedPolicy);
+    },
+  };
+}
+
+function checkIdentity(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined,
+): FilterVerdict<PacketContext> {
+  const required = requiredIdentities(rule);
+  if (!required) return proceed(context, 'auth-check', 'no-auth');
+
+  const identities = vdom(services, context).identities;
+  const packet = ipv4(context);
+  if (!identities || !packet) return proceed(context, 'auth-check', 'no-identity-table');
+
+  const source = (originalIpv4(context) ?? packet).sourceIP.toString();
+  const identity = identities.lookup(source);
+  if (!identity) return deny(context, 'auth-check', 'auth-required', rule?.id);
+
+  if (required.users.length > 0 && required.users.includes(identity.user)) {
+    context.authenticatedUser = identity.user;
+    identities.touch(source, 'in', packet.totalLength);
+    return proceed(context, 'auth-check', identity.user);
+  }
+
+  if (required.groups.some(group => identity.groups.includes(group))) {
+    context.authenticatedUser = identity.user;
+    identities.touch(source, 'in', packet.totalLength);
+    return proceed(context, 'auth-check', identity.user);
+  }
+
+  return deny(context, 'auth-check', 'auth-required', rule?.id);
+}
+
+function requiredIdentities(
+  rule: SecurityRule | undefined,
+): { groups: readonly string[]; users: readonly string[] } | undefined {
+  const groups = rule?.authGroups ?? [];
+  const users = rule?.authUsers ?? [];
+  if (groups.length === 0 && users.length === 0) return undefined;
+  return { groups, users };
 }
 
 function utmInspectStage(services: FirewallServices): PipelineStage {

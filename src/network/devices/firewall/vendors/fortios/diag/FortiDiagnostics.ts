@@ -1,6 +1,7 @@
 import type { FirewallLogLevel, FirewallLogType } from '../../../logging/FirewallLogStore';
 import { makeDebugFlowState, type DebugFlowState } from './debugFlowRenderer';
 import type { SessionFilter } from './sessionListRenderer';
+import type { AuthListFilter } from './authListRenderer';
 
 export interface LogViewFilter {
   category: FirewallLogType;
@@ -12,6 +13,7 @@ export interface LogViewFilter {
 export class FortiDiagnostics {
   readonly sessionFilter: SessionFilter = {};
   readonly debugFlow: DebugFlowState = makeDebugFlowState();
+  authFilter: AuthListFilter = {};
   readonly logFilter: LogViewFilter = {
     category: 'traffic', fields: new Map(), viewLines: 0,
   };
