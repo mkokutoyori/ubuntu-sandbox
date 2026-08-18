@@ -2,30 +2,30 @@
 Lab « My Network » — transcription de diagnostic : pc1-to-server1
 Générée : 2026-08-18T19:00:00.000Z
 Topologie : Lab « My Network » — 6 routeurs Cisco, 4 Catalyst, PC1 (Windows) et Server1 (Linux). LAN1 192.168.10.0/24 [PC1 .2] — Switch1 — Router1 Gi0/0 (passive OSPF) ; LAN2 192.168.40.0/24 [Server1 .11] — Switch2 — Router4 Gi0/1 ; coeur en /30 : R1-R2 10.0.10.0, R2-R3 10.0.20.0, R3-R4 10.0.30.0, R1-R5 10.0.40.0, R5-R6 10.0.50.0, R3-R6 10.0.60.0 ; OSPF process 1 partout, R3 déclare 10.0.20.0 et 10.0.30.0 en area 1 là où ses voisins R2 et R4 les déclarent en area 0.
-question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
-Étapes : 61
+question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? verdict = discordance d'area OSPF sur 10.0.20.0/30 et 10.0.30.0/30 ; les paquets sont rejetes (RFC 2328 §8.2), Router4 reste hors du domaine et personne n'apprend 192.168.40.0/24.
+Étapes : 64
 ============================================================
 
 
 --- [1] § Le symptôme — PC1 vers Server1 ---
-[1/61] PC1 PC1$ ping -n 2 192.168.40.11
+[1/64] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 10.0.20.2: Destination host unreachable.
-  Reply from 10.0.20.2: Destination host unreachable.
+  Reply from 192.168.10.1: Destination host unreachable.
+  Reply from 192.168.10.1: Destination host unreachable.
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 0, Lost = 2 (100% loss),
 
-[2/61] PC1 PC1$ tracert 192.168.40.11
+[2/64] PC1 PC1$ tracert 192.168.40.11
   
   Tracing route to 192.168.40.11 over a maximum of 30 hops:
   
-     1    1 ms     <1 ms    <1 ms    192.168.10.1
-     2    1 ms     <1 ms    <1 ms    10.0.10.2
-     3    1 ms     1 ms     1 ms     10.0.20.2
-     4    1 ms     1 ms     1 ms     10.0.20.2
+     1    1 ms     1 ms     1 ms     192.168.10.1
+     2    1 ms     1 ms     <1 ms    192.168.10.1
           Destination net unreachable.
+     3     * * *     Request timed out.
+     4     * * *     Request timed out.
      5     * * *     Request timed out.
      6     * * *     Request timed out.
      7     * * *     Request timed out.
@@ -55,7 +55,7 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   
   Trace complete.
 
-[3/61] PC1 PC1$ ipconfig /all
+[3/64] PC1 PC1$ ipconfig /all
   Windows IP Configuration
   
      Host Name . . . . . . . . . . . . : PC1
@@ -108,7 +108,7 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
      Autoconfiguration Enabled . . . . : Yes
   
 
-[4/61] PC1 PC1$ route print
+[4/64] PC1 PC1$ route print
   ===========================================================================
   Interface List
      1...02 00 00 00 00 05 ......Intel(R) Ethernet Connection #1
@@ -133,25 +133,25 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
 
 
 --- [5] § Le LAN de chaque côté est sain ---
-[5/61] PC1 PC1$ ping -n 1 192.168.10.1
+[5/64] PC1 PC1$ ping -n 1 192.168.10.1
   
   Pinging 192.168.10.1 with 32 bytes of data:
-  Reply from 192.168.10.1: bytes=32 time=<1ms TTL=255
+  Reply from 192.168.10.1: bytes=32 time=1ms TTL=255
   
   Ping statistics for 192.168.10.1:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
       Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
-[6/61] Server1 Server1$ ping -c 1 192.168.40.1
+[6/64] Server1 Server1$ ping -c 1 192.168.40.1
   PING 192.168.40.1 (192.168.40.1) 56(84) bytes of data.
-  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=0.482 ms
+  64 bytes from 192.168.40.1: icmp_seq=1 ttl=255 time=0.827 ms
   
   --- 192.168.40.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.482/0.482/0.482/0.000 ms
+  rtt min/avg/max/mdev = 0.827/0.827/0.827/0.000 ms
 
-[7/61] Server1 Server1$ ip addr show eth0
+[7/64] Server1 Server1$ ip addr show eth0
   2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
       link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
       inet 192.168.40.11/24 brd 192.168.40.255 dynamic scope global eth0
@@ -159,24 +159,24 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       inet6 fe80::ff:fe00:49/64 scope link
          valid_lft forever preferred_lft forever
 
-[8/61] Server1 Server1$ ip route
+[8/64] Server1 Server1$ ip route
   192.168.40.0/24 dev eth0 proto kernel scope link src 192.168.40.11 metric 0
   default via 192.168.40.1 dev eth0 proto dhcp
 
-[9/61] Router1 Router1# enable
+[9/64] Router1 Router1# enable
 <vide>
 
-[10/61] Router1 Router1# show ip dhcp binding
+[10/64] Router1 Router1# show ip dhcp binding
   Bindings from all pools not associated with VRF:
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
   192.168.10.2        0102.0000.0000.05       23 Aug 2026 19:00:00    automatic
 
-[11/61] Router4 Router4# enable
+[11/64] Router4 Router4# enable
 <vide>
 
-[12/61] Router4 Router4# show ip dhcp binding
+[12/64] Router4 Router4# show ip dhcp binding
   Bindings from all pools not associated with VRF:
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
@@ -185,67 +185,61 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
 
 
 --- [13] § Le retour, vu de Server1 ---
-[13/61] Server1 Server1$ ping -c 2 192.168.10.2
+[13/64] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
+  From 192.168.40.1 icmp_seq=1 Destination Net Unreachable
+  From 192.168.40.1 icmp_seq=2 Destination Net Unreachable
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 0 received, 100% packet loss
   ping: destination host unreachable
 
-[14/61] Server1 Server1$ traceroute 192.168.10.2
+[14/64] Server1 Server1$ traceroute 192.168.10.2
   traceroute to 192.168.10.2 (192.168.10.2), 30 hops max, 60 byte packets
-   1  192.168.40.1 (192.168.40.1)  0.497 ms  0.364 ms  0.286 ms
-   2  * * *
-   3  * * *
-   4  * * *
-   5  * * *
-   6  * * *
-   7  * * *
-   8  * * *
+   1  192.168.40.1 (192.168.40.1)  0.893 ms  0.748 ms  0.669 ms
+   2  192.168.40.1 (192.168.40.1)  0.548 ms !N (Net unreachable)  0.760 ms !N (Net unreachable)  0.643 ms !N (Net unreachable)
 
 
 --- [15] § Jusqu'où le paquet passe-t-il ? ---
-[15/61] PC1 PC1$ ping -n 1 10.0.10.2
+[15/64] PC1 PC1$ ping -n 1 10.0.10.2
   
   Pinging 10.0.10.2 with 32 bytes of data:
-  Reply from 10.0.10.2: bytes=32 time=1ms TTL=253
+  Reply from 10.0.10.2: bytes=32 time=3ms TTL=253
   
   Ping statistics for 10.0.10.2:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 3ms, Maximum = 3ms, Average = 3ms
 
-[16/61] PC1 PC1$ ping -n 1 10.0.20.2
+[16/64] PC1 PC1$ ping -n 1 10.0.20.2
   
   Pinging 10.0.20.2 with 32 bytes of data:
-  Reply from 10.0.20.2: bytes=32 time=<1ms TTL=251
+  Reply from 10.0.20.2: bytes=32 time=2ms TTL=251
   
   Ping statistics for 10.0.20.2:
       Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Minimum = 2ms, Maximum = 2ms, Average = 2ms
 
-[17/61] PC1 PC1$ ping -n 1 10.0.30.2
+[17/64] PC1 PC1$ ping -n 1 10.0.30.2
   
   Pinging 10.0.30.2 with 32 bytes of data:
-  Reply from 10.0.30.2: bytes=32 time=<1ms TTL=250
+  Reply from 192.168.10.1: Destination host unreachable.
   
   Ping statistics for 10.0.30.2:
-      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
-  Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
-[18/61] PC1 PC1$ ping -n 1 192.168.40.1
+[18/64] PC1 PC1$ ping -n 1 192.168.40.1
   
   Pinging 192.168.40.1 with 32 bytes of data:
-  Reply from 10.0.20.2: Destination host unreachable.
+  Reply from 192.168.10.1: Destination host unreachable.
   
   Ping statistics for 192.168.40.1:
       Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
 
 
 --- [19] § Les tables de routage, routeur par routeur ---
-[19/61] Router1 Router1# show ip route
+[19/64] Router1 Router1# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -258,24 +252,22 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
   C        10.0.10.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.10.1/32 is directly connected, GigabitEthernet0/1
   O        10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
-  O IA       10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
   C        10.0.40.0/30 is directly connected, GigabitEthernet0/2
   L        10.0.40.2/32 is directly connected, GigabitEthernet0/2
   O        10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O        10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O        10.0.60.0/30 [110/3] via 10.0.40.1, GigabitEthernet0/2
         192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.10.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.10.1/32 is directly connected, GigabitEthernet0/0
-  O IA   192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
 
-[20/61] Router1 Router1# enable
+[20/64] Router1 Router1# enable
 <vide>
 
-[21/61] Router1 Router1# show ip route
+[21/64] Router1 Router1# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -288,24 +280,22 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
   C        10.0.10.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.10.1/32 is directly connected, GigabitEthernet0/1
   O        10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
-  O IA       10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
   C        10.0.40.0/30 is directly connected, GigabitEthernet0/2
   L        10.0.40.2/32 is directly connected, GigabitEthernet0/2
   O        10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
-  O        10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O        10.0.60.0/30 [110/3] via 10.0.40.1, GigabitEthernet0/2
         192.168.10.0/24 is variably subnetted, 2 subnets, 2 masks
   C        192.168.10.0/24 is directly connected, GigabitEthernet0/0
   L        192.168.10.1/32 is directly connected, GigabitEthernet0/0
-  O IA   192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
 
-[22/61] Router2 Router2# enable
+[22/64] Router2 Router2# enable
 <vide>
 
-[23/61] Router2 Router2# show ip route
+[23/64] Router2 Router2# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -318,22 +308,20 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
   C        10.0.10.0/30 is directly connected, GigabitEthernet0/0
   L        10.0.10.2/32 is directly connected, GigabitEthernet0/0
   C        10.0.20.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.20.1/32 is directly connected, GigabitEthernet0/1
-  O IA       10.0.30.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
   O        10.0.40.0/30 [110/2] via 10.0.10.1, GigabitEthernet0/0
   O        10.0.50.0/30 [110/3] via 10.0.10.1, GigabitEthernet0/0
-  O        10.0.60.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
+  O        10.0.60.0/30 [110/4] via 10.0.10.1, GigabitEthernet0/0
   O    192.168.10.0/24 [110/2] via 10.0.10.1, GigabitEthernet0/0
-  O IA   192.168.40.0/24 [110/3] via 10.0.20.2, GigabitEthernet0/1
 
-[24/61] Router3 Router3# enable
+[24/64] Router3 Router3# enable
 <vide>
 
-[25/61] Router3 Router3# show ip route
+[25/64] Router3 Router3# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -358,10 +346,33 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   L        10.0.60.2/32 is directly connected, GigabitEthernet0/2
   O    192.168.10.0/24 [110/4] via 10.0.60.1, GigabitEthernet0/2
 
-[26/61] Router4 Router4# enable
+[26/64] Router4 Router4# enable
 <vide>
 
-[27/61] Router4 Router4# show ip route
+[27/64] Router4 Router4# show ip route
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
+  
+  Gateway of last resort is not set
+  
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.30.0/30 is directly connected, GigabitEthernet0/0
+  L        10.0.30.2/32 is directly connected, GigabitEthernet0/0
+        192.168.40.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.40.0/24 is directly connected, GigabitEthernet0/1
+  L        192.168.40.1/32 is directly connected, GigabitEthernet0/1
+
+[28/64] Router5 Router5# enable
+<vide>
+
+[29/64] Router5 Router5# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -375,50 +386,19 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   Gateway of last resort is not set
   
         10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
-  O        10.0.10.0/30 [110/5] via 10.0.30.1, GigabitEthernet0/0
-  O        10.0.20.0/30 [110/6] via 10.0.30.1, GigabitEthernet0/0
-  C        10.0.30.0/30 is directly connected, GigabitEthernet0/0
-  L        10.0.30.2/32 is directly connected, GigabitEthernet0/0
-  O        10.0.40.0/30 [110/4] via 10.0.30.1, GigabitEthernet0/0
-  O        10.0.50.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
-  O        10.0.60.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
-  O    192.168.10.0/24 [110/5] via 10.0.30.1, GigabitEthernet0/0
-        192.168.40.0/24 is variably subnetted, 2 subnets, 2 masks
-  C        192.168.40.0/24 is directly connected, GigabitEthernet0/1
-  L        192.168.40.1/32 is directly connected, GigabitEthernet0/1
-
-[28/61] Router5 Router5# enable
-<vide>
-
-[29/61] Router5 Router5# show ip route
-  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-         E1 - OSPF external type 1, E2 - OSPF external type 2
-         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
-         ia - IS-IS inter area, * - candidate default, U - per-user static route
-         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
-         a - application route
-         + - replicated route, % - next hop override, p - overrides from PfR
-  
-  Gateway of last resort is not set
-  
-        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
   O        10.0.10.0/30 [110/2] via 10.0.40.2, GigabitEthernet0/0
   O        10.0.20.0/30 [110/3] via 10.0.40.2, GigabitEthernet0/0
-  O IA       10.0.30.0/30 [110/3] via 10.0.50.2, GigabitEthernet0/1
   C        10.0.40.0/30 is directly connected, GigabitEthernet0/0
   L        10.0.40.1/32 is directly connected, GigabitEthernet0/0
   C        10.0.50.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.50.1/32 is directly connected, GigabitEthernet0/1
   O        10.0.60.0/30 [110/2] via 10.0.50.2, GigabitEthernet0/1
   O    192.168.10.0/24 [110/2] via 10.0.40.2, GigabitEthernet0/0
-  O IA   192.168.40.0/24 [110/4] via 10.0.50.2, GigabitEthernet0/1
 
-[30/61] Router6 Router6# enable
+[30/64] Router6 Router6# enable
 <vide>
 
-[31/61] Router6 Router6# show ip route
+[31/64] Router6 Router6# show ip route
   Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
          D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
          N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
@@ -431,57 +411,40 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   
   Gateway of last resort is not set
   
-        10.0.0.0/8 is variably subnetted, 8 subnets, 2 masks
+        10.0.0.0/8 is variably subnetted, 7 subnets, 2 masks
   O        10.0.10.0/30 [110/3] via 10.0.50.1, GigabitEthernet0/1
   O        10.0.20.0/30 [110/4] via 10.0.50.1, GigabitEthernet0/1
-  O IA       10.0.30.0/30 [110/2] via 10.0.60.2, GigabitEthernet0/0
   O        10.0.40.0/30 [110/2] via 10.0.50.1, GigabitEthernet0/1
   C        10.0.50.0/30 is directly connected, GigabitEthernet0/1
   L        10.0.50.2/32 is directly connected, GigabitEthernet0/1
   C        10.0.60.0/30 is directly connected, GigabitEthernet0/0
   L        10.0.60.1/32 is directly connected, GigabitEthernet0/0
   O    192.168.10.0/24 [110/3] via 10.0.50.1, GigabitEthernet0/1
-  O IA   192.168.40.0/24 [110/3] via 10.0.60.2, GigabitEthernet0/0
 
 
 --- [32] § Le trou : Router3 n'a pas de route vers le LAN2 ---
-[32/61] Router3 Router3# show ip route 192.168.40.0
+[32/64] Router3 Router3# show ip route 192.168.40.0
   % Network not in table
 
-[33/61] Router1 Router1# show ip route 192.168.40.0
-  Routing entry for 192.168.40.0/24
-    Known via "ospf 1", distance 110, metric 4, type inter area
-    Last update from 10.0.10.2 on GigabitEthernet0/1, 00:00:00 ago
-    Routing Descriptor Blocks:
-    * 10.0.10.2, via GigabitEthernet0/1
-        Route metric is 4, traffic share count is 1
+[33/64] Router1 Router1# show ip route 192.168.40.0
+  % Network not in table
 
-[34/61] Router2 Router2# show ip route 192.168.40.0
-  Routing entry for 192.168.40.0/24
-    Known via "ospf 1", distance 110, metric 3, type inter area
-    Last update from 10.0.20.2 on GigabitEthernet0/1, 00:00:00 ago
-    Routing Descriptor Blocks:
-    * 10.0.20.2, via GigabitEthernet0/1
-        Route metric is 3, traffic share count is 1
+[34/64] Router2 Router2# show ip route 192.168.40.0
+  % Network not in table
 
-[35/61] Router4 Router4# show ip route 192.168.10.0
-  Routing entry for 192.168.10.0/24
-    Known via "ospf 1", distance 110, metric 5, type intra area
-    Last update from 10.0.30.1 on GigabitEthernet0/0, 00:00:00 ago
-    Routing Descriptor Blocks:
-    * 10.0.30.1, via GigabitEthernet0/0
-        Route metric is 5, traffic share count is 1
+[35/64] Router4 Router4# show ip route 192.168.10.0
+  % Network not in table
 
 
 --- [36] § Les areas déclarées de part et d'autre des deux liens ---
-[36/61] Router2 Router2# show running-config | section router ospf
+[36/64] Router2 Router2# show running-config | section router ospf
   router ospf 1
    router-id 10.0.20.1
    network 10.0.10.0 0.0.0.3 area 0
    network 10.0.20.0 0.0.0.3 area 0
   !
 
-[37/61] Router3 Router3# show running-config | section router ospf
+[37/64] Router3 Router3# show running-config | section router ospf
   router ospf 1
    router-id 10.0.30.1
    network 10.0.20.0 0.0.0.3 area 1
@@ -489,14 +452,14 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
    network 10.0.60.0 0.0.0.3 area 0
   !
 
-[38/61] Router4 Router4# show running-config | section router ospf
+[38/64] Router4 Router4# show running-config | section router ospf
   router ospf 1
    router-id 192.168.40.1
    network 10.0.30.0 0.0.0.3 area 0
    network 192.168.40.0 0.0.0.255 area 0
   !
 
-[39/61] Router1 Router1# show ip protocols
+[39/64] Router1 Router1# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -516,13 +479,13 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       10.0.50.1       110           00:00:00
     Distance: (default is 110)
 
-[40/61] Router1 Router1# show ip ospf interface brief
+[40/64] Router1 Router1# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
   Gi0/0        1     0               192.168.10.1/24    1     DR    0/0
   Gi0/1        1     0               10.0.10.1/30       1     DR    1/1
   Gi0/2        1     0               10.0.40.2/30       1     DR    1/1
 
-[41/61] Router2 Router2# show ip protocols
+[41/64] Router2 Router2# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -536,15 +499,14 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
     Routing Information Sources:
       Gateway         Distance      Last Update
       192.168.10.1    110           00:00:00
-      10.0.30.1       110           00:00:00
     Distance: (default is 110)
 
-[42/61] Router2 Router2# show ip ospf interface brief
+[42/64] Router2 Router2# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
   Gi0/0        1     0               10.0.10.2/30       1     BDR   1/1
-  Gi0/1        1     0               10.0.20.1/30       1     DR    1/1
+  Gi0/1        1     0               10.0.20.1/30       1     DR    0/0
 
-[43/61] Router3 Router3# show ip protocols
+[43/64] Router3 Router3# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -558,18 +520,16 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       10.0.60.0 0.0.0.3 area 0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.20.1       110           00:00:00
-      192.168.40.1    110           00:00:00
       10.0.60.1       110           00:00:00
     Distance: (default is 110)
 
-[44/61] Router3 Router3# show ip ospf interface brief
+[44/64] Router3 Router3# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  Gi0/0        1     1               10.0.20.2/30       1     BDR   1/1
-  Gi0/1        1     1               10.0.30.1/30       1     DR    1/1
+  Gi0/0        1     1               10.0.20.2/30       1     DR    0/0
+  Gi0/1        1     1               10.0.30.1/30       1     DR    0/0
   Gi0/2        1     0               10.0.60.2/30       1     DR    1/1
 
-[45/61] Router4 Router4# show ip protocols
+[45/64] Router4 Router4# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -582,15 +542,14 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       192.168.40.0 0.0.0.255 area 0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.30.1       110           00:00:00
     Distance: (default is 110)
 
-[46/61] Router4 Router4# show ip ospf interface brief
+[46/64] Router4 Router4# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
-  Gi0/0        1     0               10.0.30.2/30       1     BDR   1/1
+  Gi0/0        1     0               10.0.30.2/30       1     DR    0/0
   Gi0/1        1     0               192.168.40.1/24    1     DR    0/0
 
-[47/61] Router5 Router5# show ip protocols
+[47/64] Router5 Router5# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -607,12 +566,12 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       10.0.60.1       110           00:00:00
     Distance: (default is 110)
 
-[48/61] Router5 Router5# show ip ospf interface brief
+[48/64] Router5 Router5# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
   Gi0/0        1     0               10.0.40.1/30       1     BDR   1/1
   Gi0/1        1     0               10.0.50.1/30       1     DR    1/1
 
-[49/61] Router6 Router6# show ip protocols
+[49/64] Router6 Router6# show ip protocols
   Routing Protocol is "ospf 1"
     Outgoing update filter list for all interfaces is not set
     Incoming update filter list for all interfaces is not set
@@ -629,145 +588,105 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
       10.0.50.1       110           00:00:00
     Distance: (default is 110)
 
-[50/61] Router6 Router6# show ip ospf interface brief
+[50/64] Router6 Router6# show ip ospf interface brief
   Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
   Gi0/0        1     0               10.0.60.1/30       1     BDR   1/1
   Gi0/1        1     0               10.0.50.2/30       1     BDR   1/1
 
 
---- [51] § Les adjacences — ce qu'IOS refuserait de former ---
-[51/61] Router1 Router1# show ip ospf neighbor
+--- [51] § Les adjacences — les deux liens en discordance ne s'appairent pas ---
+[51/64] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   10.0.20.1       1     FULL/  -        00:00:40    10.0.10.2       GigabitEthernet0/1
   10.0.50.1       1     FULL/  -        00:00:40    10.0.40.1       GigabitEthernet0/2
 
-[52/61] Router1 Router1# show ip ospf neighbor
+[52/64] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   10.0.20.1       1     FULL/  -        00:00:40    10.0.10.2       GigabitEthernet0/1
   10.0.50.1       1     FULL/  -        00:00:40    10.0.40.1       GigabitEthernet0/2
 
-[53/61] Router2 Router2# show ip ospf neighbor
+[53/64] Router2 Router2# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   192.168.10.1    1     FULL/  -        00:00:40    10.0.10.1       GigabitEthernet0/0
-  10.0.30.1       1     FULL/  -        00:00:40    10.0.20.2       GigabitEthernet0/1
 
-[54/61] Router3 Router3# show ip ospf neighbor
+[54/64] Router3 Router3# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  10.0.20.1       1     FULL/  -        00:00:40    10.0.20.1       GigabitEthernet0/0
-  192.168.40.1    1     FULL/  -        00:00:40    10.0.30.2       GigabitEthernet0/1
   10.0.60.1       1     FULL/  -        00:00:40    10.0.60.1       GigabitEthernet0/2
 
-[55/61] Router4 Router4# show ip ospf neighbor
+[55/64] Router4 Router4# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
-  10.0.30.1       1     FULL/  -        00:00:40    10.0.30.1       GigabitEthernet0/0
 
-[56/61] Router5 Router5# show ip ospf neighbor
+[56/64] Router5 Router5# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   192.168.10.1    1     FULL/  -        00:00:40    10.0.40.2       GigabitEthernet0/0
   10.0.60.1       1     FULL/  -        00:00:40    10.0.50.2       GigabitEthernet0/1
 
-[57/61] Router6 Router6# show ip ospf neighbor
+[57/64] Router6 Router6# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
   10.0.30.1       1     FULL/  -        00:00:40    10.0.60.2       GigabitEthernet0/0
   10.0.50.1       1     FULL/  -        00:00:40    10.0.50.1       GigabitEthernet0/1
 
 
 --- [58] § La LSDB — qui annonce 192.168.40.0/24 ? ---
-[58/61] Router1 Router1# show ip ospf database
+[58/64] Router1 Router1# show ip ospf database
               OSPF Router with ID (192.168.10.1) (Process ID 1)
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
   192.168.10.1    192.168.10.1    0           0x8000006d        0x29b4      3
-  10.0.20.1       10.0.20.1       0           0x80000049        0xac66      2
-  10.0.30.1       10.0.30.1       0           0x800001dc        0x6d02      1
-  192.168.40.1    192.168.40.1    0           0x80000022        0xe883      2
+  10.0.20.1       10.0.20.1       0           0x80000027        0x681e      2
   10.0.50.1       10.0.50.1       0           0x8000003a        0x5279      2
   10.0.60.1       10.0.60.1       0           0x8000001f        0x7446      2
+  10.0.30.1       10.0.30.1       0           0x800000f7        0x8725      1
   
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
   10.0.10.1       192.168.10.1    0           0x8000006e        0x2df3
-  10.0.20.1       10.0.20.1       0           0x8000004a        0x7225
-  10.0.30.1       10.0.30.1       0           0x800001dd        0x8e0b
   10.0.40.2       192.168.10.1    0           0x8000006f        0x6b69
-  10.0.60.2       10.0.30.1       0           0x800001de        0x6397
+  10.0.60.2       10.0.30.1       0           0x800000f8        0x7c41
   10.0.50.1       10.0.50.1       0           0x8000003b        0xdbbb
   
 
-[59/61] Router3 Router3# show ip ospf database
+[59/64] Router3 Router3# show ip ospf database
               OSPF Router with ID (10.0.30.1) (Process ID 1)
   
                   Router Link States (Area 1)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x800001ec        0x7d53      1
-  10.0.20.1       10.0.20.1       0           0x8000004b        0xaea8      2
-  192.168.10.1    192.168.10.1    0           0x80000070        0x2c3c      3
-  192.168.40.1    192.168.40.1    0           0x80000023        0xe9a4      2
-  10.0.50.1       10.0.50.1       0           0x8000003c        0x54bb      2
-  10.0.60.1       10.0.60.1       0           0x80000020        0x7567      2
-  
-                  Net Link States (Area 1)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.10.1       192.168.10.1    0           0x80000071        0x3027
-  10.0.20.1       10.0.20.1       0           0x8000004c        0x7447
-  10.0.30.1       10.0.30.1       0           0x800001ed        0x9e1c
-  10.0.40.2       192.168.10.1    0           0x80000072        0x6e9c
-  10.0.60.2       10.0.30.1       0           0x800001ee        0x73a8
-  10.0.50.1       10.0.50.1       0           0x8000003d        0xdddd
+  10.0.30.1       10.0.30.1       0           0x800000ff        0x51ba      2
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  10.0.30.1       10.0.30.1       0           0x800001ec        0x7d53      1
+  10.0.30.1       10.0.30.1       0           0x80000100        0x90e3      1
   10.0.60.1       10.0.60.1       0           0x80000020        0x7567      2
   10.0.50.1       10.0.50.1       0           0x8000003c        0x54bb      2
   192.168.10.1    192.168.10.1    0           0x80000070        0x2c3c      3
-  10.0.20.1       10.0.20.1       0           0x8000004b        0xaea8      2
-  192.168.40.1    192.168.40.1    0           0x80000023        0xe9a4      2
+  10.0.20.1       10.0.20.1       0           0x80000028        0x693f      2
   
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.60.2       10.0.30.1       0           0x800001ee        0x73a8
+  10.0.60.2       10.0.30.1       0           0x80000101        0x85db
   10.0.10.1       192.168.10.1    0           0x80000071        0x3027
-  10.0.20.1       10.0.20.1       0           0x8000004c        0x7447
-  10.0.30.1       10.0.30.1       0           0x800001ed        0x9e1c
   10.0.40.2       192.168.10.1    0           0x80000072        0x6e9c
   10.0.50.1       10.0.50.1       0           0x8000003d        0xdddd
   
 
-[60/61] Router4 Router4# show ip ospf database
+[60/64] Router4 Router4# show ip ospf database
               OSPF Router with ID (192.168.40.1) (Process ID 1)
   
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  192.168.40.1    192.168.40.1    0           0x80000024        0xeac5      2
-  10.0.30.1       10.0.30.1       0           0x800001fc        0x8da4      1
-  10.0.20.1       10.0.20.1       0           0x8000004d        0xb0ea      2
-  192.168.10.1    192.168.10.1    0           0x80000073        0x2fc3      3
-  10.0.50.1       10.0.50.1       0           0x8000003e        0x56fd      2
-  10.0.60.1       10.0.60.1       0           0x80000021        0x7688      2
-  
-                  Net Link States (Area 0)
-  
-  Link ID         ADV Router      Age         Seq#            Checksum
-  10.0.10.1       192.168.10.1    0           0x80000074        0x335a
-  10.0.20.1       10.0.20.1       0           0x8000004e        0x7669
-  10.0.30.1       10.0.30.1       0           0x800001fd        0xae2d
-  10.0.40.2       192.168.10.1    0           0x80000075        0x71cf
-  10.0.60.2       10.0.30.1       0           0x800001fe        0x83b9
-  10.0.50.1       10.0.50.1       0           0x8000003f        0xdf00
+  192.168.40.1    192.168.40.1    0           0x80000023        0xbc63      2
   
 
 
---- [61] § Journal de Router1 ---
-[61/61] Router1 Router1# show logging
+--- [61] § Les journaux — le rejet, nommé ---
+[61/64] Router1 Router1# show logging
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
   
   No Active Message Discriminator.
@@ -799,3 +718,228 @@ question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?
   *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.20.1 on GigabitEthernet0/1 from Exchange to Full, ExchangeDone
   *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.50.1 on GigabitEthernet0/2 from Exchange to Full, ExchangeDone
+
+[62/64] Router2 Router2# show logging
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 115 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 115 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 115 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
+      Sequence numbers: disabled
+      Facility: local7
+  
+      Trap logging: level informational, 115 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.20.2, GigabitEthernet0/1
+
+[63/64] Router3 Router3# show logging
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 216 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 216 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 216 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
+      Sequence numbers: disabled
+      Facility: local7
+  
+      Trap logging: level informational, 216 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.30.2, GigabitEthernet0/1
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, from backbone area must be virtual-link but not found, from 10.0.20.1, GigabitEthernet0/0
+
+[64/64] Router4 Router4# show logging
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 104 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 104 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 104 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
+      Sequence numbers: disabled
+      Facility: local7
+  
+      Trap logging: level informational, 104 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0
+  *Aug 18 19:00:00.000: %OSPF-4-ERRRCV: Received invalid packet: mismatch area ID, received 1 but interface is in area 0, from 10.0.30.1, GigabitEthernet0/0

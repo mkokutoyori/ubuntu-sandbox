@@ -1018,6 +1018,11 @@ export class LoggingConfig {
           + `Hello R ${p.helloReceived} C ${p.helloConfigured}, `
           + `Mask R ${p.maskReceived} C ${p.maskConfigured}`, true, DEBUG_VERBATIM);
       }),
+      bus.subscribeWhere('ospf.area.mismatch' as never, isOurs, (e) => {
+        const p = e.payload as unknown as { iface: string; from: string; reason: string };
+        this.append('warnings', 'ospf',
+          `Received invalid packet: ${p.reason}, from ${p.from}, ${p.iface}`, true, 'ERRRCV');
+      }),
       bus.subscribeWhere('ospf.neighbor.state-changed', isOurs, (e) => {
         const p = e.payload;
         const versFull = String(p.newState).toLowerCase() === 'full';

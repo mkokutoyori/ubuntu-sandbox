@@ -1,29 +1,3 @@
-/**
- * Expérience n°1 du lab : PC1 (192.168.10.2) ne joint pas Server1
- * (192.168.40.11).
- *
- * La transcription déroule le chemin de bout en bout — ping, tracert,
- * table de routage de chaque routeur, voisinages et LSDB OSPF — et
- * répond à la question posée : oui, c'est normal, la maquette contient
- * une discordance d'area OSPF sur deux liens du coeur.
- *
- *   - 10.0.20.0/30 : Router2 la déclare en area 0, Router3 en area 1.
- *   - 10.0.30.0/30 : Router3 la déclare en area 1, Router4 en area 0.
- *
- * Sur un IOS réel, l'Area ID voyage dans l'en-tête de chaque paquet OSPF
- * et un paquet dont l'area ne correspond pas à celle de l'interface qui
- * le reçoit est jeté (RFC 2328 §8.2) : ni Router2↔Router3 ni
- * Router3↔Router4 ne s'appairent, Router4 reste hors du domaine, et
- * personne n'apprend 192.168.40.0/24.
- *
- * Le simulateur, lui, arrive au même verdict par un autre chemin : il
- * laisse les adjacences se former malgré la discordance, puis Router3 —
- * devenu ABR — annonce 192.168.40.0/24 en inter-area au reste du
- * domaine SANS l'installer dans sa propre table. Le trafic remonte donc
- * jusqu'à lui et y meurt. Cet écart est relevé dans la transcription ;
- * les assertions ci-dessous ne portent que sur ce qui est vrai des deux
- * côtés, pour qu'une correction du contrôle d'area ne les casse pas.
- */
 import { describe, it, expect } from 'vitest';
 import { loadLab, resetLab, dumpLab, LAB, type LabStepInput } from './_lab';
 
@@ -71,7 +45,7 @@ function buildSteps(): LabStepInput[] {
     steps.push({ on: r, cmd: 'show ip ospf interface brief' });
   }
 
-  steps.push({ section: 'Les adjacences — ce qu\'IOS refuserait de former', on: 'Router1', cmd: 'show ip ospf neighbor' });
+  steps.push({ section: 'Les adjacences — les deux liens en discordance ne s\'appairent pas', on: 'Router1', cmd: 'show ip ospf neighbor' });
   for (const r of ROUTERS) {
     steps.push({ on: r, cmd: 'show ip ospf neighbor' });
   }
@@ -80,7 +54,10 @@ function buildSteps(): LabStepInput[] {
   steps.push({ on: 'Router3', cmd: 'show ip ospf database' });
   steps.push({ on: 'Router4', cmd: 'show ip ospf database' });
 
-  steps.push({ section: 'Journal de Router1', on: 'Router1', cmd: 'show logging' });
+  steps.push({ section: 'Les journaux — le rejet, nommé', on: 'Router1', cmd: 'show logging' });
+  steps.push({ on: 'Router2', cmd: 'show logging' });
+  steps.push({ on: 'Router3', cmd: 'show logging' });
+  steps.push({ on: 'Router4', cmd: 'show logging' });
 
   return steps;
 }
@@ -94,26 +71,22 @@ describe('lab « My Network » — expérience 1 : PC1 ne joint pas Server1', ()
       'pc1-to-server1',
       lab,
       buildSteps(),
-      'question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ?',
+      'question = pourquoi PC1 192.168.10.2 ne ping-t-il pas Server1 192.168.40.11 ? '
+      + 'verdict = discordance d\'area OSPF sur 10.0.20.0/30 et 10.0.30.0/30 ; les paquets sont '
+      + 'rejetes (RFC 2328 §8.2), Router4 reste hors du domaine et personne n\'apprend 192.168.40.0/24.',
     );
 
     const exec = (name: string, cmd: string) =>
       (lab.devices[name] as unknown as { executeCommand(c: string): Promise<string> }).executeCommand(cmd);
 
-    // Le lab est bien monté : les deux hôtes ont pris leur bail DHCP
-    // auprès du routeur de leur LAN et joignent leur passerelle. Ni le
-    // câblage, ni l'adressage, ni les commutateurs ne sont en cause.
     expect(await exec('PC1', 'ipconfig')).toContain(LAB.lan1.pc1);
     expect(await exec('Server1', 'ip addr show eth0')).toContain(`${LAB.lan2.server1}/24`);
     expect(await exec('PC1', `ping -n 1 ${LAB.lan1.gw}`)).toMatch(/TTL=/i);
     expect(await exec('Server1', `ping -c 1 ${LAB.lan2.gw}`)).toMatch(/bytes from/i);
 
-    // Le symptôme rapporté, dans les deux sens.
     expect(await exec('PC1', `ping -n 1 ${LAB.lan2.server1}`)).not.toMatch(/TTL=/i);
     expect(await exec('Server1', `ping -c 1 ${LAB.lan1.pc1}`)).toMatch(/100% packet loss/);
 
-    // La cause, dans la configuration : les deux bouts de 10.0.20.0/30 et
-    // de 10.0.30.0/30 ne déclarent pas la même area.
     const r2ospf = await exec('Router2', 'show running-config | section router ospf');
     const r3ospf = await exec('Router3', 'show running-config | section router ospf');
     const r4ospf = await exec('Router4', 'show running-config | section router ospf');
@@ -122,9 +95,6 @@ describe('lab « My Network » — expérience 1 : PC1 ne joint pas Server1', ()
     expect(r3ospf).toContain(`network ${LAB.wan.r3r4.net} 0.0.0.3 area 1`);
     expect(r4ospf).toContain(`network ${LAB.wan.r3r4.net} 0.0.0.3 area 0`);
 
-    // La conséquence sur le plan de données : Router3 est le dernier
-    // routeur que le paquet atteint, et il n'a aucune route vers le LAN
-    // de Server1 — alors qu'il est physiquement collé à Router4.
     const r3routes = await exec('Router3', 'show ip route');
     expect(r3routes).toContain(`${LAB.wan.r3r4.net}/30 is directly connected`);
     expect(r3routes).not.toContain(LAB.lan2.net);

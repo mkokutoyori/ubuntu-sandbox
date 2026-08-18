@@ -1,36 +1,3 @@
-/**
- * Le lab « My Network » — la maquette de référence de nos expériences,
- * montée de zéro : chaque équipement est instancié, chaque câble est
- * branché port à port, et chaque configuration est TAPÉE dans la CLI de
- * l'équipement, exactement comme le ferait un technicien devant la
- * console. Rien n'est injecté dans les structures internes.
- *
- *      PC1 .2                                                    PC2 (sans IP)
- *        │                                                         │
- *     Switch1                                                   Switch4 ── WinServer1
- *        │ Fa0/2                                          Gi0/2 ────┘ (sans IP)
- *        │                                                  │
- *   Gi0/0│ (passive)                                    [Router6]
- *   ┌────┴─────┐  10.0.10.0/30   ┌─────────┐               │ Gi0/0
- *   │ Router1  ├──Gi0/1───Gi0/0──┤ Router2 │        10.0.60.0/30
- *   │          │                 └────┬────┘               │ Gi0/2
- *   └────┬─────┘                 Gi0/1│ 10.0.20.0/30  ┌────┴────┐
- *   Gi0/2│ 10.0.40.0/30               └───────Gi0/0───┤ Router3 │
- *   ┌────┴─────┐  10.0.50.0/30              (area 0 ↮ area 1)   │
- *   │ Router5  ├──Gi0/1───Gi0/1──[Router6]       └────┬────┘
- *   └────┬─────┘                              Gi0/1   │ 10.0.30.0/30
- *   Gi0/2│                                (area 1 ↮ area 0)
- *     Switch3 (rien derrière)                         │ Gi0/0
- *                                                ┌────┴────┐
- *                                                │ Router4 │
- *                                                └────┬────┘
- *                                                Gi0/1│ 192.168.40.1
- *                                                  Switch2 ── Server1 .11
- *
- * LAN1 192.168.10.0/24, LAN2 192.168.40.0/24, coeur en /30. OSPF process
- * 1 sur les six routeurs. Les deux hôtes prennent leur adresse en DHCP
- * auprès du routeur de leur LAN, comme dans la maquette d'origine.
- */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { vi } from 'vitest';
@@ -49,7 +16,6 @@ import { pingOnSimulatedClock, isPingStep, canLendClock } from '../../support/fa
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/lab');
 
-/** Les noms d'équipements du lab, tels qu'ils apparaissent sur le canvas. */
 export type LabDeviceName =
   | 'Router1' | 'Router2' | 'Router3' | 'Router4' | 'Router5' | 'Router6'
   | 'Switch1' | 'Switch2' | 'Switch3' | 'Switch4'
@@ -62,12 +28,10 @@ export interface Lab {
   readonly Switch3: CiscoSwitch; readonly Switch4: CiscoSwitch;
   readonly PC1: WindowsPC; readonly PC2: WindowsPC;
   readonly Server1: LinuxServer; readonly WinServer1: WindowsServer;
-  /** Tous les équipements indexés par nom — ce que `dumpLab` parcourt. */
   readonly devices: Record<string, Equipment>;
   readonly note: string;
 }
 
-/** Le plan d'adressage du lab, pour que les tests ne le ré-écrivent pas. */
 export const LAB = {
   lan1: { net: '192.168.10.0', mask: '255.255.255.0', gw: '192.168.10.1', pc1: '192.168.10.2' },
   lan2: { net: '192.168.40.0', mask: '255.255.255.0', gw: '192.168.40.1', server1: '192.168.40.11' },
@@ -90,7 +54,6 @@ const NOTE =
   'R1-R5 10.0.40.0, R5-R6 10.0.50.0, R3-R6 10.0.60.0 ; OSPF process 1 partout, ' +
   'R3 déclare 10.0.20.0 et 10.0.30.0 en area 1 là où ses voisins R2 et R4 les déclarent en area 0.';
 
-/** Remet à zéro les singletons partagés et fige l'horloge du lab. */
 export function resetLab(): void {
   vi.useRealTimers();
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -101,12 +64,6 @@ export function resetLab(): void {
   Logger.reset();
 }
 
-/**
- * Pose les équipements et branche les câbles. L'ordre de création est
- * celui de la maquette d'origine : c'est lui qui distribue les adresses
- * MAC (02:00:00:00:00:01 pour Router1 Gi0/0, et ainsi de suite), donc
- * une transcription reste comparable d'une exécution à l'autre.
- */
 export function buildLab(): Lab {
   const Router1 = new CiscoRouter('Router1', 119, 238);
   const PC1 = new WindowsPC('windows-pc', 'PC1', 91, 65);
@@ -131,20 +88,16 @@ export function buildLab(): Lab {
     new Cable(id).connect(portA, portB);
   };
 
-  // LAN1 : PC1 — Switch1 — Router1
   wire('pc1-sw1', PC1, 'eth0', Switch1, 'FastEthernet0/1');
   wire('sw1-r1', Switch1, 'FastEthernet0/2', Router1, 'GigabitEthernet0/0');
-  // Coeur
   wire('r1-r2', Router1, 'GigabitEthernet0/1', Router2, 'GigabitEthernet0/0');
   wire('r2-r3', Router2, 'GigabitEthernet0/1', Router3, 'GigabitEthernet0/0');
   wire('r3-r4', Router3, 'GigabitEthernet0/1', Router4, 'GigabitEthernet0/0');
   wire('r1-r5', Router1, 'GigabitEthernet0/2', Router5, 'GigabitEthernet0/0');
   wire('r5-r6', Router5, 'GigabitEthernet0/1', Router6, 'GigabitEthernet0/1');
   wire('r6-r3', Router6, 'GigabitEthernet0/0', Router3, 'GigabitEthernet0/2');
-  // LAN2 : Router4 — Switch2 — Server1
   wire('r4-sw2', Router4, 'GigabitEthernet0/1', Switch2, 'FastEthernet0/1');
   wire('sw2-srv1', Switch2, 'FastEthernet0/2', Server1, 'eth0');
-  // Segments encore vierges : rien ne les adresse côté routeur
   wire('r5-sw3', Router5, 'GigabitEthernet0/2', Switch3, 'FastEthernet0/1');
   wire('r6-sw4', Router6, 'GigabitEthernet0/2', Switch4, 'FastEthernet0/1');
   wire('sw4-winsrv1', Switch4, 'FastEthernet0/2', WinServer1, 'eth0');
@@ -167,7 +120,6 @@ export function buildLab(): Lab {
   };
 }
 
-/** Enchaîne des commandes sur un équipement, sans transcription. */
 export async function run(device: Equipment, cmds: readonly string[]): Promise<void> {
   const cli = device as unknown as { executeCommand(c: string): Promise<string> };
   for (const cmd of cmds) {
@@ -175,7 +127,6 @@ export async function run(device: Equipment, cmds: readonly string[]): Promise<v
   }
 }
 
-/** Les comptes locaux, poussés à l'identique sur les six routeurs. */
 const LAB_USERS = [
   'username alice privilege 1 secret alice',
   'username bob privilege 1 secret bob',
@@ -183,7 +134,6 @@ const LAB_USERS = [
   'username dave privilege 1 secret dave',
 ];
 
-/** Le préambule commun de chaque routeur du lab. */
 const routerPreamble = (hostname: string): string[] => ([
   'enable',
   'configure terminal',
@@ -193,13 +143,6 @@ const routerPreamble = (hostname: string): string[] => ([
   ...LAB_USERS,
 ]);
 
-/**
- * Tape la configuration de chaque équipement dans sa propre CLI, dans
- * l'ordre où on la saisirait en salle : interfaces d'abord, puis DHCP,
- * puis OSPF. Les areas déclarées sont celles de la maquette — R3 en
- * area 1 face à des voisins en area 0 — et sont laissées telles quelles :
- * c'est l'objet même du lab.
- */
 export async function configureLab(lab: Lab): Promise<void> {
   await run(lab.Router1, [
     ...routerPreamble('Router1'),
@@ -252,7 +195,6 @@ export async function configureLab(lab: Lab): Promise<void> {
     ` ip address ${LAB.wan.r3r6.r3} ${LAB.mask30}`, 'no shutdown', 'exit',
     'router ospf 1',
     ' router-id 10.0.30.1',
-    // Les deux lignes que le reste du domaine déclare, lui, en area 0.
     ` network ${LAB.wan.r2r3.net} 0.0.0.3 area 1`,
     ` network ${LAB.wan.r3r4.net} 0.0.0.3 area 1`,
     ` network ${LAB.wan.r3r6.net} 0.0.0.3 area 0`,
@@ -312,8 +254,6 @@ export async function configureLab(lab: Lab): Promise<void> {
     'end',
   ]);
 
-  // Les quatre Catalyst restent en configuration d'usine : le lab ne
-  // découpe aucun VLAN, tout reste sur VLAN 1.
   for (const [sw, name] of [
     [lab.Switch1, 'Switch1'], [lab.Switch2, 'Switch2'],
     [lab.Switch3, 'Switch3'], [lab.Switch4, 'Switch4'],
@@ -321,14 +261,10 @@ export async function configureLab(lab: Lab): Promise<void> {
     await run(sw, ['enable', 'configure terminal', `hostname ${name}`, 'end']);
   }
 
-  // Les deux hôtes adressés prennent leur bail auprès du routeur de leur
-  // LAN : LAB1 n'exclut que .1, donc PC1 obtient .2 ; LAB2 exclut .1
-  // à .10, donc Server1 obtient .11.
   await run(lab.PC1, ['ipconfig /renew']);
   await run(lab.Server1, ['dhclient eth0']);
 }
 
-/** Monte le lab et le configure — le point d'entrée des expériences. */
 export async function loadLab(): Promise<Lab> {
   const lab = buildLab();
   await configureLab(lab);
@@ -336,9 +272,7 @@ export async function loadLab(): Promise<Lab> {
 }
 
 export interface LabStep {
-  /** Titre de section, inséré avant l'étape dans la transcription. */
   readonly section?: string;
-  /** Équipement visé ; par défaut le dernier utilisé, sinon PC1. */
   readonly on?: LabDeviceName;
   readonly cmd: string;
 }

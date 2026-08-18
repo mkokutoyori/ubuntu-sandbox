@@ -30,6 +30,7 @@ import {
   OSPF_MAX_AGE, OSPF_LS_REFRESH_TIME, OSPF_MIN_LS_INTERVAL, OSPF_MIN_LS_ARRIVAL,
   OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
   OSPF_BACKBONE_AREA, OSPF_ALL_SPF_ROUTERS, OSPF_ALL_DR_ROUTERS,
+  areasEqual, isBackboneAreaId,
   OSPF_AD_INTRA_AREA, OSPF_AD_INTER_AREA, OSPF_AD_EXTERNAL,
   OSPF_INFINITY_METRIC,
   OSPF_VERSION_2,
@@ -612,7 +613,7 @@ export class OSPFEngine implements IProtocolEngine {
    */
   addNetwork(network: string, wildcard: string, areaId: string): void {
     const already = this.config.networks.some((n) =>
-      n.network === network && n.wildcard === wildcard && n.areaId === areaId);
+      n.network === network && n.wildcard === wildcard && areasEqual(n.areaId, areaId));
     if (!already) this.config.networks.push({ network, wildcard, areaId });
 
     // Ensure area exists
@@ -621,7 +622,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       });
     }
 
@@ -633,7 +634,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   removeNetwork(network: string, wildcard: string, areaId: string): void {
     this.config.networks = this.config.networks.filter(
-      n => !(n.network === network && n.wildcard === wildcard && n.areaId === areaId)
+      n => !(n.network === network && n.wildcard === wildcard && areasEqual(n.areaId, areaId))
     );
   }
 
@@ -656,7 +657,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       };
       this.config.areas.set(areaId, area);
       if (!this.lsdb.areas.has(areaId)) {
@@ -775,7 +776,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       };
       this.config.areas.set(areaId, area);
     }
@@ -1001,14 +1002,51 @@ export class OSPFEngine implements IProtocolEngine {
     peerRouterId: string,
     packetAreaId: string,
   ): OSPFInterface | null {
-    if (packetAreaId !== OSPF_BACKBONE_AREA) return null;
+    if (!isBackboneAreaId(packetAreaId)) return null;
     const transitIface = this.interfaces.get(ifaceName);
-    if (!transitIface || transitIface.areaId === OSPF_BACKBONE_AREA) return null;
+    if (!transitIface || isBackboneAreaId(transitIface.areaId)) return null;
     const vl = this.virtualLinks.get(peerRouterId);
-    if (!vl || vl.transitAreaId !== transitIface.areaId) return null;
+    if (!vl || !areasEqual(vl.transitAreaId, transitIface.areaId)) return null;
     // Keep the VL iface's IP in sync with our transit interface IP
     vl.iface.ipAddress = transitIface.ipAddress;
     return vl.iface;
+  }
+
+  private ifaceForReceivedPacket(
+    ifaceName: string,
+    packetAreaId: string,
+    senderRouterId: string,
+    srcIP: string,
+    packetType: number,
+  ): OSPFInterface | null {
+    const physIface = this.interfaces.get(ifaceName);
+    if (!physIface) return null;
+
+    const vlIface = this.resolveVLIface(ifaceName, senderRouterId, packetAreaId);
+    if (vlIface) return vlIface;
+
+    if (!areasEqual(packetAreaId, physIface.areaId)) {
+      const why = isBackboneAreaId(packetAreaId)
+        ? 'mismatch area ID, from backbone area must be virtual-link but not found'
+        : `mismatch area ID, received ${packetAreaId} but interface is in area ${physIface.areaId}`;
+      Logger.warn(this.deviceId ?? 'ospf', 'ospf:area-mismatch',
+        `OSPF-4-ERRRCV: Received invalid packet: ${why}, from ${srcIP}, ${ifaceName}`);
+      this.getBus().publish({
+        topic: 'ospf.area.mismatch',
+        payload: {
+          ...this.routerRef(),
+          iface: ifaceName,
+          from: srcIP,
+          packetType,
+          areaReceived: packetAreaId,
+          areaConfigured: physIface.areaId,
+          reason: why,
+        },
+      } as never);
+      return null;
+    }
+
+    return physIface;
   }
 
   /**
@@ -1043,7 +1081,7 @@ export class OSPFEngine implements IProtocolEngine {
       // If we don't have a transit iface from SPF, find one by area
       if (!transitIfaceName) {
         for (const [, iface] of this.interfaces) {
-          if (iface.areaId === vl.transitAreaId) {
+          if (areasEqual(iface.areaId, vl.transitAreaId)) {
             transitIfaceName = iface.name;
             vl.iface.ipAddress = iface.ipAddress;
             break;
@@ -1189,15 +1227,8 @@ export class OSPFEngine implements IProtocolEngine {
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFHelloPacket): void {
     this.dispatchIncoming(ifaceName, hello, srcIP);
-    // VL detection: backbone Hello on transit interface → process on VL synthetic iface
-    const vlIface = this.resolveVLIface(ifaceName, hello.routerId, hello.areaId);
-    const physIface = this.interfaces.get(ifaceName);
-    if (!physIface) return;
-
-    // Drop backbone packets arriving on non-backbone interfaces if sender is not a VL peer
-    if (!vlIface && hello.areaId === OSPF_BACKBONE_AREA && physIface.areaId !== OSPF_BACKBONE_AREA) return;
-
-    const iface = vlIface ?? physIface;
+    const iface = this.ifaceForReceivedPacket(
+      ifaceName, hello.areaId, hello.routerId, srcIP, 1);
     if (!iface) return;
     // passive-interface: hellos neither sent nor processed (IOS behaviour)
     if (iface.passive) return;
@@ -2300,7 +2331,7 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Generate links for each interface in this area
     for (const [, iface] of this.interfaces) {
-      if (iface.areaId !== areaId) continue;
+      if (!areasEqual(iface.areaId, areaId)) continue;
       if (iface.state === 'Down') continue;
 
       if (iface.networkType === 'loopback') {
@@ -2378,7 +2409,7 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     // Virtual link type 4 links (RFC 2328 §12.4.1.1) — only in backbone Router-LSA
-    if (areaId === OSPF_BACKBONE_AREA) {
+    if (isBackboneAreaId(areaId)) {
       for (const [peerRouterId, vl] of this.virtualLinks) {
         const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
         if (vlNeighbor && vlNeighbor.state === 'Full') {
@@ -2714,7 +2745,7 @@ export class OSPFEngine implements IProtocolEngine {
     let sentToAny = false;
     for (const [ifName, iface] of this.interfaces) {
       if (ifName === excludeIface) continue;
-      if (iface.areaId !== areaId && lsa.lsType !== 5) continue;
+      if (!areasEqual(iface.areaId, areaId) && lsa.lsType !== 5) continue;
       if (iface.passive) continue;
       // RFC 2328 §12.4.5 / RFC 3101 §3.4: AS-external-LSAs (Type 5) are never
       // flooded into stub, totally-stubby, or NSSA areas — that's the whole
@@ -3020,7 +3051,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (r.routeType === 'intra-area') return true;
         // Backbone inter-area routes (learned from other areas via Type 3 LSAs) should be
         // propagated into non-backbone areas — this is the backbone pass-through function.
-        if (r.routeType === 'inter-area' && sourceAreaId === OSPF_BACKBONE_AREA) return true;
+        if (r.routeType === 'inter-area' && isBackboneAreaId(sourceAreaId)) return true;
         return false;
       });
 
@@ -3507,7 +3538,7 @@ export class OSPFEngine implements IProtocolEngine {
           });
         } else if (link.type === 4) {
           // Virtual link — only meaningful in backbone SPF (RFC 2328 §15)
-          if (areaId !== OSPF_BACKBONE_AREA) continue;
+          if (!isBackboneAreaId(areaId)) continue;
           const peerRouterId = link.linkId;
           const neighborKey = makeLSDBKey(1, peerRouterId, peerRouterId);
           const neighborLSA = areaDB.get(neighborKey) as RouterLSA | undefined;
@@ -3654,7 +3685,7 @@ export class OSPFEngine implements IProtocolEngine {
     }
     // Fall back: any interface in the transit area
     for (const [, iface] of this.interfaces) {
-      if (iface.areaId === vl.transitAreaId) return iface.name;
+      if (areasEqual(iface.areaId, vl.transitAreaId)) return iface.name;
     }
     return null;
   }
@@ -3936,6 +3967,8 @@ export class OSPFEngine implements IProtocolEngine {
           `OSPF packet type ${packet.packetType} from ${srcIP} dropped on ${ifaceName}: authentication mismatch`);
         return;
       }
+      if (!this.ifaceForReceivedPacket(
+        ifaceName, packet.areaId, packet.routerId, srcIP, packet.packetType)) return;
     }
 
     switch (packet.packetType) {
