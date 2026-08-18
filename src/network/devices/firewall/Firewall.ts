@@ -7,19 +7,19 @@ import {
   IPAddress,
   MACAddress,
   SubnetMask,
-  computeIPv4Checksum,
+  IP_PROTO_ESP,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
-  type ICMPPacket,
   type IPv4Packet,
 } from '../../core/types';
-import {
-  IP_PROTO_ICMP, IP_PROTO_UDP, UDP_PORT_IKE, createIPv4Packet, type UDPPacket,
-} from '../../core/types';
-import { tryIpToUint32 } from '../../core/ip';
+import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
+import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
 import { RouteTable } from './l3/RouteTable';
+import {
+  ProxyArpTable, proxyOwnerKey, type ProxyArpEntry,
+} from './l3/ProxyArpTable';
 import { ArpService } from './l3/ArpService';
 import { ZoneTable } from './model/ZoneTable';
 import { ObjectStore } from './model/ObjectStore';
@@ -58,8 +58,8 @@ import {
   type RemoteAuthOutcome,
 } from './auth/AuthPortal';
 import {
-  applyAdminAccount, adminTrustsSource, authenticateAdmin, ldapBind,
-  type AdminAccountDraft, type LdapBindTarget,
+  applyAdminAccount, adminTrustsSource, authenticateAdmin, remoteAuthenticate,
+  type AdminAccountDraft,
 } from './identity/AdminAccounts';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
@@ -80,10 +80,8 @@ import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import {
   projectLoggingOntoSyslogAgent,
-  syslogSeverityOf,
 } from '../../syslog/loggingProjection';
 import {
-  firewallLogText,
   type FirewallLogEvent,
   type FirewallLogFacts,
 } from './logging/SyslogCatalog';
@@ -101,20 +99,13 @@ export interface TrafficLogger {
   onDenied(context: PacketContext): void;
 }
 
-
-export interface ProxyArpEntry {
-  readonly from: string;
-  readonly to?: string;
-  readonly iface?: string;
-}
-
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
   private readonly vdoms: VdomRegistry;
   private readonly switchGroups = new Map<string, ReadonlySet<string>>();
   private readonly vdomLinks = new Map<string, readonly string[]>();
   private readonly macTable = new Map<string, string>();
-  private readonly proxyArp = new Map<string, readonly ProxyArpEntry[]>();
+  private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
   private readonly pipelines = new Map<string, FirewallPipeline>();
@@ -227,6 +218,11 @@ export class Firewall extends Equipment {
       sendArpAware: (p, packet, nextHop) =>
         this.sendIpv4FrameArpAware(p, packet, nextHop),
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
+      ...ipsecHostFacts({
+        interfaces: this.interfaces,
+        routes: () => this.getVdom().routes,
+        connected: (iface) => this.getPort(iface)?.isConnected(),
+      }),
     });
     this.tcp = agents.tcp;
     this.ipsec = agents.ipsec;
@@ -287,26 +283,15 @@ export class Firewall extends Equipment {
     this.forward(iface, packet, nextHop.toString());
   }
 
-  private async remoteAuthenticate(
+  private remoteAuthenticate(
     server: string, user: string, password: string,
   ): Promise<RemoteAuthOutcome> {
-    const declared = this.getVdom().users.getServer(server);
-    if (!declared) return { accepted: false };
-
-    if (declared.kind === 'ldap') {
-      return { accepted: this.ldapBind(declared, user, password), server, source: 'ldap' };
-    }
-
-    const agent = declared.kind === 'radius' ? this.radius : this.tacacs;
-    const outcome = await agent.authenticate(user, password, declared.address);
-    const accepted = typeof outcome === 'boolean' ? outcome : outcome.status === 'pass';
-    return { accepted, server, source: declared.kind };
-  }
-
-  private ldapBind(
-    server: LdapBindTarget, user: string, password: string,
-  ): boolean {
-    return ldapBind(this.tcp, server, user, password);
+    return remoteAuthenticate({
+      tcp: this.tcp,
+      server: (name) => this.getVdom().users.getServer(name),
+      radius: this.radius,
+      tacacs: this.tacacs,
+    }, server, user, password);
   }
 
   setAuthPortalPorts(httpPort: number, httpsPort: number): void {
@@ -551,44 +536,28 @@ export class Firewall extends Equipment {
 
   removeIpPool(name: string, vdom?: string): void {
     this.getVdom(vdom).pools.remove(name);
-    this.proxyArp.delete(proxyOwnerKey('ippool', name));
+    this.proxyArp.clear(proxyOwnerKey('ippool', name));
   }
 
   setProxyArpEntries(owner: string, entries: readonly ProxyArpEntry[]): void {
-    if (entries.length === 0) { this.proxyArp.delete(owner); return; }
-    this.proxyArp.set(owner, Object.freeze([...entries]));
+    this.proxyArp.set(owner, entries);
   }
 
   clearProxyArpEntries(owner: string): void {
-    this.proxyArp.delete(owner);
+    this.proxyArp.clear(owner);
   }
 
   proxyArpAnswers(address: string, iface: string): boolean {
-    const value = tryIpToUint32(address);
-    if (value === null) return false;
-
-    for (const entries of this.proxyArp.values()) {
-      for (const entry of entries) {
-        if (entry.iface !== undefined && entry.iface !== iface) continue;
-
-        const from = tryIpToUint32(entry.from);
-        const to = tryIpToUint32(entry.to ?? entry.from);
-        if (from === null || to === null) continue;
-        if (value >= from && value <= to) return true;
-      }
-    }
-    return false;
+    return this.proxyArp.answers(address, iface);
   }
 
   proxyArpAddresses(): readonly ProxyArpEntry[] {
-    const out: ProxyArpEntry[] = [];
-    for (const entries of this.proxyArp.values()) out.push(...entries);
-    return Object.freeze(out);
+    return this.proxyArp.all();
   }
 
   private publishPoolProxyArp(pool: IpPool): void {
     const owner = proxyOwnerKey('ippool', pool.name);
-    if (!pool.arpReply) { this.proxyArp.delete(owner); return; }
+    if (!pool.arpReply) { this.proxyArp.clear(owner); return; }
 
     this.setProxyArpEntries(owner, [{
       from: pool.startIP,
@@ -666,6 +635,13 @@ export class Firewall extends Equipment {
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
 
+    if (packet.protocol === IP_PROTO_ESP
+      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
+      const opened = decryptFromTunnel(this.ipsec, this.getVdom().tunnels, packet);
+      if (opened) this.handleIpv4Frame(opened.tunnel, opened.inner);
+      return;
+    }
+
     const vdom = this.vdoms.contextOfInterface(portName);
     const belongsToSession = vdom.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
     if (!belongsToSession && this.destinedToSelf(portName, vdom, packet)
@@ -741,6 +717,8 @@ export class Firewall extends Equipment {
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
+    const ike = ikeDatagram(packet);
+    if (ike) { this.ipsec.handleIkeUdp(portName, packet, ike); return; }
     if (!this.allowsAccess(portName, 'ping')) return;
 
     const reply = icmpEchoReply(packet);
@@ -750,6 +728,11 @@ export class Firewall extends Equipment {
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
+    if (this.getVdom().tunnels.isTunnelInterface(egressPort)) {
+      this.forwardThroughTunnel(egressPort, packet);
+      return;
+    }
+
     const frame = buildEgressFrame(this.egressDeps(), egressPort, packet, gateway, bridged);
     if (!frame) return;
 
@@ -757,6 +740,14 @@ export class Firewall extends Equipment {
       at: this.services.now(), iface: egressPort, direction: 'out', frame,
     });
     this.sendFrame(egressPort, frame);
+  }
+
+  private forwardThroughTunnel(tunnelName: string, packet: IPv4Packet): void {
+    const vdom = this.getVdom();
+    for (const leg of sealedLegs(
+      this.ipsec, vdom.tunnels, vdom.routes, tunnelName, packet)) {
+      this.forward(leg.iface, leg.packet, leg.gateway);
+    }
   }
 
   private emitArp(packet: ARPPacket, iface: string): void {
@@ -779,10 +770,6 @@ export class Firewall extends Equipment {
   }
 }
 
-export function proxyOwnerKey(kind: string, name: string): string {
-  return `${kind}:${name}`;
-}
-
 function vdomServices(context: VdomContext): VdomServices {
   return {
     ...context,
@@ -790,3 +777,6 @@ function vdomServices(context: VdomContext): VdomServices {
     opmode: context.settings.opmode,
   };
 }
+
+export { proxyOwnerKey };
+export type { ProxyArpEntry };

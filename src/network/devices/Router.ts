@@ -3617,6 +3617,48 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
   /** @internal Used by CLI shells */
   _getPortsInternal(): Map<string, Port> { return this.ports; }
+
+  _ipsecLocalIp(iface: string): string | null {
+    if (!iface) {
+      for (const [, port] of this.ports) {
+        const any = port.getIPAddress();
+        if (any) return any.toString();
+      }
+      return null;
+    }
+    if (/^Tunnel/i.test(iface)) {
+      const configured = this._getOSPFExtraConfig()?.pendingIfConfig?.get(iface) as
+        { tunnelSource?: string } | undefined;
+      const sourceIP = configured?.tunnelSource
+        ? this.ports.get(configured.tunnelSource)?.getIPAddress()
+        : null;
+      if (sourceIP) return sourceIP.toString();
+    }
+    return this.ports.get(iface)?.getIPAddress()?.toString() ?? null;
+  }
+
+  _ipsecLocalIps(): string[] {
+    const addresses: string[] = [];
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      if (ip) addresses.push(ip.toString());
+    }
+    return addresses;
+  }
+
+  _ipsecInterfaceDown(iface: string): boolean {
+    if (/^(Tunnel|Loopback)/i.test(iface)) return false;
+    const port = this.ports.get(iface);
+    return port !== undefined && !port.isConnected();
+  }
+
+  _ipsecEgressInterfaceFor(peerIp: string): string | undefined {
+    try {
+      return this.lookupRoute(new IPAddress(peerIp))?.iface;
+    } catch {
+      return undefined;
+    }
+  }
   /** @internal Used by CLI shells */
   _getHostnameInternal(): string { return this.hostname; }
   _getUptimeMs(): number { return this.getUptimeMs(); }

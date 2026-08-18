@@ -1,6 +1,7 @@
 import type { TcpStack } from '../../../tcp/TcpStack';
 import { dialLdap } from '../../windows/server/ad/ldap/LdapClient';
 import { trustHostAllows, type AccessMatrix } from '../authz/AccessMatrix';
+import type { IdentitySource } from './IdentityTable';
 
 export interface AdminAccountDraft {
   readonly name: string;
@@ -61,4 +62,44 @@ export function ldapBind(
   const bound = dialed.client.bind(dn, password);
   dialed.client.unbind();
   return bound.ok;
+}
+
+export interface RemoteAuthDeps {
+  readonly tcp: TcpStack;
+  readonly server: (name: string) => DeclaredAuthServer | undefined;
+  readonly radius: AuthenticatingAgent;
+  readonly tacacs: AuthenticatingAgent;
+}
+
+export interface DeclaredAuthServer extends LdapBindTarget {
+  readonly kind: IdentitySource;
+  readonly address: string;
+}
+
+export interface AuthenticatingAgent {
+  authenticate(
+    user: string, password: string, address: string,
+  ): Promise<boolean | { status: string }> | boolean | { status: string };
+}
+
+export interface RemoteAuthResult {
+  readonly accepted: boolean;
+  readonly server?: string;
+  readonly source?: IdentitySource;
+}
+
+export async function remoteAuthenticate(
+  deps: RemoteAuthDeps, server: string, user: string, password: string,
+): Promise<RemoteAuthResult> {
+  const declared = deps.server(server);
+  if (!declared) return { accepted: false };
+
+  if (declared.kind === 'ldap') {
+    return { accepted: ldapBind(deps.tcp, declared, user, password), server, source: 'ldap' };
+  }
+
+  const agent = declared.kind === 'radius' ? deps.radius : deps.tacacs;
+  const outcome = await agent.authenticate(user, password, declared.address);
+  const accepted = typeof outcome === 'boolean' ? outcome : outcome.status === 'pass';
+  return { accepted, server, source: declared.kind };
 }

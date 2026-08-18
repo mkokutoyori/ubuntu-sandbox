@@ -447,13 +447,23 @@ programmation du moteur IKE partagé depuis les déclarations FortiOS.
 **`IpsecHost` est le port étroit** qui permet à `Router` ET à `Firewall`
 d'héberger le MÊME moteur IKE. N'en écrivez pas un second.
 
+**FGT-VPN-3 est FERMÉ** (journal E39) : un ping part d'un poste derrière
+un FortiGate et ressort derrière l'autre, en ESP sur le fil, dans un
+laboratoire à deux pare-feu câblés. Quatre défauts ont été trouvés en le
+mesurant, et un seul était dans le VPN :
+
+- **un pare-feu ne recevait AUCUN datagramme adressé à lui-même hormis
+  un écho ICMP**, donc aucun ne pouvait RÉPONDRE à une offre IKE ;
+- **`IPSecEngine` fouillait la table de ports de `Router`** par un
+  `as any` — `IpsecHost` porte désormais les quatre faits qu'il
+  cherchait, et le moteur ne sait plus ce qu'est un port ;
+- **`removeStaticRoute` avait un corps VIDE** : `delete <n>` sous
+  `config router static` laissait la route dans la table de transfert ;
+- **une seule carte de chiffrement** pour tous les tunnels rendait
+  impossible de retrouver celle d'un tunnel donné.
+
 **Ce qui reste de la phase 8, nommé plutôt que tu** :
 
-- le tunnel se déclare, se programme et se diagnostique, mais **aucun
-  test ne fait encore circuler un ping de bout en bout à travers lui**
-  (FGT-VPN-3) : cela demande un laboratoire à deux FortiGate reliés, et
-  l'étage de chiffrement du pipeline n'est pas branché sur l'interface
-  de tunnel ;
 - `authmethod signature` (certificats) est accepté et ne change rien —
   le moteur a `IkeCertAuthConfig`, il reste à le brancher ;
 - SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma ;

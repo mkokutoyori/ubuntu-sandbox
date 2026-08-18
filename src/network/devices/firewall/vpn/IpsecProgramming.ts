@@ -1,11 +1,20 @@
 import type { IPSecEngine } from '../../../ipsec/IPSecEngine';
+import type { CryptoMapEntry } from '../../../ipsec/IPSecTypes';
 import {
   IPAddress, IP_PROTO_UDP, createIPv4Packet,
   type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import type { IpsecProposal, IpsecTunnelTable } from './IpsecTunnelTable';
 
-const CRYPTO_MAP = 'FORTI_VPN';
+export function cryptoMapName(tunnel: string): string {
+  return `FORTI_${tunnel}`;
+}
+
+export function cryptoEntryFor(
+  engine: IPSecEngine, tunnel: string,
+): CryptoMapEntry | undefined {
+  return engine.getCryptoMap(cryptoMapName(tunnel))?.staticEntries.get(1);
+}
 
 export function transformSetName(tunnel: string): string {
   return `TS_${tunnel}`;
@@ -54,15 +63,14 @@ export function programIpsecEngine(
 
     engine.addTransformSet(transformSetName(tunnel.name), transformsOf(proposals));
 
-    const entry = engine.getOrCreateCryptoMapEntry(CRYPTO_MAP, priority);
+    const entry = engine.getOrCreateCryptoMapEntry(cryptoMapName(tunnel.name), 1);
     entry.peers = [tunnel.remoteGateway];
     entry.transformSets = [transformSetName(tunnel.name)];
     entry.saLifetimeSeconds = selectors[0]?.keyLifeSeconds ?? tunnel.keyLifeSeconds;
     if (selectors[0]?.pfs) entry.pfsGroup = `group${selectors[0].dhGroups[0] ?? 14}`;
-    priority++;
 
     if (tunnel.boundInterface.length > 0) {
-      engine.applyCryptoMapToInterface(tunnel.boundInterface, CRYPTO_MAP);
+      engine.applyCryptoMapToInterface(tunnel.boundInterface, cryptoMapName(tunnel.name));
     }
   }
 }

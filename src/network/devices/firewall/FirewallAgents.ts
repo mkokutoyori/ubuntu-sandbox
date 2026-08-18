@@ -21,6 +21,10 @@ export interface FirewallAgentDeps {
   readonly sendArpAware: (
     port: string, packet: IPv4Packet, nextHop: IPAddress) => void;
   readonly sendUdp: (destIp: string, port: number, payload: unknown) => boolean;
+  readonly localIp: (iface: string) => string | null;
+  readonly localIps: () => string[];
+  readonly interfaceDown: (iface: string) => boolean;
+  readonly egressFor: (peerIp: string) => string | undefined;
 }
 
 export interface FirewallAgents {
@@ -45,6 +49,10 @@ export function buildFirewallAgents(deps: FirewallAgentDeps): FirewallAgents {
     _sendNatTKeepalive: (destIp: string) =>
       deps.sendUdp(destIp, NAT_T_PORT,
         { type: 'nat-t-keepalive', bytes: new Uint8Array([0xff]) }),
+    _ipsecLocalIp: deps.localIp,
+    _ipsecLocalIps: deps.localIps,
+    _ipsecInterfaceDown: deps.interfaceDown,
+    _ipsecEgressInterfaceFor: deps.egressFor,
     getPort: deps.port,
     getPorts: deps.ports,
     sendFrame: deps.send,

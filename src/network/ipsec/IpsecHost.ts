@@ -8,4 +8,8 @@ export interface IpsecHost {
   _sendNatTKeepalive(destIp: string): boolean;
   _getHostnameInternal(): string;
   _getHostsTable(): RouterHostsTable;
+  _ipsecLocalIp(iface: string): string | null;
+  _ipsecLocalIps(): string[];
+  _ipsecInterfaceDown(iface: string): boolean;
+  _ipsecEgressInterfaceFor(peerIp: string): string | undefined;
 }

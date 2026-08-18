@@ -283,13 +283,15 @@ export class FortiShell {
       },
       applyStaticRoute(route) {
         const routes = fw.getRouteTable();
-        routes.removeStatic(route.destination, route.mask);
+        routes.removeStaticById(route.id);
         if (!route.enabled || route.blackhole) return;
         routes.addStatic(route.destination, route.mask,
           route.gateway === '0.0.0.0' ? undefined : route.gateway,
-          { iface: route.iface || undefined, distance: route.distance });
+          { iface: route.iface || undefined, distance: route.distance, id: route.id });
       },
-      removeStaticRoute() {},
+      removeStaticRoute(id) {
+        fw.getRouteTable().removeStaticById(id);
+      },
       applySchedule(schedule) {
         const built = makeSchedule(schedule.name, schedule.days, schedule.start, schedule.end);
         if (built) fw.setSchedule(built);

@@ -23,6 +23,7 @@ export interface StaticRouteOptions {
   distance?: number;
   metric?: number;
   iface?: string;
+  id?: string;
 }
 
 export interface RouteTableDeps {
@@ -39,6 +40,7 @@ interface StaticRecord {
   distance: number;
   metric?: number;
   isDefault: boolean;
+  id?: string;
 }
 
 const DEFAULT_STATIC_DISTANCE = 1;
@@ -62,6 +64,7 @@ export class RouteTable {
       distance: options.distance ?? DEFAULT_STATIC_DISTANCE,
       metric: options.metric,
       isDefault: mask === '0.0.0.0' && network === '0.0.0.0',
+      id: options.id,
     });
   }
 
@@ -73,6 +76,14 @@ export class RouteTable {
     const index = this.statics.findIndex(route =>
       route.network === network && route.mask === mask
       && (nextHop === undefined || route.nextHop === nextHop));
+    if (index < 0) return false;
+
+    this.statics.splice(index, 1);
+    return true;
+  }
+
+  removeStaticById(id: string): boolean {
+    const index = this.statics.findIndex(route => route.id === id);
     if (index < 0) return false;
 
     this.statics.splice(index, 1);

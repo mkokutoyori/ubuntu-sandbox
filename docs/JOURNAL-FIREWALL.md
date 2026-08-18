@@ -1976,6 +1976,67 @@ d'extraire le calcul.
 
 ---
 
+### E39 — FGT-VPN-3 : un paquet traverse le tunnel, pour de bon
+
+`vpn/{IpsecDataPlane,FirewallIpsecHost}.ts`, `l3/ProxyArpTable.ts`
+(neufs), `Firewall.ts`, `FirewallAgents.ts`, `ipsec/{IpsecHost,
+IPSecEngine}.ts`, `Router.ts` — **12 cas** neufs plus 1 spec Playwright.
+**8 des 12** tombent avant correctif.
+
+La phase 8 avait livré la déclaration, la programmation et le
+diagnostic ; elle laissait ouvert le seul point qui prouve qu'un tunnel
+existe. Cette entrée le ferme, et la mesure a trouvé QUATRE défauts là
+où j'en attendais un.
+
+**(1) Un pare-feu ne recevait aucun datagramme adressé à lui-même, sauf
+un écho ICMP.** `deliverLocally` répondait au ping et jetait tout le
+reste, IKE compris : un FortiGate pouvait donc ÉMETTRE une offre IKE et
+aucun ne pouvait y RÉPONDRE. Le tunnel ne montait jamais, quelle que
+soit la configuration. C'est la cause première, et elle n'était pas dans
+le VPN. Un point de fidélité au passage, vérifié contre la documentation
+Fortinet plutôt que supposé : `allowaccess` ne gouverne PAS IKE — il
+décrit l'accès d'ADMINISTRATION, et un tunnel monte sur une interface
+qui n'autorise que `ping`.
+
+**(2) `IPSecEngine` fouillait la table de ports de son hôte** par
+`(this.router as any)._getPortsInternal()`, une méthode que seul
+`Router` porte : chaque chemin de chiffrement explosait sur un pare-feu.
+`IpsecHost` gagne les quatre FAITS que le moteur cherchait vraiment —
+adresse locale d'une interface, adresses locales, interface tombée,
+interface de sortie vers un pair — et les cinq fouilles disparaissent
+avec quinze erreurs `no-explicit-any` préexistantes. Le moteur ne sait
+plus ce qu'est un port : il pose des questions, l'hôte répond.
+
+**(3) `removeStaticRoute` avait un CORPS VIDE.** `delete 1` sous `config
+router static` retirait la route de la configuration et la laissait dans
+la table de transfert : `show router static` ne la listait plus pendant
+que le pare-feu continuait d'acheminer dessus. Même racine, un second
+défaut : changer le `dst` d'une route existante en laissait une seconde
+derrière, la suppression cherchant la NOUVELLE destination. La cause est
+que la table de routage était indexée par préfixe alors que FortiOS
+indexe par numéro de séquence ; `RouteTable` retient désormais l'identité
+de configuration qui a posé chaque route, donc la suppression est exacte
+— ce qui règle du même coup deux routes vers le même préfixe par deux
+passerelles, qui disparaissaient ensemble.
+
+**(4) Une carte de chiffrement pour tous les tunnels** ne permettait pas
+de retrouver celle d'un tunnel donné : la séquence était calculée dans
+une boucle. Une carte par tunnel (`FORTI_<nom>`) rend la recherche
+stable, et `findEntryForPeer` parcourt de toute façon toutes les cartes.
+
+**Ce qui a été écrit, et non contourné** : l'interface de tunnel est
+choisie par la ROUTE, le sélecteur de phase 2 décide ensuite, le paquet
+sort en ESP par l'interface physique liée, et à l'arrivée il RENTRE dans
+le pipeline avec le tunnel comme interface d'ENTRÉE — donc la politique
+`srcintf "vers_a"` le voit, ce que la sonde vérifie sur la session
+ouverte côté distant. Rien n'est livré par appel direct : le laboratoire
+est fait de deux FortiGate câblés, et les trames ESP sont comptées sur le
+fil.
+
+**Trois extractions imposées par G3**, jamais un seuil relâché :
+`vpn/FirewallIpsecHost.ts`, `l3/ProxyArpTable.ts` et
+`identity/AdminAccounts.remoteAuthenticate`.
+
 ### E38 — FortiOS phase 8 : le tunnel devient une interface, et IKE calcule vraiment
 
 `crypto/dh/modp.ts`, `ipsec/{IkeKeyExchange,IpsecHost}.ts`,

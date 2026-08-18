@@ -1231,6 +1231,10 @@ export class IPSecEngine implements IProtocolEngine {
     return this.cryptoMaps.get(mapName)!;
   }
 
+  getCryptoMap(mapName: string): CryptoMap | undefined {
+    return this.cryptoMaps.get(mapName);
+  }
+
   getOrCreateCryptoMapEntry(mapName: string, seq: number): CryptoMapEntry {
     const map = this.getOrCreateCryptoMap(mapName);
     if (!map.staticEntries.has(seq)) {
@@ -1904,21 +1908,12 @@ export class IPSecEngine implements IProtocolEngine {
   // ══════════════════════════════════════════════════════════════════
 
   onPortDown(portName: string): void {
-    // Find all SAs whose peer was reached via this port and clear them
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const port = ports.get(portName);
-    if (!port) return;
+    if (this.router._ipsecLocalIp(portName) === null) return;
 
-    // Clear SAs for all peers
     const toDelete: string[] = [];
     for (const [peerIP] of this.ikeSADB) {
-      // Check if we'd reach this peer via the downed port
-      try {
-        const route = (this.router as any).lookupRoute(new IPAddress(peerIP));
-        if (route && route.iface === portName) {
-          toDelete.push(peerIP);
-        }
-      } catch { toDelete.push(peerIP); }
+      const egress = this.router._ipsecEgressInterfaceFor(peerIP);
+      if (egress === undefined || egress === portName) toDelete.push(peerIP);
     }
     for (const ip of toDelete) {
       this.clearSAsForPeer(ip);
@@ -2208,13 +2203,7 @@ export class IPSecEngine implements IProtocolEngine {
 
   /** Get all local IP addresses on this router. */
   private getAllLocalIPs(): string[] {
-    const ips: string[] = [];
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    for (const [, port] of ports) {
-      const ip = port.getIPAddress?.();
-      if (ip) ips.push(ip.toString());
-    }
-    return ips;
+    return this.router._ipsecLocalIps();
   }
 
   /** Get all multicast SAs (for show commands). */
@@ -2520,12 +2509,7 @@ export class IPSecEngine implements IProtocolEngine {
    * May return multiple packets when post-encapsulation fragmentation is needed.
    */
   processOutbound(pkt: IPv4Packet, egressIface: string, entry: CryptoMapEntry): IPv4Packet[] | null {
-    // Check if egress port is actually up (cable connected)
-    // Skip this check for virtual interfaces (Tunnel, Loopback, Serial sub-if) which have no cable
-    const isVirtualIface = /^(Tunnel|Loopback)/i.test(egressIface);
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const outPort = ports.get(egressIface);
-    if (!isVirtualIface && outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+    if (this.router._ipsecInterfaceDown(egressIface)) {
       // Port is down — trigger DPD-like SA clearing for any peer on this interface
       const peerIP = this.determinePeer(entry, egressIface, pkt);
       if (peerIP) {
@@ -2654,27 +2638,9 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private encapsulate(innerPkt: IPv4Packet, sa: IPSec_SA, egressIface: string): IPv4Packet | null {
-    // Determine local IP on egress interface
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    let localIP: IPAddress | null = null;
-    // For GRE tunnels, the outer IP uses the physical tunnel source address
-    if (/^Tunnel/i.test(egressIface)) {
-      const extra = (this.router as any)._getOSPFExtraConfig?.();
-      const tunCfg = extra?.pendingIfConfig?.get(egressIface);
-      if (tunCfg?.tunnelSource) {
-        const srcPort = ports.get(tunCfg.tunnelSource);
-        localIP = srcPort?.getIPAddress?.() || null;
-      }
-    }
-    if (!localIP) {
-      for (const [name, port] of ports) {
-        if (name === egressIface) {
-          localIP = port.getIPAddress?.() || null;
-          break;
-        }
-      }
-    }
-    if (!localIP) return null;
+    const localAddress = this.router._ipsecLocalIp(egressIface);
+    if (!localAddress) return null;
+    const localIP: IPAddress = new IPAddress(localAddress);
 
     // ── RFC 4301 §7: Stateful Fragment Checking ──
     // In tunnel mode, fragments should be reassembled before IPsec processing.
@@ -3868,12 +3834,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private negotiateTunnel(peerIP: string, entry: CryptoMapEntry, egressIface: string): boolean {
-    // Check if egress port is actually up (cable connected)
-    // Skip this check for virtual interfaces (Tunnel, Loopback) which have no cable
-    const isVirtualIface = /^(Tunnel|Loopback)/i.test(egressIface);
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    const outPort = ports.get(egressIface);
-    if (!isVirtualIface && outPort && typeof outPort.isConnected === 'function' && !outPort.isConnected()) {
+    if (this.router._ipsecInterfaceDown(egressIface)) {
       Logger.info(this.router.id, 'ipsec:port-down',
         `${this.router.name}: IKE negotiation failed — interface ${egressIface} is down`);
       this.createFailedIKESA(peerIP, egressIface, 'Interface down');
@@ -3939,27 +3900,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   private getLocalIP(egressIface: string): string | null {
-    const ports = (this.router as any)._getPortsInternal() as Map<string, any>;
-    if (egressIface) {
-      // For GRE tunnel interfaces, use the tunnel source's physical interface IP
-      // so that IKE uses WAN addresses, not the virtual tunnel address (RFC 2784)
-      if (/^Tunnel/i.test(egressIface)) {
-        const extra = (this.router as any)._getOSPFExtraConfig?.();
-        const tunCfg = extra?.pendingIfConfig?.get(egressIface);
-        if (tunCfg?.tunnelSource) {
-          const srcPort = ports.get(tunCfg.tunnelSource);
-          const srcIP = srcPort?.getIPAddress?.()?.toString();
-          if (srcIP) return srcIP;
-        }
-      }
-      const port = ports.get(egressIface);
-      return port?.getIPAddress?.()?.toString() || null;
-    }
-    for (const [, port] of ports) {
-      const ip = port.getIPAddress?.();
-      if (ip) return ip.toString();
-    }
-    return null;
+    return this.router._ipsecLocalIp(egressIface);
   }
 
   private findEntryForPeer(peerApparentIP: string, _ports: any): CryptoMapEntry | null {
