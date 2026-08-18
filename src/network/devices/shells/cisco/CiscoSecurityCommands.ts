@@ -440,13 +440,21 @@ export function buildIdentityConfigCommands(
    * le port des demandes.
    */
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
+    if (args[0] === 'key' && args[1]) { sec().radiusDefaults.key = args.slice(1).join(' '); return ''; }
+    if (args[0] === 'timeout' || args[0] === 'retransmit') {
+      const n = Number(args[1]);
+      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] ?? args[0] });
+      if (args[0] === 'timeout') sec().radiusDefaults.timeoutSec = n;
+      else sec().radiusDefaults.retransmit = n;
+      return '';
+    }
     if (args[0] !== 'host' || !args[1]) return '';
     const host = args[1];
     let key: string | undefined;
     let authPort = 1645;
     let acctPort = 1646;
-    let timeoutSec = 5;
-    let retransmit = 3;
+    let timeoutSec: number | undefined;
+    let retransmit: number | undefined;
     for (let i = 2; i < args.length; i++) {
       if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
       else if (args[i] === 'auth-port' && args[i + 1]) { authPort = Number(args[i + 1]) || authPort; i++; }
@@ -459,8 +467,8 @@ export function buildIdentityConfigCommands(
       existant.key = key ?? existant.key;
       existant.authPort = authPort;
       existant.acctPort = acctPort;
-      existant.timeoutSec = timeoutSec;
-      existant.retransmit = retransmit;
+      existant.timeoutSec = timeoutSec ?? existant.timeoutSec;
+      existant.retransmit = retransmit ?? existant.retransmit;
       return '';
     }
     sec().radiusServers.set(host, {
@@ -492,11 +500,18 @@ export function buildIdentityConfigCommands(
    * `server <ip>` utilisable comme membre de groupe.
    */
   trie.registerGreedy('tacacs-server', 'Legacy tacacs host', (args) => {
+    if (args[0] === 'key' && args[1]) { sec().tacacsDefaults.key = args.slice(1).join(' '); return ''; }
+    if (args[0] === 'timeout') {
+      const n = Number(args[1]);
+      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] ?? args[0] });
+      sec().tacacsDefaults.timeoutSec = n;
+      return '';
+    }
     if (args[0] !== 'host' || !args[1]) return '';
     const host = args[1];
     let key: string | undefined;
     let port = 49;
-    let timeoutSec = 5;
+    let timeoutSec: number | undefined;
     for (let i = 2; i < args.length; i++) {
       if (args[i] === 'key' && args[i + 1]) { key = args[i + 1]; i++; }
       else if (args[i] === 'port' && args[i + 1]) { port = Number(args[i + 1]) || 49; i++; }
@@ -506,7 +521,7 @@ export function buildIdentityConfigCommands(
     if (existant) {
       existant.key = key ?? existant.key;
       existant.port = port;
-      existant.timeoutSec = timeoutSec;
+      existant.timeoutSec = timeoutSec ?? existant.timeoutSec;
       return '';
     }
     sec().tacacsServers.set(host, {

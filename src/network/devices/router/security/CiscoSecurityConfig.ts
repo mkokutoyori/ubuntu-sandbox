@@ -44,8 +44,8 @@ export interface RadiusServer {
   authPort: number;
   acctPort: number;
   key?: string;
-  retransmit: number;
-  timeoutSec: number;
+  retransmit?: number;
+  timeoutSec?: number;
   /** Voir `TacacsServer.legacySpelling` : `radius-server host <ip>` alimente ce magasin-ci. */
   legacySpelling?: boolean;
   stats: RadiusServerStats;
@@ -56,7 +56,7 @@ export interface TacacsServer {
   address?: string;
   key?: string;
   port: number;
-  timeoutSec: number;
+  timeoutSec?: number;
   singleConnection: boolean;
   stats: TacacsServerStats;
   /**
@@ -420,6 +420,8 @@ export class CiscoSecurityConfig {
   tacacsServers: Map<string, TacacsServer> = new Map();
   aaaGroups: Map<string, AaaServerGroup> = new Map();
   legacyHosts: AaaLegacyServerHost[] = [];
+  radiusDefaults: { key?: string; timeoutSec?: number; retransmit?: number } = {};
+  tacacsDefaults: { key?: string; timeoutSec?: number } = {};
 
   ssh: SshConfig = {
     version: 1, timeoutSec: 120, authRetries: 3, dhMinBits: 1024, loggingEvents: false,
@@ -593,6 +595,17 @@ export class CiscoSecurityConfig {
       if (k.general) lines.push(`crypto key generate rsa general-keys modulus ${k.modulus} label ${k.label}`);
       else lines.push(`crypto key generate rsa modulus ${k.modulus}`);
     }
+    if (this.radiusDefaults.key) lines.push(`radius-server key ${this.radiusDefaults.key}`);
+    if (this.radiusDefaults.timeoutSec !== undefined) {
+      lines.push(`radius-server timeout ${this.radiusDefaults.timeoutSec}`);
+    }
+    if (this.radiusDefaults.retransmit !== undefined) {
+      lines.push(`radius-server retransmit ${this.radiusDefaults.retransmit}`);
+    }
+    if (this.tacacsDefaults.key) lines.push(`tacacs-server key ${this.tacacsDefaults.key}`);
+    if (this.tacacsDefaults.timeoutSec !== undefined) {
+      lines.push(`tacacs-server timeout ${this.tacacsDefaults.timeoutSec}`);
+    }
     for (const r of this.radiusServers.values()) {
       // Même règle que pour TACACS+ : la forme héritée se rend telle
       // qu'elle a été tapée, sans quoi la configuration déclarerait un
@@ -616,7 +629,7 @@ export class CiscoSecurityConfig {
       if (t.legacySpelling) {
         lines.push(`tacacs-server host ${t.address ?? t.name}`
           + (t.port !== 49 ? ` port ${t.port}` : '')
-          + (t.timeoutSec !== 5 ? ` timeout ${t.timeoutSec}` : '')
+          + (t.timeoutSec !== undefined && t.timeoutSec !== 5 ? ` timeout ${t.timeoutSec}` : '')
           + (t.key ? ` key ${t.key}` : ''));
         continue;
       }
@@ -624,7 +637,7 @@ export class CiscoSecurityConfig {
       if (t.address) lines.push(` address ipv4 ${t.address}`);
       if (t.port !== 49) lines.push(` port ${t.port}`);
       if (t.key) lines.push(` key ${t.key}`);
-      if (t.timeoutSec !== 5) lines.push(` timeout ${t.timeoutSec}`);
+      if (t.timeoutSec !== undefined && t.timeoutSec !== 5) lines.push(` timeout ${t.timeoutSec}`);
     }
     for (const g of this.aaaGroups.values()) {
       lines.push(`aaa group server ${g.kind} ${g.name}`);

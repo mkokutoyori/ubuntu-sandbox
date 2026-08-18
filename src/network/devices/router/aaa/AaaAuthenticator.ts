@@ -510,17 +510,19 @@ export class AaaAuthenticator {
   }
 
   private syncRadiusServer(client: RadiusClientAgent, server: RadiusServer): void {
-    client.addServer(server.address as string, server.key ?? '', {
+    const defauts = getSecurityConfig(this.router).radiusDefaults;
+    client.addServer(server.address as string, server.key ?? defauts.key ?? '', {
       port: server.authPort,
-      timeoutMs: server.timeoutSec * 1000,
-      retransmit: server.retransmit,
+      timeoutMs: (server.timeoutSec ?? defauts.timeoutSec ?? 5) * 1000,
+      retransmit: server.retransmit ?? defauts.retransmit,
     });
   }
 
   private syncTacacsServer(client: TacacsClientAgent, server: TacacsServer): void {
-    client.addServer(server.address as string, server.key ?? '', {
+    const defauts = getSecurityConfig(this.router).tacacsDefaults;
+    client.addServer(server.address as string, server.key ?? defauts.key ?? '', {
       port: server.port,
-      timeoutMs: server.timeoutSec * 1000,
+      timeoutMs: (server.timeoutSec ?? defauts.timeoutSec ?? 5) * 1000,
     });
   }
 

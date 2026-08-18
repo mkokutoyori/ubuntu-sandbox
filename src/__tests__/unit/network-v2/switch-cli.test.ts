@@ -131,7 +131,7 @@ describe('T-CLI-02: Abbreviation & Ambiguity', () => {
   it('should resolve "wr" as write memory', async () => {
     await sw.executeCommand('enable');
     const result = await sw.executeCommand('wr');
-    expect(result).toBe('[OK]');
+    expect(result).toBe('Building configuration...\n[OK]');
   });
 
   it('should return ambiguous error for "s" in config-if mode', async () => {
