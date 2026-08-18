@@ -29,6 +29,16 @@ export const PIM_DENSE_MODE_NOTE =
   '% PIM dense mode is accepted but behaves as sparse mode in this simulator '
   + '(explicit join only — flood-and-prune is not modelled).';
 
+export function pimInterfaceRunningConfigLines(router: Router, iface: string): string[] {
+  const a = agent(router);
+  if (!a) return [];
+  const rt = a.getInterfaceRuntime(iface);
+  if (!rt?.enabled) return [];
+  const lines = [` ip pim ${rt.mode}-mode`];
+  if (rt.drPriority !== 1) lines.push(` ip pim dr-priority ${rt.drPriority}`);
+  return lines;
+}
+
 export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
   const enable = (mode: PimMode) => (args: string[]) => {
     void args;
@@ -263,7 +273,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     ];
     for (const ifaceName of ifaces) {
       const rt = a.getInterfaceRuntime(ifaceName);
-      if (!rt) continue;
+      if (!rt || !rt.enabled) continue;
       const port = r.getPort(ifaceName);
       const ip = port?.getIPAddress()?.toString() ?? '0.0.0.0';
       const nbrCount = a.listNeighbors(ifaceName).length;
@@ -272,7 +282,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     }
     const anyDense = ifaces.some((n) => {
       const rt = a.getInterfaceRuntime(n);
-      return rt !== undefined && rt.mode !== 'sparse';
+      return rt !== undefined && rt.enabled && rt.mode !== 'sparse';
     });
     if (anyDense) {
       lines.push('');

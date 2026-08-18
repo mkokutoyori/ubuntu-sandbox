@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-18T19:50:56.829Z
+Generated: 2026-08-18T20:20:01.337Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -1060,7 +1060,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2835G4RT
+  Processor board ID FTX4520N2HX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1070,9 +1070,9 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1888 bytes
+  Current configuration : 2242 bytes
   !
-  ! Last configuration change at 19:50:57 UTC Tue Aug 18 2026 by console
+  ! Last configuration change at 20:20:01 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1090,6 +1090,19 @@ Total steps: 311
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ipv6 address 2001:db8:1::1/64
+   ip ospf cost 100
+   ip ospf priority 200
+   ip ospf dead-interval 20
+   ip ospf network point-to-multipoint
+   ip ospf retransmit-interval 10
+   ip ospf transmit-delay 2
+   ip ospf authentication message-digest
+   ip ospf authentication-key secretkey2
+   ip ospf mtu-ignore
+   ip ospf demand-circuit
+   ip ospf bfd
+   ip ospf flood-reduction
+   ip ospf database-filter all out
   !
   interface GigabitEthernet0/2
    no ip address
@@ -1598,17 +1611,17 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 18 19:50:56.824: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 18 19:50:56.825: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 18 19:50:56.826: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.826: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.866: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.904: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.914: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.961: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.975: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.999: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.078: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.332: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 20:20:01.333: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 20:20:01.334: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 20:20:01.334: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 20:20:01.373: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.411: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.421: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.462: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.477: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.491: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.578: %SYS-5-CONFIG_I: Configured from console by console
 
 [238/311] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1620,7 +1633,7 @@ Total steps: 311
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE2F3621.35C28F5C (19:50:57.210 UTC Tue Aug 18 2026)
+  reference time is EE2F3CF1.AFDF3B64 (20:20:01.687 UTC Tue Aug 18 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1631,7 +1644,7 @@ Total steps: 311
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [241/311] r1 R1# show clock
-  *19:50:57.000 UTC Tue Aug 18 2026
+  *20:20:01.000 UTC Tue Aug 18 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1816,7 +1829,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX2835G4RT
+  Processor board ID FTX4520N2HX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1826,9 +1839,9 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1888 bytes
+  Current configuration : 2242 bytes
   !
-  ! Last configuration change at 19:50:57 UTC Tue Aug 18 2026 by console
+  ! Last configuration change at 20:20:01 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1846,6 +1859,19 @@ Total steps: 311
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ipv6 address 2001:db8:1::1/64
+   ip ospf cost 100
+   ip ospf priority 200
+   ip ospf dead-interval 20
+   ip ospf network point-to-multipoint
+   ip ospf retransmit-interval 10
+   ip ospf transmit-delay 2
+   ip ospf authentication message-digest
+   ip ospf authentication-key secretkey2
+   ip ospf mtu-ignore
+   ip ospf demand-circuit
+   ip ospf bfd
+   ip ospf flood-reduction
+   ip ospf database-filter all out
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2209,21 +2235,21 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 18 19:50:56.824: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 18 19:50:56.825: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 18 19:50:56.826: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.826: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 18 19:50:56.866: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.904: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.914: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.961: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.975: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:56.999: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 18 19:50:57.078: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.332: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 20:20:01.333: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 20:20:01.334: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 20:20:01.334: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 20:20:01.373: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.411: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.421: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.462: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.477: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.491: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 20:20:01.578: %SYS-5-CONFIG_I: Configured from console by console
 
 [255/311] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX2835G4RT
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX4520N2HX
 
 [256/311] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2297,6 +2323,19 @@ Total steps: 311
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ipv6 address 2001:db8:1::1/64
+   ip ospf cost 100
+   ip ospf priority 200
+   ip ospf dead-interval 20
+   ip ospf network point-to-multipoint
+   ip ospf retransmit-interval 10
+   ip ospf transmit-delay 2
+   ip ospf authentication message-digest
+   ip ospf authentication-key secretkey2
+   ip ospf mtu-ignore
+   ip ospf demand-circuit
+   ip ospf bfd
+   ip ospf flood-reduction
+   ip ospf database-filter all out
   !
   interface GigabitEthernet0/2
    no ip address
@@ -2335,7 +2374,7 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1888 bytes
+  Current configuration : 2242 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2348,6 +2387,19 @@ Total steps: 311
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
    ipv6 address 2001:db8:1::1/64
+   ip ospf cost 100
+   ip ospf priority 200
+   ip ospf dead-interval 20
+   ip ospf network point-to-multipoint
+   ip ospf retransmit-interval 10
+   ip ospf transmit-delay 2
+   ip ospf authentication message-digest
+   ip ospf authentication-key secretkey2
+   ip ospf mtu-ignore
+   ip ospf demand-circuit
+   ip ospf bfd
+   ip ospf flood-reduction
+   ip ospf database-filter all out
   interface GigabitEthernet0/2
    no ip address
   interface GigabitEthernet0/3

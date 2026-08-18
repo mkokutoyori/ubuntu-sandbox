@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-acl-aaa-security
-Generated: 2026-08-13T16:24:09.189Z
+Generated: 2026-08-18T20:20:08.211Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP ACL(basic/adv/named)/AAA/SSH-hardening/attack-defense
 Total steps: 274
@@ -117,7 +117,7 @@ Total steps: 274
 
 [36/274] r1 <R1> display acl 2000
   Basic ACL 2000, 21 rule(s)
-  ACL's step is 5
+  ACL's step is 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -142,7 +142,7 @@ Total steps: 274
 
 [37/274] r1 <R1> display acl all
   Basic ACL 2000, 21 rule(s)
-  ACL's step is 5
+  ACL's step is 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -166,7 +166,7 @@ Total steps: 274
    rule 1000 deny
   Basic ACL 2001, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   Total 2 ACL(s)
 
 
@@ -301,13 +301,13 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
 
 [73/274] r1 <R1> display acl name WAN-IN
   Advanced ACL WAN-IN, 2 rule(s)
   ACL's step is 5
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
 
 
 --- [74] § time-range / traffic-filter ---
@@ -678,6 +678,7 @@ Total steps: 274
    shutdown
   #
   acl number 2000
+   step 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -701,7 +702,7 @@ Total steps: 274
    rule 1000 deny
   #
   acl number 2001
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
    rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
@@ -729,14 +730,14 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
   #
   acl name WAN-IN advanced
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
   #
   acl number 3001
-   rule 5 permit
+   rule 5 permit ip
   #
   user-interface vty 0 4
    authentication-mode aaa
@@ -896,7 +897,7 @@ Total steps: 274
 
 [192/274] r1 <R1> display acl all
   Basic ACL 2000, 21 rule(s)
-  ACL's step is 5
+  ACL's step is 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -920,7 +921,7 @@ Total steps: 274
    rule 1000 deny
   Basic ACL 2001, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   Advanced ACL 3000, 26 rule(s)
   ACL's step is 5
    rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
@@ -948,14 +949,14 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
   Advanced ACL WAN-IN, 2 rule(s)
   ACL's step is 5
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
   Advanced ACL 3001, 1 rule(s)
   ACL's step is 5
-   rule 5 permit
+   rule 5 permit ip
   Total 5 ACL(s)
 
 [193/274] r1 <R1> display dhcp server statistics
@@ -1010,14 +1011,14 @@ Total steps: 274
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 16:24:09.274  Aug 13 2026(EE286E29.4624DD2F)
+  Reference time: 20:20:08.317  Aug 18 2026(EE2F3CF8.5126E978)
 
 [204/274] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [205/274] r1 <R1> display clock
-  2026-08-13 16:24:09
-  Thursday
+  2026-08-18 20:20:08
+  Tuesday
   Time Zone(UTC) : UTC
 
 [206/274] r1 <R1> display lldp neighbor
@@ -1029,13 +1030,13 @@ Total steps: 274
 [208/274] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-13 16:24:09
+  CPU Usage Stat. Time : 2026-08-18 20:20:08
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [209/274] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-13 16:24:09
+  Memory utilization statistics at 2026-08-18 20:20:08
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1076,10 +1077,10 @@ Total steps: 274
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-13 16:24:09 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-13 16:24:09 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-13 16:24:09 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 16:24:09 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:08 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:08 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:08 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:08 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [214/274] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1175,6 +1176,7 @@ Total steps: 274
    shutdown
   #
   acl number 2000
+   step 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -1198,7 +1200,7 @@ Total steps: 274
    rule 1000 deny
   #
   acl number 2001
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
    rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
@@ -1226,14 +1228,14 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
   #
   acl name WAN-IN advanced
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
   #
   acl number 3001
-   rule 5 permit
+   rule 5 permit ip
   #
   user-interface vty 0 4
    authentication-mode aaa
@@ -1354,6 +1356,7 @@ Total steps: 274
    shutdown
   #
   acl number 2000
+   step 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -1377,7 +1380,7 @@ Total steps: 274
    rule 1000 deny
   #
   acl number 2001
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   #
   acl number 3000
    rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
@@ -1405,14 +1408,14 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
   #
   acl name WAN-IN advanced
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
   #
   acl number 3001
-   rule 5 permit
+   rule 5 permit ip
   #
   user-interface vty 0 4
    authentication-mode aaa
@@ -1477,6 +1480,7 @@ Total steps: 274
   interface GigabitEthernet0/0/3
    shutdown
   acl number 2000
+   step 10
    rule 5 permit source 192.168.1.0 0.0.0.255
    rule 10 permit source 192.168.2.0 0.0.0.255
    rule 15 permit source 192.168.3.0 0.0.0.255
@@ -1499,7 +1503,7 @@ Total steps: 274
    rule 100 permit source 192.168.20.0 0.0.0.255
    rule 1000 deny
   acl number 2001
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   acl number 3000
    rule 5 permit tcp source 192.168.1.0 0.0.0.255 destination-port eq 81
    rule 6 permit udp destination 10.0.0.1 0.0.0.0 destination-port eq 53
@@ -1526,12 +1530,12 @@ Total steps: 274
    rule 60 permit tcp source 192.168.12.0 0.0.0.255 destination-port eq 92
    rule 61 permit udp destination 10.0.0.12 0.0.0.0 destination-port eq 53
    rule 900 permit icmp
-   rule 1000 deny
+   rule 1000 deny ip
   acl name WAN-IN advanced
    rule 5 permit tcp destination-port eq 443
-   rule 10 deny
+   rule 10 deny ip
   acl number 3001
-   rule 5 permit
+   rule 5 permit ip
   user-interface vty 0 4
    authentication-mode aaa
    user privilege level 15
@@ -1738,14 +1742,14 @@ Total steps: 274
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    <cr>           
+    <cr>
 
 [272/274] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>      
+    <cr>
 
 [273/274] r1 [Huawei] return
 <empty>

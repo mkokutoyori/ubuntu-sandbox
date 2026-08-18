@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-08-13T16:16:23.803Z
+Generated: 2026-08-18T20:20:03.974Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-08-13 16:16:23
-  Thursday
+  2026-08-18 20:20:03
+  Tuesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -58,13 +58,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-13 16:16:23
+  CPU Usage Stat. Time : 2026-08-18 20:20:03
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-13 16:16:23
+  Memory utilization statistics at 2026-08-18 20:20:03
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -311,7 +311,7 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 16:16:23.901  Aug 13 2026(EE286C57.E6A7EF9D)
+  Reference time: 20:20:04.053  Aug 18 2026(EE2F3CF4.0D916872)
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -327,10 +327,10 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-08-13 16:16:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-13 16:16:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-13 16:16:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 16:16:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -463,11 +463,11 @@ Total steps: 304
     compare        Compare function
     debugging      Enable system debugging functions
     display        Display current system information
-    free           
+    free
     header         Configure login/shell banner
     ip             Internet Protocol
     isis           Configure IS-IS routing
-    kill           
+    kill
     ping           Send ICMP echo messages
     quit           Exit from current command view
     reboot         Reboot device
@@ -514,7 +514,7 @@ Total steps: 304
     firewall                Firewall configuration
     health                  Display device health
     history-command         Display CLI history
-    hwtacacs-server         
+    hwtacacs-server
     icmp                    Internet Control Message Protocol
     icmpv6                  ICMPv6 information
     igmp                    Internet Group Management Protocol
@@ -542,7 +542,7 @@ Total steps: 304
     pim                     Protocol Independent Multicast
     power                   Display power supply status
     qos                     Quality of Service
-    radius-server           
+    radius-server
     rip                     Display RIP information
     route-policy            Display a route-policy
     router                  Router configuration information
@@ -778,6 +778,7 @@ Total steps: 304
 
 [91/304] r1 [R1-CORE-acl-basic-2000] display this
   #
+  acl number 2000
   #
 
 [92/304] r1 [R1-CORE-acl-basic-2000] quit
@@ -788,6 +789,7 @@ Total steps: 304
 
 [94/304] r1 [R1-CORE-acl-basic-MGMT] display this
   #
+  acl name MGMT basic
   #
 
 [95/304] r1 [R1-CORE-acl-basic-MGMT] quit
@@ -858,6 +860,10 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
+  #
   rip 1
    version 2
   #
@@ -913,6 +919,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -972,6 +982,10 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
+  #
   rip 1
    version 2
   #
@@ -1029,6 +1043,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1092,6 +1110,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1165,6 +1187,10 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
+  #
   rip 1
    version 2
   #
@@ -1234,6 +1260,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1311,6 +1341,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1397,7 +1431,7 @@ Total steps: 304
 
 [134/304] r1 [R1-EDGE] ospf ?
     <1-65535>  Process ID
-    <cr>       
+    <cr>
 
 [135/304] r1 [R1-EDGE] undo ?
     acl            Delete Access Control List
@@ -1428,33 +1462,33 @@ Total steps: 304
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    <cr>           
+    <cr>
 
 [136/304] r1 [R1-EDGE] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>      
+    <cr>
 
 [137/304] r1 [R1-EDGE] aaa ?
-    <cr>  
+    <cr>
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
     WORD  Toggle: snmp-agent
-    <cr>  
+    <cr>
 
 [139/304] r1 [R1-EDGE] ntp-service ?
     enable  Toggle: ntp-service enable
-    <cr>    
+    <cr>
 
 [140/304] r1 [R1-EDGE] rip ?
-    vpn-instance  VPN instance
-    <cr>          
+    WORD  Enter RIP view or configure RIP
+    <cr>
 
 [141/304] r1 [R1-EDGE] bgp ?
     WORD  Configure BGP routing
-    <cr>  
+    <cr>
 
 [142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
 <empty>
@@ -1579,6 +1613,8 @@ Total steps: 304
    bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
+  acl number 2000
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
@@ -1627,6 +1663,9 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1766,6 +1805,9 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1872,6 +1914,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -2075,7 +2121,11 @@ Total steps: 304
   Lease          : 1 day(s)
 
 [222/304] r1 <R1> display acl all
-  Total 0 ACL(s)
+  Basic ACL 2000, 0 rule(s)
+  ACL's step is 5
+  Basic ACL MGMT, 0 rule(s)
+  ACL's step is 5
+  Total 2 ACL(s)
 
 [223/304] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
@@ -2145,14 +2195,14 @@ Total steps: 304
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 16:16:24.768  Aug 13 2026(EE286C58.C49BA5E3)
+  Reference time: 20:20:04.977  Aug 18 2026(EE2F3CF4.FA1CAC08)
 
 [234/304] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [235/304] r1 <R1> display clock
-  2026-08-13 16:16:24
-  Thursday
+  2026-08-18 20:20:04
+  Tuesday
   Time Zone(UTC) : UTC
 
 [236/304] r1 <R1> display lldp neighbor
@@ -2164,13 +2214,13 @@ Total steps: 304
 [238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-13 16:16:24
+  CPU Usage Stat. Time : 2026-08-18 20:20:04
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [239/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-13 16:16:24
+  Memory utilization statistics at 2026-08-18 20:20:04
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -2211,15 +2261,15 @@ Total steps: 304
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 9
-  2026-08-13 16:16:23 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-13 16:16:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-13 16:16:23 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 16:16:23 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-13 16:16:24 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
-  2026-08-13 16:16:24 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
-  2026-08-13 16:16:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
-  2026-08-13 16:16:24 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-13 16:16:24 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:03 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-18 20:20:03 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:03 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:04 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
+  2026-08-18 20:20:04 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-18 20:20:04 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-18 20:20:04 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-18 20:20:04 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -2325,6 +2375,10 @@ Total steps: 304
   #
   interface Tunnel0/0/0
    shutdown
+  #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -2440,6 +2494,10 @@ Total steps: 304
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
+  #
   rip 1
    version 2
   #
@@ -2497,6 +2555,8 @@ Total steps: 304
    bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
+  acl number 2000
+  acl name MGMT basic
   rip 1
    version 2
   ospf 1
@@ -2691,14 +2751,14 @@ Total steps: 304
     screen-width   Restore default screen width
     terminal       Set the terminal line characteristics
     traffic        Display traffic statistics
-    <cr>           
+    <cr>
 
 [302/304] r1 [Huawei] acl ?
     advanced  Advanced ACL (3000-3999)
     basic     Basic ACL (2000-2999)
     name      Named ACL
     number    ACL number
-    <cr>      
+    <cr>
 
 [303/304] r1 [Huawei] return
 <empty>

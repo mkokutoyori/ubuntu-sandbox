@@ -15,6 +15,7 @@ import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands'
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
+import { pimInterfaceRunningConfigLines } from './CiscoPimCommands';
 
 import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
 import {
@@ -860,6 +861,34 @@ function horodatageIos(ms: number): string {
  * where the per-interface view showed neither. Two possible answers
  * to one question is the defect; there is one builder now.
  */
+const OSPF_IF_DEFAULTS: Record<string, unknown> = {
+  priority: 1, helloInterval: 10, deadInterval: 40, networkType: 'broadcast',
+  retransmitInterval: 5, transmitDelay: 1, authType: 0,
+};
+
+function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const ecart = (cle: string) =>
+    pending[cle] !== undefined && pending[cle] !== OSPF_IF_DEFAULTS[cle];
+
+  if (pending.cost !== undefined) lines.push(` ip ospf cost ${pending.cost}`);
+  if (ecart('priority')) lines.push(` ip ospf priority ${pending.priority}`);
+  if (ecart('helloInterval')) lines.push(` ip ospf hello-interval ${pending.helloInterval}`);
+  if (ecart('deadInterval')) lines.push(` ip ospf dead-interval ${pending.deadInterval}`);
+  if (ecart('networkType')) lines.push(` ip ospf network ${pending.networkType}`);
+  if (ecart('retransmitInterval')) lines.push(` ip ospf retransmit-interval ${pending.retransmitInterval}`);
+  if (ecart('transmitDelay')) lines.push(` ip ospf transmit-delay ${pending.transmitDelay}`);
+  if (pending.authType === 1) lines.push(' ip ospf authentication');
+  if (pending.authType === 2) lines.push(' ip ospf authentication message-digest');
+  if (pending.authKey) lines.push(` ip ospf authentication-key ${pending.authKey}`);
+  if (pending.mtuIgnore) lines.push(' ip ospf mtu-ignore');
+  if (pending.demandCircuit) lines.push(' ip ospf demand-circuit');
+  if (pending.bfd) lines.push(' ip ospf bfd');
+  if (pending.floodReduction) lines.push(' ip ospf flood-reduction');
+  if (pending.databaseFilterAllOut) lines.push(' ip ospf database-filter all out');
+  return lines;
+}
+
 function interfaceConfigLines(
   router: Router, name: string, port: Port,
   descs: Map<string, string>, dhcp: ReturnType<Router['_getDHCPServerInternal']>,
@@ -926,6 +955,7 @@ function interfaceConfigLines(
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
   lines.push(...igmpInterfaceRunningConfigLines(router, name));
+  lines.push(...pimInterfaceRunningConfigLines(router, name));
   // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu
   // nulle part : la commande était acceptée, absente de la
   // running-config, et sans vue pour la contredire. Le stockage
@@ -934,6 +964,7 @@ function interfaceConfigLines(
   const ospfExtra = (router as unknown as { _getOSPFExtraConfig?: () => { pendingIfConfig: Map<string, Record<string, unknown>> } })._getOSPFExtraConfig?.();
   const pending = ospfExtra?.pendingIfConfig.get(name);
   if (pending) {
+    lines.push(...ospfInterfaceRunningConfigLines(pending));
     if (pending.tunnelMode) lines.push(` tunnel mode ${pending.tunnelMode}`);
     if (pending.tunnelSource) lines.push(` tunnel source ${pending.tunnelSource}`);
     if (pending.tunnelDest) lines.push(` tunnel destination ${pending.tunnelDest}`);
