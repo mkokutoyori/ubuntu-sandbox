@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-static-routing
-Generated: 2026-08-13T16:26:58.634Z
+Generated: 2026-08-18T19:32:45.629Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=static/default/floating, IPv6, prefix-list, PBR, SLA/track
 Total steps: 325
@@ -1643,7 +1643,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7846L2LQ
+  Processor board ID FTX2485FLQX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1653,7 +1653,9 @@ Total steps: 325
 [218/325] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 5411 bytes
+  Current configuration : 5434 bytes
+  !
+  ! Last configuration change at 19:32:45 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1761,7 +1763,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
-  ! Last configuration change at 16:26:58 UTC Thu Aug 13 2026 by console
+  ipv6 unicast-routing
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -2073,8 +2075,10 @@ Total steps: 325
   Application Layer Gateways: none
 
 [238/325] r1 R1# show ip dhcp binding
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
 
 [239/325] r1 R1# show ip dhcp pool
 <empty>
@@ -2165,19 +2169,19 @@ Total steps: 325
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:26:58.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:26:58.631: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:26:58.632: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:26:58.632: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:26:58.642: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.649: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.656: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.661: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.673: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.689: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.691: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.699: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.703: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.623: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:45.624: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:45.626: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:45.626: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:45.654: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.692: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.720: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.738: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.753: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.779: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.785: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.801: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.825: %SYS-5-CONFIG_I: Configured from console by console
 
 [252/325] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2189,7 +2193,7 @@ Total steps: 325
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE286ED2.C0000000 (16:26:58.750 UTC Thu Aug 13 2026)
+  reference time is EE2F31DD.F020C49B (19:32:45.938 UTC Tue Aug 18 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2200,7 +2204,7 @@ Total steps: 325
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [255/325] r1 R1# show clock
-  *16:26:58.000 UTC Thu Aug 13 2026
+  *19:32:45.000 UTC Tue Aug 18 2026
 
 [256/325] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2427,7 +2431,7 @@ Total steps: 325
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7846L2LQ
+  Processor board ID FTX2485FLQX
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2437,7 +2441,9 @@ Total steps: 325
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 5411 bytes
+  Current configuration : 5434 bytes
+  !
+  ! Last configuration change at 19:32:45 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2545,7 +2551,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
-  ! Last configuration change at 16:26:58 UTC Thu Aug 13 2026 by console
+  ipv6 unicast-routing
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -2846,23 +2852,23 @@ Total steps: 325
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:26:58.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:26:58.631: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:26:58.632: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:26:58.632: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:26:58.642: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.649: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.656: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.661: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.673: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.689: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.691: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.699: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:26:58.703: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.623: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:45.624: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:45.626: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:45.626: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:45.654: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.692: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.720: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.738: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.753: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.779: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.785: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.801: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:45.825: %SYS-5-CONFIG_I: Configured from console by console
 
 [269/325] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX7846L2LQ
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX2485FLQX
 
 [270/325] r1 R1# show environment
   Number of Critical alarms:  0
@@ -3040,7 +3046,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
   !
-  ! Last configuration change at 16:26:58 UTC Thu Aug 13 2026 by console
+  ipv6 unicast-routing
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   !
   route-map RM-PBR permit 10
@@ -3098,7 +3104,7 @@ Total steps: 325
 [282/325] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 5411 bytes
+  Current configuration : 5434 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -3192,6 +3198,7 @@ Total steps: 325
   ip prefix-list PL-IN seq 75 permit 10.15.0.0/16 le 24
   ip prefix-list PL-IN seq 100 deny 0.0.0.0/0
   ip prefix-list PL-OUT seq 5 permit 192.168.0.0/16 ge 24
+  ipv6 unicast-routing
   ipv6 prefix-list V6-PL seq 5 permit 2001:db8::/32 le 64
   route-map RM-PBR permit 10
    match ip address 101
@@ -3460,7 +3467,6 @@ Total steps: 325
     rip    Enter RIP routing protocol configuration
 
 [321/325] r1 R1(config)# crypto ?
-    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -3470,6 +3476,7 @@ Total steps: 325
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
+    <cr>
 
 [322/325] r1 R1(config)# no ?
     aaa            Disable AAA
@@ -3478,25 +3485,27 @@ Total steps: 325
     arp            Remove ARP entry
     banner         Remove a banner
     boot           Boot Commands
-    cdp            CDP global configuration
+    cdp            Enable CDP globally
+    clock          Set the system clock
     crypto         Encryption and key management
     enable         Modify enable password parameters
     event          Embedded Event Manager
     hostname       Reset hostname
     interface      Remove a virtual interface
     ip             Global IP configuration subcommands
-    ipv6           Global IPv6 configuration subcommands
+    ipv6           IPv6 interface subcommands
     key            Key management
     line           Remove line configuration
-    lldp           LLDP global configuration
-    logging        Modify message logging facilities
-    ntp            Network Time Protocol
+    lldp           Enable LLDP globally
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
+    ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule
     radius-server  Remove legacy radius host
     route-map      Remove a route-map
     router         Enable a routing protocol
-    service        Disable a service
+    service        Disable a network based service
     sntp           Configure SNTP
     tacacs-server  Remove legacy tacacs host
     track          Remove a tracked object
@@ -3506,7 +3515,7 @@ Total steps: 325
 <empty>
 
 [324/325] r1 R1# show running-config | count !
-  24
+  25
 
 [325/325] r1 R1# write memory
   Building configuration...

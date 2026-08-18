@@ -1175,6 +1175,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.syncRouteDebug();
         this.emitLinkTrap(name, port, state === 'up');
         if (state === 'up') {
+          this.ospfIntegration.onPortUp(name);
           this._ospfAutoConverge();
           // The cable often arrives AFTER the address is configured, so
           // the advertisement from `configureInterface` went nowhere.
@@ -1182,6 +1183,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         } else {
           this.ipsecEngine?.onPortDown(name);
           this.ospfIntegration.onPortDown(name);
+          this._ospfAutoConverge();
           // EIGRP declares the neighbours on a dead interface down at
           // once, without waiting out their hold time — IOS logs it as
           // '%DUAL-5-NBRCHANGE … is down: interface down'.

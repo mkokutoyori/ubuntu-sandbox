@@ -112,6 +112,7 @@ export class RouterOSPFIntegration {
 
   // ── OSPF Engine instances ──
   private ospfEngine: OSPFEngine | null = null;
+  private readonly carrierDown = new Set<string>();
   private ospfv3Engine: OSPFv3Engine | null = null;
 
   // ── Extra config (advanced features not in OSPFEngine) ──
@@ -439,6 +440,27 @@ export class RouterOSPFIntegration {
    * retransmit) are fired synchronously so a converge call completes
    * without waiting simulated seconds.
    */
+  private drainLoadingNeighbors(allPeers: RouterOSPFIntegration[]): boolean {
+    let drained = false;
+    for (let round = 0; round < 3; round++) {
+      let pending = false;
+      for (const peer of allPeers) {
+        if (!peer.ospfEngine) continue;
+        for (const [, iface] of peer.ospfEngine.getInterfaces()) {
+          if (iface.passive) continue;
+          for (const [remoteRid, neighbor] of iface.neighbors) {
+            if (neighbor.state !== 'Loading') continue;
+            pending = true;
+            drained = true;
+            peer.ospfEngine.triggerLSRRetransmit(iface.name, remoteRid);
+          }
+        }
+      }
+      if (!pending) break;
+    }
+    return drained;
+  }
+
   private driveWireConvergence(allPeers: RouterOSPFIntegration[]): void {
     // Round 1: mutual discovery (Init); round 2: 2-Way both sides →
     // p2p ExStart → DD exchange cascades synchronously over the cables.
@@ -523,7 +545,12 @@ export class RouterOSPFIntegration {
    * the interface when the cable comes back
    * (docs/PRD-Link-State.md §2.1 P7).
    */
+  onPortUp(portName: string): void {
+    this.carrierDown.delete(portName);
+  }
+
   onPortDown(portName: string): void {
+    this.carrierDown.add(portName);
     if (!this.ospfEngine) return;
     if (!this.ospfEngine.getInterface(portName)) return;
     // deactivateInterface() only schedules SPF (RFC 2328 §16.5 throttle
@@ -547,7 +574,7 @@ export class RouterOSPFIntegration {
     for (const [portName, port] of this.ctx.getPorts()) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
-      if (ip && mask) {
+      if (ip && mask && !this.carrierDown.has(portName)) {
         routerIfaces.push({ name: portName, ip: ip.toString(), mask: mask.toString() });
       }
     }
@@ -593,7 +620,9 @@ export class RouterOSPFIntegration {
     for (const [rp, rPortInner] of remote.ctx.getPorts()) {
       const rIp = rPortInner.getIPAddress();
       const rMask = rPortInner.getSubnetMask();
-      if (rIp && rMask) remoteIfaces.push({ name: rp, ip: rIp.toString(), mask: rMask.toString() });
+      if (rIp && rMask && !remote.carrierDown.has(rp)) {
+        remoteIfaces.push({ name: rp, ip: rIp.toString(), mask: rMask.toString() });
+      }
     }
     const remoteMatches = remote.ospfEngine.matchInterfaces(remoteIfaces);
     for (const rm of remoteMatches) {
@@ -704,6 +733,19 @@ export class RouterOSPFIntegration {
     // Done while sendCallbacks are still synchronous (pre-delay re-wire).
     for (const peer of allPeers) {
       peer.ospfEngine?.refloodSelfOriginatedLSAs();
+    }
+
+    if (this.drainLoadingNeighbors(allPeers)) {
+      for (const peer of allPeers) {
+        if (!peer.ospfEngine) continue;
+        for (const [areaId] of peer.ospfEngine.getConfig().areas) {
+          peer.ospfEngine.originateRouterLSA(areaId);
+        }
+        for (const [, iface] of peer.ospfEngine.getInterfaces()) {
+          if (iface.state === 'DR') peer.ospfEngine.originateNetworkLSA(iface);
+        }
+      }
+      for (const peer of allPeers) peer.ospfEngine?.refloodSelfOriginatedLSAs();
     }
 
     for (const peer of allPeers) peer.ospfEngine?.setBatchConvergence(false);

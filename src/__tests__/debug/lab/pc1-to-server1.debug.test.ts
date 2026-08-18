@@ -65,7 +65,7 @@ function buildSteps(): LabStepInput[] {
 describe('lab « My Network » — expérience 1 : PC1 ne joint pas Server1', () => {
   it('reproduit la panne et la ramène à la discordance d\'area OSPF', async () => {
     resetLab();
-    const lab = await loadLab();
+    const lab = await loadLab('area-mismatch');
 
     await dumpLab(
       'pc1-to-server1',

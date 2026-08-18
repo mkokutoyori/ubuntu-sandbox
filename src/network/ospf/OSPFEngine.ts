@@ -943,6 +943,9 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(name);
     if (!iface) return;
 
+    const areaId = iface.areaId;
+    const wasDR = iface.state === 'DR';
+
     // Kill all neighbors
     for (const [, neighbor] of iface.neighbors) {
       this.neighborEvent(iface, neighbor, 'KillNbr');
@@ -957,13 +960,53 @@ export class OSPFEngine implements IProtocolEngine {
     iface.state = 'Down';
 
     // Remove from area
-    const area = this.config.areas.get(iface.areaId);
+    const area = this.config.areas.get(areaId);
     if (area) {
       area.interfaces = area.interfaces.filter(i => i !== name);
     }
 
     this.interfaces.delete(name);
+
+    if (wasDR) this.flushOwnLSA(areaId, 2, iface.ipAddress);
+    this.refreshRouterLSAForArea(areaId);
     this.scheduleSPF();
+  }
+
+  private hasInterfaceInArea(areaId: string): boolean {
+    for (const [, iface] of this.interfaces) {
+      if (areasEqual(iface.areaId, areaId)) return true;
+    }
+    for (const [, vl] of this.virtualLinks) {
+      if (areasEqual(vl.iface.areaId, areaId)) return true;
+    }
+    return false;
+  }
+
+  private refreshRouterLSAForArea(areaId: string): void {
+    if (this.hasInterfaceInArea(areaId)) {
+      this.originateRouterLSA(areaId);
+    } else {
+      this.flushOwnLSA(areaId, 1, this.config.routerId);
+    }
+  }
+
+  private flushOwnLSA(areaId: string, lsType: number, linkStateId: string): void {
+    const areaDB = this.lsdb.areas.get(areaId);
+    if (!areaDB) return;
+    const key = makeLSDBKey(lsType, linkStateId, this.config.routerId);
+    const lsa = areaDB.get(key);
+    if (!lsa) return;
+
+    lsa.lsAge = OSPF_MAX_AGE;
+    lsa.lsSequenceNumber = this.nextSeqNumber();
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+    this.floodLSA(areaId, lsa, null, true);
+    areaDB.delete(key);
+
+    this.getBus().publish({
+      topic: 'ospf.lsa.flushed',
+      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa), reason: 'interface-down' },
+    } as never);
   }
 
   getInterface(name: string): OSPFInterface | undefined {
@@ -2077,9 +2120,24 @@ export class OSPFEngine implements IProtocolEngine {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
 
-      // Skip if LSA is MaxAge and not in DB
+      for (const [, nbr] of iface.neighbors) {
+        nbr.lsRequestList = nbr.lsRequestList.filter(
+          (h) => makeLSDBKey(h.lsType, h.linkStateId, h.advertisingRouter) !== key,
+        );
+      }
+
       if (lsa.lsAge >= OSPF_MAX_AGE) {
-        if (areaDB && !areaDB.has(key)) continue;
+        ackedHeaders.push(this.extractHeader(lsa));
+        if (areaDB?.has(key)) {
+          areaDB.delete(key);
+          this.lsArrivalTimes.delete(key);
+          lsdbChanged = true;
+          if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
+          const maxAgeExclude = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
+            ? ifaceName : null;
+          this.floodLSA(iface.areaId, lsa, maxAgeExclude);
+        }
+        continue;
       }
 
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);

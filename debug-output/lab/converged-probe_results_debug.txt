@@ -1,0 +1,1078 @@
+============================================================
+Lab « My Network » — transcription de diagnostic : converged-probe
+Générée : 2026-08-18T19:00:00.000Z
+Topologie : Lab « My Network » — 6 routeurs Cisco, 4 Catalyst, PC1 (Windows) et Server1 (Linux). LAN1 192.168.10.0/24 [PC1 .2] — Switch1 — Router1 Gi0/0 (passive OSPF) ; LAN2 192.168.40.0/24 [Server1 .11] — Switch2 — Router4 Gi0/1 ; coeur en /30 : R1-R2 10.0.10.0, R2-R3 10.0.20.0, R3-R4 10.0.30.0, R1-R5 10.0.40.0, R5-R6 10.0.50.0, R3-R6 10.0.60.0 ; OSPF process 1 partout, R3 déclare 10.0.20.0 et 10.0.30.0 en area 1 là où ses voisins R2 et R4 les déclarent en area 0.
+areas corrigées : area 0 = R1/R2/R5/R6 + le coeur, area 1 = R3-R4 + LAN2, Router3 en ABR.
+Étapes : 124
+============================================================
+
+
+--- [1] § A. Bout en bout ---
+[1/124] PC1 PC1$ ping -n 4 192.168.40.11
+  
+  Pinging 192.168.40.11 with 32 bytes of data:
+  Reply from 192.168.40.11: bytes=32 time=4ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 4ms, Average = 2ms
+
+[2/124] PC1 PC1$ tracert 192.168.40.11
+  
+  Tracing route to 192.168.40.11 over a maximum of 30 hops:
+  
+     1    1 ms     <1 ms    <1 ms    192.168.10.1
+     2    <1 ms    <1 ms    <1 ms    10.0.10.2
+     3    1 ms     1 ms     1 ms     10.0.20.2
+     4    1 ms     <1 ms    1 ms     10.0.30.2
+     5    1 ms     1 ms     1 ms     192.168.40.11
+  
+  Trace complete.
+
+[3/124] Server1 Server1$ ping -c 4 192.168.10.2
+  PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=2.086 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=0.949 ms
+  64 bytes from 192.168.10.2: icmp_seq=3 ttl=124 time=0.940 ms
+  64 bytes from 192.168.10.2: icmp_seq=4 ttl=124 time=1.234 ms
+  
+  --- 192.168.10.2 ping statistics ---
+  4 packets transmitted, 4 received, 0% packet loss
+  rtt min/avg/max/mdev = 0.940/1.302/2.086/0.468 ms
+
+[4/124] Server1 Server1$ traceroute 192.168.10.2
+  traceroute to 192.168.10.2 (192.168.10.2), 30 hops max, 60 byte packets
+   1  192.168.40.1 (192.168.40.1)  0.643 ms  0.302 ms  0.259 ms
+   2  10.0.30.1 (10.0.30.1)  0.458 ms  0.324 ms  0.314 ms
+   3  10.0.20.1 (10.0.20.1)  0.557 ms  0.562 ms  2.974 ms
+   4  10.0.10.1 (10.0.10.1)  3.025 ms  0.810 ms  4.551 ms
+   5  192.168.10.2 (192.168.10.2)  1.132 ms  0.751 ms  1.894 ms
+
+[5/124] PC1 PC1$ ping -n 1 -l 1472 192.168.40.11
+  
+  Pinging 192.168.40.11 with 1472 bytes of data:
+  Reply from 192.168.40.11: bytes=1472 time=1ms TTL=60
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[6/124] PC1 PC1$ ping -n 1 -l 2000 192.168.40.11
+  
+  Pinging 192.168.40.11 with 2000 bytes of data:
+  Reply from 192.168.40.11: bytes=2000 time=<1ms TTL=60
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[7/124] PC1 PC1$ ping -n 1 -f -l 1500 192.168.40.11
+  Pinging 192.168.40.11 with 1500 bytes of data:
+  Packet needs to be fragmented but DF set.
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 1, Received = 0, Lost = 1 (100% loss),
+
+[8/124] PC1 PC1$ arp -a
+  
+  Interface: 192.168.10.2 --- 0x1
+    Internet Address      Physical Address      Type
+    192.168.10.1          02-00-00-00-00-01     dynamic
+
+[9/124] Server1 Server1$ ip neigh
+  192.168.40.1 dev eth0 lladdr 02:00:00:00:00:2c REACHABLE
+
+[10/124] Switch1 Switch1# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:01 DYNAMIC     FastEthernet0/2
+  1       02:00:00:00:00:05 DYNAMIC     FastEthernet0/1
+  
+  Total Mac Addresses for this criterion: 2
+
+[11/124] Switch2 Switch2# show mac address-table
+  Mac Address Table
+  -------------------------------------------
+  
+  Vlan    Mac Address       Type        Ports
+  ----    -----------       --------    -----
+  1       02:00:00:00:00:2c DYNAMIC     FastEthernet0/1
+  1       02:00:00:00:00:49 DYNAMIC     FastEthernet0/2
+  
+  Total Mac Addresses for this criterion: 2
+
+
+--- [12] § B. L'ABR — routes inter-area ---
+[12/124] Router1 Router1# enable
+<vide>
+
+[13/124] Router1 Router1# enable
+<vide>
+
+[14/124] Router1 Router1# show ip route ospf
+  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
+  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
+  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+
+[15/124] Router2 Router2# enable
+<vide>
+
+[16/124] Router2 Router2# show ip route ospf
+  O 192.168.10.0/24 [110/2] via 10.0.10.1, GigabitEthernet0/0
+  O 10.0.40.0/30 [110/2] via 10.0.10.1, GigabitEthernet0/0
+  O 10.0.60.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
+  O 10.0.50.0/30 [110/3] via 10.0.10.1, GigabitEthernet0/0
+  O IA 10.0.30.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/3] via 10.0.20.2, GigabitEthernet0/1
+
+[17/124] Router3 Router3# enable
+<vide>
+
+[18/124] Router3 Router3# show ip route ospf
+  O 10.0.10.0/30 [110/2] via 10.0.20.1, GigabitEthernet0/0
+  O 10.0.50.0/30 [110/2] via 10.0.60.1, GigabitEthernet0/2
+  O 192.168.10.0/24 [110/3] via 10.0.20.1, GigabitEthernet0/0
+  O 10.0.40.0/30 [110/3] via 10.0.20.1, GigabitEthernet0/0
+  O 192.168.40.0/24 [110/2] via 10.0.30.2, GigabitEthernet0/1
+
+[19/124] Router4 Router4# enable
+<vide>
+
+[20/124] Router4 Router4# show ip route ospf
+  O IA 10.0.20.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.10.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
+  O IA 192.168.10.0/24 [110/4] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.40.0/30 [110/4] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.50.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.60.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
+
+[21/124] Router5 Router5# enable
+<vide>
+
+[22/124] Router5 Router5# show ip route ospf
+  O 192.168.10.0/24 [110/2] via 10.0.40.2, GigabitEthernet0/0
+  O 10.0.10.0/30 [110/2] via 10.0.40.2, GigabitEthernet0/0
+  O 10.0.60.0/30 [110/2] via 10.0.50.2, GigabitEthernet0/1
+  O 10.0.20.0/30 [110/3] via 10.0.40.2, GigabitEthernet0/0
+  O IA 10.0.30.0/30 [110/3] via 10.0.50.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/4] via 10.0.50.2, GigabitEthernet0/1
+
+[23/124] Router6 Router6# enable
+<vide>
+
+[24/124] Router6 Router6# show ip route ospf
+  O 10.0.20.0/30 [110/2] via 10.0.60.2, GigabitEthernet0/0
+  O 10.0.40.0/30 [110/2] via 10.0.50.1, GigabitEthernet0/1
+  O 192.168.10.0/24 [110/3] via 10.0.50.1, GigabitEthernet0/1
+  O 10.0.10.0/30 [110/3] via 10.0.60.2, GigabitEthernet0/0
+  O IA 10.0.30.0/30 [110/2] via 10.0.60.2, GigabitEthernet0/0
+  O IA 192.168.40.0/24 [110/3] via 10.0.60.2, GigabitEthernet0/0
+
+[25/124] Router1 Router1# show ip ospf border-routers
+              OSPF Router with ID (192.168.10.1) (Process ID 1)
+  
+                  Base Topology (MTRIC 0)
+  
+  Router         Type     Dist  Next Hop        Via
+  10.0.30.1      ABR      -     -               -
+
+[26/124] Router1 Router1# show ip ospf database summary
+              OSPF Router with ID (192.168.10.1) (Process ID 1)
+  
+                  Summary Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.30.0       10.0.30.1       0           0x800000a2        0x9338
+  192.168.40.0    10.0.30.1       0           0x800000a3        0x27a
+  
+
+[27/124] Router1 Router1# show ip ospf database router
+              OSPF Router with ID (192.168.10.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  192.168.10.1    192.168.10.1    0           0x8000003d        0xf83c      3
+  10.0.20.1       10.0.20.1       0           0x80000029        0x8c42      2
+  10.0.30.1       10.0.30.1       0           0x800000b0        0x8f1c      2
+  10.0.50.1       10.0.50.1       0           0x8000001a        0x3255      2
+  10.0.60.1       10.0.60.1       0           0x8000000f        0x6434      2
+  
+
+[28/124] Router3 Router3# show ip ospf
+  Routing Process "ospf 1" with ID 10.0.30.1
+   Number of areas in this router is 2
+   Reference bandwidth unit is 100 mbps
+  
+      Area 0
+          Number of interfaces in this area is 2
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 12
+  
+      Area 1
+          Number of interfaces in this area is 1
+          Area type: NORMAL
+          SPF algorithm last executed: recently
+          Number of LSA 9
+  
+
+[29/124] Router3 Router3# show ip ospf database
+              OSPF Router with ID (10.0.30.1) (Process ID 1)
+  
+                  Router Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  10.0.30.1       10.0.30.1       0           0x800000bc        0x9ba9      2
+  10.0.20.1       10.0.20.1       0           0x8000002b        0x8e84      2
+  192.168.10.1    192.168.10.1    0           0x80000040        0xfbc3      3
+  10.0.50.1       10.0.50.1       0           0x8000001c        0x3497      2
+  10.0.60.1       10.0.60.1       0           0x80000010        0x6555      2
+  
+                  Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.10.1       192.168.10.1    0           0x80000041        0xf3
+  10.0.20.1       10.0.20.1       0           0x8000002c        0x5425
+  10.0.40.2       192.168.10.1    0           0x80000042        0x3e69
+  10.0.60.2       10.0.30.1       0           0x800000bf        0x4374
+  10.0.50.1       10.0.50.1       0           0x8000001d        0xbdbb
+  
+                  Router Link States (Area 1)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  10.0.30.1       10.0.30.1       0           0x800000bd        0xf6e       1
+  192.168.40.1    192.168.40.1    0           0x80000013        0xd992      2
+  
+                  Net Link States (Area 1)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.30.1       10.0.30.1       0           0x800000be        0x6ee7
+  
+
+[30/124] Router3 Router3# show ip ospf interface brief
+  Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C
+  Gi0/0        1     0               10.0.20.2/30       1     BDR   1/1
+  Gi0/1        1     1               10.0.30.1/30       1     DR    1/1
+  Gi0/2        1     0               10.0.60.2/30       1     DR    1/1
+
+[31/124] Router4 Router4# show ip ospf database
+              OSPF Router with ID (192.168.40.1) (Process ID 1)
+  
+                  Router Link States (Area 1)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum  Link count
+  192.168.40.1    192.168.40.1    0           0x80000015        0xdbd4      2
+  10.0.30.1       10.0.30.1       0           0x800000d5        0x2768      1
+  
+                  Net Link States (Area 1)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.30.1       10.0.30.1       0           0x800000d6        0x8681
+  
+
+[32/124] Router4 Router4# show ip ospf border-routers
+              OSPF Router with ID (192.168.40.1) (Process ID 1)
+  
+                  Base Topology (MTRIC 0)
+  
+  Router         Type     Dist  Next Hop        Via
+  10.0.30.1      ABR      -     -               -
+
+[33/124] Router4 Router4# show ip route 192.168.10.0
+  Routing entry for 192.168.10.0/24
+    Known via "ospf 1", distance 110, metric 4, type inter area
+    Last update from 10.0.30.1 on GigabitEthernet0/0, 00:00:00 ago
+    Routing Descriptor Blocks:
+    * 10.0.30.1, via GigabitEthernet0/0
+        Route metric is 4, traffic share count is 1
+
+[34/124] Router1 Router1# show ip route 192.168.40.0
+  Routing entry for 192.168.40.0/24
+    Known via "ospf 1", distance 110, metric 4, type inter area
+    Last update from 10.0.10.2 on GigabitEthernet0/1, 00:00:00 ago
+    Routing Descriptor Blocks:
+    * 10.0.10.2, via GigabitEthernet0/1
+        Route metric is 4, traffic share count is 1
+
+
+--- [35] § C. Résumé d'area sur l'ABR ---
+[35/124] Router3 Router3# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[36/124] Router3 Router3(config)# router ospf 1
+<vide>
+
+[37/124] Router3 Router3(config-router)# area 1 range 192.168.40.0 255.255.255.0
+<vide>
+
+[38/124] Router3 Router3(config-router)# end
+<vide>
+
+[39/124] Router3 Router3# show running-config | section router ospf
+  router ospf 1
+   router-id 10.0.30.1
+   network 10.0.20.0 0.0.0.3 area 0
+   network 10.0.30.0 0.0.0.3 area 1
+   network 10.0.60.0 0.0.0.3 area 0
+  !
+
+[40/124] Router1 Router1# show ip route ospf
+  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
+  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
+  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+
+[41/124] Router1 Router1# show ip ospf database summary
+              OSPF Router with ID (192.168.10.1) (Process ID 1)
+  
+                  Summary Net Link States (Area 0)
+  
+  Link ID         ADV Router      Age         Seq#            Checksum
+  10.0.30.0       10.0.30.1       0           0x8000010e        0xba
+  192.168.40.0    10.0.30.1       0           0x8000010f        0x6efc
+  
+
+
+--- [42] § D. Area 1 en stub ---
+[42/124] Router3 Router3# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[43/124] Router3 Router3(config)# router ospf 1
+<vide>
+
+[44/124] Router3 Router3(config-router)# area 1 stub
+<vide>
+
+[45/124] Router3 Router3(config-router)# end
+<vide>
+
+[46/124] Router4 Router4# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[47/124] Router4 Router4(config)# router ospf 1
+<vide>
+
+[48/124] Router4 Router4(config-router)# area 1 stub
+<vide>
+
+[49/124] Router4 Router4(config-router)# end
+<vide>
+
+[50/124] Router4 Router4# show ip ospf
+  Routing Process "ospf 1" with ID 192.168.40.1
+   Number of areas in this router is 1
+   Reference bandwidth unit is 100 mbps
+  
+      Area 1
+          Number of interfaces in this area is 2
+          Area type: STUB
+          SPF algorithm last executed: recently
+          Number of LSA 9
+  
+
+[51/124] Router4 Router4# show ip route ospf
+  O IA 10.0.20.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.10.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
+  O IA 192.168.10.0/24 [110/4] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.40.0/30 [110/4] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.50.0/30 [110/3] via 10.0.30.1, GigabitEthernet0/0
+  O IA 10.0.60.0/30 [110/2] via 10.0.30.1, GigabitEthernet0/0
+  O*IA 0.0.0.0/0 [110/2] via 10.0.30.1, GigabitEthernet0/0
+
+[52/124] PC1 PC1$ ping -n 2 192.168.40.11
+  
+  Pinging 192.168.40.11 with 32 bytes of data:
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[53/124] Router3 Router3# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[54/124] Router3 Router3(config)# router ospf 1
+<vide>
+
+[55/124] Router3 Router3(config-router)# no area 1 stub
+<vide>
+
+[56/124] Router3 Router3(config-router)# no area 1 range 192.168.40.0 255.255.255.0
+<vide>
+
+[57/124] Router3 Router3(config-router)# end
+<vide>
+
+[58/124] Router4 Router4# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[59/124] Router4 Router4(config)# router ospf 1
+<vide>
+
+[60/124] Router4 Router4(config-router)# no area 1 stub
+<vide>
+
+[61/124] Router4 Router4(config-router)# end
+<vide>
+
+
+--- [62] § E. Convergence sur panne du lien R2-R3 ---
+[62/124] Router2 Router2# show ip route ospf
+  O 192.168.10.0/24 [110/2] via 10.0.10.1, GigabitEthernet0/0
+  O 10.0.40.0/30 [110/2] via 10.0.10.1, GigabitEthernet0/0
+  O 10.0.60.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
+  O 10.0.50.0/30 [110/3] via 10.0.10.1, GigabitEthernet0/0
+  O IA 10.0.30.0/30 [110/2] via 10.0.20.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/3] via 10.0.20.2, GigabitEthernet0/1
+
+[63/124] Router1 Router1# show ip route 192.168.40.0
+  Routing entry for 192.168.40.0/24
+    Known via "ospf 1", distance 110, metric 4, type inter area
+    Last update from 10.0.10.2 on GigabitEthernet0/1, 00:00:00 ago
+    Routing Descriptor Blocks:
+    * 10.0.10.2, via GigabitEthernet0/1
+        Route metric is 4, traffic share count is 1
+
+[64/124] Router2 Router2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[65/124] Router2 Router2(config)# interface GigabitEthernet0/1
+<vide>
+
+[66/124] Router2 Router2(config-if)# shutdown
+<vide>
+
+[67/124] Router2 Router2(config-if)# end
+<vide>
+
+[68/124] Router1 Router1# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  10.0.20.1       1     FULL/  -        00:00:40    10.0.10.2       GigabitEthernet0/1
+  10.0.50.1       1     FULL/  -        00:00:40    10.0.40.1       GigabitEthernet0/2
+
+[69/124] Router3 Router3# show ip ospf neighbor
+  Neighbor ID     Pri   State           Dead Time   Address         Interface
+  192.168.40.1    1     FULL/  -        00:00:40    10.0.30.2       GigabitEthernet0/1
+  10.0.60.1       1     FULL/  -        00:00:40    10.0.60.1       GigabitEthernet0/2
+
+[70/124] Router1 Router1# show ip route 192.168.40.0
+  Routing entry for 192.168.40.0/24
+    Known via "ospf 1", distance 110, metric 5, type inter area
+    Last update from 10.0.40.1 on GigabitEthernet0/2, 00:00:00 ago
+    Routing Descriptor Blocks:
+    * 10.0.40.1, via GigabitEthernet0/2
+        Route metric is 5, traffic share count is 1
+
+[71/124] Router1 Router1# show ip route ospf
+  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
+  O 10.0.60.0/30 [110/3] via 10.0.40.1, GigabitEthernet0/2
+  O IA 10.0.30.0/30 [110/4] via 10.0.40.1, GigabitEthernet0/2
+  O IA 192.168.40.0/24 [110/5] via 10.0.40.1, GigabitEthernet0/2
+
+[72/124] PC1 PC1$ ping -n 2 192.168.40.11
+  
+  Pinging 192.168.40.11 with 32 bytes of data:
+  Reply from 192.168.40.11: bytes=32 time=2ms TTL=59
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=59
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+
+[73/124] PC1 PC1$ tracert 192.168.40.11
+  
+  Tracing route to 192.168.40.11 over a maximum of 30 hops:
+  
+     1    <1 ms    <1 ms    <1 ms    192.168.10.1
+     2    <1 ms    <1 ms    <1 ms    10.0.40.1
+     3    <1 ms    <1 ms    <1 ms    10.0.50.2
+     4    1 ms     1 ms     1 ms     10.0.60.2
+     5    1 ms     1 ms     1 ms     10.0.30.2
+     6    1 ms     1 ms     1 ms     192.168.40.11
+  
+  Trace complete.
+
+[74/124] Router2 Router2# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[75/124] Router2 Router2(config)# interface GigabitEthernet0/1
+<vide>
+
+[76/124] Router2 Router2(config-if)# no shutdown
+<vide>
+
+[77/124] Router2 Router2(config-if)# end
+<vide>
+
+[78/124] PC1 PC1$ ping -n 2 192.168.40.11
+  
+  Pinging 192.168.40.11 with 32 bytes of data:
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=60
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+
+--- [79] § F. DHCP ---
+[79/124] Router1 Router1# show ip dhcp binding
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
+  192.168.10.2        0102.0000.0000.05       23 Aug 2026 19:00:00    automatic
+
+[80/124] Router1 Router1# show ip dhcp pool
+  Pool LAB1 :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 1
+   Excluded addresses             : 1
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   192.168.10.1         192.168.10.1     - 192.168.10.254   1    /1        /254
+    Network          : 192.168.10.0/24
+    Default Router   : 192.168.10.1
+    DNS Server(s)    : 5.5.5.5
+    Domain Name      : not configured
+    Lease Time       : 5 days
+    Current Bindings : 1
+
+[81/124] Router4 Router4# show ip dhcp binding
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
+  192.168.40.11       0102.0000.0000.49       22 Aug 2026 19:00:00    automatic
+
+[82/124] Router4 Router4# show ip dhcp pool
+  Pool LAB2 :
+   Utilization mark (high/low)    : 100 / 0
+   Subnet size (first/next)       : 0 / 0
+   Total addresses                : 254
+   Leased addresses               : 1
+   Excluded addresses             : 10
+   Pending event                  : none
+   1 subnet is currently in the pool :
+   Current index        IP address range                    Leased/Excluded/Total
+   192.168.40.1         192.168.40.1     - 192.168.40.254   1    /10       /254
+    Network          : 192.168.40.0/24
+    Default Router   : 192.168.40.1
+    DNS Server(s)    : 4.4.4.4
+    Domain Name      : not configured
+    Lease Time       : 4 days
+    Current Bindings : 1
+
+[83/124] Router4 Router4# show ip dhcp conflict
+  IP address        Detection method   Detection time
+  
+  No conflicts detected.
+
+[84/124] Router1 Router1# show ip dhcp server statistics
+  Memory usage         36028
+  Address pools        1
+  Automatic bindings   1
+  
+  Message              Received
+  DHCPDISCOVER         1
+  DHCPREQUEST          1
+  DHCPINFORM           0
+  DHCPRELEASE          0
+  DHCPDECLINE          0
+  
+  Message              Sent
+  DHCPOFFER            1
+  DHCPACK              1
+  DHCPNAK              0
+
+[85/124] PC1 PC1$ ipconfig /release
+  Windows IP Configuration
+  
+  All adapters have been successfully released.
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+  
+  Ethernet adapter Ethernet 1:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+     Connection-specific DNS Suffix  . :
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[86/124] PC1 PC1$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     Default Gateway . . . . . . . . . : 
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[87/124] PC1 PC1$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     DHCP Offer received from 192.168.10.1
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 192.168.10.2
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.10.1
+  
+
+[88/124] PC1 PC1$ ipconfig /all
+  Windows IP Configuration
+  
+     Host Name . . . . . . . . . . . . : PC1
+     Primary Dns Suffix  . . . . . . . : 
+     Node Type . . . . . . . . . . . . : Hybrid
+     IP Routing Enabled. . . . . . . . : No
+     WINS Proxy Enabled. . . . . . . . : No
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-05
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+     IPv4 Address. . . . . . . . . . . : 192.168.10.2(Preferred)
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Lease Obtained. . . . . . . . . . : Tuesday, August 18, 2026 7:00:00 PM
+     Lease Expires . . . . . . . . . . : Sunday, August 23, 2026 7:00:00 PM
+     Default Gateway . . . . . . . . . : 192.168.10.1
+     DHCP Server . . . . . . . . . . . : 192.168.10.1
+     DNS Servers . . . . . . . . . . . : 5.5.5.5
+     NetBIOS over Tcpip. . . . . . . . : Enabled
+  
+  Ethernet adapter Ethernet 1:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-06
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 2:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-07
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+  Ethernet adapter Ethernet 3:
+  
+     Media State . . . . . . . . . . . : Media disconnected
+     Connection-specific DNS Suffix  . :
+     Description . . . . . . . . . . . : Intel(R) Ethernet Connection
+     Physical Address. . . . . . . . . : 02-00-00-00-00-08
+     DHCP Enabled. . . . . . . . . . . : Yes
+     Autoconfiguration Enabled . . . . : Yes
+  
+
+[89/124] Server1 Server1$ dhclient -r eth0
+  released 192.168.40.11
+
+[90/124] Server1 Server1$ dhclient eth0
+<vide>
+
+[91/124] Server1 Server1$ ip addr show eth0
+  2: eth0: <BROADCAST,UP,MULTICAST,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+      link/ether 02:00:00:00:00:49 brd ff:ff:ff:ff:ff:ff
+      inet 192.168.40.11/24 brd 192.168.40.255 dynamic scope global eth0
+         valid_lft forever preferred_lft forever
+      inet6 fe80::ff:fe00:49/64 scope link
+         valid_lft forever preferred_lft forever
+
+
+--- [92] § G. Le segment resté vierge ---
+[92/124] Router6 Router6# configure terminal
+  Enter configuration commands, one per line.  End with CNTL/Z.
+
+[93/124] Router6 Router6(config)# interface GigabitEthernet0/2
+<vide>
+
+[94/124] Router6 Router6(config-if)# ip address 192.168.60.1 255.255.255.0
+<vide>
+
+[95/124] Router6 Router6(config-if)# no shutdown
+<vide>
+
+[96/124] Router6 Router6(config-if)# exit
+<vide>
+
+[97/124] Router6 Router6(config)# ip dhcp excluded-address 192.168.60.1 192.168.60.10
+<vide>
+
+[98/124] Router6 Router6(config)# ip dhcp pool LAB3
+<vide>
+
+[99/124] Router6 Router6(dhcp-config)# network 192.168.60.0 255.255.255.0
+<vide>
+
+[100/124] Router6 Router6(dhcp-config)# default-router 192.168.60.1
+<vide>
+
+[101/124] Router6 Router6(dhcp-config)# exit
+<vide>
+
+[102/124] Router6 Router6(config)# router ospf 1
+<vide>
+
+[103/124] Router6 Router6(config-router)# network 192.168.60.0 0.0.0.255 area 0
+<vide>
+
+[104/124] Router6 Router6(config-router)# end
+<vide>
+
+[105/124] PC2 PC2$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     DHCP Offer received from 192.168.60.1
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 192.168.60.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.60.1
+  
+
+[106/124] PC2 PC2$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 192.168.60.11
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.60.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[107/124] WinServer1 WinServer1$ ipconfig /renew
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     DHCP Offer received from 192.168.60.1
+     DHCP Request - Broadcast
+     DHCP ACK received
+  
+  Ethernet adapter Ethernet 0:
+     Connection-specific DNS Suffix  . :
+     IPv4 Address. . . . . . . . . . . : 192.168.60.12
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.60.1
+  
+
+[108/124] WinServer1 WinServer1$ ipconfig
+  Windows IP Configuration
+  
+  Ethernet adapter Ethernet 0:
+  
+     Connection-specific DNS Suffix  . : 
+     IPv4 Address. . . . . . . . . . . : 192.168.60.12
+     Subnet Mask . . . . . . . . . . . : 255.255.255.0
+     Default Gateway . . . . . . . . . : 192.168.60.1
+  
+  Ethernet adapter Ethernet 1:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 2:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+  Ethernet adapter Ethernet 3:
+  
+     Connection-specific DNS Suffix  . : 
+     Media State . . . . . . . . . . . : Media disconnected
+  
+
+[109/124] Router6 Router6# show ip dhcp binding
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
+  192.168.60.11       0102.0000.0000.8d       19 Aug 2026 19:00:00    automatic
+  192.168.60.12       0102.0000.0000.89       19 Aug 2026 19:00:00    automatic
+
+[110/124] PC2 PC2$ ping -n 2 192.168.40.11
+  
+  Pinging 192.168.40.11 with 32 bytes of data:
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=61
+  Reply from 192.168.40.11: bytes=32 time=<1ms TTL=61
+  
+  Ping statistics for 192.168.40.11:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
+
+[111/124] PC2 PC2$ ping -n 2 192.168.10.2
+  
+  Pinging 192.168.10.2 with 32 bytes of data:
+  Reply from 192.168.10.2: bytes=32 time=1ms TTL=125
+  Reply from 192.168.10.2: bytes=32 time=4ms TTL=125
+  
+  Ping statistics for 192.168.10.2:
+      Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
+  Approximate round trip times in milli-seconds:
+      Minimum = 1ms, Maximum = 4ms, Average = 3ms
+
+[112/124] Router1 Router1# show ip route ospf
+  O 10.0.20.0/30 [110/2] via 10.0.10.2, GigabitEthernet0/1
+  O 10.0.50.0/30 [110/2] via 10.0.40.1, GigabitEthernet0/2
+  O 192.168.60.0/24 [110/3] via 10.0.40.1, GigabitEthernet0/2
+  O 10.0.60.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 10.0.30.0/30 [110/3] via 10.0.10.2, GigabitEthernet0/1
+  O IA 192.168.40.0/24 [110/4] via 10.0.10.2, GigabitEthernet0/1
+
+
+--- [113] § H. Services de bout en bout ---
+[113/124] PC1 PC1$ ssh alice@192.168.40.11
+  Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+  
+  
+  Connection to 192.168.40.11 closed.
+
+[114/124] Server1 Server1$ ss -tlnp
+  State      Recv-Q  Send-Q   Local Address:Port     Peer Address:Port  Process
+  LISTEN     0       0        0.0.0.0:1521           0.0.0.0:*          users:(("tnslsnr",pid=2001,fd=3))
+  LISTEN     0       0        [::]:1521              [::]:*             users:(("tnslsnr",pid=2001,fd=3))
+  LISTEN     0       0        0.0.0.0:22             0.0.0.0:*          users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        [::]:22                [::]:*             users:(("sshd",pid=985,fd=3))
+  LISTEN     0       0        127.0.0.53:53          0.0.0.0:*         
+  LISTEN     0       0        0.0.0.0:1812           0.0.0.0:*         
+
+[115/124] Server1 Server1$ systemctl start nginx
+<vide>
+
+[116/124] Server1 Server1$ systemctl status nginx
+  [0;1;32m●[0m nginx.service - A high performance web server and a reverse proxy server
+       Loaded: loaded (/usr/lib/systemd/system/nginx.service; disabled; vendor preset: enabled)
+       Active: [0;1;32mactive (running)[0m since Tue, 18 Aug 2026 19:00:00 GMT
+     Main PID: 45 (nginx)
+        Tasks: 1
+       Memory: 2.5M
+          CPU: 55ms
+       CGroup: /system.slice/nginx.service
+               └─45 /usr/sbin/nginx -g "daemon on; master_process on;"
+
+[117/124] PC1 PC1$ curl http://192.168.40.11/
+  <!DOCTYPE html>
+  <html>
+  <head>
+  <title>Welcome to nginx!</title>
+  <style>
+  html { color-scheme: light dark; }
+  body { width: 35em; margin: 0 auto;
+  font-family: Tahoma, Verdana, Arial, sans-serif; }
+  </style>
+  </head>
+  <body>
+  <h1>Welcome to nginx!</h1>
+  <p>If you see this page, the nginx web server is successfully installed and
+  working. Further configuration is required.</p>
+  
+  <p>For online documentation and support please refer to
+  <a href="http://nginx.org/">nginx.org</a>.<br/>
+  Commercial support is available at
+  <a href="http://nginx.com/">nginx.com</a>.</p>
+  
+  <p><em>Thank you for using nginx.</em></p>
+  </body>
+  </html>
+  
+
+[118/124] PC1 PC1$ Test-NetConnection 192.168.40.11 -Port 22
+  'test-netconnection' is not recognized as an internal or external command,
+  operable program or batch file.
+
+
+--- [119] § I. Vue générale ---
+[119/124] Router3 Router3# show ip protocols
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 10.0.30.1
+    Number of areas in this router is 2. 2 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+      10.0.20.0 0.0.0.3 area 0
+      10.0.30.0 0.0.0.3 area 1
+      10.0.60.0 0.0.0.3 area 0
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+      192.168.40.1    110           00:00:00
+      10.0.60.1       110           00:00:00
+      10.0.20.1       110           00:00:00
+    Distance: (default is 110)
+
+[120/124] Router3 Router3# show ip ospf statistics
+  OSPF statistics:
+    Rcvd: 0 total, 0 errors
+    LSA: 22 total
+    SPF: 44 runs, last run recently
+    Neighbors: 3, Adjacent: 3
+    Neighbor state changes: 20
+  
+    Area statistics:
+      Area 0: 5 router LSA(s), 5 network LSA(s), 2 summary LSA(s)
+      Area 1: 2 router LSA(s), 1 network LSA(s), 7 summary LSA(s)
+
+[121/124] Router1 Router1# show ip ospf traffic
+  OSPF statistics:
+    Rcvd: 1373 total, 0 checksum errors
+           257 hello, 4 database desc, 2 link state req
+           605 link state updates, 505 link state acks
+    Sent: 1502 total
+           297 hello, 4 database desc, 0 link state req
+           841 link state updates, 360 link state acks
+
+[122/124] Router1 Router1# show ip cef
+  Prefix               Next Hop             Interface
+  0.0.0.0/0            no route
+  192.168.10.0/24      attached             GigabitEthernet0/0
+  10.0.10.0/30         attached             GigabitEthernet0/1
+  10.0.40.0/30         attached             GigabitEthernet0/2
+  10.0.20.0/30         10.0.10.2            GigabitEthernet0/1
+  10.0.50.0/30         10.0.40.1            GigabitEthernet0/2
+  192.168.60.0/24      10.0.40.1            GigabitEthernet0/2
+  10.0.60.0/30         10.0.10.2            GigabitEthernet0/1
+  10.0.30.0/30         10.0.10.2            GigabitEthernet0/1
+  192.168.40.0/24      10.0.10.2            GigabitEthernet0/1
+
+[123/124] Router1 Router1# show logging
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 9 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 9 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 9 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
+      Sequence numbers: disabled
+      Facility: local7
+  
+      Trap logging: level informational, 9 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (6400 bytes):
+  
+  *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
+  *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.20.1 on GigabitEthernet0/1 from Exchange to Full, ExchangeDone
+  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.50.1 on GigabitEthernet0/2 from Exchange to Full, ExchangeDone
+
+[124/124] Router4 Router4# show logging
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 8 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 8 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 8 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
+      Sequence numbers: disabled
+      Facility: local7
+  
+      Trap logging: level informational, 8 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 10.0.30.1 on GigabitEthernet0/0 from Loading to Full, LoadingDone
+  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:00:00.000: %SYS-5-CONFIG_I: Configured from console by console

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-08-13T16:28:41.857Z
+Generated: 2026-08-18T19:32:43.028Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -1096,7 +1096,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7357Q1ME
+  Processor board ID FTX3521V3Y0
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1106,7 +1106,9 @@ Total steps: 355
 [248/355] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4784 bytes
+  Current configuration : 4786 bytes
+  !
+  ! Last configuration change at 19:32:43 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1254,7 +1256,6 @@ Total steps: 355
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
-  ! Last configuration change at 16:28:41 UTC Thu Aug 13 2026 by console
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
@@ -1539,8 +1540,10 @@ Total steps: 355
   Application Layer Gateways: none
 
 [268/355] r1 R1# show ip dhcp binding
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
 
 [269/355] r1 R1# show ip dhcp pool
 <empty>
@@ -1605,16 +1608,16 @@ Total steps: 355
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:28:41.851: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:28:41.852: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:28:41.853: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:28:41.853: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:28:41.867: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.877: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.892: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.901: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.931: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Aug 13 16:28:41.951: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.023: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.024: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.025: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.025: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.050: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.087: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.133: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.184: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.259: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Aug 18 19:32:43.281: %SYS-5-CONFIG_I: Configured from console by console
 
 [282/355] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1626,7 +1629,7 @@ Total steps: 355
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE286F39.FC6A7EF9 (16:28:41.986 UTC Thu Aug 13 2026)
+  reference time is EE2F31DB.6E978D4F (19:32:43.432 UTC Tue Aug 18 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1637,7 +1640,7 @@ Total steps: 355
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [285/355] r1 R1# show clock
-  *16:28:41.000 UTC Thu Aug 13 2026
+  *19:32:43.000 UTC Tue Aug 18 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1819,7 +1822,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX7357Q1ME
+  Processor board ID FTX3521V3Y0
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1829,7 +1832,9 @@ Total steps: 355
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4784 bytes
+  Current configuration : 4786 bytes
+  !
+  ! Last configuration change at 19:32:43 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1977,7 +1982,6 @@ Total steps: 355
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
   !
-  ! Last configuration change at 16:28:41 UTC Thu Aug 13 2026 by console
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   !
@@ -2184,20 +2188,20 @@ Total steps: 355
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:28:41.851: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:28:41.852: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:28:41.853: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:28:41.853: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:28:41.867: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.877: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.892: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.901: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:28:41.931: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Aug 13 16:28:41.951: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.023: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.024: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.025: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.025: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.050: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.087: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.133: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.184: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.259: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Aug 18 19:32:43.281: %SYS-5-CONFIG_I: Configured from console by console
 
 [299/355] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX7357Q1ME
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX3521V3Y0
 
 [300/355] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2295,7 +2299,7 @@ Total steps: 355
 [312/355] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4784 bytes
+  Current configuration : 4786 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2689,7 +2693,6 @@ Total steps: 355
     rip    Enter RIP routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
-    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -2699,6 +2702,7 @@ Total steps: 355
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
+    <cr>
 
 [352/355] r1 R1(config)# no ?
     aaa            Disable AAA
@@ -2707,25 +2711,27 @@ Total steps: 355
     arp            Remove ARP entry
     banner         Remove a banner
     boot           Boot Commands
-    cdp            CDP global configuration
+    cdp            Enable CDP globally
+    clock          Set the system clock
     crypto         Encryption and key management
     enable         Modify enable password parameters
     event          Embedded Event Manager
     hostname       Reset hostname
     interface      Remove a virtual interface
     ip             Global IP configuration subcommands
-    ipv6           Global IPv6 configuration subcommands
+    ipv6           IPv6 interface subcommands
     key            Key management
     line           Remove line configuration
-    lldp           LLDP global configuration
-    logging        Modify message logging facilities
-    ntp            Network Time Protocol
+    lldp           Enable LLDP globally
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
+    ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule
     radius-server  Remove legacy radius host
     route-map      Remove a route-map
     router         Enable a routing protocol
-    service        Disable a service
+    service        Disable a network based service
     sntp           Configure SNTP
     tacacs-server  Remove legacy tacacs host
     track          Remove a tracked object
@@ -2735,7 +2741,7 @@ Total steps: 355
 <empty>
 
 [354/355] r1 R1# show running-config | count !
-  17
+  18
 
 [355/355] r1 R1# write memory
   Building configuration...

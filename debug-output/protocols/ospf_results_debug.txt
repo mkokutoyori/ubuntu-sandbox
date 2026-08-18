@@ -646,75 +646,75 @@ Total steps: 400
 --- [99] § OSPF — matrice de joignabilité (routage dynamique) ---
 [99/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=1.306 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=3.063 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=62 time=2.344 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=62 time=0.801 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.306/2.184/3.063/0.878 ms
+  rtt min/avg/max/mdev = 0.801/1.573/2.344/0.772 ms
 
 [100/400] lhq lhq$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=1.009 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.853 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.746 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=2.463 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.853/0.931/1.009/0.078 ms
+  rtt min/avg/max/mdev = 0.746/1.605/2.463/0.859 ms
 
 [101/400] lhq lhq$ ping -c 2 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.750 ms
-  64 bytes from 10.2.2.11: icmp_seq=2 ttl=62 time=0.807 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=62 time=0.650 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=62 time=0.755 ms
   
   --- 10.2.2.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.750/0.778/0.807/0.028 ms
+  rtt min/avg/max/mdev = 0.650/0.703/0.755/0.052 ms
 
 [102/400] ldc ldc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.698 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.481 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.726 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.534 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.481/0.589/0.698/0.109 ms
+  rtt min/avg/max/mdev = 0.534/0.630/0.726/0.096 ms
 
 [103/400] ldc ldc$ ping -c 2 10.2.2.11
   PING 10.2.2.11 (10.2.2.11) 56(84) bytes of data.
-  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.694 ms
-  64 bytes from 10.2.2.11: icmp_seq=2 ttl=61 time=0.560 ms
+  64 bytes from 10.2.2.11: icmp_seq=1 ttl=61 time=0.623 ms
+  64 bytes from 10.2.2.11: icmp_seq=2 ttl=61 time=0.526 ms
   
   --- 10.2.2.11 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.560/0.627/0.694/0.067 ms
+  rtt min/avg/max/mdev = 0.526/0.575/0.623/0.048 ms
 
 [104/400] lbr lbr$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=2.626 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.501 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.624 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=1.242 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.501/1.563/2.626/1.062 ms
+  rtt min/avg/max/mdev = 0.624/0.933/1.242/0.309 ms
 
 [105/400] lbr lbr$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.690 ms
-  64 bytes from 10.3.3.10: icmp_seq=2 ttl=61 time=0.671 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=61 time=0.666 ms
+  64 bytes from 10.3.3.10: icmp_seq=2 ttl=61 time=0.644 ms
   
   --- 10.3.3.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.671/0.680/0.690/0.009 ms
+  rtt min/avg/max/mdev = 0.644/0.655/0.666/0.011 ms
 
 [106/400] srvdc srvdc$ ping -c 2 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.526 ms
-  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.365 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.664 ms
+  64 bytes from 10.1.1.10: icmp_seq=2 ttl=62 time=0.429 ms
   
   --- 10.1.1.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.365/0.445/0.526/0.081 ms
+  rtt min/avg/max/mdev = 0.429/0.546/0.664/0.117 ms
 
 [107/400] whq whq$ ping -n 2 10.3.3.10
   
@@ -725,18 +725,18 @@ Total steps: 400
   Ping statistics for 10.3.3.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [108/400] wbr wbr$ ping -n 2 10.1.1.10
   
   Pinging 10.1.1.10 with 32 bytes of data:
   Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
-  Reply from 10.1.1.10: bytes=32 time=<1ms TTL=62
+  Reply from 10.1.1.10: bytes=32 time=2ms TTL=62
   
   Ping statistics for 10.1.1.10:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 0ms, Maximum = 1ms, Average = 1ms
+      Minimum = 1ms, Maximum = 2ms, Average = 2ms
 
 [109/400] rhq R-HQ# traceroute 10.2.2.11
   Type escape sequence to abort.
@@ -744,13 +744,13 @@ Total steps: 400
   VRF info: (vrf in name/id, vrf out name/id)
   
     1 172.16.12.2  1 msec 0 msec 0 msec
-    2 10.2.2.11  1 msec 0 msec 0 msec
+    2 10.2.2.11  0 msec 1 msec 0 msec
 
 [110/400] ldc ldc$ traceroute -n -m 6 10.2.2.11
-   1  10.3.3.1  0.753  0.568  0.538
-   2  172.16.13.1  0.443  0.446  0.514
-   3  172.16.12.2  0.682  0.582  0.546
-   4  10.2.2.11  0.706  0.749  0.840
+   1  10.3.3.1  0.753  0.388  0.253
+   2  172.16.13.1  0.511  0.307  0.493
+   3  172.16.12.2  0.458  0.498  0.389
+   4  10.2.2.11  0.646  0.529  0.453
 
 
 --- [111] § OSPF — coût & métriques ---
@@ -1386,12 +1386,12 @@ Total steps: 400
 
 [263/400] lhq lhq$ ping -c 2 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=1.139 ms
-  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.452 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=1.828 ms
+  64 bytes from 10.2.2.10: icmp_seq=2 ttl=126 time=0.433 ms
   
   --- 10.2.2.10 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.452/0.795/1.139/0.343 ms
+  rtt min/avg/max/mdev = 0.433/1.131/1.828/0.698 ms
 
 
 --- [264] § OSPF — statistiques, SPF & process ---
@@ -1399,7 +1399,7 @@ Total steps: 400
   OSPF statistics:
     Rcvd: 0 total, 0 errors
     LSA: 7 total
-    SPF: 65 runs, last run recently
+    SPF: 67 runs, last run recently
     Neighbors: 1, Adjacent: 1
     Neighbor state changes: 16
   
@@ -1442,18 +1442,18 @@ Total steps: 400
 [267/400] rdc R-DC# show ip ospf statistics
   OSPF statistics:
     Rcvd: 0 total, 0 errors
-    LSA: 6 total
-    SPF: 63 runs, last run recently
+    LSA: 5 total
+    SPF: 65 runs, last run recently
     Neighbors: 0, Adjacent: 0
     Neighbor state changes: 4
   
     Area statistics:
-      Area 0: 3 router LSA(s), 3 network LSA(s), 0 summary LSA(s)
+      Area 0: 3 router LSA(s), 2 network LSA(s), 0 summary LSA(s)
 
 [268/400] rbr <R-BR> display ospf cumulative
   OSPF statistics:
     LSA: 7 total
-    SPF: 62 runs
+    SPF: 64 runs
     Neighbors: 1, Adjacent: 1
   
     Area statistics:
@@ -1471,7 +1471,7 @@ Total steps: 400
 [271/400] rbr <R-BR> display ospf statistics
   OSPF statistics:
     LSA: 7 total
-    SPF: 63 runs
+    SPF: 65 runs
     Neighbors: 1, Adjacent: 1
   
     Area statistics:
@@ -1487,7 +1487,7 @@ Total steps: 400
       Options is 0x02
       Dead timer due in 00:00:40
       Neighbor is up for 00:00:00
-      Index 1/1, retransmission queue length 62, number of retransmission 0
+      Index 1/1, retransmission queue length 68, number of retransmission 0
       First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
       Last retransmission scan length is 0, maximum is 0
       Last retransmission scan time is 0 msec, maximum is 0 msec
@@ -1519,7 +1519,7 @@ Total steps: 400
       Options is 0x02
       Dead timer due in 00:00:40
       Neighbor is up for 00:00:00
-      Index 1/1, retransmission queue length 68, number of retransmission 0
+      Index 1/1, retransmission queue length 74, number of retransmission 0
       First 0x0(0)/0x0(0) Next 0x0(0)/0x0(0)
       Last retransmission scan length is 0, maximum is 0
       Last retransmission scan time is 0 msec, maximum is 0 msec
@@ -1538,17 +1538,17 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000a3        0x24ae      3
+  1.1.1.1         1.1.1.1         0           0x800000a6        0x2736      3
   3.3.3.3         3.3.3.3         0           0x8000002b        0xa7ed      2
-  2.2.2.2         2.2.2.2         0           0x80000063        0xe529      2
+  2.2.2.2         2.2.2.2         0           0x80000068        0xeace      2
   
                   Net Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum
   172.16.13.1     1.1.1.1         0           0x80000071        0xf123
   172.16.12.1     1.1.1.1         0           0x80000083        0xfe32
-  172.16.13.2     3.3.3.3         0           0x8000002c        0xb577
-  172.16.12.2     2.2.2.2         0           0x80000064        0xe4a4
+  172.16.13.2     3.3.3.3         3600        0x8000003e        0xc7aa
+  172.16.12.2     2.2.2.2         0           0x80000069        0xe9f9
   
 
 [278/400] rhq R-HQ# show ip route ospf
@@ -1564,7 +1564,7 @@ Total steps: 400
           Number of interfaces in this area is 2
           Area type: NORMAL
           SPF algorithm last executed: recently
-          Number of LSA 6
+          Number of LSA 5
   
 
 [280/400] rdc R-DC# show ip ospf neighbor
@@ -1586,7 +1586,7 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  3.3.3.3         3.3.3.3         0           0x80000052        0xfeae      2
+  3.3.3.3         3.3.3.3         0           0x80000056        0x333       2
   1.1.1.1         1.1.1.1         0           0x80000076        0xc4ee      3
   2.2.2.2         2.2.2.2         0           0x80000027        0xa85c      2
   
@@ -1595,7 +1595,6 @@ Total steps: 400
   Link ID         ADV Router      Age         Seq#            Checksum
   172.16.13.1     1.1.1.1         0           0x80000071        0xf123
   172.16.12.1     1.1.1.1         0           0x80000077        0xf265
-  172.16.13.2     3.3.3.3         0           0x8000002c        0xb577
   
 
 [284/400] rdc R-DC# show ip route ospf
@@ -1652,13 +1651,13 @@ Total steps: 400
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    2.2.2.2         2.2.2.2         0     48    0x80000071
-   Router    1.1.1.1         1.1.1.1         0     60    0x800000aa
+   Router    2.2.2.2         2.2.2.2         0     48    0x80000076
+   Router    1.1.1.1         1.1.1.1         0     60    0x800000ad
    Router    3.3.3.3         3.3.3.3         0     48    0x8000002b
    Network   172.16.13.1     1.1.1.1         0     32    0x80000071
    Network   172.16.12.1     1.1.1.1         0     32    0x80000083
-   Network   172.16.13.2     3.3.3.3         0     32    0x8000002c
-   Network   172.16.12.2     2.2.2.2         0     32    0x80000072
+   Network   172.16.13.2     3.3.3.3         3600  32    0x8000003e
+   Network   172.16.12.2     2.2.2.2         0     32    0x80000077
   
 
 [291/400] rbr <R-BR> display ospf routing
@@ -1710,11 +1709,11 @@ Total steps: 400
 
 [298/400] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.372 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.408 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.372/0.372/0.372/0.000 ms
+  rtt min/avg/max/mdev = 0.408/0.408/0.408/0.000 ms
 
 [299/400] srvdc srvdc$ ip route show default
   10.3.3.0/24 dev eth0 proto kernel scope link src 10.3.3.10 metric 0
@@ -1722,11 +1721,11 @@ Total steps: 400
 
 [300/400] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.277 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.281 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.277/0.277/0.277/0.000 ms
+  rtt min/avg/max/mdev = 0.281/0.281/0.281/0.000 ms
 
 [301/400] whq whq$ route print
   ===========================================================================
@@ -1769,9 +1768,9 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000ac        0x2d45      3
+  1.1.1.1         1.1.1.1         0           0x800000af        0x30cc      3
   3.3.3.3         3.3.3.3         0           0x8000002b        0xa7ed      2
-  2.2.2.2         2.2.2.2         0           0x80000075        0xf77d      2
+  2.2.2.2         2.2.2.2         0           0x8000007a        0xfc23      2
   
 
 [304/400] rhq R-HQ# show ip ospf database router 2.2.2.2
@@ -1780,9 +1779,9 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000ad        0x2e72      3
+  1.1.1.1         1.1.1.1         0           0x800000b0        0x31f9      3
   3.3.3.3         3.3.3.3         0           0x8000002b        0xa7ed      2
-  2.2.2.2         2.2.2.2         0           0x80000077        0xf9bf      2
+  2.2.2.2         2.2.2.2         0           0x8000007c        0xfe65      2
   
 
 [305/400] rhq R-HQ# show ip ospf database router 3.3.3.3
@@ -1791,9 +1790,9 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000ae        0x2f9f      3
+  1.1.1.1         1.1.1.1         0           0x800000b1        0x3227      3
   3.3.3.3         3.3.3.3         0           0x8000002b        0xa7ed      2
-  2.2.2.2         2.2.2.2         0           0x80000079        0xfb02      2
+  2.2.2.2         2.2.2.2         0           0x8000007e        0x1a7       2
   
 
 [306/400] rhq R-HQ# show ip ospf database network
@@ -1804,8 +1803,8 @@ Total steps: 400
   Link ID         ADV Router      Age         Seq#            Checksum
   172.16.13.1     1.1.1.1         0           0x80000071        0xf123
   172.16.12.1     1.1.1.1         0           0x80000083        0xfe32
-  172.16.13.2     3.3.3.3         0           0x8000002c        0xb577
-  172.16.12.2     2.2.2.2         0           0x8000007c        0xfc3e
+  172.16.13.2     3.3.3.3         3600        0x8000003e        0xc7aa
+  172.16.12.2     2.2.2.2         0           0x80000081        0x293
   
 
 [307/400] rhq R-HQ# show ip ospf database summary
@@ -1820,7 +1819,7 @@ Total steps: 400
   
   Link ID         ADV Router      Age         Seq#            Checksum  Tag  Forward Address
   192.0.2.0       1.1.1.1         0           0x8000008e        0x9587      0    Forward Address: 0.0.0.0
-  172.16.23.0     2.2.2.2         0           0x80000042        0x5b70      0    Forward Address: 0.0.0.0
+  172.16.23.0     2.2.2.2         0           0x80000043        0x5c85      0    Forward Address: 0.0.0.0
 
 [309/400] rhq R-HQ# show ip ospf database database-summary
               OSPF Router with ID (1.1.1.1) (Process ID 1)
@@ -1857,7 +1856,7 @@ Total steps: 400
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  3.3.3.3         3.3.3.3         0           0x8000005e        0xb3c       2
+  3.3.3.3         3.3.3.3         0           0x80000062        0xfc0       2
   1.1.1.1         1.1.1.1         0           0x80000076        0xc4ee      3
   2.2.2.2         2.2.2.2         0           0x80000027        0xa85c      2
   
@@ -1870,7 +1869,6 @@ Total steps: 400
   Link ID         ADV Router      Age         Seq#            Checksum
   172.16.13.1     1.1.1.1         0           0x80000071        0xf123
   172.16.12.1     1.1.1.1         0           0x80000077        0xf265
-  172.16.13.2     3.3.3.3         0           0x8000002c        0xb577
   
 
 [313/400] rdc R-DC# show ip ospf database database-summary
@@ -1879,21 +1877,21 @@ Total steps: 400
   Area 0 database summary
     LSA Type      Count    Delete   Maxage
     Router        3        0        0
-    Network       3        0        0
+    Network       2        0        0
     Summary Net   0        0        0
     Summary ASBR  0        0        0
     Type-7 Ext    0        0        0
-    Subtotal      6        0        0
+    Subtotal      5        0        0
   
   Process 1 database summary
     LSA Type      Count    Delete   Maxage
     Router        3        0        0
-    Network       3        0        0
+    Network       2        0        0
     Summary Net   0        0        0
     Summary ASBR  0        0        0
     Type-5 Ext    0        0        0
     Type-7 Ext    0        0        0
-    Total         6        0        0
+    Total         5        0        0
 
 
 --- [314] § OSPF — LSDB détaillée (Huawei) ---
@@ -1903,8 +1901,8 @@ Total steps: 400
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    2.2.2.2         2.2.2.2         0     48    0x8000008b
-   Router    1.1.1.1         1.1.1.1         0     60    0x800000b7
+   Router    2.2.2.2         2.2.2.2         0     48    0x80000090
+   Router    1.1.1.1         1.1.1.1         0     60    0x800000ba
    Router    3.3.3.3         3.3.3.3         0     48    0x8000002b
 
 [315/400] rbr <R-BR> display ospf lsdb router 2.2.2.2
@@ -1913,8 +1911,8 @@ Total steps: 400
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    2.2.2.2         2.2.2.2         0     48    0x8000008d
-   Router    1.1.1.1         1.1.1.1         0     60    0x800000b8
+   Router    2.2.2.2         2.2.2.2         0     48    0x80000092
+   Router    1.1.1.1         1.1.1.1         0     60    0x800000bb
    Router    3.3.3.3         3.3.3.3         0     48    0x8000002b
 
 [316/400] rbr <R-BR> display ospf lsdb router 1.1.1.1
@@ -1923,8 +1921,8 @@ Total steps: 400
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    2.2.2.2         2.2.2.2         0     48    0x8000008f
-   Router    1.1.1.1         1.1.1.1         0     60    0x800000b9
+   Router    2.2.2.2         2.2.2.2         0     48    0x80000094
+   Router    1.1.1.1         1.1.1.1         0     60    0x800000bc
    Router    3.3.3.3         3.3.3.3         0     48    0x8000002b
 
 [317/400] rbr <R-BR> display ospf lsdb network
@@ -1935,8 +1933,8 @@ Total steps: 400
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
    Network   172.16.13.1     1.1.1.1         0     32    0x80000071
    Network   172.16.12.1     1.1.1.1         0     32    0x80000083
-   Network   172.16.13.2     3.3.3.3         0     32    0x8000002c
-   Network   172.16.12.2     2.2.2.2         0     32    0x80000092
+   Network   172.16.13.2     3.3.3.3         3600  32    0x8000003e
+   Network   172.16.12.2     2.2.2.2         0     32    0x80000097
 
 [318/400] rbr <R-BR> display ospf lsdb summary
            OSPF Process 1 with Router ID 2.2.2.2
@@ -2103,19 +2101,19 @@ Total steps: 400
 
 [334/400] lhq lhq$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.365 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=255 time=0.237 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.365/0.365/0.365/0.000 ms
+  rtt min/avg/max/mdev = 0.237/0.237/0.237/0.000 ms
 
 [335/400] lhq lhq$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.451 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=253 time=0.442 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.451/0.451/0.451/0.000 ms
+  rtt min/avg/max/mdev = 0.442/0.442/0.442/0.000 ms
 
 [336/400] lhq lhq$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
@@ -2127,11 +2125,11 @@ Total steps: 400
 
 [337/400] lhq lhq$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.603 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=126 time=0.549 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.603/0.603/0.603/0.000 ms
+  rtt min/avg/max/mdev = 0.549/0.549/0.549/0.000 ms
 
 [338/400] lhq lhq$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -2143,19 +2141,19 @@ Total steps: 400
 
 [339/400] lbr lbr$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
-  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.530 ms
+  64 bytes from 10.1.1.1: icmp_seq=1 ttl=253 time=0.479 ms
   
   --- 10.1.1.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.530/0.530/0.530/0.000 ms
+  rtt min/avg/max/mdev = 0.479/0.479/0.479/0.000 ms
 
 [340/400] lbr lbr$ ping -c 1 10.2.2.1
   PING 10.2.2.1 (10.2.2.1) 56(84) bytes of data.
-  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.358 ms
+  64 bytes from 10.2.2.1: icmp_seq=1 ttl=255 time=0.274 ms
   
   --- 10.2.2.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.358/0.358/0.358/0.000 ms
+  rtt min/avg/max/mdev = 0.274/0.274/0.274/0.000 ms
 
 [341/400] lbr lbr$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
@@ -2167,19 +2165,19 @@ Total steps: 400
 
 [342/400] lbr lbr$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.465 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.682 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.465/0.465/0.465/0.000 ms
+  rtt min/avg/max/mdev = 0.682/0.682/0.682/0.000 ms
 
 [343/400] lbr lbr$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
-  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.235 ms
+  64 bytes from 10.2.2.10: icmp_seq=1 ttl=128 time=0.190 ms
   
   --- 10.2.2.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.235/0.235/0.235/0.000 ms
+  rtt min/avg/max/mdev = 0.190/0.190/0.190/0.000 ms
 
 [344/400] lbr lbr$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -2207,11 +2205,11 @@ Total steps: 400
 
 [347/400] ldc ldc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.324 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.198 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.324/0.324/0.324/0.000 ms
+  rtt min/avg/max/mdev = 0.198/0.198/0.198/0.000 ms
 
 [348/400] ldc ldc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
@@ -2231,11 +2229,11 @@ Total steps: 400
 
 [350/400] ldc ldc$ ping -c 1 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
-  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.223 ms
+  64 bytes from 10.3.3.10: icmp_seq=1 ttl=64 time=0.260 ms
   
   --- 10.3.3.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.223/0.223/0.223/0.000 ms
+  rtt min/avg/max/mdev = 0.260/0.260/0.260/0.000 ms
 
 [351/400] srvdc srvdc$ ping -c 1 10.1.1.1
   PING 10.1.1.1 (10.1.1.1) 56(84) bytes of data.
@@ -2255,11 +2253,11 @@ Total steps: 400
 
 [353/400] srvdc srvdc$ ping -c 1 10.3.3.1
   PING 10.3.3.1 (10.3.3.1) 56(84) bytes of data.
-  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.217 ms
+  64 bytes from 10.3.3.1: icmp_seq=1 ttl=255 time=0.248 ms
   
   --- 10.3.3.1 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.217/0.217/0.217/0.000 ms
+  rtt min/avg/max/mdev = 0.248/0.248/0.248/0.000 ms
 
 [354/400] srvdc srvdc$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
@@ -2478,11 +2476,11 @@ Total steps: 400
 
 [386/400] lbr lbr$ ping -c 1 10.1.1.10
   PING 10.1.1.10 (10.1.1.10) 56(84) bytes of data.
-  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.535 ms
+  64 bytes from 10.1.1.10: icmp_seq=1 ttl=62 time=0.543 ms
   
   --- 10.1.1.10 ping statistics ---
   1 packets transmitted, 1 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.535/0.535/0.535/0.000 ms
+  rtt min/avg/max/mdev = 0.543/0.543/0.543/0.000 ms
 
 [387/400] srvdc srvdc$ ping -c 1 10.2.2.10
   PING 10.2.2.10 (10.2.2.10) 56(84) bytes of data.
@@ -2614,9 +2612,9 @@ Total steps: 400
   
   No Active Message Discriminator.
   
-      Console logging: level informational, 31 messages logged, xml disabled,
+      Console logging: level informational, 32 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 31 messages logged, xml disabled,
+      Monitor logging: level debugging, 32 messages logged, xml disabled,
                        filtering disabled
       Buffer logging:  level debugging, 370 messages logged, xml disabled,
                        filtering disabled
@@ -2627,7 +2625,7 @@ Total steps: 400
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 31 message lines logged
+      Trap logging: level informational, 32 message lines logged
           No active syslog hosts
   
   Log Buffer (32768 bytes):
@@ -2641,94 +2639,94 @@ Total steps: 400
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/0 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 0.5816969999978028ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 1), 0 routes, runtime 1.6320300000006682ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/1 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.021690000001399312ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 2), 0 routes, runtime 0.02235599999767146ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.024928999999247026ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 3), 0 routes, runtime 0.024865999999747146ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.09679800000230898ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 4), 0 routes, runtime 0.1069470000002184ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 3.3.3.3 on GigabitEthernet0/2 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/2 Nbr 3.3.3.3 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 2 routes, runtime 0.1541030000007595ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 5), 2 routes, runtime 0.08954499999890686ms
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Down -> Init, event HelloReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Init -> ExStart, event TwoWayReceived
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Exchange -> Loading, event ExchangeDone
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 4 routes, runtime 0.2145730000011099ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 4 routes, runtime 0.049257000002398854ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 4 routes, runtime 0.06854899999962072ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.03979099999924074ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.028691999999864493ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 11), 4 routes, runtime 0.044354999998176936ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 12), 4 routes, runtime 0.04464100000041071ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 13), 4 routes, runtime 0.04493699999875389ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 14), 4 routes, runtime 0.0483120000026247ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 15), 4 routes, runtime 0.0318409999999858ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 16), 4 routes, runtime 0.02785799999765004ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 17), 4 routes, runtime 0.027444999999715947ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 18), 4 routes, runtime 0.028032999998686137ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 19), 4 routes, runtime 0.046416999997745734ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 20), 4 routes, runtime 0.09029799999916577ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 21), 4 routes, runtime 0.0492709999998624ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 22), 4 routes, runtime 0.04199199999857228ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 23), 4 routes, runtime 0.044406000000890344ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 24), 4 routes, runtime 0.028292999999393942ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 25), 4 routes, runtime 0.03486999999950058ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 26), 4 routes, runtime 0.026654999997845152ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 27), 4 routes, runtime 0.027127999997901497ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 28), 4 routes, runtime 0.035251999997854ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 29), 4 routes, runtime 0.042489999999816064ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 30), 4 routes, runtime 0.0427239999989979ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 31), 4 routes, runtime 0.03656500000215601ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 32), 4 routes, runtime 0.027947999999014428ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 33), 4 routes, runtime 0.02915500000017346ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 34), 4 routes, runtime 0.02769100000296021ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 35), 4 routes, runtime 0.04694799999924726ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 36), 4 routes, runtime 0.046711999999388354ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 6), 4 routes, runtime 0.2550470000023779ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 7), 4 routes, runtime 0.07550400000036461ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 8), 4 routes, runtime 0.04778900000019348ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 9), 4 routes, runtime 0.03445799999826704ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 10), 4 routes, runtime 0.028399000002536923ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 11), 4 routes, runtime 0.04202799999984563ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 12), 4 routes, runtime 0.04189799999949173ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 13), 4 routes, runtime 0.04931399999986752ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 14), 4 routes, runtime 0.028104000000894303ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 15), 4 routes, runtime 0.029946999999083346ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 16), 4 routes, runtime 0.02757500000006985ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 17), 4 routes, runtime 0.026109999998880085ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 18), 4 routes, runtime 0.025905999998940388ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 19), 4 routes, runtime 0.043687000001227716ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 20), 4 routes, runtime 0.06779699999970035ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 21), 4 routes, runtime 0.04318599999896833ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 22), 4 routes, runtime 0.053326999997807434ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 23), 4 routes, runtime 0.04390100000091479ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 24), 4 routes, runtime 0.028194999998959247ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 25), 4 routes, runtime 0.03958000000056927ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 26), 4 routes, runtime 0.0264790000001085ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 27), 4 routes, runtime 0.025971999999455875ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 28), 4 routes, runtime 0.027128000001539476ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 29), 4 routes, runtime 0.039702000001852866ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 30), 4 routes, runtime 0.0441160000009404ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 31), 4 routes, runtime 0.06036800000219955ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 32), 4 routes, runtime 0.07390099999975064ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 33), 4 routes, runtime 0.0290050000003248ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 34), 4 routes, runtime 0.0315069999996922ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 35), 4 routes, runtime 0.04482399999687914ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 36), 4 routes, runtime 0.047787999999854947ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 37), 4 routes, runtime 0.04348299999765004ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 38), 4 routes, runtime 0.04378999999971711ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 39), 4 routes, runtime 0.04451600000174949ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 37), 4 routes, runtime 0.04301100000157021ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 38), 4 routes, runtime 0.043604999998933636ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 39), 4 routes, runtime 0.043847000000823755ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from DR to PointToPoint
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 40), 4 routes, runtime 0.16379400000005262ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 40), 4 routes, runtime 0.26216999999815016ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from PointToPoint to Waiting
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 41), 4 routes, runtime 0.04716999999800464ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 41), 4 routes, runtime 0.052003000000695465ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 42), 2 routes, runtime 0.04352700000163168ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 42), 2 routes, runtime 0.03483799999958137ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 43), 2 routes, runtime 0.03476500000033411ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 43), 2 routes, runtime 0.02782899999874644ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 44), 2 routes, runtime 0.03365400000257068ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 44), 2 routes, runtime 0.029555999997683102ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 45), 2 routes, runtime 0.044727999997121515ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 45), 2 routes, runtime 0.030209000000468222ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 46), 2 routes, runtime 0.03835099999923841ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 46), 2 routes, runtime 0.029839999999239808ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 47), 2 routes, runtime 0.027237000002060086ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 47), 2 routes, runtime 0.035535999999410706ms
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Full to Down, KillNbr
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Full -> Down, event KillNbr
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Down -> Init, event HelloReceived
@@ -2736,272 +2734,272 @@ Total steps: 400
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state ExStart -> Exchange, event NegotiationDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Exchange -> Loading, event ExchangeDone
-  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
   *Jun  6 08:00:00.000: OSPF: GigabitEthernet0/1 Nbr 2.2.2.2 state Loading -> Full, event LoadingDone
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 48), 2 routes, runtime 0.059201000000030035ms
+  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
+  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 48), 2 routes, runtime 0.03189099999872269ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 49), 2 routes, runtime 0.08859300000040093ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 49), 2 routes, runtime 0.03303500000038184ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 50), 2 routes, runtime 0.028806999998778338ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 50), 2 routes, runtime 0.026784000001498498ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 51), 2 routes, runtime 0.26029799999741954ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 51), 2 routes, runtime 0.2325970000019879ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 52), 2 routes, runtime 0.0454909999971278ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 52), 2 routes, runtime 0.04315800000040326ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 53), 2 routes, runtime 0.0491630000033183ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 53), 2 routes, runtime 0.06900299999688286ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 54), 2 routes, runtime 0.06017699999938486ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 54), 2 routes, runtime 0.06375299999854178ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 55), 2 routes, runtime 0.15240699999776552ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 55), 2 routes, runtime 0.11498500000016065ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 56), 3 routes, runtime 0.07043699999849196ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 56), 3 routes, runtime 0.04573200000231736ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 57), 3 routes, runtime 0.03814599999896018ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 57), 3 routes, runtime 0.04183600000033039ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 58), 3 routes, runtime 0.038698000000294996ms
   *Jun  6 08:00:00.000: %LINK-5-CHANGED: Interface GigabitEthernet0/2, changed state to administratively down
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 59), 3 routes, runtime 0.05211299999791663ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 60), 3 routes, runtime 0.04375100000106613ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 61), 3 routes, runtime 0.03852499999993597ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 62), 3 routes, runtime 0.04297899999801302ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from Down to Waiting
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 58), 3 routes, runtime 0.04523199999675853ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 59), 3 routes, runtime 0.03700100000060047ms
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 60), 3 routes, runtime 0.03902699999889592ms
-  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 61), 3 routes, runtime 0.055080999998608604ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 63), 3 routes, runtime 0.048945000002277084ms
   *Jun  6 08:00:00.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to up
   *Jun  6 08:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up
+  *Jun  6 08:00:00.000: %OSPF-4-ERRRCV: OSPF packet type 1 from 172.16.13.2 dropped on GigabitEthernet0/2: authentication mismatch
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 62), 3 routes, runtime 0.05068000000028405ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 64), 3 routes, runtime 0.04952000000048429ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 63), 3 routes, runtime 0.04061099999671569ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 65), 3 routes, runtime 0.05099999999947613ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 64), 3 routes, runtime 0.040374999996856786ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 66), 3 routes, runtime 0.038148999999975786ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 65), 3 routes, runtime 0.04112300000269897ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 67), 3 routes, runtime 0.038695999999617925ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 66), 3 routes, runtime 0.03593199999886565ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 68), 3 routes, runtime 0.0349949999981618ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 67), 3 routes, runtime 0.028167000000394182ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 69), 3 routes, runtime 0.0397030000021914ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 68), 3 routes, runtime 0.02679100000023027ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 70), 3 routes, runtime 0.024493000000802567ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 69), 3 routes, runtime 0.04237999999895692ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 71), 3 routes, runtime 0.039252000002306886ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 70), 3 routes, runtime 0.04177000000345288ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 72), 3 routes, runtime 0.04107999999905587ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 71), 3 routes, runtime 0.04062999999950989ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 73), 3 routes, runtime 0.0558420000015758ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 72), 3 routes, runtime 0.0426210000005085ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 74), 3 routes, runtime 0.03901000000041677ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 73), 3 routes, runtime 0.04216699999960838ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 75), 3 routes, runtime 0.03988700000263634ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 74), 3 routes, runtime 0.04273000000102911ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 76), 3 routes, runtime 0.039285999999265186ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 75), 3 routes, runtime 0.035450999999739ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 77), 3 routes, runtime 0.052963999998610234ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 76), 3 routes, runtime 0.03478900000118301ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 78), 3 routes, runtime 0.03751099999863072ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 77), 3 routes, runtime 0.04469800000151736ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 79), 3 routes, runtime 0.051954999998997664ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 78), 3 routes, runtime 0.046452999999019084ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 80), 3 routes, runtime 0.03848400000060792ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 79), 3 routes, runtime 0.036090000001422595ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 81), 3 routes, runtime 0.036278999999922235ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 80), 3 routes, runtime 0.02477799999905983ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 82), 3 routes, runtime 0.023601000000780914ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 81), 3 routes, runtime 0.023193999997602077ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 83), 3 routes, runtime 0.030025000000023283ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 82), 3 routes, runtime 0.040873000001738546ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 84), 3 routes, runtime 0.04064500000094995ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 83), 3 routes, runtime 0.04267299999992247ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 85), 3 routes, runtime 0.03996099999858416ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 84), 3 routes, runtime 0.08180800000263844ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 86), 3 routes, runtime 0.05289799999809475ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 85), 3 routes, runtime 0.041509999999107094ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 87), 3 routes, runtime 0.03993899999841233ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 86), 3 routes, runtime 0.03849800000170944ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 88), 3 routes, runtime 0.0388230000025942ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 87), 3 routes, runtime 0.040861000001314096ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 89), 3 routes, runtime 0.051983999997901265ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 88), 3 routes, runtime 0.04164899999886984ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 90), 3 routes, runtime 0.038165999998454936ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 89), 3 routes, runtime 0.040881000000808854ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 91), 3 routes, runtime 0.03843899999992573ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 90), 3 routes, runtime 0.035780000001977896ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 92), 3 routes, runtime 0.03519099999903119ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 91), 3 routes, runtime 0.034984000001713866ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 93), 3 routes, runtime 0.03473599999779253ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 92), 3 routes, runtime 0.037287999999534804ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 94), 3 routes, runtime 0.03755500000261236ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 93), 3 routes, runtime 0.02274299999771756ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 95), 3 routes, runtime 0.03685400000176742ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 94), 3 routes, runtime 0.02344699999957811ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 96), 3 routes, runtime 0.022770999999920605ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 95), 3 routes, runtime 0.02290300000095158ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 97), 3 routes, runtime 0.02419200000076671ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 96), 3 routes, runtime 0.023149000000557862ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 98), 3 routes, runtime 0.02484299999923678ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 97), 3 routes, runtime 0.023339999999734573ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 99), 3 routes, runtime 0.029708000001846813ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 98), 3 routes, runtime 0.023422000002028653ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 100), 3 routes, runtime 0.034457000001566485ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 99), 3 routes, runtime 0.0426499999994121ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 101), 3 routes, runtime 0.0387510000000475ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 100), 3 routes, runtime 0.04002799999943818ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 102), 3 routes, runtime 0.08845900000233087ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 101), 3 routes, runtime 0.03820199999972829ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 103), 3 routes, runtime 0.039135999999416526ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 102), 3 routes, runtime 0.039842999998654705ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 104), 3 routes, runtime 0.03840000000127475ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 103), 3 routes, runtime 0.03546299999652547ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 105), 3 routes, runtime 0.03518800000165356ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 104), 3 routes, runtime 0.03568799999993644ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 106), 3 routes, runtime 0.04646599999978207ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 105), 3 routes, runtime 0.03413699999873643ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 107), 3 routes, runtime 0.0746640000033949ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 106), 3 routes, runtime 0.039434000002074754ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 108), 3 routes, runtime 0.040222999999969034ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 107), 3 routes, runtime 0.03984900000068592ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 109), 3 routes, runtime 0.041193000000930624ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 108), 3 routes, runtime 0.06752200000119046ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 110), 3 routes, runtime 0.03742399999828194ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 109), 3 routes, runtime 0.03963800000201445ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 111), 3 routes, runtime 0.03905200000008335ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 110), 3 routes, runtime 0.036325000000942964ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 112), 3 routes, runtime 0.03548599999703583ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 111), 3 routes, runtime 0.03876700000182609ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 113), 3 routes, runtime 0.06658199999947101ms
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 112), 3 routes, runtime 0.040561000001616776ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 114), 3 routes, runtime 0.03966199999922537ms
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
   *Jun  6 08:00:00.000: OSPF: Interface GigabitEthernet0/2 state change from hello interval mismatch to Mismatched hello parameters from 172.16.13.2: received 10, configured 5
-  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 113), 3 routes, runtime 0.022813999999925727ms
+  *Jun  6 08:00:00.000: OSPF: Running full SPF (run 115), 3 routes, runtime 0.02347600000211969ms
 
 [400/400] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ospf
-Generated: 2026-08-13T16:27:50.878Z
+Generated: 2026-08-18T19:32:43.368Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=OSPF/OSPFv3: areas, auth, redistribution, timers, show
 Total steps: 311
@@ -680,7 +680,7 @@ Total steps: 311
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000060        0xb1d8      2
+  1.1.1.1         1.1.1.1         0           0x80000060        0x2d1a      3
   
                   Router Link States (Area 3)
   
@@ -690,7 +690,7 @@ Total steps: 311
                   Router Link States (Area 0.0.0.0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000031        0x51bc      1
+  1.1.1.1         1.1.1.1         0           0x80000031        0xfdce      3
   
 
 [151/311] r1 R1# show ip ospf database router
@@ -709,7 +709,7 @@ Total steps: 311
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000064        0xb55d      2
+  1.1.1.1         1.1.1.1         0           0x80000064        0x31ce      3
   
                   Router Link States (Area 3)
   
@@ -719,7 +719,7 @@ Total steps: 311
                   Router Link States (Area 0.0.0.0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000031        0x51bc      1
+  1.1.1.1         1.1.1.1         0           0x80000031        0xfdce      3
   
 
 [152/311] r1 R1# show ip ospf database network
@@ -1060,7 +1060,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1879Z1RL
+  Processor board ID FTX7697BLMU
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1070,7 +1070,9 @@ Total steps: 311
 [204/311] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1865 bytes
+  Current configuration : 1888 bytes
+  !
+  ! Last configuration change at 19:32:43 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1141,7 +1143,7 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  ! Last configuration change at 16:27:50 UTC Thu Aug 13 2026 by console
+  ipv6 unicast-routing
   !
   route-map RM-OSPF permit 10
    match ip address 10
@@ -1467,7 +1469,7 @@ Total steps: 311
                   Router Link States (Area 0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x800000b0        0x233       2
+  1.1.1.1         1.1.1.1         0           0x800000b0        0x7d38      3
   
                   Router Link States (Area 3)
   
@@ -1477,7 +1479,7 @@ Total steps: 311
                   Router Link States (Area 0.0.0.0)
   
   Link ID         ADV Router      Age         Seq#            Checksum  Link count
-  1.1.1.1         1.1.1.1         0           0x80000031        0x51bc      1
+  1.1.1.1         1.1.1.1         0           0x80000031        0xfdce      3
   
 
 [216/311] r1 R1# show ip ospf interface brief
@@ -1526,8 +1528,10 @@ Total steps: 311
   Application Layer Gateways: none
 
 [224/311] r1 R1# show ip dhcp binding
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
 
 [225/311] r1 R1# show ip dhcp pool
 <empty>
@@ -1594,17 +1598,17 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:27:50.874: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:27:50.874: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:27:50.876: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:27:50.876: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:27:50.889: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.909: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.910: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.927: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.935: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.939: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.962: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.363: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.364: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.365: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.365: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.402: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.445: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.458: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.506: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.530: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.554: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.651: %SYS-5-CONFIG_I: Configured from console by console
 
 [238/311] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1616,7 +1620,7 @@ Total steps: 311
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 0 (1/100 of seconds), resolution is 4001
-  reference time is EE286F07.03958106 (16:27:51.014 UTC Thu Aug 13 2026)
+  reference time is EE2F31DB.C2D0E560 (19:32:43.761 UTC Tue Aug 18 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1627,7 +1631,7 @@ Total steps: 311
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [241/311] r1 R1# show clock
-  *16:27:51.000 UTC Thu Aug 13 2026
+  *19:32:43.000 UTC Tue Aug 18 2026
 
 [242/311] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1812,7 +1816,7 @@ Total steps: 311
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX1879Z1RL
+  Processor board ID FTX7697BLMU
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1822,7 +1826,9 @@ Total steps: 311
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1865 bytes
+  Current configuration : 1888 bytes
+  !
+  ! Last configuration change at 19:32:43 UTC Tue Aug 18 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1893,7 +1899,7 @@ Total steps: 311
   !
   access-list 10 permit 172.16.0.0 0.0.255.255
   !
-  ! Last configuration change at 16:27:50 UTC Thu Aug 13 2026 by console
+  ipv6 unicast-routing
   !
   route-map RM-OSPF permit 10
    match ip address 10
@@ -2203,21 +2209,21 @@ Total steps: 311
   
   Log Buffer (4096 bytes):
   
-  *Aug 13 16:27:50.874: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:27:50.874: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Aug 13 16:27:50.876: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:27:50.876: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Aug 13 16:27:50.889: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.909: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.910: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.927: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.935: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.939: %SYS-5-CONFIG_I: Configured from console by console
-  *Aug 13 16:27:50.962: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.363: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.364: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 18 19:32:43.365: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.365: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 18 19:32:43.402: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.445: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.458: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.506: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.530: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.554: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 18 19:32:43.651: %SYS-5-CONFIG_I: Configured from console by console
 
 [255/311] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1879Z1RL
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX7697BLMU
 
 [256/311] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2329,7 +2335,7 @@ Total steps: 311
 [268/311] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1865 bytes
+  Current configuration : 1888 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2386,6 +2392,7 @@ Total steps: 311
    passive-interface Loopback3
    passive-interface Loopback4
   access-list 10 permit 172.16.0.0 0.0.255.255
+  ipv6 unicast-routing
   route-map RM-OSPF permit 10
    match ip address 10
    set metric 100
@@ -2596,7 +2603,6 @@ Total steps: 311
     rip    Enter RIP routing protocol configuration
 
 [307/311] r1 R1(config)# crypto ?
-    <cr>         
     dynamic-map  Define a dynamic crypto map
     gdoi         Group Domain of Interpretation
     ikev2        Internet Key Exchange version 2
@@ -2606,6 +2612,7 @@ Total steps: 311
     keyring      Define an ISAKMP keyring
     map          Define a crypto map entry
     pki          Public Key Infrastructure
+    <cr>
 
 [308/311] r1 R1(config)# no ?
     aaa            Disable AAA
@@ -2614,25 +2621,27 @@ Total steps: 311
     arp            Remove ARP entry
     banner         Remove a banner
     boot           Boot Commands
-    cdp            CDP global configuration
+    cdp            Enable CDP globally
+    clock          Set the system clock
     crypto         Encryption and key management
     enable         Modify enable password parameters
     event          Embedded Event Manager
     hostname       Reset hostname
     interface      Remove a virtual interface
     ip             Global IP configuration subcommands
-    ipv6           Global IPv6 configuration subcommands
+    ipv6           IPv6 interface subcommands
     key            Key management
     line           Remove line configuration
-    lldp           LLDP global configuration
-    logging        Modify message logging facilities
-    ntp            Network Time Protocol
+    lldp           Enable LLDP globally
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
+    ntp            Authenticate time sources
     parser         Negate a parser command
     privilege      Remove privilege command rule
     radius-server  Remove legacy radius host
     route-map      Remove a route-map
     router         Enable a routing protocol
-    service        Disable a service
+    service        Disable a network based service
     sntp           Configure SNTP
     tacacs-server  Remove legacy tacacs host
     track          Remove a tracked object
@@ -2642,7 +2651,7 @@ Total steps: 311
 <empty>
 
 [310/311] r1 R1# show running-config | count !
-  18
+  19
 
 [311/311] r1 R1# write memory
   Building configuration...

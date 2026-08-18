@@ -29,7 +29,16 @@ export interface Lab {
   readonly PC1: WindowsPC; readonly PC2: WindowsPC;
   readonly Server1: LinuxServer; readonly WinServer1: WindowsServer;
   readonly devices: Record<string, Equipment>;
+  readonly cables: Record<string, LabLink>;
   readonly note: string;
+}
+
+export interface LabLink {
+  cable: Cable;
+  readonly a: Equipment;
+  readonly ap: string;
+  readonly b: Equipment;
+  readonly bp: string;
 }
 
 export const LAB = {
@@ -80,12 +89,15 @@ export function buildLab(): Lab {
   const WinServer1 = new WindowsServer('WinServer1', 491, 654);
   const PC2 = new WindowsPC('windows-pc', 'PC2', 823, 653);
 
+  const cables: Record<string, LabLink> = {};
   const wire = (id: string, a: Equipment, ap: string, b: Equipment, bp: string) => {
     const portA = a.getPort(ap);
     const portB = b.getPort(bp);
     if (!portA) throw new Error(`${a.getName()} n'a pas de port ${ap}`);
     if (!portB) throw new Error(`${b.getName()} n'a pas de port ${bp}`);
-    new Cable(id).connect(portA, portB);
+    const cable = new Cable(id);
+    cable.connect(portA, portB);
+    cables[id] = { cable, a, ap, b, bp };
   };
 
   wire('pc1-sw1', PC1, 'eth0', Switch1, 'FastEthernet0/1');
@@ -116,8 +128,21 @@ export function buildLab(): Lab {
     Router1, Router2, Router3, Router4, Router5, Router6,
     Switch1, Switch2, Switch3, Switch4,
     PC1, PC2, Server1, WinServer1,
-    devices, note: NOTE,
+    devices, cables, note: NOTE,
   };
+}
+
+export function unplug(lab: Lab, linkId: string): void {
+  const link = lab.cables[linkId];
+  if (!link) throw new Error(`lien inconnu : ${linkId}`);
+  link.cable.disconnect();
+}
+
+export function replug(lab: Lab, linkId: string): void {
+  const link = lab.cables[linkId];
+  if (!link) throw new Error(`lien inconnu : ${linkId}`);
+  link.cable = new Cable(linkId);
+  link.cable.connect(link.a.getPort(link.ap)!, link.b.getPort(link.bp)!);
 }
 
 export async function run(device: Equipment, cmds: readonly string[]): Promise<void> {
@@ -143,7 +168,11 @@ const routerPreamble = (hostname: string): string[] => ([
   ...LAB_USERS,
 ]);
 
-export async function configureLab(lab: Lab): Promise<void> {
+export type LabVariant = 'converged' | 'area-mismatch';
+
+export async function configureLab(lab: Lab, variant: LabVariant = 'converged'): Promise<void> {
+  const r2r3AreaOnR3 = variant === 'area-mismatch' ? '1' : '0';
+  const r4Area = variant === 'area-mismatch' ? '0' : '1';
   await run(lab.Router1, [
     ...routerPreamble('Router1'),
     'logging buffered 6400 debugging',
@@ -195,7 +224,7 @@ export async function configureLab(lab: Lab): Promise<void> {
     ` ip address ${LAB.wan.r3r6.r3} ${LAB.mask30}`, 'no shutdown', 'exit',
     'router ospf 1',
     ' router-id 10.0.30.1',
-    ` network ${LAB.wan.r2r3.net} 0.0.0.3 area 1`,
+    ` network ${LAB.wan.r2r3.net} 0.0.0.3 area ${r2r3AreaOnR3}`,
     ` network ${LAB.wan.r3r4.net} 0.0.0.3 area 1`,
     ` network ${LAB.wan.r3r6.net} 0.0.0.3 area 0`,
     'exit',
@@ -218,8 +247,8 @@ export async function configureLab(lab: Lab): Promise<void> {
     'exit',
     'router ospf 1',
     ' router-id 192.168.40.1',
-    ` network ${LAB.wan.r3r4.net} 0.0.0.3 area 0`,
-    ` network ${LAB.lan2.net} 0.0.0.255 area 0`,
+    ` network ${LAB.wan.r3r4.net} 0.0.0.3 area ${r4Area}`,
+    ` network ${LAB.lan2.net} 0.0.0.255 area ${r4Area}`,
     'exit',
     'end',
   ]);
@@ -265,9 +294,9 @@ export async function configureLab(lab: Lab): Promise<void> {
   await run(lab.Server1, ['dhclient eth0']);
 }
 
-export async function loadLab(): Promise<Lab> {
+export async function loadLab(variant: LabVariant = 'converged'): Promise<Lab> {
   const lab = buildLab();
-  await configureLab(lab);
+  await configureLab(lab, variant);
   return lab;
 }
 
@@ -283,6 +312,7 @@ export async function dumpLab(
   lab: Lab,
   steps: readonly LabStepInput[],
   header?: string,
+  marker?: (cmd: string) => boolean,
 ): Promise<string> {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   const lines: string[] = [];
@@ -313,6 +343,12 @@ export async function dumpLab(
     if (!device) {
       lines.push(`[${index}/${steps.length}] (${current})> ${step.cmd}`);
       lines.push(`<ÉQUIPEMENT INCONNU '${current}'>`);
+      lines.push('');
+      continue;
+    }
+
+    if (marker?.(step.cmd)) {
+      lines.push(`[${index}/${steps.length}] ${step.cmd}`);
       lines.push('');
       continue;
     }
