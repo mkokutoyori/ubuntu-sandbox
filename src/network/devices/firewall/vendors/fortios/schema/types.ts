@@ -202,6 +202,7 @@ export interface FortiCommitDevice {
   applyRemoteAuthServer(server: FortiRemoteServerPatch): void;
   applyLdapServer(server: FortiLdapServerPatch): void;
   applyPhase1(tunnel: FortiPhase1Patch): void;
+  applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
   applyCaCertificate(entry: FortiCaCertificatePatch): string | void;
@@ -273,6 +274,21 @@ export interface FortiRemoteServerPatch {
   readonly secret: string;
   readonly port: number;
   readonly authType?: string;
+}
+
+export interface FortiSslVpnRulePatch {
+  readonly id: string;
+  readonly groups: readonly string[];
+  readonly users: readonly string[];
+  readonly portal: string;
+}
+
+export interface FortiSslVpnPatch {
+  readonly enabled: boolean;
+  readonly port: number;
+  readonly serverCertificate: string;
+  readonly sourceInterfaces: readonly string[];
+  readonly rules: readonly FortiSslVpnRulePatch[];
 }
 
 export interface FortiLocalCertificatePatch {

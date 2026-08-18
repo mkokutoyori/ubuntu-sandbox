@@ -1,7 +1,7 @@
 import { implementedIkeGroups } from '../../../../../ipsec/IkeKeyExchange';
 import { parseProposal, SUPPORTED_CIPHERS } from '../../../vpn/IpsecProposals';
 import {
-  address, addressMask, choice, count, enable, reference, text, word,
+  address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
 } from './types';
 
@@ -307,7 +307,82 @@ export const VPN_CERTIFICATE_CA: FortiTableSpec = {
   },
 };
 
+export const VPN_SSL_WEB_PORTAL: FortiTableSpec = {
+  path: ['vpn', 'ssl', 'web', 'portal'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'vpngrp',
+  renderOrder: 630,
+  help: 'Portal.',
+  attributes: [
+    { ...word('name', 'Portal name.'), readOnly: true },
+    enable('web-mode', 'Enable/disable the web portal.', true),
+    {
+      ...enable('tunnel-mode', 'Enable/disable the IPsec-over-SSL tunnel.'),
+      unimplementedValues: {
+        enable: 'tunnel mode needs a FortiClient-shaped VPN client, which this '
+          + 'build does not have; the web portal is served for real.',
+      },
+    },
+    text('ip-pools', 'Address range this portal hands to tunnel-mode clients.'),
+  ],
+};
+
+export const VPN_SSL_SETTINGS: FortiTableSpec = {
+  path: ['vpn', 'ssl', 'settings'],
+  kind: 'object',
+  scope: 'vdom',
+  accessGroup: 'vpngrp',
+  renderOrder: 640,
+  help: 'Configure SSL-VPN.',
+  attributes: [
+    enable('status', 'Enable/disable the SSL-VPN portal.'),
+    count('port', 'Port the portal listens on.', 1, 65535, 10443),
+    reference('servercert', 'Certificate the portal presents.',
+      ['vpn certificate local']),
+    refList('source-interface', 'Interfaces the portal listens on.',
+      ['system interface']),
+    count('login-timeout', 'Seconds a login may take.', 10, 180, 30),
+  ],
+  children: [{
+    path: ['vpn', 'ssl', 'settings', 'authentication-rule'],
+    kind: 'table',
+    keyType: 'integer',
+    ordered: true,
+    scope: 'vdom',
+    accessGroup: 'vpngrp',
+    renderOrder: 1,
+    help: 'Authentication rule.',
+    attributes: [
+      { ...word('id', 'Rule identifier.'), readOnly: true },
+      refList('groups', 'User groups this rule admits.', ['user group']),
+      refList('users', 'Users this rule admits.', ['user local']),
+      reference('portal', 'Portal these users land on.', ['vpn ssl web portal']),
+    ],
+  }],
+  onCommit(object, context) {
+    const rules = object.childEntries('authentication-rule').map(rule => ({
+      id: rule.key,
+      groups: [...rule.effective('groups')],
+      users: [...rule.effective('users')],
+      portal: rule.effective('portal')[0] ?? '',
+    }));
+
+    return context.device.applySslVpnSettings({
+      enabled: object.effective('status')[0] === 'enable',
+      port: Number.parseInt(object.effective('port')[0] ?? '10443', 10),
+      serverCertificate: object.effective('servercert')[0] ?? '',
+      sourceInterfaces: [...object.effective('source-interface')],
+      rules,
+    });
+  },
+};
+
 export const VPN_SPECS: readonly FortiTableSpec[] = Object.freeze([
+  VPN_SSL_WEB_PORTAL,
+  VPN_SSL_SETTINGS,
   VPN_CERTIFICATE_CA,
   VPN_CERTIFICATE_LOCAL,
   VPN_PHASE1_INTERFACE,

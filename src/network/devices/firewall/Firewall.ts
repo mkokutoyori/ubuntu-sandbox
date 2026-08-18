@@ -8,6 +8,7 @@ import {
   MACAddress,
   SubnetMask,
   IP_PROTO_ESP,
+  IP_PROTO_TCP,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
@@ -26,7 +27,7 @@ import { ObjectStore } from './model/ObjectStore';
 import { PolicyStore } from './model/PolicyStore';
 import { SessionTable } from './session/SessionTable';
 import { NatPolicyStore } from './nat/NatPolicyStore';
-import { FirewallNatEngine } from './nat/FirewallNatEngine';
+import { FirewallNatEngine, clearVdomTranslations } from './nat/FirewallNatEngine';
 import { IpPoolAllocator, type IpPool } from './nat/IpPool';
 import { PolicyRouteTable } from './l3/PolicyRouteTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
@@ -53,10 +54,10 @@ import {
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
+import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import {
-  AuthPortal, buildAuthPortal, AUTH_PORTAL_PORT, AUTH_PORTAL_HTTPS_PORT,
-  type RemoteAuthOutcome,
-} from './auth/AuthPortal';
+  buildFirewallPortals, type FirewallPortals, type PortalPorts,
+} from './auth/FirewallPortals';
 import {
   applyAdminAccount, adminTrustsSource, authenticateAdmin, remoteAuthenticate,
   type AdminAccountDraft,
@@ -67,6 +68,7 @@ import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
+import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
 import { bringUpTunnel, programIpsecEngine, udpDatagram } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
@@ -120,12 +122,13 @@ export class Firewall extends Equipment {
   private readonly access = new AccessMatrix();
   protected readonly tcp: TcpStack;
   private readonly portal: AuthPortal;
+  private readonly sslVpn: SslVpnPortal;
+  private readonly portals: FirewallPortals;
   private readonly ipsec: IPSecEngine;
   private readonly hostsTable = new RouterHostsTable();
   private readonly radius: RadiusClientAgent;
   private readonly tacacs: TacacsClientAgent;
   private readonly adminSecrets = new Map<string, string>();
-  private portalPorts = { http: AUTH_PORTAL_PORT, https: AUTH_PORTAL_HTTPS_PORT };
   private readonly traces: PacketContext[] = [];
   private sessionObserver?: (session: FirewallSession, reason: SessionCloseReason) => void;
   private trafficLogger?: TrafficLogger;
@@ -230,13 +233,16 @@ export class Firewall extends Equipment {
     this.radius = agents.radius;
     this.tacacs = agents.tacacs;
 
-    this.portal = buildAuthPortal({
+    this.portals = buildFirewallPortals({
       tcp: this.tcp,
       now,
       vdom: (name?: string) => this.getVdom(name),
+      certificates: () => this.getCertificateStore(),
       remoteAuthenticate: (server, user, password) =>
         this.remoteAuthenticate(server, user, password),
     });
+    this.portal = this.portals.auth;
+    this.sslVpn = this.portals.sslVpn;
   }
 
   private pipelineFor(mode: DeploymentMode): FirewallPipeline {
@@ -264,6 +270,12 @@ export class Firewall extends Equipment {
 
   getCertificateStore(vdom?: string): CertificateStore {
     return this.getVdom(vdom).certificates;
+  }
+
+  getSslVpnPortal(): SslVpnPortal { return this.sslVpn; }
+
+  applySslVpnSettings(settings: SslVpnSettings): string | undefined {
+    return this.sslVpn.apply(settings);
   }
 
   syncIpsecTunnels(v?: string) {
@@ -303,15 +315,12 @@ export class Firewall extends Equipment {
   }
 
   setAuthPortalPorts(httpPort: number, httpsPort: number): void {
-    this.portalPorts = { http: httpPort, https: httpsPort };
-    if (!this.portal.isListening()) return;
-    this.portal.stop();
-    this.portal.start(httpPort);
+    this.portals.setPorts(httpPort, httpsPort);
   }
 
-  getAuthPortalPorts(): { http: number; https: number } { return this.portalPorts; }
+  getAuthPortalPorts(): PortalPorts { return this.portals.ports(); }
 
-  startAuthPortal(): boolean { return this.portal.start(this.portalPorts.http); }
+  startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void {
     applyAdminAccount(this.access, this.adminSecrets, admin);
@@ -376,16 +385,7 @@ export class Firewall extends Equipment {
   }
 
   clearTranslations(): number {
-    let cleared = 0;
-    for (const vdom of this.vdoms.all()) {
-      for (const session of vdom.sessions.view().all()) {
-        if (session.translation === undefined) continue;
-        vdom.nat.release(session.translation);
-        vdom.sessions.close(session, 'clear');
-        cleared++;
-      }
-    }
-    return cleared;
+    return clearVdomTranslations(this.vdoms.all());
   }
 
   setSchedule(schedule: ScheduleObject, vdom?: string): boolean {
@@ -727,6 +727,11 @@ export class Firewall extends Equipment {
   private deliverLocally(portName: string, packet: IPv4Packet): void {
     const ike = ikeDatagram(packet);
     if (ike) { this.ipsec.handleIkeUdp(portName, packet, ike); return; }
+
+    if (packet.protocol === IP_PROTO_TCP) {
+      this.tcp.handleIp(portName, packet.sourceIP, packet);
+      return;
+    }
     if (!this.allowsAccess(portName, 'ping')) return;
 
     const reply = icmpEchoReply(packet);

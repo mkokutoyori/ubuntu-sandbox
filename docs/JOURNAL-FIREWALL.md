@@ -1976,6 +1976,47 @@ d'extraire le calcul.
 
 ---
 
+### E42 — SSL-VPN en mode web : le portail écoute, et il présente un certificat
+
+`vpn/SslVpnPortal.ts`, `auth/FirewallPortals.ts` (neufs), `schema/vpn.ts`,
+`schema/types.ts`, `commit/vpnCommits.ts`, `Firewall.ts` — **13 cas**
+neufs plus 3 specs Playwright. **12 des 13** tombent avant correctif.
+
+`config vpn ssl settings` n'avait aucun schéma, donc toute la famille
+tombait dans le vide — un apprenant qui suit un tutoriel FortiGate
+s'arrête à la première ligne. La matière, elle, était là : le pare-feu
+porte une pile TCP, un serveur HTTP/1.1 réel (le portail
+d'authentification de la phase 7), un serveur TLS réel, et depuis E40 un
+magasin où `set servercert` peut puiser. **Ce chantier est donc le
+premier consommateur du précédent** : le certificat qu'un opérateur
+importe sert vraiment à quelque chose.
+
+**Le défaut trouvé en le mesurant dépasse largement le SSL-VPN** : un
+pare-feu ne remettait **AUCUN segment TCP à sa propre pile**.
+`deliverLocally` répondait à l'écho ICMP, puis à IKE depuis E39, et
+jetait tout le reste. Conséquence : **tout écouteur que le pare-feu porte
+était sourd**, le portail d'authentification de la phase 7 compris — dont
+aucun test n'avait jamais joint le port depuis le fil, tous visant un
+serveur situé DERRIÈRE le pare-feu. Une fonction livrée, testée, et
+injoignable.
+
+**Un portail déclaré sans certificat ne s'ouvre PAS en clair**, il est
+refusé : la même règle que `tlsMaterialFor` applique côté nginx/Apache,
+et pour la même raison — tout ce qui suit traite le port 10443 comme
+chiffré, donc y servir du clair serait la pire réponse disponible.
+
+**`tunnel-mode` est REFUSÉ en nommant la brique absente** (il faudrait un
+client FortiClient qui n'existe pas ici) plutôt que rangé inerte. Le mode
+web, lui, est servi pour de bon : `curl -k https://<fgt>:10443/` rend la
+page de connexion, et `curl -v` montre le certificat configuré.
+
+**`authentication-rule` décide qui entre** : un membre d'un groupe nommé
+par une règle est admis, un utilisateur qu'aucune règle ne nomme est
+refusé — sans règle, personne n'entre, ce qui est le défaut sûr.
+
+Trois extractions imposées par G3 : `auth/FirewallPortals.ts`,
+`nat/clearVdomTranslations`, et le déplacement des ports du portail.
+
 ### E41 — `dpd` et `nattraversal` agissent, et `diagnose` rapporte une mesure
 
 `schema/vpn.ts`, `schema/types.ts`, `commit/vpnCommits.ts`,

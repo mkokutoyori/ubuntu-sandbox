@@ -33,17 +33,18 @@
 | **5** | VDOM et modes de déploiement | ✅ livrée (E35) |
 | **6** | Inspection et UTM | ✅ livrée (E36) |
 | **7** | Utilisateurs et authentification | ✅ livrée (E37) |
-| **8** | VPN | ✅ livrée (E38) |
+| **8** | VPN — tunnel, certificats, DPD/NAT-T, SSL-VPN web | ✅ livrée (E38 à E42) |
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 1094 cas verts sur 38 fichiers du module
-pare-feu ; 361 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+**Mesures au dernier commit** : 1140 cas verts sur 42 fichiers du module
+pare-feu ; 407 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
 système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
-VDOM + 36 d'UTM + 43 d'utilisateurs + 42 de VPN) ; 45 specs Playwright ;
-aucune erreur de typecheck dans le module ; lint propre. **Le badge
-« Limited simulation » est retiré.** S'y ajoutent 40 cas de socle
-cryptographique (`ike-real-diffie-hellman.test.ts`).
+VDOM + 36 d'UTM + 43 d'utilisateurs + 42 de VPN + 12 de trafic dans le
+tunnel + 10 de certificats + 11 de DPD/NAT-T + 13 de SSL-VPN) ; 52 specs
+Playwright ; aucune erreur de typecheck dans le module ; lint propre.
+**Le badge « Limited simulation » est retiré.** S'y ajoutent 40 cas de
+socle cryptographique (`ike-real-diffie-hellman.test.ts`).
 
 ---
 
@@ -475,9 +476,16 @@ atteignent le moteur, `dpd-retryinterval`/`dpd-retrycount` existent, et
 été configuré — il était faux, pas seulement inerte. Trouvé en chemin :
 `diagnose vpn tunnel up` ne négociait rien.
 
-**Ce qui reste de la phase 8, nommé plutôt que tu** :
+**SSL-VPN est FERMÉ en mode web** (journal E42) : `config vpn ssl
+settings`, `config authentication-rule` et `config vpn ssl web portal`
+existent, le portail ÉCOUTE en TLS avec le certificat de `set servercert`
+— premier consommateur du magasin de E40 — et `tunnel-mode` est refusé en
+nommant la brique absente (un client FortiClient). Trouvé en le
+mesurant, et bien plus large : **un pare-feu ne remettait aucun segment
+TCP à sa propre pile**, donc tout écouteur qu'il porte était sourd, le
+portail d'authentification de la phase 7 compris.
 
-- SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma.
+**La phase 8 n'a plus de reste.**
 
 ### 6.10 Après
 
