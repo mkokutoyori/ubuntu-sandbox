@@ -7,10 +7,16 @@ import type { InterfaceTable } from '../../l3/InterfaceTable';
 import type { RouteTable } from '../../l3/RouteTable';
 import type { ObjectStore } from '../../model/ObjectStore';
 import type { PolicyStore } from '../../model/PolicyStore';
-import { isDenyAction } from '../../model/SecurityRule';
+import { isDenyAction, type SecurityRule } from '../../model/SecurityRule';
+import {
+  inspectTls, protocolOfFlow, scanAntivirus, scanDnsFilter, scanFileFilter,
+  scanWebFilter, scanWebFilterHost,
+  type InspectedFlow, type UtmVerdict, type UtmVerdictKind,
+} from '../../inspection/ContentInspector';
+import type { ProtocolOptions, UtmProfileStore } from '../../inspection/UtmProfiles';
 import type { ZoneTable } from '../../model/ZoneTable';
 import type { PolicyEvaluator } from '../../policy/PolicyEvaluator';
-import { flowKeyFromPacket } from '../../session/FlowKey';
+import { flowKeyFromPacket, reverseFlowKey } from '../../session/FlowKey';
 import type { SessionTable, SessionTranslation } from '../../session/SessionTable';
 import { TcpStateMachine, type ObservedTcpFlags } from '../../session/TcpStateMachine';
 import type { FirewallNatEngine } from '../../nat/FirewallNatEngine';
@@ -30,6 +36,7 @@ export interface VdomServices {
   natPolicy?: NatPolicyStore;
   nat?: FirewallNatEngine;
   policyRoutes?: PolicyRouteTable;
+  utm?: UtmProfileStore;
   centralNat?: boolean;
   opmode?: 'nat' | 'transparent';
 }
@@ -79,6 +86,17 @@ function ipv4(context: PacketContext): IPv4Packet | undefined {
   return context.packet.type === 'ipv4' ? context.packet : undefined;
 }
 
+function sessionPolicy(
+  services: FirewallServices, context: PacketContext, session: { policyId?: string },
+): SecurityRule | undefined {
+  if (session.policyId === undefined) return undefined;
+  return vdom(services, context).policy.ordered().find(rule => rule.id === session.policyId);
+}
+
+function originalIpv4(context: PacketContext): IPv4Packet | undefined {
+  return context.originalPacket.type === 'ipv4' ? context.originalPacket : undefined;
+}
+
 function tcpFlagsOf(packet: IPv4Packet): ObservedTcpFlags | undefined {
   if (packet.protocol !== IP_PROTO_TCP) return undefined;
   const payload = packet.payload as TCPPacket | null | undefined;
@@ -98,9 +116,121 @@ export function createCoreStages(services: FirewallServices): PipelineStage[] {
     routeLookupStage(services),
     egressZoneStage(services),
     policyLookupStage(services),
+    utmInspectStage(services),
     natSourceStage(services),
     sessionInstallStage(services),
   ];
+}
+
+function utmInspectStage(services: FirewallServices): PipelineStage {
+  return {
+    name: 'utm-inspect',
+    apply(context) {
+      return inspectUtm(services, context, context.matchedPolicy, 'utm-inspect');
+    },
+  };
+}
+
+function inspectUtm(
+  services: FirewallServices, context: PacketContext,
+  rule: SecurityRule | undefined, stage: string,
+): FilterVerdict<PacketContext> {
+  if (rule?.utmEnabled !== true) return proceed(context, stage, 'utm-disabled');
+
+  const packet = ipv4(context);
+  const profiles = vdom(services, context).utm;
+  if (!packet || !profiles) return proceed(context, stage, 'no-profiles');
+
+  const flow = inspectedFlowOf(packet, profiles.getProtocolOptions(rule.protocolOptions));
+  if (!flow) return proceed(context, stage, 'no-payload');
+
+  const ssl = rule.sslSshProfile === undefined
+    ? undefined
+    : profiles.getSslSsh(rule.sslSshProfile);
+  const sni = ssl ? inspectTls(flow, ssl) : undefined;
+  if (sni !== undefined) context.inspectedSni = sni;
+
+  const verdict = firstBlocking(flow, rule, profiles, sni);
+  if (!verdict) return proceed(context, stage, 'clean');
+
+  context.utmVerdict = verdict;
+  if (!verdict.blocked) return proceed(context, stage, `monitor:${verdict.detail}`);
+  return deny(context, stage, UTM_REASON[verdict.kind], rule.id);
+}
+
+const UTM_REASON: Readonly<Record<UtmVerdictKind, VerdictReason>> = Object.freeze({
+  clean: 'profile-block',
+  virus: 'utm-virus',
+  'url-blocked': 'utm-url',
+  'category-blocked': 'utm-category',
+  'dns-blocked': 'utm-dns',
+  'file-type-blocked': 'utm-file-type',
+});
+
+function firstBlocking(
+  flow: InspectedFlow, rule: SecurityRule, profiles: UtmProfileStore,
+  sni: string | undefined,
+): UtmVerdict | undefined {
+  const scans: Array<UtmVerdict | undefined> = [];
+
+  const antivirus = rule.antivirusProfile === undefined
+    ? undefined
+    : profiles.getAntivirus(rule.antivirusProfile);
+  if (antivirus) scans.push(scanAntivirus(flow, antivirus));
+
+  const web = rule.webFilterProfile === undefined
+    ? undefined
+    : profiles.getWebFilter(rule.webFilterProfile);
+  if (web && flow.protocol === 'http') {
+    scans.push(scanWebFilter(flow, web, profiles.urlFiltersOf(web)));
+  }
+  if (web && flow.protocol === 'https' && sni !== undefined) {
+    scans.push(scanWebFilterHost(sni, web, profiles.urlFiltersOf(web)));
+  }
+
+  const dns = rule.dnsFilterProfile === undefined
+    ? undefined
+    : profiles.getDnsFilter(rule.dnsFilterProfile);
+  if (dns && flow.protocol === 'dns') {
+    scans.push(scanDnsFilter(flow, dns, profiles.domainFiltersOf(dns)));
+  }
+
+  const file = rule.fileFilterProfile === undefined
+    ? undefined
+    : profiles.getFileFilter(rule.fileFilterProfile);
+  if (file) scans.push(scanFileFilter(flow, file));
+
+  return scans.find(verdict => verdict !== undefined && verdict.kind !== 'clean');
+}
+
+function inspectedFlowOf(
+  packet: IPv4Packet, options: ProtocolOptions,
+): InspectedFlow | undefined {
+  const payload = packet.payload as
+    { type?: string; sourcePort?: number; destinationPort?: number; payload?: unknown } | null;
+  if (payload?.type !== 'tcp' && payload?.type !== 'udp') return undefined;
+
+  const text = payloadText(payload.payload);
+  if (text === undefined || text.length === 0) return undefined;
+
+  const sourcePort = payload.sourcePort ?? 0;
+  const destinationPort = payload.destinationPort ?? 0;
+  return Object.freeze({
+    protocol: protocolOfFlow(sourcePort, destinationPort, options),
+    sourcePort,
+    destinationPort,
+    payload: text,
+    bytes: payload.payload instanceof Uint8Array ? payload.payload : undefined,
+  });
+}
+
+function payloadText(payload: unknown): string | undefined {
+  if (typeof payload === 'string') return payload;
+  if (payload instanceof Uint8Array) {
+    return Array.from(payload).map(byte => String.fromCharCode(byte)).join('');
+  }
+  if (payload !== null && typeof payload === 'object') return JSON.stringify(payload);
+  return undefined;
 }
 
 function vdomBindStage(services: FirewallServices): PipelineStage {
@@ -219,6 +349,12 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
       }
 
       vdom(services, context).sessions.recordTraffic(found.session, found.direction, packet.totalLength);
+
+      const carried = sessionPolicy(services, context, found.session);
+      if (carried?.utmEnabled === true) {
+        const inspected = inspectUtm(services, context, carried, 'utm-inspect');
+        if (inspected.kind === 'drop') return inspected;
+      }
 
       const translation = found.session.translation;
       if (translation && vdom(services, context).nat) {
@@ -498,7 +634,8 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         return deny(context, 'session-install', 'session-table-full');
       }
 
-      const session = vdom(services, context).sessions.install(flowKeyFromPacket(packet), {
+      const arrived = originalIpv4(context) ?? packet;
+      const session = vdom(services, context).sessions.install(flowKeyFromPacket(arrived), {
         ingressZone: context.ingressZone ?? '',
         egressZone: context.egressZone ?? '',
         ingressInterface: context.ingressPort,
@@ -506,6 +643,7 @@ function sessionInstallStage(services: FirewallServices): PipelineStage {
         timeoutSec: services.defaultTimeoutSec ?? DEFAULT_TIMEOUT_SEC,
         policyId: context.matchedPolicy?.id,
         tcpState: tcpMachines.get(context)?.state,
+        replyKey: reverseFlowKey(flowKeyFromPacket(packet)),
       });
       session.tcpMachine = tcpMachines.get(context);
 

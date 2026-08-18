@@ -23,13 +23,16 @@ export class FortiValidator {
   validate(spec: FortiAttributeSpec, raw: readonly string[]): ValidationResult {
     if (spec.readOnly) return KO(FortiMessages.readOnly(spec.name));
     if (spec.unimplemented) return KO(FortiMessages.unimplemented(spec.name, spec.unimplemented));
-    if (raw.length === 0) return KO(FortiMessages.incomplete(`une valeur pour \`${spec.name}\``));
+    if (raw.length === 0) return KO(FortiMessages.incomplete(`a value for \`${spec.name}\``));
+
+    const refused = this.refusedValue(spec, raw);
+    if (refused) return KO(refused);
 
     const arity = attributeArity(spec);
     if (spec.multiValue) return this.validateList(spec, raw);
     if (raw.length !== arity) {
       return KO(FortiMessages.incomplete(
-        `${arity} valeur(s) pour \`${spec.name}\`, ${raw.length} donnee(s)`,
+        `${arity} value(s) for \`${spec.name}\`, ${raw.length} given`,
       ));
     }
 
@@ -50,6 +53,19 @@ export class FortiValidator {
     return OK([...raw]);
   }
 
+  private refusedValue(
+    spec: FortiAttributeSpec, raw: readonly string[],
+  ): string | null {
+    const refusals = spec.unimplementedValues;
+    if (!refusals) return null;
+
+    for (const value of raw) {
+      const reason = refusals[value];
+      if (reason) return FortiMessages.unimplementedValue(spec.name, value, reason);
+    }
+    return null;
+  }
+
   private checkOne(
     attribute: FortiAttributeSpec, part: ArgumentSpec, value: string,
   ): string | null {
@@ -64,9 +80,9 @@ export class FortiValidator {
 
 function expected(part: ArgumentSpec): string {
   if (part.values && part.values.length > 0) {
-    return `valeurs admises : ${part.values.map(v => v.keyword).join(', ')}.`;
+    return `allowed values: ${part.values.map(v => v.keyword).join(', ')}.`;
   }
-  if (part.range) return `attendu ${argumentPlaceholder(part)} (minimum ${part.range[0]}, `
+  if (part.range) return `expected ${argumentPlaceholder(part)} (minimum ${part.range[0]}, `
     + `maximum ${part.range[1]}).`;
-  return `attendu ${argumentPlaceholder(part)}.`;
+  return `expected ${argumentPlaceholder(part)}.`;
 }

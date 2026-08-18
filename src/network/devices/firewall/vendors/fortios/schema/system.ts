@@ -236,6 +236,10 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
   renderOrder: 70,
   help: 'Configure DHCP servers.',
   attributes: [
+    {
+      name: 'id', help: 'ID.', quoted: false, readOnly: true,
+      parts: [{ name: 'id', type: 'INT', description: 'ID.', range: [0, 65535] }],
+    },
     enable('status', 'Enable/disable this DHCP configuration.', true),
     reference('interface', 'DHCP server can assign IP configurations to clients '
       + 'connected to this interface.', ['system interface']),

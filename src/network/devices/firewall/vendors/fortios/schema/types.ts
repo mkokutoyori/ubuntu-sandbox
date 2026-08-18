@@ -13,6 +13,9 @@ export interface FortiObjectView {
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
   setting(path: string, attribute: string): readonly string[];
+  childEntries(name: string): readonly FortiObjectView[];
+  childSetting(name: string, attribute: string): readonly string[];
+  childGroup(name: string): FortiObjectView | undefined;
 }
 
 export interface FortiSchemaEnvironment {
@@ -33,6 +36,7 @@ export interface FortiAttributeSpec {
   readonly defaultValue?: readonly string[];
   readonly availableWhen?: (object: FortiObjectView) => boolean;
   readonly unimplemented?: string;
+  readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
 }
 
@@ -179,6 +183,99 @@ export interface FortiCommitDevice {
   removeVdomLink(name: string): void;
   applySwitchInterface(name: string, members: readonly string[]): void;
   removeSwitchInterface(name: string): void;
+  applyAntivirusProfile(profile: FortiAntivirusPatch): void;
+  removeAntivirusProfile(name: string): void;
+  applyWebFilterProfile(profile: FortiWebFilterPatch): void;
+  removeWebFilterProfile(name: string): void;
+  applyDnsFilterProfile(profile: FortiDnsFilterPatch): void;
+  removeDnsFilterProfile(name: string): void;
+  applyFileFilterProfile(profile: FortiFileFilterPatch): void;
+  removeFileFilterProfile(name: string): void;
+  applySslSshProfile(profile: FortiSslSshPatch): void;
+  removeSslSshProfile(name: string): void;
+  applyProtocolOptions(options: FortiProtocolOptionsPatch): void;
+  removeProtocolOptions(name: string): void;
+  applyUrlFilterTable(table: FortiFilterTablePatch): void;
+  removeUrlFilterTable(id: string): void;
+  applyDomainFilterTable(table: FortiFilterTablePatch): void;
+  removeDomainFilterTable(id: string): void;
+}
+
+export interface FortiAntivirusPatch {
+  readonly name: string;
+  readonly http: string;
+  readonly ftp: string;
+  readonly smtp: string;
+  readonly comment?: string;
+}
+
+export interface FortiUrlFilterPatch {
+  readonly id: string;
+  readonly pattern: string;
+  readonly type: string;
+  readonly action: string;
+  readonly enabled: boolean;
+}
+
+export interface FortiCategoryFilterPatch {
+  readonly id: string;
+  readonly category: number;
+  readonly action: string;
+}
+
+export interface FortiFilterTablePatch {
+  readonly id: string;
+  readonly name: string;
+  readonly entries: readonly FortiUrlFilterPatch[];
+  readonly comment?: string;
+}
+
+export interface FortiWebFilterPatch {
+  readonly name: string;
+  readonly urlFilterTable?: string;
+  readonly categoryFilters: readonly FortiCategoryFilterPatch[];
+  readonly unclassifiedAction: string;
+  readonly logAllUrl: boolean;
+  readonly comment?: string;
+}
+
+export interface FortiDnsFilterPatch {
+  readonly name: string;
+  readonly domainFilterTable?: string;
+  readonly categoryFilters: readonly FortiCategoryFilterPatch[];
+  readonly unclassifiedAction: string;
+  readonly comment?: string;
+}
+
+export interface FortiFileFilterEntryPatch {
+  readonly id: string;
+  readonly fileTypes: readonly string[];
+  readonly action: string;
+  readonly direction: string;
+}
+
+export interface FortiFileFilterPatch {
+  readonly name: string;
+  readonly entries: readonly FortiFileFilterEntryPatch[];
+  readonly scanArchiveContents: boolean;
+  readonly comment?: string;
+}
+
+export interface FortiSslSshPatch {
+  readonly name: string;
+  readonly httpsMode: string;
+  readonly httpsPorts: readonly number[];
+  readonly caName: string;
+  readonly comment?: string;
+}
+
+export interface FortiProtocolOptionsPatch {
+  readonly name: string;
+  readonly httpPorts: readonly number[];
+  readonly httpsPorts: readonly number[];
+  readonly ftpPorts: readonly number[];
+  readonly dnsPorts: readonly number[];
+  readonly comment?: string;
 }
 
 export interface FortiCommitContext {
@@ -224,6 +321,16 @@ export function childMap(spec: FortiTableSpec): ReadonlyMap<string, FortiTableSp
     map.set(child.path[child.path.length - 1], child);
   }
   return map;
+}
+
+export function keyAttributeName(spec: FortiTableSpec): string | undefined {
+  if (spec.kind !== 'table') return undefined;
+
+  const first = spec.attributes[0];
+  if (!first) return undefined;
+  return first.readOnly === true || first.unimplemented !== undefined
+    ? first.name
+    : undefined;
 }
 
 export function attributeArity(spec: FortiAttributeSpec): number {

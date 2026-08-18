@@ -13,6 +13,10 @@ export const ROUTER_STATIC: FortiTableSpec = {
   renderOrder: 220,
   help: 'Configure IPv4 static routing tables.',
   attributes: [
+    {
+      name: 'seq-num', help: 'Sequence number.', readOnly: true, quoted: false,
+      parts: [{ name: 'seq-num', type: 'INT', description: 'Sequence number.' }],
+    },
     addressMask('dst', 'Destination IP and mask for this route.', ['0.0.0.0', '0.0.0.0']),
     address('gateway', 'Gateway IP for this route.', '0.0.0.0'),
     reference('device', 'Gateway out interface or tunnel.', ['system interface']),

@@ -294,9 +294,9 @@ export class FortiSocle {
     }
 
     for (const name of object.childNames()) {
-      const child = object.child(name);
+      const child = object.childSpec(name);
       if (!child) continue;
-      out.push(this.plain(`config ${name}`, ['config', name], child.spec.help,
+      out.push(this.plain(`config ${name}`, ['config', name], child.help,
         () => this.deps.nav.descend([name])));
     }
 

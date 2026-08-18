@@ -41,6 +41,14 @@ export interface SecurityRule {
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
 
+  utmEnabled?: boolean;
+  antivirusProfile?: string;
+  webFilterProfile?: string;
+  dnsFilterProfile?: string;
+  fileFilterProfile?: string;
+  sslSshProfile?: string;
+  protocolOptions?: string;
+
   comment?: string;
   tags: string[];
   readonly implicit: boolean;
@@ -78,6 +86,13 @@ export interface SecurityRuleInit {
   logEnd?: boolean;
   securityProfileGroup?: string;
   sessionTimeoutOverrideSec?: number;
+  utmEnabled?: boolean;
+  antivirusProfile?: string;
+  webFilterProfile?: string;
+  dnsFilterProfile?: string;
+  fileFilterProfile?: string;
+  sslSshProfile?: string;
+  protocolOptions?: string;
   comment?: string;
   tags?: string[];
   implicit?: boolean;
@@ -122,6 +137,13 @@ export function makeRule(init: SecurityRuleInit): SecurityRule {
     logEnd: init.logEnd ?? false,
     securityProfileGroup: init.securityProfileGroup,
     sessionTimeoutOverrideSec: init.sessionTimeoutOverrideSec,
+    utmEnabled: init.utmEnabled,
+    antivirusProfile: init.antivirusProfile,
+    webFilterProfile: init.webFilterProfile,
+    dnsFilterProfile: init.dnsFilterProfile,
+    fileFilterProfile: init.fileFilterProfile,
+    sslSshProfile: init.sslSshProfile,
+    protocolOptions: init.protocolOptions,
     comment: init.comment,
     tags: [...(init.tags ?? [])],
     implicit: init.implicit ?? false,

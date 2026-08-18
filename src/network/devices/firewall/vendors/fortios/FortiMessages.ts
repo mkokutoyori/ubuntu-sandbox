@@ -74,6 +74,13 @@ export const FortiMessages = {
     );
   },
 
+  unimplementedValue(attribute: string, value: string, reason: string): string {
+    return fail(
+      FORTI_COMMAND_FAIL,
+      `\`set ${attribute} ${value}\` exists on a real FortiGate; ${reason}`,
+    );
+  },
+
   unimplementedPath(path: string, reason: string): string {
     return fail(
       FORTI_COMMAND_FAIL,

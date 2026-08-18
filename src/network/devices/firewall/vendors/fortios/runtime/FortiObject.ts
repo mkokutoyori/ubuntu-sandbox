@@ -1,5 +1,5 @@
 import {
-  attributeMap, childMap, attributeArity, EMPTY_ENVIRONMENT,
+  attributeMap, childMap, attributeArity, keyAttributeName, EMPTY_ENVIRONMENT,
   type FortiAttributeSpec, type FortiObjectView, type FortiSchemaEnvironment,
   type FortiTableSpec,
 } from '../schema/types';
@@ -13,7 +13,9 @@ export interface FortiObjectSnapshot {
 export class FortiObject implements FortiObjectView {
   private readonly values = new Map<string, string[]>();
   private readonly childTables = new Map<string, FortiTable>();
+  private readonly childSingletons = new Map<string, FortiObject>();
   private readonly attributes: ReadonlyMap<string, FortiAttributeSpec>;
+  private readonly keyAttribute: string | undefined;
 
   constructor(
     readonly spec: FortiTableSpec,
@@ -21,13 +23,38 @@ export class FortiObject implements FortiObjectView {
     private readonly env: FortiSchemaEnvironment = EMPTY_ENVIRONMENT,
   ) {
     this.attributes = attributeMap(spec);
+    this.keyAttribute = keyAttributeName(spec);
     for (const [name, childSpec] of childMap(spec)) {
+      if (childSpec.kind === 'object') {
+        this.childSingletons.set(name, new FortiObject(childSpec, name, env));
+        continue;
+      }
       this.childTables.set(name, new FortiTable(childSpec, env));
     }
   }
 
   setting(path: string, attribute: string): readonly string[] {
     return this.env.setting(path, attribute);
+  }
+
+  childEntries(name: string): readonly FortiObject[] {
+    return this.childTables.get(name)?.all() ?? [];
+  }
+
+  childSetting(name: string, attribute: string): readonly string[] {
+    return this.childSingletons.get(name)?.effective(attribute) ?? [];
+  }
+
+  childGroup(name: string): FortiObject | undefined {
+    return this.childSingletons.get(name);
+  }
+
+  childObject(name: string): FortiObject | undefined {
+    return this.childSingletons.get(name);
+  }
+
+  childSpec(name: string): FortiTableSpec | undefined {
+    return this.childTables.get(name)?.spec ?? this.childSingletons.get(name)?.spec;
   }
 
   attribute(name: string): FortiAttributeSpec | undefined {
@@ -51,7 +78,7 @@ export class FortiObject implements FortiObjectView {
   }
 
   childNames(): readonly string[] {
-    return [...this.childTables.keys()];
+    return [...this.childTables.keys(), ...this.childSingletons.keys()];
   }
 
   set(name: string, values: readonly string[]): void {
@@ -77,6 +104,8 @@ export class FortiObject implements FortiObjectView {
   }
 
   effective(name: string): readonly string[] {
+    if (name === this.keyAttribute) return [this.key];
+
     const posed = this.values.get(name);
     if (posed !== undefined) return posed;
     return this.attributes.get(name)?.defaultValue ?? [];
@@ -124,6 +153,7 @@ export class FortiObject implements FortiObjectView {
     for (const [name, list] of this.values) values.set(name, [...list]);
     const children = new Map<string, unknown>();
     for (const [name, table] of this.childTables) children.set(name, table.snapshot());
+    for (const [name, single] of this.childSingletons) children.set(name, single.snapshot());
     return { values, children };
   }
 
@@ -132,6 +162,7 @@ export class FortiObject implements FortiObjectView {
     for (const [name, list] of snapshot.values) this.values.set(name, [...list]);
     for (const [name, state] of snapshot.children) {
       this.childTables.get(name)?.restore(state as never);
+      this.childSingletons.get(name)?.restore(state as never);
     }
   }
 }

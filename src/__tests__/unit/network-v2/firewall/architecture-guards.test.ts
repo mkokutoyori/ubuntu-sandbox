@@ -285,6 +285,18 @@ describe('G8 — toute table du schema declare sa portee et son groupe de droits
     expect(new Set(rangs).size).toBe(rangs.length);
   });
 
+  it('toute table nomme sa cle en PREMIER attribut, et cet attribut est en lecture seule',
+    async () => {
+      const { FORTIOS_SCHEMA } = await import(
+        '@/network/devices/firewall/vendors/fortios/schema');
+      const { keyAttributeName } = await import(
+        '@/network/devices/firewall/vendors/fortios/schema/types');
+
+      for (const spec of FORTIOS_SCHEMA.filter(s => s.kind === 'table')) {
+        expect(keyAttributeName(spec), spec.path.join(' ')).toBeDefined();
+      }
+    });
+
   it('une table ordonnee porte une cle entiere — sinon `move` n\'a pas de sens', async () => {
     const { FORTIOS_SCHEMA } = await import(
       '@/network/devices/firewall/vendors/fortios/schema');

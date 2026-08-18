@@ -2,6 +2,7 @@ import type { IPv4Packet, IPv6Packet, MACAddress } from '../../../core/types';
 import type { FirewallSession } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
 import type { SecurityRule } from '../model/SecurityRule';
+import type { UtmVerdict } from '../inspection/ContentInspector';
 
 export type FirewallPacket = IPv4Packet | IPv6Packet;
 
@@ -23,6 +24,11 @@ export type VerdictReason =
   | 'screen-recon'
   | 'alg-violation'
   | 'profile-block'
+  | 'utm-virus'
+  | 'utm-url'
+  | 'utm-category'
+  | 'utm-dns'
+  | 'utm-file-type'
   | 'application-shift-deny'
   | 'zone-mismatch'
   | 'interface-down'
@@ -72,6 +78,9 @@ export interface PacketContext {
   destinationTranslated?: boolean;
   policyRouteId?: string;
   policyRouteGateway?: string;
+
+  utmVerdict?: UtmVerdict;
+  inspectedSni?: string;
 
   identifiedApplication?: string;
   identifiedUser?: string;

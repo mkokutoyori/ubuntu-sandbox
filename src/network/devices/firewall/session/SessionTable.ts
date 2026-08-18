@@ -61,6 +61,7 @@ export interface SessionInstallOptions {
   timeoutSec: number;
   policyId?: string;
   tcpState?: ObservedTcpState;
+  replyKey?: FlowKey;
 }
 
 export interface SessionTableLimits {
@@ -261,7 +262,7 @@ export class SessionTable {
       createdAt,
       lastSeenAt: createdAt,
       c2s: key,
-      s2c: reverseFlowKey(key),
+      s2c: options.replyKey ?? reverseFlowKey(key),
       ingressZone: options.ingressZone,
       egressZone: options.egressZone,
       ingressInterface: options.ingressInterface,

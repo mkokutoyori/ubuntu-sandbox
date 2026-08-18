@@ -3680,7 +3680,7 @@ Le routage par politique est évalué **avant** la table de routage. Une
 étape de pipeline le porte, insérée juste avant `route-lookup`.
 
 C'est un excellent laboratoire — « le trafic web sort par le lien B, le
-reste par le lien A » — et il est entièrement simulable.
+reste par le lien A » — et il est entièrement simulable **— corrigé en E36 : ce l'est pour les hôtes, qui ont un vrai TLS, PAS pour le pare-feu, qui n'a aucun point de terminaison TCP/TLS**.
 
 ### 22.3 Les protocoles dynamiques
 
@@ -4269,8 +4269,8 @@ observable le jour où `Cable` porte une latence »).
 | **FGT-UTM-4** | Un fichier ordinaire passe — le témoin |
 | **FGT-UTM-5** | Le filtrage d'URL bloque par motif explicite et par catégorie locale |
 | **FGT-UTM-6** | Un domaine hors catalogue est « non classé », et le profil décide |
-| **FGT-UTM-7** | `deep-inspection` intercepte réellement : le client voit le certificat du FortiGate |
-| **FGT-UTM-8** | Sans l'autorité dans son magasin, le client refuse — et l'installer résout |
+| **FGT-UTM-7** | ~~`deep-inspection` intercepte réellement~~ — **REFUSÉ famille 2** (E36) : l'interception exige de terminer la session du client et de la ré-émettre sous un certificat re-signé ; le pare-feu achemine des paquets et ne détient aucun point de terminaison TCP/TLS. L'accepter laisserait la session chiffrée pendant que la CLI annoncerait le déchiffrement |
+| **FGT-UTM-8** | ~~Sans l'autorité dans son magasin, le client refuse~~ — sans objet, découle de FGT-UTM-7 |
 | **FGT-UTM-9** | `certificate-inspection` lit le SNI sans déchiffrer |
 | **FGT-UTM-10** | Le filtrage de fichiers reconnaît les nombres magiques |
 | **FGT-UTM-11** | `profile-protocol-options` décide quels ports sont inspectés |
@@ -5668,7 +5668,7 @@ la séparation gestion/trafic n'a pas de mécanisme derrière, et c'est
 | `config webfilter profile` + catalogue local | 25 |
 | `config dnsfilter profile` | 15 |
 | `config file-filter profile` | 15 |
-| `ssl-ssh-profile` — inspection profonde réelle | 35 |
+| `ssl-ssh-profile` — `certificate-inspection` réelle (SNI du vrai ClientHello) ; `deep-inspection` refusée famille 2 | 35 |
 | `profile-protocol-options` | 10 |
 | Refus famille 2 : IPS, application, DLP | 10 |
 

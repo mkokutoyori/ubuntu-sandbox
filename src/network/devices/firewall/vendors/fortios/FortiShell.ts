@@ -17,7 +17,13 @@ import { makeIpPool, type IpPoolType } from '../../nat/IpPool';
 import { vipAddress } from '../../model/AddressObject';
 import { proxyOwnerKey, type Firewall } from '../../Firewall';
 import type { PolicyRoutePrefix } from '../../l3/PolicyRouteTable';
-import type { FortiCentralSnatPatch, FortiVipPatch } from './schema/types';
+import type {
+  FortiCategoryFilterPatch, FortiCentralSnatPatch, FortiFilterTablePatch,
+  FortiUrlFilterPatch, FortiVipPatch,
+} from './schema/types';
+import type {
+  CategoryFilterEntry, FilterTable, UrlFilterEntry, UtmAction,
+} from '../../inspection/UtmProfiles';
 import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
 import {
@@ -293,6 +299,100 @@ export class FortiShell {
       removeSwitchInterface(name) {
         fw.removeSwitchInterface(name);
       },
+      applyAntivirusProfile(profile) {
+        fw.getUtmProfiles().setAntivirus({
+          name: profile.name,
+          httpScan: utmAction(profile.http),
+          ftpScan: utmAction(profile.ftp),
+          smtpScan: utmAction(profile.smtp),
+          comment: profile.comment,
+        });
+      },
+      removeAntivirusProfile(name) {
+        fw.getUtmProfiles().removeAntivirus(name);
+      },
+      applyWebFilterProfile(profile) {
+        fw.getUtmProfiles().setWebFilter({
+          name: profile.name,
+          urlFilterTable: profile.urlFilterTable,
+          categoryFilters: profile.categoryFilters.map(categoryEntry),
+          unclassifiedAction: utmAction(profile.unclassifiedAction),
+          logAllUrl: profile.logAllUrl,
+          comment: profile.comment,
+        });
+      },
+      removeWebFilterProfile(name) {
+        fw.getUtmProfiles().removeWebFilter(name);
+      },
+      applyDnsFilterProfile(profile) {
+        fw.getUtmProfiles().setDnsFilter({
+          name: profile.name,
+          domainFilterTable: profile.domainFilterTable,
+          categoryFilters: profile.categoryFilters.map(categoryEntry),
+          unclassifiedAction: utmAction(profile.unclassifiedAction),
+          comment: profile.comment,
+        });
+      },
+      removeDnsFilterProfile(name) {
+        fw.getUtmProfiles().removeDnsFilter(name);
+      },
+      applyFileFilterProfile(profile) {
+        fw.getUtmProfiles().setFileFilter({
+          name: profile.name,
+          entries: profile.entries.map(entry => ({
+            id: entry.id,
+            fileTypes: [...entry.fileTypes],
+            action: utmAction(entry.action),
+            direction: entry.direction === 'incoming' || entry.direction === 'outgoing'
+              ? entry.direction
+              : 'any',
+          })),
+          scanArchiveContents: profile.scanArchiveContents,
+          comment: profile.comment,
+        });
+      },
+      removeFileFilterProfile(name) {
+        fw.getUtmProfiles().removeFileFilter(name);
+      },
+      applySslSshProfile(profile) {
+        fw.getUtmProfiles().setSslSsh({
+          name: profile.name,
+          httpsMode: profile.httpsMode === 'certificate-inspection'
+            ? 'certificate-inspection'
+            : 'disable',
+          httpsPorts: [...profile.httpsPorts],
+          caName: profile.caName,
+          comment: profile.comment,
+        });
+      },
+      removeSslSshProfile(name) {
+        fw.getUtmProfiles().removeSslSsh(name);
+      },
+      applyProtocolOptions(options) {
+        fw.getUtmProfiles().setProtocolOptions({
+          name: options.name,
+          httpPorts: [...options.httpPorts],
+          httpsPorts: [...options.httpsPorts],
+          ftpPorts: [...options.ftpPorts],
+          dnsPorts: [...options.dnsPorts],
+          comment: options.comment,
+        });
+      },
+      removeProtocolOptions(name) {
+        fw.getUtmProfiles().removeProtocolOptions(name);
+      },
+      applyUrlFilterTable(table) {
+        fw.getUtmProfiles().setUrlFilterTable(filterTable(table));
+      },
+      removeUrlFilterTable(id) {
+        fw.getUtmProfiles().removeUrlFilterTable(id);
+      },
+      applyDomainFilterTable(table) {
+        fw.getUtmProfiles().setDomainFilterTable(filterTable(table));
+      },
+      removeDomainFilterTable(id) {
+        fw.getUtmProfiles().removeDomainFilterTable(id);
+      },
       applyIpPool(pool) {
         fw.setIpPool(makeIpPool({ ...pool, type: pool.type as IpPoolType }));
       },
@@ -523,6 +623,34 @@ export class FortiShell {
   setHints(enabled: boolean): void {
     setHintsEnabled(enabled);
   }
+}
+
+function utmAction(declared: string): UtmAction {
+  if (declared === 'block') return 'block';
+  if (declared === 'monitor' || declared === 'log-only') return 'monitor';
+  return 'allow';
+}
+
+function urlEntry(entry: FortiUrlFilterPatch): UrlFilterEntry {
+  return {
+    id: entry.id,
+    pattern: entry.pattern,
+    type: entry.type === 'wildcard' || entry.type === 'regex' ? entry.type : 'simple',
+    action: utmAction(entry.action),
+  };
+}
+
+function filterTable(table: FortiFilterTablePatch): FilterTable {
+  return {
+    id: table.id,
+    name: table.name,
+    entries: table.entries.filter(entry => entry.enabled).map(urlEntry),
+    comment: table.comment,
+  };
+}
+
+function categoryEntry(entry: FortiCategoryFilterPatch): CategoryFilterEntry {
+  return { id: entry.id, category: entry.category, action: utmAction(entry.action) };
 }
 
 export function vipRuleId(name: string): string {

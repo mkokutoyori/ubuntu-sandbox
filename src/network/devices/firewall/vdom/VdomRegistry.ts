@@ -10,6 +10,7 @@ import { SessionTable, type FirewallSession, type SessionCloseReason } from '../
 import { PolicyEvaluator } from '../policy/PolicyEvaluator';
 import { ScheduleStore } from '../model/ScheduleObject';
 import { FirewallLogStore } from '../logging/FirewallLogStore';
+import { UtmProfileStore } from '../inspection/UtmProfiles';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
 
 export type DeploymentMode = 'nat' | 'transparent';
@@ -36,6 +37,7 @@ export interface VdomContext {
   readonly evaluator: PolicyEvaluator;
   readonly schedules: ScheduleStore;
   readonly logs: FirewallLogStore;
+  readonly utm: UtmProfileStore;
   readonly settings: VdomSettings;
 }
 
@@ -190,6 +192,7 @@ export class VdomRegistry {
       evaluator,
       schedules,
       logs: new FirewallLogStore(),
+      utm: new UtmProfileStore(),
       settings,
     });
   }

@@ -46,6 +46,7 @@ import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
 import { FirewallLogStore } from './logging/FirewallLogStore';
 import { PacketCapture } from './diag/PacketCapture';
+import type { UtmProfileStore } from './inspection/UtmProfiles';
 import type { FirewallSession, SessionCloseReason } from './session/SessionTable';
 import type { SecurityRule } from './model/SecurityRule';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -391,6 +392,7 @@ export class Firewall extends Equipment {
   getPolicyRoutes(vdom?: string): PolicyRouteTable { return this.getVdom(vdom).policyRoutes; }
   getScheduleStore(vdom?: string): ScheduleStore { return this.getVdom(vdom).schedules; }
   getLogStore(vdom?: string): FirewallLogStore { return this.getVdom(vdom).logs; }
+  getUtmProfiles(vdom?: string): UtmProfileStore { return this.getVdom(vdom).utm; }
   getProfile(): FirewallProfile { return this.profile; }
 
   setCentralNat(enabled: boolean, vdom?: string): void {
@@ -684,6 +686,7 @@ function vdomServices(context: VdomContext): VdomServices {
     natPolicy: context.natPolicy,
     nat: context.nat,
     policyRoutes: context.policyRoutes,
+    utm: context.utm,
     centralNat: context.settings.centralNat,
     opmode: context.settings.opmode,
   };

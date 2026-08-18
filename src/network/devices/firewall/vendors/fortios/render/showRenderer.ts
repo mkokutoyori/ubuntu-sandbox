@@ -1,4 +1,7 @@
-import { isQuoted, type FortiAttributeSpec, type FortiTableSpec } from '../schema/types';
+import {
+  isQuoted, keyAttributeName,
+  type FortiAttributeSpec, type FortiTableSpec,
+} from '../schema/types';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import type { FortiObject } from '../runtime/FortiObject';
 import type { FortiTable } from '../runtime/FortiTable';
@@ -22,7 +25,9 @@ function attributeLines(
   object: FortiObject, options: ShowOptions, indent: string,
 ): string[] {
   const out: string[] = [];
+  const key = keyAttributeName(object.spec);
   for (const spec of object.spec.attributes) {
+    if (spec.name === key) continue;
     if (!object.isAvailable(spec)) continue;
     if (spec.unimplemented) continue;
     if (!options.full && !object.isExplicit(spec.name)) continue;
@@ -38,10 +43,22 @@ function childLines(object: FortiObject, options: ShowOptions, indent: string): 
   const out: string[] = [];
   for (const name of object.childNames()) {
     const table = object.child(name);
-    if (!table || table.size() === 0) continue;
+    if (table) {
+      if (table.size() === 0) continue;
+      out.push(`${indent}config ${name}`);
+      out.push(...tableBody(table, options, indent + STEP));
+      out.push(`${indent}end`);
+      continue;
+    }
+
+    const single = object.childObject(name);
+    if (!single) continue;
+
+    const body = objectLines(single, options, indent + STEP);
+    if (body.length === 0) continue;
 
     out.push(`${indent}config ${name}`);
-    out.push(...tableBody(table, options, indent + STEP));
+    out.push(...body);
     out.push(`${indent}end`);
   }
   return out;

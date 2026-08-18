@@ -11,6 +11,7 @@ import { SYSTEM_SPECS } from './system';
 import { ROUTER_SPECS } from './router';
 import { LOG_SPECS } from './log';
 import { VDOM_SPECS } from './vdom';
+import { UTM_SPECS } from './utm';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VDOM_SPECS,
@@ -22,6 +23,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_SCHEDULE_RECURRING,
   FIREWALL_IPPOOL,
   FIREWALL_VIP,
+  ...UTM_SPECS,
   ...ROUTER_SPECS,
   FIREWALL_POLICY,
   FIREWALL_CENTRAL_SNAT_MAP,

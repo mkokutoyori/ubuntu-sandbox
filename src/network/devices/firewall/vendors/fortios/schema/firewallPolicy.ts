@@ -24,6 +24,10 @@ function denies(object: FortiObjectView): boolean {
   return object.effective('action')[0] === 'deny';
 }
 
+function usesUtm(object: FortiObjectView): boolean {
+  return object.effective('utm-status')[0] === 'enable';
+}
+
 export const FIREWALL_POLICY: FortiTableSpec = {
   path: ['firewall', 'policy'],
   kind: 'table',
@@ -89,6 +93,37 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     enable('logtraffic-start', 'Record logs when a session starts.'),
     enable('capture-packet', 'Enable/disable capture packets.'),
     enable('utm-status', 'Enable to add one or more security profiles.'),
+    {
+      ...reference('av-profile', 'Name of an existing Antivirus profile.',
+        ['antivirus profile']),
+      availableWhen: usesUtm,
+    },
+    {
+      ...reference('webfilter-profile', 'Name of an existing Web filter profile.',
+        ['webfilter profile']),
+      availableWhen: usesUtm,
+    },
+    {
+      ...reference('dnsfilter-profile', 'Name of an existing DNS filter profile.',
+        ['dnsfilter profile']),
+      availableWhen: usesUtm,
+    },
+    {
+      ...reference('file-filter-profile', 'Name of an existing file-filter profile.',
+        ['file-filter profile']),
+      availableWhen: usesUtm,
+    },
+    {
+      ...reference('ssl-ssh-profile', 'Name of an existing SSL SSH profile.',
+        ['firewall ssl-ssh-profile']),
+      availableWhen: usesUtm,
+    },
+    {
+      ...reference('profile-protocol-options',
+        'Name of an existing Protocol options profile.',
+        ['firewall profile-protocol-options']),
+      availableWhen: usesUtm,
+    },
     choice('inspection-mode', 'Policy inspection mode.', [
       { keyword: 'proxy', description: 'Proxy based inspection.' },
       { keyword: 'flow', description: 'Flow based inspection.' },
@@ -113,11 +148,6 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       unimplemented: 'application identification needs a FortiGuard signature '
         + 'database; accepting this attribute would install a rule that could '
         + 'never match.',
-    },
-    {
-      ...reference('av-profile', 'Name of an existing Antivirus profile.',
-        ['antivirus profile']),
-      unimplemented: 'security profiles are not implemented yet.',
     },
   ],
   onCommit(object, context) {
@@ -149,6 +179,13 @@ export const FIREWALL_POLICY: FortiTableSpec = {
         : undefined,
       logStart: object.effective('logtraffic-start')[0] === 'enable',
       logEnd: object.effective('logtraffic')[0] === 'all',
+      utmEnabled: usesUtm(object),
+      antivirusProfile: named(object, 'av-profile'),
+      webFilterProfile: named(object, 'webfilter-profile'),
+      dnsFilterProfile: named(object, 'dnsfilter-profile'),
+      fileFilterProfile: named(object, 'file-filter-profile'),
+      sslSshProfile: named(object, 'ssl-ssh-profile'),
+      protocolOptions: named(object, 'profile-protocol-options'),
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
       comment: comment === '' ? undefined : comment,
     });
@@ -169,6 +206,11 @@ function normaliseAny(values: readonly string[]): string[] {
 
 function timeRestriction(name: string | undefined): string | undefined {
   return name === undefined || name === 'always' ? undefined : name;
+}
+
+function named(object: FortiObjectView, attribute: string): string | undefined {
+  const value = object.effective(attribute)[0];
+  return value === undefined || value === '' ? undefined : value;
 }
 
 function sessionTtl(raw: string | undefined): number | undefined {

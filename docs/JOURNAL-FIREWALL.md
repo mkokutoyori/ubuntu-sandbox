@@ -1807,6 +1807,135 @@ dans l'en-tête du fichier plutôt que laissé à supposer.
 
 ---
 
+### E36 — FortiOS phase 6 : l'inspection lit le trafic, et le fil dit non
+
+`inspection/UtmProfiles.ts` + `inspection/ContentInspector.ts` (socle,
+neufs), `vendors/fortios/schema/utm.ts` (neuf) — **36 cas** neufs, plus
+6 specs Playwright. **15 des 36 tombent avant correctif.**
+
+**Le témoin a sauvé la phase.** Le premier cas de la sonde — « sans
+profil UTM, la requête passe intacte » — a échoué. Sans lui, les trois
+cas de BLOCAGE passaient tous, et j'aurais conclu que l'UTM
+fonctionnait : ils vérifient une ABSENCE (`not.toContain`), et une
+requête qui n'aboutit jamais satisfait cette absence aussi bien qu'un
+blocage réussi. Un test qui ne peut pas distinguer « bloqué » de
+« cassé » ne mesure rien.
+
+**B52 — aucune connexion TCP n'a jamais pu traverser ce pare-feu avec
+NAT.** Le défaut est antérieur à cette phase et vaut pour les DEUX
+constructeurs, l'étage étant dans le socle. `sessionInstallStage`
+indexait la session sur le paquet **APRÈS traduction** : la clé aller
+était donc l'adresse traduite, que le client ne porte jamais. Le premier
+paquet crée la session, la réponse correspond (elle arrive bien sur
+l'adresse traduite) — et **tout paquet suivant de l'initiateur rate la
+voie rapide**, se fait rejuger comme une nouvelle connexion, et un ACK
+nu est refusé par `tcp-state-check`. Mesure : `curl` répond
+`Empty reply from server` avec `set nat enable`, sert la page avec
+`set nat disable`, et la trace des segments montre le SYN qui passe,
+le SYN-ACK qui revient, puis l'ACK du client qui n'arrive jamais au
+serveur. `context.originalPacket` existait depuis toujours et n'était
+pas lu ; `SessionTable.install` reçoit désormais la clé retour
+explicitement, parce que l'inverse de la clé aller n'est PAS la clé
+retour dès qu'il y a traduction. **ICMP masquait le défaut** : un
+`ping -c 1` n'émet qu'un paquet aller, donc la voie rapide n'était
+jamais sollicitée une seconde fois — toutes les phases précédentes
+n'avaient mesuré que de l'ICMP. La phase 4 avait d'ailleurs rencontré la
+conséquence et soigné le symptôme : `originalFlow(session)`
+reconstituait la vue avant traduction pour l'affichage, faute de
+regarder la clé elle-même.
+
+**B53 — l'inspection ne voyait jamais la charge utile.** `utm-inspect`
+n'était placé que sur le chemin du PREMIER paquet ; or une requête HTTP
+ne voyage jamais dans le SYN. `sessionLookupStage` court-circuite en
+« fastpath » dès qu'une session existe, donc le GET traversait sans
+être lu. L'inspection est appelée depuis les deux endroits par UNE
+fonction (`inspectUtm`), jamais recopiée. Piège relevé au passage :
+`proceed()` rend `Continue`, pas `accept` — ma première garde
+court-circuitait sur tout verdict non-`accept` et faisait retomber les
+paquets propres dans le pipeline complet, où la réponse du serveur
+n'avait aucune politique retour et se faisait refuser. Seul un `drop`
+doit court-circuiter.
+
+**B54 — un enfant de type objet était injoignable depuis la CLI.**
+`FortiSocle` n'enregistrait `config <nom>` que pour les enfants de type
+TABLE (`object.child(name)` ne rend que celles-là), donc `config http`,
+`config https`, `config web`, `config ftgd-wf` — tous les sous-blocs
+d'un profil UTM — répondaient « unknown configuration path ». Même
+cause, deuxième symptôme : `showRenderer.childLines` ne rendait pas
+davantage ces blocs, si bien qu'un réglage tapé disparaissait de la
+configuration rendue — donc du rechargement d'une topologie.
+
+**B55 — la clé d'un objet n'était lisible nulle part.** `get` affichait
+`name : ""` pour un profil nommé `AV`, la clé n'étant portée par aucun
+attribut. `keyAttributeName(spec)` la dérive une fois (le premier
+attribut, non modifiable par `set`), un garde-fou l'épingle, et cette
+dérivation a immédiatement trouvé **deux tables qui ne déclaraient pas
+leur clé du tout** (`system dhcp server`, `router static`).
+
+**Le schéma que j'avais écrit n'était pas celui d'un vrai FortiGate.**
+La sonde a échoué sur le filtrage d'URL, et la vérification a montré que
+la faute était dans le produit : `config url-filter` **à l'intérieur**
+du profil est une invention. Un vrai FortiGate déclare
+`config webfilter urlfilter` / `edit 1` / `config entries`, puis
+RÉFÉRENCE la table par son numéro depuis `config web` /
+`set urlfilter-table 1` ; le filtre DNS a la même forme
+(`config dnsfilter domain-filter`, référencée par
+`set domain-filter-table`). Corrigé aux deux endroits. La différence
+n'est pas cosmétique : une table référencée modifiée APRÈS le profil
+prend effet, une table recopiée non — c'est une référence, pas une
+copie, et `UtmProfileStore` la résout au moment de l'inspection.
+
+**`deep-inspection` est REFUSÉ, en nommant la brique absente.** Elle
+consiste à terminer la session du client et à la ré-émettre vers le
+serveur sous un certificat re-signé par l'AC du FortiGate. Ce pare-feu
+achemine des paquets et ne détient aucun point de terminaison TCP ni
+TLS : il ne peut présenter aucun certificat. L'accepter aurait laissé
+la session chiffrée pendant que la CLI aurait annoncé qu'elle est
+déchiffrée. `FortiAttributeSpec.unimplementedValues` refuse le mot-clé
+seul, pas l'attribut — `certificate-inspection`, elle, est RÉELLE.
+
+**`certificate-inspection` lit le SNI d'un VRAI ClientHello**, et
+Fortinet documente que c'est exactement ce qu'un FortiGate filtre sans
+déchiffrer : le nom d'hôte, jamais le chemin. Les deux moitiés sont
+épinglées, dont celle qui manque.
+
+**Aucun analyseur n'est réécrit.** `parseHttpRequest` passe par
+`Http1Wire.parseRequest` (RFC 9112), la question DNS par
+`decodeDnsMessage` (RFC 1035), le SNI par `TlsRecordWire.decodeRecords`
++ `decodeMessages`. Trois expressions régulières sur du texte ont été
+supprimées au profit des codecs du dépôt : deux analyseurs d'un même
+protocole finissent toujours par se contredire, et ici ils lisent
+désormais le VRAI format du fil au lieu d'en gratter la sérialisation.
+
+**Interface en anglais** : six chaînes françaises restaient dans
+`FortiValidator` et `FortiNavigator` — les messages d'erreur de valeur,
+les plus lus de tous.
+
+---
+
+## Périmètre pris — FortiOS phase 6 (inspection et UTM)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `inspection/UtmProfiles.ts` et
+`inspection/ContentInspector.ts` (nouveau répertoire), `UtmProfileStore`
+porté par `VdomContext`, étage `utm-inspect` dans
+`pipeline/stages/coreStages.ts`, six champs UTM sur
+`model/SecurityRule.ts`, `utmVerdict`/`inspectedSni` sur
+`pipeline/PacketContext.ts`.
+
+**Fichiers FortiOS pris** : `schema/utm.ts` (nouveau),
+`schema/{firewallPolicy,index,types}.ts`, `FortiShell.ts`,
+`runtime/{FortiObject,FortiNavigator,FortiValidator}.ts`,
+`FortiMessages.ts`.
+
+**Ce que la phase ne prend PAS** : `application list`, `ips sensor`,
+`dlp sensor` et `firewall shaper` sont REFUSÉS dans le produit en
+nommant la brique absente, pas laissés ouverts ; `deep-inspection` de
+même.
+
+---
+
 ## Périmètre pris — FortiOS phase 5 (VDOM et modes de déploiement)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.

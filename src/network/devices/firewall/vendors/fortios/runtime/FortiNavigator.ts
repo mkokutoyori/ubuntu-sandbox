@@ -97,6 +97,16 @@ export class FortiNavigator {
 
   private descendChild(parent: FortiObject, words: readonly string[]): string {
     if (words.length !== 1) return FortiMessages.unknownPath(words.join(' '));
+
+    const single = parent.childObject(words[0]);
+    if (single) {
+      this.stack.push({
+        kind: 'object', object: single, existed: true,
+        snapshot: single.snapshot(), owner: null,
+      });
+      return EMPTY;
+    }
+
     const child = parent.child(words[0]);
     if (!child) return FortiMessages.unknownPath(words[0]);
 
@@ -311,7 +321,7 @@ export class FortiNavigator {
       return FortiMessages.incomplete('`move <key> {before|after} <key>`');
     }
     if (positionWord !== 'before' && positionWord !== 'after') {
-      return FortiMessages.valueError(positionWord, 'attendu : `before` ou `after`.');
+      return FortiMessages.valueError(positionWord, 'expected `before` or `after`.');
     }
     if (!table.move(unquote(key), positionWord as MovePosition, unquote(target))) {
       return FortiMessages.unknownKey(unquote(key));

@@ -31,17 +31,17 @@
 | **3** | NAT complet : `ippool`, `vip`, `central-snat-map`, `router policy` | ✅ livrée (E33) |
 | **4** | Diagnostic et journaux | ✅ livrée (E34) |
 | **5** | VDOM et modes de déploiement | ✅ livrée (E35) |
-| 6 | Inspection et UTM | ⏳ |
+| **6** | Inspection et UTM | ✅ livrée (E36) |
 | 7 | Utilisateurs et authentification | ⏳ |
 | 8 | VPN | ⏳ |
 | 9 | HA et SD-WAN | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 971 cas verts sur 35 fichiers du module
-pare-feu ; 239 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
+**Mesures au dernier commit** : 1008 cas verts sur 36 fichiers du module
+pare-feu ; 275 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
 système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
-VDOM) ; 25 specs Playwright ; aucune erreur de typecheck dans le
-module ; lint propre. **Le badge « Limited simulation » est retiré.**
+VDOM + 36 d'UTM) ; 31 specs Playwright ; aucune erreur de typecheck dans
+le module ; lint propre. **Le badge « Limited simulation » est retiré.**
 
 ---
 
@@ -344,7 +344,48 @@ pipeline par mode), et l'invite qui indique le VDOM courant.
   châssis, sans vieillissement ni STP — `Switch` en a une plus complète,
   et la partager serait le prochain pas.
 
-### 6.7 Après
+### 6.7 Phase 6 — inspection et UTM — ✅ livrée
+
+Livrée : `inspection/UtmProfiles.ts` + `inspection/ContentInspector.ts`
+au socle, étage `utm-inspect`, `config antivirus profile`,
+`config webfilter profile` + `config webfilter urlfilter`,
+`config dnsfilter profile` + `config dnsfilter domain-filter`,
+`config file-filter profile`, `config firewall ssl-ssh-profile`,
+`config firewall profile-protocol-options`, et les six références UTM
+d'une politique derrière `set utm-status enable`.
+
+**Trois défauts de socle trouvés ici et corrigés** (E36) : la session
+était indexée sur le paquet APRÈS traduction (aucune connexion TCP ne
+pouvait traverser avec NAT) ; l'inspection n'était appelée que sur le
+premier paquet (la charge utile ne voyage jamais dans le SYN) ; un
+enfant de type objet était injoignable depuis la CLI et absent du
+`show`.
+
+**Ce qui est REFUSÉ dans le produit, en nommant la brique absente** —
+et qu'il ne faut donc pas « implémenter » sans fournir la brique :
+
+- `deep-inspection` : pas de point de terminaison TCP/TLS sur le
+  pare-feu, donc aucun certificat re-signé possible ;
+- `application list`, `ips sensor`, `dlp sensor` : pas de base de
+  signatures FortiGuard, et il n'y en aura pas ;
+- `firewall shaper traffic-shaper` : pas d'horloge de fil.
+
+**Ce qui reste de la phase 6, nommé plutôt que tu** :
+
+- le catalogue de catégories est LOCAL (quatre catégories,
+  `LOCAL_URL_CATEGORIES`) : il n'y a pas de FortiGuard ;
+- l'antivirus reconnaît EICAR et rien d'autre — c'est une signature de
+  test, pas un moteur ;
+- `scan-archive-contents` est accepté et ne descend dans aucune archive
+  (il n'y a pas de décompresseur) ;
+- le filtrage de fichiers lit le nombre magique en tête de corps, donc
+  ne voit pas un fichier réparti sur plusieurs segments.
+
+**Si vous câblez le serveur DHCP du FortiGate** (`config system dhcp
+server` est aujourd'hui grammaire seule) : le socle DHCP du dépôt est
+`src/network/dhcp/DHCPServer.ts`. N'en écrivez pas un second.
+
+### 6.8 Après
 
 Suivre §39 du BRD. Chaque phase : revendiquer dans
 `JOURNAL-FIREWALL.md`, livrer, discriminer par `git stash`, mettre à jour
@@ -384,3 +425,4 @@ comparer, jamais le supposer).
 | 2026-08-17 | agent `mandeng` | Phase 3 livrée (E33). Décisions D11 à D14, pièges P7 à P11, §6.4 (ce qui reste de la phase 3). |
 | 2026-08-17 | agent `mandeng` | Phase 4 livrée (E34), badge retiré. Décisions D15 à D21, pièges P12 à P15, §6.5 (ce qui reste de la phase 4). |
 | 2026-08-17 | agent `mandeng` | Phase 5 livrée (E35). Décisions D22 à D27, §6.6 (ce qui reste de la phase 5). |
+| 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
