@@ -1976,6 +1976,53 @@ d'extraire le calcul.
 
 ---
 
+### E43 — SD-WAN : la sonde mesure, et la sélection suit la mesure
+
+`sdwan/{SdwanTable,SdwanHealthProbe,SdwanService}.ts`,
+`diag/TraceRing.ts`, `schema/sdwan.ts`, `diag/sdwanRenderer.ts` (tous
+neufs), `Firewall.ts`, `FortiSocle.ts`, `FortiDiagCommands.ts` —
+**14 cas** neufs plus 3 specs Playwright. **13 des 14** tombent avant
+correctif.
+
+`config system sdwan` n'avait aucun schéma. La matière existait : le
+pare-feu route, `Cable` porte `packetLossRate` — ce qui rend le seuil de
+perte DÉMONTRABLE plutôt que décoratif — et le pipeline a déjà un étage
+de route de politique, qui est exactement ce qu'une règle de service
+SD-WAN est.
+
+**La sonde envoie de VRAIS échos**, depuis l'interface du membre vers le
+serveur déclaré. Le pare-feu n'avait pas de client d'écho ICMP — il
+RÉPOND, il n'appelle pas — et c'est la brique qui manquait ;
+`SdwanHealthProbe` la fournit et compte ce qui revient. Le moteur IP SLA
+du dépôt n'a **pas** été adopté ici, et c'est une décision mesurée :
+`IpSlaHost` est un port LARGE (`tracePath`, `computeKeyDigest`,
+`sendTrap`, `fetchHttp`, `sendIcmpv6Echo`…) dont un pare-feu ne remplirait
+presque rien, et ce qu'une sonde de santé SD-WAN a besoin de savoir tient
+en une phrase — « combien d'échos sont revenus ». Écrire l'adaptateur
+aurait produit plus de code inerte que de code utile.
+
+**Le laboratoire est à deux fournisseurs qui mènent au MÊME serveur** par
+une dorsale commune, et ce n'est pas un détail : au premier essai la
+sonde visait l'adresse du premier fournisseur, donc le second membre
+échouait pour une raison de topologie et non de produit. Une bascule qui
+« marche » parce que le second lien ne mène nulle part ne prouve rien.
+
+**Les seuils de latence et de gigue sont acceptés, stockés, rendus — et
+jamais franchis**, la livraison de trame étant synchrone. C'est la même
+limite qu'IP SLA a mesurée et écrite ; l'aide de l'attribut la nomme, de
+sorte qu'un apprenant lise la contrainte au lieu de la découvrir. Le
+seuil de PERTE, lui, est mesuré pour de bon.
+
+**Le format de `diagnose sys sdwan health-check` est celui de FortiOS**,
+relevé sur la documentation Fortinet : un membre mort n'affiche NI
+latence NI gigue, ce qu'une implantation écrite de mémoire aurait raté.
+
+**Trois garde-fous ont mordu, et chacun avait raison.** G2 a attrapé une
+vraie faute d'architecture : le socle importait un type de la couche
+vendeur (`FortiSdwanPatch`) — la configuration SD-WAN appartient au
+socle, et c'est FortiOS qui s'y projette. G8 a attrapé un rang de rendu
+en double, G3 a imposé l'extraction de `diag/TraceRing.ts`.
+
 ### E42 — SSL-VPN en mode web : le portail écoute, et il présente un certificat
 
 `vpn/SslVpnPortal.ts`, `auth/FirewallPortals.ts` (neufs), `schema/vpn.ts`,
@@ -2214,6 +2261,32 @@ progrès ; le test le dit maintenant dans les deux sens.
 **Quatre extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
 `commit/objectCommits.ts`, `FirewallAgents.ts`, `l3/FirewallEgress.ts`,
 `logging/emitFirewallEvent.ts`.
+
+---
+
+## Périmètre pris — FortiOS phase 9a (SD-WAN)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `sdwan/` (nouveau répertoire —
+table des membres, sondes de santé, sélection de service), et le
+**client d'écho ICMP** que le pare-feu n'a pas (il répond, il n'appelle
+pas).
+
+**Fichiers FortiOS pris** : `schema/sdwan.ts` (neuf),
+`schema/index.ts`, `commit/sdwanCommits.ts` (neuf),
+`diag/sdwanRenderer.ts` (neuf), `Firewall.ts`.
+
+**Réutilisations imposées, à ne pas réécrire** : `Cable.packetLossRate`
+(c'est ce qui rend le seuil de perte mesurable), `RouteTable` et le
+`policyRouteStage` du pipeline pour la sélection, `events/Scheduler`.
+
+**Ce que la phase ne prend PAS, et pourquoi** : les seuils de **latence**
+et de **gigue** sont acceptés et jamais franchis — la livraison de trame
+est synchrone, donc le temps d'aller-retour est nul en temps virtuel.
+C'est la même limite qu'IP SLA a mesurée et écrite ; la nier ici ferait
+diverger deux modules sur le même fait. La HA (`config system ha`) est
+une livraison distincte, 9b.
 
 ---
 

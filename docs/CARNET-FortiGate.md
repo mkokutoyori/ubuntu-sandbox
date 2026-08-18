@@ -34,14 +34,15 @@
 | **6** | Inspection et UTM | ✅ livrée (E36) |
 | **7** | Utilisateurs et authentification | ✅ livrée (E37) |
 | **8** | VPN — tunnel, certificats, DPD/NAT-T, SSL-VPN web | ✅ livrée (E38 à E42) |
-| 9 | HA et SD-WAN | ⏳ |
+| **9a** | **SD-WAN : membres, sondes réelles, bascule sur perte** | ✅ livrée (E43) |
+| 9b | HA (`config system ha`, élection, cerveau divisé) | ⏳ |
 | 10 | Routage dynamique (chantier de socle) | ⏳ |
 
-**Mesures au dernier commit** : 1140 cas verts sur 42 fichiers du module
+**Mesures au dernier commit** : 1155 cas verts sur 44 fichiers du module
 pare-feu ; 407 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
 système + 34 de NAT + 13 d'aide/langue + 44 de diagnostic + 27 de
 VDOM + 36 d'UTM + 43 d'utilisateurs + 42 de VPN + 12 de trafic dans le
-tunnel + 10 de certificats + 11 de DPD/NAT-T + 13 de SSL-VPN) ; 52 specs
+tunnel + 10 de certificats + 11 de DPD/NAT-T + 13 de SSL-VPN + 14 de SD-WAN) ; 55 specs
 Playwright ; aucune erreur de typecheck dans le module ; lint propre.
 **Le badge « Limited simulation » est retiré.** S'y ajoutent 40 cas de
 socle cryptographique (`ike-real-diffie-hellman.test.ts`).

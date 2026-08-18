@@ -25,6 +25,10 @@ export interface FortiDiagDeps {
   readonly logContext: () => FortiLogContext;
 }
 
+import {
+  renderSdwanHealthCheck, renderSdwanMembers, renderSdwanService,
+} from './sdwanRenderer';
+
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
   if (family === 'sys') return diagnoseSession(tail, deps);
@@ -33,6 +37,15 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseSdwan(rest: readonly string[], deps: FortiDiagDeps): string {
+  const table = deps.fw.getSdwan().getTable();
+
+  if (rest[0] === 'health-check') return renderSdwanHealthCheck(table, rest[1]);
+  if (rest[0] === 'member') return renderSdwanMembers(table);
+  if (rest[0] === 'service') return renderSdwanService(table);
+  return FortiMessages.unknownPath(`sys sdwan ${rest.join(' ')}`);
 }
 
 export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -77,6 +90,8 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
 }
 
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
+
   const verb = rest[1];
   const filter = deps.state.sessionFilter;
 

@@ -1,0 +1,165 @@
+export type SdwanProtocol = 'ping' | 'http' | 'dns' | 'tcp-echo' | 'udp-echo';
+
+export type SdwanServiceMode = 'auto' | 'manual' | 'priority' | 'sla' | 'load-balance';
+
+export interface SdwanMember {
+  readonly sequence: number;
+  readonly iface: string;
+  readonly gateway: string;
+  readonly priority: number;
+  readonly zone: string;
+  readonly enabled: boolean;
+}
+
+export interface SdwanSlaTarget {
+  readonly id: number;
+  readonly latencyThresholdMs: number;
+  readonly jitterThresholdMs: number;
+  readonly packetLossThresholdPercent: number;
+}
+
+export interface SdwanHealthCheck {
+  readonly name: string;
+  readonly server: string;
+  readonly protocol: SdwanProtocol;
+  readonly port: number;
+  readonly intervalMs: number;
+  readonly probeCount: number;
+  readonly failtime: number;
+  readonly recoverytime: number;
+  readonly members: readonly number[];
+  readonly sla: readonly SdwanSlaTarget[];
+}
+
+export interface SdwanService {
+  readonly id: string;
+  readonly name: string;
+  readonly mode: SdwanServiceMode;
+  readonly sources: readonly string[];
+  readonly destinations: readonly string[];
+  readonly priorityMembers: readonly number[];
+  readonly healthCheck: string;
+  readonly slaId: number;
+}
+
+export interface SdwanMemberHealth {
+  alive: boolean;
+  packetLossPercent: number;
+  latencyMs: number;
+  jitterMs: number;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+}
+
+export interface SdwanConfiguration {
+  readonly enabled: boolean;
+  readonly zones: readonly string[];
+  readonly members: readonly SdwanMember[];
+  readonly healthChecks: readonly SdwanHealthCheck[];
+  readonly services: readonly SdwanService[];
+}
+
+export const DEAD_LOSS_PERCENT = 100;
+
+export class SdwanTable {
+  private readonly members = new Map<number, SdwanMember>();
+  private readonly checks = new Map<string, SdwanHealthCheck>();
+  private readonly services = new Map<string, SdwanService>();
+  private readonly zones = new Set<string>();
+  private readonly health = new Map<string, Map<number, SdwanMemberHealth>>();
+  private enabled = false;
+
+  setStatus(enabled: boolean): void { this.enabled = enabled; }
+
+  isEnabled(): boolean { return this.enabled; }
+
+  setZone(name: string): void { this.zones.add(name); }
+
+  removeZone(name: string): boolean { return this.zones.delete(name); }
+
+  zoneNames(): readonly string[] { return Object.freeze([...this.zones]); }
+
+  setMember(member: SdwanMember): void { this.members.set(member.sequence, member); }
+
+  removeMember(sequence: number): boolean { return this.members.delete(sequence); }
+
+  member(sequence: number): SdwanMember | undefined { return this.members.get(sequence); }
+
+  allMembers(): readonly SdwanMember[] {
+    return Object.freeze([...this.members.values()].sort((a, b) => a.sequence - b.sequence));
+  }
+
+  setHealthCheck(check: SdwanHealthCheck): void {
+    this.checks.set(check.name, check);
+    if (!this.health.has(check.name)) this.health.set(check.name, new Map());
+  }
+
+  removeHealthCheck(name: string): boolean {
+    this.health.delete(name);
+    return this.checks.delete(name);
+  }
+
+  healthCheck(name: string): SdwanHealthCheck | undefined { return this.checks.get(name); }
+
+  allHealthChecks(): readonly SdwanHealthCheck[] {
+    return Object.freeze([...this.checks.values()]);
+  }
+
+  setService(service: SdwanService): void { this.services.set(service.id, service); }
+
+  removeService(id: string): boolean { return this.services.delete(id); }
+
+  allServices(): readonly SdwanService[] {
+    return Object.freeze([...this.services.values()]);
+  }
+
+  recordHealth(check: string, sequence: number, sample: {
+    alive: boolean; packetLossPercent: number; latencyMs: number; jitterMs: number;
+  }): void {
+    const perCheck = this.health.get(check) ?? new Map<number, SdwanMemberHealth>();
+    this.health.set(check, perCheck);
+
+    const previous = perCheck.get(sequence);
+    perCheck.set(sequence, {
+      alive: sample.alive,
+      packetLossPercent: sample.packetLossPercent,
+      latencyMs: sample.latencyMs,
+      jitterMs: sample.jitterMs,
+      consecutiveFailures: sample.alive ? 0 : (previous?.consecutiveFailures ?? 0) + 1,
+      consecutiveSuccesses: sample.alive ? (previous?.consecutiveSuccesses ?? 0) + 1 : 0,
+    });
+  }
+
+  healthOf(check: string, sequence: number): SdwanMemberHealth | undefined {
+    return this.health.get(check)?.get(sequence);
+  }
+
+  slaMet(check: string, sequence: number, slaId: number): boolean {
+    const declared = this.checks.get(check);
+    const measured = this.healthOf(check, sequence);
+    if (!declared || !measured || !measured.alive) return false;
+
+    const target = declared.sla.find(entry => entry.id === slaId);
+    if (!target) return true;
+
+    return measured.packetLossPercent <= target.packetLossThresholdPercent
+      && measured.latencyMs <= target.latencyThresholdMs
+      && measured.jitterMs <= target.jitterThresholdMs;
+  }
+
+  preferredMember(check: string, slaId?: number): SdwanMember | undefined {
+    const declared = this.checks.get(check);
+    if (!declared) return undefined;
+
+    const candidates = declared.members
+      .map(sequence => this.members.get(sequence))
+      .filter((member): member is SdwanMember => member !== undefined && member.enabled)
+      .sort((a, b) => a.priority - b.priority || a.sequence - b.sequence);
+
+    const meeting = slaId === undefined
+      ? candidates.filter(member => this.healthOf(check, member.sequence)?.alive === true)
+      : candidates.filter(member => this.slaMet(check, member.sequence, slaId));
+
+    return meeting[0];
+  }
+}

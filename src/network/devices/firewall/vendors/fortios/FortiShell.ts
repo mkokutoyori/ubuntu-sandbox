@@ -289,6 +289,9 @@ export class FortiShell {
           route.gateway === '0.0.0.0' ? undefined : route.gateway,
           { iface: route.iface || undefined, distance: route.distance, id: route.id });
       },
+      applySdwan(patch) {
+        return fw.applySdwan(patch);
+      },
       removeStaticRoute(id) {
         fw.getRouteTable().removeStaticById(id);
       },

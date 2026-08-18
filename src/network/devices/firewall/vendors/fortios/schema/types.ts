@@ -3,6 +3,7 @@ import type { ObjectStore } from '../../../model/ObjectStore';
 import type { PolicyStore } from '../../../model/PolicyStore';
 
 import type { AccessGroup } from '../../../authz/AccessMatrix';
+import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -203,6 +204,7 @@ export interface FortiCommitDevice {
   applyLdapServer(server: FortiLdapServerPatch): void;
   applyPhase1(tunnel: FortiPhase1Patch): void;
   applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
+  applySdwan(settings: SdwanConfiguration): string | void;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
   applyCaCertificate(entry: FortiCaCertificatePatch): string | void;
