@@ -48,7 +48,6 @@ import {
 } from './cisco/CiscoSecurityCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
-import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
 import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
@@ -2154,7 +2153,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showDHCPSnoopingBinding(this.d());
     });
 
-    registerLoggingShowCommands(this.userTrie, this.loggingCommandContext(), 'user');
 
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => this.handlePing(args));
   }
@@ -2463,7 +2461,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return this.showDHCPSnoopingBinding(this.d());
     });
 
-    registerLoggingShowCommands(this.privilegedTrie, this.loggingCommandContext());
   }
 
   /**

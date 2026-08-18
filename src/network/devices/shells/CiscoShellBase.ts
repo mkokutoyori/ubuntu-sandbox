@@ -111,7 +111,7 @@ import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS, type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
-  registerLoggingConfigCommands, registerLoggingShowCommands, severityValues,
+  registerLoggingConfigCommands, loggingShowViews, severityValues,
   registerSequenceNumbersCommand, registerLoggingClearCommands,
 } from './cisco/CiscoLoggingCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
@@ -3864,7 +3864,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const identite = buildIdentityShowCommands(() => this.d())
       .map(v => vue(v.path, v.description, v.niveau, () => v.render()));
 
+    // Niveau 15 : `show logging` est une commande privilegiee sur IOS,
+    // et c'est le niveau que le trie lui donnait. Les deux modes d'EXEC
+    // restent declares pour que la DELEGATION puisse la descendre.
+    const journal: CommandSpec[] = loggingShowViews(this.loggingCommandContext())
+      .map(v => ({
+        id: v.path.filter((s): s is string => typeof s === 'string').join('-'),
+        path: [...v.path], description: v.description,
+        modes: exec, minPrivilege: 15,
+        run: (_session, args) => v.render(args),
+      }));
+
     return [
+      ...journal,
       ...identite,
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),

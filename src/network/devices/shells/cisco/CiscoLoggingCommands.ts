@@ -28,6 +28,7 @@
  * fait rien coûte plus cher qu'un refus.
  */
 
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { scopedTrie, type ExecScope } from './CiscoExecScope';
 import type { CommandTrie, ParamSpec } from '../CommandTrie';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
@@ -367,44 +368,57 @@ export function registerSequenceNumbersCommand(trie: CommandTrie, ctx: LoggingCo
   trie.register('no service sequence-numbers', 'Stop stamping logger messages', set(false));
 }
 
-export function registerLoggingShowCommands(
-  target: CommandTrie, ctx: LoggingCommandContext, scope: ExecScope = 'privileged',
-): void {
-  const trie = scopedTrie(target, scope);
-  trie.register('show logging', 'Show the contents of logging buffers', () => {
-    ctx.beforeApply?.();
-    const base = ctx.config().render();
+export interface LoggingShowView {
+  readonly path: readonly (string | ArgumentSpec)[];
+  readonly description: string;
+  render(args: Record<string, string>): string;
+}
+
+export function loggingShowViews(ctx: LoggingCommandContext): LoggingShowView[] {
+  const avecSuffixe = (base: string): string => {
     const suffix = ctx.showSuffix?.() ?? '';
     return suffix ? `${base}\n\n${suffix}` : base;
-  });
-  /**
-   * `show logging last <n>` — les N dernières lignes du tampon.
-   *
-   * La commande n'existait pas (`% Invalid input`), alors que c'est la
-   * première chose qu'on tape sur un routeur dont le tampon fait 64 Ko :
-   * le `show logging` nu recrache tout, et ce qu'on cherche est en bas.
-   * L'en-tête reste affiché — IOS ne le supprime pas — seule la liste
-   * des messages est tronquée par la fin.
-   */
-  trie.registerGreedy('show logging last', 'Show last <n> lines of the logging buffer', (args) => {
-    ctx.beforeApply?.();
-    if (args.length === 0) throw new CliIncomplete();
-    if (!/^\d+$/.test(args[0])) throw new CliInvalidInput({ token: args[0] });
-    const n = parseInt(args[0], 10);
-    if (n < 1) throw new CliInvalidInput({ token: args[0] });
-    const base = ctx.config().render({ last: n });
-    const suffix = ctx.showSuffix?.() ?? '';
-    return suffix ? `${base}\n\n${suffix}` : base;
-  });
-  trie.register('show logging count', 'Show occurrence count of each message',
-    () => { ctx.beforeApply?.(); return ctx.config().renderCount(); });
-  // Une table à PART, celle qu'alimente `logging history` et que le SNMP
-  // relève : la rendre identique à `show logging` faisait croire à une
-  // seule vue là où IOS en a deux.
-  trie.register('show logging history', 'Show the contents of the logging history table',
-    () => { ctx.beforeApply?.(); return ctx.config().renderHistory(); });
-  trie.register('show logging persistent', 'Show the contents of the persistent log files',
-    () => { ctx.beforeApply?.(); return ctx.config().renderPersistent(); });
+  };
+
+  return [
+    {
+      path: ['show', 'logging'],
+      description: 'Show the contents of logging buffers',
+      render: () => { ctx.beforeApply?.(); return avecSuffixe(ctx.config().render()); },
+    },
+    {
+      // `show logging last <n>` — les N dernieres lignes du tampon. Le
+      // `show logging` nu recrache tout, et ce qu'on cherche est en bas.
+      // L'en-tete reste affiche : IOS ne le supprime pas.
+      path: ['show', 'logging', 'last', {
+        name: 'lignes', type: 'INT', range: [1, 2147483647],
+        description: 'Number of lines to show from the end',
+      }],
+      description: 'Show last <n> lines of the logging buffer',
+      render: (args) => {
+        ctx.beforeApply?.();
+        return avecSuffixe(ctx.config().render({ last: parseInt(args.lignes, 10) }));
+      },
+    },
+    {
+      path: ['show', 'logging', 'count'],
+      description: 'Show occurrence count of each message',
+      render: () => { ctx.beforeApply?.(); return ctx.config().renderCount(); },
+    },
+    {
+      // Une table a PART, celle qu'alimente `logging history` et que le
+      // SNMP releve : la rendre identique a `show logging` faisait croire
+      // a une seule vue la ou IOS en a deux.
+      path: ['show', 'logging', 'history'],
+      description: 'Show the contents of the logging history table',
+      render: () => { ctx.beforeApply?.(); return ctx.config().renderHistory(); },
+    },
+    {
+      path: ['show', 'logging', 'persistent'],
+      description: 'Show the contents of the persistent log files',
+      render: () => { ctx.beforeApply?.(); return ctx.config().renderPersistent(); },
+    },
+  ];
 }
 
 /**

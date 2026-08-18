@@ -31,7 +31,6 @@ import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
 import { isValidIPv4 } from '../../core/ip';
 import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
 import { CliInvalidInput } from './cli/CliDiagnostic';
-import { registerLoggingShowCommands } from './cisco/CiscoLoggingCommands';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
@@ -1317,7 +1316,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerPolicyShow(trie, this.policy);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
-    registerLoggingShowCommands(trie, this.loggingCommandContext(), scope);
 
 
     // `show tech-support` — real aggregation of the key show outputs.
