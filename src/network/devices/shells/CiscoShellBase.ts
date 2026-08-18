@@ -3847,6 +3847,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * moitie d'une famille, et l'aide de l'une cesserait de decrire ce que
    * l'autre configure.
    */
+  private showSntp(): string {
+    const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[] };
+    const entete = 'SNTP server   Stratum   Version   Last Receive';
+    const ligne = (nom: string): string => `${nom.padEnd(14)}1         4         00:00:01`;
+
+    const cfg = getNtpAgent(this.d())?.getConfig?.();
+    if (cfg?.associations && cfg.associations.size > 0) {
+      return [entete, ...[...cfg.associations.keys()].map(ligne)].join('\n');
+    }
+    const declarees = (dev.getUnhandledConfigLines?.() ?? [])
+      .filter(l => l.startsWith('sntp server'));
+    if (declarees.length === 0) return 'No SNTP servers configured';
+    return [entete, ...declarees.map(l => ligne(l.split(/\s+/)[2] ?? ''))].join('\n');
+  }
+
   protected showSocleSpecs(): CommandSpec[] {
     const exec = ['user', 'privileged'];
     // Les deux modes d'EXEC parce que la DELEGATION doit rester
@@ -3875,8 +3890,33 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         run: (_session, args) => v.render(args),
       }));
 
+    // Niveau 1 MESURE et non suppose : les douze repondaient deja sans
+    // `enable`, le trie les posant sur l'arbre utilisateur autant que
+    // sur le privilegie.
+    const systeme: CommandSpec[] = [
+      vue(['show', 'calendar'], 'Display hardware calendar', 1, () => showCalendar(this.cs())),
+      vue(['show', 'aliases'], 'Display command aliases', 1, () => this.aliases.render()),
+      vue(['show', 'buffers'], 'Display buffer pools', 1, () => showBuffers()),
+      vue(['show', 'sockets'], 'Display open sockets', 1, () => showSockets()),
+      vue(['show', 'stacks'], 'Display process stacks', 1, () => showStacks()),
+      vue(['show', 'reload'], 'Display reload schedule', 1,
+        () => showReload(this.getScheduledReloadMs())),
+      vue(['show', 'sntp'], 'Display SNTP information', 1, () => this.showSntp()),
+      vue(['show', 'terminal'], 'Display terminal configuration parameters', 1, () =>
+        `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
+        + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`),
+      vue(['show', 'file'], 'Show filesystem information', 1,
+        () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
+      vue(['show', 'file', 'systems'], 'File system information', 1,
+        () => showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0)),
+      vue(['show', 'tcp'], 'Status of TCP connections', 1, () => showTcpBrief()),
+      vue(['show', 'tcp', 'brief'], 'Brief display of TCP connection status', 1,
+        () => showTcpBrief()),
+    ];
+
     return [
       ...journal,
+      ...systeme,
       ...identite,
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
@@ -5743,33 +5783,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
         showRedundancy());
     }
-    trie.registerGreedy('show file', 'Display file systems', () =>
-      showFileSystems(this.fs(), this.readStartupConfig()?.length ?? 0), [
-      { keyword: 'systems', description: 'File system information' },
-    ]);
-    trie.register('show calendar', 'Display hardware calendar', () =>
-      showCalendar(this.cs()));
-    trie.registerGreedy('show terminal', 'Display terminal parameters', () =>
-      `${showTerminal(this.terminalLength, this.terminalWidth, this.terminalHistorySize)}\n`
-      + `Monitor parameter: ${this.terminalMonitor ? 'enabled' : 'disabled'}`);
-    trie.registerGreedy('show buffers', 'Display buffer pools', () =>
-      showBuffers());
-    trie.registerGreedy('show tcp', 'Display TCP connections', () =>
-      showTcpBrief(), [
-      { keyword: 'brief', description: 'Brief display of TCP connection status' },
-    ]);
-    trie.registerGreedy('show sockets', 'Display open sockets', () =>
-      showSockets());
-    trie.registerGreedy('show stacks', 'Display process stacks', () =>
-      showStacks());
-    trie.registerGreedy('show reload', 'Display reload schedule', () =>
-      showReload(this.getScheduledReloadMs()));
     trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
       const dev = this.d() as unknown as Router;
       return showAaa(getSecurityConfig(dev), a.join(' '));
     });
-    trie.register('show aliases', 'Display command aliases', () =>
-      this.aliases.render());
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */
@@ -6248,20 +6265,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (agent?.removeServer && args[0]) agent.removeServer(args[0]);
       dev._removeUnhandledConfigLine?.(`sntp server ${args.join(' ')}`);
       return '';
-    });
-    this.privilegedTrie.register('show sntp', 'Show SNTP', () => {
-      const dev = this.d() as unknown as { getUnhandledConfigLines?: () => readonly string[] };
-      const agent = getNtpAgent(this.d());
-      if (agent?.getConfig) {
-        const cfg = agent.getConfig();
-        if (cfg.associations && cfg.associations.size > 0) {
-          return ['SNTP server   Stratum   Version   Last Receive', ...[...cfg.associations.keys()].map(k => `${k.padEnd(14)}1         4         00:00:01`)].join('\n');
-        }
-      }
-      const lines = dev.getUnhandledConfigLines?.() ?? [];
-      const sntpLines = lines.filter(l => l.startsWith('sntp server'));
-      if (sntpLines.length === 0) return 'No SNTP servers configured';
-      return ['SNTP server   Stratum   Version   Last Receive', ...sntpLines.map(l => `${l.split(/\s+/)[2]?.padEnd(14) ?? ''}1         4         00:00:01`)].join('\n');
     });
 
     this.registerCommonShowCommands(this.privilegedTrie);
