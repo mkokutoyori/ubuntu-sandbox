@@ -187,13 +187,28 @@ describe('le registre de migration nomme les DEUX moities', () => {
   // Le noeud, lui, PEUT rester : sous un parent glouton il est le seul
   // moyen d'empecher `debug arp ?` de reprendre le `<cr>` du parent pour
   // une frappe que la machine declare incomplete. Ce qui compte est
-  // qu'il ne s'execute pas et qu'il ne se propose pas.
-  it('et il ne se propose pas non plus', async () => {
+  // qu'il ne s'execute pas et que le TRIE ne le propose pas — le socle,
+  // lui, doit le proposer, puisque `no debug arp` est une vraie commande.
+  it('le trie ne le propose plus, le socle si', async () => {
     const r = await router();
-    const propose = (r as unknown as { cliHelp(s: string): string }).cliHelp('no debug ')
+    const shell = (r as unknown as {
+      getShell(): { getActiveTrie(): { getCompletions(s: string): Array<{ keyword: string }> } };
+    }).getShell();
+
+    const parLeTrie = shell.getActiveTrie().getCompletions('no debug ').map(c => c.keyword);
+    const parLaMachine = (r as unknown as { cliHelp(s: string): string }).cliHelp('no debug ')
       .split('\n').map(l => l.trim().split(/\s\s+/)[0]);
 
-    expect(propose).not.toContain('arp');
+    expect(parLeTrie).not.toContain('arp');
+    expect(parLaMachine).toContain('arp');
+  });
+
+  it('et la negation y est decrite comme une negation', async () => {
+    const r = await router();
+    const aide = (r as unknown as { cliHelp(s: string): string }).cliHelp('no debug ');
+
+    expect(aide).toContain('Disable ARP debug');
+    expect(aide).not.toContain('Enable ARP debug');
   });
 });
 

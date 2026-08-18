@@ -53,6 +53,7 @@ function specFor(
       ? [...path, { name: 'rest', type: 'REST' as const, optional: true }]
       : [...path],
     description,
+    undoDescription: pair.undoDescription,
     modes: DEBUG_MODES,
     minPrivilege: 15,
     run: (_session, args) => pair.enable([...prefix, ...positional(args.rest)]),

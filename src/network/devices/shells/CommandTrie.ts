@@ -364,6 +364,7 @@ export class CommandTrie {
    * une frappe que la meme machine declare incomplete. Le marqueur ne se
    * propose pas et ne s'execute pas — il dit seulement que ce mot n'est
    * plus un argument.
+
    */
   private marqueurSousGlouton(node: CommandNode, mot: string): CommandNode | undefined {
     if (!node.greedy && !node._porteGreedy) return undefined;

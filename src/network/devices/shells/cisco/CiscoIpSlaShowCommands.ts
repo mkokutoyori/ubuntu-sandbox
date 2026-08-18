@@ -1,3 +1,4 @@
+import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 import type { IpSlaEngine, SlaOperationRuntime } from '../../../ipsla/IpSlaEngine';
@@ -264,18 +265,22 @@ function renderDistribution(runtime: SlaOperationRuntime): string[] {
   return lines;
 }
 
-export function registerIpSlaDebugCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {
+export function ipSlaDebugPairs(ctx: IpSlaShowContext): DebugPair[] {
   const service = () => ctx.r().getDebugService();
-  const branches: Array<[string, 'ip.sla.trace' | 'ip.sla.error', string]> = [
-    ['trace', 'ip.sla.trace', 'IP SLAs trace'],
-    ['error', 'ip.sla.error', 'IP SLAs errors'],
+  const paire = (
+    path: readonly string[], description: string,
+    category: 'ip.sla.trace' | 'ip.sla.error' | 'track',
+  ): DebugPair => ({
+    path: [...path], description, undoDescription: description, takesArguments: false,
+    enable: () => service().enable(category),
+    disable: () => service().disable(category),
+  });
+
+  return [
+    paire(['debug', 'ip', 'sla', 'trace'], 'IP SLAs trace', 'ip.sla.trace'),
+    paire(['debug', 'ip', 'sla', 'error'], 'IP SLAs errors', 'ip.sla.error'),
+    paire(['debug', 'track'], 'Tracking state changes', 'track'),
   ];
-  for (const [keyword, category, description] of branches) {
-    trie.register(`debug ip sla ${keyword}`, description, () => service().enable(category));
-    trie.register(`no debug ip sla ${keyword}`, description, () => service().disable(category));
-  }
-  trie.register('debug track', 'Tracking state changes', () => service().enable('track'));
-  trie.register('no debug track', 'Tracking state changes', () => service().disable('track'));
 }
 
 export function registerIpSlaClearCommands(trie: CommandTrie, ctx: IpSlaShowContext): void {

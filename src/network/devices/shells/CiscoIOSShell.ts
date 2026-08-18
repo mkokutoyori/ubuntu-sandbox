@@ -20,6 +20,7 @@
 import type { ExecScope } from './cisco/CiscoExecScope';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
 import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
@@ -61,7 +62,7 @@ import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
 } from './cisco/CiscoIpSlaCommands';
 import {
-  registerIpSlaShowCommands, registerIpSlaClearCommands, registerIpSlaDebugCommands,
+  registerIpSlaShowCommands, registerIpSlaClearCommands, ipSlaDebugPairs,
 } from './cisco/CiscoIpSlaShowCommands';
 import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
@@ -145,6 +146,10 @@ import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContin
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
+  protected override debugPairs(): DebugPair[] {
+    return [...super.debugPairs(), ...ipSlaDebugPairs(this)];
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
@@ -676,7 +681,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.initializeCommands();
     // `registerShowCommands` est appelé pour plusieurs tries ; le debug
     // est privilégié seulement, donc enregistré ici une seule fois.
-    registerIpSlaDebugCommands(this.privilegedTrie, this);
     // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
     // texte source de son gestionnaire. Les arbres sont releves sur
     // l'objet lui-meme : les nommer a la main en aurait oublie, et un

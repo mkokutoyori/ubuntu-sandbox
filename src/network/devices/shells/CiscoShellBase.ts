@@ -1992,7 +1992,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     }
     if (rawInput.endsWith('\t')) {
       const stem = rawInput.replace(/\s+$/, '');
-      const completed = this.tabComplete(stem);
+      // L'equipement est connu ici : sans lui, la completion retombe sur
+      // le trie seul et une commande migree n'est jamais completee.
+      const completed = this.tabComplete(stem, device);
       return (completed ?? stem).trimEnd();
     }
     const trimmed = rawInput.trim();
@@ -4246,6 +4248,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * cette moitie, un mot-cle du socle arriverait seul dans une liste de
    * lignes et se ferait juger comme s'il etait une commande racine.
    */
+  /**
+   * Ce qui precede le mot en cours, ECRIT EN ENTIER.
+   *
+   * La tabulation rend des LIGNES, et une ligne qui garde l'abreviation
+   * tapee n'est pas une commande : `sho runn` proposait
+   * `sho running-config` a cote de `show running-config`, donc DEUX
+   * candidats pour une seule commande — et un terminal qui a deux
+   * candidats liste au lieu de completer. C'est ainsi que la tabulation
+   * paraissait ne rien faire des qu'un mot anterieur etait abrege.
+   *
+   * Le trie rend deja ses lignes canoniques ; c'est le pont vers le
+   * socle qui recollait le mot tape. Il recolle desormais le mot du
+   * registre, et retombe sur la frappe quand aucun des deux moteurs ne
+   * sait la resoudre — mieux vaut un candidat imparfait que pas de
+   * candidat.
+   */
+  private amontCanonique(input: string): string {
+    const brut = CiscoShellBase.completionStem(input);
+    if (brut === '') return brut;
+
+    const table = this.socleTable();
+    const parLeSocle = table
+      ? this.cheminCanonique(table, `${brut} `, this.socleSession(table)) : null;
+    if (parLeSocle !== null && parLeSocle.length > 0) return parLeSocle.join(' ');
+
+    const parLeTrie = this.getActiveTrie().match(brut);
+    if (parLeTrie.matchedKeywords.length > 0) return parLeTrie.matchedKeywords.join(' ');
+    return brut;
+  }
+
   private static completionStem(input: string): string {
     const trimmed = input.trim();
     if (input.endsWith(' ') || trimmed === '') return trimmed;
@@ -4450,10 +4482,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const table = this.socleTable();
     if (!table) return [];
 
-    // `no` et `default` sont des verbes de CONFIGURATION : les honorer
-    // en EXEC ferait repondre `default ?` sur une machine qui refuse
-    // `default`.
-    const negation = this.isConfigMode() ? CiscoShellBase.motDeNegation(input) : null;
+    // `default` n'existe qu'en configuration — l'honorer en EXEC ferait
+    // repondre `default ?` sur une machine qui refuse `default`. `no`,
+    // lui, se tape aussi en EXEC : `no debug track` en est une.
+    const negation = CiscoShellBase.motDeNegation(input);
+    const horsPortee = negation !== null
+      && negation.trim().toLowerCase() === 'default' && !this.isConfigMode();
+    if (horsPortee) return [];
     const ligne = negation === null ? input : input.slice(negation.length);
     // La tabulation ne DEPLIE pas une branche entiere : `no ` suivi d'un
     // blanc ne complete rien, comme `ip ` ou `interface `. C'est `?` qui
@@ -5421,17 +5456,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * juger, et on rend alors la completion telle quelle plutot que de
    * refuser ce qu'on n'a pas su lire.
    */
+  /**
+   * Completer, c'est repondre a la MEME question que lister.
+   *
+   * Cette porte ne lisait que le trie, quand la liste des candidats lit
+   * les deux moteurs : une commande MIGREE etait donc listee et jamais
+   * completee — `show clo` avait un seul candidat, `show clock`, et Tab
+   * ne faisait rien. Et sur deux candidats elle rendait le PREMIER, donc
+   * `show cl` s'ecrivait `show class-map` alors que l'operateur n'avait
+   * pas choisi : sur une vraie machine, Tab ecrit ce que les candidats
+   * ont en COMMUN et s'arrete la.
+   *
+   * Elle derive desormais de `tabCandidates`, si bien que les deux ne
+   * peuvent plus se contredire.
+   */
   tabComplete(input: string, device?: TDevice): string | null {
-    const trie = this.getActiveTrie();
-    const complete = trie.tabComplete(input);
-    if (complete === null || !device) return complete;
-    const precedent = this.deviceRef;
-    this.deviceRef = device;
-    try {
-      return this.laSessionVoit(complete.trim()) ? complete : null;
-    } finally {
-      this.deviceRef = precedent;
+    if (!device) return this.getActiveTrie().tabComplete(input);
+
+    const candidats = this.tabCandidates(input, device);
+    if (candidats.length === 0) return null;
+    if (candidats.length === 1) return `${candidats[0]} `;
+
+    const commun = CiscoShellBase.prefixeCommun(candidats);
+    return commun.length > input.trimStart().length ? commun : null;
+  }
+
+  /**
+   * Le plus long prefixe que tous les candidats partagent, coupe au
+   * dernier mot ENTIER : completer au milieu d'un mot ecrirait une
+   * commande qui n'existe pas.
+   */
+  private static prefixeCommun(lignes: readonly string[]): string {
+    let commun = lignes[0];
+    for (const ligne of lignes.slice(1)) {
+      let taille = 0;
+      while (taille < commun.length && taille < ligne.length
+        && commun[taille].toLowerCase() === ligne[taille].toLowerCase()) taille++;
+      commun = commun.slice(0, taille);
     }
+    return commun;
   }
 
   tabCandidates(input: string, device: TDevice): string[] {
@@ -5445,7 +5508,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       try {
         const base = this.withUniversalCandidates(input, trie.tabCandidates(input))
           .filter((c) => this.laSessionVoit(c));
-        const amont = CiscoShellBase.completionStem(input);
+        const amont = this.amontCanonique(input);
         for (const { keyword } of this.socleSuggestions(input, 'TAB', device)) {
           const ligne = `${amont} ${keyword}`.trim();
           if (!base.includes(ligne)) base.push(ligne);
