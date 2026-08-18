@@ -21,6 +21,8 @@ export interface Phase1Tunnel {
   readonly dhGroups: readonly number[];
   readonly presharedKey: string;
   readonly keyLifeSeconds: number;
+  readonly authMethod: 'psk' | 'signature';
+  readonly certificate: string;
   readonly dpd: DpdMode;
   readonly natTraversal: string;
   readonly policyBased: boolean;

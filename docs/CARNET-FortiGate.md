@@ -462,10 +462,15 @@ mesurant, et un seul était dans le VPN :
 - **une seule carte de chiffrement** pour tous les tunnels rendait
   impossible de retrouver celle d'un tunnel donné.
 
+**`authmethod signature` est FERMÉ** (journal E40) : `config vpn
+certificate local` porte l'identité de la machine, `config vpn
+certificate ca` ce qu'elle croit, le certificat entre en PEM et un
+certificat qu'aucune ancre ne signe fait ÉCHOUER le tunnel. Un `onCommit`
+peut désormais refuser, ce qu'il fallait pour qu'une phase 1 `signature`
+sans certificat soit rejetée à la fermeture, comme sur une vraie machine.
+
 **Ce qui reste de la phase 8, nommé plutôt que tu** :
 
-- `authmethod signature` (certificats) est accepté et ne change rien —
-  le moteur a `IkeCertAuthConfig`, il reste à le brancher ;
 - SSL-VPN (`config vpn ssl settings`, portail web) n'a pas de schéma ;
 - `dpd` et `nattraversal` sont déclarés et transmis au moteur, mais
   aucun test ne les mesure ici.

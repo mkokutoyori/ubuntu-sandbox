@@ -5,6 +5,8 @@ import {
   type IPv4Packet, type UDPPacket,
 } from '../../../core/types';
 import type { IpsecProposal, IpsecTunnelTable } from './IpsecTunnelTable';
+import type { CertificateStore } from './CertificateStore';
+import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 
 export function cryptoMapName(tunnel: string): string {
   return `FORTI_${tunnel}`;
@@ -41,8 +43,10 @@ function espTransform(cipher: string): string {
 
 export function programIpsecEngine(
   engine: IPSecEngine, tunnels: IpsecTunnelTable,
+  certificates?: CertificateStore, now?: () => number,
 ): void {
   let priority = 10;
+  if (certificates) programCertificateAuth(engine, tunnels, certificates, now);
 
   for (const tunnel of tunnels.all()) {
     const selectors = tunnels.selectorsOf(tunnel.name);
@@ -53,11 +57,11 @@ export function programIpsecEngine(
       policy.encryption = ikeEncryption(tunnel.proposals);
       policy.hash = ikeHash(tunnel.proposals);
       policy.group = group;
-      policy.auth = 'pre-share';
+      policy.auth = tunnel.authMethod === 'signature' ? 'rsa-sig' : 'pre-share';
       policy.lifetime = tunnel.keyLifeSeconds;
     }
 
-    if (tunnel.presharedKey.length > 0) {
+    if (tunnel.authMethod !== 'signature' && tunnel.presharedKey.length > 0) {
       engine.addPreSharedKey(tunnel.remoteGateway, tunnel.presharedKey);
     }
 
@@ -86,6 +90,28 @@ function ikeEncryption(proposals: readonly IpsecProposal[]): string {
 
 function ikeHash(proposals: readonly IpsecProposal[]): string {
   return proposals[0]?.integrity ?? 'sha256';
+}
+
+function programCertificateAuth(
+  engine: IPSecEngine, tunnels: IpsecTunnelTable,
+  certificates: CertificateStore, now?: () => number,
+): void {
+  const signing = tunnels.all().find(tunnel => tunnel.authMethod === 'signature');
+  const local = signing ? certificates.local(signing.certificate) : undefined;
+  const trustAnchors = certificates.trustAnchors();
+
+  if (!local) { engine.clearIkeCertAuth(); return; }
+
+  engine.setIkeCertAuth({
+    localCert: local.certificate,
+    localKey: local.privateKey,
+    trustAnchors,
+    revocationCheck: 'none',
+    clock: now,
+    verifier: new CertificateVerifier({
+      trustAnchors, revocationCheck: 'none', clock: now,
+    }),
+  });
 }
 
 export function bringUpTunnel(

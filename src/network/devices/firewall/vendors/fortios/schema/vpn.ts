@@ -77,6 +77,8 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       { keyword: 'signature', description: 'Certificate signature.' },
     ], 'psk'),
     { ...text('psksecret', 'Pre-shared secret for PSK authentication.'), quoted: true },
+    reference('certificate', 'Local certificate presented for signature authentication.',
+      ['vpn certificate local']),
     proposalAttribute('Phase 1 proposals.'),
     dhGroupAttribute(),
     count('keylife', 'Phase 1 key life in seconds.', 120, 172800, 86400),
@@ -94,6 +96,10 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
     text('comments', 'Comment.'),
   ],
   onCommit(object, context) {
+    if (object.effective('authmethod')[0] === 'signature'
+      && (object.effective('certificate')[0] ?? '') === '') {
+      return 'a signature phase 1 needs `set certificate <local-certificate>`.';
+    }
     context.device.applyPhase1({
       name: object.key,
       boundInterface: object.effective('interface')[0] ?? '',
@@ -104,6 +110,8 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       dhGroups: numbers(object, 'dhgrp'),
       presharedKey: object.effective('psksecret')[0] ?? '',
       keyLifeSeconds: Number.parseInt(object.effective('keylife')[0] ?? '86400', 10),
+      authMethod: object.effective('authmethod')[0] === 'signature' ? 'signature' : 'psk',
+      certificate: object.effective('certificate')[0] ?? '',
       dpd: object.effective('dpd')[0] ?? 'on-demand',
       natTraversal: object.effective('nattraversal')[0] ?? 'enable',
       policyBased: false,
@@ -176,6 +184,10 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
     dhGroupAttribute(),
   ],
   onCommit(object, context) {
+    if (object.effective('authmethod')[0] === 'signature'
+      && (object.effective('certificate')[0] ?? '') === '') {
+      return 'a signature phase 1 needs `set certificate <local-certificate>`.';
+    }
     context.device.applyPhase1({
       name: object.key,
       boundInterface: object.effective('interface')[0] ?? '',
@@ -186,6 +198,8 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
       dhGroups: numbers(object, 'dhgrp'),
       presharedKey: object.effective('psksecret')[0] ?? '',
       keyLifeSeconds: 86400,
+      authMethod: object.effective('authmethod')[0] === 'signature' ? 'signature' : 'psk',
+      certificate: object.effective('certificate')[0] ?? '',
       dpd: 'on-demand',
       natTraversal: 'enable',
       policyBased: true,
@@ -210,7 +224,84 @@ export function validateProposals(values: readonly string[]): string | null {
   return null;
 }
 
+export const VPN_CERTIFICATE_LOCAL: FortiTableSpec = {
+  path: ['vpn', 'certificate', 'local'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'vpngrp',
+  renderOrder: 118,
+  help: 'Local keys and certificates.',
+  attributes: [
+    { ...word('name', 'Name of the certificate.'), readOnly: true },
+    { ...text('certificate', 'PEM-encoded certificate.'), quoted: true },
+    { ...text('private-key', 'PEM-encoded private key.'), quoted: true },
+    text('comments', 'Optional comments.'),
+    choice('range', 'Scope this certificate is visible in.', [
+      { keyword: 'global', description: 'Visible to every VDOM.' },
+      { keyword: 'vdom', description: 'Visible to this VDOM only.' },
+    ], 'vdom'),
+    choice('source', 'Where this certificate came from.', [
+      { keyword: 'factory', description: 'Shipped with the unit.' },
+      { keyword: 'user', description: 'Imported by an operator.' },
+      { keyword: 'bundle', description: 'Part of a bundle.' },
+    ], 'user'),
+  ],
+  onCommit(object, context) {
+    const refusal = context.device.applyLocalCertificate({
+      name: object.key,
+      certificatePem: object.effective('certificate')[0] ?? '',
+      privateKeyPem: object.effective('private-key')[0] ?? '',
+      comments: object.effective('comments')[0] || undefined,
+    });
+    if (refusal) return refusal;
+  },
+  onDelete(key, context) {
+    context.device.removeLocalCertificate(key);
+  },
+};
+
+export const VPN_CERTIFICATE_CA: FortiTableSpec = {
+  path: ['vpn', 'certificate', 'ca'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'vpngrp',
+  renderOrder: 117,
+  help: 'CA certificate.',
+  attributes: [
+    { ...word('name', 'Name of the CA certificate.'), readOnly: true },
+    { ...text('ca', 'PEM-encoded CA certificate.'), quoted: true },
+    { ...text('certificate', 'PEM-encoded CA certificate.'), quoted: true },
+    enable('trusted', 'Enable/disable as a trusted CA.', true),
+    choice('range', 'Scope this certificate is visible in.', [
+      { keyword: 'global', description: 'Visible to every VDOM.' },
+      { keyword: 'vdom', description: 'Visible to this VDOM only.' },
+    ], 'vdom'),
+    choice('source', 'Where this certificate came from.', [
+      { keyword: 'factory', description: 'Shipped with the unit.' },
+      { keyword: 'user', description: 'Imported by an operator.' },
+      { keyword: 'bundle', description: 'Part of a bundle.' },
+    ], 'user'),
+  ],
+  onCommit(object, context) {
+    const refusal = context.device.applyCaCertificate({
+      name: object.key,
+      certificatePem: object.effective('certificate')[0] || object.effective('ca')[0] || '',
+      trusted: object.effective('trusted')[0] !== 'disable',
+    });
+    if (refusal) return refusal;
+  },
+  onDelete(key, context) {
+    context.device.removeCaCertificate(key);
+  },
+};
+
 export const VPN_SPECS: readonly FortiTableSpec[] = Object.freeze([
+  VPN_CERTIFICATE_CA,
+  VPN_CERTIFICATE_LOCAL,
   VPN_PHASE1_INTERFACE,
   VPN_PHASE2_INTERFACE,
   VPN_PHASE1_POLICY,

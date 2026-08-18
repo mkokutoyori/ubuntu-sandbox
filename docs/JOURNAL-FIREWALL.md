@@ -1976,6 +1976,43 @@ d'extraire le calcul.
 
 ---
 
+### E40 — `authmethod signature` authentifie, et le certificat entre par la CLI
+
+`vpn/CertificateStore.ts` (neuf), `schema/vpn.ts`, `schema/types.ts`,
+`commit/vpnCommits.ts`, `runtime/FortiNavigator.ts`,
+`vpn/IpsecProgramming.ts`, `vdom/VdomRegistry.ts` — **10 cas** neufs plus
+3 specs Playwright. **7 des 10** tombent avant correctif.
+
+Le mot-clé était accepté, rangé, rendu par `show`, et le moteur
+continuait de s'authentifier par clé partagée : rien n'appelait
+`setIkeCertAuth`. Le moteur, lui, savait déjà tout faire — émettre une
+charge utile de certificat, la VÉRIFIER contre des ancres de confiance,
+refuser un certificat expiré ou révoqué. Il lui manquait uniquement
+d'être configuré depuis FortiOS, c'est-à-dire deux magasins et un
+branchement. **Encore une fois le refus aurait été le mauvais choix** :
+la matière était là.
+
+**`config vpn certificate local` et `config vpn certificate ca` sont
+deux magasins distincts**, et c'est la distinction qui porte le sens :
+l'un est l'IDENTITÉ de la machine (certificat ET clé privée), l'autre ce
+qu'elle CROIT. Les noms d'attributs sont ceux de FortiOS, relevés sur la
+documentation Fortinet et sur les modules Ansible qui en dérivent
+(`certificate`, `private-key`, `range`, `source`, `trusted`), et le
+certificat entre en PEM — la forme que produit n'importe quel outil, y
+compris l'`openssl` de ce dépôt.
+
+**Le cas qui décide est le certificat qu'aucune ancre ne signe** : le
+tunnel ne monte pas. Sans lui, une implantation qui rangerait le
+certificat sans jamais le lire passerait tous les autres cas.
+
+**Un `onCommit` peut désormais REFUSER**, et il le fallait : `set
+authmethod signature` sans `set certificate` décrit une phase 1 qui ne
+peut pas s'authentifier, et un vrai FortiGate refuse à la fermeture de
+l'objet plutôt qu'à la saisie — c'est là que la valeur est validée. Le
+contrat passe de `=> void` à `=> string | void`, `next`/`end` rendent
+`Command fail` et laissent l'objet OUVERT pour qu'on puisse le corriger.
+Un PEM illisible est refusé de la même façon, et rien n'est rangé.
+
 ### E39 — FGT-VPN-3 : un paquet traverse le tunnel, pour de bon
 
 `vpn/{IpsecDataPlane,FirewallIpsecHost}.ts`, `l3/ProxyArpTable.ts`

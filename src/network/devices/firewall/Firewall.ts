@@ -66,6 +66,7 @@ import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
+import type { CertificateStore } from './vpn/CertificateStore';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
 import { bringUpTunnel, programIpsecEngine, udpDatagram } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
@@ -261,7 +262,14 @@ export class Firewall extends Equipment {
 
   getIpsecEngine(): IPSecEngine { return this.ipsec; }
 
-  syncIpsecTunnels(v?: string) { programIpsecEngine(this.ipsec, this.getVdom(v).tunnels); }
+  getCertificateStore(vdom?: string): CertificateStore {
+    return this.getVdom(vdom).certificates;
+  }
+
+  syncIpsecTunnels(v?: string) {
+    const vdom = this.getVdom(v);
+    programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now);
+  }
 
   bringUpIpsecTunnel(name: string, v?: string): boolean {
     return bringUpTunnel(this.ipsec, this.getVdom(v).tunnels, name);

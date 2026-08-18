@@ -324,6 +324,7 @@ describe('`diagnose vpn tunnel list` lit l`etat reel', () => {
       name: 'T', boundInterface: 'port2', ikeVersion: 2, type: 'static',
       remoteGateway: '198.51.100.1', proposals: [], dhGroups: [14],
       presharedKey: 'x', keyLifeSeconds: 86400, dpd: 'on-demand',
+      authMethod: 'psk', certificate: '',
       natTraversal: 'enable', policyBased: false,
     });
 

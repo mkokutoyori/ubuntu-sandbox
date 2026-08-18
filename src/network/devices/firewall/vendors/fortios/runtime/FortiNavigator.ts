@@ -222,7 +222,9 @@ export class FortiNavigator {
       return FortiMessages.commandFail('`next` closes an object; use `end` here.');
     }
 
-    this.commit(frame.object);
+    const refusal = this.commit(frame.object);
+    if (refusal) return FortiMessages.commandFail(refusal);
+
     this.stack.pop();
     return EMPTY;
   }
@@ -232,7 +234,9 @@ export class FortiNavigator {
     if (!frame) return EMPTY;
 
     if (frame.kind === 'object') {
-      this.commit(frame.object);
+      const refusal = this.commit(frame.object);
+      if (refusal) return FortiMessages.commandFail(refusal);
+
       this.stack.pop();
       if (this.currentTable() !== undefined) this.stack.pop();
       return EMPTY;
@@ -331,10 +335,10 @@ export class FortiNavigator {
     return EMPTY;
   }
 
-  private commit(object: FortiObject, owner?: FortiTable | null): void {
+  private commit(object: FortiObject, owner?: FortiTable | null): string | void {
     const table = owner ?? this.ownerOf(object);
     const position = table ? table.keys().indexOf(object.key) : -1;
-    object.spec.onCommit?.(object, { ...this.deps.commitContext(), position });
+    return object.spec.onCommit?.(object, { ...this.deps.commitContext(), position });
   }
 
   private ownerOf(object: FortiObject): FortiTable | null {

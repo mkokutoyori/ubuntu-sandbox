@@ -14,6 +14,7 @@ import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
 import { IpsecTunnelTable } from '../vpn/IpsecTunnelTable';
+import { CertificateStore } from '../vpn/CertificateStore';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -46,6 +47,7 @@ export interface VdomContext {
   readonly identities: IdentityTable;
   readonly users: UserDirectory;
   readonly tunnels: IpsecTunnelTable;
+  readonly certificates: CertificateStore;
   readonly settings: VdomSettings;
 }
 
@@ -212,6 +214,7 @@ export class VdomRegistry {
           this.deps.onTunnelInterface?.(name, tunnel, boundTo),
         onInterfaceRemoved: (tunnel) => this.deps.onTunnelRemoved?.(name, tunnel),
       }),
+      certificates: new CertificateStore(),
       users: new UserDirectory({
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,

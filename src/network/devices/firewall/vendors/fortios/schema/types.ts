@@ -202,6 +202,10 @@ export interface FortiCommitDevice {
   applyRemoteAuthServer(server: FortiRemoteServerPatch): void;
   applyLdapServer(server: FortiLdapServerPatch): void;
   applyPhase1(tunnel: FortiPhase1Patch): void;
+  applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
+  removeLocalCertificate(name: string): void;
+  applyCaCertificate(entry: FortiCaCertificatePatch): string | void;
+  removeCaCertificate(name: string): void;
   removePhase1(name: string): void;
   applyPhase2(tunnel: FortiPhase2Patch): void;
   removePhase2(name: string): void;
@@ -271,6 +275,19 @@ export interface FortiRemoteServerPatch {
   readonly authType?: string;
 }
 
+export interface FortiLocalCertificatePatch {
+  readonly name: string;
+  readonly certificatePem: string;
+  readonly privateKeyPem: string;
+  readonly comments?: string;
+}
+
+export interface FortiCaCertificatePatch {
+  readonly name: string;
+  readonly certificatePem: string;
+  readonly trusted: boolean;
+}
+
 export interface FortiPhase1Patch {
   readonly name: string;
   readonly boundInterface: string;
@@ -281,6 +298,8 @@ export interface FortiPhase1Patch {
   readonly dhGroups: readonly number[];
   readonly presharedKey: string;
   readonly keyLifeSeconds: number;
+  readonly authMethod: 'psk' | 'signature';
+  readonly certificate: string;
   readonly dpd: string;
   readonly natTraversal: string;
   readonly policyBased: boolean;
@@ -416,7 +435,8 @@ export interface FortiTableSpec {
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
   readonly scopeOnly?: boolean;
-  readonly onCommit?: (object: FortiObjectView, context: FortiCommitContext) => void;
+  readonly onCommit?: (
+    object: FortiObjectView, context: FortiCommitContext) => string | void;
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;
 }
 
