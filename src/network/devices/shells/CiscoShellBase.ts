@@ -35,7 +35,7 @@ import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events
 import { runSshClient } from '../linux/network/LinuxSshClient';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import type { Router } from '../Router';
-import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { getSecurityConfig, buildIdentityShowCommands } from './cisco/CiscoSecurityCommands';
 import { parserViewMode } from '../router/security/CiscoSecurityConfig';
 import type { CiscoDevice } from './CiscoDevice';
 import type { PromptMap } from './PromptBuilder';
@@ -3736,6 +3736,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     return sequenceFamily([
       {
+        path: ['clear', 'aaa', 'local', 'user', 'lockout', 'username'],
+        description: 'Unlock a locally-locked-out user',
+        args: [{ name: 'nom', type: 'WORD', description: 'Username to unlock' }],
+        modes: exec, negatable: false,
+      },
+      {
         path: ['clear', 'counters'], description: 'Clear interface counters',
         modes: exec, negatable: false,
         args: [{
@@ -3781,6 +3787,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   private applyClear(words: string[]): string {
     const [tete, ...reste] = words;
+
+    if (tete === 'aaa') {
+      const nom = reste[reste.length - 1];
+      (this.d() as unknown as { getCredentialStore?: () => { unlock(n: string): void } })
+        .getCredentialStore?.().unlock(nom);
+      return '';
+    }
 
     if (tete === 'counters') {
       const ports = this.d()._getPortsInternal();
@@ -3848,7 +3861,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       modes: exec, minPrivilege: niveau, run: () => rendu(),
     });
 
+    const identite = buildIdentityShowCommands(() => this.d())
+      .map(v => vue(v.path, v.description, v.niveau, () => v.render()));
+
     return [
+      ...identite,
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,

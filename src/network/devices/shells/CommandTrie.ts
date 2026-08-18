@@ -123,6 +123,12 @@ export interface CommandNode {
   hintSuggestions?: Array<{ keyword: string; description: string; leadingOnly?: boolean }>;
   _hintOnly?: boolean;
   /**
+   * Ce mot appartient au SOCLE : il n'est plus un argument du parent
+   * glouton, et il ne s'execute pas ici. L'aide s'y arrete, l'execution
+   * continue de passer par le parent.
+   */
+  _migre?: boolean;
+  /**
    * Enregistre POUR ETRE REFUSE, donc jamais annonce.
    *
    * `show ip sla monitor` existe uniquement pour que le glouton
@@ -312,20 +318,23 @@ export class CommandTrie {
   }
 
   prunePaths(paths: readonly string[]): void {
+    // Une declaration EN ATTENTE deviendrait un noeud reel apres
+    // l'elagage, donc un chemin migre reapparaitrait dans le trie.
+    this.viderDeclarationsEnAttente();
     for (const path of paths) {
       const words = path.toLowerCase().split(/\s+/).filter(Boolean);
       if (words.length === 0) continue;
       let node = this.root;
       let missing = false;
       for (const word of words.slice(0, -1)) {
-        const next = node.children.get(word);
+        const next = node.children.get(word) ?? this.marqueurSousGlouton(node, word);
         if (!next) { missing = true; break; }
         node = next;
       }
       if (missing) continue;
 
       const last = words[words.length - 1];
-      const target = node.children.get(last);
+      const target = node.children.get(last) ?? this.marqueurSousGlouton(node, last);
       if (!target) continue;
 
       // Elaguer un chemin retire CE chemin, pas ce qui pend dessous.
@@ -344,6 +353,26 @@ export class CommandTrie {
       // endroits differents.
       target._hintOnly = true;
     }
+  }
+
+  /**
+   * Le noeud qu'un chemin MIGRE laisse sous un parent glouton.
+   *
+   * `show aaa` est enregistre glouton : une fois
+   * `show aaa local user lockout` parti au socle, plus rien n'arretait
+   * la marche et `show aaa local ?` annoncait le `<cr>` du parent, pour
+   * une frappe que la meme machine declare incomplete. Le marqueur ne se
+   * propose pas et ne s'execute pas — il dit seulement que ce mot n'est
+   * plus un argument.
+   */
+  private marqueurSousGlouton(node: CommandNode, mot: string): CommandNode | undefined {
+    if (!node.greedy && !node._porteGreedy) return undefined;
+
+    const cree = this.createNode(mot, '');
+    cree._hintOnly = true;
+    cree._migre = true;
+    node.children.set(mot, cree);
+    return cree;
   }
 
   private static cloneNode(src: CommandNode): CommandNode {
@@ -589,7 +618,11 @@ export class CommandTrie {
       // porte des enfants : `clear logging` elague garde
       // `clear logging persistent`, et refuser d'y entrer rendrait la
       // fille inatteignable en meme temps que le parent.
-      const exactChild = exactChildRaw
+      // Un noeud de PASSAGE ne s'execute jamais : il existe pour que
+      // l'aide s'arrete la, et l'execution doit continuer de passer par
+      // le parent glouton — sans quoi `no logging synchronous` tomberait
+      // sur le marqueur laisse par `no logging trap`.
+      const exactChild = exactChildRaw && !exactChildRaw._migre
         && (!exactChildRaw._hintOnly || exactChildRaw.children.size > 0)
         ? exactChildRaw : undefined;
       if (exactChild) {

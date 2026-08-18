@@ -172,14 +172,28 @@ describe('sur la machine, les deux sens marchent', () => {
 });
 
 describe('le registre de migration nomme les DEUX moities', () => {
-  it('un chemin migre et sa negation sortent du trie ensemble', async () => {
+  it('un chemin migre et sa negation ne s\'EXECUTENT plus depuis le trie', async () => {
     const r = await router();
-    const shell = (r as unknown as { getShell(): { enumerateAllCommandPaths(): string[] } }).getShell();
+    const shell = (r as unknown as {
+      getShell(): { enumerateAllExecutablePaths(): string[] };
+    }).getShell();
 
-    const restants = shell.enumerateAllCommandPaths()
+    const restants = shell.enumerateAllExecutablePaths()
       .filter(path => path === 'debug arp' || path === 'no debug arp');
 
     expect(restants).toEqual([]);
+  });
+
+  // Le noeud, lui, PEUT rester : sous un parent glouton il est le seul
+  // moyen d'empecher `debug arp ?` de reprendre le `<cr>` du parent pour
+  // une frappe que la machine declare incomplete. Ce qui compte est
+  // qu'il ne s'execute pas et qu'il ne se propose pas.
+  it('et il ne se propose pas non plus', async () => {
+    const r = await router();
+    const propose = (r as unknown as { cliHelp(s: string): string }).cliHelp('no debug ')
+      .split('\n').map(l => l.trim().split(/\s\s+/)[0]);
+
+    expect(propose).not.toContain('arp');
   });
 });
 

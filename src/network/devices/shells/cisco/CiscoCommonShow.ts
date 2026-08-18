@@ -1437,11 +1437,7 @@ export function showAaa(sec: import('@/network/devices/router/security/CiscoSecu
   if (lower.startsWith('local')) {
     const rest = lower.slice('local'.length).trim();
     if (rest === '') return '% Incomplete command.';
-    if (rest !== 'user lockout') return "% Invalid input detected at '^' marker.";
-    return [
-      'Local-user            Lock time            Unlock time',
-      '-------------------------------------------------------------',
-    ].join('\n');
+    return "% Invalid input detected at '^' marker.";
   }
   if (lower.includes('group')) {
     if (sec.aaaGroups.size === 0) return 'No AAA server groups configured';

@@ -44,7 +44,7 @@ import { estTypeSansNumero } from './cisco/CiscoConfigCommands';
 import { getNtpAgent } from '../../equipment/RouterServiceCapabilities';
 import {
   buildIdentityConfigCommands, buildIdentitySubmodeCommands,
-  buildIdentityShowCommands, type CiscoSecurityShellContext,
+  type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
@@ -4477,10 +4477,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       this.configRadiusServerTrie, this.configTacacsServerTrie,
       this.configAaaGroupTrie, identityCtx,
     );
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      buildIdentityShowCommands(t, () => this.d());
-    }
-
     // IOS ne nomme pas ses arguments, il les TYPE. Cette table etait
     // posee sur le seul shell du routeur, si bien qu'un Catalyst
     // repondait `WORD  Set a banner` la ou IOS liste `motd`, `login`,

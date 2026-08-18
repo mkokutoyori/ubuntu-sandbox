@@ -1201,12 +1201,24 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
  * n'avait ni `show tacacs` ni `show login` pour verifier ce qu'il
  * venait de poser.
  */
+export interface IdentityShowView {
+  readonly path: readonly string[];
+  readonly description: string;
+  readonly niveau: number;
+  render(): string;
+}
+
 export function buildIdentityShowCommands(
-  trie: CommandTrie, getDevice: () => object,
-): void {
+  getDevice: () => object,
+): IdentityShowView[] {
   const sec = () => getSecurityConfig(getDevice());
 
-  trie.register('show aaa servers', 'Display AAA servers', () => {
+  const vues: IdentityShowView[] = [];
+  const vue = (
+    path: readonly string[], description: string, niveau: number, render: () => string,
+  ): void => { vues.push({ path, description, niveau, render }); };
+
+  vue(['show', 'aaa', 'servers'], 'Display AAA servers', 1, () => {
     const s = sec();
     const lines: string[] = [];
     let idx = 1;
@@ -1228,18 +1240,17 @@ export function buildIdentityShowCommands(
     return lines.length ? lines.join('\n') : 'No AAA servers configured';
   });
 
-  trie.register('show aaa local user lockout', 'Local users currently locked out', () => {
-    const locked = getDevice().getCredentialStore().list().filter(a => a.locked);
-    if (locked.length === 0) return 'No users are presently locked out';
-    const lines = ['User                             Lock time'];
-    for (const a of locked) lines.push(`${a.name.padEnd(33)}${a.lockReason ?? 'locked'}`);
+  vue(['show', 'aaa', 'local', 'user', 'lockout'],
+    'Local users currently locked out', 1, () => {
+    const lines = [
+      'Local-user            Lock time            Unlock time',
+      '-------------------------------------------------------------',
+    ];
+    for (const a of getDevice().getCredentialStore().list()) {
+      if (!a.locked) continue;
+      lines.push(`${a.name.padEnd(22)}${a.lockReason ?? 'locked'}`);
+    }
     return lines.join('\n');
-  });
-
-  trie.registerGreedy('clear aaa local user lockout', 'Unlock a locally-locked-out user', (args) => {
-    if (args[0] !== 'username' || !args[1]) return '% Incomplete command.';
-    getDevice().getCredentialStore().unlock(args[1]);
-    return '';
   });
 
   /*
@@ -1254,7 +1265,7 @@ export function buildIdentityShowCommands(
    * qui est rendue, avec le tableau « Overall Accounting Traffic » du
    * vrai IOS.
    */
-  trie.register('show accounting', 'Display accounting records', () => {
+  vue(['show', 'accounting'], 'Display accounting records', 1, () => {
     const auth = (getDevice() as unknown as {
       getAaaAuthenticator?: () => { accountingTraffic: () => ReadonlyMap<string, { starts: number; stops: number; failed: number }> };
     }).getAaaAuthenticator?.();
@@ -1271,7 +1282,7 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
-  trie.register('show aaa sessions', 'Display AAA sessions', () => {
+  vue(['show', 'aaa', 'sessions'], 'Display AAA sessions', 1, () => {
     const reg = (getDevice() as unknown as { getSshSessionRegistry?: () =>{ list: () => readonly { id: string; user: string; fromIp: string; line: string; loginAt: number }[]; history: () => readonly { id: string }[] } }).getSshSessionRegistry?.();
     if (!reg) return 'Total sessions since last reload: 0';
     const active = reg.list();
@@ -1284,7 +1295,7 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
-  trie.register('show radius statistics', 'Display Radius stats', () => {
+  vue(['show', 'radius', 'statistics'], 'Display Radius stats', 1, () => {
     const s = sec();
     if (s.radiusServers.size === 0) return 'No RADIUS servers configured';
     const lines = ['  Radius Statistics:'];
@@ -1297,7 +1308,7 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
-  trie.register('show tacacs', 'Display TACACS', () => {
+  vue(['show', 'tacacs'], 'Display TACACS', 1, () => {
     const s = sec();
     const auth = (getDevice() as unknown as {
       getAaaAuthenticator?: () => { failedAccounting: () => number };
@@ -1316,7 +1327,7 @@ export function buildIdentityShowCommands(
     return lines.length ? lines.join('\n') : 'No TACACS+ servers configured';
   });
 
-  trie.register('show login', 'Display login config', () => {
+  vue(['show', 'login'], 'Display login config', 1, () => {
     const s = sec();
     const r = getDevice() as unknown as {
       getLoginBlocker?: () => {
@@ -1360,7 +1371,7 @@ export function buildIdentityShowCommands(
     return lines.join('\n');
   });
 
-  trie.register('show login failures', 'Display login failures', () => {
+  vue(['show', 'login', 'failures'], 'Display login failures', 1, () => {
     const r = getDevice() as unknown as { getSecurityAuditLog?: () => { entries: () => readonly { mnemonic: string; message: string; at: number }[] } | null };
     const audit = r.getSecurityAuditLog?.();
     if (!audit) return "Information about login failure's with the device\n\n*** No failures recorded ***";
@@ -1383,12 +1394,12 @@ export function buildIdentityShowCommands(
     }
     return lines.join('\n');
   });
+
+  return vues;
 }
 
 export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   const sec = () => getSecurityConfig(getRouter());
-
-  buildIdentityShowCommands(trie, getRouter);
 
   trie.register('show crypto pki trustpoints', 'PKI trustpoints', () => {
     const tps = [...sec().pkiTrustpoints.values()];
