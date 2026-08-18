@@ -149,3 +149,79 @@ export function desCbcEncrypt(key: Uint8Array, iv: Uint8Array, data: Uint8Array)
 }
 
 export const DES_BLOCK_SIZE = BLOCK_SIZE;
+
+/** DES-CBC decryption without padding; `data` must be a multiple of 8 bytes. */
+export function desCbcDecrypt(key: Uint8Array, iv: Uint8Array, data: Uint8Array): Uint8Array {
+  if (iv.length !== BLOCK_SIZE) throw new Error('DES-CBC: iv must be 8 bytes');
+  if (data.length === 0 || data.length % BLOCK_SIZE !== 0) {
+    throw new Error('DES-CBC: data must be a positive multiple of 8 bytes');
+  }
+  const subkeys = keySchedule(key).reverse();
+  const out = new Uint8Array(data.length);
+  let prev = iv;
+  for (let off = 0; off < data.length; off += BLOCK_SIZE) {
+    const cipherBlock = data.slice(off, off + BLOCK_SIZE);
+    const plain = crypt(cipherBlock, subkeys);
+    for (let i = 0; i < BLOCK_SIZE; i++) plain[i] ^= prev[i];
+    out.set(plain, off);
+    prev = cipherBlock;
+  }
+  return out;
+}
+
+/** EDE three-key Triple DES on one 8-byte block (encrypt = E(k1) D(k2) E(k3)). */
+export function tripleDesEncryptBlock(key: Uint8Array, block: Uint8Array): Uint8Array {
+  const [k1, k2, k3] = splitTripleKey(key);
+  return desEncryptBlock(k3, desDecryptBlock(k2, desEncryptBlock(k1, block)));
+}
+
+/** EDE three-key Triple DES on one 8-byte block (decrypt = D(k3) E(k2) D(k1)). */
+export function tripleDesDecryptBlock(key: Uint8Array, block: Uint8Array): Uint8Array {
+  const [k1, k2, k3] = splitTripleKey(key);
+  return desDecryptBlock(k1, desEncryptBlock(k2, desDecryptBlock(k3, block)));
+}
+
+export function tripleDesCbcEncrypt(
+  key: Uint8Array, iv: Uint8Array, data: Uint8Array,
+): Uint8Array {
+  return tripleDesCbc(key, iv, data, 'encrypt');
+}
+
+export function tripleDesCbcDecrypt(
+  key: Uint8Array, iv: Uint8Array, data: Uint8Array,
+): Uint8Array {
+  return tripleDesCbc(key, iv, data, 'decrypt');
+}
+
+function splitTripleKey(key: Uint8Array): [Uint8Array, Uint8Array, Uint8Array] {
+  if (key.length === 24) return [key.slice(0, 8), key.slice(8, 16), key.slice(16, 24)];
+  if (key.length === 16) return [key.slice(0, 8), key.slice(8, 16), key.slice(0, 8)];
+  throw new Error(`3DES: key must be 16 or 24 bytes (got ${key.length})`);
+}
+
+function tripleDesCbc(
+  key: Uint8Array, iv: Uint8Array, data: Uint8Array, mode: 'encrypt' | 'decrypt',
+): Uint8Array {
+  if (iv.length !== BLOCK_SIZE) throw new Error('3DES-CBC: iv must be 8 bytes');
+  if (data.length === 0 || data.length % BLOCK_SIZE !== 0) {
+    throw new Error('3DES-CBC: data must be a positive multiple of 8 bytes');
+  }
+  const out = new Uint8Array(data.length);
+  let prev = iv;
+  for (let off = 0; off < data.length; off += BLOCK_SIZE) {
+    if (mode === 'encrypt') {
+      const block = data.slice(off, off + BLOCK_SIZE);
+      for (let i = 0; i < BLOCK_SIZE; i++) block[i] ^= prev[i];
+      const enc = tripleDesEncryptBlock(key, block);
+      out.set(enc, off);
+      prev = enc;
+      continue;
+    }
+    const cipherBlock = data.slice(off, off + BLOCK_SIZE);
+    const plain = tripleDesDecryptBlock(key, cipherBlock);
+    for (let i = 0; i < BLOCK_SIZE; i++) plain[i] ^= prev[i];
+    out.set(plain, off);
+    prev = cipherBlock;
+  }
+  return out;
+}

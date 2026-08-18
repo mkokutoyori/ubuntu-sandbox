@@ -1976,6 +1976,30 @@ d'extraire le calcul.
 
 ---
 
+## Périmètre pris — FortiOS phase 8 (VPN)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `vpn/` (nouveau répertoire —
+`IpsecTunnelTable`, adaptation du moteur IKE existant au pare-feu),
+interface de tunnel sur `InterfaceTable`, étage de chiffrement dans
+`pipeline/stages/`.
+
+**Fichiers FortiOS pris** : `schema/vpn.ts` (neuf),
+`schema/{firewallPolicy,index,types}.ts`, `FortiShell.ts`,
+`diag/*` (`diagnose vpn tunnel list`).
+
+**Réutilisations imposées, à ne pas réécrire** : `ipsec/IPSecEngine.ts`
+(IKEv1 et IKEv2 réels, ESP), `IMPLEMENTED_GROUPS` de
+`tls/keyExchange.ts`, `crypto/` (AES-GCM, SHA-256), `TcpStack` et
+`HttpsServerSession` du pare-feu pour le portail SSL-VPN.
+
+**Ce que la phase ne prend PAS** : 3DES et DES sont REFUSÉS (le dépôt
+n'a pas de `desCbcDecrypt` — même décision que `openssl enc`), et tout
+groupe DH hors `IMPLEMENTED_GROUPS` de même.
+
+---
+
 ## Périmètre pris — FortiOS phase 7 (utilisateurs et authentification)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.

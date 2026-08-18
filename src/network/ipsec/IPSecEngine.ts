@@ -54,6 +54,9 @@ import {
   Drop,
   Reject,
 } from '../core/FilterChain';
+import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
+import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
+import type { IkeKeyPair } from './IkeKeyExchange';
 import {
   IPSecSignalStore,
   makeReadonlyIPSecObservables,
@@ -71,7 +74,7 @@ import { DdnsResolver } from './DdnsResolver';
 
 
 // Forward reference — resolved at runtime to avoid circular imports
-type Router = import('../devices/Router').Router;
+type Router = import('./IpsecHost').IpsecHost;
 
 /**
  * Pipeline context carried through the inbound IPSec FilterChain.
@@ -177,6 +180,14 @@ const AH_OVERHEAD_BASE = 24;
  * the derivation is deterministic, both ends of an SA that feed it the same
  * seed obtain identical KEYMAT — the prerequisite for verifiable ESP ICVs.
  */
+export function ikeKeymatSeed(
+  psk: string, dhSecret: string | null, loSpi: number, hiSpi: number,
+  transforms: readonly string[],
+): string {
+  const agreed = dhSecret ?? 'no-dh';
+  return `ipsec-keymat|${psk}|${agreed}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+}
+
 function deriveKeymatHex(secret: string, label: string, bits: number): string {
   if (bits <= 0) return '';
   const bytes = Math.ceil(bits / 8);
@@ -358,6 +369,19 @@ function sealedInner(p: IPv4Packet): IPv4Packet {
  * separate HMAC ICV is computed over the ciphertext (RFC 4303 §3.4.4).
  * Mutates `esp` in place.
  */
+function espIsTripleDes(algorithm: string): boolean {
+  return algorithm.startsWith('3des');
+}
+
+function padToBlock(data: Uint8Array, block: number): Uint8Array {
+  const remainder = data.length % block;
+  if (remainder === 0 && data.length > 0) return data;
+
+  const padded = new Uint8Array(data.length + (block - remainder));
+  padded.set(data);
+  return padded;
+}
+
 export function sealAndSignEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): void {
   if (espIsGcm(cryptoKeys.espEncAlgorithm) && cryptoKeys.espEncKey.length > 0) {
     const key = hexToBytes(cryptoKeys.espEncKey);
@@ -372,8 +396,13 @@ export function sealAndSignEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): void {
   }
   if (espEncrypts(cryptoKeys)) {
     const key = hexToBytes(cryptoKeys.espEncKey);
-    const iv = deterministicEspIV(esp.spi, esp.sequenceNumber, cryptoKeys.espEncKey);
-    const ct = aesCbcEncrypt(key, iv, encodePacket(esp.innerPacket));
+    const triple = espIsTripleDes(cryptoKeys.espEncAlgorithm);
+    const iv = deterministicEspIV(esp.spi, esp.sequenceNumber, cryptoKeys.espEncKey)
+      .subarray(0, triple ? 8 : 16);
+    const plaintext = encodePacket(esp.innerPacket);
+    const ct = triple
+      ? tripleDesCbcEncrypt(key, iv, padToBlock(plaintext, 8))
+      : aesCbcEncrypt(key, iv, plaintext);
     esp.ciphertext = bytesToHex(iv) + bytesToHex(ct);
     esp.innerPacket = sealedInner(esp.innerPacket);
   }
@@ -395,9 +424,13 @@ export function openEsp(cryptoKeys: SACryptoKeys, esp: ESPPacket): IPv4Packet | 
       return pt ? decodePacket(pt) : null;
     }
     const key = hexToBytes(cryptoKeys.espEncKey);
-    const iv = hexToBytes(esp.ciphertext.slice(0, 32));
-    const ct = hexToBytes(esp.ciphertext.slice(32));
-    return decodePacket(aesCbcDecrypt(key, iv, ct));
+    const triple = espIsTripleDes(cryptoKeys.espEncAlgorithm);
+    const ivHex = triple ? 16 : 32;
+    const iv = hexToBytes(esp.ciphertext.slice(0, ivHex));
+    const ct = hexToBytes(esp.ciphertext.slice(ivHex));
+    return decodePacket(triple
+      ? tripleDesCbcDecrypt(key, iv, ct)
+      : aesCbcDecrypt(key, iv, ct));
   } catch {
     return null;
   }
@@ -556,6 +589,7 @@ export class IPSecEngine implements IProtocolEngine {
   private pendingIke = new Map<string, {
     entry: CryptoMapEntry; egressIface: string; localIP: string;
     apparentSrcIP: string; spiInitIn: number; offer: IkeOfferMessage;
+    keyPair?: IkeKeyPair;
   }>();
   private natKeepaliveInterval: number = 0;
   private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
@@ -3399,6 +3433,18 @@ export class IPSecEngine implements IProtocolEngine {
     this.router._sendIkeUdp(destIp, { type: 'ike', step: 'reject', reason });
   }
 
+  private preferredDhGroup(
+    version: 1 | 2,
+    policies: readonly IkePolicyProposal[],
+    proposals: readonly IkeV2ProposalWire[],
+  ): number | null {
+    const declared = version === 2
+      ? proposals.flatMap(p => p.dhGroup)
+      : policies.map(p => p.group);
+    const wanted = declared.find(group => Number.isFinite(group));
+    return wanted === undefined ? null : wanted;
+  }
+
   private initiateIkeWire(
     peerIP: string, entry: CryptoMapEntry,
     localIP: string, apparentSrcIP: string, egressIface: string,
@@ -3427,6 +3473,13 @@ export class IPSecEngine implements IProtocolEngine {
       ? (this.resolveSelfIdentity(profile?.selfIdentity)
         ?? (this.isakmpIdentity === 'hostname' ? this.router._getHostnameInternal() : apparentSrcIP))
       : apparentSrcIP;
+    const wantedGroup = this.preferredDhGroup(version, policies, ikev2Proposals);
+    const exchange = wantedGroup === null ? null : generateIkeKeyShare(wantedGroup);
+    if (wantedGroup !== null && !exchange) {
+      this.createFailedIKESA(peerIP, egressIface,
+        `Unimplemented DH group ${wantedGroup}`);
+      return false;
+    }
     const spiInitIn = randomSPI();
     const offer: IkeOfferMessage = {
       type: 'ike', step: 'offer', version,
@@ -3439,6 +3492,7 @@ export class IPSecEngine implements IProtocolEngine {
       lifetimeKB: this.globalSALifetimeKB,
       ipsecSpiIn: spiInitIn,
       natTHint: apparentSrcIP !== localIP,
+      keyExchange: exchange?.payload,
     };
     if (this.ikeCertAuth) {
       
@@ -3448,7 +3502,10 @@ export class IPSecEngine implements IProtocolEngine {
         authSignature: PkiKeyPair.sign(this.ikeCertAuth.localKey, `${apparentSrcIP}|${peerIP}|${spiInitIn}`),
       };
     }
-    this.pendingIke.set(peerIP, { entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer });
+    this.pendingIke.set(peerIP, {
+      entry, egressIface, localIP, apparentSrcIP, spiInitIn, offer,
+      keyPair: exchange?.pair,
+    });
     this.dbgIsakmp(`ISAKMP:(0): SA request profile is (NULL)`);
     this.dbgIsakmp(`ISAKMP: Created a peer struct for ${peerIP}, peer port 500`);
     this.dbgIsakmp(`ISAKMP:(0): Processing SA payload.  message ID = 0`);
@@ -3643,7 +3700,23 @@ export class IPSecEngine implements IProtocolEngine {
     const transforms = chosenTransform.transforms;
     const loSpi = Math.min(offer.ipsecSpiIn, spiRespIn);
     const hiSpi = Math.max(offer.ipsecSpiIn, spiRespIn);
-    const keymatSeed = `ipsec-keymat|${myPSK}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+    const negotiatedGroup = isV2 && chosenIkev2 ? chosenIkev2.grp : offer.keyExchange?.group;
+    let responderExchange: ReturnType<typeof generateIkeKeyShare> = null;
+    let dhSecret: string | null = null;
+    if (offer.keyExchange) {
+      if (negotiatedGroup !== undefined && negotiatedGroup !== offer.keyExchange.group) {
+        this.rejectIke(srcIp, 'INVALID_KE_PAYLOAD');
+        return;
+      }
+      responderExchange = generateIkeKeyShare(offer.keyExchange.group);
+      if (!responderExchange) {
+        this.rejectIke(srcIp, `Unimplemented DH group ${offer.keyExchange.group}`);
+        return;
+      }
+      dhSecret = ikeSharedSecret(responderExchange.pair, offer.keyExchange);
+      if (!dhSecret) { this.rejectIke(srcIp, 'INVALID_KE_PAYLOAD'); return; }
+    }
+    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms);
     const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
     const saMode = chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));
@@ -3694,6 +3767,7 @@ export class IPSecEngine implements IProtocolEngine {
       pskProof: this.ikePskProof(myPSK), chosenPolicy, chosenIkev2, chosenTransform,
       ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
       lifetimeSec, lifetimeKB, natT,
+      keyExchange: responderExchange?.payload,
     };
     if (this.ikeCertAuth) {
       
@@ -3741,7 +3815,15 @@ export class IPSecEngine implements IProtocolEngine {
     const transforms = accept.chosenTransform.transforms;
     const loSpi = Math.min(spiInitIn, accept.ipsecSpiIn);
     const hiSpi = Math.max(spiInitIn, accept.ipsecSpiIn);
-    const keymatSeed = `ipsec-keymat|${myPSK}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+    let dhSecret: string | null = null;
+    if (pending.keyPair) {
+      dhSecret = ikeSharedSecret(pending.keyPair, accept.keyExchange);
+      if (!dhSecret) {
+        this.createFailedIKESA(srcIp, pending.egressIface, 'INVALID_KE_PAYLOAD');
+        return;
+      }
+    }
+    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms);
     const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
     const saMode = accept.chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));

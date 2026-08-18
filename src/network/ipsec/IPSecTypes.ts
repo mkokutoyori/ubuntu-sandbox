@@ -271,6 +271,19 @@ export interface IkeOfferMessage {
   natTHint: boolean;
   authMode?: 'psk' | 'x509';
   certPayload?: X509CertPayload;
+  keyExchange?: IkeKeyExchangePayload;
+}
+
+/**
+ * RFC 7296 section 1.2 KEi/KEr — the initiator's and responder's public
+ * Diffie-Hellman shares. `group` is the IKE group number; `share` is the
+ * `groupe:hexadecimal` encoding `tls/keyExchange.ts` already uses, so both
+ * ends run the SAME key agreement this repository verified against
+ * published vectors.
+ */
+export interface IkeKeyExchangePayload {
+  group: number;
+  share: string;
 }
 
 export interface IkeAcceptMessage {
@@ -287,6 +300,7 @@ export interface IkeAcceptMessage {
   lifetimeSec: number;
   lifetimeKB: number;
   natT: boolean;
+  keyExchange?: IkeKeyExchangePayload;
 }
 
 export interface IkeRejectMessage {

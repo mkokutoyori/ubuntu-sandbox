@@ -37,7 +37,7 @@ export const PUBLIC_EXPONENT = 65537n;
 export interface RsaPublicKey { readonly n: bigint; readonly e: bigint }
 export interface RsaPrivateKey { readonly n: bigint; readonly e: bigint; readonly d: bigint }
 
-function modPow(base: bigint, exp: bigint, m: bigint): bigint {
+export function modPow(base: bigint, exp: bigint, m: bigint): bigint {
   let result = 1n;
   let b = base % m;
   let e = exp;
