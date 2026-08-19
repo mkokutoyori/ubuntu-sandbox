@@ -1283,6 +1283,18 @@ export abstract class Switch extends Equipment {
 
   // ─── VLAN Access Map (Cisco VACL) API ──────────────────────────────
 
+  vlanAccessMapRunningConfigLines(): string[] {
+    const out: string[] = [];
+    for (const [name, rules] of this.vlanAccessMaps) {
+      for (const rule of rules) {
+        out.push(`vlan access-map ${name} ${rule.sequence}`);
+        if (rule.matchIpAcl) out.push(` match ip address ${rule.matchIpAcl}`);
+        out.push(` action ${rule.action}`);
+      }
+    }
+    return out;
+  }
+
   getVaclEngine(): ACLEngine {
     if (!this.vaclEngine) this.vaclEngine = new ACLEngine();
     return this.vaclEngine;

@@ -1888,7 +1888,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.configMstTrie.registerGreedy('instance', 'Map VLANs to an MST instance', (a) => {
       const id = parseInt(a[0], 10);
       if (!isNaN(id)) {
-        this.stpAgentOf(this.d())?.mapMstInstance(id, a.slice(1).join(' '));
+        const reste = a.slice(1);
+        if (reste[0]?.toLowerCase() === 'vlan') reste.shift();
+        this.stpAgentOf(this.d())?.mapMstInstance(id, reste.join(' '));
         this.requireVtp().onLocalMstChange();
       }
       return '';
@@ -3271,6 +3273,90 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ].join('\n');
   }
 
+  private static readonly DEFAULT_PORT_MTU = 1500;
+  private static readonly DEFAULT_LACP_PORT_PRIORITY = 32768;
+
+  private renderSwitchGlobalLines(sw: CiscoSwitch): string[] {
+    const out: string[] = [];
+
+    if (sw.getMACAgingTime() !== CiscoSwitchShell.DEFAULT_MAC_AGING_SEC) {
+      out.push(`mac address-table aging-time ${sw.getMACAgingTime()}`);
+    }
+    for (const e of sw.getMACTable()) {
+      if (e.type !== 'static') continue;
+      out.push(`mac address-table static ${e.mac} vlan ${e.vlan} interface ${e.port}`);
+    }
+
+    const snoop = sw._getDHCPSnoopingConfig();
+    if (snoop.enabled) out.push('ip dhcp snooping');
+    if (snoop.vlans.size > 0) {
+      const sorted = [...snoop.vlans].sort((a, b) => a - b);
+      out.push(`ip dhcp snooping vlan ${this.compactVlanList(sorted)}`);
+    }
+    if (snoop.verifyMac) out.push('ip dhcp snooping verify mac-address');
+
+    const lacp = sw.getLacpAgent?.()?.getConfig?.();
+    if (lacp) {
+      if (lacp.systemPriority !== CiscoSwitchShell.DEFAULT_LACP_SYSTEM_PRIORITY) {
+        out.push(`lacp system-priority ${lacp.systemPriority}`);
+      }
+      if (lacp.fastRate) out.push('lacp rate fast');
+    }
+
+    const udldGlobalMode = sw.getUdldAgent?.()?.getConfig?.().globalMode ?? 'disabled';
+    if (udldGlobalMode !== 'disabled') {
+      out.push(udldGlobalMode === 'aggressive' ? 'udld aggressive' : 'udld enable');
+    }
+    if (sw.getDot1xAgent?.()?.getConfig?.()?.enabled) out.push('dot1x system-auth-control');
+
+    out.push(...sw.getPortMirror().asRunningConfigLines());
+    out.push(...sw.vlanAccessMapRunningConfigLines());
+
+    return out;
+  }
+
+  private static readonly DEFAULT_MAC_AGING_SEC = 300;
+  private static readonly DEFAULT_LACP_SYSTEM_PRIORITY = 32768;
+
+  private renderPortLayer2Lines(
+    sw: CiscoSwitch, portName: string, port: import('../../hardware/Port').Port,
+  ): string[] {
+    const out: string[] = [];
+    const mtu = port.getMTU();
+    if (mtu !== CiscoSwitchShell.DEFAULT_PORT_MTU) out.push(`mtu ${mtu}`);
+
+    const l2pt = sw.getSwitchportConfig(portName)?.l2ptProtocols;
+    for (const proto of ['cdp', 'stp', 'vtp', 'lldp'] as const) {
+      if (l2pt?.has(proto)) out.push(`l2protocol-tunnel ${proto}`);
+    }
+
+    const lacpPort = sw.getLacpAgent?.()?.getPortInfo?.(portName);
+    if (lacpPort && lacpPort.portPriority !== CiscoSwitchShell.DEFAULT_LACP_PORT_PRIORITY) {
+      out.push(`lacp port-priority ${lacpPort.portPriority}`);
+    }
+
+    const udld = sw.getUdldAgent?.();
+    const udldMode = udld?.getPortRuntime?.(portName)?.mode;
+    const udldGlobal = udld?.getConfig?.().globalMode ?? 'disabled';
+    if (udldMode && udldMode !== udldGlobal) {
+      out.push(udldMode === 'disabled' ? 'no udld port'
+        : `udld port${udldMode === 'aggressive' ? ' aggressive' : ''}`);
+    }
+
+    const dot1x = sw.getDot1xAgent?.()?.getPortRuntime?.(portName);
+    if (dot1x) {
+      out.push('dot1x pae authenticator');
+      if (dot1x.mode !== 'disabled') out.push(`dot1x port-control ${dot1x.mode}`);
+    }
+
+    const snoop = sw._getDHCPSnoopingConfig();
+    if (snoop.trustedPorts.has(portName)) out.push('ip dhcp snooping trust');
+    const rate = snoop.rateLimits.get(portName);
+    if (rate && rate > 0) out.push(`ip dhcp snooping limit rate ${rate}`);
+
+    return out;
+  }
+
   buildRunningConfig(sw: CiscoSwitch): string {
     const chiffre = sw.getServiceFlags?.().get('password-encryption') === true;
     const lines = [
@@ -3415,6 +3501,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // group, which is exactly what "no agent, no lines" renders.
     const dtpAgent = (sw as unknown as { getDtpAgent?: () => import('../../dtp/DtpAgent').DtpAgent }).getDtpAgent?.();
     const lacpAgent = (sw as unknown as { getLacpAgent?: () => import('../../lacp/LacpAgent').LacpAgent }).getLacpAgent?.();
+    for (const l of this.renderSwitchGlobalLines(sw)) lines.push(l);
     if (dai.vlans.size > 0 || dai.vlanAclFilters.size > 0) lines.push('!');
 
     const ports = sw._getPortsInternal();
@@ -3471,6 +3558,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (cdpAgent) for (const l of cdpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (lldpAgent) for (const l of lldpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
       if (lacpAgent) for (const l of lacpAgent.runningConfigInterfaceLines(portName)) lines.push(` ${l}`);
+      for (const l of this.renderPortLayer2Lines(sw, portName, port)) lines.push(` ${l}`);
       if (!port.getIsUp()) {
         lines.push(` shutdown`);
       }
