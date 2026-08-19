@@ -4046,10 +4046,45 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         () => showTcpBrief()),
     ];
 
+    const administration: CommandSpec[] = [
+      vue(['show', 'ip', 'ssh'], 'Display SSH server status', 15, () => {
+        const sec = getSecurityConfig(this.d());
+        return showIpSsh(sec.ssh,
+          sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
+      }),
+      vue(['show', 'ip', 'ssh', 'known-hosts'], 'Display learned SSH host keys', 15,
+        () => this.sshKnownHosts().renderCisco()),
+      {
+        id: 'show-ssh', description: 'Display SSH sessions',
+        path: ['show', 'ssh', {
+          name: 'reste', type: 'REST', optional: true,
+          description: 'Display SSH sessions', values: [],
+        }],
+        modes: exec, minPrivilege: 15,
+        run: () => {
+          const dev = this.d() as unknown as {
+            getSshSessionRegistry?: () =>
+            { list: () => readonly { lineIndex: number; user: string }[] } | null;
+          };
+          const ssh = getSecurityConfig(this.d() as object).ssh;
+          return showSshSessions(dev.getSshSessionRegistry?.() ?? null, {
+            encryptionAlgorithms: ssh.encryptionAlgorithms,
+            macAlgorithms: ssh.macAlgorithms,
+          });
+        },
+      },
+      vue(['show', 'ip', 'http', 'server', 'status'], 'Display HTTP server status', 15,
+        () => getHttpService(this.d())?.statusLines().join('\n') ?? ''),
+      vue(['show', 'ip', 'http', 'server', 'all'],
+        'Display all HTTP server information', 15,
+        () => getHttpService(this.d())?.statusLines().join('\n') ?? ''),
+    ];
+
     return [
       ...journal,
       ...systeme,
       ...identite,
+      ...administration,
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,
@@ -4294,7 +4329,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * la description d'UNE des branches pour le nom de TOUTES.
    */
   protected socleLegends(): ReadonlyArray<[readonly string[], string]> {
-    return [];
+    return [
+      [['show', 'ip', 'http'], 'HTTP information'],
+      [['show', 'ip', 'http', 'server'], 'HTTP server information'],
+    ];
   }
 
   protected socleTable(): CommandTable | null {
@@ -5014,6 +5052,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected syncDnsService(): void {
     (this.deviceRef as unknown as { _syncDnsService?: () => void } | null)?._syncDnsService?.();
+  }
+
+  protected sshKnownHosts(): { renderCisco: () => string } {
+    return (this.d() as unknown as {
+      _getSshKnownHosts?: () => { renderCisco: () => string };
+    })._getSshKnownHosts?.() ?? { renderCisco: () => '' };
   }
 
   protected registreSessions(): { formatShowUsers: () => string } | null {
@@ -5888,11 +5932,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // qui le crée : `describeNode` sort en silence sur un nœud absent.
     trie.describeNode('show parser', 'Display parser information');
 
-    trie.register('show ip ssh', 'Display SSH server status', () => {
-      const sec = getSecurityConfig(this.d());
-      return showIpSsh(sec.ssh, sec.cryptoKeys.length > 0 ? sec.cryptoKeys[0].modulus : null);
-    });
-
     /*
      * `show ip http server status` et `... all` LISENT le service, elles
      * ne récitent pas un texte : le port, la méthode d'authentification
@@ -5902,24 +5941,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * aucune connexion n'est retenue, aucun module n'est déclaré — donc
      * `all` rend l'état et le dit, plutôt que d'inventer deux tableaux.
      */
-    trie.register('show ip http server status', 'Display HTTP server status', () =>
-      getHttpService(this.d())?.statusLines().join('\n') ?? '');
-    trie.register('show ip http server all', 'Display all HTTP server information', () =>
-      getHttpService(this.d())?.statusLines().join('\n') ?? '');
-    trie.register('show ip ssh known-hosts', 'Display learned SSH host keys', () => {
-      const dev = this.d() as unknown as { _getSshKnownHosts?: () => { renderCisco: () => string } };
-      return dev._getSshKnownHosts?.().renderCisco() ?? '';
-    });
-    trie.registerGreedy('show ssh', 'Display SSH sessions', () => {
-      const dev = this.d() as unknown as {
-        getSshSessionRegistry?: () => { list: () => readonly { lineIndex: number; user: string }[] } | null;
-      };
-      const ssh = getSecurityConfig(this.d() as object).ssh;
-      return showSshSessions(dev.getSshSessionRegistry?.() ?? null, {
-        encryptionAlgorithms: ssh.encryptionAlgorithms,
-        macAlgorithms: ssh.macAlgorithms,
-      });
-    });
     trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     registerCiscoDnsExecCommands(target, this.dnsCommandContext());
     trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>

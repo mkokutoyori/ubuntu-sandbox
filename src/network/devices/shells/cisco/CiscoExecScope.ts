@@ -8,12 +8,7 @@ export const PRIVILEGED_ONLY_SHOW_CHILDREN: ReadonlySet<string> = new Set([
   'logging', 'snmp', 'parser', 'ssh', 'platform', 'diag', 'license',
 ]);
 
-export const PRIVILEGED_ONLY_PATHS: readonly string[] = [
-  'show ip ssh',
-  'show ip ssh known-hosts',
-  'show ip http server status',
-  'show ip http server all',
-];
+export const PRIVILEGED_ONLY_PATHS: readonly string[] = [];
 
 export const PRIVILEGED_EXEC_ONLY: ReadonlySet<string> = new Set([
   'show logging',
@@ -29,12 +24,7 @@ export const PRIVILEGED_EXEC_ONLY: ReadonlySet<string> = new Set([
   'show snmp user',
   'show snmp view',
   'show snmp engineID',
-  'show ip ssh',
-  'show ip ssh known-hosts',
-  'show ssh',
   'show parser view',
-  'show ip http server status',
-  'show ip http server all',
   'show platform',
   'show diag',
   'show license',

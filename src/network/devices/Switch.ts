@@ -81,6 +81,7 @@ import { PortMirror, type MirrorDirection, type MirrorSession } from './switch/P
 import { ACLEngine } from './router/ACLEngine';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
 import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
+import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
@@ -2778,6 +2779,9 @@ export abstract class Switch extends Equipment {
     return this._sshSessionRegistry!;
   }
   private _sshSessionRegistry: SshSessionRegistry | null = null;
+
+  readonly sshKnownHosts = new RouterSshKnownHosts();
+  _getSshKnownHosts(): RouterSshKnownHosts { return this.sshKnownHosts; }
 
   consoleLineCount(): number { return 1; }
 
