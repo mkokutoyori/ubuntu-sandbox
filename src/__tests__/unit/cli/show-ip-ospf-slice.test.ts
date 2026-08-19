@@ -179,3 +179,51 @@ describe('le commutateur n\'a pas OSPF, et ne l\'a toujours pas', () => {
       expect(await device.executeCommand(command)).toContain('Invalid input');
     });
 });
+
+describe('`show ip ospf interface <nom>` distingue les deux absences', () => {
+  it('une interface qui N\'EXISTE PAS est refusee, comme sur `show interfaces`', async () => {
+    const sortie = await (await avecOspf()).executeCommand('show ip ospf interface zorglub');
+
+    expect(sortie).toContain('Invalid input');
+  });
+
+  it('et la meme frappe est refusee de la meme facon par la commande voisine', async () => {
+    const device = await avecOspf();
+
+    const ospf = await device.executeCommand('show ip ospf interface zorglub');
+    const brut = await device.executeCommand('show interfaces zorglub');
+
+    expect(ospf).toContain('Invalid input');
+    expect(brut).toContain('Invalid input');
+  });
+
+  it('une interface qui EXISTE sans OSPF le dit, dans les mots d\'IOS', async () => {
+    const sortie = await (await avecOspf())
+      .executeCommand('show ip ospf interface GigabitEthernet0/1');
+
+    expect(sortie).toBe('%OSPF: OSPF not enabled on GigabitEthernet0/1');
+  });
+
+  it('une interface qui porte OSPF rend sa vue — le temoin', async () => {
+    const sortie = await (await avecOspf())
+      .executeCommand('show ip ospf interface GigabitEthernet0/0');
+
+    expect(sortie).toContain('GigabitEthernet0/0');
+    expect(sortie).toContain('Internet address');
+    expect(sortie).not.toContain('not enabled');
+  });
+
+  it('`brief` reste une sous-commande, pas un nom d\'interface', async () => {
+    const sortie = await (await avecOspf()).executeCommand('show ip ospf interface brief');
+
+    expect(sortie).not.toContain('Invalid input');
+    expect(sortie).not.toContain('not enabled on brief');
+  });
+
+  it('sans argument, la vue liste ce qui tourne', async () => {
+    const sortie = await (await avecOspf()).executeCommand('show ip ospf interface');
+
+    expect(sortie).toContain('GigabitEthernet0/0');
+    expect(sortie).not.toContain('Invalid input');
+  });
+});

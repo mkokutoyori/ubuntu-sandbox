@@ -1647,6 +1647,12 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
   const lines: string[] = [];
   const ifaces = ospf.getInterfaces();
   const resolvedIfName = ifName ? resolveOSPFIfName(ifName) : undefined;
+  if (resolvedIfName !== undefined) {
+    if (!router._getPortsInternal().has(resolvedIfName)) {
+      throw new CliInvalidInput({ token: ifName });
+    }
+    if (!ifaces.has(resolvedIfName)) return `%OSPF: OSPF not enabled on ${resolvedIfName}`;
+  }
 
   for (const [name, iface] of ifaces) {
     if (resolvedIfName && name !== resolvedIfName) continue;
