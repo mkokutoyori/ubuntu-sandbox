@@ -57,6 +57,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
       { keyword: 'check-policy-option', description: 'Use the policy setting.' },
     ], 'check-all'),
+    count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
+    count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
     count('timezone', 'Time zone index.', 0, 86, 4),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
@@ -69,6 +71,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     context.device.applyGlobalSettings({
       hostname: object.effective('hostname')[0],
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
+      authHttpPort: Number.parseInt(object.effective('auth-http-port')[0] ?? '1000', 10),
+      authHttpsPort: Number.parseInt(object.effective('auth-https-port')[0] ?? '1003', 10),
     });
   },
 };
@@ -165,6 +169,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       { keyword: 'up', description: 'Bring the interface up.' },
       { keyword: 'down', description: 'Shut down the interface.' },
     ], 'up'),
+    choice('security-mode', 'Turn on the captive portal for this interface.', [
+      { keyword: 'none', description: 'No captive portal.' },
+      { keyword: 'captive-portal', description: 'Capture unauthenticated HTTP.' },
+    ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
   ],
@@ -182,6 +190,8 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
+    context.device.setCaptivePortalInterface(object.key,
+      object.effective('security-mode')[0] === 'captive-portal');
   },
 };
 

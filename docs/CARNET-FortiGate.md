@@ -38,6 +38,7 @@
 | **9b** | **HA : élection, cerveau divisé, synchronisation par le fil** | ✅ livrée (E44) |
 | **10** | **Routage dynamique — RIP et OSPF sur de vrais minuteurs** | ✅ livrée (E45) |
 | **11** | **Points restés ouverts : BGP, DHCP, NTP, horaires** | ✅ livrée (E46 à E48) |
+| **12** | **Le portail captif capture** | ✅ livrée (E49) |
 
 **Mesures au dernier commit** : 1182 cas verts sur 45 fichiers du module
 pare-feu ; 407 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
@@ -422,12 +423,11 @@ second facteur toujours accepté serait pire que pas de second facteur).
 
 **Ce qui reste de la phase 7, nommé plutôt que tu** :
 
-- le portail sert le formulaire et traite le POST, mais **rien
-  n'INTERCEPTE encore le premier flux HTTP pour y rediriger** : le
-  laboratoire s'authentifie en appelant le portail, pas en étant
-  détourné vers lui ;
-- `security-mode captive-portal` sur une interface (l'autre forme du
-  portail, par interface au lieu de par politique) n'a pas de schéma ;
+- ~~le portail n'intercepte pas~~ **fermé en E49** : un flux HTTP non
+  authentifié reçoit un vrai `303` vers `http://<pare-feu>:1000/fgtauth`,
+  et `security-mode captive-portal` sur une interface existe. HTTPS n'est
+  pas capturé (il faudrait présenter un certificat pour un nom qu'on n'a
+  pas — même brique manquante que `deep-inspection`) ;
 - l'authentification d'un compte administrateur à l'ouverture de session
   n'est pas branchée sur une vraie connexion SSH au pare-feu — le
   pare-feu n'a pas encore de serveur SSH ;
@@ -535,5 +535,6 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 8 livrée (E38). §6.9. **Socle : IKE calcule un vrai DH ; 3DES se déchiffre.** Deux affirmations du BRD corrigées après vérification. |
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
+| 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |
