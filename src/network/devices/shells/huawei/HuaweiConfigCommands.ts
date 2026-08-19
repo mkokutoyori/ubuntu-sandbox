@@ -15,7 +15,7 @@ import { IPAddress, SubnetMask, MACAddress, IPv6Address } from '../../../core/ty
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
 import { resolveHuaweiInterfaceName } from './HuaweiDisplayCommands';
-import { refuseUnknownUndo, huaweiTypeInterface, refuseMotInattenduVrp } from '../cli-utils';
+import { refuseUnknownUndo, huaweiTypeInterface, refuseMotInattenduVrp, HUAWEI_ERRORS } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { interfacePoolName } from './HuaweiDhcpCommands';
 import { describeHuaweiInterfaceArg, wordArg } from './huaweiInterfaceHelp';
@@ -818,7 +818,9 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (!port) return '';
     if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
     const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) { try { port.setSpeed(n); } catch { /* ignore */ } }
+    if (isNaN(n)) return HUAWEI_ERRORS.WRONG(`speed ${args.join(' ')}`);
+    try { port.setSpeed(n); } catch { return HUAWEI_ERRORS.WRONG(`speed ${args.join(' ')}`); }
+    port.setNegotiationAuto(false);
     return '';
   });
   trie.registerGreedy('duplex', 'Set interface duplex', (args) => {
@@ -826,7 +828,11 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const a = (args[0] ?? '').toLowerCase();
-    if (port && (a === 'full' || a === 'half' || a === 'auto')) port.setDuplex(a as any);
+    if (!port) return '';
+    if (a === 'auto') { port.setNegotiationAuto(true); return ''; }
+    if (a !== 'full' && a !== 'half') return HUAWEI_ERRORS.WRONG(`duplex ${args.join(' ')}`);
+    port.setDuplex(a);
+    port.setNegotiationAuto(false);
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
