@@ -282,3 +282,31 @@ describe('the OSPFv3 interface family answers from the socle', () => {
     expect(router.cliHelp('ipv6 ')).not.toContain('ospf            Set OSPFv3 cost');
   });
 });
+
+describe('une ambiguite qui traverse les DEUX moteurs reste une ambiguite', () => {
+  async function privilegie(): Promise<Cli> {
+    const router = new CiscoRouter(`R${serial++}`) as unknown as Cli;
+    await router.executeCommand('enable');
+    return router;
+  }
+
+  it('`show ip s` nomme l\'ambiguite bien que chaque moteur n\'en voie qu\'une part',
+    async () => {
+      const router = await privilegie();
+      expect(await router.executeCommand('show ip s'))
+        .toBe('% Ambiguous command:  "show ip s"');
+    });
+
+  it('un mot-cle TAPE EN ENTIER que le trie porte l\'emporte sur l\'ambiguite',
+    async () => {
+      const router = await privilegie();
+      const rendu = await router.executeCommand('show ip route');
+      expect(rendu).not.toContain('Ambiguous');
+      expect(rendu).toContain('Codes:');
+    });
+
+  it('une abreviation que le socle SEUL resout s\'execute', async () => {
+    const router = await privilegie();
+    expect(await router.executeCommand('show ip ss')).not.toContain('Ambiguous');
+  });
+});

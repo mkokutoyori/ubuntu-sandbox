@@ -4605,6 +4605,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return false;
   }
 
+  private trieResoutExactement(cmdPart: string): boolean {
+    const resultat = this.getActiveTrie().match(cmdPart);
+    if (resultat.status !== 'ok') return false;
+    const tapes = cmdPart.trim().toLowerCase().split(/\s+/);
+    return resultat.matchedKeywords.every(
+      (mot, rang) => mot.toLowerCase() === (tapes[rang] ?? ''));
+  }
+
   private trieProlonge(cmdPart: string): boolean {
     const typed = cmdPart.trim().toLowerCase().replace(/^no\s+/i, '').split(/\s+/);
 
@@ -4839,6 +4847,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         line: cmdPart,
         tokenOffset: CiscoShellBase.offsetOfWord(cmdPart, parsed.position),
       });
+    }
+    if (parsed.status === 'ambiguous' && !this.trieResoutExactement(cmdPart)) {
+      return renderCliDiagnostic('ambiguous', { line: cmdPart });
     }
     if (parsed.status !== 'ok') return null;
     const bare = cmdPart.trim().replace(/^no\s+/i, '');
