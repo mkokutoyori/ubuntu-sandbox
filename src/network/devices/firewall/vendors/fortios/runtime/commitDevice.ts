@@ -101,6 +101,15 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       },
       applyGlobalSettings(settings) {
         fw.setMultiVdom(settings.multiVdom);
+        if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
+          fw.setPortalPorts(settings.authHttpPort, settings.authHttpsPort);
+        }
+      },
+      setCaptivePortalInterface(iface, on) {
+        fw.setCaptivePortalInterface(iface, on);
+      },
+      refreshCaptivePortal() {
+        fw.refreshCaptivePortal();
       },
       applyVdom(name) {
         fw.getVdomRegistry().create(name);

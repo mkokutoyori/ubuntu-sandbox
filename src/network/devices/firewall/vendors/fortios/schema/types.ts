@@ -151,6 +151,8 @@ export interface FortiPolicyRoutePatch {
 export interface FortiGlobalSettings {
   readonly hostname?: string;
   readonly multiVdom: boolean;
+  readonly authHttpPort?: number;
+  readonly authHttpsPort?: number;
 }
 
 export interface FortiVdomSettings {
@@ -185,6 +187,8 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  setCaptivePortalInterface(iface: string, on: boolean): void;
+  refreshCaptivePortal(): void;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;

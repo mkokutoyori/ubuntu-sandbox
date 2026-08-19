@@ -2409,6 +2409,71 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E49 — Le portail captif capture, et un défaut du socle TCP tombe avec
+
+`auth/CaptivePortalRedirect.ts`, `mgmt/ManagementWiring.ts`,
+`l3/Ipv4Ingress.ts` (neufs), `tcp/TcpStack.ts`, `Firewall.ts`,
+`schema/system.ts`, `schema/firewallPolicy.ts`, `schema/types.ts`,
+`runtime/commitDevice.ts` — **9 cas** neufs plus 5 specs Playwright.
+**6 des 9** tombent avant correctif ; les trois autres sont nommés dans
+l'en-tête (un témoin de non-régression, deux témoins négatifs).
+
+**Le détournement est une vraie réponse HTTP sur une vraie connexion
+TCP.** Un `curl` d'un `LinuxPC` vers un serveur distant reçoit
+`303 See Other` avec `Location: http://192.168.1.1:1000/fgtauth` — format
+vérifié contre la documentation Fortinet, port pris de
+`config system global auth-http-port`. Une fois l'identité liée, le même
+`curl` atteint nginx : un portail dont on ne sort pas serait une
+souricière, pas un portail.
+
+**Le mécanisme est celui d'un vrai portail captif** : un écouteur TCP
+générique (`0.0.0.0:80`) répond À LA PLACE de la destination. Le paquet
+refusé par `auth-check` est remis à la pile TCP du pare-feu au lieu
+d'être jeté, et la pile — dont l'écouteur générique accepte n'importe
+quelle destination — termine la connexion et sert la redirection.
+
+**UN DÉFAUT DU SOCLE TCP EST TOMBÉ AVEC, et il dépasse le portail.**
+`TcpStack.transmit` sourçait chaque segment depuis `egress.srcIp`,
+l'adresse que le ROUTAGE choisit vers le pair, au lieu de
+`socket.localIp`, l'adresse que le pair a réellement adressée. Pour une
+socket ordinaire les deux coïncident, ce qui rendait le défaut invisible ;
+pour une socket acceptée sur un écouteur générique elles diffèrent, et le
+SYN-ACK partait de `192.168.1.1` alors que le client attendait
+`203.0.113.10` — le client répondait RST, mesuré. C'est la même forme que
+plusieurs défauts déjà refermés ici : une valeur re-dérivée d'une
+deuxième façon au lieu d'être lue là où elle est décidée. 168 fichiers
+TCP, HTTP, SSH et telnet restent verts.
+
+**Un flux capturé n'est plus du transit.** Après le SYN, l'ACK et la
+requête tombaient plus tôt, à `tcp-state-check` (`no-session-non-syn`) :
+aucune session n'existe, puisque le SYN a été refusé. Le portail retient
+donc les quadruplets qu'il a capturés et les réclame AVANT le pipeline,
+à côté des autres revendications de plan de contrôle — ce qui est la
+vérité du modèle : une connexion que le pare-feu termine lui-même n'est
+pas du trafic qui le traverse.
+
+**`security-mode captive-portal` est l'autre forme**, par interface au
+lieu de par politique, et elle détourne sans qu'aucune politique n'exige
+d'authentification. `set security-mode none` la retire vraiment — le cas
+qui le vérifie a dû être renforcé, car il passait des deux côtés tant
+qu'il ne prouvait pas d'abord que le détournement avait lieu.
+
+**Ce qui n'est pas du HTTP est REFUSÉ, pas détourné** : on ne redirige
+pas un ping vers un formulaire, et prétendre le contraire serait pire que
+le refus. HTTPS n'est pas capturé non plus : il faudrait présenter un
+certificat pour un nom qu'on n'a pas, ce que la phase 6 refuse déjà faute
+de point de terminaison TLS re-signant.
+
+**Trois extractions plutôt qu'un seuil relevé** (G3 a tiré à 865 lignes) :
+`mgmt/ManagementWiring.ts` rassemble le câblage des quatre services qui
+terminent des connexions (portails, HA, NTP, portail captif) —
+le constructeur en faisait 166 lignes —, `l3/Ipv4Ingress.ts` prend la
+CLASSIFICATION d'un paquet entrant (consommé, désencapsulé, local,
+transit) et la rend lisible d'un coup d'œil, et la glu du portail
+descend dans le module du portail. `Firewall.ts` retombe à 798.
+
+---
+
 ### E48 — Horaires ponctuels, groupes d'horaires, NTP
 
 `mgmt/FirewallNtp.ts`, `pipeline/PipelineCache.ts`,
@@ -2583,6 +2648,22 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Périmètre pris — FortiOS phase 12 (le portail captif capture)
+
+**Agent `mandeng`.** §6.8 du carnet nomme le point : « le portail sert le
+formulaire et traite le POST, mais **rien n'INTERCEPTE encore le premier
+flux HTTP pour y rediriger** : le laboratoire s'authentifie en appelant
+le portail, pas en étant détourné vers lui ». Un portail captif qui ne
+capture pas est exactement la famille de défaut que ce module referme —
+la fonction a un nom, une configuration et une vue, et le mécanisme
+qu'elle promet n'a pas lieu.
+
+S'y ajoute `security-mode captive-portal` sur une interface, l'autre
+forme du portail (par interface au lieu de par politique), qui n'a pas de
+schéma.
 
 ---
 
