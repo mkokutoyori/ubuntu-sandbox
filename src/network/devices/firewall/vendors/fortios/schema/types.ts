@@ -5,6 +5,9 @@ import type { PolicyStore } from '../../../model/PolicyStore';
 import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
+import type {
+  OspfConfiguration, RipConfiguration,
+} from '../../../routing/DynamicRoutingTypes';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -208,6 +211,8 @@ export interface FortiCommitDevice {
   applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
   applySdwan(settings: SdwanConfiguration): string | void;
   applyHa(settings: HaConfiguration): string | void;
+  applyRip(settings: RipConfiguration): string | void;
+  applyOspf(settings: OspfConfiguration): string | void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
@@ -449,7 +454,7 @@ export interface FortiCommitContext {
 export interface FortiTableSpec {
   readonly path: readonly string[];
   readonly kind: 'table' | 'object';
-  readonly keyType?: 'name' | 'integer';
+  readonly keyType?: 'name' | 'integer' | 'address';
   readonly ordered?: boolean;
   readonly scope: FortiScope;
   readonly accessGroup: FortiAccessGroup;
@@ -459,6 +464,7 @@ export interface FortiTableSpec {
   readonly children?: readonly FortiTableSpec[];
   readonly predefined?: readonly string[];
   readonly scopeOnly?: boolean;
+  readonly unavailable?: string;
   readonly onCommit?: (
     object: FortiObjectView, context: FortiCommitContext) => string | void;
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;

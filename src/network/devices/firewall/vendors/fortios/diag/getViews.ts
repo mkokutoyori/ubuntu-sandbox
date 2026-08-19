@@ -1,6 +1,6 @@
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
-import type { RouteTable } from '../../../l3/RouteTable';
+import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
 import type { SessionStatistics } from '../../../session/SessionTable';
@@ -95,6 +95,18 @@ const ROUTE_CODE: Readonly<Record<string, string>> = Object.freeze({
   dynamic: 'O',
 });
 
+const PROTOCOL_CODE: Readonly<Record<string, string>> = Object.freeze({
+  rip: 'R',
+  ospf: 'O',
+  bgp: 'B',
+});
+
+function prefixLength(mask: string): number {
+  return mask.split('.')
+    .map(octet => Number.parseInt(octet, 10).toString(2).split('1').length - 1)
+    .reduce((total, bits) => total + bits, 0);
+}
+
 export function renderRoutingTable(routes: RouteTable): string {
   const lines = [
     'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
@@ -103,15 +115,60 @@ export function renderRoutingTable(routes: RouteTable): string {
     '',
   ];
 
-  for (const route of routes.all()) {
-    const code = ROUTE_CODE[route.kind] ?? 'S';
-    const prefix = `${route.network} ${route.mask}`;
-    const via = route.nextHop === undefined
-      ? `is directly connected, ${route.iface}`
-      : `[${route.distance}/${route.metric ?? 0}] via ${route.nextHop}, ${route.iface}`;
-    lines.push(`${code}       ${prefix} ${via}`);
-  }
+  const rows = routes.all().map(route => ({
+    code: (route.protocol === undefined
+      ? ROUTE_CODE[route.kind]
+      : PROTOCOL_CODE[route.protocol]) ?? 'S',
+    destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
+  }));
+
+  lines.push(...renderTable(rows, [
+    { header: '', width: 8, value: row => row.code },
+    { header: '', width: 0, value: row => row.destination },
+  ], FIXED_TABLE).filter(line => line.trim().length > 0));
+
   return lines.join('\n');
+}
+
+function reachedBy(route: FirewallRoute): string {
+  const metric = `[${route.distance}/${route.metric ?? 0}]`;
+  const onLink = route.nextHop === undefined
+    || route.nextHop.length === 0
+    || route.nextHop === route.network;
+  if (onLink) {
+    return route.kind === 'connected'
+      ? `is directly connected, ${route.iface}`
+      : `${metric} is directly connected, ${route.iface}`;
+  }
+  return `${metric} via ${route.nextHop}, ${route.iface}`;
+}
+
+export function renderOspfNeighbors(
+  neighbours: ReadonlyArray<{
+    routerId: string; priority: number; state: string; address: string; iface: string;
+  }>,
+): string {
+  const header = 'OSPF process 1:\nNeighbor ID     Pri State           '
+    + 'Dead Time   Address         Interface';
+  if (neighbours.length === 0) return header;
+
+  const rows = neighbours.map(entry => ({
+    id: entry.routerId,
+    pri: String(entry.priority),
+    state: entry.state,
+    dead: '00:00:38',
+    address: entry.address,
+    iface: entry.iface,
+  }));
+
+  return [header, ...renderTable(rows, [
+    { header: '', width: 16, value: row => row.id },
+    { header: '', width: 4, value: row => row.pri },
+    { header: '', width: 16, value: row => row.state },
+    { header: '', width: 12, value: row => row.dead },
+    { header: '', width: 16, value: row => row.address },
+    { header: '', width: 0, value: row => row.iface },
+  ], FIXED_TABLE)].join('\n');
 }
 
 export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {

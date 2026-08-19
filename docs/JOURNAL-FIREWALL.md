@@ -1976,6 +1976,94 @@ d'extraire le calcul.
 
 ---
 
+### E45 — RIP et OSPF : les minuteurs font l'adjacence, pas une commande
+
+`routing/{DynamicRoutingTypes,FirewallRouting,RoutingWiring}.ts`,
+`l3/LocalDelivery.ts`, `schema/routerDynamic.ts` (tous neufs),
+`ospf/OSPFEngine.ts`, `Firewall.ts`, `l3/RouteTable.ts`,
+`diag/getViews.ts` — **15 cas** neufs plus 5 specs Playwright. **11 des
+15** tombent avant correctif ; les 4 autres sont nommés dans l'en-tête du
+fichier de sonde plutôt que laissés à découvrir (deux témoins négatifs,
+deux cas BGP qui passaient parce que le schéma entier était absent).
+
+**Une prémisse fausse, et elle était la mienne.** La note de périmètre de
+cette phase affirmait que le BRD §22.3 refusait RIP et OSPF en nommant un
+couplage à `Router`. §22.3 ne dit rien de tel — elle traite du partage
+entre VDOM — et §19.3 disait déjà l'inverse : « Les moteurs existent. Le
+travail est de les brancher […] pas de les réécrire. » L'erreur a voyagé
+d'une note jusqu'à l'en-tête d'un fichier de test ; les deux sont
+corrigés. La leçon n'est pas celle de LDAP et de DH/3DES (« une case ❌
+vieillit ») mais sa jumelle : **on vérifie une citation avant de la
+répéter.** La mesure elle-même tient : `OSPFEngine` se construit avec un
+numéro de processus et parle au fil par `setSendCallback` ; `RIPEngine`
+se construit avec `RIPCallbacks`, qui EST déjà un port étroit. Ce qui
+appartient à `Router`, c'est la GLU — un pare-feu a besoin de la sienne.
+
+**Le défaut central n'était pas dans le pare-feu mais dans le moteur
+partagé, et il était le mien.** `OSPFEngine.activateInterface` construit
+un objet d'interface NEUF, `neighbors: new Map()` compris, et l'écrit
+par-dessus l'ancien sans condition. Les quatre appelants du dépôt s'en
+gardent tous par un `if (!engine.getInterface(name))` — quatre copies de
+la même garde, donc une garde que le moteur aurait dû porter. Ma glu
+appelait sans garde : l'adjacence atteignait `ExStart`, puis l'appel
+suivant l'effaçait. `reactivateInterface` met désormais les faits à jour
+EN PLACE et ne réinitialise la machine à états que lorsque quelque chose
+invalide vraiment les adjacences — changement de zone, d'adresse, de
+masque ou de type de réseau (RFC 2328 : un voisin d'une autre zone n'est
+pas un voisin). Les quatre appelants gardés ne traversent jamais ce
+chemin, donc le correctif ne peut rien changer pour eux : 48 fichiers
+OSPF/RIP et 220 fichiers de routage et de CLI constructeur passent.
+
+**`convergeDynamicRouting()` a été écrit, puis SUPPRIMÉ, et c'est le
+correctif qui compte.** Première version : une commande qui pompait des
+Hello, forçait l'élection et lançait le SPF. Un vrai FortiGate n'a pas
+cette commande, et surtout elle mesurait sa propre complaisance — elle
+faisait exister l'adjacence au lieu de l'observer. Les deux bouts
+portent de VRAIS minuteurs (`HelloActor` est armé par
+`OSPFEngine.setEventBus`, `RIPEngine.start()` arme un `setInterval` de
+30 s), donc il ne manquait rien qu'un déclencheur : les interfaces sont
+activées au COMMIT de la configuration — comme sur une vraie machine, et
+comme le fait `Firewall.configureInterface` quand une adresse change — et
+la sonde avance une horloge virtuelle. `RIPEngine.sendUpdates()`, ajouté
+en chemin, est retiré pour la même raison : c'était une seconde façon de
+faire ce que le minuteur fait déjà.
+
+**Deux valeurs rangées et lues par personne**, trouvées en branchant :
+je poussais dans `engine.getConfig().networks` alors que `addNetwork()`
+existe et fait TROIS choses — dédoublonner, déclarer la zone, amorcer sa
+base de données d'états de liens ; sans la zone, le SPF n'avait rien sur
+quoi tourner et rendait zéro route avec une adjacence pourtant `Full`. Et
+`config area … set type` était stocké et jamais transmis : il passe
+maintenant par `setAreaType`.
+
+**La table de routage rendait un format qu'aucun FortiGate ne produit.**
+Vérifié contre la documentation Fortinet et des captures : le vrai rend
+`C 10.0.1.0/24 is directly connected, port4` — notation CIDR, et le
+préfixe suivi d'UNE espace, seule la colonne de code étant calée. Le
+dépôt écrivait `192.168.1.0 255.255.255.0` et calait le préfixe sur 22
+caractères. Corrigé dans le rendu partagé (`FIXED_TABLE`), et l'attente
+de `fortios-diagnostic.test.ts` corrigée avec — c'est le test qui
+encodait le mauvais format, pas le code qui régressait. Une route apprise
+dont le saut suivant est vide se rend `[110/1] is directly connected`,
+comme le vrai, plutôt que `via , port2`.
+
+**BGP reste refusé**, et sa note ne parle plus d'un couplage inexistant :
+le moteur BGP est réel, il lui manque la session TCP que ce pare-feu
+n'ouvre pas encore pour lui. `FortiNavigator` lit `spec.unavailable`, donc
+le refus est une propriété du schéma et non un cas particulier écrit à la
+main.
+
+**Trois extractions plutôt qu'un seuil relevé** (G1/G3 ont tiré à 850
+lignes) : `routing/RoutingWiring.ts`, `l3/LocalDelivery.ts`, et le report
+de `logPipelineOutcome`/`publishPoolProxyArp` dans les modules qui les
+concernent. `Firewall.ts` retombe à 799.
+
+**Trouvé et NON corrigé, parce que ce n'est pas à moi** :
+`cisco-acl.test.ts` « 4.2 named extended ACL » échoue déjà sans aucune de
+mes modifications (vérifié par `git stash push -- src/network/`).
+
+---
+
 ### E44 — FGCP : deux FortiGate élisent un primaire, et le fil en décide
 
 `ha/{HaTypes,HaAgent,HaSessionSync,FirewallHa}.ts`,
@@ -2318,6 +2406,55 @@ progrès ; le test le dit maintenant dans les deux sens.
 **Quatre extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
 `commit/objectCommits.ts`, `FirewallAgents.ts`, `l3/FirewallEgress.ts`,
 `logging/emitFirewallEvent.ts`.
+
+---
+
+## Périmètre pris — FortiOS phase 10 (routage dynamique)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**CORRECTION (E45).** Ce paragraphe attribuait à §22.3 du BRD un refus
+que §22.3 NE CONTIENT PAS — cette section traite du partage entre VDOM.
+Le BRD dit même l'inverse, et le disait déjà : §19.3 classe OSPFv2 « oui,
+réel », RIP et BGP « oui », et conclut « Les moteurs existent. Le travail
+est de les brancher sur le pare-feu et sur la grammaire CLI de chaque
+vendeur, pas de les réécrire. » La leçon n'est donc pas « une case ❌
+vieillit » mais **« on vérifie une citation avant de la répéter »** : la
+prémisse fausse était la mienne, pas celle du BRD, et elle a voyagé d'une
+note de périmètre jusqu'à l'en-tête d'un fichier de test. Ce que la
+mesure établit reste vrai et vaut d'être gardé : `OSPFEngine` se construit avec un `processId` et rien
+d'autre, et parle au fil par un `setSendCallback` ; `RIPEngine` se
+construit avec un identifiant, un nom d'hôte et une interface
+`RIPCallbacks` qui EST déjà le port étroit que §22.3 demande d'écrire
+(adresse, masque et MAC d'un port, liste des ports, envoi de trame,
+table de routage, pose et retrait de route). Les 148 occurrences du mot
+« Router » dans `OSPFEngine` sont du vocabulaire du protocole
+(`RouterLSA`, `advertisingRouter`, Router ID), pas la classe.
+
+**Ce qui est réellement propre à `Router`, c'est la GLU d'intégration**
+(`devices/router/RouterOSPFIntegration.ts`), et un pare-feu n'a pas
+besoin qu'on la découple : il a besoin de la sienne. La phase n'est donc
+pas un chantier de socle mais une déclinaison de plus, ce qui la rend
+beaucoup moins risquée que le BRD ne l'annonçait.
+
+**Prélèvement sur le socle** : `routing/` (nouveau répertoire du module
+pare-feu — intégration RIP et OSPF), et le dispatch du protocole 89 et
+du port UDP 520 dans le plan de données du pare-feu.
+
+**Fichiers FortiOS pris** : `schema/routerDynamic.ts` (neuf),
+`schema/index.ts`, `diag/getViews.ts` (codes de protocole dans
+`get router info routing-table all`), `Firewall.ts`.
+
+**Réutilisations imposées, à ne pas réécrire** : `ospf/OSPFEngine.ts`,
+`rip/RIPEngine.ts` — les moteurs, tels quels. Écrire un second moteur
+donnerait deux réponses possibles à « cette route est-elle apprise ? ».
+
+**Ce que la phase ne prend PAS** : BGP. Son moteur s'appuie sur une
+session TCP et sur `AbstractRoutingProtocolEngine` ; c'est une
+livraison distincte, et l'annoncer ici sans la mesurer serait refaire
+l'erreur que cette entrée corrige. Le refus de §22.3 est donc conservé
+POUR BGP SEUL, et sa note est corrigée : elle nommait un couplage qui
+n'existe pas.
 
 ---
 

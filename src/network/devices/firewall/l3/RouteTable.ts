@@ -11,6 +11,7 @@ export interface FirewallRoute {
   readonly kind: RouteKind;
   readonly distance: number;
   readonly metric?: number;
+  readonly protocol?: string;
 }
 
 export interface ResolvedNextHop {
@@ -82,6 +83,15 @@ export class RouteTable {
     return true;
   }
 
+  removeStaticsBySource(source: string): number {
+    const prefix = `${source}:`;
+    const before = this.statics.length;
+    for (let index = this.statics.length - 1; index >= 0; index--) {
+      if (this.statics[index].id?.startsWith(prefix)) this.statics.splice(index, 1);
+    }
+    return before - this.statics.length;
+  }
+
   removeStaticById(id: string): boolean {
     const index = this.statics.findIndex(route => route.id === id);
     if (index < 0) return false;
@@ -139,9 +149,10 @@ export class RouteTable {
         mask: route.mask,
         nextHop: route.nextHop,
         iface,
-        kind: route.isDefault ? 'default' : 'static',
+        kind: kindOf(route),
         distance: route.distance,
         metric: route.metric,
+        protocol: protocolOf(route),
       }));
     }
     return Object.freeze(routes);
@@ -174,6 +185,18 @@ export class RouteTable {
     }
     return undefined;
   }
+}
+
+function kindOf(route: StaticRecord): RouteKind {
+  return protocolOf(route) === undefined
+    ? (route.isDefault ? 'default' : 'static')
+    : 'dynamic';
+}
+
+function protocolOf(route: StaticRecord): string | undefined {
+  if (route.id?.startsWith('rip:')) return 'rip';
+  if (route.id?.startsWith('ospf:')) return 'ospf';
+  return undefined;
 }
 
 function prefixBits(mask: number): number {

@@ -7,7 +7,6 @@ import {
   MACAddress,
   SubnetMask,
   IP_PROTO_ESP,
-  IP_PROTO_TCP,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
@@ -18,7 +17,7 @@ import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
 import { RouteTable } from './l3/RouteTable';
 import {
-  ProxyArpTable, proxyOwnerKey, type ProxyArpEntry,
+  ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
 import { ArpService } from './l3/ArpService';
 import { ZoneTable } from './model/ZoneTable';
@@ -47,11 +46,11 @@ import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
 import { VdomLinkTable } from './vdom/VdomLinkTable';
 import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
-import { emitFirewallEvent } from './logging/emitFirewallEvent';
+import { emitFirewallEvent, logPipelineOutcome } from './logging/emitFirewallEvent';
 import {
-  arpFrame, buildEgressFrame, icmpEchoReply,
-  type BridgedFrame, type EgressDeps,
+  arpFrame, buildEgressFrame, type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
+import { deliverLocally } from './l3/LocalDelivery';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -70,6 +69,13 @@ import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import { SdwanService } from './sdwan/SdwanService';
+import type { FirewallRouting } from './routing/FirewallRouting';
+import {
+  createFirewallRouting, deliverToRoutingProtocol, routingPortFacts,
+} from './routing/RoutingWiring';
+import type {
+  OspfConfiguration, RipConfiguration,
+} from './routing/DynamicRoutingTypes';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { FirewallHa, serialNumberOf } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
@@ -130,6 +136,7 @@ export class Firewall extends Equipment {
   private readonly sslVpn: SslVpnPortal;
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
+  private readonly routing: FirewallRouting;
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
   private readonly hostsTable = new RouterHostsTable();
@@ -271,6 +278,20 @@ export class Firewall extends Equipment {
       sessions: () => this.getVdom().sessions,
     });
 
+    this.routing = createFirewallRouting({
+      deviceId: this.id,
+      hostname: () => this.getName(),
+      bus: () => this.getBus(),
+      routes: () => this.getVdom().routes,
+      connectedRoutes: () => this.interfaces.connectedRoutes(),
+      interfaceAddresses: () => routingPortFacts(this.interfaces, (n) => this.getPort(n)),
+      resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
+      emitFrame: (iface, frame) => {
+        this.capture.record({ at: this.services.now(), iface, direction: 'out', frame });
+        this.sendFrame(iface, frame);
+      },
+    });
+
     this.sdwan = new SdwanService({
       send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
       localIp: (iface) => this.interfaces.get(iface)?.ip,
@@ -306,6 +327,13 @@ export class Firewall extends Equipment {
   getSslVpnPortal(): SslVpnPortal { return this.sslVpn; }
 
   getSdwan(): SdwanService { return this.sdwan; }
+
+  getRouting(): FirewallRouting { return this.routing; }
+
+  applyRip(c: RipConfiguration): string | undefined { return this.routing.applyRip(c); }
+
+  applyOspf(c: OspfConfiguration): string | undefined { return this.routing.applyOspf(c); }
+
 
   getHa(): HaAgent { return this.haService.agent; }
 
@@ -390,6 +418,7 @@ export class Firewall extends Equipment {
     if (port && iface?.ip && iface.mask) {
       port.configureIP(new IPAddress(iface.ip), new SubnetMask(iface.mask));
     }
+    this.routing.refreshInterfaces();
   }
 
   simulate(request: SimulationRequest): SimulationResult {
@@ -542,7 +571,7 @@ export class Firewall extends Equipment {
 
   setIpPool(pool: IpPool, vdom?: string): void {
     this.getVdom(vdom).pools.upsert(pool);
-    this.publishPoolProxyArp(pool);
+    publishPoolProxyArp(this.proxyArp, pool);
   }
 
   removeIpPool(name: string, vdom?: string): void {
@@ -566,15 +595,6 @@ export class Firewall extends Equipment {
     return this.proxyArp.all();
   }
 
-  private publishPoolProxyArp(pool: IpPool): void {
-    const owner = proxyOwnerKey('ippool', pool.name);
-    if (!pool.arpReply) { this.proxyArp.clear(owner); return; }
-
-    this.setProxyArpEntries(owner, [{
-      from: pool.startIP, to: pool.endIP,
-      iface: pool.arpInterface ?? pool.associatedInterface,
-    }]);
-  }
 
   bindPolicyToInterface(iface: string): void { this.boundPolicyInterfaces.add(iface); }
   unbindPolicyFromInterface(iface: string): void { this.boundPolicyInterfaces.delete(iface); }
@@ -647,6 +667,8 @@ export class Firewall extends Equipment {
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
 
+    if (deliverToRoutingProtocol(this.routing, portName, packet)) return;
+
     if (packet.protocol === IP_PROTO_ESP
       && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
       const opened = decryptFromTunnel(this.ipsec, this.getVdom().tunnels, packet);
@@ -695,22 +717,10 @@ export class Firewall extends Equipment {
   }
 
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
-    const facts = logFactsOf(context, this.vdoms.contextOfInterface(context.ingressPort).zones);
-
-    if (!accepted) {
-      this.logFirewallEvent('policy-deny', {
-        ...facts, ruleId: context.matchedPolicy?.id, reason: context.verdict?.reason,
-      });
-      this.trafficLogger?.onDenied(context);
-      return;
-    }
-    if (context.session === undefined || !context.isFirstPacket) return;
-
-    this.trafficLogger?.onSessionOpened(context.session, context.matchedPolicy);
-    this.logFirewallEvent('session-built', { ...facts, sessionId: context.session.id });
-    if (context.session.translation) {
-      this.logFirewallEvent('translation-created', { ...facts, sessionId: context.session.id });
-    }
+    logPipelineOutcome(
+      (event, facts) => { this.logFirewallEvent(event, facts); }, context,
+      logFactsOf(context, this.vdoms.contextOfInterface(context.ingressPort).zones),
+      accepted, this.trafficLogger);
   }
 
   private destinationIsTranslated(portName: string, packet: IPv4Packet): boolean {
@@ -722,18 +732,14 @@ export class Firewall extends Equipment {
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
-    const ike = ikeDatagram(packet);
-    if (ike) { this.ipsec.handleIkeUdp(portName, packet, ike); return; }
-    if (this.sdwan.observeReply(packet)) return;
-
-    if (packet.protocol === IP_PROTO_TCP) {
-      this.tcp.handleIp(portName, packet.sourceIP, packet);
-      return;
-    }
-    if (!this.allowsAccess(portName, 'ping')) return;
-
-    const reply = icmpEchoReply(packet);
-    if (reply) this.forward(portName, reply);
+    deliverLocally({
+      ikeDatagram: (p) => ikeDatagram(p),
+      handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
+      observedBySdwan: (p) => this.sdwan.observeReply(p),
+      handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
+      allowsPing: (iface) => this.allowsAccess(iface, 'ping'),
+      reply: (iface, p) => { this.forward(iface, p); },
+    }, portName, packet);
   }
 
   private forward(

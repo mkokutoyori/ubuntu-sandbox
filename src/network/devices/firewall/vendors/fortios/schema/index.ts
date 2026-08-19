@@ -17,12 +17,14 @@ import { ADMIN_SPECS } from './admin';
 import { VPN_SPECS } from './vpn';
 import { SDWAN_SPECS } from './sdwan';
 import { HA_SPECS } from './ha';
+import { ROUTER_DYNAMIC_SPECS } from './routerDynamic';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VDOM_SPECS,
   ...SYSTEM_SPECS,
   ...SDWAN_SPECS,
   ...HA_SPECS,
+  ...ROUTER_DYNAMIC_SPECS,
   FIREWALL_ADDRESS,
   FIREWALL_ADDRGRP,
   FIREWALL_SERVICE_CUSTOM,

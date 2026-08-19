@@ -37,7 +37,7 @@ import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
-  renderRoutingTable, renderSystemStatus,
+  renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
@@ -326,6 +326,12 @@ export class FortiShell {
       },
       hasInterface(name) {
         return fw.getPort(name) !== undefined;
+      },
+      applyRip(patch) {
+        return fw.applyRip(patch);
+      },
+      applyOspf(patch) {
+        return fw.applyOspf(patch);
       },
       removeStaticRoute(id) {
         fw.getRouteTable().removeStaticById(id);
@@ -618,6 +624,9 @@ export class FortiShell {
     }
     if (path === 'system interface' || path === 'system interface physical') {
       return renderInterfaceStatus(this.fw.getInterfaceTable());
+    }
+    if (path === 'router info ospf neighbor') {
+      return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
     }
     if (path === 'router info routing-table all') {
       return renderRoutingTable(this.fw.getRouteTable());

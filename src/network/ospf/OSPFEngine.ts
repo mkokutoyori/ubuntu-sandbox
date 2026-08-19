@@ -871,6 +871,11 @@ export class OSPFEngine implements IProtocolEngine {
       ? Math.max(1, Math.floor(this.config.referenceBandwidth / bandwidth))
       : 1;
 
+    const already = this.interfaces.get(name);
+    if (already) {
+      return this.reactivateInterface(already, ipAddress, mask, areaId, defaultCost, options);
+    }
+
     const iface: OSPFInterface = {
       name,
       ipAddress,
@@ -913,6 +918,68 @@ export class OSPFEngine implements IProtocolEngine {
     // Bring interface up
     this.interfaceUp(name);
 
+    return iface;
+  }
+
+  private reactivateInterface(
+    iface: OSPFInterface,
+    ipAddress: string,
+    mask: string,
+    areaId: string,
+    defaultCost: number,
+    options?: {
+      cost?: number;
+      priority?: number;
+      networkType?: OSPFNetworkType;
+      helloInterval?: number;
+      deadInterval?: number;
+      mtu?: number;
+      propagationDelayMs?: number;
+      bandwidthBps?: number;
+    },
+  ): OSPFInterface {
+    const networkType = options?.networkType
+      ?? (/^Loopback/i.test(iface.name) ? 'loopback' : iface.networkType);
+
+    const invalidatesAdjacencies = !areasEqual(iface.areaId, areaId)
+      || iface.ipAddress !== ipAddress
+      || iface.mask !== mask
+      || iface.networkType !== networkType;
+
+    iface.ipAddress = ipAddress;
+    iface.mask = mask;
+    iface.areaId = areaId;
+    iface.networkType = networkType;
+    iface.priority = options?.priority ?? iface.priority;
+    iface.helloInterval = options?.helloInterval ?? iface.helloInterval;
+    iface.deadInterval = options?.deadInterval ?? iface.deadInterval;
+    iface.mtu = options?.mtu ?? iface.mtu;
+    iface.propagationDelayMs = options?.propagationDelayMs ?? iface.propagationDelayMs;
+    iface.passive = this.config.passiveInterfaces.has(iface.name);
+    if (options?.cost !== undefined) {
+      iface.cost = options.cost;
+      iface.costExplicit = true;
+    } else if (!iface.costExplicit) {
+      iface.cost = defaultCost;
+    }
+
+    const area = this.config.areas.get(areaId);
+    if (area && !area.interfaces.includes(iface.name)) area.interfaces.push(iface.name);
+
+    if (!invalidatesAdjacencies) return iface;
+
+    for (const [, neighbor] of iface.neighbors) {
+      this.neighborEvent(iface, neighbor, 'KillNbr');
+    }
+    iface.neighbors.clear();
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
+    iface.state = 'Down';
+    this.interfaceUp(iface.name);
     return iface;
   }
 

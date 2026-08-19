@@ -28,7 +28,7 @@ function encodeSecret(clear: string): string {
 }
 
 export function renderKey(spec: FortiTableSpec, key: string): string {
-  return spec.keyType === 'integer' ? key : `"${key}"`;
+  return spec.keyType === 'integer' || spec.keyType === 'address' ? key : `"${key}"`;
 }
 
 function attributeLines(

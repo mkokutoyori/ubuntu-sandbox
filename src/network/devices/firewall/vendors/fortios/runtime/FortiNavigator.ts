@@ -82,6 +82,7 @@ export class FortiNavigator {
 
     const spec = this.deps.tree.spec(words);
     if (!spec) return FortiMessages.unknownPath(words.join(' '));
+    if (spec.unavailable) return FortiMessages.commandFail(spec.unavailable);
 
     if (spec.kind === 'object') {
       const object = this.deps.tree.singleton(spec);
