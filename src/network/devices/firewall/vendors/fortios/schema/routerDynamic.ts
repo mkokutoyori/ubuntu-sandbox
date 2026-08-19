@@ -2,10 +2,7 @@ import {
   address, addressMask, choice, count, enable, reference, text, word,
   type FortiTableSpec,
 } from './types';
-
-const BGP_NOTE = 'BGP has a real engine in this simulator, but it runs over a '
-  + 'TCP session this firewall does not open for it yet; RIP and OSPF are '
-  + 'available on this platform.';
+import { AS_NUMBER_MAX } from '../../../routing/FirewallBgp';
 
 const RIP_NETWORK: FortiTableSpec = {
   path: ['router', 'rip', 'network'],
@@ -183,17 +180,81 @@ export const ROUTER_OSPF: FortiTableSpec = {
   },
 };
 
+const BGP_NEIGHBOR: FortiTableSpec = {
+  path: ['router', 'bgp', 'neighbor'],
+  kind: 'table',
+  keyType: 'address',
+  quotedKey: true,
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'BGP neighbor table.',
+  attributes: [
+    { ...word('ip', 'Neighbor address.'), readOnly: true },
+    count('remote-as', 'Autonomous system of the neighbor.', 1, AS_NUMBER_MAX, 0),
+    count('weight', 'Weight applied to routes learned from this neighbor.',
+      0, 65535, 0),
+  ],
+};
+
+const BGP_NETWORK: FortiTableSpec = {
+  path: ['router', 'bgp', 'network'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 2,
+  help: 'BGP network table.',
+  attributes: [
+    { ...word('id', 'Entry identifier.'), readOnly: true },
+    addressMask('prefix', 'Prefix this router originates.', ['0.0.0.0', '0.0.0.0']),
+  ],
+};
+
 export const ROUTER_BGP: FortiTableSpec = {
   path: ['router', 'bgp'],
   kind: 'object',
   scope: 'vdom',
   accessGroup: 'netgrp',
   renderOrder: 236,
-  help: `Configure BGP. ${BGP_NOTE}`,
-  unavailable: BGP_NOTE,
+  help: 'Configure BGP.',
   attributes: [
-    { ...word('as', 'Local autonomous system number.'), unimplemented: BGP_NOTE },
+    count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
+    address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
   ],
+  children: [BGP_NEIGHBOR, BGP_NETWORK],
+  onCommit(object, context) {
+    const asn = Number.parseInt(object.effective('as')[0] ?? '0', 10);
+    const neighbours = object.childEntries('neighbor');
+
+    if (neighbours.length > 0 && asn === 0) {
+      return 'a local AS number is required before a neighbor can be configured.';
+    }
+    for (const entry of neighbours) {
+      if (Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10) === 0) {
+        return `neighbor ${entry.key} has no remote-as.`;
+      }
+    }
+
+    return context.device.applyBgp({
+      enabled: asn > 0,
+      asn,
+      routerId: object.effective('router-id')[0] ?? '0.0.0.0',
+      neighbours: neighbours.map(entry => ({
+        ip: entry.key,
+        remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),
+        weight: Number.parseInt(entry.effective('weight')[0] ?? '0', 10),
+      })),
+      networks: object.childEntries('network').map(entry => ({
+        id: entry.key,
+        prefix: entry.effective('prefix')[0] ?? '0.0.0.0',
+        mask: entry.effective('prefix')[1] ?? '0.0.0.0',
+        area: '',
+      })),
+    });
+  },
 };
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =

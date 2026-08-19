@@ -28,6 +28,7 @@ function encodeSecret(clear: string): string {
 }
 
 export function renderKey(spec: FortiTableSpec, key: string): string {
+  if (spec.quotedKey !== undefined) return spec.quotedKey ? `"${key}"` : key;
   return spec.keyType === 'integer' || spec.keyType === 'address' ? key : `"${key}"`;
 }
 

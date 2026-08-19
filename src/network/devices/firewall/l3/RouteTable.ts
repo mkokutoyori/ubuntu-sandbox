@@ -196,6 +196,7 @@ function kindOf(route: StaticRecord): RouteKind {
 function protocolOf(route: StaticRecord): string | undefined {
   if (route.id?.startsWith('rip:')) return 'rip';
   if (route.id?.startsWith('ospf:')) return 'ospf';
+  if (route.id?.startsWith('bgp:')) return 'bgp';
   return undefined;
 }
 

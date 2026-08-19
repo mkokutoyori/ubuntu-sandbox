@@ -2409,6 +2409,94 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E46 — BGP : le refus était le mien, et rien ne manquait
+
+`routing/FirewallBgp.ts`, `bgp/bgpTransport.ts` (neufs),
+`schema/routerDynamic.ts`, `FortiShell.ts`, `diag/getViews.ts`,
+`l3/RouteTable.ts`, `RouterDynamicRouting.ts` — **11 cas** neufs plus 5
+specs Playwright. **10 des 11** tombent avant correctif ; le onzième est
+le témoin négatif, nommé dans l'en-tête du fichier.
+
+**La note de la phase 10 disait « le moteur BGP est réel, la session TCP
+ne lui est pas ouverte ». C'était faux.** Le pare-feu porte un
+`TcpStack` depuis la phase 7, et j'avais moi-même branché la livraison
+locale TCP en phase 8 (`deliverLocally` → `this.tcp.handleIp`).
+`BGPEngine.setWire(wire)` est un port d'UNE méthode,
+`connect(ip): BgpPeerLink | null`. Il ne manquait donc rien : la session
+TCP/179 s'ouvre, l'adjacence atteint `Established` **des deux côtés**
+(mesuré sur le voisin Cisco, pas seulement chez nous), le préfixe distant
+est appris et rendu `B`, notre propre préfixe est ANNONCÉ — R1 installe
+`B 192.168.1.0/24 [20/0] via 10.0.0.1` — et un ping traverse.
+
+**Le défaut central était que je n'appelais pas `enable()`.** Je
+remplissais `engine.getConfig()` à la main puis appelais `converge()` ;
+or `converge()` sort par sa première ligne tant que le moteur n'est pas
+`enabled`, si bien que rien ne se passait et que `getNeighbors()`
+répondait vide. `enable(config)` fusionne ET converge : c'est le chemin
+public, et le contourner revenait à écrire un second démarrage à côté du
+vrai.
+
+**Une seule implémentation du transport.** `bgpTransport(socket)` vivait
+en fonction privée dans `RouterDynamicRouting.ts` ; la recopier dans le
+pare-feu aurait donné deux adaptateurs pour un seul protocole. Elle est
+extraite dans `bgp/bgpTransport.ts` et les deux appelants la lisent.
+
+**`edit "10.0.0.2"` est entre guillemets, `edit 0.0.0.0` ne l'est pas**,
+et ce n'est pas une incohérence de FortiOS : la table `neighbor` de BGP
+cite sa clé, la table `area` d'OSPF ne la cite pas — les deux captures le
+montrent. Le rendu déduisait le guillemet du `keyType`, ce qui ne peut
+pas distinguer deux tables dont la clé est du même type ; `quotedKey` est
+donc une propriété **de la table**, déclarée là où la différence existe.
+
+**`RouteTable.protocolOf` ne connaissait pas `bgp:`**, si bien qu'une
+route apprise par BGP se rendait `S` (statique) — le code de protocole
+est ce qui distingue « quelqu'un me l'a annoncée » de « je l'ai tapée ».
+
+**Deux extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré à 805
+et 803 lignes) : `bgpFacts()` descend dans `FirewallBgp.summaryFacts()`
+— le service qui détient la donnée — et les trois délégations
+`applyRip`/`applyOspf`/`applyBgp` de `Firewall.ts` disparaissent, la
+couche vendeur appelant `getRouting()` directement. Piège rencontré en
+chemin : mettre `BgpSummaryFacts` dans `diag/getViews.ts` faisait
+importer la couche VENDEUR par le socle, ce que G2 interdit ; le type
+vit dans `routing/DynamicRoutingTypes.ts`.
+
+**Un cas de sonde corrigé, pas le code** : le refus d'un numéro d'AS hors
+bornes tombe sur `set` (validation) et non sur `end` (commit) — l'inverse
+du piège de la phase 9b, où le refus tombait au commit. La sortie réelle
+est celle de FortiOS, `Command fail. Return code -61` précédé de
+`value parse error before '…'`.
+
+Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
+refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Périmètre pris — FortiOS phase 11 (les points restés ouverts)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+§39 du BRD s'arrête à la phase 10 : ce qui reste n'est pas une phase
+suivante mais la liste des points laissés ouverts, et l'instruction est
+de les FERMER, pas de les documenter une fois de plus.
+
+**BGP d'abord, parce que le refus était le mien et qu'il reposait sur
+une prémisse fausse.** La note de la phase 10 disait « le moteur BGP est
+réel, la session TCP ne lui est pas ouverte ». Mesure : le pare-feu porte
+un `TcpStack` depuis la phase 7, et j'ai moi-même branché la livraison
+locale TCP en phase 8 (`deliverLocally` → `this.tcp.handleIp`).
+`BGPEngine.setWire(wire: BgpWire)` est un port étroit d'une seule
+méthode, `connect(ip): BgpPeerLink | null`, exactement de la même forme
+que `RIPCallbacks`. Il ne manquait donc rien : la troisième fois qu'un
+refus de ce module s'appuie sur une case périmée.
+
+**Ensuite les restes de la phase 2** (§6.2 bis du carnet) : `config
+system ntp`, `config system dhcp server` côté plan de données, `config
+system interface` en `mode dhcp`, `config firewall schedule onetime` et
+`schedule group`. Les socles NTP et DHCP existent — l'utilisateur l'a
+rappelé — donc le travail est de les brancher, pas de les réécrire.
+
+---
+
 ## Périmètre pris — FortiOS phase 10 (routage dynamique)
 
 **Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.

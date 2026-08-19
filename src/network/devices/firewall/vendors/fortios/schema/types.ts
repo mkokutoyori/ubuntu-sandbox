@@ -6,7 +6,7 @@ import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type {
-  OspfConfiguration, RipConfiguration,
+  BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
 
 export type FortiAccessGroup = AccessGroup;
@@ -213,6 +213,7 @@ export interface FortiCommitDevice {
   applyHa(settings: HaConfiguration): string | void;
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
+  applyBgp(settings: BgpConfiguration): string | void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
@@ -455,6 +456,7 @@ export interface FortiTableSpec {
   readonly path: readonly string[];
   readonly kind: 'table' | 'object';
   readonly keyType?: 'name' | 'integer' | 'address';
+  readonly quotedKey?: boolean;
   readonly ordered?: boolean;
   readonly scope: FortiScope;
   readonly accessGroup: FortiAccessGroup;
