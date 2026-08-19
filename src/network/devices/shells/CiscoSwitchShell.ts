@@ -1424,63 +1424,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.privilegedTrie.registerGreedy('vtp primary', 'Force this switch to become the VTP Primary Server', (args) => {
-      const force = args.some(a => a.toLowerCase() === 'force');
-      return this.requireVtp().becomePrimary(force).message;
-    });
-
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show vtp password', 'Display the VTP password', () => {
-        const cfg = this.requireVtp().getConfig();
-        return cfg.password
-          ? `VTP Password: ${cfg.password}`
-          : 'The VTP password is not configured.';
-      });
-      t.register('show vtp status', 'Display VTP status', () => {
-        const cfg = this.requireVtp().getConfig();
-        const numVlans = this.d().getVLANs().size;
-        const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
-        const updaterIp = cfg.lastUpdaterIdentity;
-        const modifiedAt = cfg.lastUpdateTimestamp ? this.formatVtpTimestamp(cfg.lastUpdateTimestamp) : '0-0-00 00:00:00';
-        return [
-          `VTP Version capable             : 1 to 2`,
-          `VTP version running             : ${cfg.version}`,
-          `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
-          `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
-          `VTP Traps Generation            : Disabled`,
-          `Device ID                       : ${deviceId}`,
-          `Configuration last modified by ${updaterIp} at ${modifiedAt}`,
-          `Local updater ID is ${updaterIp} on interface Vl1 (lowest numbered VLAN interface found)`,
-          ``,
-          `Feature VLAN:`,
-          `--------------`,
-          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}${cfg.version === 3 && cfg.primaryServer ? ', Primary Server' : ''}`,
-          `Maximum VLANs supported locally : ${cfg.version === 3 ? 4094 : 1005}`,
-          `Number of existing VLANs        : ${numVlans}`,
-          `Configuration Revision          : ${cfg.revision}`,
-        ].join('\n');
-      });
-      t.register('show vtp counters', 'Display VTP counters', () => {
-        return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
-      });
-      t.register('show vtp devices', 'Display VTP devices in the domain', () => {
-        const cdp = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
-        const switches = (cdp?.getNeighbors() ?? []).filter(n => n.remoteType.startsWith('switch'));
-        if (switches.length === 0) {
-          return 'Retrieving device ID with revision > 0 from the ring...\nNo device found.';
-        }
-        const lines = [
-          'Retrieving information from the VTP domain...',
-          '',
-          'Device ID          Platform           Local Interface',
-          '----------------   ----------------   ----------------',
-        ];
-        for (const n of switches) {
-          lines.push(`${n.remoteHost.padEnd(19)}${n.remotePlatform.padEnd(19)}${this.abbreviateInterface(n.localPort)}`);
-        }
-        return lines.join('\n');
-      });
-    }
   }
 
   private registerUdldCommands(): void {
@@ -1994,8 +1937,45 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return vlan ? [...specs, ...stpVlanSpecs(vlan.action)] : specs;
   }
 
+  private vlanVtpShowSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerVlanShowCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          restDescriptionFor: (path) => ({
+            'show vlan id': 'VLAN number',
+            'show vlan name': 'VLAN name',
+          })[path],
+          restLiteralFor: (path) => path === 'show vlan id' ? '<1-4094>' : 'WORD',
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerVtpShowCommands(collector as unknown as CommandTrie),
+        { modes: exec, minPrivilege: 1 },
+      ),
+      {
+        id: 'vtp-primary',
+        path: ['vtp', 'primary', {
+          name: 'force', type: 'ENUM', optional: true,
+          description: 'Force the takeover without confirmation',
+          values: [{ keyword: 'force', description: 'Do not ask for confirmation' }],
+        }],
+        description: 'Force this switch to become the VTP Primary Server',
+        modes: ['privileged'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.requireVtp().becomePrimary(String(args.force ?? '') === 'force').message,
+      },
+    ];
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
-    return [...super.socleSpecs(), ...this.stpShowSpecs()];
+    return [
+      ...super.socleSpecs(),
+      ...this.stpShowSpecs(),
+      ...this.vlanVtpShowSpecs(),
+    ];
   }
 
   protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
@@ -2003,6 +1983,91 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleLegends(),
       [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
     ];
+  }
+
+  private registerVlanShowCommands(t: CommandTrie): void {
+    t.register('show vlan summary', 'Display VLAN count summary', () => {
+      const ids = [...this.d().getVLANs().keys()];
+      const extended = ids.filter((id) => id >= 1006).length;
+      const normal = ids.length - extended;
+      return [
+        `Number of existing VLANs          : ${ids.length}`,
+        `Number of existing VTP VLANs      : ${normal}`,
+        `Number of existing extended VLANs : ${extended}`,
+      ].join('\n');
+    });
+
+    t.register('show vlan brief', 'Display VLAN summary', () => {
+      return this.showVlanBrief(this.d());
+    });
+
+    t.register('show vlan', 'Display VLAN information', () => {
+      return this.showVlanFull(this.d());
+    });
+
+    t.registerGreedy('show vlan id', 'Display a VLAN by id', (args) => {
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return '% Invalid VLAN id';
+      return this.showVlanBrief(this.d(), { id });
+    });
+
+    t.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
+      return this.showVlanBrief(this.d(), { name: args[0] });
+    });
+  }
+
+  private registerVtpShowCommands(t: CommandTrie): void {
+    t.register('show vtp password', 'Display the VTP password', () => {
+      const cfg = this.requireVtp().getConfig();
+      return cfg.password
+        ? `VTP Password: ${cfg.password}`
+        : 'The VTP password is not configured.';
+    });
+    t.register('show vtp status', 'Display VTP status', () => {
+      const cfg = this.requireVtp().getConfig();
+      const numVlans = this.d().getVLANs().size;
+      const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
+      const updaterIp = cfg.lastUpdaterIdentity;
+      const modifiedAt = cfg.lastUpdateTimestamp ? this.formatVtpTimestamp(cfg.lastUpdateTimestamp) : '0-0-00 00:00:00';
+      return [
+        `VTP Version capable             : 1 to 2`,
+        `VTP version running             : ${cfg.version}`,
+        `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
+        `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
+        `VTP Traps Generation            : Disabled`,
+        `Device ID                       : ${deviceId}`,
+        `Configuration last modified by ${updaterIp} at ${modifiedAt}`,
+        `Local updater ID is ${updaterIp} on interface Vl1 (lowest numbered VLAN interface found)`,
+        ``,
+        `Feature VLAN:`,
+        `--------------`,
+        `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}${cfg.version === 3 && cfg.primaryServer ? ', Primary Server' : ''}`,
+        `Maximum VLANs supported locally : ${cfg.version === 3 ? 4094 : 1005}`,
+        `Number of existing VLANs        : ${numVlans}`,
+        `Configuration Revision          : ${cfg.revision}`,
+      ].join('\n');
+    });
+    t.register('show vtp counters', 'Display VTP counters', () => {
+      return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
+    });
+    t.register('show vtp devices', 'Display VTP devices in the domain', () => {
+      const cdp = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+      const switches = (cdp?.getNeighbors() ?? []).filter(n => n.remoteType.startsWith('switch'));
+      if (switches.length === 0) {
+        return 'Retrieving device ID with revision > 0 from the ring...\nNo device found.';
+      }
+      const lines = [
+        'Retrieving information from the VTP domain...',
+        '',
+        'Device ID          Platform           Local Interface',
+        '----------------   ----------------   ----------------',
+      ];
+      for (const n of switches) {
+        lines.push(`${n.remoteHost.padEnd(19)}${n.remotePlatform.padEnd(19)}${this.abbreviateInterface(n.localPort)}`);
+      }
+      return lines.join('\n');
+    });
   }
 
   private registerStpShowCommands(t: CommandTrie): void {
@@ -2488,36 +2553,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return formatInvalidInput(23);
       }
       return this.showQueuingInterface(name);
-    });
-
-    this.privilegedTrie.register('show vlan summary', 'Display VLAN count summary', () => {
-      const ids = [...this.d().getVLANs().keys()];
-      const extended = ids.filter((id) => id >= 1006).length;
-      const normal = ids.length - extended;
-      return [
-        `Number of existing VLANs          : ${ids.length}`,
-        `Number of existing VTP VLANs      : ${normal}`,
-        `Number of existing extended VLANs : ${extended}`,
-      ].join('\n');
-    });
-
-    this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
-      return this.showVlanBrief(this.d());
-    });
-
-    this.privilegedTrie.register('show vlan', 'Display VLAN information', () => {
-      return this.showVlanFull(this.d());
-    });
-
-    this.privilegedTrie.registerGreedy('show vlan id', 'Display a VLAN by id', (args) => {
-      const id = parseInt(args[0], 10);
-      if (isNaN(id)) return '% Invalid VLAN id';
-      return this.showVlanBrief(this.d(), { id });
-    });
-
-    this.privilegedTrie.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      return this.showVlanBrief(this.d(), { name: args[0] });
     });
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
