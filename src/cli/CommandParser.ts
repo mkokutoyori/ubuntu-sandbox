@@ -1,5 +1,6 @@
 import { argumentAccepts, resolveEnumValue } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
+import type { ReachabilityOptions } from './CommandTable';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
 
 export type ParseResult =
@@ -108,14 +109,15 @@ export function keywordMatches(
 }
 
 export function subtreeReachable(
-  node: TreeNode, table: CommandTable, session: CliSession, modeStrict = false,
+  node: TreeNode, table: CommandTable, session: CliSession,
+  options: ReachabilityOptions = {},
 ): boolean {
-  if (node.spec && table.isReachable(node.spec, session, modeStrict)) return true;
+  if (node.spec && table.isReachable(node.spec, session, options)) return true;
   if (node.argumentChild
-    && subtreeReachable(node.argumentChild, table, session, modeStrict)) return true;
+    && subtreeReachable(node.argumentChild, table, session, options)) return true;
 
   for (const child of node.children.values()) {
-    if (subtreeReachable(child, table, session, modeStrict)) return true;
+    if (subtreeReachable(child, table, session, options)) return true;
   }
   return false;
 }

@@ -1,4 +1,6 @@
 import type { CommandSpec } from '../CommandTable';
+import type { ArgumentSpec } from '../ArgumentTypes';
+import type { CliSession } from '../CliSession';
 
 export type TrieAction = (args: string[], raw?: string) => string;
 
@@ -68,6 +70,9 @@ export interface SpecFromTrieOptions {
   restDescription?: string;
   restDescriptionFor?: (path: string) => string | undefined;
   restLiteralFor?: (path: string) => string | undefined;
+  argumentFor?: (path: string) => ArgumentSpec | null | undefined;
+  hiddenFor?: (path: string) => boolean;
+  reachableWhenFor?: (path: string) => ((session: CliSession) => boolean) | undefined;
   skip?: (path: string) => boolean;
   keywordsFor?: (path: string) => ReadonlyArray<{ keyword: string; description: string }> | undefined;
 }
@@ -79,23 +84,28 @@ export function specsFromTrieRegistrations(
   const restName = options.restName ?? 'reste';
   const specs: CommandSpec[] = [];
   for (const entry of collectRegistrations(register)) {
-    if (entry.hidden) continue;
     if (options.skip?.(entry.path)) continue;
+    const cache = entry.hidden || options.hiddenFor?.(entry.path) === true;
+    const contexte = options.reachableWhenFor?.(entry.path);
     const words = entry.path.split(/\s+/).filter(Boolean);
     const declaredLabel = options.restDescriptionFor?.(entry.path)
       ?? options.restDescription;
     const restLiteral = options.restLiteralFor?.(entry.path);
-    const path: CommandSpec['path'] = entry.greedy
-      ? [...words, {
-        name: restName, type: 'REST' as const, optional: true,
-        description: declaredLabel ?? entry.description,
-        ...(restLiteral ? { literal: restLiteral } : {}),
-        ...(declaredLabel === undefined && restLiteral === undefined
-          ? { values: [] } : {}),
-      }]
-      : [...words];
+    const declaredArgument = options.argumentFor?.(entry.path);
+    const reste: ArgumentSpec = {
+      name: restName, type: 'REST', optional: true,
+      description: declaredLabel ?? entry.description,
+      ...(restLiteral ? { literal: restLiteral } : {}),
+      ...(declaredLabel === undefined && restLiteral === undefined
+        ? { values: [] } : {}),
+    };
+    const argument = declaredArgument === undefined
+      ? (entry.greedy ? reste : null) : declaredArgument;
+    const path: CommandSpec['path'] = argument === null
+      ? [...words] : [...words, argument];
+    const nomValeur = argument === null ? restName : argument.name;
     const run = (prefix: readonly string[]) => (_session: unknown, args: Record<string, string>) => {
-      const rest = String(args[restName] ?? '').trim();
+      const rest = String(args[nomValeur] ?? '').trim();
       const argv = [...prefix, ...(rest.length === 0 ? [] : rest.split(/\s+/))];
       return entry.action(argv, [...words, ...argv].join(' '));
     };
@@ -105,6 +115,8 @@ export function specsFromTrieRegistrations(
       description: entry.description,
       modes: options.modes,
       minPrivilege: options.minPrivilege,
+      ...(cache ? { hidden: true } : {}),
+      ...(contexte ? { reachableWhen: contexte } : {}),
       run: run([]) as CommandSpec['run'],
     });
     for (const sub of entry.keywords ?? options.keywordsFor?.(entry.path) ?? []) {
@@ -117,6 +129,8 @@ export function specsFromTrieRegistrations(
         description: sub.description,
         modes: options.modes,
         minPrivilege: options.minPrivilege,
+        ...(cache ? { hidden: true } : {}),
+        ...(contexte ? { reachableWhen: contexte } : {}),
         run: run([sub.keyword]) as CommandSpec['run'],
       });
     }
