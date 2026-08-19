@@ -42,3 +42,22 @@ export function serialNumberOf(name: string): string {
     (total, letter) => (total * 31 + letter.charCodeAt(0)) % 100000000, 7);
   return `FGVMEV${String(digits).padStart(10, '0')}`;
 }
+
+export interface HaWiringHost {
+  serial(): string;
+  now(): number;
+  sendFrame(iface: string, frame: EthernetFrame): void;
+  port(iface: string): { getMAC(): MACAddress; isConnected(): boolean } | undefined;
+  sessions(): SessionTable;
+}
+
+export function buildFirewallHa(host: HaWiringHost): FirewallHa {
+  return new FirewallHa({
+    serial: () => host.serial(),
+    now: () => host.now(),
+    sendFrame: (iface, frame) => { host.sendFrame(iface, frame); },
+    interfaceMac: (iface) => host.port(iface)?.getMAC(),
+    interfaceUp: (iface) => host.port(iface)?.isConnected() === true,
+    sessions: () => host.sessions(),
+  });
+}

@@ -181,6 +181,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       parent: object.effective('interface')[0],
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
     });
+    if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
   },
 };
 
@@ -260,12 +261,32 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       renderOrder: 71,
       help: 'DHCP IP range configuration.',
       attributes: [
+        { ...word('id', 'Range identifier.'), readOnly: true },
         address('start-ip', 'Start of IP range.'),
         address('end-ip', 'End of IP range.'),
       ],
     },
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyDhcpScope({
+      id: object.key,
+      enabled: object.effective('status')[0] !== 'disable',
+      iface: object.effective('interface')[0] ?? '',
+      defaultGateway: object.effective('default-gateway')[0] ?? '0.0.0.0',
+      netmask: object.effective('netmask')[0] ?? '0.0.0.0',
+      dnsServers: [object.effective('dns-server1')[0] ?? '']
+        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      domain: object.effective('domain')[0] ?? '',
+      leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
+      ranges: object.childEntries('ip-range').map(range => ({
+        startIp: range.effective('start-ip')[0] ?? '0.0.0.0',
+        endIp: range.effective('end-ip')[0] ?? '0.0.0.0',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDhcpScope(key);
+  },
 };
 
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
