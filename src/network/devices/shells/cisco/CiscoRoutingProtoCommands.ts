@@ -19,7 +19,10 @@ import type { RoutingConfigRepository }
 import { parseRedistribute, upsertRedistribute }
   from '../../inspection/config/RoutingConfigRepository';
 import type { CommandSpec } from '@/cli/CommandTable';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import { collectRegistrations, specsFromTrieRegistrations }
+  from '@/cli/commands/trieAdapter';
 import { showIpProtocols } from './CiscoShowCommands';
 import {
   showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
@@ -999,23 +1002,69 @@ Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string }>>
 
 const ROUTING_PROTO_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
   'show ip bgp': ['A.B.C.D', 'Network in the BGP routing table to display'],
-  'show ip bgp neighbors': ['A.B.C.D', 'Neighbor to display information about'],
   'show ip protocols vrf': ['WORD', 'VRF name'],
   'show ip eigrp interfaces': ['WORD', 'Interface name'],
 };
 
+const BGP_NEIGHBORS_PATH = 'show ip bgp neighbors';
+
+const BGP_NEIGHBOR_ADDRESS: ArgumentSpec = {
+  name: 'neighbor', type: 'IP_ADDR', optional: true,
+  description: 'Neighbor to display information about',
+};
+
+const BGP_NEIGHBOR_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'advertised-routes', description: 'Routes advertised to this neighbor' },
+  { keyword: 'routes', description: 'Routes learned from this neighbor' },
+];
+
+function bgpNeighborSpecs(action: (args: string[]) => string): CommandSpec[] {
+  const words = BGP_NEIGHBORS_PATH.split(' ');
+  const lire = (args: Record<string, string>): string =>
+    String(args[BGP_NEIGHBOR_ADDRESS.name] ?? '').trim();
+
+  const specs: CommandSpec[] = [{
+    id: words.join('-'),
+    path: [...words, BGP_NEIGHBOR_ADDRESS],
+    description: 'Display BGP neighbors',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: ((_session: unknown, args: Record<string, string>) => {
+      const adresse = lire(args);
+      return action(adresse.length === 0 ? [] : [adresse]);
+    }) as CommandSpec['run'],
+  }];
+
+  for (const vue of BGP_NEIGHBOR_VIEWS) {
+    specs.push({
+      id: [...words, vue.keyword].join('-'),
+      path: [...words, BGP_NEIGHBOR_ADDRESS, vue.keyword],
+      description: vue.description,
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      run: ((_session: unknown, args: Record<string, string>) =>
+        action([lire(args), vue.keyword])) as CommandSpec['run'],
+    });
+  }
+  return specs;
+}
+
 export function routingProtoShowSpecs(
   ctx: CiscoShellContext, repo: RoutingConfigRepository,
 ): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerRoutingProtoShow(
-      collector as unknown as CommandTrie, ctx, repo),
-    {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[0],
-      keywordsFor: (path) => ROUTING_PROTO_SHOW_KEYWORDS[path],
-    },
-  );
+  const register = (collector: SpecCollector) => registerRoutingProtoShow(
+    collector as unknown as CommandTrie, ctx, repo);
+
+  const specs = specsFromTrieRegistrations(register, {
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    skip: (path) => path === BGP_NEIGHBORS_PATH,
+    restDescriptionFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[1],
+    restLiteralFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[0],
+    keywordsFor: (path) => ROUTING_PROTO_SHOW_KEYWORDS[path],
+  });
+
+  const voisins = collectRegistrations(register)
+    .find((entry) => entry.path === BGP_NEIGHBORS_PATH);
+  return voisins ? [...specs, ...bgpNeighborSpecs(voisins.action)] : specs;
 }

@@ -129,6 +129,34 @@ describe('l\'argument est ANNONCE la ou la commande en lit un', () => {
       .toContain('Neighbor to display information about');
   });
 
+  it('les deux vues du voisin viennent APRES son adresse, comme sur IOS',
+    async () => {
+      const device = await avecBgp();
+      const nu = device.cliHelp('show ip bgp neighbors ');
+      expect(nu).not.toContain('advertised-routes');
+      const apres = device.cliHelp('show ip bgp neighbors 10.0.0.2 ');
+      expect(apres).toContain('advertised-routes');
+      expect(apres).toContain('routes');
+    });
+
+  it('sans adresse, la vue du voisin est refusee', async () => {
+    expect(await (await avecBgp()).executeCommand('show ip bgp neighbors advertised-routes'))
+      .toContain('% Invalid input');
+  });
+
+  it('la tabulation garde l\'adresse deja tapee', async () => {
+    expect((await avecBgp()).cliTabCandidates('show ip bgp neighbors 10.0.0.2 adv'))
+      .toEqual(['show ip bgp neighbors 10.0.0.2 advertised-routes']);
+  });
+
+  it('les deux vues comptent les prefixes du voisin nomme', async () => {
+    const device = await avecBgp();
+    expect(await device.executeCommand('show ip bgp neighbors 10.0.0.2 advertised-routes'))
+      .toContain('Total number of prefixes');
+    expect(await device.executeCommand('show ip bgp neighbors 10.0.0.2 routes'))
+      .toContain('Total number of prefixes');
+  });
+
   it('`show ip eigrp interfaces ?` annonce l\'interface', async () => {
     expect((await privilegie()).cliHelp('show ip eigrp interfaces '))
       .toContain('Interface name');

@@ -4742,12 +4742,13 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private cheminCanonique(
     table: CommandTable, ligne: string, session: CliSession | null,
   ): string[] | null {
-    const mots = ligne.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const parcourus = ligne.endsWith(' ') ? mots : mots.slice(0, -1);
+    const tapes = ligne.trim().split(/\s+/).filter(Boolean);
+    const parcourus = ligne.endsWith(' ') ? tapes : tapes.slice(0, -1);
 
     let node = table.rootNode();
     const canonique: string[] = [];
-    for (const mot of parcourus) {
+    for (const tape of parcourus) {
+      const mot = tape.toLowerCase();
       const enfant = session
         ? uniqueChild(node, mot, table, session)
         : CiscoShellBase.enfantUnique(node, mot);
@@ -4759,6 +4760,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       const argument = node.argumentChild;
       if (argument?.argument && argumentAccepts(argument.argument, mot)) {
         node = argument;
+        canonique.push(tape);
         continue;
       }
       return null;
