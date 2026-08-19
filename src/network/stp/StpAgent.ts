@@ -700,6 +700,9 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   runningConfigGlobalLines(): string[] {
     const out: string[] = [];
     if (!this.config.enabled) out.push('no spanning-tree vlan 1');
+    if (this.config.mode !== 'stp') {
+      out.push(`spanning-tree mode ${this.config.mode === 'mstp' ? 'mst' : 'rapid-pvst'}`);
+    }
     if (this.config.bridgePriority !== 32768) {
       out.push(`spanning-tree vlan 1 priority ${this.config.bridgePriority}`);
     }
@@ -719,6 +722,38 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     if (this.config.uplinkFast) out.push('spanning-tree uplinkfast');
     if (this.config.backboneFast) out.push('spanning-tree backbonefast');
     if (this.pathcostMethod === 'long') out.push('spanning-tree pathcost method long');
+    for (const vlan of this.configuredVlans()) {
+      const prio = this.vlanPriority.get(vlan);
+      if (prio !== undefined) out.push(`spanning-tree vlan ${vlan} priority ${prio}`);
+      const hello = this.vlanHello.get(vlan);
+      if (hello !== undefined) out.push(`spanning-tree vlan ${vlan} hello-time ${hello}`);
+      const maxAge = this.vlanMaxAge.get(vlan);
+      if (maxAge !== undefined) out.push(`spanning-tree vlan ${vlan} max-age ${maxAge}`);
+      const fwd = this.vlanForwardDelay.get(vlan);
+      if (fwd !== undefined) out.push(`spanning-tree vlan ${vlan} forward-time ${fwd}`);
+    }
+    out.push(...this.runningConfigMstLines());
+    return out;
+  }
+
+  private configuredVlans(): number[] {
+    const vlans = new Set<number>([
+      ...this.vlanPriority.keys(), ...this.vlanHello.keys(),
+      ...this.vlanMaxAge.keys(), ...this.vlanForwardDelay.keys(),
+    ]);
+    vlans.delete(1);
+    return [...vlans].sort((a, b) => a - b);
+  }
+
+  runningConfigMstLines(): string[] {
+    const r = this.mstRegion;
+    if (!r.name && r.revision === 0 && r.instances.size === 0) return [];
+    const out = ['spanning-tree mst configuration'];
+    if (r.name) out.push(` name ${r.name}`);
+    if (r.revision !== 0) out.push(` revision ${r.revision}`);
+    for (const [instance, vlans] of [...r.instances].sort((a, b) => a[0] - b[0])) {
+      out.push(` instance ${instance} vlan ${vlans}`);
+    }
     return out;
   }
 

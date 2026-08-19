@@ -70,7 +70,6 @@ const MODE_BLOCK = /^(interface|router|line|vlan|archive|event manager applet|ro
 const NEVER_SERIALIZED: ReadonlyArray<RegExp> = [
   /^crypto key (generate|zeroize)\b/,
   /^service dhcp$/,
-  /^ip routing$/,
   /^ip cef$/,
 ];
 
