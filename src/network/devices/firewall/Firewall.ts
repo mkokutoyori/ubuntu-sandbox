@@ -51,7 +51,7 @@ import {
   arpFrame, buildEgressFrame, type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
-import type { DhcpScope, FirewallDhcp } from './l3/FirewallDhcp';
+import type { FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -93,6 +93,7 @@ import type { FirewallSession, SessionCloseReason } from './session/SessionTable
 import type { SecurityRule } from './model/SecurityRule';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
+import { SyslogCollectorTable } from './logging/SyslogCollectors';
 import {
   projectLoggingOntoSyslogAgent,
 } from '../../syslog/loggingProjection';
@@ -126,6 +127,7 @@ export class Firewall extends Equipment {
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
   private readonly syslog: SyslogAgent;
+  private readonly syslogCollectors: SyslogCollectorTable;
   private readonly boundPolicyInterfaces = new Set<string>();
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
   private readonly capture = new PacketCapture();
@@ -184,6 +186,7 @@ export class Firewall extends Equipment {
 
     const now = options.now ?? (() => Date.now());
     this.syslog = new SyslogAgent(this, () => this.getBus());
+    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
       deviceId: this.id,
@@ -446,10 +449,9 @@ export class Firewall extends Equipment {
   now(): number { return this.services.now(); }
   getLoggingConfig(): LoggingConfig { return this.logging; }
   getSyslogAgent(): SyslogAgent { return this.syslog; }
+  getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
 
-  syncSyslogAgent(): void {
-    projectLoggingOntoSyslogAgent(this.logging, this.syslog);
-  }
+  syncSyslogAgent(): void { projectLoggingOntoSyslogAgent(this.logging, this.syslog); }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
     emitFirewallEvent({
@@ -460,9 +462,7 @@ export class Firewall extends Equipment {
     }, event, facts);
   }
 
-  clearTranslations(): number {
-    return clearVdomTranslations(this.vdoms.all());
-  }
+  clearTranslations(): number { return clearVdomTranslations(this.vdoms.all()); }
 
   setSchedule(schedule: ScheduleObject, vdom?: string): boolean {
     return this.getVdom(vdom).schedules.upsert(schedule);

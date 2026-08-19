@@ -490,7 +490,7 @@ export class FortiShell {
   }
 
   private logFormat(): FortiLogFormat {
-    const declared = this.tree.setting('log syslogd', 'format')[0];
+    const declared = this.tree.setting('log syslogd setting', 'format')[0];
     if (declared === 'csv' || declared === 'cef' || declared === 'rfc5424') return declared;
     return 'default';
   }

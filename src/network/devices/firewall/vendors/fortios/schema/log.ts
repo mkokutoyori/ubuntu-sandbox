@@ -21,16 +21,16 @@ const FORMATS = [
   { keyword: 'rfc5424', description: 'RFC 5424 syslog format.' },
 ];
 
-function syslogCollector(
-  path: readonly string[], renderOrder: number, help: string,
+function syslogSetting(
+  collector: string, renderOrder: number,
 ): FortiTableSpec {
   return {
-    path,
+    path: ['log', collector, 'setting'],
     kind: 'object',
     scope: 'vdom',
     accessGroup: 'loggrp',
     renderOrder,
-    help,
+    help: 'Global settings for remote syslog server.',
     attributes: [
       enable('status', 'Enable/disable remote syslog logging.'),
       word('server', 'Address of the remote syslog server.'),
@@ -53,36 +53,52 @@ function syslogCollector(
         ['system interface']),
       enable('enc-algorithm', 'Enable/disable reliable syslogging with TLS encryption.'),
     ],
-    children: [
-      {
-        path: ['filter'],
-        kind: 'object',
-        scope: 'vdom',
-        accessGroup: 'loggrp',
-        renderOrder: renderOrder + 1,
-        help: 'Filters for remote system server.',
-        attributes: [
-          choice('severity', 'Lowest severity level to log.', SEVERITIES, 'information'),
-          enable('forward-traffic', 'Enable/disable forward traffic logging.', true),
-          enable('local-traffic', 'Enable/disable local in or out traffic logging.'),
-          enable('multicast-traffic', 'Enable/disable multicast traffic logging.', true),
-          enable('sniffer-traffic', 'Enable/disable sniffer traffic logging.', true),
-        ],
-        onCommit() {},
-      },
-    ],
-    onCommit() {},
+    onCommit(object, context) {
+      return context.device.applySyslogCollector({
+        collector,
+        enabled: object.effective('status')[0] === 'enable',
+        server: object.effective('server')[0] ?? '',
+        port: Number.parseInt(object.effective('port')[0] ?? '514', 10),
+        transport: object.effective('mode')[0] === 'udp' ? 'udp' : 'tcp',
+        facility: object.effective('facility')[0] ?? 'local7',
+        sourceInterface: object.effective('interface')[0] ?? '',
+      });
+    },
   };
 }
 
-export const LOG_SYSLOGD = syslogCollector(
-  ['log', 'syslogd'], 300, 'Global settings for remote syslog server.');
-export const LOG_SYSLOGD2 = syslogCollector(
-  ['log', 'syslogd2'], 310, 'Global settings for remote syslog server.');
-export const LOG_SYSLOGD3 = syslogCollector(
-  ['log', 'syslogd3'], 320, 'Global settings for remote syslog server.');
-export const LOG_SYSLOGD4 = syslogCollector(
-  ['log', 'syslogd4'], 330, 'Global settings for remote syslog server.');
+function syslogFilter(collector: string, renderOrder: number): FortiTableSpec {
+  return {
+    path: ['log', collector, 'filter'],
+    kind: 'object',
+    scope: 'vdom',
+    accessGroup: 'loggrp',
+    renderOrder,
+    help: 'Filters for remote system server.',
+    attributes: [
+      choice('severity', 'Lowest severity level to log.', SEVERITIES, 'information'),
+      enable('forward-traffic', 'Enable/disable forward traffic logging.', true),
+      enable('local-traffic', 'Enable/disable local in or out traffic logging.'),
+      enable('multicast-traffic', 'Enable/disable multicast traffic logging.', true),
+      enable('sniffer-traffic', 'Enable/disable sniffer traffic logging.', true),
+    ],
+    onCommit(object, context) {
+      return context.device.applySyslogFilter({
+        collector,
+        severity: object.effective('severity')[0] ?? 'information',
+        forwardTraffic: object.effective('forward-traffic')[0] !== 'disable',
+        localTraffic: object.effective('local-traffic')[0] === 'enable',
+      });
+    },
+  };
+}
+
+export const SYSLOG_COLLECTORS: readonly FortiTableSpec[] = Object.freeze([
+  syslogSetting('syslogd', 300), syslogFilter('syslogd', 301),
+  syslogSetting('syslogd2', 310), syslogFilter('syslogd2', 311),
+  syslogSetting('syslogd3', 320), syslogFilter('syslogd3', 321),
+  syslogSetting('syslogd4', 330), syslogFilter('syslogd4', 331),
+]);
 
 export const LOG_MEMORY_SETTING: FortiTableSpec = {
   path: ['log', 'memory', 'setting'],
@@ -142,10 +158,7 @@ export const LOG_SETTING: FortiTableSpec = {
 };
 
 export const LOG_SPECS: readonly FortiTableSpec[] = Object.freeze([
-  LOG_SYSLOGD,
-  LOG_SYSLOGD2,
-  LOG_SYSLOGD3,
-  LOG_SYSLOGD4,
+  ...SYSLOG_COLLECTORS,
   LOG_MEMORY_SETTING,
   LOG_MEMORY_GLOBAL_SETTING,
   LOG_SETTING,

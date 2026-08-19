@@ -531,7 +531,7 @@ describe('les journaux', () => {
   it('`set format csv` change la mise en forme', async () => {
     const { sh, poste } = await laboratoire();
     run(sh, 'config log setting', 'set fwpolicy-implicit-log enable', 'end');
-    run(sh, 'config log syslogd', 'set format csv', 'end');
+    run(sh, 'config log syslogd setting', 'set format csv', 'end');
 
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
@@ -542,7 +542,7 @@ describe('les journaux', () => {
   it('`set format cef` rend un en-tete CEF', async () => {
     const { sh, poste } = await laboratoire();
     run(sh, 'config log setting', 'set fwpolicy-implicit-log enable', 'end');
-    run(sh, 'config log syslogd', 'set format cef', 'end');
+    run(sh, 'config log syslogd setting', 'set format cef', 'end');
 
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
@@ -554,7 +554,7 @@ describe('les journaux', () => {
   it('`set format rfc5424` rend une priorite et un horodatage', async () => {
     const { sh, poste } = await laboratoire();
     run(sh, 'config log setting', 'set fwpolicy-implicit-log enable', 'end');
-    run(sh, 'config log syslogd', 'set format rfc5424', 'end');
+    run(sh, 'config log syslogd setting', 'set format rfc5424', 'end');
 
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');

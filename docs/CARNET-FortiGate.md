@@ -39,6 +39,7 @@
 | **10** | **Routage dynamique — RIP et OSPF sur de vrais minuteurs** | ✅ livrée (E45) |
 | **11** | **Points restés ouverts : BGP, DHCP, NTP, horaires** | ✅ livrée (E46 à E48) |
 | **12** | **Le portail captif capture** | ✅ livrée (E49) |
+| **13** | **Les collecteurs syslog émettent** | ✅ livrée (E50) |
 
 **Mesures au dernier commit** : 1182 cas verts sur 45 fichiers du module
 pare-feu ; 407 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
@@ -322,9 +323,10 @@ syslogd[2-4]` + `filter`, `config log memory setting|global-setting`,
 - `get system performance status` ne rend **ni CPU ni mémoire** : aucun
   modèle de charge n'existe, et une constante affichée là où la vue
   promet une mesure est précisément le défaut que ce dépôt referme ;
-- les collecteurs syslog sont **configurables et n'émettent pas encore**
-  vers un vrai collecteur — `SyslogAgent` existe sur le socle, le
-  branchement du formateur FortiOS vers lui reste à faire ;
+- ~~les collecteurs syslog n'émettent pas~~ **fermé en E50** : un vrai
+  `rsyslog` reçoit la ligne dans son `/var/log/syslog`. Le chemin CLI
+  était faux au passage (`config log syslogd setting` et
+  `… filter` sont FRÈRES sur un vrai FortiGate, pas parent/enfant) ;
 - `diagnose sniffer packet` lit le tampon de capture du pare-feu, pas le
   bus de trames global : il voit ce qui traverse CE pare-feu, ce qui est
   le périmètre de la commande, mais un `any` n'inclut pas les trames
@@ -535,6 +537,7 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 8 livrée (E38). §6.9. **Socle : IKE calcule un vrai DH ; 3DES se déchiffre.** Deux affirmations du BRD corrigées après vérification. |
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
+| 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |
