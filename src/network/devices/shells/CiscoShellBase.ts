@@ -355,10 +355,21 @@ function enumeration(
 const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
   userTrie: ['user', 'privileged'],
   privilegedTrie: ['user', 'privileged'],
-  configTrie: ['config'],
-  configIfTrie: ['config-if'],
-  configLineTrie: ['config-line'],
 };
+
+/**
+ * Le nom du champ DIT le mode : `configRouterOspfTrie` porte
+ * `config-router-ospf`. Les deux arbres d'EXEC sont l'exception — ils
+ * partagent un espace de noms — et sont nommes explicitement. Une
+ * derivation qui tomberait a cote n'elague RIEN pour cet arbre, ce qui
+ * est le cote sur lequel se tromper.
+ */
+function modesDuTrie(champ: string): readonly string[] {
+  const explicite = MODE_DU_TRIE[champ];
+  if (explicite) return explicite;
+  return [champ.replace(/Trie$/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()];
+}
 
 const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
   ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
@@ -4800,6 +4811,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected socleLegends(): ReadonlyArray<[readonly string[], string]> {
     return [
       [['show', 'ip', 'http'], 'HTTP information'],
+      [['client-identifier'], 'Manual binding client identifier'],
+      [['lease'], 'Set DHCP lease duration'],
+      [['option'], 'Set a raw DHCP option'],
       [['show', 'ip', 'http', 'server'], 'HTTP server information'],
     ];
   }
@@ -4844,11 +4858,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
     for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
       if (!(valeur instanceof CommandTrie)) continue;
-      const modes = MODE_DU_TRIE[champ];
+      const modes = modesDuTrie(champ);
       const paths: string[] = [];
       for (const spec of table.specs()) {
-        if (modes !== undefined
-          && !modes.some(mode => spec.modes.includes(mode))) continue;
+        if (!modes.some(mode => spec.modes.includes(mode))) continue;
         const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
         paths.push(texte);
         if (spec.undo) paths.push(`no ${texte}`);

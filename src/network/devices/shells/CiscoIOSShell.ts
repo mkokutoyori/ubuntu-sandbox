@@ -82,7 +82,7 @@ import {
   buildConfigCommands, buildConfigIfCommands,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands,
+  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
   registerDhcpShowCommands, dhcpIpv6ShowSpecs,
@@ -252,6 +252,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...this.ipv6ExecSpecs(),
+      ...dhcpPoolSpecs(this),
       ...ospfIpv6ShowSpecs(() => this.d()),
       ...dhcpIpv6ShowSpecs(() => this.d()),
       ...pimShowSpecs(this.multicastShowContext()),

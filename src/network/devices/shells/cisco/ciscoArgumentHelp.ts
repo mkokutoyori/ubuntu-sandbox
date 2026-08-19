@@ -392,25 +392,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   ]);
 
   // ── DHCP ──
-  tries.configDhcp.describeArgs('bootfile', [WORD('file', 'Boot file name')]);
-  tries.configDhcp.describeArgs('class', [WORD('name', 'Name of the DHCP class')]);
-  tries.configDhcp.describeArgs('client-name', [WORD('name', 'Client name, without the domain')]);
-  tries.configDhcp.describeArgs('domain-name', [WORD('domain', 'Domain name given to clients')]);
-  tries.configDhcp.describeArgs('hardware-address', [MAC('Client hardware address')]);
-  tries.configDhcp.describeArgs('host', [IP('address', 'Client IP address'), { ...MASK('Client subnet mask'), optional: true }]);
-  tries.configDhcp.describeArgs('next-server', [IP('address', 'Boot server IP address')]);
-  tries.configDhcp.describeArgs('netbios-name-server', [IP('address', 'NetBIOS name server IP address')]);
-  tries.configDhcp.describeArgs('client-identifier deny', [
-    WORD('identifier', 'Client identifier to deny'),
-  ]);
-  tries.configDhcp.describeArgs('netbios-node-type', [
-    ENUM('type', 'NetBIOS node type', [
-      ['b-node', 'Broadcast node'],
-      ['h-node', 'Hybrid node'],
-      ['m-node', 'Mixed node'],
-      ['p-node', 'Peer-to-peer node'],
-    ]),
-  ]);
 
   // ── Listes d'accès nommées ──
   for (const trie of [tries.configStdNacl, tries.configExtNacl]) {
@@ -655,21 +636,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     WORD('name', 'This system\'s network name'),
   ]);
 
-  tries.configDhcp.describeArgs('network', [
-    IP('network', 'Network number'),
-    { ...MASK('Network mask'), optional: true },
-  ]);
-  tries.configDhcp.describeArgs('lease', [
-    INT('days', [0, 365], 'Days'),
-    { ...INT('hours', [0, 23], 'Hours'), optional: true },
-    { ...INT('minutes', [0, 59], 'Minutes'), optional: true },
-  ]);
-  tries.configDhcp.describeArgs('default-router', [
-    IP('address', 'Default router IP address'),
-  ]);
-  tries.configDhcp.describeArgs('dns-server', [
-    IP('address', 'DNS server IP address'),
-  ]);
 
   tries.configRouterOspf.describeArgs('router-id', [
     IP('router-id', 'OSPF router-id in IP address format'),

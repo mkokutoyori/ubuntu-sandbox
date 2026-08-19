@@ -54,7 +54,7 @@ import {
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
-import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
+import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -1881,6 +1881,15 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.registerSwitchDebugCommands();
   }
 
+  private dhcpPoolContext(): CiscoShellContext {
+    return {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      getSelectedDHCPPool: () => this.selectedDhcpPool,
+      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
+    } as unknown as CiscoShellContext;
+  }
+
   private stpShowSpecs(): CommandSpec[] {
     const register = (collector: SpecCollector) =>
       this.registerStpShowCommands(collector as unknown as CommandTrie);
@@ -1982,6 +1991,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     return [
       ...super.socleSpecs(),
       ...this.stpShowSpecs(),
+      ...dhcpPoolSpecs(this.dhcpPoolContext()),
       ...this.vlanVtpShowSpecs(),
       ...this.l2TableSpecs(),
     ];
@@ -4695,13 +4705,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // handful of accessors the pool commands actually call need to be
     // populated; the rest of CiscoShellContext is irrelevant on a
     // switch (no IPSec / routing-proto state here).
-    const dhcpCtx = {
-      r: () => this.d() as unknown as Router,
-      setMode: (m: string) => { this.mode = m as CLIMode; },
-      getSelectedDHCPPool: () => this.selectedDhcpPool,
-      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
-    } as unknown as CiscoShellContext;
-    buildConfigDhcpCommands(this.configDhcpTrie, dhcpCtx);
+    buildConfigDhcpCommands(this.configDhcpTrie, this.dhcpPoolContext());
 
     // ── AAA / TACACS+ / RADIUS / protection force brute ──
     // Un Catalyst 2960 connait toute cette famille ; elle vivait dans le

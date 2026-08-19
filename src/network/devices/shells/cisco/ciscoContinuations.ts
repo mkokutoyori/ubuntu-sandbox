@@ -46,10 +46,6 @@ export const SOCLE: ContinuationTable = {
   configArchiveLog: {
     'notify syslog contenttype': ['xml'],
   },
-  configDhcp: {
-    'lease': ['infinite'],
-    'option': ['ascii', 'hex'],
-  },
   configRadiusServer: {
     'address': ['acct-port', 'auth-port', 'ipv4'],
   },
