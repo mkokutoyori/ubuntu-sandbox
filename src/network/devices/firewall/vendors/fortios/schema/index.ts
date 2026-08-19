@@ -16,11 +16,13 @@ import { USER_SPECS } from './user';
 import { ADMIN_SPECS } from './admin';
 import { VPN_SPECS } from './vpn';
 import { SDWAN_SPECS } from './sdwan';
+import { HA_SPECS } from './ha';
 
 export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VDOM_SPECS,
   ...SYSTEM_SPECS,
   ...SDWAN_SPECS,
+  ...HA_SPECS,
   FIREWALL_ADDRESS,
   FIREWALL_ADDRGRP,
   FIREWALL_SERVICE_CUSTOM,

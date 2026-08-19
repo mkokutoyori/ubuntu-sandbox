@@ -39,6 +39,7 @@ import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
   renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
+import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
 import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
@@ -47,6 +48,8 @@ import {
 export { FORTI_COMMAND_FAIL };
 
 export const FORTI_BUILD = '2662';
+
+const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
 export class FortiShell {
   private readonly tree: FortiConfigTree;
@@ -81,6 +84,9 @@ export class FortiShell {
       authorize: (spec, intent) => this.authorizeSpec(spec, intent),
       principal: () => this.adminName ?? '',
     });
+    this.fw.bindHaConfiguration(
+      () => this.clusterConfigurationText(),
+      (text) => { this.absorbClusterConfiguration(text); });
     this.fw.setTrafficLogger({
       onSessionOpened: (session, rule) => {
         if (!shouldLogTrafficStart(rule)) return;
@@ -103,6 +109,29 @@ export class FortiShell {
         this.fw.getLogStore().append(deniedLog(context, this.fw.now()));
       },
     });
+  }
+
+  private clusterConfigurationText(): string {
+    const kept: string[] = [];
+    let insideHa = false;
+
+    for (const line of renderWholeConfig(this.tree, { full: false })) {
+      const trimmed = line.trim();
+      if (trimmed === 'config system ha') { insideHa = true; continue; }
+      if (insideHa) { if (trimmed === 'end') insideHa = false; continue; }
+      if (PER_MEMBER_LINE.test(trimmed)) continue;
+      kept.push(line);
+    }
+    return kept.join('\n');
+  }
+
+  private absorbClusterConfiguration(text: string): void {
+    if (text.length === 0) return;
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      this.socle.execute(trimmed);
+    }
   }
 
   getPrompt(): string {
@@ -291,6 +320,12 @@ export class FortiShell {
       },
       applySdwan(patch) {
         return fw.applySdwan(patch);
+      },
+      applyHa(patch) {
+        return fw.applyHa(patch);
+      },
+      hasInterface(name) {
+        return fw.getPort(name) !== undefined;
       },
       removeStaticRoute(id) {
         fw.getRouteTable().removeStaticById(id);
@@ -574,6 +609,13 @@ export class FortiShell {
       });
     }
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
+    if (path === 'system ha status') {
+      return renderHaStatus(this.fw.getHa(), {
+        model: 'FortiGate-VM64',
+        hostname: this.fw.getName(),
+        now: this.fw.now(),
+      });
+    }
     if (path === 'system interface' || path === 'system interface physical') {
       return renderInterfaceStatus(this.fw.getInterfaceTable());
     }
@@ -603,11 +645,7 @@ export class FortiShell {
     });
   }
 
-  private serialNumber(): string {
-    const digits = this.fw.getName().split('').reduce(
-      (total, letter) => (total * 31 + letter.charCodeAt(0)) % 100000000, 7);
-    return `FGVMEV${String(digits).padStart(10, '0')}`;
-  }
+  private serialNumber(): string { return this.fw.serialNumber(); }
 
   private diagDeps() {
     return {
@@ -626,9 +664,28 @@ export class FortiShell {
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
     if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
+    if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` is not implemented in this simulator.`,
     );
+  }
+
+  private executeHa(rest: readonly string[]): string {
+    const ha = this.fw.getHa();
+    if (ha.getConfiguration().mode === 'standalone') {
+      return FortiMessages.commandFail('this unit is not part of a cluster.');
+    }
+
+    if (rest[0] === 'failover' && rest[1] === 'set') { ha.forceFailover(); return ''; }
+    if (rest[0] === 'manage') {
+      const index = Number.parseInt(rest[1] ?? '', 10);
+      const peers = ha.knownPeers();
+      if (!Number.isFinite(index) || index < 1 || index > peers.length) {
+        return FortiMessages.commandFail(`no cluster member ${rest[1] ?? ''}.`);
+      }
+      return `Connecting to ${peers[index - 1].serial}...`;
+    }
+    return FortiMessages.unknownPath(`ha ${rest.join(' ')}`);
   }
 
   private logsImplicitDeny(): boolean {

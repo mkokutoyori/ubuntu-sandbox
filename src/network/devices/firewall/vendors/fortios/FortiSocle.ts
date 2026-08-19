@@ -27,6 +27,10 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'sys'], 'System diagnostics.'],
   [['diagnose', 'sys', 'session'], 'Session table diagnostics.'],
   [['diagnose', 'sys', 'sdwan'], 'SD-WAN diagnostics.'],
+  [['diagnose', 'sys', 'ha'], 'Cluster diagnostics.'],
+  [['diagnose', 'sys', 'ha', 'checksum'], 'Configuration checksums.'],
+  [['execute', 'ha'], 'Cluster operations.'],
+  [['execute', 'ha', 'failover'], 'Force a failover.'],
   [['diagnose', 'debug'], 'Debug facility.'],
   [['diagnose', 'debug', 'flow'], 'Trace the path a packet follows.'],
   [['diagnose', 'firewall'], 'Firewall diagnostics.'],
@@ -207,6 +211,9 @@ export class FortiSocle {
     const run = (words: readonly string[]) =>
       (_s: CliSession, args: Readonly<Record<string, string>>): string =>
         this.deps.diagnose([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
+    const run2 = (words: readonly string[]) =>
+      (_s: CliSession, args: Readonly<Record<string, string>>): string =>
+        this.deps.runExecute([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
 
     return [
       this.withArgument('diagnose sys session list',
@@ -231,6 +238,18 @@ export class FortiSocle {
       this.plain('diagnose sys sdwan service',
         ['diagnose', 'sys', 'sdwan', 'service'], 'List the SD-WAN service rules.',
         () => this.deps.diagnose(['sys', 'sdwan', 'service'])),
+      this.plain('diagnose sys ha status', ['diagnose', 'sys', 'ha', 'status'],
+        'Show the cluster state.', () => this.deps.diagnose(['sys', 'ha', 'status'])),
+      this.plain('diagnose sys ha checksum show',
+        ['diagnose', 'sys', 'ha', 'checksum', 'show'],
+        'Compare the members configuration checksums.',
+        () => this.deps.diagnose(['sys', 'ha', 'checksum', 'show'])),
+      this.plain('execute ha failover set', ['execute', 'ha', 'failover', 'set'],
+        'Give the primary role up.', () => this.deps.runExecute(['ha', 'failover', 'set'])),
+      this.withArgument('execute ha manage',
+        ['execute', 'ha', 'manage', rest('rest', 'Cluster member index.')],
+        'Open the CLI of another cluster member.',
+        run2(['ha', 'manage'])),
       this.plain('diagnose debug reset', ['diagnose', 'debug', 'reset'],
         'Reset the debug settings.', () => this.deps.diagnose(['debug', 'reset'])),
       this.plain('diagnose debug enable', ['diagnose', 'debug', 'enable'],
