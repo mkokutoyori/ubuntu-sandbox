@@ -8,6 +8,7 @@ import { readCertificatePem, readPrivateKeyPem } from '../../../vpn/CertificateS
 
 type VpnHandlers = Pick<FortiCommitDevice,
   'applyPhase1' | 'removePhase1' | 'applyPhase2' | 'removePhase2'
+  | 'applySslVpnSettings'
   | 'applyLocalCertificate' | 'removeLocalCertificate'
   | 'applyCaCertificate' | 'removeCaCertificate'>;
 
@@ -38,6 +39,9 @@ export function vpnCommitHandlers(fw: Firewall): VpnHandlers {
     removePhase1(name) {
       fw.getTunnelTable().removePhase1(name);
       fw.syncIpsecTunnels();
+    },
+    applySslVpnSettings(settings) {
+      return fw.applySslVpnSettings(settings);
     },
     applyLocalCertificate(entry) {
       const certificate = readCertificatePem(entry.certificatePem);

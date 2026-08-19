@@ -6,7 +6,7 @@ import {
   rewriteSrcIP,
 } from '../../../nat/rewrite';
 import type { ObjectStore } from '../model/ObjectStore';
-import type { SessionTranslation } from '../session/SessionTable';
+import type { FirewallSession, SessionTranslation } from '../session/SessionTable';
 import type { FlowDirection } from '../session/TcpStateMachine';
 import { tryIpToUint32, uint32ToIp } from '../../../core/ip';
 import type {
@@ -429,4 +429,20 @@ function portMatches(
   if (criterion === undefined) return true;
   if (criterion.protocol !== 0 && criterion.protocol !== packet.protocol) return false;
   return port >= criterion.from && port <= criterion.to;
+}
+
+export function clearVdomTranslations(vdoms: Iterable<{
+  sessions: { view(): { all(): readonly FirewallSession[] }; close(s: FirewallSession, r: 'clear'): void };
+  nat: { release(translation: NonNullable<FirewallSession['translation']>): void };
+}>): number {
+  let cleared = 0;
+  for (const vdom of vdoms) {
+    for (const session of vdom.sessions.view().all()) {
+      if (session.translation === undefined) continue;
+      vdom.nat.release(session.translation);
+      vdom.sessions.close(session, 'clear');
+      cleared++;
+    }
+  }
+  return cleared;
 }

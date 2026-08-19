@@ -1976,6 +1976,94 @@ d'extraire le calcul.
 
 ---
 
+### E43 — SD-WAN : la sonde mesure, et la sélection suit la mesure
+
+`sdwan/{SdwanTable,SdwanHealthProbe,SdwanService}.ts`,
+`diag/TraceRing.ts`, `schema/sdwan.ts`, `diag/sdwanRenderer.ts` (tous
+neufs), `Firewall.ts`, `FortiSocle.ts`, `FortiDiagCommands.ts` —
+**14 cas** neufs plus 3 specs Playwright. **13 des 14** tombent avant
+correctif.
+
+`config system sdwan` n'avait aucun schéma. La matière existait : le
+pare-feu route, `Cable` porte `packetLossRate` — ce qui rend le seuil de
+perte DÉMONTRABLE plutôt que décoratif — et le pipeline a déjà un étage
+de route de politique, qui est exactement ce qu'une règle de service
+SD-WAN est.
+
+**La sonde envoie de VRAIS échos**, depuis l'interface du membre vers le
+serveur déclaré. Le pare-feu n'avait pas de client d'écho ICMP — il
+RÉPOND, il n'appelle pas — et c'est la brique qui manquait ;
+`SdwanHealthProbe` la fournit et compte ce qui revient. Le moteur IP SLA
+du dépôt n'a **pas** été adopté ici, et c'est une décision mesurée :
+`IpSlaHost` est un port LARGE (`tracePath`, `computeKeyDigest`,
+`sendTrap`, `fetchHttp`, `sendIcmpv6Echo`…) dont un pare-feu ne remplirait
+presque rien, et ce qu'une sonde de santé SD-WAN a besoin de savoir tient
+en une phrase — « combien d'échos sont revenus ». Écrire l'adaptateur
+aurait produit plus de code inerte que de code utile.
+
+**Le laboratoire est à deux fournisseurs qui mènent au MÊME serveur** par
+une dorsale commune, et ce n'est pas un détail : au premier essai la
+sonde visait l'adresse du premier fournisseur, donc le second membre
+échouait pour une raison de topologie et non de produit. Une bascule qui
+« marche » parce que le second lien ne mène nulle part ne prouve rien.
+
+**Les seuils de latence et de gigue sont acceptés, stockés, rendus — et
+jamais franchis**, la livraison de trame étant synchrone. C'est la même
+limite qu'IP SLA a mesurée et écrite ; l'aide de l'attribut la nomme, de
+sorte qu'un apprenant lise la contrainte au lieu de la découvrir. Le
+seuil de PERTE, lui, est mesuré pour de bon.
+
+**Le format de `diagnose sys sdwan health-check` est celui de FortiOS**,
+relevé sur la documentation Fortinet : un membre mort n'affiche NI
+latence NI gigue, ce qu'une implantation écrite de mémoire aurait raté.
+
+**Trois garde-fous ont mordu, et chacun avait raison.** G2 a attrapé une
+vraie faute d'architecture : le socle importait un type de la couche
+vendeur (`FortiSdwanPatch`) — la configuration SD-WAN appartient au
+socle, et c'est FortiOS qui s'y projette. G8 a attrapé un rang de rendu
+en double, G3 a imposé l'extraction de `diag/TraceRing.ts`.
+
+### E42 — SSL-VPN en mode web : le portail écoute, et il présente un certificat
+
+`vpn/SslVpnPortal.ts`, `auth/FirewallPortals.ts` (neufs), `schema/vpn.ts`,
+`schema/types.ts`, `commit/vpnCommits.ts`, `Firewall.ts` — **13 cas**
+neufs plus 3 specs Playwright. **12 des 13** tombent avant correctif.
+
+`config vpn ssl settings` n'avait aucun schéma, donc toute la famille
+tombait dans le vide — un apprenant qui suit un tutoriel FortiGate
+s'arrête à la première ligne. La matière, elle, était là : le pare-feu
+porte une pile TCP, un serveur HTTP/1.1 réel (le portail
+d'authentification de la phase 7), un serveur TLS réel, et depuis E40 un
+magasin où `set servercert` peut puiser. **Ce chantier est donc le
+premier consommateur du précédent** : le certificat qu'un opérateur
+importe sert vraiment à quelque chose.
+
+**Le défaut trouvé en le mesurant dépasse largement le SSL-VPN** : un
+pare-feu ne remettait **AUCUN segment TCP à sa propre pile**.
+`deliverLocally` répondait à l'écho ICMP, puis à IKE depuis E39, et
+jetait tout le reste. Conséquence : **tout écouteur que le pare-feu porte
+était sourd**, le portail d'authentification de la phase 7 compris — dont
+aucun test n'avait jamais joint le port depuis le fil, tous visant un
+serveur situé DERRIÈRE le pare-feu. Une fonction livrée, testée, et
+injoignable.
+
+**Un portail déclaré sans certificat ne s'ouvre PAS en clair**, il est
+refusé : la même règle que `tlsMaterialFor` applique côté nginx/Apache,
+et pour la même raison — tout ce qui suit traite le port 10443 comme
+chiffré, donc y servir du clair serait la pire réponse disponible.
+
+**`tunnel-mode` est REFUSÉ en nommant la brique absente** (il faudrait un
+client FortiClient qui n'existe pas ici) plutôt que rangé inerte. Le mode
+web, lui, est servi pour de bon : `curl -k https://<fgt>:10443/` rend la
+page de connexion, et `curl -v` montre le certificat configuré.
+
+**`authentication-rule` décide qui entre** : un membre d'un groupe nommé
+par une règle est admis, un utilisateur qu'aucune règle ne nomme est
+refusé — sans règle, personne n'entre, ce qui est le défaut sûr.
+
+Trois extractions imposées par G3 : `auth/FirewallPortals.ts`,
+`nat/clearVdomTranslations`, et le déplacement des ports du portail.
+
 ### E41 — `dpd` et `nattraversal` agissent, et `diagnose` rapporte une mesure
 
 `schema/vpn.ts`, `schema/types.ts`, `commit/vpnCommits.ts`,
@@ -2173,6 +2261,32 @@ progrès ; le test le dit maintenant dans les deux sens.
 **Quatre extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
 `commit/objectCommits.ts`, `FirewallAgents.ts`, `l3/FirewallEgress.ts`,
 `logging/emitFirewallEvent.ts`.
+
+---
+
+## Périmètre pris — FortiOS phase 9a (SD-WAN)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `sdwan/` (nouveau répertoire —
+table des membres, sondes de santé, sélection de service), et le
+**client d'écho ICMP** que le pare-feu n'a pas (il répond, il n'appelle
+pas).
+
+**Fichiers FortiOS pris** : `schema/sdwan.ts` (neuf),
+`schema/index.ts`, `commit/sdwanCommits.ts` (neuf),
+`diag/sdwanRenderer.ts` (neuf), `Firewall.ts`.
+
+**Réutilisations imposées, à ne pas réécrire** : `Cable.packetLossRate`
+(c'est ce qui rend le seuil de perte mesurable), `RouteTable` et le
+`policyRouteStage` du pipeline pour la sélection, `events/Scheduler`.
+
+**Ce que la phase ne prend PAS, et pourquoi** : les seuils de **latence**
+et de **gigue** sont acceptés et jamais franchis — la livraison de trame
+est synchrone, donc le temps d'aller-retour est nul en temps virtuel.
+C'est la même limite qu'IP SLA a mesurée et écrite ; la nier ici ferait
+diverger deux modules sur le même fait. La HA (`config system ha`) est
+une livraison distincte, 9b.
 
 ---
 
