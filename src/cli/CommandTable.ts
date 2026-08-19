@@ -183,6 +183,10 @@ export class CommandTable {
     return session.privilegeLevel >= required;
   }
 
+  admetLeMode(spec: CommandSpec, session: CliSession): boolean {
+    return this.modeAdmits(spec, session);
+  }
+
   private modeAdmits(spec: CommandSpec, session: CliSession): boolean {
     if (spec.modes.includes(session.mode)) return true;
     return session.configAncestors().some(mode => spec.modes.includes(mode));

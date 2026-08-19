@@ -49,7 +49,12 @@ export function parseCommand(
     }
     if (matches.length === 1) { node = matches[0]; continue; }
 
-    const argument = node.argumentChild;
+    // La place d'argument appartient au MODE qui l'a declaree : sans ce
+    // filtre, le glouton d'un sous-mode avalait le mot d'un autre mode
+    // et rendait « incomplete » une frappe que celui-ci refuse.
+    const argument = node.argumentChild
+      && subtreeReachable(node.argumentChild, table, session)
+      ? node.argumentChild : undefined;
     if (argument?.argument?.type === 'REST') {
       args[argument.argument.name] = tokens.slice(index).join(' ');
       node = argument;
@@ -70,7 +75,11 @@ export function parseCommand(
     return { status: 'invalid', token, position: index };
   }
 
-  const spec = node.spec;
+  // Une commande d'un AUTRE mode n'est pas la commande de celui-ci : la
+  // traiter comme telle faisait repondre `% Invalid input` la ou le
+  // noeud porte, dans ce mode, des continuations parfaitement valides.
+  const spec = node.spec && table.admetLeMode(node.spec, session)
+    ? node.spec : undefined;
   if (!spec) return { status: 'incomplete', consumed: tokens.length };
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };

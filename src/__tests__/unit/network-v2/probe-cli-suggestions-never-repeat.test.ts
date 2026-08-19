@@ -301,7 +301,13 @@ async function walkTab(
   const visit = async (prefix: string, typed: string[], left: number): Promise<void> => {
     if (left === 0 || seenPrefix.has(prefix)) return;
     seenPrefix.add(prefix);
-    const already = new Set(typed.map((t) => t.toLowerCase()));
+    // Même exemption que la marche `?` : un `do` ou `default` de tête
+    // n'appartient pas à la commande qu'il porte, donc le revoir plus
+    // loin n'est pas une répétition — `default escape-character default`
+    // est une vraie ligne IOS.
+    const already = new Set(
+      typed.filter((t, i) => !(i === 0 && /^(do|default)$/i.test(t)))
+        .map((t) => t.toLowerCase()));
     // Ce que `?` connaît à cette place sert de plan de marche ; ce que
     // Tab en fait est ce qu'on vérifie.
     for (const k of keywords(cli.cliHelp(prefix))) {

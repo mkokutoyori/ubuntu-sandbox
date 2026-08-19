@@ -4,12 +4,18 @@ import type { CliSession } from '../CliSession';
 
 export type TrieAction = (args: string[], raw?: string) => string;
 
+export interface AdapterKeyword {
+  readonly keyword: string;
+  readonly description: string;
+  readonly argument?: ArgumentSpec | null;
+}
+
 export interface CollectedRegistration {
   path: string;
   description: string;
   action: TrieAction;
   greedy: boolean;
-  keywords?: ReadonlyArray<{ keyword: string; description: string }>;
+  keywords?: ReadonlyArray<AdapterKeyword>;
   hidden: boolean;
 }
 
@@ -28,7 +34,7 @@ export interface SpecCollector {
 
 function normaliseKeywords(
   keywords?: ReadonlyArray<{ keyword: string; description: string } | string>,
-): ReadonlyArray<{ keyword: string; description: string }> | undefined {
+): ReadonlyArray<AdapterKeyword> | undefined {
   if (!keywords) return undefined;
   return keywords.map(k => typeof k === 'string' ? { keyword: k, description: '' } : k);
 }
@@ -74,7 +80,28 @@ export interface SpecFromTrieOptions {
   hiddenFor?: (path: string) => boolean;
   reachableWhenFor?: (path: string) => ((session: CliSession) => boolean) | undefined;
   skip?: (path: string) => boolean;
-  keywordsFor?: (path: string) => ReadonlyArray<{ keyword: string; description: string }> | undefined;
+  /**
+   * Le mot-cle du trie qui porte la NEGATION de toute la famille.
+   *
+   * Le trie enregistre `no` comme un mot-cle de plus, dont le
+   * gestionnaire lit le mot suivant ; le socle, lui, traite `no` comme
+   * un MODIFICATEUR et cherche `undo` sur la commande positive. Sans
+   * cette traduction, une famille migree perd sa negation entiere : le
+   * chemin `no <kw>` n'existe plus et `no <kw>` cherche un `undo` que
+   * personne n'a declare.
+   */
+  undoFrom?: string;
+  undoFor?: (path: string) => boolean;
+  undoDescriptionFor?: (path: string) => string | undefined;
+  keywordsFor?: (path: string) => ReadonlyArray<AdapterKeyword> | undefined;
+}
+
+function argumentsFille(
+  sub: AdapterKeyword, place: ArgumentSpec | null,
+  args: Record<string, string>,
+): string[] {
+  const valeur = place === null ? '' : String(args[place.name] ?? '').trim();
+  return [sub.keyword, ...(valeur.length === 0 ? [] : valeur.split(/\s+/))];
 }
 
 export function specsFromTrieRegistrations(
@@ -82,8 +109,13 @@ export function specsFromTrieRegistrations(
   options: SpecFromTrieOptions,
 ): CommandSpec[] {
   const restName = options.restName ?? 'reste';
+  const collected = collectRegistrations(register);
+  const negation = options.undoFrom === undefined
+    ? undefined
+    : collected.find(entry => entry.path === options.undoFrom);
   const specs: CommandSpec[] = [];
-  for (const entry of collectRegistrations(register)) {
+  for (const entry of collected) {
+    if (negation !== undefined && entry.path === negation.path) continue;
     if (options.skip?.(entry.path)) continue;
     const cache = entry.hidden || options.hiddenFor?.(entry.path) === true;
     const contexte = options.reachableWhenFor?.(entry.path);
@@ -118,20 +150,67 @@ export function specsFromTrieRegistrations(
       ...(cache ? { hidden: true } : {}),
       ...(contexte ? { reachableWhen: contexte } : {}),
       run: run([]) as CommandSpec['run'],
+      ...(options.undoDescriptionFor?.(entry.path) === undefined ? {} : {
+        undoDescription: options.undoDescriptionFor(entry.path),
+      }),
+      ...(negation === undefined
+        || options.undoFor?.(entry.path) === false ? {} : {
+        undo: ((_session: unknown, args: Record<string, string>) => {
+          const nom = argument === null ? restName : argument.name;
+          const valeur = String(args[nom] ?? '').trim();
+          const argv = [...words,
+            ...(valeur.length === 0 ? [] : valeur.split(/\s+/))];
+          return negation.action(argv, [negation.path, ...argv].join(' '));
+        }) as CommandSpec['undo'],
+      }),
     });
+    // Une NEGATION ne reprend pas la valeur que la forme positive exige :
+    // `no password` se tape seul. Le chemin nu n'existe alors QUE
+    // negativement — le socle porte deja cette notion — sinon `password`
+    // tout court passerait pour une commande complete.
+    if (negation !== undefined && argument !== null && argument.optional !== true) {
+      specs.push({
+        id: `no-${words.join('-')}`,
+        path: [...words],
+        description: entry.description,
+        modes: options.modes,
+        minPrivilege: options.minPrivilege,
+        existsOnlyNegated: true,
+        ...(cache ? { hidden: true } : {}),
+        ...(contexte ? { reachableWhen: contexte } : {}),
+        run: (() => '') as CommandSpec['run'],
+        undo: ((_session: unknown) =>
+          negation.action([...words], [negation.path, ...words].join(' '))
+        ) as CommandSpec['undo'],
+      });
+    }
+
     for (const sub of entry.keywords ?? options.keywordsFor?.(entry.path) ?? []) {
+      const placeFille: ArgumentSpec | null = sub.argument === undefined
+        ? { name: restName, type: 'REST', optional: true,
+          description: sub.description, values: [] }
+        : sub.argument;
       specs.push({
         id: [...words, sub.keyword].join('-'),
-        path: [...words, sub.keyword, {
-          name: restName, type: 'REST' as const, optional: true,
-          description: options.restDescription ?? sub.description,
-        }],
+        path: placeFille === null
+          ? [...words, sub.keyword]
+          : [...words, sub.keyword, placeFille],
         description: sub.description,
         modes: options.modes,
         minPrivilege: options.minPrivilege,
         ...(cache ? { hidden: true } : {}),
         ...(contexte ? { reachableWhen: contexte } : {}),
-        run: run([sub.keyword]) as CommandSpec['run'],
+        run: ((_session: unknown, args: Record<string, string>) => {
+          const argv = argumentsFille(sub, placeFille, args);
+          return entry.action(argv, [...words, ...argv].join(' '));
+        }) as CommandSpec['run'],
+        ...(negation === undefined
+          || options.undoFor?.(entry.path) === false ? {} : {
+          undo: ((_session: unknown, args: Record<string, string>) => {
+            const argv = [...words, ...argumentsFille(sub, placeFille, args)];
+            return negation.action(argv, [negation.path, ...argv].join(' '));
+          }) as CommandSpec['undo'],
+        }),
       });
     }
   }

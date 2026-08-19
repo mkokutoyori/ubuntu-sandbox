@@ -14,9 +14,11 @@
 
 import { CiscoFileSystem } from './cisco/CiscoFileSystem';
 import { CommandTable } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { CommandSpec, TreeNode } from '@/cli/CommandTable';
 import { showIpDhcpSpecs, type DhcpViewServer } from '@/cli/commands/show/showIpDhcp';
 import { showConfigViewSpecs } from '@/cli/commands/show/showSlice';
@@ -244,6 +246,124 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['telnet-zeroidle', 'Set TCP window 0 when connection is idle'],
   ['udp-small-servers', 'Enable small UDP servers (e.g., ECHO)'],
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
+];
+
+const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | null>> = {
+  'motd-banner': null,
+  length: { name: 'lines', type: 'INT', description: 'Number of lines on a screen', range: [0, 512] },
+  width: { name: 'characters', type: 'INT', description: 'Width of the display terminal', range: [0, 512] },
+  'session-timeout': { name: 'minutes', type: 'INT', description: 'Timeout in minutes', range: [0, 35791] },
+  'absolute-timeout': { name: 'minutes', type: 'INT', description: 'Absolute session lifetime in minutes', range: [0, 35791] },
+  rotary: { name: 'group', type: 'INT', description: 'Rotary group number', range: [1, 100] },
+  autocommand: { name: 'command', type: 'REST', optional: true, description: 'Command to execute on connection' },
+  password: { name: 'password', type: 'REST', literal: 'LINE', description: 'The UNENCRYPTED (cleartext) line password' },
+  'login-timeout': { name: 'seconds', type: 'INT', optional: true, range: [1, 300], description: 'Timeout in seconds' },
+  speed: enumeration('bps', 'Transmit and receive speeds', [
+    ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
+    ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
+    ['38400', '38400 bps'], ['57600', '57600 bps'], ['115200', '115200 bps'],
+  ]),
+  databits: enumeration('bits', 'Number of data bits per character', [
+    ['5', 'Five data bits'], ['6', 'Six data bits'],
+    ['7', 'Seven data bits'], ['8', 'Eight data bits'],
+  ]),
+  stopbits: enumeration('bits', 'Number of stop bits', [
+    ['1', 'One stop bit'], ['2', 'Two stop bits'],
+  ]),
+  parity: enumeration('parity', 'Set terminal parity', [
+    ['even', 'Even parity'], ['none', 'No parity'], ['odd', 'Odd parity'],
+  ]),
+  flowcontrol: enumeration('method', 'Set the flow control', [
+    ['hardware', 'Hardware flow control'],
+    ['none', 'Set no flow control'],
+    ['software', 'Software flow control'],
+  ]),
+  'escape-character': {
+    name: 'caractere', type: 'INT', optional: true, range: [0, 255],
+    description: 'ASCII decimal value of the escape character',
+    values: [
+      { keyword: 'break', description: 'Use the BREAK signal as the escape character' },
+      { keyword: 'default', description: 'Restore the default escape character' },
+      { keyword: 'none', description: 'Disable the escape character' },
+      { keyword: 'soft', description: 'Use a soft escape character' },
+    ],
+  },
+  'exec-timeout': { name: 'minutes', type: 'REST', optional: true, literal: '<0-35791>', description: 'Timeout in minutes' },
+};
+
+const LINE_KEYWORD_ARGUMENTS: Readonly<Record<string, ArgumentSpec>> = {
+  'privilege level': { name: 'level', type: 'INT', optional: true, description: 'Privilege level', range: [0, 15] },
+  'history size': { name: 'size', type: 'INT', optional: true, description: 'Size of history buffer', range: [0, 256] },
+};
+
+const LINE_TRANSPORT_PROTOCOLS: ArgumentSpec = {
+  name: 'protocol', type: 'ENUM', optional: true, description: 'Transport protocol',
+  values: [
+    { keyword: 'all', description: 'All protocols' },
+    { keyword: 'none', description: 'No protocols' },
+    { keyword: 'ssh', description: 'TCP/IP SSH protocol' },
+    { keyword: 'telnet', description: 'TCP/IP Telnet protocol' },
+  ],
+};
+
+const LINE_TRANSPORT_KEYWORDS:
+ReadonlyArray<{ keyword: string; description: string; argument: ArgumentSpec }> = [
+  {
+    keyword: 'input', argument: LINE_TRANSPORT_PROTOCOLS,
+    description: 'Define which protocols to use when connecting to the terminal server',
+  },
+  {
+    keyword: 'output', argument: LINE_TRANSPORT_PROTOCOLS,
+    description: 'Define which protocols to use for outgoing connections',
+  },
+];
+
+function enumeration(
+  name: string, description: string, valeurs: ReadonlyArray<readonly [string, string]>,
+): ArgumentSpec {
+  return {
+    name, type: 'ENUM', optional: true, description,
+    values: valeurs.map(([keyword, texte]) => ({ keyword, description: texte })),
+  };
+}
+
+/**
+ * Quel MODE chaque arbre porte.
+ *
+ * L'elagage des chemins migres etait aveugle au mode : il retirait de
+ * TOUS les arbres tout chemin declare au socle. Tant que les familles
+ * migrees etaient des vues (`show ...`, plusieurs mots, uniques), cela
+ * ne se voyait pas ; le premier mot-cle d'un seul mot l'a montre —
+ * `privilege`, declare pour `config-line`, effacait le `privilege exec
+ * level` de la configuration globale, une AUTRE commande du meme nom.
+ * Un arbre absent de cette table est elague comme avant.
+ */
+const MODE_DU_TRIE: Readonly<Record<string, readonly string[]>> = {
+  userTrie: ['user', 'privileged'],
+  privilegedTrie: ['user', 'privileged'],
+  configTrie: ['config'],
+  configIfTrie: ['config-if'],
+  configLineTrie: ['config-line'],
+};
+
+const LINE_KEYWORD_SUITES: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
+  ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
+  ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
+  ['privilege', [['level', 'Set the privilege level of the line']]],
+  ['exec', [['banner', 'Enable the display of the EXEC banner']]],
+  ['history', [['size', 'Set the size of the history buffer']]],
+  ['no', [
+    ['absolute-timeout', 'Clear the absolute session limit'],
+    ['escape-character', 'Restore the default escape character'],
+    ['exec', 'Disable the EXEC process'],
+    ['history', 'Disable the command history'],
+    ['login', 'Disable authentication on the line'],
+    ['logging', 'Disable synchronous logging'],
+    ['password', 'Clear the line password'],
+    ['privilege', 'Clear the privilege level'],
+  ]],
+  ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
+  ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
 ];
 
 export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
@@ -3994,6 +4114,299 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     return [entete, ...declarees.map(l => ligne(l.split(/\s+/)[2] ?? ''))].join('\n');
   }
 
+  private lineSpecs(): CommandSpec[] {
+    const suites = new Map(LINE_KEYWORD_SUITES.map(([kw, liste]) => [kw, liste]));
+    const negations = new Map(suites.get('no') ?? []);
+    return specsFromTrieRegistrations(
+      (collector) => this.registerLineCommands(collector as unknown as CommandTrie),
+      {
+        modes: ['config-line'], minPrivilege: 15,
+        undoFrom: 'no',
+        undoDescriptionFor: (path) => negations.get(path),
+        argumentFor: (path) => LINE_ARGUMENTS[path],
+        reachableWhenFor: (path) => () => this.lineKeywordAllowed(path),
+        keywordsFor: (path) => path === 'transport'
+          ? LINE_TRANSPORT_KEYWORDS
+          : suites.get(path)?.map(([keyword, description]) => ({
+          keyword, description,
+          argument: LINE_KEYWORD_ARGUMENTS[`${path} ${keyword}`],
+        })),
+      },
+    );
+  }
+
+  private registerLineTransportCommands(t: CommandTrie): void {
+    t.registerGreedy('login-timeout', 'Set login timeout', (args) => {
+      if (args.length === 0) throw new CliIncomplete();
+      const secondes = Number.parseInt(args[0], 10);
+      if (!/^\d+$/.test(args[0]) || secondes < 1 || secondes > 300) {
+        throw new CliInvalidInput({ token: args[0] });
+      }
+      const range = this.selectedVtyRange;
+      if (!range) return '';
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      dev._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last, loginTimeoutSeconds: secondes,
+      });
+      return '';
+    });
+    t.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
+      if (args.length === 0) return '% Incomplete command.';
+      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      const range = this.selectedVtyRange;
+      if (!range) {
+        if (this.selectedConsoleLine != null) {
+          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
+          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
+        }
+        return '';
+      }
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      dev._getVtyLineConfig?.().upsert({
+        first: range.first, last: range.last,
+        execTimeoutMinutes: parseInt(args[0], 10),
+        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
+      });
+      return '';
+    });
+    // `access-class <acl> {in|out}` — VTY ACL gate (§21).
+    t.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
+      this.requireLineKind('access-class');
+      const range = this.selectedVtyRange;
+      if (!range) return '';
+      if (!args[0] || !args[1]) return '% Incomplete command.';
+      const dir = args[1].toLowerCase();
+      if (dir !== 'in' && dir !== 'out') return CISCO_ERRORS.INVALID_INPUT;
+      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+      const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
+      dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
+      return '';
+    });
+    // `transport input {all|ssh|telnet|none}` — the only line directive
+    // we *do* react to today, because the sshd dispatch needs to know
+    // whether SSH is administratively allowed on the VTY. Anything we
+    // don't recognise is accepted silently, matching real IOS.
+    t.registerGreedy('transport', 'transport input/output', (args) => {
+      const dev = this.d() as unknown as {
+        _setVtyTransportInput?: (
+          t: 'ssh' | 'telnet' | 'all' | 'none',
+          range?: { first: number; last: number },
+        ) => void;
+      };
+      const dir = args[0]?.toLowerCase();
+      if (!dir) return CISCO_ERRORS.INCOMPLETE;
+      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
+      // sortantes d'un serveur de terminaux : il est accepté et
+      // n'entraîne rien ici, mais il est refusé plutôt que stocké
+      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
+      if (dir !== 'input' && dir !== 'output') return CISCO_ERRORS.INVALID_INPUT;
+      const proto = (args[1] ?? '').toLowerCase();
+      if (!proto) return '% Incomplete command.';
+      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      if (dir !== 'input') return '';
+      if (this.selectedAuxLine != null) {
+        this.auxLineTransportInput = proto;
+        return '';
+      }
+      if (typeof dev._setVtyTransportInput === 'function') {
+        dev._setVtyTransportInput(proto, this.selectedVtyRange ?? undefined);
+      }
+      return '';
+    });
+  }
+
+  private registerLineCommands(t: CommandTrie): void {
+    this.registerLineTransportCommands(t);
+    for (const kw of ['login', 'password',
+      'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
+      'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
+      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
+      'absolute-timeout', 'escape-character']) {
+      t.registerGreedy(kw, `line ${kw}`, (args, raw) => {
+        this.requireLineKind(kw);
+        const range = this.selectedVtyRange;
+        if (!range) {
+          if (this.selectedAuxLine != null) {
+            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
+            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
+            return '';
+          }
+          if (this.selectedConsoleLine == null) return '';
+          if (kw === 'password') {
+            if (!args[0]) return '% Incomplete command.';
+            let pwArgs = [...args];
+            this.consoleLinePasswordEncrypted = false;
+            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
+            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
+            this.consoleLinePassword = pwArgs.join(' ');
+            return '';
+          }
+          if (kw === 'login') {
+            const sub = args[0]?.toLowerCase();
+            if (sub === 'local') { this.consoleLineLogin = 'local'; this.consoleLineLoginAuthList = null; return ''; }
+            if (sub === 'authentication') {
+              if (!args[1]) return '% Incomplete command.';
+              this.consoleLineLogin = 'aaa';
+              this.consoleLineLoginAuthList = args[1];
+              return '';
+            }
+            this.consoleLineLogin = 'password';
+            this.consoleLineLoginAuthList = null;
+            return '';
+          }
+          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+            this.consoleLineLoggingSynchronous = true;
+            return '';
+          }
+          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+            const lvl = parseInt(args[1], 10);
+            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
+              return CISCO_ERRORS.INVALID_INPUT;
+            }
+            this.consolePrivilegeLevel(lvl);
+            return '';
+          }
+          if (kw === 'history') {
+            if ((args[0] ?? '').toLowerCase() !== 'size') return CISCO_ERRORS.INVALID_INPUT;
+            const n = parseInt(args[1] ?? '', 10);
+            if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
+            this.consoleLineHistorySize = n;
+            this.consoleLineHistoryEnabled = true;
+            this.terminalHistorySize = n;
+            this.terminalHistoryEnabled = n > 0;
+            return '';
+          }
+          if (kw === 'no') {
+            const sub = args[0]?.toLowerCase();
+            if (sub === 'history') {
+              this.consoleLineHistoryEnabled = false;
+              this.consoleLineHistorySize = null;
+              this.terminalHistorySize = 0;
+              this.terminalHistoryEnabled = false;
+              return '';
+            }
+            if (sub === 'login') {
+              this.consoleLineLoginAuthList = null;
+              if (args[1]?.toLowerCase() === 'local') {
+                this.consoleLineLogin = null;
+              } else {
+                this.consoleLineLogin = 'none';
+              }
+              return '';
+            }
+            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
+            if (sub === 'privilege') { this.consolePrivilegeLevel(null); return ''; }
+            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
+          }
+          return '';
+        }
+        if (kw === 'password' && !args[0]) return '% Incomplete command.';
+        const dev = this.d() as unknown as {
+          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
+        };
+        const update: Record<string, unknown> = { first: range.first, last: range.last };
+        if (kw === 'login') {
+          // bare `login` → authenticate with the line password; `login local`
+          // → local user DB; `login authentication …` → AAA.
+          const sub = args[0]?.toLowerCase();
+          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
+        } else if (kw === 'password') {
+          // `password [0|7] <mot>`. Le chiffre de type n'est un type que
+          // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
+          // (`args.slice(1)`), donc `password mon mot` rangeait `mot` — le
+          // premier mot du mot de passe disparaissait — et la forme
+          // `password 7 <chiffre>` rangeait le chiffre comme s'il etait le
+          // texte en clair, sans garder l'algorithme.
+          if (args[0] === '0' && args.length > 1) {
+            update.linePassword = args.slice(1).join(' ');
+            update.linePasswordAlgo = 'plain';
+          } else if (args[0] === '7' && args.length > 1) {
+            update.linePassword = args.slice(1).join(' ');
+            update.linePasswordAlgo = 'type-7';
+          } else {
+            update.linePassword = args.join(' ');
+            update.linePasswordAlgo = 'plain';
+          }
+        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
+          update.loggingSynchronous = true;
+        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
+          update.privilege = parseInt(args[1], 10);
+        } else if (kw === 'session-timeout' && args[0]) {
+          update.sessionTimeoutMinutes = parseInt(args[0], 10);
+        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
+          update.historySize = parseInt(args[1], 10);
+          update.historyEnabled = true;
+        } else if (kw === 'absolute-timeout' && args[0]) {
+          // `absolute-timeout <minutes>` : la duree MAXIMALE d'une
+          // session, activite comprise. `exec-timeout` ne borne que
+          // l'inactivite, donc un operateur qui tape sans arret n'etait
+          // jamais deconnecte — ce que cette commande existe pour
+          // empecher. Elle etait refusee.
+          const min = parseInt(args[0], 10);
+          if (!Number.isFinite(min) || min < 0) return CISCO_ERRORS.INVALID_INPUT;
+          update.absoluteTimeoutMinutes = min;
+        } else if (kw === 'escape-character' && args[0]) {
+          // `escape-character {break | <ascii> | default | none | soft}`.
+          const v = args[0].toLowerCase();
+          if (v === 'break' || v === 'default' || v === 'none' || v === 'soft') {
+            update.escapeCharacter = v;
+          } else {
+            const code = parseInt(args[0], 10);
+            if (!Number.isFinite(code) || code < 0 || code > 255) return CISCO_ERRORS.INVALID_INPUT;
+            update.escapeCharacter = String(code);
+          }
+        } else if (kw === 'length' && args[0]) {
+          update.terminalLength = parseInt(args[0], 10);
+        } else if (kw === 'width' && args[0]) {
+          update.terminalWidth = parseInt(args[0], 10);
+        } else if (kw === 'autocommand') {
+          update.autocommand = args.join(' ');
+        } else if (kw === 'motd-banner') {
+          update.motdBannerSuppressed = false;
+        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
+          update.execBannerSuppressed = false;
+        } else if (kw === 'authorization' && args[0] && args[1]) {
+          update.authorizationList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'accounting' && args[0] && args[1]) {
+          update.accountingList = `${args[0]} ${args[1]}`;
+        } else if (kw === 'speed' && args[0]) {
+          update.speedBaud = parseInt(args[0], 10);
+        } else if (kw === 'stopbits' && args[0]) {
+          update.stopbits = parseInt(args[0], 10);
+        } else if (kw === 'rotary' && args[0]) {
+          update.rotaryGroup = parseInt(args[0], 10);
+        } else if (kw === 'no' && args.length > 0) {
+          const sub = args[0]?.toLowerCase();
+          // `no password` clears the line secret (empty string → explicitly
+          // unset, distinct from "never configured"); `no login` disables auth.
+          if (sub === 'password') update.linePassword = '';
+          else if (sub === 'login') update.login = 'none';
+          // `no history` COUPE l'historique ; ce n'est pas
+          // `history size 0`, qui en demande un de taille nulle.
+          else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
+          else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
+          else if (sub === 'escape-character') update.escapeCharacter = 'default';
+          else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
+          else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
+          else if (sub === 'autocommand') update.autocommand = '';
+          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
+        }
+        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
+        // Bare `login` with no line password configured is inert on real IOS —
+        // the line refuses incoming sessions until a password is set. Echo the
+        // warning so operators (and the simulated incoming-VTY verdict) agree.
+        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
+          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
+        }
+        return '';
+      });
+    }
+  }
+
   protected showSocleSpecs(): CommandSpec[] {
     const exec = ['user', 'privileged'];
     // Les deux modes d'EXEC parce que la DELEGATION doit rester
@@ -4126,6 +4539,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...identite,
       ...administration,
       ...filtres,
+      ...this.lineSpecs(),
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,
@@ -4411,11 +4825,21 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected pruneMigratedFromTries(): void {
-    const paths = this.migratedPaths();
-    if (paths.length === 0) return;
+    const table = this.socleTable();
+    if (!table) return;
 
-    for (const value of Object.values(this as unknown as Record<string, unknown>)) {
-      if (value instanceof CommandTrie) value.prunePaths(paths);
+    for (const [champ, valeur] of Object.entries(this as unknown as Record<string, unknown>)) {
+      if (!(valeur instanceof CommandTrie)) continue;
+      const modes = MODE_DU_TRIE[champ];
+      const paths: string[] = [];
+      for (const spec of table.specs()) {
+        if (modes !== undefined
+          && !modes.some(mode => spec.modes.includes(mode))) continue;
+        const texte = CiscoShellBase.keywordPathOf(spec).join(' ');
+        paths.push(texte);
+        if (spec.undo) paths.push(`no ${texte}`);
+      }
+      if (paths.length > 0) valeur.prunePaths(paths);
     }
   }
 
@@ -4728,8 +5152,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           keyword: s.value, description: s.description, isArgument: s.isArgument,
         }));
 
-      return (negation === null ? brutes : this.suggestionsNegatives(table, ligne, brutes))
-        .map(({ keyword, description }) => ({ keyword, description }));
+      const rendues = negation === null
+        ? this.avecNegationAuPremierRang(table, ligne, brutes)
+        : this.suggestionsNegatives(table, ligne, brutes);
+      return rendues.map(({ keyword, description }) => ({ keyword, description }));
     } finally {
       this.deviceRef = precedent;
     }
@@ -4753,12 +5179,35 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * Une commande sans `undo` n'y figure pas : l'annoncer promettrait une
    * negation que l'execution refuse.
    */
+  /**
+   * `no` est propose des qu'une commande du mode sait se defaire.
+   *
+   * Le mot venait du trie, ou il etait un mot-cle comme un autre ; une
+   * famille entierement migree le perdait donc de son premier rang,
+   * alors que `no <commande>` s'execute. Il ne peut pas rejoindre les
+   * commandes universelles : celles-la n'ont pas de suite, et `no ?`
+   * doit lister ce qui se defait.
+   */
+  private avecNegationAuPremierRang(
+    table: CommandTable, ligne: string,
+    brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
+  ): Array<{ keyword: string; description: string; isArgument: boolean }> {
+    if (ligne.trim() !== '' || !this.isConfigMode()) return brutes;
+    if (brutes.some(s => s.keyword.toLowerCase() === 'no')) return brutes;
+    if (!CiscoShellBase.negationSous(table, [], this.mode)) return brutes;
+    return [...brutes, {
+      keyword: 'no', description: 'Negate a command or set its defaults',
+      isArgument: false,
+    }];
+  }
+
   private suggestionsNegatives(
     table: CommandTable, ligne: string,
     brutes: Array<{ keyword: string; description: string; isArgument: boolean }>,
   ): Array<{ keyword: string; description: string; isArgument: boolean }> {
     const amont = this.cheminCanonique(table, ligne, this.socleSession(table));
-    if (amont === null || !CiscoShellBase.negationSous(table, amont)) return [];
+    if (amont === null
+      || !CiscoShellBase.negationSous(table, amont, this.mode)) return [];
 
     return brutes.flatMap(suggestion => {
       // Une VALEUR d'argument n'a pas de chemin a elle : c'est la
@@ -4767,7 +5216,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       if (suggestion.isArgument || !/^[A-Za-z]/.test(suggestion.keyword)) return [suggestion];
 
       const chemin = [...amont, suggestion.keyword.toLowerCase()];
-      const spec = CiscoShellBase.negationSous(table, chemin);
+      const spec = CiscoShellBase.negationSous(table, chemin, this.mode);
       if (!spec) return [];
 
       const nomme = CiscoShellBase.keywordPathOf(spec).length === chemin.length;
@@ -4787,12 +5236,16 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   private static negationSous(
-    table: CommandTable, chemin: readonly string[],
+    table: CommandTable, chemin: readonly string[], mode?: string,
   ): CommandSpec | null {
     let dessous: CommandSpec | null = null;
 
     for (const spec of table.specs()) {
       if (!spec.undo) continue;
+      // Une commande d'un AUTRE mode ne se defait pas ici : sans ce
+      // filtre, `no ?` proposait dans un sous-mode les negations de tous
+      // les autres.
+      if (mode !== undefined && !spec.modes.includes(mode)) continue;
       const mots = CiscoShellBase.keywordPathOf(spec);
       if (mots.length < chemin.length) continue;
       if (!chemin.every((mot, rang) => mots[rang] === mot)) continue;
@@ -7241,190 +7694,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       { keyword: 'aux', description: 'Auxiliary line', leadingOnly: true },
     ]);
 
-    for (const kw of ['login', 'password',
-      'logging', 'privilege', 'no', 'speed', 'stopbits', 'databits', 'parity',
-      'flowcontrol', 'session-timeout', 'history', 'length', 'width', 'authorization',
-      'accounting', 'rotary', 'autocommand', 'motd-banner', 'exec',
-      'absolute-timeout', 'escape-character']) {
-      this.configLineTrie.registerGreedy(kw, `line ${kw}`, (args, raw) => {
-        this.requireLineKind(kw);
-        const range = this.selectedVtyRange;
-        if (!range) {
-          if (this.selectedAuxLine != null) {
-            if (kw === 'exec') { this.auxLineNoExec = false; return ''; }
-            if (kw === 'no' && args[0]?.toLowerCase() === 'exec') { this.auxLineNoExec = true; return ''; }
-            return '';
-          }
-          if (this.selectedConsoleLine == null) return '';
-          if (kw === 'password') {
-            if (!args[0]) return '% Incomplete command.';
-            let pwArgs = [...args];
-            this.consoleLinePasswordEncrypted = false;
-            if (pwArgs[0] === '0') pwArgs = pwArgs.slice(1);
-            else if (pwArgs[0] === '7') { this.consoleLinePasswordEncrypted = true; pwArgs = pwArgs.slice(1); }
-            this.consoleLinePassword = pwArgs.join(' ');
-            return '';
-          }
-          if (kw === 'login') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'local') { this.consoleLineLogin = 'local'; this.consoleLineLoginAuthList = null; return ''; }
-            if (sub === 'authentication') {
-              if (!args[1]) return '% Incomplete command.';
-              this.consoleLineLogin = 'aaa';
-              this.consoleLineLoginAuthList = args[1];
-              return '';
-            }
-            this.consoleLineLogin = 'password';
-            this.consoleLineLoginAuthList = null;
-            return '';
-          }
-          if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-            this.consoleLineLoggingSynchronous = true;
-            return '';
-          }
-          if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-            const lvl = parseInt(args[1], 10);
-            if (!Number.isFinite(lvl) || lvl < 0 || lvl > 15) {
-              return CISCO_ERRORS.INVALID_INPUT;
-            }
-            this.consolePrivilegeLevel(lvl);
-            return '';
-          }
-          if (kw === 'history') {
-            if ((args[0] ?? '').toLowerCase() !== 'size') return CISCO_ERRORS.INVALID_INPUT;
-            const n = parseInt(args[1] ?? '', 10);
-            if (!Number.isFinite(n) || n < 0 || n > 256) return CISCO_ERRORS.INVALID_INPUT;
-            this.consoleLineHistorySize = n;
-            this.consoleLineHistoryEnabled = true;
-            this.terminalHistorySize = n;
-            this.terminalHistoryEnabled = n > 0;
-            return '';
-          }
-          if (kw === 'no') {
-            const sub = args[0]?.toLowerCase();
-            if (sub === 'history') {
-              this.consoleLineHistoryEnabled = false;
-              this.consoleLineHistorySize = null;
-              this.terminalHistorySize = 0;
-              this.terminalHistoryEnabled = false;
-              return '';
-            }
-            if (sub === 'login') {
-              this.consoleLineLoginAuthList = null;
-              if (args[1]?.toLowerCase() === 'local') {
-                this.consoleLineLogin = null;
-              } else {
-                this.consoleLineLogin = 'none';
-              }
-              return '';
-            }
-            if (sub === 'password') { this.consoleLinePassword = null; return ''; }
-            if (sub === 'privilege') { this.consolePrivilegeLevel(null); return ''; }
-            if (sub === 'logging') { this.consoleLineLoggingSynchronous = false; return ''; }
-          }
-          return '';
-        }
-        if (kw === 'password' && !args[0]) return '% Incomplete command.';
-        const dev = this.d() as unknown as {
-          _getVtyLineConfig?: () => { upsert: (p: object) => { requiresPasswordButUnset?: () => boolean } };
-        };
-        const update: Record<string, unknown> = { first: range.first, last: range.last };
-        if (kw === 'login') {
-          // bare `login` → authenticate with the line password; `login local`
-          // → local user DB; `login authentication …` → AAA.
-          const sub = args[0]?.toLowerCase();
-          update.login = sub === 'local' ? 'local' : sub === 'authentication' ? 'aaa' : 'password';
-        } else if (kw === 'password') {
-          // `password [0|7] <mot>`. Le chiffre de type n'est un type que
-          // s'il est ecrit ; il etait retire INCONDITIONNELLEMENT
-          // (`args.slice(1)`), donc `password mon mot` rangeait `mot` — le
-          // premier mot du mot de passe disparaissait — et la forme
-          // `password 7 <chiffre>` rangeait le chiffre comme s'il etait le
-          // texte en clair, sans garder l'algorithme.
-          if (args[0] === '0' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'plain';
-          } else if (args[0] === '7' && args.length > 1) {
-            update.linePassword = args.slice(1).join(' ');
-            update.linePasswordAlgo = 'type-7';
-          } else {
-            update.linePassword = args.join(' ');
-            update.linePasswordAlgo = 'plain';
-          }
-        } else if (kw === 'logging' && args[0]?.toLowerCase() === 'synchronous') {
-          update.loggingSynchronous = true;
-        } else if (kw === 'privilege' && args[0]?.toLowerCase() === 'level' && args[1]) {
-          update.privilege = parseInt(args[1], 10);
-        } else if (kw === 'session-timeout' && args[0]) {
-          update.sessionTimeoutMinutes = parseInt(args[0], 10);
-        } else if (kw === 'history' && args[0]?.toLowerCase() === 'size' && args[1]) {
-          update.historySize = parseInt(args[1], 10);
-          update.historyEnabled = true;
-        } else if (kw === 'absolute-timeout' && args[0]) {
-          // `absolute-timeout <minutes>` : la duree MAXIMALE d'une
-          // session, activite comprise. `exec-timeout` ne borne que
-          // l'inactivite, donc un operateur qui tape sans arret n'etait
-          // jamais deconnecte — ce que cette commande existe pour
-          // empecher. Elle etait refusee.
-          const min = parseInt(args[0], 10);
-          if (!Number.isFinite(min) || min < 0) return CISCO_ERRORS.INVALID_INPUT;
-          update.absoluteTimeoutMinutes = min;
-        } else if (kw === 'escape-character' && args[0]) {
-          // `escape-character {break | <ascii> | default | none | soft}`.
-          const v = args[0].toLowerCase();
-          if (v === 'break' || v === 'default' || v === 'none' || v === 'soft') {
-            update.escapeCharacter = v;
-          } else {
-            const code = parseInt(args[0], 10);
-            if (!Number.isFinite(code) || code < 0 || code > 255) return CISCO_ERRORS.INVALID_INPUT;
-            update.escapeCharacter = String(code);
-          }
-        } else if (kw === 'length' && args[0]) {
-          update.terminalLength = parseInt(args[0], 10);
-        } else if (kw === 'width' && args[0]) {
-          update.terminalWidth = parseInt(args[0], 10);
-        } else if (kw === 'autocommand') {
-          update.autocommand = args.join(' ');
-        } else if (kw === 'motd-banner') {
-          update.motdBannerSuppressed = false;
-        } else if (kw === 'exec' && args[0]?.toLowerCase() === 'banner') {
-          update.execBannerSuppressed = false;
-        } else if (kw === 'authorization' && args[0] && args[1]) {
-          update.authorizationList = `${args[0]} ${args[1]}`;
-        } else if (kw === 'accounting' && args[0] && args[1]) {
-          update.accountingList = `${args[0]} ${args[1]}`;
-        } else if (kw === 'speed' && args[0]) {
-          update.speedBaud = parseInt(args[0], 10);
-        } else if (kw === 'stopbits' && args[0]) {
-          update.stopbits = parseInt(args[0], 10);
-        } else if (kw === 'rotary' && args[0]) {
-          update.rotaryGroup = parseInt(args[0], 10);
-        } else if (kw === 'no' && args.length > 0) {
-          const sub = args[0]?.toLowerCase();
-          // `no password` clears the line secret (empty string → explicitly
-          // unset, distinct from "never configured"); `no login` disables auth.
-          if (sub === 'password') update.linePassword = '';
-          else if (sub === 'login') update.login = 'none';
-          // `no history` COUPE l'historique ; ce n'est pas
-          // `history size 0`, qui en demande un de taille nulle.
-          else if (sub === 'history' && args.length === 1) update.historyEnabled = false;
-          else if (sub === 'absolute-timeout') update.absoluteTimeoutMinutes = 0;
-          else if (sub === 'escape-character') update.escapeCharacter = 'default';
-          else if (sub === 'motd-banner') update.motdBannerSuppressed = true;
-          else if (sub === 'exec' && args[1]?.toLowerCase() === 'banner') update.execBannerSuppressed = true;
-          else if (sub === 'autocommand') update.autocommand = '';
-          update.removed = (raw ?? `no ${args.join(' ')}`).trim();
-        }
-        const line = dev._getVtyLineConfig?.().upsert(update as Parameters<NonNullable<ReturnType<NonNullable<typeof dev._getVtyLineConfig>>['upsert']>>[0]);
-        // Bare `login` with no line password configured is inert on real IOS —
-        // the line refuses incoming sessions until a password is set. Echo the
-        // warning so operators (and the simulated incoming-VTY verdict) agree.
-        if (kw === 'login' && update.login === 'password' && line?.requiresPasswordButUnset?.()) {
-          return `% Login disabled on line vty ${range.first} ${range.last}, until 'password' is set`;
-        }
-        return '';
-      });
-    }
     // Les vingt mots-clés ci-dessus partagent UN handler, et
     // `autoContinuations` lit le corps d'un handler pour deviner ses
     // suites : chacun des vingt se voyait donc proposer l'union des
@@ -7433,54 +7702,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // et chaque suite ci-dessous est celle que ce handler DISPATCHE
     // vraiment, pas celle qu'IOS documente : annoncer une forme que la
     // machine refuse ensuite serait le défaut inverse.
-    const suitesDeLigne: ReadonlyArray<readonly [string, ReadonlyArray<readonly [string, string]>]> = [
-      ['login', [['authentication', 'Use an AAA method list'], ['local', 'Use the local user database']]],
-      ['logging', [['synchronous', 'Synchronize logging output with EXEC output']]],
-      ['privilege', [['level', 'Set the privilege level of the line']]],
-      ['exec', [['banner', 'Enable the display of the EXEC banner']]],
-      ['history', [['size', 'Set the size of the history buffer']]],
-      ['escape-character', [
-        ['break', 'Use the BREAK signal as the escape character'],
-        ['default', 'Restore the default escape character'],
-        ['none', 'Disable the escape character'],
-        ['soft', 'Use a soft escape character'],
-      ]],
-      ['no', [
-        ['absolute-timeout', 'Clear the absolute session limit'],
-        ['escape-character', 'Restore the default escape character'],
-        ['exec', 'Disable the EXEC process'],
-        ['history', 'Disable the command history'],
-        ['login', 'Disable authentication on the line'],
-        ['logging', 'Disable synchronous logging'],
-        ['password', 'Clear the line password'],
-        ['privilege', 'Clear the privilege level'],
-      ]],
-      ['authorization', [['commands', 'Authorize commands'], ['exec', 'Authorize EXEC sessions']]],
-      ['accounting', [['commands', 'Account for commands'], ['connection', 'Account for connections'], ['exec', 'Account for EXEC sessions']]],
-    ];
-    for (const [kw, suites] of suitesDeLigne) {
-      this.configLineTrie.addCompletionKeywords(kw,
-        suites.map(([keyword, description]) => ({ keyword, description })));
-    }
-    this.configLineTrie.describeArgs('privilege level', [
-      { name: 'level', type: 'INT', description: 'Privilege level', range: [0, 15] },
-    ]);
-    this.configLineTrie.describeArgs('history size', [
-      { name: 'size', type: 'INT', description: 'Size of history buffer', range: [0, 256] },
-    ]);
-    for (const [kw, name, description, range] of [
-      ['length', 'lines', 'Number of lines on a screen', [0, 512]],
-      ['width', 'characters', 'Width of the display terminal', [0, 512]],
-      ['session-timeout', 'minutes', 'Timeout in minutes', [0, 35791]],
-      ['absolute-timeout', 'minutes', 'Absolute session lifetime in minutes', [0, 35791]],
-      ['rotary', 'group', 'Rotary group number', [1, 100]],
-    ] as ReadonlyArray<readonly [string, string, string, readonly [number, number]]>) {
-      this.configLineTrie.describeArgs(kw, [{ name, type: 'INT', description, range }]);
-    }
-    this.configLineTrie.describeArgs('autocommand', [
-      { name: 'command', type: 'STRING', description: 'Command to execute on connection' },
-    ]);
-    this.configLineTrie.takesNoArgument('motd-banner');
 
     // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
     // so show running-config can echo it back exactly.
@@ -7582,92 +7803,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * tout : `commands configure include hostname` porte sur une commande
      * de configuration, qui n'est dans aucun arbre exec.
      */
-    this.configLineTrie.setCompletionFilter((path, keyword) =>
-      this.lineKeywordAllowed(path.length > 0 ? path[0] : keyword));
     // `login-timeout <secondes>` : le delai laisse pour s'identifier,
     // distinct de `exec-timeout` qui compte l'inactivite APRES la
     // connexion. La commande d'IOS etait refusee.
-    this.configLineTrie.registerGreedy('login-timeout', 'Set login timeout', (args) => {
-      if (args.length === 0) throw new CliIncomplete();
-      const secondes = Number.parseInt(args[0], 10);
-      if (!/^\d+$/.test(args[0]) || secondes < 1 || secondes > 300) {
-        throw new CliInvalidInput({ token: args[0] });
-      }
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last, loginTimeoutSeconds: secondes,
-      });
-      return '';
-    });
-    this.configLineTrie.registerGreedy('exec-timeout', 'Set line exec timeout', (args) => {
-      if (args.length === 0) return '% Incomplete command.';
-      if (!/^\d+$/.test(args[0]) || (args[1] !== undefined && !/^\d+$/.test(args[1]))) {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      const range = this.selectedVtyRange;
-      if (!range) {
-        if (this.selectedConsoleLine != null) {
-          this.consoleLineExecTimeoutMin = parseInt(args[0], 10);
-          this.consoleLineExecTimeoutSec = parseInt(args[1] ?? '0', 10);
-        }
-        return '';
-      }
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      dev._getVtyLineConfig?.().upsert({
-        first: range.first, last: range.last,
-        execTimeoutMinutes: parseInt(args[0], 10),
-        execTimeoutSeconds: parseInt(args[1] ?? '0', 10),
-      });
-      return '';
-    });
-    // `access-class <acl> {in|out}` — VTY ACL gate (§21).
-    this.configLineTrie.registerGreedy('access-class', 'Apply ACL to VTY', (args) => {
-      this.requireLineKind('access-class');
-      const range = this.selectedVtyRange;
-      if (!range) return '';
-      if (!args[0] || !args[1]) return '% Incomplete command.';
-      const dir = args[1].toLowerCase();
-      if (dir !== 'in' && dir !== 'out') return CISCO_ERRORS.INVALID_INPUT;
-      const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-      const field = dir === 'out' ? 'accessClassOut' : 'accessClassIn';
-      dev._getVtyLineConfig?.().upsert({ first: range.first, last: range.last, [field]: args[0] });
-      return '';
-    });
-    // `transport input {all|ssh|telnet|none}` — the only line directive
-    // we *do* react to today, because the sshd dispatch needs to know
-    // whether SSH is administratively allowed on the VTY. Anything we
-    // don't recognise is accepted silently, matching real IOS.
-    this.configLineTrie.registerGreedy('transport', 'transport input/output', (args) => {
-      const dev = this.d() as unknown as {
-        _setVtyTransportInput?: (
-          t: 'ssh' | 'telnet' | 'all' | 'none',
-          range?: { first: number; last: number },
-        ) => void;
-      };
-      const dir = args[0]?.toLowerCase();
-      if (!dir) return CISCO_ERRORS.INCOMPLETE;
-      // `preferred` existe sur IOS et ne s'applique qu'aux connexions
-      // sortantes d'un serveur de terminaux : il est accepté et
-      // n'entraîne rien ici, mais il est refusé plutôt que stocké
-      // inerte, faute de quoi l'aide promettrait un réglage sans effet.
-      if (dir !== 'input' && dir !== 'output') return CISCO_ERRORS.INVALID_INPUT;
-      const proto = (args[1] ?? '').toLowerCase();
-      if (!proto) return '% Incomplete command.';
-      if (proto !== 'all' && proto !== 'ssh' && proto !== 'telnet' && proto !== 'none') {
-        return CISCO_ERRORS.INVALID_INPUT;
-      }
-      if (dir !== 'input') return '';
-      if (this.selectedAuxLine != null) {
-        this.auxLineTransportInput = proto;
-        return '';
-      }
-      if (typeof dev._setVtyTransportInput === 'function') {
-        dev._setVtyTransportInput(proto, this.selectedVtyRange ?? undefined);
-      }
-      return '';
-    });
 
     // ARP config commands (shared between router and switch)
     registerArpConfigCommands(this.configTrie, () => this.d());

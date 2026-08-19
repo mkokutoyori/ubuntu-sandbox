@@ -904,48 +904,12 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     { ...IP('address', 'IP address of the TACACS+ server'), literal: 'Hostname or A.B.C.D' },
   ]);
 
-  tries.configLine.describeArgs('login-timeout', [
-    INT('seconds', [1, 300], 'Timeout in seconds'),
-  ]);
-  tries.configLine.describeArgs('password', [
-    { name: 'password', type: 'STRING', description: 'The UNENCRYPTED (cleartext) line password' },
-  ]);
   // Les réglages de la liaison série. Ils étaient les seuls nœuds de ce
   // mode dont l'aide venait de l'EXTRACTION du code : les vingt-deux
   // commandes de `line` partagent un aiguillage, donc chacune se voyait
   // proposer les mots-clés des vingt et une autres — `speed ?` répondait
   // `authentication`, `autocommand`, `banner`. Les valeurs ci-dessous
   // sont celles d'IOS.
-  tries.configLine.describeArgs('speed', [
-    ENUM('bps', 'Transmit and receive speeds', [
-      ['300', '300 bps'], ['1200', '1200 bps'], ['2400', '2400 bps'],
-      ['4800', '4800 bps'], ['9600', '9600 bps'], ['19200', '19200 bps'],
-      ['38400', '38400 bps'], ['57600', '57600 bps'], ['115200', '115200 bps'],
-    ]),
-  ]);
-  tries.configLine.describeArgs('databits', [
-    ENUM('bits', 'Number of data bits per character', [
-      ['5', 'Five data bits'], ['6', 'Six data bits'],
-      ['7', 'Seven data bits'], ['8', 'Eight data bits'],
-    ]),
-  ]);
-  tries.configLine.describeArgs('stopbits', [
-    ENUM('bits', 'Number of stop bits', [
-      ['1', 'One stop bit'], ['2', 'Two stop bits'],
-    ]),
-  ]);
-  tries.configLine.describeArgs('parity', [
-    ENUM('parity', 'Set terminal parity', [
-      ['even', 'Even parity'], ['none', 'No parity'], ['odd', 'Odd parity'],
-    ]),
-  ]);
-  tries.configLine.describeArgs('flowcontrol', [
-    ENUM('method', 'Set the flow control', [
-      ['hardware', 'Hardware flow control'],
-      ['none', 'Set no flow control'],
-      ['software', 'Software flow control'],
-    ]),
-  ]);
   // `source-interface` était le SEUL mot-clé légitime que l'extraction
   // apportait à un nœud dont le corps est partagé — les quatre écritures
   // de `ip domain lookup`, sur les deux plateformes. Il est déclaré, ce
@@ -967,22 +931,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
   ]);
   // `transport ?` listait `all`/`none`/`ssh`/`telnet` : ce sont les
   // MÉTHODES, un niveau trop haut. IOS n'offre ici que la direction.
-  tries.configLine.describeArgs('transport', [
-    ENUM('direction', 'Transport direction', [
-      ['input', 'Define which protocols to use when connecting to the terminal server'],
-      ['output', 'Define which protocols to use for outgoing connections'],
-    ]),
-  ]);
-  for (const dir of ['input', 'output']) {
-    tries.configLine.describeArgs(`transport ${dir}`, [
-      ENUM('protocol', 'Transport protocol', [
-        ['all', 'All protocols'],
-        ['none', 'No protocols'],
-        ['ssh', 'TCP/IP SSH protocol'],
-        ['telnet', 'TCP/IP Telnet protocol'],
-      ]),
-    ]);
-  }
 
   tries.privileged.describeArgs('reload', [
     { name: 'when', type: 'STRING', description: 'Reload reason', optional: true,

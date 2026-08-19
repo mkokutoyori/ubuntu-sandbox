@@ -2882,6 +2882,14 @@ export function ospfIpv6ShowSpecs(getRouter: () => Router): CommandSpec[] {
         'show ipv6 route': 'Prefix or protocol',
       })[path],
       restLiteralFor: (path) => path === 'show ipv6 ospf' ? '<1-65535>' : undefined,
+      keywordsFor: (path) => ({
+        'show ipv6 ospf': [
+          { keyword: 'database', description: 'Database contents' },
+          { keyword: 'interface', description: 'Interface configuration' },
+          { keyword: 'neighbor', description: 'Neighbor information' },
+        ],
+        'show ipv6 route': [{ keyword: 'summary', description: 'Summary' }],
+      })[path],
       skip: (path) => !path.startsWith('show ipv6 '),
     },
   );
