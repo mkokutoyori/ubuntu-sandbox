@@ -474,7 +474,7 @@ export class RouterOSPFIntegration {
     for (const peer of allPeers) {
       if (!peer.ospfEngine) continue;
       for (const [name, iface] of peer.ospfEngine.getInterfaces()) {
-        if (iface.passive) continue;
+        if (iface.passive || iface.state === 'Down') continue;
         if (RouterOSPFIntegration.isCabled(peer, name)) continue;
         for (const [, neighbor] of iface.neighbors) {
           if (neighbor.state === 'Down') {
@@ -547,6 +547,10 @@ export class RouterOSPFIntegration {
    */
   onPortUp(portName: string): void {
     this.carrierDown.delete(portName);
+    const port = this.ctx.getPorts().get(portName);
+    if (!port?.isOperationallyUp()) return;
+    const iface = this.ospfEngine?.getInterface(portName);
+    if (iface && iface.state === 'Down') this.ospfEngine!.interfaceUp(portName);
   }
 
   onPortDown(portName: string): void {

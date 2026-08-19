@@ -958,14 +958,9 @@ export class OSPFEngine implements IProtocolEngine {
     iface.waitTimer = null;
 
     iface.state = 'Down';
-
-    // Remove from area
-    const area = this.config.areas.get(areaId);
-    if (area) {
-      area.interfaces = area.interfaces.filter(i => i !== name);
-    }
-
-    this.interfaces.delete(name);
+    iface.neighbors.clear();
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
 
     if (wasDR) this.flushOwnLSA(areaId, 2, iface.ipAddress);
     this.refreshRouterLSAForArea(areaId);
@@ -974,7 +969,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   private hasInterfaceInArea(areaId: string): boolean {
     for (const [, iface] of this.interfaces) {
-      if (areasEqual(iface.areaId, areaId)) return true;
+      if (iface.state !== 'Down' && areasEqual(iface.areaId, areaId)) return true;
     }
     for (const [, vl] of this.virtualLinks) {
       if (areasEqual(vl.iface.areaId, areaId)) return true;
@@ -1168,7 +1163,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── Interface State Machine ───────────────────────────────────
 
-  private interfaceUp(name: string): void {
+  interfaceUp(name: string): void {
     const iface = this.interfaces.get(name);
     if (!iface) return;
 

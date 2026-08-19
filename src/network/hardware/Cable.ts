@@ -213,11 +213,13 @@ export class Cable {
    * Notifies ports of link-down via disconnectCable().
    */
   disconnect(): void {
-    if (this.portA) this.portA.disconnectCable();
-    if (this.portB) this.portB.disconnectCable();
-    Logger.info(this.id, 'cable:disconnect', `Cable ${this.id} disconnected`);
+    const a = this.portA;
+    const b = this.portB;
     this.portA = null;
     this.portB = null;
+    if (a) a.disconnectCable();
+    if (b) b.disconnectCable();
+    Logger.info(this.id, 'cable:disconnect', `Cable ${this.id} disconnected`);
     this.getBus().publish({
       topic: 'cable.disconnected',
       payload: { cableId: this.id },

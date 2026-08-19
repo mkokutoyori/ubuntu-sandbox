@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-08-18T20:20:12.425Z
+Generated: 2026-08-19T05:38:38.249Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -1045,14 +1045,14 @@ Total steps: 257
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 20:20:12.520  Aug 18 2026(EE2F3CFC.851EB851)
+  Reference time: 05:38:38.368  Aug 19 2026(EE2FBFDE.5E353F7C)
 
 [187/257] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [188/257] r1 <R1> display clock
-  2026-08-18 20:20:12
-  Tuesday
+  2026-08-19 05:38:38
+  Wednesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 <R1> display lldp neighbor
@@ -1064,13 +1064,13 @@ Total steps: 257
 [191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-18 20:20:12
+  CPU Usage Stat. Time : 2026-08-19 05:38:38
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-18 20:20:12
+  Memory utilization statistics at 2026-08-19 05:38:38
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1111,14 +1111,14 @@ Total steps: 257
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 8
-  2026-08-18 20:20:12 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-18 20:20:12 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-18 20:20:12 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-18 20:20:12 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-18 20:20:12 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
-  2026-08-18 20:20:12 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
-  2026-08-18 20:20:12 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
-  2026-08-18 20:20:12 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
+  2026-08-19 05:38:38 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 05:38:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 05:38:38 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 05:38:38 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-19 05:38:38 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
+  2026-08-19 05:38:38 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
+  2026-08-19 05:38:38 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
+  2026-08-19 05:38:38 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
 
 [197/257] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled

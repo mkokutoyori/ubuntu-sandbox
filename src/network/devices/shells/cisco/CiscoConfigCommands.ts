@@ -629,18 +629,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) delete (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss;
     return '';
   });
-  trie.register('ip proxy-arp', 'Enable proxy-ARP', () => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) port.setProxyArp(true);
-    return '';
-  });
-  trie.register('ip redirects', 'Enable ICMP redirects', () => {
-    if (!ctx.getSelectedInterface()) return '';
-    const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipRedirects?: boolean }).ipRedirects = true;
-    return '';
-  });
   // Le durcissement du §9 du tutoriel NTP : `ntp disable` interdit a une
   // interface de SERVIR le temps, ce qui est la contre-mesure la plus
   // simple contre un client NTP non sollicite sur un lien exterieur. La

@@ -1261,6 +1261,17 @@ export function buildSecurityInterfaceCommands(trie: CommandTrie, ctx: CiscoSecu
     sec().ifaceFlags(i).noUnreachables = true;
     return '';
   });
+  trie.register('ip redirects', 'Enable ICMP redirects', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    sec().ifaceFlags(i).noRedirects = false;
+    return '';
+  });
+  trie.register('ip proxy-arp', 'Enable proxy-ARP', () => {
+    const i = ctx.getSelectedInterface(); if (!i) return '';
+    sec().ifaceFlags(i).noProxyArp = false;
+    ctx.r().getPort(i)?.setProxyArp(true);
+    return '';
+  });
   trie.register('no ip redirects', 'Disable ICMP redirects', () => {
     const i = ctx.getSelectedInterface(); if (!i) return '';
     sec().ifaceFlags(i).noRedirects = true;

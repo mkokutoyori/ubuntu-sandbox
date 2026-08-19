@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-08-18T20:20:09.085Z
+Generated: 2026-08-19T05:38:46.585Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -941,14 +941,14 @@ Total steps: 260
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 20:20:09.171  Aug 18 2026(EE2F3CF9.2BC6A7EF)
+  Reference time: 05:38:46.725  Aug 19 2026(EE2FBFE6.B9999999)
 
 [190/260] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [191/260] r1 <R1> display clock
-  2026-08-18 20:20:09
-  Tuesday
+  2026-08-19 05:38:46
+  Wednesday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -960,13 +960,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-08-18 20:20:09
+  CPU Usage Stat. Time : 2026-08-19 05:38:46
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-08-18 20:20:09
+  Memory utilization statistics at 2026-08-19 05:38:46
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1007,11 +1007,11 @@ Total steps: 260
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 5
-  2026-08-18 20:20:09 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-08-18 20:20:09 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-08-18 20:20:09 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-08-18 20:20:09 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
-  2026-08-18 20:20:09 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
+  2026-08-19 05:38:46 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 05:38:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 05:38:46 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 05:38:46 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-19 05:38:46 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
 
 [200/260] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled

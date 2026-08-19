@@ -1496,8 +1496,11 @@ function ipInterfaceBlock(router: Router, name: string, port: Port): string {
   const nat = router._getNATEngine();
   const natTag = nat.isInsideInterface(name) ? ' (nat: inside)'
     : nat.isOutsideInterface(name) ? ' (nat: outside)' : '';
+  const flags = (router as unknown as {
+    [k: symbol]: { interfaceFlags?: Map<string, { noRedirects?: boolean; noUnreachables?: boolean }> } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')]?.interfaceFlags?.get(name) ?? {};
   return ipInterfaceBlockFor(name, port, router._getPortsInternal(), natTag,
-    router.ripSplitHorizonOn(name));
+    router.ripSplitHorizonOn(name), flags);
 }
 
 export function ipInterfaceBlockFor(
@@ -1506,6 +1509,7 @@ export function ipInterfaceBlockFor(
   ports: ReadonlyMap<string, Port>,
   natTag = '',
   splitHorizon = true,
+  icmp: { noRedirects?: boolean; noUnreachables?: boolean } = {},
 ): string {
   const view = iosInterfaceStatus(port, name, ports);
   const ip = port.getIPAddress();
@@ -1528,8 +1532,8 @@ export function ipInterfaceBlockFor(
   lines.push('  Local Proxy ARP is disabled');
   lines.push('  Security level is default');
   lines.push(`  Split horizon is ${splitHorizon ? 'enabled' : 'disabled'}`);
-  lines.push('  ICMP redirects are always sent');
-  lines.push('  ICMP unreachables are always sent');
+  lines.push(`  ICMP redirects are ${icmp.noRedirects ? 'never sent' : 'always sent'}`);
+  lines.push(`  ICMP unreachables are ${icmp.noUnreachables ? 'never sent' : 'always sent'}`);
   lines.push('  IP fast switching is enabled');
   lines.push('  IP CEF switching is enabled');
   return lines.join('\n');

@@ -1406,6 +1406,7 @@ export function showIpOspfNeighbor(router: Router): string {
 
   for (const n of neighbors) {
     const iface = ospf.getInterface(n.iface);
+    if (!iface || iface.state === 'Down') continue;
     const stateStr = `${n.state.toUpperCase()}/  -`;
     const deadTime = compteARebours(iface, n.lastHelloReceived);
 
@@ -1694,18 +1695,19 @@ function showIpOspfInterfaceBrief(router: Router): string {
     'Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C',
   ];
 
-  for (const [name, iface] of ospf.getInterfaces()) {
-    const pid = ospf.getProcessId();
-    const area = iface.areaId;
-    const ipMask = `${iface.ipAddress}/${maskToCIDR(iface.mask)}`;
-    const cost = iface.cost;
-    const state = ospfIfStateAbbr(ospfIfaceOperUp(router, name) ? iface.state : 'Down');
-    const fullCount = countFullNeighbors(iface);
-    const totalCount = iface.neighbors.size;
+  const pid = ospf.getProcessId();
+  const rendu = (name: string, area: string, ipMask: string, cost: number,
+    state: string, total: number, full: number) => {
     lines.push(
       `${iosShortInterfaceName(name).padEnd(13)}${String(pid).padEnd(6)}${area.padEnd(16)}`
-      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${totalCount}/${fullCount}`
+      + `${ipMask.padEnd(19)}${String(cost).padEnd(6)}${state.padEnd(6)}${total}/${full}`
     );
+  };
+
+  for (const [name, iface] of ospf.getInterfaces()) {
+    rendu(name, iface.areaId, `${iface.ipAddress}/${maskToCIDR(iface.mask)}`, iface.cost,
+      ospfIfStateAbbr(ospfIfaceOperUp(router, name) ? iface.state : 'Down'),
+      iface.neighbors.size, countFullNeighbors(iface));
   }
 
   return lines.join('\n');
