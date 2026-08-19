@@ -47,10 +47,11 @@ import {
   buildBfdInterfaceCommands, registerBfdShowCommands,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands,
+  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
@@ -174,9 +175,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
+  private multicastShowContext(): {
+    r: () => Router;
+    resolveInterfaceName: (input: string) => string | null;
+  } {
+    return {
+      r: () => this.d(),
+      resolveInterfaceName: (input: string) => this.resolveInterfaceName(input),
+    };
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...pimShowSpecs(this.multicastShowContext()),
+      ...igmpShowSpecs(this.multicastShowContext()),
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),
       ...natShowSpecs(() => this.d()),
@@ -335,6 +348,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
       [['show', 'ip'], 'IP information'],
       [['show', 'ip', 'bgp'], 'BGP information'],
+      [['show', 'ip', 'pim'], 'PIM information'],
+      [['show', 'ip', 'pim', 'rp'], 'PIM Rendezvous Point information'],
+      [['show', 'ip', 'igmp'], 'IGMP information'],
       [['show', 'ip', 'eigrp'], 'IP-EIGRP information'],
       [['show', 'eigrp'], 'EIGRP information'],
       [['show', 'eigrp', 'address-family'], 'Address family'],
@@ -1369,8 +1385,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
-    registerIgmpShowCommands(trie, { r: () => this.d() });
-    registerPimShowCommands(trie, { r: () => this.d() });
+    registerIgmpShowCommands(trie, this.multicastShowContext());
+    registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);

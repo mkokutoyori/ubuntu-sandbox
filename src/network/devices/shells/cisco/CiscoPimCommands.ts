@@ -1,4 +1,6 @@
 import type { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { PimAgent } from '../../../pim/PimAgent';
 import type { PimMode } from '../../../pim/types';
@@ -13,6 +15,12 @@ interface IfCtx {
 
 interface ShowCtx {
   r(): Router;
+  resolveInterfaceName?(input: string): string | null;
+}
+
+function namedInterface(ctx: ShowCtx, input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  return ctx.resolveInterfaceName?.(input) ?? input;
 }
 
 function agent(router: Router): PimAgent | undefined {
@@ -202,9 +210,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
   trie.registerGreedy('show ip pim neighbor', 'Display PIM neighbors', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
-    let iface: string | undefined;
-    if (args[0] && args[0].toLowerCase() !== 'detail' && args[0].toLowerCase() !== 'count') iface = args[0];
-    const neighbors = a.listNeighbors(iface);
+    const neighbors = a.listNeighbors(namedInterface(ctx, args[0]));
     const rows = ['PIM Neighbor Table',
       'Neighbor Address  Interface                Uptime/Expires    Ver  DR Prio/Mode'];
     for (const n of neighbors) {
@@ -267,7 +273,7 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     const a = agent(ctx.r());
     const r = ctx.r();
     if (!a) return '';
-    const requested = args[0] && args[0].toLowerCase() !== 'count' ? args[0] : undefined;
+    const requested = namedInterface(ctx, args[0]);
     const ifaces = requested ? [requested] : Array.from(a.getConfig().interfaces.keys());
     // L'en-tête tient sur deux lignes et les données sur une : les trois
     // se déduisent des MÊMES largeurs, sinon elles finissent décalées
@@ -328,4 +334,22 @@ export function registerPimShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines.join('\n');
   });
+}
+
+const PIM_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip pim neighbor': ['WORD', 'Interface name'],
+  'show ip pim interface': ['WORD', 'Interface name'],
+  'show ip mroute': ['A.B.C.D', 'Multicast group address'],
+};
+
+export function pimShowSpecs(ctx: ShowCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerPimShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => PIM_SHOW_ARGUMENTS[path]?.[0],
+    },
+  );
 }

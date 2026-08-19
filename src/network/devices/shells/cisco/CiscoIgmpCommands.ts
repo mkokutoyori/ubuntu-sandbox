@@ -1,4 +1,6 @@
 import type { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
@@ -13,6 +15,12 @@ interface IfCtx {
 
 interface ShowCtx {
   r(): Router;
+  resolveInterfaceName?(input: string): string | null;
+}
+
+function namedInterface(ctx: ShowCtx, input: string | undefined): string | undefined {
+  if (!input) return undefined;
+  return ctx.resolveInterfaceName?.(input) ?? input;
 }
 
 function agent(router: Router): IgmpAgent | undefined {
@@ -110,11 +118,16 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
   trie.registerGreedy('show ip igmp groups', 'Display IGMP group membership', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
-    let iface: string | undefined;
-    const ifIdx = args.findIndex((x) => x.toLowerCase() === 'interface');
-    if (ifIdx >= 0 && args[ifIdx + 1]) iface = args[ifIdx + 1];
     const detail = args.includes('detail');
-    const groups = iface ? a.groupsFor(iface) : a.listGroups();
+    const ifIdx = args.findIndex((x) => x.toLowerCase() === 'interface');
+    const premier = args[0] && args[0].toLowerCase() !== 'detail'
+      && args[0].toLowerCase() !== 'interface' ? args[0] : undefined;
+    const groupe = premier && /^\d+\.\d+\.\d+\.\d+$/.test(premier) ? premier : undefined;
+    const iface = ifIdx >= 0
+      ? namedInterface(ctx, args[ifIdx + 1])
+      : (groupe ? undefined : namedInterface(ctx, premier));
+    const groups = (iface ? a.groupsFor(iface) : a.listGroups())
+      .filter((g) => !groupe || g.groupAddress === groupe);
     const now = a.nowMs();
     if (detail) {
       const blocks: string[] = [];
@@ -145,7 +158,7 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     const a = agent(ctx.r());
     const r = ctx.r();
     if (!a) return '';
-    const requested = args[0];
+    const requested = namedInterface(ctx, args[0]);
     const ifaces = requested
       ? [requested]
       : Array.from(a.getConfig().interfaces.keys());
@@ -187,4 +200,27 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
     }
     return lines.join('\n');
   });
+}
+
+const IGMP_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip igmp groups': ['A.B.C.D', 'Multicast group address'],
+  'show ip igmp interface': ['WORD', 'Interface name'],
+};
+
+const IGMP_SHOW_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string }>>> = {
+  'show ip igmp groups': [{ keyword: 'detail', description: 'Detailed output' }],
+};
+
+export function igmpShowSpecs(ctx: ShowCtx): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIgmpShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => IGMP_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => IGMP_SHOW_ARGUMENTS[path]?.[0],
+      keywordsFor: (path) => IGMP_SHOW_KEYWORDS[path],
+    },
+  );
 }
