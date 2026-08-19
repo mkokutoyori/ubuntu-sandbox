@@ -12,21 +12,21 @@ chaque marqueur `! --- … ---` est un geste de câblage.
   
   Pinging 192.168.40.11 with 32 bytes of data:
   Reply from 192.168.40.11: bytes=32 time=6ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 6ms, Average = 4ms
+      Minimum = 1ms, Maximum = 6ms, Average = 4ms
 
 [2/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.953 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.572 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.463 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.176 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.572/1.763/1.953/0.191 ms
+  rtt min/avg/max/mdev = 1.176/1.320/1.463/0.144 ms
 
 [3/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -157,21 +157,21 @@ chaque marqueur `! --- … ---` est un geste de câblage.
   
   Pinging 192.168.40.11 with 32 bytes of data:
   Reply from 192.168.40.11: bytes=32 time=2ms TTL=59
-  Reply from 192.168.40.11: bytes=32 time=7ms TTL=59
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=59
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 7ms, Average = 5ms
+      Minimum = 1ms, Maximum = 2ms, Average = 2ms
 
 [23/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=123 time=1.738 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=123 time=1.896 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=123 time=1.438 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=123 time=5.993 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.738/1.817/1.896/0.079 ms
+  rtt min/avg/max/mdev = 1.438/3.715/5.993/2.278 ms
 
 [24/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -236,22 +236,22 @@ chaque marqueur `! --- … ---` est un geste de câblage.
 [35/96] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [36/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.840 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.183 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=0.957 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=0.917 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.183/1.512/1.840/0.328 ms
+  rtt min/avg/max/mdev = 0.917/0.937/0.957/0.020 ms
 
 [37/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -364,22 +364,22 @@ chaque marqueur `! --- … ---` est un geste de câblage.
 [54/96] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
   Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 1ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [55/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=2.286 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=2.456 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.328 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.260 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 2.286/2.371/2.456/0.085 ms
+  rtt min/avg/max/mdev = 1.260/1.294/1.328/0.034 ms
 
 [56/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -473,22 +473,22 @@ chaque marqueur `! --- … ---` est un geste de câblage.
 [68/96] PC1 PC1$ ping -n 2 192.168.40.11
   
   Pinging 192.168.40.11 with 32 bytes of data:
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
-  Reply from 192.168.40.11: bytes=32 time=2ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
+  Reply from 192.168.40.11: bytes=32 time=1ms TTL=60
   
   Ping statistics for 192.168.40.11:
       Packets: Sent = 2, Received = 2, Lost = 0 (0% loss),
   Approximate round trip times in milli-seconds:
-      Minimum = 2ms, Maximum = 2ms, Average = 2ms
+      Minimum = 1ms, Maximum = 1ms, Average = 1ms
 
 [69/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.374 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.410 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.385 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.012 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.374/1.392/1.410/0.018 ms
+  rtt min/avg/max/mdev = 1.012/1.199/1.385/0.186 ms
 
 [70/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
@@ -578,12 +578,12 @@ chaque marqueur `! --- … ---` est un geste de câblage.
 
 [84/96] Server1 Server1$ ping -c 2 192.168.10.2
   PING 192.168.10.2 (192.168.10.2) 56(84) bytes of data.
-  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.221 ms
-  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.212 ms
+  64 bytes from 192.168.10.2: icmp_seq=1 ttl=124 time=1.199 ms
+  64 bytes from 192.168.10.2: icmp_seq=2 ttl=124 time=1.178 ms
   
   --- 192.168.10.2 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 1.212/1.216/1.221/0.004 ms
+  rtt min/avg/max/mdev = 1.178/1.188/1.199/0.011 ms
 
 [85/96] Router1 Router1# show ip ospf neighbor
   Neighbor ID     Pri   State           Dead Time   Address         Interface
