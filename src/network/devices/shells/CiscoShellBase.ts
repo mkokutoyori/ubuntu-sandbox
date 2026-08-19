@@ -4046,6 +4046,46 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         () => showTcpBrief()),
     ];
 
+    const listeNommee = (
+      keyword: string, description: string, libelle: string,
+      rendu: (wanted: string | undefined) => string,
+    ): CommandSpec => ({
+      id: `show-ip-${keyword}`,
+      path: ['show', 'ip', keyword, {
+        name: 'nom', type: 'WORD', optional: true, description: libelle,
+      }],
+      description, modes: exec, minPrivilege: 1,
+      run: (_session, args) => rendu(args.nom === undefined || args.nom === ''
+        ? undefined : String(args.nom)),
+    });
+
+    const filtres: CommandSpec[] = [
+      listeNommee('community-list', 'Display BGP community lists',
+        'Community list name or number', (wanted) => {
+          const out: string[] = [];
+          for (const [key, rules] of this.communityLists()) {
+            const [kind, name] = key.split(' ');
+            if (wanted && wanted !== name) continue;
+            out.push(`Community ${kind} list ${name}`);
+            for (const rule of rules) out.push(`    ${rule}`);
+          }
+          return out.join('\n');
+        }),
+      listeNommee('as-path-access-list', 'Display AS-path filters',
+        'AS path access list number', (wanted) => {
+          const store = this.asPathLists();
+          const keys = wanted ? [wanted] : [...store.keys()];
+          const out: string[] = [];
+          for (const k of keys) {
+            const rules = store.get(k);
+            if (!rules) continue;
+            out.push(`AS path access list ${k}`);
+            for (const rule of rules) out.push(`    ${rule}`);
+          }
+          return out.join('\n');
+        }),
+    ];
+
     const administration: CommandSpec[] = [
       vue(['show', 'ip', 'ssh'], 'Display SSH server status', 15, () => {
         const sec = getSecurityConfig(this.d());
@@ -4085,6 +4125,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...systeme,
       ...identite,
       ...administration,
+      ...filtres,
       vue(['show', 'ntp', 'status'], 'Display NTP status', 1,
         () => showNtpStatus(this.cs())),
       vue(['show', 'ntp', 'authentication-keys'], 'Display NTP authentication keys', 15,
@@ -5976,31 +6017,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ]);
     trie.registerGreedy('show adjacency', 'Display CEF adjacency table', () =>
       showAdjacency(this.d() as unknown as Parameters<typeof showAdjacency>[0]));
-    trie.registerGreedy('show ip as-path-access-list', 'Display AS-path filters', (args) => {
-      const store = this.asPathLists();
-      const wanted = args[0];
-      const keys = wanted ? [wanted] : [...store.keys()];
-      const out: string[] = [];
-      for (const k of keys) {
-        const rules = store.get(k);
-        if (!rules) continue;
-        out.push(`AS path access list ${k}`);
-        for (const rule of rules) out.push(`    ${rule}`);
-      }
-      return out.join('\n');
-    });
-    trie.registerGreedy('show ip community-list', 'Display BGP community lists', (args) => {
-      const store = this.communityLists();
-      const wanted = args[0];
-      const out: string[] = [];
-      for (const [key, rules] of store) {
-        const [kind, name] = key.split(' ');
-        if (wanted && wanted !== name) continue;
-        out.push(`Community ${kind} list ${name}`);
-        for (const rule of rules) out.push(`    ${rule}`);
-      }
-      return out.join('\n');
-    });
     if (this.hasSwitchingHardware()) {
       trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
         showRedundancy());

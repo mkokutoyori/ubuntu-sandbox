@@ -69,7 +69,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow,
+  buildPolicyConfig, registerPolicyShow, policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -104,7 +104,7 @@ import {
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands,
+  registerACLShowCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
@@ -189,6 +189,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return [
       ...super.socleSpecs(),
       ...pimShowSpecs(this.multicastShowContext()),
+      ...aclShowSpecs(() => this.d()),
+      ...policyShowSpecs(this.policy),
       ...igmpShowSpecs(this.multicastShowContext()),
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),

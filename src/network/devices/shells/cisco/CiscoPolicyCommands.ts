@@ -4,6 +4,8 @@
  * sub-mode + their show family. Router-only.
  */
 import type { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { formatInvalidInput } from '../CommandTrie';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
@@ -124,4 +126,22 @@ export function registerPolicyShow(
     if (a.length > 1) return formatInvalidInput('show route-map '.length + a[0].length + 1);
     return repo.renderRouteMaps(a[0]);
   });
+}
+
+const POLICY_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip prefix-list': ['WORD', 'Name of a prefix list'],
+  'show ipv6 prefix-list': ['WORD', 'Name of a prefix list'],
+  'show route-map': ['WORD', 'Route map name'],
+};
+
+export function policyShowSpecs(repo: PolicyRepository): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerPolicyShow(collector as unknown as CommandTrie, repo),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[0],
+    },
+  );
 }
