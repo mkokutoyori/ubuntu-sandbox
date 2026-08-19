@@ -253,3 +253,40 @@ function uptimeClock(seconds: number): string {
   const ss = String(total % 60).padStart(2, '0');
   return `${hh}:${mm}:${ss}`;
 }
+
+export function renderDhcpLeases(
+  leases: ReadonlyArray<{
+    iface: string; ip: string; mac: string; expiresAt: number; serverId: string;
+  }>,
+): string {
+  if (leases.length === 0) return '';
+
+  const byInterface = new Map<string, typeof leases[number][]>();
+  for (const lease of leases) {
+    const bucket = byInterface.get(lease.iface) ?? [];
+    bucket.push(lease);
+    byInterface.set(lease.iface, bucket);
+  }
+
+  const lines: string[] = [];
+  for (const [iface, bucket] of byInterface) {
+    lines.push(iface);
+    const rows = bucket.map(lease => ({
+      ip: lease.ip,
+      mac: lease.mac,
+      hostname: '',
+      vci: '',
+      serverId: lease.serverId,
+      expiry: new Date(lease.expiresAt).toUTCString(),
+    }));
+    lines.push(...renderTable(rows, [
+      { header: 'IP', width: 16, value: row => row.ip },
+      { header: 'MAC-Address', width: 19, value: row => row.mac },
+      { header: 'Hostname', width: 19, value: row => row.hostname },
+      { header: 'VCI', width: 17, value: row => row.vci },
+      { header: 'SERVER-ID', width: 10, value: row => row.serverId },
+      { header: 'Expiry', width: 0, value: row => row.expiry },
+    ], FIXED_TABLE).map(line => `    ${line}`));
+  }
+  return lines.join('\n');
+}

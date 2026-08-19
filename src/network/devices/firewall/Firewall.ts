@@ -51,6 +51,7 @@ import {
   arpFrame, buildEgressFrame, type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
+import type { DhcpScope, FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
@@ -68,13 +69,13 @@ import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
-import { SdwanService } from './sdwan/SdwanService';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import {
-  createFirewallRouting, deliverToRoutingProtocol, routingPortFacts,
-} from './routing/RoutingWiring';
+  buildL3Services, claimedByControlPlane, type L3Services,
+} from './l3/L3ServiceWiring';
+import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
-import { FirewallHa, serialNumberOf } from './ha/FirewallHa';
+import { buildFirewallHa, serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
 import type { SdwanConfiguration } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
@@ -134,6 +135,9 @@ export class Firewall extends Equipment {
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
   private readonly routing: FirewallRouting;
+  private readonly dhcp: FirewallDhcp;
+  private readonly l3: L3Services;
+
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
   private readonly hostsTable = new RouterHostsTable();
@@ -256,45 +260,43 @@ export class Firewall extends Equipment {
     this.tacacs = agents.tacacs;
 
     this.portals = buildFirewallPortals({
-      tcp: this.tcp,
-      now,
+      tcp: this.tcp, now,
       vdom: (name?: string) => this.getVdom(name),
       certificates: () => this.getCertificateStore(),
-      remoteAuthenticate: (server, user, password) =>
-        this.remoteAuthenticate(server, user, password),
+      remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
     });
     this.portal = this.portals.auth;
     this.sslVpn = this.portals.sslVpn;
 
-    this.haService = new FirewallHa({
+    this.haService = buildFirewallHa({
       serial: () => this.serialNumber(),
       now,
       sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
-      interfaceMac: (iface) => this.getPort(iface)?.getMAC(),
-      interfaceUp: (iface) => this.getPort(iface)?.isConnected() === true,
+      port: (iface) => this.getPort(iface),
       sessions: () => this.getVdom().sessions,
     });
 
-    this.routing = createFirewallRouting({
+    const l3 = buildL3Services({
       deviceId: this.id,
       hostname: () => this.getName(),
       bus: () => this.getBus(),
-      routes: () => this.getVdom().routes,
-      connectedRoutes: () => this.interfaces.connectedRoutes(),
-      interfaceAddresses: () => routingPortFacts(this.interfaces, (n) => this.getPort(n)),
-      resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
       tcp: () => this.tcp,
+      routes: () => this.getVdom().routes,
+      interfaces: () => this.interfaces,
+      port: (iface) => this.getPort(iface),
+      resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
       emitFrame: (iface, frame) => {
         this.capture.record({ at: this.services.now(), iface, direction: 'out', frame });
         this.sendFrame(iface, frame);
       },
+      assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
+      forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
     });
+    this.l3 = l3;
+    this.routing = l3.routing;
+    this.dhcp = l3.dhcp;
+    this.sdwan = l3.sdwan;
 
-    this.sdwan = new SdwanService({
-      send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
-      localIp: (iface) => this.interfaces.get(iface)?.ip,
-      settle: () => Promise.resolve(),
-    });
   }
 
   private pipelineFor(mode: DeploymentMode): FirewallPipeline {
@@ -327,6 +329,8 @@ export class Firewall extends Equipment {
   getSdwan(): SdwanService { return this.sdwan; }
 
   getRouting(): FirewallRouting { return this.routing; }
+
+  getDhcp(): FirewallDhcp { return this.dhcp; }
 
 
   getHa(): HaAgent { return this.haService.agent; }
@@ -661,7 +665,8 @@ export class Firewall extends Equipment {
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
 
-    if (deliverToRoutingProtocol(this.routing, portName, packet)) return;
+    if (claimedByControlPlane(
+      this.l3, portName, packet, frame?.srcMAC.toString() ?? '')) return;
 
     if (packet.protocol === IP_PROTO_ESP
       && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {

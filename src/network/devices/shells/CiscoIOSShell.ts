@@ -95,6 +95,7 @@ import {
 } from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
+  routingProtoShowSpecs,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -180,6 +181,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ospfShowSpecs(() => this.d()),
       ...natShowSpecs(() => this.d()),
       ...cryptoShowSpecs(() => this.d()),
+      ...routingProtoShowSpecs(this, this.routingCfg),
       ...ospfClearSpecs(() => this.d()),
       ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
@@ -332,6 +334,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'crypto', 'key'], 'Show crypto keys'],
       [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
       [['show', 'ip'], 'IP information'],
+      [['show', 'ip', 'bgp'], 'BGP information'],
+      [['show', 'ip', 'eigrp'], 'IP-EIGRP information'],
+      [['show', 'eigrp'], 'EIGRP information'],
+      [['show', 'eigrp', 'address-family'], 'Address family'],
+      [['show', 'eigrp', 'address-family', 'ipv4'], 'IPv4 address family'],
       [['show', 'ip', 'nat'], 'Network Address Translation'],
       [['show', 'ip', 'nat', 'nvi'], 'NAT Virtual Interface'],
     ];

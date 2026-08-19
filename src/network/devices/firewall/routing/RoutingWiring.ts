@@ -9,6 +9,8 @@ import type { RouteTable } from '../l3/RouteTable';
 import type { TcpStack } from '../../../tcp/TcpStack';
 import { FirewallRouting, ripPacketOf, type RoutingPortFacts } from './FirewallRouting';
 
+export type { FirewallRouting };
+
 export interface RoutingWiringHost {
   readonly deviceId: string;
   hostname(): string;

@@ -2409,6 +2409,65 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E47 — DHCP : le schéma existait, `onCommit` était VIDE
+
+`l3/FirewallDhcp.ts`, `l3/L3ServiceWiring.ts` (neufs), `schema/system.ts`,
+`FortiShell.ts`, `diag/getViews.ts`, `Firewall.ts`, `ha/FirewallHa.ts` —
+**8 cas** neufs plus 5 specs Playwright. **6 des 8** tombent avant
+correctif ; les deux autres sont nommés dans l'en-tête du fichier.
+
+**`config system dhcp server` était déclaré, stocké, rendu par `show` —
+et son `onCommit` était littéralement `onCommit() {}`.** La famille de
+défaut que ce module passe son temps à refermer : une valeur affichée que
+rien ne soutient. Le socle DHCP du dépôt est complet et sert déjà le
+routeur, le commutateur et Windows Server ; il ne manquait que le
+branchement. Un vrai `LinuxPC` obtient maintenant un vrai bail par un
+vrai DISCOVER sur le fil, la passerelle et le DNS déclarés arrivent
+jusqu'à `ip route` et `/etc/resolv.conf` du client, et deux clients du
+même segment reçoivent deux adresses différentes.
+
+**La plage FortiOS est traduite en exclusions, parce que les deux modèles
+diffèrent.** `DHCPServer` est de forme IOS — un réseau, un masque, des
+plages EXCLUES — là où FortiOS déclare `start-ip`/`end-ip`.
+`gapsOutsideRanges` exclut ce qui est en dehors des plages déclarées :
+c'est la traduction exacte, et elle évite d'écrire un second allocateur à
+côté de celui qui existe.
+
+**`set status disable` éteint pour de bon**, et le cas qui le vérifie a
+dû être renforcé : il passait des deux côtés parce que rien ne servait
+avant correctif. Il obtient maintenant un bail D'ABORD, puis désactive,
+puis vérifie qu'un nouveau bail n'est plus délivré — sans ce premier
+temps, l'assertion ne distinguait pas « éteint » de « jamais allumé ».
+
+**`set mode dhcp` est un vrai CLIENT.** `DHCPClient` et
+`WireDhcpChannel` existaient ; le pare-feu leur fournit son propre
+émetteur de trames et reçoit les réponses par un second point de dispatch
+(UDP/68), symétrique de celui du serveur (UDP/67). L'adresse obtenue
+passe par `configureInterface` et la passerelle pose une route par défaut
+identifiée `dhcp:<iface>`, donc retirée quand le bail tombe.
+
+**`execute dhcp lease-list`** rend le format du vrai — nom d'interface
+sur sa ligne, puis les colonnes `IP MAC-Address Hostname VCI SERVER-ID
+Expiry` — et ne montre que ce qui est réellement mesuré : les colonnes
+que ce simulateur ne renseigne pas restent vides plutôt que d'être
+inventées.
+
+**Une erreur de laboratoire de ma part, corrigée** : mes deux clients
+étaient d'abord sur deux ports différents du pare-feu, donc sur deux
+segments, ce qui ne teste pas l'allocation mais la topologie. Ils passent
+par un `GenericSwitch`, dont les ports s'appellent `eth0…` et non
+`Fa0/1`.
+
+**Quatre extractions plutôt qu'un seuil relevé** (G3 a tiré à 834
+lignes) : `l3/L3ServiceWiring.ts` rassemble le câblage du routage, du
+DHCP et du SD-WAN — le constructeur en faisait 171 lignes à lui seul ;
+`buildFirewallHa` rejoint `ha/FirewallHa.ts` ; `claimedByControlPlane`
+réunit les trois tests de plan de contrôle du chemin d'entrée en un
+seul ; et les délégations `applyDhcpScope`/`removeDhcpScope` disparaissent
+au profit de `getDhcp()`. `Firewall.ts` retombe à 798.
+
+---
+
 ### E46 — BGP : le refus était le mien, et rien ne manquait
 
 `routing/FirewallBgp.ts`, `bgp/bgpTransport.ts` (neufs),

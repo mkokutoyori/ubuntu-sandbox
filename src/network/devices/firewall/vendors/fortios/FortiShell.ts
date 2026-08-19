@@ -37,7 +37,7 @@ import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
-  renderBgpNeighbors, renderBgpSummary,
+  renderBgpNeighbors, renderBgpSummary, renderDhcpLeases,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
 import { renderHaChecksum, renderHaStatus } from './diag/haRenderer';
@@ -336,6 +336,15 @@ export class FortiShell {
       },
       applyBgp(patch) {
         return fw.getRouting().applyBgp(patch);
+      },
+      applyDhcpScope(scope) {
+        fw.getDhcp().upsertScope(scope);
+      },
+      removeDhcpScope(id) {
+        fw.getDhcp().removeScope(id);
+      },
+      acquireDhcpLease(iface) {
+        fw.getDhcp().acquireLease(iface);
       },
       removeStaticRoute(id) {
         fw.getRouteTable().removeStaticById(id);
@@ -684,6 +693,9 @@ export class FortiShell {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
     if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
     if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
+    if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
+      return renderDhcpLeases(this.fw.getDhcp().leases());
+    }
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` is not implemented in this simulator.`,
     );
