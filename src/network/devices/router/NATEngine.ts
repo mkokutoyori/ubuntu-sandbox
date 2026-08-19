@@ -312,6 +312,9 @@ export class NATEngine {
   // service ftp` (Cisco) both drive this same per-protocol toggle. FTP's ALG
   // is on by default, matching real vsftpd-adjacent router defaults.
   private algEnabled = new Set<string>(['ftp']);
+  private algDoors = 0;
+
+  getAlgDoors(): number { return this.algDoors; }
 
   setAlgEnabled(protocol: string, enabled: boolean): void {
     if (enabled) this.algEnabled.add(protocol); else this.algEnabled.delete(protocol);
@@ -341,6 +344,7 @@ export class NATEngine {
     const key = makeKey4(opts.protocol, opts.insideIP, opts.insidePort, opts.outsideIP, opts.outsidePort);
     this.sessions.set(key, session);
     this.reverseSessions.set(makeKey(opts.protocol, opts.globalIP, opts.globalPort), session);
+    this.algDoors++;
   }
 
   /** Provide ACL matching function (injected by Router) */
