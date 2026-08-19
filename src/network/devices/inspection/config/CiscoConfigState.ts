@@ -29,8 +29,6 @@ const DEFAULTS: FeatureDefaults = {
   // booléen ne peut pas dire sur quel port ni pour qui, et cette table
   // n'a pas de rendu vivant. Ils vivent dans `CiscoHttpService`, qui
   // porte les six faits du serveur ensemble et les rend.
-  // Legacy source-routing historically defaulted on.
-  'ip source-route': true,
   'ip domain-lookup': true,
 };
 

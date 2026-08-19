@@ -4231,8 +4231,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    */
   protected serviceSpecs(): CommandSpec[] {
     const drapeau = (nom: string, on: boolean): string => {
-      (this.d() as unknown as { _setServiceFlag?: (n: string, e: boolean) => void })
-        ._setServiceFlag?.(nom, on);
+      const dev = this.d() as unknown as {
+        _setServiceFlag?: (n: string, e: boolean) => void;
+      };
+      if (nom === 'finger') {
+        getSecurityConfig(this.d()).ipFinger = on;
+        return '';
+      }
+      dev._setServiceFlag?.(nom, on);
       return '';
     };
 
@@ -6689,7 +6695,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // reflects real learnt state (and stops learning when disabled).
     flag('ip cef', 'ip cef', 'CEF');
     this.registerHttpServerCommands();
-    flag('ip source-route', 'ip source-route', 'IP source-route');
     // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
     // the router (CiscoOspfCommands, device-specific); only record the
     // negation here so it's recognised on both vendors without
@@ -6699,36 +6704,23 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       return '';
     });
     registerCiscoDnsCommands(this.configTrie, this.dnsCommandContext());
-    this.configTrie.register('ip bootp server', 'Enable BOOTP server', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('bootp-server', true);
-      return '';
-    });
-    this.configTrie.register('no ip bootp server', 'Disable BOOTP server', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('bootp-server', false);
-      return '';
-    });
-    this.configTrie.register('ip finger', 'Enable finger service', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('finger', true);
-      return '';
-    });
-    this.configTrie.register('no ip finger', 'Disable finger service', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('finger', false);
-      return '';
-    });
-    this.configTrie.register('ip gratuitous-arps', 'Enable gratuitous ARP', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('gratuitous-arps', true);
-      return '';
-    });
-    this.configTrie.register('no ip gratuitous-arps', 'Disable gratuitous ARP', () => {
-      const r = this.d() as unknown as { _setServiceFlag?: (n: string, on: boolean) => void };
-      r._setServiceFlag?.('gratuitous-arps', false);
-      return '';
-    });
+    const durcissement = (
+      commande: string, description: string, undoDescription: string,
+      applique: (sec: ReturnType<typeof getSecurityConfig>, on: boolean) => void,
+    ): void => {
+      this.configTrie.register(commande, description,
+        () => { applique(getSecurityConfig(this.d()), true); return ''; });
+      this.configTrie.register(`no ${commande}`, undoDescription,
+        () => { applique(getSecurityConfig(this.d()), false); return ''; });
+    };
+    durcissement('ip source-route', 'Accept source-routed packets',
+      'Drop source-routed packets', (sec, on) => { sec.ipSourceRoute = on; });
+    durcissement('ip bootp server', 'Enable BOOTP server',
+      'Disable BOOTP server', (sec, on) => { sec.ipBootpServer = on; });
+    durcissement('ip gratuitous-arps', 'Send gratuitous ARP',
+      'Stop sending gratuitous ARP', (sec, on) => { sec.ipGratuitousArps = on; });
+    durcissement('ip finger', 'Enable finger service',
+      'Disable finger service', (sec, on) => { sec.ipFinger = on; });
     this.configTrie.register('no banner motd', 'Clear MOTD banner', () => {
       const dev = this.d() as unknown as {
         _setSshBanner?: (b: string) => void;

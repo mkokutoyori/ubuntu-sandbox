@@ -434,6 +434,10 @@ export class CiscoSecurityConfig {
   login: LoginControl = {};
   ipCef = true;
   ipCefDistributed = false;
+  ipSourceRoute = true;
+  ipBootpServer = true;
+  ipGratuitousArps = true;
+  ipFinger = false;
   ipv6Cef = false;
   ipMulticastRouting = false;
 
@@ -573,6 +577,10 @@ export class CiscoSecurityConfig {
     if (this.login.onFailureLog) lines.push('login on-failure log');
     if (this.login.onSuccessLog) lines.push('login on-success log');
     if (!this.ipCef) lines.push('no ip cef');
+    if (!this.ipSourceRoute) lines.push('no ip source-route');
+    if (!this.ipBootpServer) lines.push('no ip bootp server');
+    if (!this.ipGratuitousArps) lines.push('no ip gratuitous-arps');
+    if (this.ipFinger) lines.push('ip finger');
     if (this.ipv6Cef) lines.push('ipv6 cef');
     if (this.ipMulticastRouting) lines.push('ip multicast-routing');
     if (this.ssh.version !== 1) lines.push(`ip ssh version ${this.ssh.version}`);
