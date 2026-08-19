@@ -18,6 +18,8 @@ import type { RoutingConfigRepository }
   from '../../inspection/config/RoutingConfigRepository';
 import { parseRedistribute, upsertRedistribute }
   from '../../inspection/config/RoutingConfigRepository';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { showIpProtocols } from './CiscoShowCommands';
 import {
   showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
@@ -980,4 +982,40 @@ export function registerRoutingProtoShow(
     }
     return out.length ? out.join('\n') : 'No routing protocol is configured.';
   });
+}
+
+const ROUTING_PROTO_SHOW_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string }>>> = {
+  'show ip eigrp neighbors': [
+    { keyword: 'detail', description: 'Show detailed peer information' },
+  ],
+  'show ip eigrp topology': [
+    { keyword: 'all-links', description: 'Show all links in topology table' },
+  ],
+  'show ip eigrp interfaces': [
+    { keyword: 'detail', description: 'Show detailed interface information' },
+  ],
+};
+
+const ROUTING_PROTO_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip bgp': ['A.B.C.D', 'Network in the BGP routing table to display'],
+  'show ip bgp neighbors': ['A.B.C.D', 'Neighbor to display information about'],
+  'show ip protocols vrf': ['WORD', 'VRF name'],
+  'show ip eigrp interfaces': ['WORD', 'Interface name'],
+};
+
+export function routingProtoShowSpecs(
+  ctx: CiscoShellContext, repo: RoutingConfigRepository,
+): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerRoutingProtoShow(
+      collector as unknown as CommandTrie, ctx, repo),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[0],
+      keywordsFor: (path) => ROUTING_PROTO_SHOW_KEYWORDS[path],
+    },
+  );
 }

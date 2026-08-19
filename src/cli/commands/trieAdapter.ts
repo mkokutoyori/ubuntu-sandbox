@@ -67,6 +67,7 @@ export interface SpecFromTrieOptions {
   restName?: string;
   restDescription?: string;
   restDescriptionFor?: (path: string) => string | undefined;
+  restLiteralFor?: (path: string) => string | undefined;
   skip?: (path: string) => boolean;
   keywordsFor?: (path: string) => ReadonlyArray<{ keyword: string; description: string }> | undefined;
 }
@@ -81,12 +82,16 @@ export function specsFromTrieRegistrations(
     if (entry.hidden) continue;
     if (options.skip?.(entry.path)) continue;
     const words = entry.path.split(/\s+/).filter(Boolean);
-    const restLabel = options.restDescriptionFor?.(entry.path)
-      ?? options.restDescription ?? entry.description;
+    const declaredLabel = options.restDescriptionFor?.(entry.path)
+      ?? options.restDescription;
+    const restLiteral = options.restLiteralFor?.(entry.path);
     const path: CommandSpec['path'] = entry.greedy
       ? [...words, {
         name: restName, type: 'REST' as const, optional: true,
-        description: restLabel,
+        description: declaredLabel ?? entry.description,
+        ...(restLiteral ? { literal: restLiteral } : {}),
+        ...(declaredLabel === undefined && restLiteral === undefined
+          ? { values: [] } : {}),
       }]
       : [...words];
     const run = (prefix: readonly string[]) => (_session: unknown, args: Record<string, string>) => {
