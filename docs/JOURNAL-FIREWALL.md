@@ -2409,6 +2409,61 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E48 — Horaires ponctuels, groupes d'horaires, NTP
+
+`mgmt/FirewallNtp.ts`, `pipeline/PipelineCache.ts`,
+`runtime/commitDevice.ts` (neufs), `model/ScheduleObject.ts`,
+`schema/firewallObjects.ts`, `schema/system.ts`, `schema/types.ts`,
+`FortiShell.ts`, `Firewall.ts` — **12 cas** neufs plus 5 specs Playwright.
+**9 des 12** tombent avant correctif ; les trois autres sont nommés dans
+l'en-tête, et aucun ne prouve quoi que ce soit du mécanisme.
+
+**Une vérification a démenti le carnet, et c'était une bonne nouvelle.**
+§6.2 bis annonçait `PolicyEvaluator.scheduleActive` « câblé par
+personne » : il l'est depuis `VdomRegistry:183`. La porte existait ; il
+manquait les deux formes d'horaire qui la traversent.
+
+**`onetime` est une fenêtre ABSOLUE, et c'est ce qui le distingue du
+récurrent.** `HH:MM YYYY/MM/DD` des deux côtés, format vérifié contre la
+référence CLI de Fortinet. Avant sa date la politique bloque, pendant
+elle passe, après elle bloque à nouveau — les trois sont mesurées par un
+vrai ping, pas par un affichage. `startAt`/`endAt` sont des instants
+absolus et non des minutes dans la journée : réutiliser
+`startMinutes`/`endMinutes` aurait fait d'un horaire ponctuel un horaire
+récurrent portant une date décorative.
+
+**Un groupe est l'UNION de ses membres**, et la récursion porte un jeu de
+noms déjà visités : un groupe qui se contiendrait lui-même boucle
+autrement. Un membre inexistant est refusé au lieu d'être stocké — sans
+quoi une faute de frappe donnerait un groupe silencieusement vide, donc
+une politique qui ne s'ouvre jamais sans que rien ne le dise.
+
+**`moment()` est un attribut à DEUX parties**, heure puis date. Le
+déclarer en `text()` ne captait rien : `set start 23:00 2026/12/31`
+laissait `effective('start')` vide et l'horaire naissait sans bornes.
+La moitié heure est typée `TIME` donc `25:99` est refusé par la CLI, et
+la moitié date est vérifiée au commit par `makeOnetimeSchedule`, qui
+refuse aussi une fin antérieure au début.
+
+**NTP branche l'agent du dépôt.** `NtpAgent` sert déjà le routeur ;
+`FirewallNtp` lui donne le port d'hôte du pare-feu. Un `type custom` sans
+serveur est refusé plutôt que stocké — c'est une configuration qui
+promet une synchronisation que rien ne peut faire.
+
+**Trois extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
+`runtime/commitDevice.ts` sort les 245 lignes de la fabrique de commit
+hors du shell vendeur — avec les quatre fonctions utilitaires qu'elle
+seule employait —, `pipeline/PipelineCache.ts` prend le cache de
+pipelines, et `buildFirewallNtp` rejoint son propre module. `FortiShell.ts`
+retombe de 808 à 544, `Firewall.ts` à 798.
+
+**Deux cas de sonde corrigés, pas le code** : la lecture de la
+configuration NTP passe par `associations`, pas par un champ `servers`
+que ce type n'a pas ; et le refus d'un membre inconnu tombe sur `set`,
+pas sur `next`.
+
+---
+
 ### E47 — DHCP : le schéma existait, `onCommit` était VIDE
 
 `l3/FirewallDhcp.ts`, `l3/L3ServiceWiring.ts` (neufs), `schema/system.ts`,

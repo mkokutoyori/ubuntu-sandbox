@@ -3,7 +3,7 @@ import {
   type PortRange, type ServiceEntry,
 } from '../../../model/ServiceObject';
 import {
-  address, addressMask, choice, clock, count, enable, reference, refList, text, word,
+  address, addressMask, choice, clock, count, enable, moment, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
 import { PREDEFINED_SERVICE_NAMES } from './predefined';
@@ -280,6 +280,57 @@ export const FIREWALL_SCHEDULE_RECURRING: FortiTableSpec = {
       start: object.effective('start')[0] ?? '00:00',
       end: object.effective('end')[0] ?? '00:00',
       onetime: false,
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeSchedule(key);
+  },
+};
+
+export const FIREWALL_SCHEDULE_ONETIME: FortiTableSpec = {
+  path: ['firewall', 'schedule', 'onetime'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 131,
+  help: 'Onetime schedule configuration.',
+  attributes: [
+    { ...word('name', 'Onetime schedule name.'), readOnly: true },
+    moment('start', 'Schedule start date and time, format hh:mm yyyy/mm/dd.'),
+    moment('end', 'Schedule end date and time, format hh:mm yyyy/mm/dd.'),
+    count('color', 'Color of icon on the GUI.', 0, 32, 0),
+  ],
+  onCommit(object, context) {
+    const start = object.effective('start').join(' ');
+    const end = object.effective('end').join(' ');
+    return context.device.applyOnetimeSchedule({ name: object.key, start, end });
+  },
+  onDelete(key, context) {
+    context.device.removeSchedule(key);
+  },
+};
+
+export const FIREWALL_SCHEDULE_GROUP: FortiTableSpec = {
+  path: ['firewall', 'schedule', 'group'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 132,
+  help: 'Schedule group configuration.',
+  attributes: [
+    { ...word('name', 'Schedule group name.'), readOnly: true },
+    refList('member', 'Schedules added to the schedule group.',
+      ['firewall schedule recurring', 'firewall schedule onetime']),
+    count('color', 'Color of icon on the GUI.', 0, 32, 0),
+  ],
+  onCommit(object, context) {
+    return context.device.applyScheduleGroup({
+      name: object.key,
+      members: [...object.effective('member')],
     });
   },
   onDelete(key, context) {

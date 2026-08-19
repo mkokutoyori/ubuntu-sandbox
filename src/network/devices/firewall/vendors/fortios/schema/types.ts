@@ -6,6 +6,7 @@ import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type { DhcpScope } from '../../../l3/FirewallDhcp';
+import type { NtpSettings } from '../../../mgmt/FirewallNtp';
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
@@ -218,6 +219,13 @@ export interface FortiCommitDevice {
   applyDhcpScope(scope: DhcpScope): void;
   removeDhcpScope(id: string): void;
   acquireDhcpLease(iface: string): void;
+  applyOnetimeSchedule(schedule: {
+    name: string; start: string; end: string;
+  }): string | void;
+  applyScheduleGroup(group: {
+    name: string; members: readonly string[];
+  }): string | void;
+  applyNtp(settings: NtpSettings): string | void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
@@ -629,6 +637,19 @@ export function addressMask(
       { name: `${name}-mask`, type: 'SUBNET_MASK', description: 'Subnet mask.' },
     ],
     defaultValue: byDefault === undefined ? undefined : [...byDefault],
+  };
+}
+
+export function moment(name: string, help: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [
+      { name, type: 'TIME', description: 'Time of day, format hh:mm.' },
+      { name: `${name}-date`, type: 'WORD', description: 'Date, format yyyy/mm/dd.' },
+    ],
+    defaultValue: undefined,
   };
 }
 
