@@ -36,7 +36,8 @@
 | **8** | VPN — tunnel, certificats, DPD/NAT-T, SSL-VPN web | ✅ livrée (E38 à E42) |
 | **9a** | **SD-WAN : membres, sondes réelles, bascule sur perte** | ✅ livrée (E43) |
 | **9b** | **HA : élection, cerveau divisé, synchronisation par le fil** | ✅ livrée (E44) |
-| 10 | Routage dynamique (chantier de socle) | ⏳ |
+| **10** | **Routage dynamique — RIP et OSPF sur de vrais minuteurs** | ✅ livrée (E45) |
+| **11** | **Points restés ouverts : BGP, serveur et client DHCP** | ✅ livrée (E46, E47) |
 
 **Mesures au dernier commit** : 1182 cas verts sur 45 fichiers du module
 pare-feu ; 407 cas FortiOS (32 d'origine + 60 de grammaire + 29 de
@@ -250,10 +251,12 @@ le type **`TIME`**, qui sert aussi à IOS (`clock set`, `time-range`).
 
 ### 6.2 bis — Phase 2, ce qui reste
 
-`config system ntp`, `config firewall schedule onetime`,
-`config firewall schedule group`, `config system dhcp server` côté
-data-plane (le schéma existe, le serveur DHCP réel n'est pas encore
-branché), et `config system interface` avec `mode dhcp` (client DHCP).
+`config system ntp`, `config firewall schedule onetime` et
+`config firewall schedule group`.
+
+**Fermés en phase 11 (E47)** : `config system dhcp server` côté plan de
+données — son `onCommit` était vide, il sert maintenant de vrais baux —
+et `config system interface` avec `mode dhcp`, qui est un vrai client.
 
 ### 6.3 Phase 2 — le plan d'origine, pour mémoire
 
@@ -531,4 +534,5 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 8 livrée (E38). §6.9. **Socle : IKE calcule un vrai DH ; 3DES se déchiffre.** Deux affirmations du BRD corrigées après vérification. |
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
+| 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46, E47). **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |

@@ -5,6 +5,7 @@ import type { PolicyStore } from '../../../model/PolicyStore';
 import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
+import type { DhcpScope } from '../../../l3/FirewallDhcp';
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
@@ -214,6 +215,9 @@ export interface FortiCommitDevice {
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;
+  applyDhcpScope(scope: DhcpScope): void;
+  removeDhcpScope(id: string): void;
+  acquireDhcpLease(iface: string): void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;

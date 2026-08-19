@@ -2196,16 +2196,60 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       r: () => this.r(),
     });
 
-    const ripIf = (key: string) => (args: string[]) => {
+    t.registerGreedy('rip version', 'RIP version on interface', (args) => {
       const ifName = this.selectedInterface;
       if (!ifName) return '';
-      vrpSetInterfaceAttr(this.r(), '_huaweiRipIfExtras', ifName, key, args.join(' '));
+      const port = this.r().getPort(ifName);
+      if (!port) return '';
+      const version = args[0];
+      if (version !== '1' && version !== '2') {
+        return HUAWEI_ERRORS.WRONG(`rip version ${args.join(' ')}`);
+      }
+      const diffusion = (args[1] ?? '').toLowerCase();
+      if (diffusion && diffusion !== 'multicast' && diffusion !== 'broadcast') {
+        return HUAWEI_ERRORS.WRONG(`rip version ${args.join(' ')}`);
+      }
+      port.setRipSendVersion(version);
+      port.setRipReceiveVersion(version);
+      port.setRipV2Broadcast(diffusion === 'broadcast');
       return '';
-    };
-    t.registerGreedy('rip version', 'RIP version on interface', ripIf('version'));
-    t.registerGreedy('rip authentication-mode', 'RIP authentication mode', ripIf('auth'));
-    t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripIf('metricIn'));
-    t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripIf('metricOut'));
+    });
+    t.registerGreedy('undo rip version', 'Restore the default RIP version', () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      port?.setRipSendVersion(null);
+      port?.setRipReceiveVersion(null);
+      port?.setRipV2Broadcast(false);
+      return '';
+    });
+    t.registerGreedy('rip authentication-mode', 'RIP authentication mode', (args) => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      if (!port) return '';
+      const mode = (args[0] ?? '').toLowerCase();
+      if (mode !== 'simple' && mode !== 'md5') {
+        return HUAWEI_ERRORS.WRONG(`rip authentication-mode ${args.join(' ')}`);
+      }
+      const cipherAt = args.findIndex((a) => a.toLowerCase() === 'cipher');
+      port.setRipAuthMode(mode);
+      port.setRipAuthKeyChain(cipherAt >= 0 ? (args[cipherAt + 1] ?? null) : null);
+      return '';
+    });
+    t.registerGreedy('undo rip authentication-mode', 'Remove RIP authentication', () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      port?.setRipAuthMode(null);
+      port?.setRipAuthKeyChain(null);
+      return '';
+    });
+    const ripMetricRefuse = (nom: string) => (args: string[]) =>
+      `Error: This simulator's RIP engine carries no per-interface metric offset, `
+      + `so ${nom} would be stored without effect.\nrip ${nom} ${args.join(' ')}`;
+    t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripMetricRefuse('metricin'));
+    t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripMetricRefuse('metricout'));
     // `rip split-horizon` ecrivait dans `_huaweiRipIfExtras`, que rien
     // ne lit : la commande etait acceptee et n'avait aucun effet. Elle
     // passe par le meme reglage que la forme Cisco, le moteur RIP etant
@@ -2220,8 +2264,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     };
     t.register('rip split-horizon', 'Enable split horizon', splitHorizonIf(true));
     t.register('undo rip split-horizon', 'Disable split horizon', splitHorizonIf(false));
-    t.register('rip poison-reverse', 'Enable poison reverse', () => { ripIf('poisonReverse')(['on']); return ''; });
-    t.registerGreedy('rip summary-address', 'RIP summary address', ripIf('summaryAddress'));
+    t.register('rip poison-reverse', 'Enable poison reverse', () =>
+      "Error: This simulator's RIP engine carries poisoned reverse device-wide, "
+      + 'not per interface, so this command would be stored without effect.\nrip poison-reverse');
+    t.registerGreedy('rip summary-address', 'RIP summary address', (args, raw) => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      if (args.length < 2) return HUAWEI_ERRORS.INCOMPLETE(`rip summary-address ${args.join(' ')}`);
+      this.r().getPort(ifName)?.addRipSummary(raw ?? `rip summary-address ${args.join(' ')}`);
+      return '';
+    });
 
     const isisIf = (key: string) => (args: string[]) => {
       const ifName = this.selectedInterface;

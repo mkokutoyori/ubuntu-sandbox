@@ -660,12 +660,12 @@ describe('Batch 25: OSPF interface commands parity', () => {
     expect(result).toBe('');
   });
 
-  it('should accept ospf mtu-enable on interface (mtu-ignore equiv)', async () => {
+  it('refuses ospf mtu-enable, naming the check this engine does not perform', async () => {
     const r = new HuaweiRouter('R1');
     await r.executeCommand('system-view');
     await r.executeCommand('interface GE0/0/0');
     const result = await r.executeCommand('ospf mtu-enable');
-    expect(result).toBe('');
+    expect(result).toMatch(/^Error: /);
   });
 
   it('should accept ospf bfd enable on interface', async () => {

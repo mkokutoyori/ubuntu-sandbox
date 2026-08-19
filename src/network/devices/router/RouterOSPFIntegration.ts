@@ -53,6 +53,7 @@ export interface OSPFExtraConfig {
     authType?: number; authKey?: string;
     demandCircuit?: boolean; networkType?: string;
     mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
+    authKeyId?: number; silent?: boolean;
     bfd?: boolean; bfdEcho?: boolean; bfdInterval?: number;
     bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   }>;

@@ -586,17 +586,21 @@ export function registerOSPFInterfaceCommands(
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
     const mode = args[0].toLowerCase();
+    const cle = (depuis: number): string | undefined => {
+      const mot = args.findIndex((a, i) => i >= depuis
+        && (a.toLowerCase() === 'cipher' || a.toLowerCase() === 'plain'));
+      return mot >= 0 ? args[mot + 1] : args[depuis];
+    };
     if (mode === 'md5') {
-      setPendingOspfIf(ifName, { authType: 2 });
-      // md5 <key-id> cipher <key>
-      if (args.length >= 4) {
-        setPendingOspfIf(ifName, { authKey: args[3] });
-      }
+      const keyId = parseInt(args[1] ?? '', 10);
+      if (isNaN(keyId)) return 'Error: Incomplete command.';
+      setPendingOspfIf(ifName, { authType: 2, authKeyId: keyId, authKey: cle(2) });
     } else if (mode === 'simple') {
-      setPendingOspfIf(ifName, { authType: 1 });
-      if (args.length >= 2) {
-        setPendingOspfIf(ifName, { authKey: args[1] });
-      }
+      setPendingOspfIf(ifName, { authType: 1, authKey: cle(1) });
+    } else if (mode === 'null') {
+      setPendingOspfIf(ifName, { authType: 0, authKey: undefined });
+    } else {
+      return 'Error: Wrong parameter found at \'^\' position.';
     }
     return '';
   });
@@ -642,9 +646,9 @@ export function registerOSPFInterfaceCommands(
     return '';
   });
 
-  trie.registerGreedy('ospf mtu-enable', 'Enable MTU check in DBD packets', (_args) => {
-    return '';
-  });
+  trie.registerGreedy('ospf mtu-enable', 'Enable MTU check in DBD packets', () =>
+    "Error: This simulator's OSPF engine writes the MTU into a DBD packet but "
+    + 'never compares it, so this command would be stored without effect.\nospf mtu-enable');
 
   trie.registerGreedy('ospf bfd enable', 'Enable BFD on OSPF interface', (_args) => {
     const ifName = ctx.getSelectedInterface();

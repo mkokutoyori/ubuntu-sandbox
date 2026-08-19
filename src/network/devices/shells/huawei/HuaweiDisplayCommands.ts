@@ -1230,11 +1230,69 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
  * rendait AUCUNE, celui par interface les rendait toutes. Les mettre ici
  * est ce qui rend le desaccord impossible plutot que rattrape.
  */
+const VRP_OSPF_IF_DEFAULTS: Record<string, unknown> = {
+  priority: 1, helloInterval: 10, deadInterval: 40,
+  networkType: 'broadcast', authType: 0,
+};
+
+export function vrpOspfInterfaceLines(pending: Record<string, unknown> | undefined): string[] {
+  if (!pending) return [];
+  const lines: string[] = [];
+  const ecart = (cle: string) =>
+    pending[cle] !== undefined && pending[cle] !== VRP_OSPF_IF_DEFAULTS[cle];
+
+  if (pending.cost !== undefined) lines.push(` ospf cost ${pending.cost}`);
+  if (ecart('priority')) lines.push(` ospf dr-priority ${pending.priority}`);
+  if (ecart('helloInterval')) lines.push(` ospf timer hello ${pending.helloInterval}`);
+  if (ecart('deadInterval')) lines.push(` ospf timer dead ${pending.deadInterval}`);
+  if (ecart('networkType')) lines.push(` ospf network-type ${pending.networkType}`);
+  if (pending.authType === 1) {
+    lines.push(` ospf authentication-mode simple${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
+  }
+  if (pending.authType === 2) {
+    const keyId = pending.authKeyId ?? 1;
+    lines.push(` ospf authentication-mode md5 ${keyId}${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
+  }
+  if (pending.silent) lines.push(' ospf silent-interface');
+  return lines;
+}
+
+export function vrpRipInterfaceLines(port: {
+  getRipSendVersion?: () => string | null;
+  getRipReceiveVersion?: () => string | null;
+  getRipAuthMode?: () => string | null;
+  getRipAuthKeyChain?: () => string | null;
+  isRipV2Broadcast?: () => boolean;
+  getRipSummaries?: () => readonly string[];
+}): string[] {
+  const lines: string[] = [];
+  const version = port.getRipSendVersion?.() ?? port.getRipReceiveVersion?.() ?? null;
+  if (version) {
+    const diffusion = port.isRipV2Broadcast?.() ? ' broadcast' : version === '2' ? ' multicast' : '';
+    lines.push(` rip version ${version}${diffusion}`);
+  }
+  const mode = port.getRipAuthMode?.();
+  if (mode) {
+    const cle = port.getRipAuthKeyChain?.();
+    lines.push(` rip authentication-mode ${mode}${cle ? ` cipher ${cle}` : ''}`);
+  }
+  for (const l of port.getRipSummaries?.() ?? []) lines.push(` ${l}`);
+  return lines;
+}
+
 export function renderHuaweiInterfaceExtras(router: Router, port: any, portName: string): string[] {
   const lines: string[] = [];
   lines.push(...lignesConfigVrrp(huaweiVrrpAgent(router)?.listGroups() ?? [], portName));
   const extra = router._getOSPFExtraConfig();
   const pending = extra.pendingIfConfig?.get(portName) as any;
+  lines.push(...vrpOspfInterfaceLines(pending));
+  lines.push(...vrpRipInterfaceLines(port));
+  if (port.isNegotiationAuto?.() === false) {
+    const vitesse = port.getSpeed?.();
+    if (vitesse) lines.push(` speed ${vitesse}`);
+    const duplex = port.getDuplex?.();
+    if (duplex) lines.push(` duplex ${duplex}`);
+  }
   if (pending?.tunnelProtocol) lines.push(` tunnel-protocol ${pending.tunnelProtocol}`);
   if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
   if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
