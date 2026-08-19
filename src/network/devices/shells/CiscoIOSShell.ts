@@ -146,6 +146,7 @@ import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContin
 const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
 
 import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
+import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
   versionText(): string {
@@ -1387,7 +1388,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
     trie.register('show ip policy', 'Display PBR bindings', () => {
       const r = getRouter() as any;
-      const local = r._ciscoLocalPolicyRouteMap;
+      const local = getGlobalConfig(r).localPolicyRouteMap;
       const m = new Map<string, string>();
       for (const port of getRouter().getPorts()) {
         const rm = port.getPolicyRouteMap();

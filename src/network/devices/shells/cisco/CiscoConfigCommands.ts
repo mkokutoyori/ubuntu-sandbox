@@ -16,6 +16,10 @@ import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../router/qos/CarPolicer';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
+import {
+  getGlobalConfig, DHCP_RELAY_INFO_POLICIES, CEF_LOAD_SHARING_ALGORITHMS,
+  type DhcpRelayInfoPolicy,
+} from '../../router/config/CiscoGlobalConfig';
 import { CISCO_ERRORS } from '../cli-utils';
 import { getNtpAgent } from '../../../equipment/RouterServiceCapabilities';
 
@@ -271,23 +275,48 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     return '';
   });
   trie.registerGreedy('ip dhcp relay information policy', 'Option-82 policy (keep/replace/drop)', (args) => {
-    (ctx.r() as any)._ciscoDhcpRelayInfoPolicy = args[0]?.toLowerCase() ?? 'replace'; return '';
+    const policy = args[0]?.toLowerCase();
+    if (!policy || !DHCP_RELAY_INFO_POLICIES.has(policy)) {
+      throw new CliInvalidInput({ token: args[0] ?? 'policy' });
+    }
+    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = policy as DhcpRelayInfoPolicy;
+    return '';
+  });
+  trie.registerGreedy('no ip dhcp relay information policy', 'Restore the default option-82 policy', () => {
+    getGlobalConfig(ctx.r()).dhcpRelayInfoPolicy = null; return '';
   });
   trie.register('ip dhcp relay information trust-all', 'Trust option-82 on all interfaces', () => {
-    (ctx.r() as any)._ciscoDhcpRelayInfoTrustAll = true; return '';
+    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = true; return '';
+  });
+  trie.register('no ip dhcp relay information trust-all', 'Stop trusting option-82 everywhere', () => {
+    getGlobalConfig(ctx.r()).dhcpRelayInfoTrustAll = false; return '';
   });
   trie.register('ip dhcp smart-relay', 'Enable DHCP smart relay', () => {
-    (ctx.r() as any)._ciscoDhcpSmartRelay = true; return '';
+    getGlobalConfig(ctx.r()).dhcpSmartRelay = true; return '';
+  });
+  trie.register('no ip dhcp smart-relay', 'Disable DHCP smart relay', () => {
+    getGlobalConfig(ctx.r()).dhcpSmartRelay = false; return '';
   });
 
   trie.register('ip dhcp snooping', 'Enable DHCP snooping globally', () => {
-    (ctx.r() as any)._ciscoDhcpSnooping = true; return '';
+    getGlobalConfig(ctx.r()).dhcpSnooping = true; return '';
   });
-  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args, raw) => {
-    (ctx.r() as any)._ciscoDhcpSnoopingVlans = raw ?? args.join(' '); return '';
+  trie.register('no ip dhcp snooping', 'Disable DHCP snooping globally', () => {
+    getGlobalConfig(ctx.r()).dhcpSnooping = false; return '';
+  });
+  trie.registerGreedy('ip dhcp snooping vlan', 'Enable DHCP snooping for VLANs', (args) => {
+    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = args.join(' ');
+    return '';
+  });
+  trie.registerGreedy('no ip dhcp snooping vlan', 'Stop snooping those VLANs', () => {
+    getGlobalConfig(ctx.r()).dhcpSnoopingVlans = null; return '';
   });
   trie.register('ip dhcp snooping information option', 'Include option-82 in snooped packets', () => {
-    (ctx.r() as any)._ciscoDhcpSnoopingInfoOption = true; return '';
+    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = true; return '';
+  });
+  trie.register('no ip dhcp snooping information option', 'Drop option-82 from snooped packets', () => {
+    getGlobalConfig(ctx.r()).dhcpSnoopingInfoOption = false; return '';
   });
 
   trie.registerGreedy('ip route', 'Establish static routes', (args) => {
@@ -299,12 +328,30 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
   });
 
   trie.registerGreedy('ip default-network', 'Configure default-network', (args) => {
-    (ctx.r() as any)._ciscoDefaultNetwork = args[0];
+    if (!args[0] || !isValidIPv4(args[0])) throw new CliInvalidInput({ token: args[0] ?? 'network' });
+    getGlobalConfig(ctx.r()).defaultNetwork = args[0];
     return '';
   });
+  trie.registerGreedy('no ip default-network', 'Remove the default-network', () => {
+    getGlobalConfig(ctx.r()).defaultNetwork = null; return '';
+  });
   trie.registerGreedy('ip local policy route-map', 'Apply local PBR', (args) => {
-    (ctx.r() as any)._ciscoLocalPolicyRouteMap = args[0];
+    if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
+    getGlobalConfig(ctx.r()).localPolicyRouteMap = args[0];
     return '';
+  });
+  trie.registerGreedy('no ip local policy route-map', 'Remove local PBR', () => {
+    getGlobalConfig(ctx.r()).localPolicyRouteMap = null; return '';
+  });
+  trie.registerGreedy('ip cef load-sharing algorithm', 'CEF load-sharing algorithm', (args) => {
+    const algo = args[0]?.toLowerCase();
+    if (!algo) return CISCO_ERRORS.INCOMPLETE;
+    if (!CEF_LOAD_SHARING_ALGORITHMS.has(algo)) throw new CliInvalidInput({ token: args[0] });
+    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = algo;
+    return '';
+  });
+  trie.registerGreedy('no ip cef load-sharing algorithm', 'Restore the default algorithm', () => {
+    getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = null; return '';
   });
 
   trie.register('router rip', 'Enter RIP routing protocol configuration', () => {

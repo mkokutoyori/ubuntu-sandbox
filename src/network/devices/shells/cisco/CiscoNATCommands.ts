@@ -269,7 +269,11 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
         return `% Pool overlaps WAN gateway ${ifName} (${ip}).`;
       }
     }
-    engine.addPool({ name, startIP, endIP });
+    engine.addPool({
+      name, startIP, endIP,
+      ...(mask !== null ? { netmask: mask } : {}),
+      ...(prefixLen !== null ? { prefixLength: prefixLen } : {}),
+    });
     (engine.getPool(name) as any).prefixLen = effPrefix;
     return '';
   });
@@ -808,10 +812,9 @@ export function runningConfigNAT(router: Router): string[] {
   const lines: string[] = [];
 
   for (const [, pool] of engine.getPools()) {
-    const prefixLen = (pool as any).prefixLen as number | undefined;
-    const tail = prefixLen != null
-      ? `prefix-length ${prefixLen}`
-      : `netmask 255.255.255.0`;
+    const tail = pool.netmask != null
+      ? `netmask ${pool.netmask}`
+      : `prefix-length ${pool.prefixLength ?? 24}`;
     lines.push(`ip nat pool ${pool.name} ${pool.startIP} ${pool.endIP} ${tail}`);
   }
 

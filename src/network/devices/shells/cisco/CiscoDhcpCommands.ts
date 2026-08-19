@@ -10,6 +10,7 @@
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
+import { getGlobalConfig } from '../../router/config/CiscoGlobalConfig';
 
 const INVALID_INPUT = "% Invalid input detected at '^' marker.";
 
@@ -262,12 +263,13 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
 
   trie.register('show ip dhcp snooping', 'Display DHCP snooping global state', () => {
     const r = getRouter() as any;
-    if (!r._ciscoDhcpSnooping) return 'DHCP snooping is not enabled.';
-    const vlans = r._ciscoDhcpSnoopingVlans ?? '(none)';
+    const g = getGlobalConfig(r);
+    if (!g.dhcpSnooping) return 'DHCP snooping is not enabled.';
+    const vlans = g.dhcpSnoopingVlans ?? '(none)';
     return [
       'Switch DHCP snooping is enabled',
       `DHCP snooping VLAN configuration: ${vlans}`,
-      `Insertion of option-82 information: ${r._ciscoDhcpSnoopingInfoOption ? 'yes' : 'no'}`,
+      `Insertion of option-82 information: ${g.dhcpSnoopingInfoOption ? 'yes' : 'no'}`,
     ].join('\n');
   });
 

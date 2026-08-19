@@ -53,6 +53,8 @@ export interface NatPool {
   name: string;
   startIP: string;
   endIP: string;
+  netmask?: string;
+  prefixLength?: number;
 }
 
 export type NatDynamicRuleType = 'overload' | 'pool';

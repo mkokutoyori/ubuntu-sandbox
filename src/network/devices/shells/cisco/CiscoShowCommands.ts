@@ -16,6 +16,7 @@ import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRu
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
 import { pimInterfaceRunningConfigLines, pimGlobalRunningConfigLines } from './CiscoPimCommands';
+import { globalConfigRunningConfigLines } from '../../router/config/CiscoGlobalConfig';
 
 import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
 import {
@@ -547,6 +548,18 @@ export function showRunningConfig(router: Router): string {
     if (r.type === 'default' && r.nextHop) lines.push(`ip route 0.0.0.0 0.0.0.0 ${staticRouteTail(r)}`);
   }
 
+  const vrfRoutes = (router as unknown as {
+    _ciscoVrfRoutes?: Map<string, Array<{
+      network: string; mask: string; nextHop: string | null; iface: string | null;
+    }>>;
+  })._ciscoVrfRoutes;
+  for (const [nom, routes] of vrfRoutes ?? []) {
+    for (const route of routes) {
+      const queue = [route.iface, route.nextHop].filter((x): x is string => !!x).join(' ');
+      lines.push(`ip route vrf ${nom} ${route.network} ${route.mask} ${queue}`);
+    }
+  }
+
   const vrfs = (router as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> })._vrfs;
   if (vrfs && vrfs.size > 0) {
     lines.push('!');
@@ -744,6 +757,9 @@ export function showRunningConfig(router: Router): string {
     lines.push(...securityLines);
     lines.push('!');
   }
+
+  const globalLines = globalConfigRunningConfigLines(router);
+  if (globalLines.length > 0) { lines.push('!'); lines.push(...globalLines); }
 
   const pimLines = pimGlobalRunningConfigLines(router);
   if (pimLines.length > 0) { lines.push('!'); lines.push(...pimLines); }
