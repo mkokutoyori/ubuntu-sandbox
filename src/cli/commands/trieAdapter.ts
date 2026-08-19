@@ -1,6 +1,6 @@
 import type { CommandSpec } from '../CommandTable';
 
-export type TrieAction = (args: string[]) => string;
+export type TrieAction = (args: string[], raw?: string) => string;
 
 export interface CollectedRegistration {
   path: string;
@@ -96,7 +96,8 @@ export function specsFromTrieRegistrations(
       : [...words];
     const run = (prefix: readonly string[]) => (_session: unknown, args: Record<string, string>) => {
       const rest = String(args[restName] ?? '').trim();
-      return entry.action([...prefix, ...(rest.length === 0 ? [] : rest.split(/\s+/))]);
+      const argv = [...prefix, ...(rest.length === 0 ? [] : rest.split(/\s+/))];
+      return entry.action(argv, [...words, ...argv].join(' '));
     };
     specs.push({
       id: words.join('-'),
