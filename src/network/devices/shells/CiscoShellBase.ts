@@ -4777,13 +4777,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // qu'il possede. Il ne le dit que si aucun chemin du trie ne
     // prolonge la frappe — sinon c'est le trie qui a la suite.
     if (parsed.status === 'incomplete') {
-      // Le trie garde la main s'il PROLONGE la frappe ou s'il la porte
-      // exactement : `show snmp` est un noeud intermediaire du socle,
-      // qui declare `show snmp community`, mais c'est une commande
-      // complete du trie. Ne consulter que le prolongement la rendait
-      // incomplete sur une machine qui sait y repondre.
       const mots = cmdPart.trim().replace(/^no\s+/i, '').split(/\s+/).length;
-      const auTrie = this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots);
+      const auTrie = (this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots))
+        && this.getActiveTrie().match(cmdPart).status !== 'invalid';
       return auTrie ? null : CISCO_ERRORS.INCOMPLETE;
     }
     // Un refus du socle MONTRE ou l'on s'est trompe. Se taire ici

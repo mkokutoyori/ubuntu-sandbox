@@ -71,7 +71,7 @@ function suggestionsAt(
   for (const child of cursor.node.children.values()) {
     if (child.keyword === undefined) continue;
     if (!child.keyword.toLowerCase().startsWith(lowered)) continue;
-    if (!subtreeReachable(child, table, session)) continue;
+    if (!subtreeReachable(child, table, session, true)) continue;
 
     out.push({
       value: child.keyword,

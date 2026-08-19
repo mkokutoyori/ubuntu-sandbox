@@ -331,6 +331,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'crypto', 'isakmp'], 'Show ISAKMP information'],
       [['show', 'crypto', 'key'], 'Show crypto keys'],
       [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
+      [['show', 'ip'], 'IP information'],
       [['show', 'ip', 'nat'], 'Network Address Translation'],
       [['show', 'ip', 'nat', 'nvi'], 'NAT Virtual Interface'],
     ];

@@ -108,13 +108,14 @@ export function keywordMatches(
 }
 
 export function subtreeReachable(
-  node: TreeNode, table: CommandTable, session: CliSession,
+  node: TreeNode, table: CommandTable, session: CliSession, modeStrict = false,
 ): boolean {
-  if (node.spec && table.isReachable(node.spec, session)) return true;
-  if (node.argumentChild && subtreeReachable(node.argumentChild, table, session)) return true;
+  if (node.spec && table.isReachable(node.spec, session, modeStrict)) return true;
+  if (node.argumentChild
+    && subtreeReachable(node.argumentChild, table, session, modeStrict)) return true;
 
   for (const child of node.children.values()) {
-    if (subtreeReachable(child, table, session)) return true;
+    if (subtreeReachable(child, table, session, modeStrict)) return true;
   }
   return false;
 }
