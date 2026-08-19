@@ -304,14 +304,12 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'no debug ip': ['nat'],
     'show dtp': ['interface'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
-    'show spanning-tree vlan': ['bridge', 'detail', 'root'],
   },
   user: {
     'show dtp': ['interface'],
     'show interfaces': ['etherchannel', 'status', 'switchport'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
     'show monitor session': ['all'],
-    'show spanning-tree vlan': ['bridge', 'detail', 'root'],
   },
 };
 

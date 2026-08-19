@@ -18,6 +18,11 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import { collectRegistrations, specsFromTrieRegistrations }
+  from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -107,6 +112,47 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
   { keyword: 'uplinkfast', description: 'Enable UplinkFast' },
   { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
 ];
+
+const STP_VLAN_NUMBER: ArgumentSpec = {
+  name: 'vlan', type: 'INT', optional: true, range: [1, 4094],
+  description: 'VLAN number',
+};
+
+const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'bridge', description: 'Bridge information' },
+  { keyword: 'detail', description: 'Detailed output' },
+  { keyword: 'root', description: 'Root bridge' },
+];
+
+function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
+  const words = ['show', 'spanning-tree', 'vlan'];
+  const exec = ['user', 'privileged'];
+  const lire = (args: Record<string, string>): string =>
+    String(args[STP_VLAN_NUMBER.name] ?? '').trim();
+
+  const specs: CommandSpec[] = [{
+    id: words.join('-'),
+    path: [...words, STP_VLAN_NUMBER],
+    description: 'STP for a VLAN',
+    modes: exec, minPrivilege: 1,
+    run: ((_session: unknown, args: Record<string, string>) => {
+      const vlan = lire(args);
+      return action(vlan.length === 0 ? [] : [vlan]);
+    }) as CommandSpec['run'],
+  }];
+
+  for (const vue of STP_VLAN_VIEWS) {
+    specs.push({
+      id: [...words, vue.keyword].join('-'),
+      path: [...words, STP_VLAN_NUMBER, vue.keyword],
+      description: vue.description,
+      modes: exec, minPrivilege: 1,
+      run: ((_session: unknown, args: Record<string, string>) =>
+        action([lire(args), vue.keyword])) as CommandSpec['run'],
+    });
+  }
+  return specs;
+}
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   override versionText(): string {
@@ -1922,99 +1968,134 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // show spanning-tree summary | mst configuration | interface <if>
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show spanning-tree summary', 'STP summary', () => {
-        const sw = this.d();
-        const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
-        const stpStates = sw._getSTPStates();
-        const ports = sw._getPortsInternal();
-        const rootVlans = [...sw.getVLANs().keys()]
-          .sort((a, b) => a - b)
-          .filter(v => agent?.isRootForVlan(v) ?? false)
-          .map(v => `VLAN${String(v).padStart(4, '0')}`);
-        const rootForVlan = rootVlans.length ? rootVlans.join(', ') : 'none';
-        let blocking = 0, listening = 0, learning = 0, forwarding = 0;
-        for (const [name, state] of stpStates) {
-          const port = ports.get(name);
-          if (!port || !port.getIsUp() || !port.isConnected()) continue;
-          if (state === 'blocking') blocking++;
-          else if (state === 'listening') listening++;
-          else if (state === 'learning') learning++;
-          else if (state === 'forwarding') forwarding++;
-        }
-        const total = blocking + listening + learning + forwarding;
-        const g = agent?.getGlobalStp();
-        const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
-        return [
-          `Switch is in ${this.stpMode} mode`,
-          `Root bridge for: ${rootForVlan}`,
-          `Extended system ID           is enabled`,
-          `Portfast Default             ${onOff(g?.portfastDefault)}`,
-          `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
-          `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
-          `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
-          `UplinkFast                   ${onOff(g?.uplinkFast)}`,
-          `BackboneFast                 ${onOff(g?.backboneFast)}`,
-          `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
-          ``,
-          `Name                   Blocking Listening Learning Forwarding STP Active`,
-          `---------------------- -------- --------- -------- ---------- ----------`,
-          `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
-        ].join('\n');
-      });
-      t.register('show spanning-tree mst configuration', 'MST region config', () =>
-        this.showMstConfig());
-      t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
-        const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
-        const lines = this.ifStp.get(name) ?? [];
-        return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
-      });
-      t.register('show spanning-tree', 'Display spanning tree state', () => this.showSpanningTree(this.d()));
-      t.register('show spanning-tree detail', 'Detailed STP state', () => this.showStpDetail(this.d()));
-      t.register('show spanning-tree root', 'STP root bridge info', () => this.showStpRoot(this.d()));
-      t.register('show spanning-tree bridge', 'STP local bridge info', () => this.showStpBridge(this.d()));
-      t.register('show spanning-tree blockedports', 'STP blocked ports', () => this.showStpBlockedPorts(this.d()));
-      t.registerGreedy('show spanning-tree vlan', 'STP for a VLAN', (a) => {
-        const id = parseInt(a[0], 10);
-        if (isNaN(id)) return this.showSpanningTree(this.d());
-        if (a[1]?.toLowerCase() === 'detail') return this.showStpDetail(this.d(), id);
-        if (a[1]?.toLowerCase() === 'bridge') return this.showStpBridge(this.d(), id);
-        if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
-        return this.showSpanningTree(this.d(), id);
-      });
-      t.register('show spanning-tree summary totals', 'STP summary totals', () =>
-        `Switch is in ${this.stpMode} mode\n` +
-        `Root bridge for: ${this.stpAgentOf(this.d())?.isRoot() ? 'VLAN0001' : 'none'}\n` +
-        `                     Blocking Listening Learning Forwarding STP Active\n` +
-        `-------------------- -------- --------- -------- ---------- ----------\n` +
-        `1 vlan               ${this.stpSummaryCounts(this.d())}`);
-      t.register('show spanning-tree inconsistentports', 'STP inconsistent ports', () => {
-        const agent = this.stpAgentOf(this.d());
-        const bad: string[] = [];
-        for (const [portName] of this.d()._getSTPStates()) {
-          if (agent?.isRootInconsistent(portName)) bad.push(this.abbreviateInterface(portName));
-        }
-        return [
-          'Name                 Interface                Inconsistency',
-          '-------------------- ------------------------ ------------------',
-          ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
-          '',
-          `Number of inconsistent ports (segments) in the system : ${bad.length}`,
-        ].join('\n');
-      });
-      t.register('show spanning-tree active', 'STP state on active interfaces', () =>
-        this.showSpanningTree(this.d()));
-      t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
-        `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
-      t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
-        if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
-        if (!a[0]) return this.showMstInstances();
-        const id = parseInt(a[0], 10);
-        if (isNaN(id)) return CISCO_ERRORS.INVALID_INPUT;
-        return this.showMstInstances(id);
-      });
-    }
     this.registerSwitchDebugCommands();
+  }
+
+  private stpShowSpecs(): CommandSpec[] {
+    const register = (collector: SpecCollector) =>
+      this.registerStpShowCommands(collector as unknown as CommandTrie);
+
+    const specs = specsFromTrieRegistrations(register, {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      skip: (path) => path === 'show spanning-tree vlan',
+      restDescriptionFor: (path) => ({
+        'show spanning-tree interface': 'Interface name',
+        'show spanning-tree mst': 'Instance number, or configuration',
+      })[path],
+      restLiteralFor: (path) => ({
+        'show spanning-tree interface': 'WORD',
+        'show spanning-tree mst': '<0-4094>',
+      })[path],
+    });
+
+    const vlan = collectRegistrations(register)
+      .find((entry) => entry.path === 'show spanning-tree vlan');
+    return vlan ? [...specs, ...stpVlanSpecs(vlan.action)] : specs;
+  }
+
+  protected override socleSpecs(): readonly CommandSpec[] {
+    return [...super.socleSpecs(), ...this.stpShowSpecs()];
+  }
+
+  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+    return [
+      ...super.socleLegends(),
+      [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
+    ];
+  }
+
+  private registerStpShowCommands(t: CommandTrie): void {
+    t.register('show spanning-tree summary', 'STP summary', () => {
+      const sw = this.d();
+      const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+      const stpStates = sw._getSTPStates();
+      const ports = sw._getPortsInternal();
+      const rootVlans = [...sw.getVLANs().keys()]
+        .sort((a, b) => a - b)
+        .filter(v => agent?.isRootForVlan(v) ?? false)
+        .map(v => `VLAN${String(v).padStart(4, '0')}`);
+      const rootForVlan = rootVlans.length ? rootVlans.join(', ') : 'none';
+      let blocking = 0, listening = 0, learning = 0, forwarding = 0;
+      for (const [name, state] of stpStates) {
+        const port = ports.get(name);
+        if (!port || !port.getIsUp() || !port.isConnected()) continue;
+        if (state === 'blocking') blocking++;
+        else if (state === 'listening') listening++;
+        else if (state === 'learning') learning++;
+        else if (state === 'forwarding') forwarding++;
+      }
+      const total = blocking + listening + learning + forwarding;
+      const g = agent?.getGlobalStp();
+      const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
+      return [
+        `Switch is in ${this.stpMode} mode`,
+        `Root bridge for: ${rootForVlan}`,
+        `Extended system ID           is enabled`,
+        `Portfast Default             ${onOff(g?.portfastDefault)}`,
+        `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
+        `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
+        `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
+        `UplinkFast                   ${onOff(g?.uplinkFast)}`,
+        `BackboneFast                 ${onOff(g?.backboneFast)}`,
+        `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
+        ``,
+        `Name                   Blocking Listening Learning Forwarding STP Active`,
+        `---------------------- -------- --------- -------- ---------- ----------`,
+        `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
+      ].join('\n');
+    });
+    t.register('show spanning-tree mst configuration', 'MST region config', () =>
+      this.showMstConfig());
+    t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
+      const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
+      const lines = this.ifStp.get(name) ?? [];
+      return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
+    });
+    t.register('show spanning-tree', 'Display spanning tree state', () => this.showSpanningTree(this.d()));
+    t.register('show spanning-tree detail', 'Detailed STP state', () => this.showStpDetail(this.d()));
+    t.register('show spanning-tree root', 'STP root bridge info', () => this.showStpRoot(this.d()));
+    t.register('show spanning-tree bridge', 'STP local bridge info', () => this.showStpBridge(this.d()));
+    t.register('show spanning-tree blockedports', 'STP blocked ports', () => this.showStpBlockedPorts(this.d()));
+    t.registerGreedy('show spanning-tree vlan', 'STP for a VLAN', (a) => {
+      const id = parseInt(a[0], 10);
+      if (isNaN(id)) return this.showSpanningTree(this.d());
+      if (a[1]?.toLowerCase() === 'detail') return this.showStpDetail(this.d(), id);
+      if (a[1]?.toLowerCase() === 'bridge') return this.showStpBridge(this.d(), id);
+      if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
+      return this.showSpanningTree(this.d(), id);
+    });
+    t.register('show spanning-tree summary totals', 'STP summary totals', () =>
+      `Switch is in ${this.stpMode} mode\n` +
+      `Root bridge for: ${this.stpAgentOf(this.d())?.isRoot() ? 'VLAN0001' : 'none'}\n` +
+      `                     Blocking Listening Learning Forwarding STP Active\n` +
+      `-------------------- -------- --------- -------- ---------- ----------\n` +
+      `1 vlan               ${this.stpSummaryCounts(this.d())}`);
+    t.register('show spanning-tree inconsistentports', 'STP inconsistent ports', () => {
+      const agent = this.stpAgentOf(this.d());
+      const bad: string[] = [];
+      for (const [portName] of this.d()._getSTPStates()) {
+        if (agent?.isRootInconsistent(portName)) bad.push(this.abbreviateInterface(portName));
+      }
+      return [
+        'Name                 Interface                Inconsistency',
+        '-------------------- ------------------------ ------------------',
+        ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
+        '',
+        `Number of inconsistent ports (segments) in the system : ${bad.length}`,
+      ].join('\n');
+    });
+    t.register('show spanning-tree active', 'STP state on active interfaces', () =>
+      this.showSpanningTree(this.d()));
+    t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
+      `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
+    t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
+      if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
+      if (!a[0]) return this.showMstInstances();
+      const id = parseInt(a[0], 10);
+      if (isNaN(id)) return CISCO_ERRORS.INVALID_INPUT;
+      return this.showMstInstances(id);
+    });
   }
 
   private registerSwitchDebugCommands(): void {
