@@ -9,6 +9,8 @@
 
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { getGlobalConfig } from '../../router/config/CiscoGlobalConfig';
 
@@ -315,6 +317,16 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
     getRouter()._getDHCPServerInternal().formatBindingsShow());
 
+}
+
+export function dhcpIpv6ShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerDhcpShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      skip: (path) => !path.startsWith('show ipv6 dhcp'),
+    },
+  );
 }
 
 // ─── DHCP Privileged Commands (debug, clear) ─────────────────────────

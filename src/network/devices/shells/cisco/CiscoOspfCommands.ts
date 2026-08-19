@@ -2872,6 +2872,21 @@ export function ospfShowSpecs(getRouter: () => Router): CommandSpec[] {
   );
 }
 
+export function ospfIpv6ShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerOSPFShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      restDescriptionFor: (path) => ({
+        'show ipv6 ospf': 'Process ID number',
+        'show ipv6 route': 'Prefix or protocol',
+      })[path],
+      restLiteralFor: (path) => path === 'show ipv6 ospf' ? '<1-65535>' : undefined,
+      skip: (path) => !path.startsWith('show ipv6 '),
+    },
+  );
+}
+
 export function ospfClearSpecs(getRouter: () => Router): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => registerOSPFShowCommands(collector as unknown as CommandTrie, getRouter),
