@@ -889,44 +889,37 @@ function ospfInterfaceRunningConfigLines(pending: Record<string, unknown>): stri
   return lines;
 }
 
-interface LegacyIfaceState {
-  tcpAdjustMss?: number;
-  ipAccounting?: boolean;
-  dhcpRelayInfoTrusted?: boolean;
-  dhcpSnoopingTrust?: boolean;
-  dhcpSnoopingRateLimit?: number;
-  ripV2Broadcast?: boolean;
-  nbarProtocolDiscovery?: boolean;
-  ipv6DhcpPool?: string;
-  ipv6DhcpRelayDestinations?: string[];
-  fairQueueConfig?: string;
-  wredEnabled?: boolean;
-}
-
-function legacyInterfaceLines(router: Router, name: string, port: Port): string[] {
+function legacyInterfaceLines(port: Port): string[] {
   const lines: string[] = [];
-  const p = port as unknown as LegacyIfaceState;
+  const mss = port.getTcpAdjustMss();
+  const rate = port.getDhcpSnoopingRateLimit();
+  const pool = port.getIpv6DhcpPool();
+  const wfq = port.getFairQueueConfig();
+  const pbr = port.getPolicyRouteMap();
 
-  const pbr = (router as unknown as { _ciscoIfacePolicyRouteMap?: Map<string, string> })
-    ._ciscoIfacePolicyRouteMap?.get(name);
   if (pbr) lines.push(` ip policy route-map ${pbr}`);
-
-  if (port.isDirectedBroadcastEnabled?.()) lines.push(' ip directed-broadcast');
-  if (p.tcpAdjustMss !== undefined) lines.push(` ip tcp adjust-mss ${p.tcpAdjustMss}`);
-  if (p.ipAccounting) lines.push(' ip accounting');
-  if (p.dhcpRelayInfoTrusted) lines.push(' ip dhcp relay information trusted');
-  if (p.dhcpSnoopingTrust) lines.push(' ip dhcp snooping trust');
-  if (p.dhcpSnoopingRateLimit !== undefined) {
-    lines.push(` ip dhcp snooping limit rate ${p.dhcpSnoopingRateLimit}`);
-  }
-  if (p.ripV2Broadcast) lines.push(' ip rip v2-broadcast');
-  if (p.nbarProtocolDiscovery) lines.push(' ip nbar protocol-discovery');
-  if (p.ipv6DhcpPool) lines.push(` ipv6 dhcp server ${p.ipv6DhcpPool}`);
-  for (const d of p.ipv6DhcpRelayDestinations ?? []) {
+  if (port.isDirectedBroadcastEnabled()) lines.push(' ip directed-broadcast');
+  if (mss !== null) lines.push(` ip tcp adjust-mss ${mss}`);
+  if (port.isIpAccountingEnabled()) lines.push(' ip accounting');
+  if (port.isDhcpRelayInfoTrusted()) lines.push(' ip dhcp relay information trusted');
+  if (port.isDhcpSnoopingTrusted()) lines.push(' ip dhcp snooping trust');
+  if (rate !== null) lines.push(` ip dhcp snooping limit rate ${rate}`);
+  if (port.isRipV2Broadcast()) lines.push(' ip rip v2-broadcast');
+  if (port.isNbarProtocolDiscoveryEnabled()) lines.push(' ip nbar protocol-discovery');
+  if (pool) lines.push(` ipv6 dhcp server ${pool}`);
+  for (const d of port.getIpv6DhcpRelayDestinations()) {
     lines.push(` ipv6 dhcp relay destination ${d}`);
   }
-  if (p.fairQueueConfig) lines.push(` ${p.fairQueueConfig.trim()}`);
-  if (p.wredEnabled) lines.push(' random-detect');
+  if (wfq) lines.push(` ${wfq.trim()}`);
+  if (port.isWredEnabled()) lines.push(' random-detect');
+  const maxRes = port.getMaxReservedBandwidth();
+  if (maxRes !== null) lines.push(` max-reserved-bandwidth ${maxRes}`);
+  const prio = port.getPriorityGroup();
+  if (prio !== null) lines.push(` priority-group ${prio}`);
+  const cql = port.getCustomQueueList();
+  if (cql !== null) lines.push(` custom-queue-list ${cql}`);
+  const txRing = port.getTxRingLimit();
+  if (txRing !== null) lines.push(` tx-ring-limit ${txRing}`);
 
   return lines;
 }
@@ -980,14 +973,10 @@ function interfaceConfigLines(
   }
   lines.push(...runningConfigInterfaceACL(router, name));
   lines.push(...runningConfigInterfaceNAT(router, name));
-  const proto = port as unknown as {
-    eigrpSummaries?: string[]; eigrpExtras?: string[];
-    ripSummaries?: string[]; ripAuth?: string[];
-  };
-  for (const l of proto.eigrpSummaries ?? []) lines.push(` ${l}`);
-  for (const l of proto.eigrpExtras ?? []) lines.push(` ${l}`);
-  for (const l of proto.ripSummaries ?? []) lines.push(` ${l}`);
-  for (const l of proto.ripAuth ?? []) lines.push(` ${l}`);
+  for (const l of port.getEigrpSummaries()) lines.push(` ${l}`);
+  for (const l of port.getEigrpExtras()) lines.push(` ${l}`);
+  for (const l of port.getRipSummaries()) lines.push(` ${l}`);
+  for (const l of (port as unknown as { ripAuth?: string[] }).ripAuth ?? []) lines.push(` ${l}`);
   const sec = (router as unknown as {
     [s: symbol]: { asInterfaceRunningConfigLines?: (iface: string) => string[] } | undefined;
   })[Symbol.for('CiscoSecurityConfig')];
@@ -996,7 +985,7 @@ function interfaceConfigLines(
   if (nhrp) lines.push(...nhrp.asRunningConfigInterface(name));
   const nf = (router as unknown as { getNetflowService?: () => { asInterfaceRunningConfigLines: (n: string) => string[] } }).getNetflowService?.();
   if (nf) lines.push(...nf.asInterfaceRunningConfigLines(name));
-  lines.push(...legacyInterfaceLines(router, name, port));
+  lines.push(...legacyInterfaceLines(port));
   lines.push(...igmpInterfaceRunningConfigLines(router, name));
   lines.push(...pimInterfaceRunningConfigLines(router, name));
   // `rate-limit` (CAR historique) était STOCKÉ sur le port et rendu

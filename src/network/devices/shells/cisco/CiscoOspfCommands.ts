@@ -1023,11 +1023,11 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     const extra = ctx.r()._getOSPFExtraConfig();
     const pending = extra.pendingIfConfig.get(ifName) || {};
     const sub = args[0]?.toLowerCase();
-    if (sub === 'interval' && args[1]) (pending as any).bfdInterval = parseInt(args[1], 10);
-    else if (sub === 'min_rx' && args[1]) (pending as any).bfdMinRx = parseInt(args[1], 10);
-    else if (sub === 'multiplier' && args[1]) (pending as any).bfdMultiplier = parseInt(args[1], 10);
-    else if (sub === 'template' && args[1]) (pending as any).bfdTemplate = args[1];
-    else if (sub === 'echo') (pending as any).bfdEcho = true;
+    if (sub === 'interval' && args[1]) pending.bfdInterval = parseInt(args[1], 10);
+    else if (sub === 'min_rx' && args[1]) pending.bfdMinRx = parseInt(args[1], 10);
+    else if (sub === 'multiplier' && args[1]) pending.bfdMultiplier = parseInt(args[1], 10);
+    else if (sub === 'template' && args[1]) pending.bfdTemplate = args[1];
+    else if (sub === 'echo') pending.bfdEcho = true;
     else (pending as any).bfd = args.join(' ');
     extra.pendingIfConfig.set(ifName, pending);
     return '';

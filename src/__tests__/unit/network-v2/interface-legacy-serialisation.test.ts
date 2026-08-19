@@ -44,6 +44,10 @@ const REGLAGES = [
   'ipv6 dhcp relay destination 2001:db8::1',
   'fair-queue 64 256 0',
   'random-detect',
+  'max-reserved-bandwidth 85',
+  'priority-group 3',
+  'custom-queue-list 7',
+  'tx-ring-limit 12',
 ];
 
 describe('running-config — les réglages d\'interface hérités y figurent', () => {
@@ -88,5 +92,38 @@ describe('running-config — les réglages d\'interface hérités y figurent', (
     const r = await routeur();
     await surIface(r, ['ip route-cache flow']);
     expect(await sectionIface(r)).toContain('ip flow ingress');
+  });
+
+  it('rend les résumés RIP et EIGRP posés sur le port', async () => {
+    const r = await routeur();
+    await surIface(r, [
+      'ip summary-address rip 10.1.0.0 255.255.0.0',
+      'ip summary-address eigrp 100 172.16.0.0 255.255.0.0',
+      'ip hello-interval eigrp 100 10',
+    ]);
+    const cfg = await sectionIface(r);
+    expect(cfg).toContain('ip summary-address rip 10.1.0.0 255.255.0.0');
+    expect(cfg).toContain('ip summary-address eigrp 100 172.16.0.0 255.255.0.0');
+    expect(cfg).toContain('ip hello-interval eigrp 100 10');
+  });
+
+  it('`no ip summary-address eigrp` retire le résumé nommé et lui seul', async () => {
+    const r = await routeur();
+    await surIface(r, [
+      'ip summary-address eigrp 100 172.16.0.0 255.255.0.0',
+      'ip summary-address eigrp 100 192.168.0.0 255.255.0.0',
+      'no ip summary-address eigrp 100 172.16.0.0 255.255.0.0',
+    ]);
+    const cfg = await sectionIface(r);
+    expect(cfg).not.toContain('172.16.0.0');
+    expect(cfg).toContain('ip summary-address eigrp 100 192.168.0.0 255.255.0.0');
+  });
+
+  it('`no bfd echo` retire vraiment la ligne que `bfd echo` a posée', async () => {
+    const r = await routeur();
+    await surIface(r, ['bfd echo']);
+    expect(await sectionIface(r)).toContain('bfd echo');
+    await surIface(r, ['no bfd echo']);
+    expect(await sectionIface(r)).not.toContain('bfd echo');
   });
 });

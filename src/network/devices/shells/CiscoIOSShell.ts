@@ -1385,8 +1385,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
     trie.register('show ip policy', 'Display PBR bindings', () => {
       const r = getRouter() as any;
-      const m = r._ciscoIfacePolicyRouteMap as Map<string, string> | undefined;
       const local = r._ciscoLocalPolicyRouteMap;
+      const m = new Map<string, string>();
+      for (const port of getRouter().getPorts()) {
+        const rm = port.getPolicyRouteMap();
+        if (rm) m.set(port.getName(), rm);
+      }
       // Une colonne alignée sur l'en-tête, et le nom abrégé qu'IOS emploie
       // ici : les lignes commençaient par une espace et débordaient de la
       // colonne annoncée, donc rien ne s'alignait sur l'en-tête.
@@ -1394,10 +1398,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const head = `${'Interface'.padEnd(COL)}Route map`;
       const rows: string[] = [];
       if (local) rows.push(`${'Local'.padEnd(COL)}${local}`);
-      if (m) {
-        for (const [iface, rm] of m) {
-          rows.push(`${iosShortInterfaceName(iface).padEnd(COL)}${rm}`);
-        }
+      for (const [iface, rm] of m) {
+        rows.push(`${iosShortInterfaceName(iface).padEnd(COL)}${rm}`);
       }
       return [head, ...rows].join('\n');
     });

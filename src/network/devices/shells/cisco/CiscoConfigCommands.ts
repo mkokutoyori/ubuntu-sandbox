@@ -392,11 +392,9 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
 
 export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('ip policy route-map', 'Apply PBR on interface', (args) => {
-    const r = ctx.r() as any;
     const iface = ctx.getSelectedInterface();
     if (!iface) return '';
-    const m = r._ciscoIfacePolicyRouteMap ?? (r._ciscoIfacePolicyRouteMap = new Map<string, string>());
-    if (args[0]) m.set(iface, args[0]);
+    if (args[0]) ctx.r().getPort(iface)?.setPolicyRouteMap(args[0]);
     return '';
   });
   trie.registerGreedy('interface', 'Select an interface to configure', (args) => {
@@ -619,7 +617,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
     if (port && Number.isFinite(n) && n > 0) {
-      (port as unknown as { tcpAdjustMss?: number }).tcpAdjustMss = n;
+      port.setTcpAdjustMss(n);
     }
     return '';
   });
@@ -649,7 +647,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.register('ip accounting', 'Enable IP accounting', () => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
-    if (port) (port as unknown as { ipAccounting?: boolean }).ipAccounting = true;
+    port?.setIpAccounting(true);
     return '';
   });
   trie.register('ip dhcp relay information trusted', 'Trust DHCP option-82', () => {
@@ -662,7 +660,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
-    if (port) (port as any).dhcpSnoopingTrust = true;
+    port?.setDhcpSnoopingTrust(true);
     return '';
   });
   trie.registerGreedy('ip dhcp snooping limit rate', 'Snooping rate-limit (pps)', (args) => {
@@ -670,14 +668,14 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) (port as any).dhcpSnoopingRateLimit = n;
+    if (!isNaN(n)) port?.setDhcpSnoopingRateLimit(n);
     return '';
   });
   trie.registerGreedy('ipv6 dhcp server', 'Bind IPv6 DHCP pool to interface', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName || !args[0]) return '';
     const port = ctx.r().getPort(ifName);
-    if (port) (port as any).ipv6DhcpPool = args[0];
+    port?.setIpv6DhcpPool(args[0]);
     ctx.r().setDhcpv6ServerPool(ifName, args[0]);
     return '';
   });
@@ -685,7 +683,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const ifName = ctx.getSelectedInterface();
     if (!ifName || !args[0]) return '';
     const port = ctx.r().getPort(ifName);
-    if (port) ((port as any).ipv6DhcpRelayDestinations ??= []).push(args[0]);
+    port?.addIpv6DhcpRelayDestination(args[0]);
     ctx.r().addDhcpv6RelayDestination(ifName, args[0]);
     return '';
   });
@@ -755,14 +753,14 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
   trie.register('ip rip v2-broadcast', 'Broadcast RIPv2 instead of multicast', () => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.ripV2Broadcast = true;
+    const port = ctx.r().getPort(ifName);
+    port?.setRipV2Broadcast(true);
     return '';
   });
   trie.registerGreedy('ip summary-address rip', 'Summarize RIP routes', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.ripSummaries ??= []).push(raw ?? `ip summary-address rip ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addRipSummary(raw ?? `ip summary-address rip ${args.join(' ')}`);
     return '';
   });
   trie.registerGreedy('ip summary-address eigrp', 'Summarize EIGRP routes', (args, raw) => {
@@ -771,34 +769,30 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!isValidIPv4(args[1]) || !isValidIPv4(args[2])) {
       throw new CliInvalidInput({ token: args[1] });
     }
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpSummaries ??= []).push(raw ?? `ip summary-address eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpSummary(raw ?? `ip summary-address eigrp ${args.join(' ')}`);
     ctx.r().addSummaryDiscardRoute(new IPAddress(args[1]), new SubnetMask(args[2]));
     return '';
   });
   trie.registerGreedy('no ip summary-address eigrp', 'Remove an EIGRP summary', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     if (args.length < 3) return CISCO_ERRORS.INCOMPLETE;
-    const port = ctx.r().getPort(ifName) as unknown as { eigrpSummaries?: string[] } | undefined;
-    if (port?.eigrpSummaries) {
-      port.eigrpSummaries = port.eigrpSummaries
-        .filter((l) => l.split(/\s+/)[3] !== args[1]);
-    }
+    ctx.r().getPort(ifName)?.removeEigrpSummary((l) => l.split(/\s+/)[4] === args[1]);
     ctx.r().removeSummaryDiscardRoute(new IPAddress(args[1]), new SubnetMask(args[2]));
     return '';
   });
   trie.registerGreedy('ip bandwidth-percent eigrp', 'EIGRP bandwidth %', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip bandwidth-percent eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `ip bandwidth-percent eigrp ${args.join(' ')}`);
     return '';
   });
   // `ip hello-interval eigrp <as> <sec>` — the value drives the real
   // Hello timer (RFC 7868 §5.3.1), not just the running-config text.
   trie.registerGreedy('ip hello-interval eigrp', 'EIGRP hello interval', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
     const sec = Number(args[args.length - 1]);
     if (Number.isFinite(sec) && sec > 0) {
       ctx.r().getEIGRPEngine().setInterfaceTiming(ifName, { helloSec: sec });
@@ -809,8 +803,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // exactly as IOS keeps it: raising one does not raise the other.
   trie.registerGreedy('ip hold-time eigrp', 'EIGRP hold time', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
     const sec = Number(args[args.length - 1]);
     if (Number.isFinite(sec) && sec > 0) {
       ctx.r().getEIGRPEngine().setInterfaceTiming(ifName, { holdSec: sec });
@@ -821,16 +815,16 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const mode = (args[1] ?? '').toLowerCase();
     if (mode !== 'md5' && mode !== 'hmac-sha-256') throw new CliInvalidInput({ token: args[1] });
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication mode eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `ip authentication mode eigrp ${args.join(' ')}`);
     ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, { mode: 'md5' });
     return '';
   });
   trie.registerGreedy('ip authentication key-chain eigrp', 'EIGRP auth key-chain', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `ip authentication key-chain eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `ip authentication key-chain eigrp ${args.join(' ')}`);
     ctx.r().getEIGRPEngine().setInterfaceAuth(ifName, { keyChain: args[1] });
     return '';
   });
@@ -846,21 +840,21 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
   trie.registerGreedy('no ip split-horizon eigrp', 'Disable EIGRP split-horizon', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) (port.eigrpExtras ??= []).push(raw ?? `no ip split-horizon eigrp ${args.join(' ')}`);
+    const port = ctx.r().getPort(ifName);
+    port?.addEigrpExtra(raw ?? `no ip split-horizon eigrp ${args.join(' ')}`);
     return '';
   });
-  trie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', (_args) => {
+  trie.registerGreedy('no bfd echo', 'Disable BFD echo on interface', () => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.bfdEcho = false;
+    const pending = ctx.r()._getOSPFExtraConfig().pendingIfConfig.get(ifName);
+    if (pending) delete pending.bfdEcho;
     return '';
   });
   trie.registerGreedy('max-reserved-bandwidth', 'Max reservable bandwidth %', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
+    const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.maxReservedBandwidth = n;
+    if (!isNaN(n)) port?.setMaxReservedBandwidth(n);
     return '';
   });
   trie.registerGreedy('rate-limit', 'Rate-limit (legacy CAR)', (args, raw) => {
@@ -889,39 +883,39 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   });
   trie.register('ip nbar protocol-discovery', 'Enable NBAR protocol discovery', () => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.nbarProtocolDiscovery = true;
+    const port = ctx.r().getPort(ifName);
+    port?.setNbarProtocolDiscovery(true);
     return '';
   });
   trie.registerGreedy('priority-group', 'Apply priority queueing group', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.priorityGroup = parseInt(args[0] ?? '', 10) || 0;
+    const port = ctx.r().getPort(ifName);
+    port?.setPriorityGroup(parseInt(args[0] ?? '', 10) || 0);
     return '';
   });
   trie.registerGreedy('custom-queue-list', 'Apply custom queue list', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.customQueueList = parseInt(args[0] ?? '', 10) || 0;
+    const port = ctx.r().getPort(ifName);
+    port?.setCustomQueueList(parseInt(args[0] ?? '', 10) || 0);
     return '';
   });
   trie.registerGreedy('fair-queue', 'Enable WFQ', (args, raw) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.fairQueueConfig = raw ?? `fair-queue ${args.join(' ')}`;
+    const port = ctx.r().getPort(ifName);
+    port?.setFairQueueConfig(raw ?? `fair-queue ${args.join(' ')}`);
     return '';
   });
   trie.register('random-detect', 'Enable WRED', () => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
-    if (port) port.wredEnabled = true;
+    const port = ctx.r().getPort(ifName);
+    port?.setWred(true);
     return '';
   });
   trie.registerGreedy('tx-ring-limit', 'Configure TX-ring limit', (args) => {
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
-    const port = ctx.r().getPort(ifName) as any;
+    const port = ctx.r().getPort(ifName);
     const n = parseInt(args[0] ?? '', 10);
-    if (port && !isNaN(n)) port.txRingLimit = n;
+    if (!isNaN(n)) port?.setTxRingLimit(n);
     return '';
   });
 

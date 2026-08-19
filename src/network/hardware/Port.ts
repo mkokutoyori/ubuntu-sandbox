@@ -133,6 +133,25 @@ export class Port {
   private keepaliveSec: number = 10;
   private keepaliveEnabled: boolean = true;
   private directedBroadcast: boolean = false;
+  private tcpAdjustMss: number | null = null;
+  private ipAccounting: boolean = false;
+  private dhcpRelayInfoTrusted: boolean = false;
+  private dhcpSnoopingTrust: boolean = false;
+  private dhcpSnoopingRateLimit: number | null = null;
+  private ripV2Broadcast: boolean = false;
+  private nbarProtocolDiscovery: boolean = false;
+  private ipv6DhcpPool: string | null = null;
+  private ipv6DhcpRelayDestinations: string[] = [];
+  private fairQueueConfig: string | null = null;
+  private wredEnabled: boolean = false;
+  private policyRouteMap: string | null = null;
+  private ripSummaries: string[] = [];
+  private eigrpSummaries: string[] = [];
+  private eigrpExtras: string[] = [];
+  private maxReservedBandwidth: number | null = null;
+  private priorityGroup: number | null = null;
+  private customQueueList: number | null = null;
+  private txRingLimit: number | null = null;
 
   private inputServicePolicy: string | null = null;
   private outputServicePolicy: string | null = null;
@@ -170,6 +189,51 @@ export class Port {
   isKeepaliveEnabled(): boolean { return this.keepaliveEnabled; }
   isDirectedBroadcastEnabled(): boolean { return this.directedBroadcast; }
   setDirectedBroadcast(on: boolean): void { this.directedBroadcast = on; }
+
+  getTcpAdjustMss(): number | null { return this.tcpAdjustMss; }
+  setTcpAdjustMss(bytes: number | null): void { this.tcpAdjustMss = bytes; }
+  isIpAccountingEnabled(): boolean { return this.ipAccounting; }
+  setIpAccounting(on: boolean): void { this.ipAccounting = on; }
+  isDhcpRelayInfoTrusted(): boolean { return this.dhcpRelayInfoTrusted; }
+  setDhcpRelayInfoTrusted(on: boolean): void { this.dhcpRelayInfoTrusted = on; }
+  isDhcpSnoopingTrusted(): boolean { return this.dhcpSnoopingTrust; }
+  setDhcpSnoopingTrust(on: boolean): void { this.dhcpSnoopingTrust = on; }
+  getDhcpSnoopingRateLimit(): number | null { return this.dhcpSnoopingRateLimit; }
+  setDhcpSnoopingRateLimit(pps: number | null): void { this.dhcpSnoopingRateLimit = pps; }
+  isRipV2Broadcast(): boolean { return this.ripV2Broadcast; }
+  setRipV2Broadcast(on: boolean): void { this.ripV2Broadcast = on; }
+  isNbarProtocolDiscoveryEnabled(): boolean { return this.nbarProtocolDiscovery; }
+  setNbarProtocolDiscovery(on: boolean): void { this.nbarProtocolDiscovery = on; }
+  getIpv6DhcpPool(): string | null { return this.ipv6DhcpPool; }
+  setIpv6DhcpPool(name: string | null): void { this.ipv6DhcpPool = name; }
+  getIpv6DhcpRelayDestinations(): readonly string[] { return this.ipv6DhcpRelayDestinations; }
+  addIpv6DhcpRelayDestination(addr: string): void {
+    if (!this.ipv6DhcpRelayDestinations.includes(addr)) this.ipv6DhcpRelayDestinations.push(addr);
+  }
+  clearIpv6DhcpRelayDestinations(): void { this.ipv6DhcpRelayDestinations = []; }
+  getFairQueueConfig(): string | null { return this.fairQueueConfig; }
+  setFairQueueConfig(line: string | null): void { this.fairQueueConfig = line; }
+  isWredEnabled(): boolean { return this.wredEnabled; }
+  setWred(on: boolean): void { this.wredEnabled = on; }
+  getPolicyRouteMap(): string | null { return this.policyRouteMap; }
+  setPolicyRouteMap(name: string | null): void { this.policyRouteMap = name; }
+  getRipSummaries(): readonly string[] { return this.ripSummaries; }
+  addRipSummary(line: string): void { this.ripSummaries.push(line); }
+  getEigrpSummaries(): readonly string[] { return this.eigrpSummaries; }
+  addEigrpSummary(line: string): void { this.eigrpSummaries.push(line); }
+  removeEigrpSummary(predicate: (line: string) => boolean): void {
+    this.eigrpSummaries = this.eigrpSummaries.filter((l) => !predicate(l));
+  }
+  getEigrpExtras(): readonly string[] { return this.eigrpExtras; }
+  addEigrpExtra(line: string): void { this.eigrpExtras.push(line); }
+  getMaxReservedBandwidth(): number | null { return this.maxReservedBandwidth; }
+  setMaxReservedBandwidth(percent: number | null): void { this.maxReservedBandwidth = percent; }
+  getPriorityGroup(): number | null { return this.priorityGroup; }
+  setPriorityGroup(group: number | null): void { this.priorityGroup = group; }
+  getCustomQueueList(): number | null { return this.customQueueList; }
+  setCustomQueueList(list: number | null): void { this.customQueueList = list; }
+  getTxRingLimit(): number | null { return this.txRingLimit; }
+  setTxRingLimit(limit: number | null): void { this.txRingLimit = limit; }
   /**
    * Auto-negotiation, asked the way the CLI asks it.
    *

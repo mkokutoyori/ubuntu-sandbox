@@ -53,7 +53,8 @@ export interface OSPFExtraConfig {
     authType?: number; authKey?: string;
     demandCircuit?: boolean; networkType?: string;
     mtuIgnore?: boolean; retransmitInterval?: number; transmitDelay?: number;
-    bfd?: boolean;
+    bfd?: boolean; bfdEcho?: boolean; bfdInterval?: number;
+    bfdMinRx?: number; bfdMultiplier?: number; bfdTemplate?: string;
   }>;
   pendingV3IfConfig: Map<string, {
     cost?: number; priority?: number;

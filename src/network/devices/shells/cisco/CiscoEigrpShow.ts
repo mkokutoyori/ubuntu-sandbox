@@ -1,6 +1,7 @@
 import { renderTable, FIXED_TABLE } from '../cli/TextTable';
 import type { EIGRPEngine } from '../../../eigrp/EIGRPEngine';
 import type { EigrpStubTlv } from '../../../eigrp/packets';
+import type { Port } from '../../../hardware/Port';
 
 interface NeighborRow {
   h: number;
@@ -223,7 +224,7 @@ function connectedMetric(bwKbps = 0, delayUsec = 0): number {
 
 
 export interface EigrpProtocolHost {
-  _getPortsInternal(): ReadonlyMap<string, unknown>;
+  _getPortsInternal(): ReadonlyMap<string, Port>;
 }
 
 export interface EigrpProtocolProcess {
@@ -315,8 +316,7 @@ function stubConfigOptions(s: {
 function configuredSummaries(host: EigrpProtocolHost): string[] {
   const out: string[] = [];
   for (const [name, raw] of host._getPortsInternal()) {
-    const port = raw as { eigrpSummaries?: string[] };
-    for (const line of port.eigrpSummaries ?? []) {
+    for (const line of raw.getEigrpSummaries()) {
       const words = line.trim().split(/\s+/);
       const network = words[3];
       const mask = words[4];
