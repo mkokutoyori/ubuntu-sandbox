@@ -27,6 +27,9 @@ import { iosShortInterfaceName, iosInterfaceStatus }
  * `area 00` all name the same area — a check on the literal text would
  * be defeated by the second spelling.
  */
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+
 export function setOspfv3InterfaceParams(
   router: Router, ifName: string, updates: Record<string, unknown>,
 ): void {
@@ -260,7 +263,7 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('network', 'Define OSPF network/area', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
 
     // Syntax: network <ip> <wildcard> area <area-id>
     if (args.length < 4) return '% Incomplete command.';
@@ -279,7 +282,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
     ctx.r().getOspfIntegration().routerIdManuel = true;
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
     ospf.setRouterId(args[0]);
     return '';
   });
@@ -287,7 +290,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   trie.registerGreedy('passive-interface', 'Suppress routing updates on an interface', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
 
     if (args[0].toLowerCase() === 'default') {
       const ports = ctx.r()._getPortsInternal();
@@ -305,7 +308,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   trie.registerGreedy('no passive-interface', 'Enable routing updates on a passive interface', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
     const ifName = ctx.resolveInterfaceName(args.join(' '));
     if (!ifName) return `% Invalid interface "${args.join(' ')}"`;
     ospf.removePassiveInterface(ifName);
@@ -315,7 +318,7 @@ function adresseReseau(ip: string, wildcard: string): string {
   trie.registerGreedy('area', 'OSPF area parameters', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
 
     const areaId = args[0];
     const subCmd = args[1].toLowerCase();
@@ -383,7 +386,7 @@ function adresseReseau(ip: string, wildcard: string): string {
       return '% Incomplete command.';
     }
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
     const bw = parseInt(args[1], 10);
     if (isNaN(bw) || bw < 1) return '% Invalid bandwidth value';
     ospf.setReferenceBandwidth(bw);
@@ -392,7 +395,7 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('default-information originate', 'Distribute default route', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
     ospf.setDefaultInformationOriginate(true);
     const extra = ctx.r()._getOSPFExtraConfig();
     // Check for metric-type argument
@@ -1122,7 +1125,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.registerGreedy('clear ip ospf', 'Clear OSPF process state', (args) => {
     const router = getRouter();
     const ospf = router._getOSPFEngineInternal();
-    if (!ospf) return '% OSPF is not enabled.';
+    if (!ospf) return '% OSPF is not configured';
     const last = args[args.length - 1]?.toLowerCase();
     if (last === 'counters') ospf.resetPacketStats();
     else if (last === 'redistribution') router._ospfAutoConverge();
@@ -1186,7 +1189,7 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
       const detail = subArgs[1]?.toLowerCase() === 'detail';
       return detail ? showIpOspfNeighborDetail(getRouter()) : showIpOspfNeighbor(getRouter());
     }
-    return showIpOspf(getRouter());
+    throw new CliInvalidInput({ token: subArgs[0] });
   });
   trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (_args) => showIpOspfNeighborDetail(getRouter()));
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
@@ -1318,7 +1321,7 @@ function ospfProcessExists(router: Router, processId: number): boolean {
 
 function showIpOspf(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   const config = ospf.getConfig();
   const extra = router._getOSPFExtraConfig();
@@ -1394,7 +1397,7 @@ function showIpOspf(router: Router): string {
 
 export function showIpOspfNeighbor(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   // Trigger convergence to ensure neighbors are up-to-date
   router._ospfAutoConverge();
@@ -1430,7 +1433,7 @@ function compteARebours(iface: { deadInterval?: number } | undefined, lastHelloM
 
 function showIpOspfDatabaseSummaryCounts(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
   const lines = [
@@ -1472,7 +1475,7 @@ function showIpOspfDatabaseSummaryCounts(router: Router): string {
 
 function showIpOspfDatabase(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   // Trigger convergence
   router._ospfAutoConverge();
@@ -1523,7 +1526,7 @@ function showIpOspfDatabase(router: Router): string {
 
 function showIpOspfDatabaseExternal(router: Router, args: string[]): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -1635,7 +1638,7 @@ function ospfIfaceOperUp(router: Router, name: string): boolean {
 
 function showIpOspfInterface(router: Router, ifName?: string): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   // Trigger convergence
   router._ospfAutoConverge();
@@ -1684,7 +1687,7 @@ function showIpOspfInterface(router: Router, ifName?: string): string {
 
 function showIpOspfInterfaceBrief(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
 
@@ -1728,7 +1731,7 @@ function ospfIfStateAbbr(state: string): string {
 
 function showIpOspfNeighborDetail(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
 
@@ -1766,7 +1769,7 @@ function showIpOspfNeighborDetail(router: Router): string {
 
 function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -1833,7 +1836,7 @@ function showIpOspfDatabaseRouter(router: Router, detail: boolean): string {
 
 function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -1887,7 +1890,7 @@ function showIpOspfDatabaseNetwork(router: Router, detail: boolean): string {
 
 function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -1941,7 +1944,7 @@ function showIpOspfDatabaseSummary(router: Router, detail: boolean): string {
 
 function showIpOspfVirtualLinks(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
 
@@ -1994,7 +1997,7 @@ function showIpOspfVirtualLinks(router: Router): string {
 
 function showIpOspfBorderRouters(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -2090,7 +2093,7 @@ function showIpOspfBorderRouters(router: Router): string {
 
 function showIpOspfStatistics(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not configured';
+  if (!ospf) return '';
 
   router._ospfAutoConverge();
   const lsdb = ospf.getLSDB();
@@ -2129,7 +2132,7 @@ function showIpOspfStatistics(router: Router): string {
 
 function showIpOspfTraffic(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const s = ospf.getPacketStats();
   const rxTotal = s.rxHello + s.rxDBD + s.rxLSR + s.rxLSU + s.rxLSAck;
   const txTotal = s.txHello + s.txDBD + s.txLSR + s.txLSU + s.txLSAck;
@@ -2146,7 +2149,7 @@ function showIpOspfTraffic(router: Router): string {
 
 function showIpOspfEvents(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const log = ospf.getEventLog();
   if (log.length === 0) return 'OSPF Router with ID (' + ospf.getConfig().routerId + ') (Process ID ' + ospf.getConfig().processId + ')\n\n  No events logged';
   return ['OSPF Router with ID (' + ospf.getConfig().routerId + ') (Process ID ' + ospf.getConfig().processId + ')', '', ...log].join('\n');
@@ -2154,7 +2157,7 @@ function showIpOspfEvents(router: Router): string {
 
 function showIpOspfTimers(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const extra = router._getOSPFExtraConfig() as unknown as Record<string, unknown> & {
     timersThrottleLsa?: { startMs: number; holdMs: number; maxMs: number };
     timersLsaArrivalMs?: number;
@@ -2178,7 +2181,7 @@ function showIpOspfTimers(router: Router): string {
 
 function showIpOspfRequestList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const lines: string[] = ['Neighbor                Interface  Area'];
   let any = false;
   for (const iface of ospf.getInterfaces().values()) {
@@ -2197,7 +2200,7 @@ function showIpOspfRequestList(router: Router): string {
 
 function showIpOspfRetransmissionList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const lines: string[] = ['Neighbor                Interface  Area  Queue length'];
   let any = false;
   for (const iface of ospf.getInterfaces().values()) {
@@ -2214,7 +2217,7 @@ function showIpOspfRetransmissionList(router: Router): string {
 
 function showIpOspfFloodList(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const lines: string[] = ['Interface              Area'];
   for (const iface of ospf.getInterfaces().values()) {
     lines.push(`${iface.name.padEnd(23)}${iface.areaId}`);
@@ -2225,7 +2228,7 @@ function showIpOspfFloodList(router: Router): string {
 
 function showIpOspfMaxMetric(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const extra = router._getOSPFExtraConfig();
   const mm = extra.maxMetric;
   const header = `OSPF Router with ID (${ospf.getConfig().routerId}) (Process ID ${ospf.getConfig().processId})`;
@@ -2236,7 +2239,7 @@ function showIpOspfMaxMetric(router: Router): string {
 
 function showIpOspfRib(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const cfg = ospf.getConfig();
   const lines = [
     `OSPF Router with ID (${cfg.routerId}) (Process ID ${cfg.processId})`,
@@ -2257,7 +2260,7 @@ function showIpOspfRib(router: Router): string {
 
 function showIpOspfSummaryAddress(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const extra = router._getOSPFExtraConfig();
   const summaries = extra.summaryAddresses ?? [];
   const header = `OSPF Router with ID (${ospf.getConfig().routerId}) (Process ID ${ospf.getConfig().processId}), Summary-address`;
@@ -2267,7 +2270,7 @@ function showIpOspfSummaryAddress(router: Router): string {
 
 function showIpOspfSegmentRouting(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const extra = router._getOSPFExtraConfig() as unknown as Record<string, unknown> & { segmentRoutingMpls?: boolean };
   if (!extra.segmentRoutingMpls) return 'OSPF Segment Routing is not enabled';
   return `OSPF Router with ID (${ospf.getConfig().routerId})\n  Segment Routing MPLS: enabled\n  SRGB: 16000 - 23999`;
@@ -2275,7 +2278,7 @@ function showIpOspfSegmentRouting(router: Router): string {
 
 function showIpOspfDatabaseNssaExternal(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const cfg = ospf.getConfig();
   const lines = [`OSPF Router with ID (${cfg.routerId}) (Process ID ${cfg.processId})`, ''];
   let any = false;
@@ -2294,7 +2297,7 @@ function showIpOspfDatabaseNssaExternal(router: Router): string {
 
 function showIpOspfDatabaseAsbrSummary(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const cfg = ospf.getConfig();
   const lines = [`OSPF Router with ID (${cfg.routerId}) (Process ID ${cfg.processId})`, '', 'Summary ASB Link States'];
   let any = false;
@@ -2311,7 +2314,7 @@ function showIpOspfDatabaseAsbrSummary(router: Router): string {
 
 function showIpOspfDatabaseSelfOriginate(router: Router): string {
   const ospf = router._getOSPFEngineInternal();
-  if (!ospf) return '% OSPF is not enabled.';
+  if (!ospf) return '';
   const cfg = ospf.getConfig();
   const lines = [`OSPF Router with ID (${cfg.routerId}) (Process ID ${cfg.processId})`, ''];
   let any = false;
@@ -2838,4 +2841,43 @@ function maskToCIDR(mask: string): number {
 
 function ipInSubnet(ip: string, network: string, mask: string): boolean {
   return inSameSubnet(ip, network, mask);
+}
+
+export function ospfShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerOSPFShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      restDescription: 'Filter',
+      restDescriptionFor: (path) => ({
+        'show ip ospf': 'Process ID number',
+        'show ip ospf interface': 'Interface name',
+        'show ip ospf neighbor': 'Neighbor ID',
+        'show ip ospf database router': 'Link-state ID, or detail',
+        'show ip ospf database network': 'Link-state ID, or detail',
+        'show ip ospf database summary': 'Link-state ID, or detail',
+        'show ip ospf database external': 'Link-state ID',
+      })[path],
+      skip: (path) => !path.startsWith('show ip ospf'),
+    },
+  );
+}
+
+export function ospfClearSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerOSPFShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['privileged'], minPrivilege: 15,
+      restDescription: 'Process ID number',
+      skip: (path) => !path.startsWith('clear ip ospf'),
+      keywordsFor: (path) => path === 'clear ip ospf'
+        ? [
+          { keyword: 'process', description: 'Reset OSPF process' },
+          { keyword: 'counters', description: 'Reset OSPF counters' },
+          { keyword: 'force-spf', description: 'Force SPF recalculation' },
+          { keyword: 'redistribution', description: 'Refresh redistributed routes' },
+        ]
+        : undefined,
+    },
+  );
 }
