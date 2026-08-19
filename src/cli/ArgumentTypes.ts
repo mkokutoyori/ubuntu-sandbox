@@ -165,6 +165,11 @@ export function argumentPlaceholder(spec: ArgumentSpec): string {
  * signifie « l'un ou l'autre ». Une seule fonction les rend toutes,
  * sinon chaque appelant en oublierait une autre.
  */
+export function argumentCompletableValues(spec: ArgumentSpec): readonly EnumValue[] {
+  return [...(spec.alternatives ?? []), ...(spec.values ?? [])]
+    .filter(value => /^[a-z][a-z0-9:._-]*$/.test(value.keyword));
+}
+
 export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
   const out: EnumValue[] = [];
   for (const form of spec.alternatives ?? []) out.push(form);

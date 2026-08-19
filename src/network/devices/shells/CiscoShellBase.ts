@@ -4394,6 +4394,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const brut = CiscoShellBase.completionStem(input);
     if (brut === '') return brut;
 
+    const negation = CiscoShellBase.motDeNegation(brut);
+    if (negation !== null) {
+      const reste = this.amontCanonique(`${brut.slice(negation.length)} `);
+      return `${negation.trim()} ${reste}`.trim();
+    }
+
     const table = this.socleTable();
     const parLeSocle = table
       ? this.cheminCanonique(table, `${brut} `, this.socleSession(table)) : null;
@@ -4630,7 +4636,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // filtrer des deux cotes rendait le socle muet la ou il est le
       // mieux renseigne — il connait le type, le trie ne l'avait pas.
       const brutes = socleComplete(table, ligne, this.socleSession(table), trigger).suggestions
-        .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument)
+        .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument || s.completable === true)
         .map(s => ({
           keyword: s.value, description: s.description, isArgument: s.isArgument,
         }));

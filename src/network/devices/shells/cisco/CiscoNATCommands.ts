@@ -882,6 +882,9 @@ export function natShowSpecs(getRouter: () => Router): CommandSpec[] {
         'show ip nat translations verbose': 'Optional filter',
       })[path],
       skip: (path) => !path.startsWith('show ip nat'),
+      keywordsFor: (path) => path === 'show ip nat translations verbose'
+        ? [{ keyword: 'vrf', description: 'Display NAT translations in VRF' }]
+        : undefined,
     },
   );
 }
