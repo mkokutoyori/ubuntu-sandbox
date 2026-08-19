@@ -29,6 +29,7 @@ import { FirewallNatEngine, clearVdomTranslations } from './nat/FirewallNatEngin
 import { IpPoolAllocator, type IpPool } from './nat/IpPool';
 import { PolicyRouteTable } from './l3/PolicyRouteTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
+import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
@@ -73,6 +74,8 @@ import type { FirewallRouting } from './routing/FirewallRouting';
 import {
   buildL3Services, claimedByControlPlane, type L3Services,
 } from './l3/L3ServiceWiring';
+import { buildFirewallNtp, type FirewallNtp } from './mgmt/FirewallNtp';
+import type { NtpAgent } from '../../ntp/NtpAgent';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { buildFirewallHa, serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -120,7 +123,7 @@ export class Firewall extends Equipment {
   private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
-  private readonly pipelines = new Map<string, FirewallPipeline>();
+  private readonly pipelines: PipelineCache;
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
@@ -137,6 +140,7 @@ export class Firewall extends Equipment {
   private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
+  private readonly ntp: FirewallNtp;
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -159,6 +163,7 @@ export class Firewall extends Equipment {
 
     const profile = options.profile ?? GENERIC_PROFILE;
     this.profile = profile;
+    this.pipelines = new PipelineCache(this.id, profile, this.registry);
 
     const first = profile.portFirstIndex;
     for (let index = first; index < first + profile.portCount; index++) {
@@ -292,6 +297,12 @@ export class Firewall extends Equipment {
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
     });
+    this.ntp = buildFirewallNtp({
+      deviceId: this.id, deviceName: name, hostname: () => this.getName(),
+      port: (n) => this.getPort(n), ports: () => [...this.getPorts().values()],
+      sendFrame: (n, f) => { this.sendFrame(n, f); }, bus: () => this.getBus(),
+    });
+
     this.l3 = l3;
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
@@ -299,23 +310,12 @@ export class Firewall extends Equipment {
 
   }
 
-  private pipelineFor(mode: DeploymentMode): FirewallPipeline {
-    const cached = this.pipelines.get(mode);
-    if (cached) return cached;
-
-    const built = FirewallPipeline.fromStageNames(
-      this.profile.pipeline[mode], this.registry, `firewall.${this.id}.${mode}`);
-    this.pipelines.set(mode, built);
-    return built;
-  }
-
   private processPipeline(context: PacketContext) {
     const vdom = this.vdoms.contextOfInterface(context.ingressPort);
-    return this.pipelineFor(vdom.settings.opmode).process(context);
+    return this.pipelines.forMode(vdom.settings.opmode).process(context);
   }
 
   getTcpStack(): TcpStack { return this.tcp; }
-
   getAccessMatrix(): AccessMatrix { return this.access; }
 
   getAuthPortal(): AuthPortal { return this.portal; }
@@ -329,8 +329,10 @@ export class Firewall extends Equipment {
   getSdwan(): SdwanService { return this.sdwan; }
 
   getRouting(): FirewallRouting { return this.routing; }
-
   getDhcp(): FirewallDhcp { return this.dhcp; }
+  getNtp(): FirewallNtp { return this.ntp; }
+  getNtpAgent(): NtpAgent { return this.ntp.getAgent(); }
+
 
 
   getHa(): HaAgent { return this.haService.agent; }
@@ -424,10 +426,8 @@ export class Firewall extends Equipment {
       throw new UnknownSimulationInterfaceError(request.ingressPort);
     }
     const context = makePacketContext({
-      ingressPort: request.ingressPort,
-      packet: buildSimulatedPacket(request),
-      arrivedAt: this.services.now(),
-      simulated: true,
+      ingressPort: request.ingressPort, packet: buildSimulatedPacket(request),
+      arrivedAt: this.services.now(), simulated: true,
     });
     return summariseSimulation(
       context, this.processPipeline(context).verdict === 'accepted');
@@ -607,7 +607,7 @@ export class Firewall extends Equipment {
     return kind === 'inter-interface' ? this.sameSecurityInter : this.sameSecurityIntra;
   }
   getPipeline(mode: DeploymentMode = 'nat'): FirewallPipeline {
-    return this.pipelineFor(mode);
+    return this.pipelines.forMode(mode);
   }
 
   getPacketCapture(): PacketCapture { return this.capture; }
@@ -725,8 +725,8 @@ export class Firewall extends Equipment {
   private destinationIsTranslated(portName: string, packet: IPv4Packet): boolean {
     const vdom = this.vdoms.contextOfInterface(portName);
     return vdom.nat.hasInboundRule(packet, {
-      ingressZone: vdom.zones.zoneOf(portName) ?? portName,
-      egressZone: '', ingressInterface: portName, egressInterface: '',
+      ingressZone: vdom.zones.zoneOf(portName) ?? portName, egressZone: '',
+      ingressInterface: portName, egressInterface: '',
     });
   }
 

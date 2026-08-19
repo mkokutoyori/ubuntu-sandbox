@@ -289,6 +289,58 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_NTP: FortiTableSpec = {
+  path: ['system', 'ntp'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 75,
+  help: 'Configure system NTP information.',
+  attributes: [
+    enable('ntpsync', 'Enable/disable setting the FortiGate clock by NTP.'),
+    choice('type', 'Use FortiGuard or a custom NTP server.', [
+      { keyword: 'fortiguard', description: 'Use the FortiGuard NTP servers.' },
+      { keyword: 'custom', description: 'Use the servers configured below.' },
+    ], 'fortiguard'),
+    count('syncinterval', 'NTP synchronization interval, in minutes.', 1, 1440, 60),
+    reference('source-ip-interface', 'Interface the NTP requests leave by.',
+      ['system interface']),
+  ],
+  children: [
+    {
+      path: ['ntpserver'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'global',
+      accessGroup: 'sysgrp',
+      renderOrder: 76,
+      help: 'Configure the NTP servers.',
+      attributes: [
+        { ...word('id', 'NTP server ID.'), readOnly: true },
+        word('server', 'IP address or hostname of the NTP server.'),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    const servers = object.childEntries('ntpserver')
+      .map(entry => entry.effective('server')[0] ?? '')
+      .filter(server => server.length > 0);
+    const enabled = object.effective('ntpsync')[0] === 'enable';
+
+    if (enabled && object.effective('type')[0] === 'custom' && servers.length === 0) {
+      return 'a custom NTP configuration needs at least one server.';
+    }
+
+    return context.device.applyNtp({
+      enabled,
+      servers,
+      syncIntervalMin: Number.parseInt(object.effective('syncinterval')[0] ?? '60', 10),
+      sourceInterface: object.effective('source-ip-interface')[0] ?? '',
+    });
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_SETTINGS,
@@ -296,4 +348,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_ZONE,
   SYSTEM_DNS,
   SYSTEM_DHCP_SERVER,
+  SYSTEM_NTP,
 ]);

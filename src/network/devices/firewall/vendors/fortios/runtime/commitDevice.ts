@@ -1,0 +1,284 @@
+import type { Firewall } from '../../../Firewall';
+import type { FortiCommitDevice } from '../schema/types';
+import {
+  makeSchedule, makeOnetimeSchedule, makeScheduleGroup,
+} from '../../../model/ScheduleObject';
+import { vipAddress } from '../../../model/AddressObject';
+import { identityCommitHandlers } from '../commit/identityCommits';
+import { vpnCommitHandlers } from '../commit/vpnCommits';
+import {
+  applyCentralSnatToFirewall, applyVipToFirewall, categoryEntry, centralSnatRuleId,
+  filterTable, urlEntry, utmAction, vipRuleId,
+} from '../commit/objectCommits';
+import type { PolicyRoutePrefix } from '../../../l3/PolicyRouteTable';
+import { makeIpPool, type IpPoolType } from '../../../nat/IpPool';
+import { proxyOwnerKey } from '../../../Firewall';
+
+export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
+  return {
+      applyInterface(name, patch) {
+        if (patch.vdom) fw.assignInterfaceToVdom(name, patch.vdom);
+        if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
+        if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
+        if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
+      },
+      applyZone(name, members, intrazone) {
+        const zones = fw.getZoneTable();
+        if (!zones.getZone(name)) {
+          zones.createZone(name, { intraZoneAction: intrazone === 'allow' ? 'allow' : 'deny' });
+        }
+        for (const member of members) zones.assignInterface(name, member);
+      },
+      removeZone(name) {
+        fw.getZoneTable().deleteZone(name);
+      },
+      applyStaticRoute(route) {
+        const routes = fw.getRouteTable();
+        routes.removeStaticById(route.id);
+        if (!route.enabled || route.blackhole) return;
+        routes.addStatic(route.destination, route.mask,
+          route.gateway === '0.0.0.0' ? undefined : route.gateway,
+          { iface: route.iface || undefined, distance: route.distance, id: route.id });
+      },
+      applySdwan(patch) {
+        return fw.applySdwan(patch);
+      },
+      applyHa(patch) {
+        return fw.applyHa(patch);
+      },
+      hasInterface(name) {
+        return fw.getPort(name) !== undefined;
+      },
+      applyRip(patch) {
+        return fw.getRouting().applyRip(patch);
+      },
+      applyOspf(patch) {
+        return fw.getRouting().applyOspf(patch);
+      },
+      applyBgp(patch) {
+        return fw.getRouting().applyBgp(patch);
+      },
+      applyDhcpScope(scope) {
+        fw.getDhcp().upsertScope(scope);
+      },
+      removeDhcpScope(id) {
+        fw.getDhcp().removeScope(id);
+      },
+      acquireDhcpLease(iface) {
+        fw.getDhcp().acquireLease(iface);
+      },
+      removeStaticRoute(id) {
+        fw.getRouteTable().removeStaticById(id);
+      },
+      applySchedule(schedule) {
+        const built = makeSchedule(schedule.name, schedule.days, schedule.start, schedule.end);
+        if (built) fw.setSchedule(built);
+      },
+      removeSchedule(name) {
+        fw.getScheduleStore().remove(name);
+      },
+      applyOnetimeSchedule(schedule) {
+        const built = makeOnetimeSchedule(schedule.name, schedule.start, schedule.end);
+        if (!built) return 'start and end must read hh:mm yyyy/mm/dd, end after start.';
+        fw.setSchedule(built);
+      },
+      applyScheduleGroup(group) {
+        const store = fw.getScheduleStore();
+        const unknown = group.members.filter(member => store.get(member) === undefined);
+        if (unknown.length > 0) return `unknown schedule ${unknown[0]}.`;
+        fw.setSchedule(makeScheduleGroup(group.name, group.members));
+      },
+      applyNtp(settings) {
+        return fw.getNtp().apply(settings);
+      },
+      applyVdomSettings(settings) {
+        fw.setCentralNat(settings.centralNat);
+        fw.setOperationMode(settings.opmode);
+        if (settings.manageIP && settings.manageIP !== '0.0.0.0') {
+          fw.setManagementAddress(settings.manageIP,
+            settings.manageMask ?? '255.255.255.0', settings.gateway);
+        }
+      },
+      applyGlobalSettings(settings) {
+        fw.setMultiVdom(settings.multiVdom);
+      },
+      applyVdom(name) {
+        fw.getVdomRegistry().create(name);
+      },
+      removeVdom(name) {
+        fw.getVdomRegistry().remove(name);
+      },
+      applyVdomLink(name) {
+        fw.createVdomLink(name);
+      },
+      removeVdomLink(name) {
+        fw.removeVdomLink(name);
+      },
+      applySwitchInterface(name, members) {
+        fw.setSwitchInterface(name, members);
+      },
+      removeSwitchInterface(name) {
+        fw.removeSwitchInterface(name);
+      },
+      applyAntivirusProfile(profile) {
+        fw.getUtmProfiles().setAntivirus({
+          name: profile.name,
+          httpScan: utmAction(profile.http),
+          ftpScan: utmAction(profile.ftp),
+          smtpScan: utmAction(profile.smtp),
+          comment: profile.comment,
+        });
+      },
+      removeAntivirusProfile(name) {
+        fw.getUtmProfiles().removeAntivirus(name);
+      },
+      applyWebFilterProfile(profile) {
+        fw.getUtmProfiles().setWebFilter({
+          name: profile.name,
+          urlFilterTable: profile.urlFilterTable,
+          categoryFilters: profile.categoryFilters.map(categoryEntry),
+          unclassifiedAction: utmAction(profile.unclassifiedAction),
+          logAllUrl: profile.logAllUrl,
+          comment: profile.comment,
+        });
+      },
+      removeWebFilterProfile(name) {
+        fw.getUtmProfiles().removeWebFilter(name);
+      },
+      applyDnsFilterProfile(profile) {
+        fw.getUtmProfiles().setDnsFilter({
+          name: profile.name,
+          domainFilterTable: profile.domainFilterTable,
+          categoryFilters: profile.categoryFilters.map(categoryEntry),
+          unclassifiedAction: utmAction(profile.unclassifiedAction),
+          comment: profile.comment,
+        });
+      },
+      removeDnsFilterProfile(name) {
+        fw.getUtmProfiles().removeDnsFilter(name);
+      },
+      applyFileFilterProfile(profile) {
+        fw.getUtmProfiles().setFileFilter({
+          name: profile.name,
+          entries: profile.entries.map(entry => ({
+            id: entry.id,
+            fileTypes: [...entry.fileTypes],
+            action: utmAction(entry.action),
+            direction: entry.direction === 'incoming' || entry.direction === 'outgoing'
+              ? entry.direction
+              : 'any',
+          })),
+          scanArchiveContents: profile.scanArchiveContents,
+          comment: profile.comment,
+        });
+      },
+      removeFileFilterProfile(name) {
+        fw.getUtmProfiles().removeFileFilter(name);
+      },
+      applySslSshProfile(profile) {
+        fw.getUtmProfiles().setSslSsh({
+          name: profile.name,
+          httpsMode: profile.httpsMode === 'certificate-inspection'
+            ? 'certificate-inspection'
+            : 'disable',
+          httpsPorts: [...profile.httpsPorts],
+          caName: profile.caName,
+          comment: profile.comment,
+        });
+      },
+      removeSslSshProfile(name) {
+        fw.getUtmProfiles().removeSslSsh(name);
+      },
+      applyProtocolOptions(options) {
+        fw.getUtmProfiles().setProtocolOptions({
+          name: options.name,
+          httpPorts: [...options.httpPorts],
+          httpsPorts: [...options.httpsPorts],
+          ftpPorts: [...options.ftpPorts],
+          dnsPorts: [...options.dnsPorts],
+          comment: options.comment,
+        });
+      },
+      removeProtocolOptions(name) {
+        fw.getUtmProfiles().removeProtocolOptions(name);
+      },
+      ...identityCommitHandlers(fw),
+      ...vpnCommitHandlers(fw),
+      applyUrlFilterTable(table) {
+        fw.getUtmProfiles().setUrlFilterTable(filterTable(table));
+      },
+      removeUrlFilterTable(id) {
+        fw.getUtmProfiles().removeUrlFilterTable(id);
+      },
+      applyDomainFilterTable(table) {
+        fw.getUtmProfiles().setDomainFilterTable(filterTable(table));
+      },
+      removeDomainFilterTable(id) {
+        fw.getUtmProfiles().removeDomainFilterTable(id);
+      },
+      applyIpPool(pool) {
+        fw.setIpPool(makeIpPool({ ...pool, type: pool.type as IpPoolType }));
+      },
+      removeIpPool(name) {
+        fw.removeIpPool(name);
+      },
+      applyVip(vip) {
+        applyVipToFirewall(fw, vip);
+      },
+      removeVip(name) {
+        fw.getNatPolicy().remove(vipRuleId(name));
+        fw.getObjectStore().removeAddress(name);
+        fw.clearProxyArpEntries(proxyOwnerKey('vip', name));
+      },
+      applyCentralSnat(entry) {
+        applyCentralSnatToFirewall(fw, entry);
+      },
+      removeCentralSnat(id) {
+        fw.getNatPolicy().remove(centralSnatRuleId(id));
+      },
+      applyPolicyRoute(route) {
+        fw.getPolicyRoutes().upsert({
+          id: route.id,
+          enabled: route.enabled,
+          action: route.action,
+          inputDevices: route.inputDevices,
+          sourcePrefixes: route.sources.map(toPrefix).filter(isPrefix),
+          destinationPrefixes: route.destinations.map(toPrefix).filter(isPrefix),
+          protocol: route.protocol,
+          startPort: route.startPort,
+          endPort: route.endPort,
+          startSourcePort: route.startSourcePort,
+          endSourcePort: route.endSourcePort,
+          outputDevice: route.outputDevice,
+          gateway: route.gateway,
+          comment: route.comment,
+        }, route.position);
+      },
+      removePolicyRoute(id) {
+        fw.getPolicyRoutes().remove(id);
+      },
+      applyMemoryLog(patch) {
+        if (patch.capacity !== undefined) fw.getLogStore().setCapacity(patch.capacity);
+        if (patch.enabled === false) fw.getLogStore().clear();
+      },
+  };
+}
+
+function toPrefix(raw: string): PolicyRoutePrefix | null {
+  const [network, length] = raw.split('/');
+  if (network === undefined) return null;
+  if (length === undefined) return { network, mask: '255.255.255.255' };
+
+  const bits = Number.parseInt(length, 10);
+  if (!Number.isFinite(bits) || bits < 0 || bits > 32) return null;
+  return { network, mask: maskOfLength(bits) };
+}
+
+function isPrefix(value: PolicyRoutePrefix | null): value is PolicyRoutePrefix {
+  return value !== null;
+}
+
+function maskOfLength(bits: number): string {
+  const value = bits === 0 ? 0 : ((0xffffffff << (32 - bits)) >>> 0);
+  return [24, 16, 8, 0].map(shift => (value >>> shift) & 0xff).join('.');
+}
