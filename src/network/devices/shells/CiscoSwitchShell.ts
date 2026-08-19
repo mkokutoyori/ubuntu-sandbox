@@ -113,6 +113,22 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
   { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
 ];
 
+const MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'address', description: 'A specific MAC address' },
+  { keyword: 'count', description: 'MAC address count' },
+  { keyword: 'dynamic', description: 'Dynamic MAC entries' },
+  { keyword: 'interface', description: 'Entries for a given interface' },
+  { keyword: 'multicast', description: 'Multicast MAC entries' },
+  { keyword: 'static', description: 'Static MAC entries' },
+  { keyword: 'vlan', description: 'Entries for a given VLAN' },
+];
+
+const CLEAR_MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'dynamic', description: 'Dynamically learnt' },
+  { keyword: 'interface', description: 'Interface configuration' },
+  { keyword: 'vlan', description: 'VLAN configuration' },
+];
+
 const STP_VLAN_NUMBER: ArgumentSpec = {
   name: 'vlan', type: 'INT', optional: true, range: [1, 4094],
   description: 'VLAN number',
@@ -753,55 +769,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── Show ──
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show dtp', 'Display DTP information', (args) => {
-        const dtp = this.requireDtp();
-        const ports = this.d().getPortNames();
-        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
-          const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
-          if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
-          const s = dtp.getPortState(name);
-          return [
-            `DTP information for ${name}:`,
-            `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
-            `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
-            `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
-            `  Neighbor address 2:                     000000000000`,
-            `  Hello timer expiration (sec/state):     0/RUNNING`,
-            `  Access timer expiration (sec/state):    never/STOPPED`,
-            `  Negotiation timer expiration (sec/st):  never/STOPPED`,
-            `  Multidrop timer expiration (sec/state): never/STOPPED`,
-            `  FSM state:                              S6:TRUNK`,
-          ].join('\n');
-        }
-        const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
-        lines.push('Interface       Mode             Status         Negotiation');
-        lines.push('--------------- ---------------- -------------- -----------');
-        for (const p of ports) {
-          const s = dtp.getPortState(p);
-          const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
-          lines.push(
-            `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
-            `${s.operationalMode.padEnd(15)}${negotiation}`,
-          );
-        }
-        return lines.join('\n');
-      });
-
-      t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
-      t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
-        this.showArpInspectionVlan(this.d(), args.join(',')));
-      t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
-        this.showArpInspectionStats(this.d()));
-      t.register('show ip arp inspection log', 'Display DAI log buffer', () =>
-        this.showArpInspectionLog(this.d()));
-      t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
-        this.showArpInspectionIfs(this.d()));
-      t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
-      t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
-      t.registerGreedy('show ip device tracking', 'Display IP device tracking table', (args) =>
-        this.showIpDeviceTracking(this.d(), args));
-    }
 
     // ── clear / recovery ──
     this.privilegedTrie.register('clear ip arp inspection statistics',
@@ -1970,11 +1937,53 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     ];
   }
 
+  private l2TableSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerDaiShowCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          restDescriptionFor: (path) => ({
+            'show ip arp inspection vlan': 'VLAN number, or a range',
+            'show ip device tracking': 'Interface name, or an address',
+          })[path],
+          restLiteralFor: (path) => ({
+            'show ip arp inspection vlan': '<1-4094>',
+            'show ip device tracking': 'WORD',
+          })[path],
+          keywordsFor: (path) => path === 'show dtp'
+            ? [{ keyword: 'interface', description: 'Interface configuration' }]
+            : undefined,
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerMacTableCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          skip: (path) => path.startsWith('clear '),
+          keywordsFor: (path) => path === 'show mac address-table'
+            ? MAC_TABLE_FILTERS : undefined,
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerMacTableCommands(collector as unknown as CommandTrie),
+        {
+          modes: ['privileged'], minPrivilege: 15,
+          skip: (path) => !path.startsWith('clear '),
+          keywordsFor: (path) => path === 'clear mac address-table'
+            ? CLEAR_MAC_TABLE_FILTERS : undefined,
+        },
+      ),
+    ];
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
       ...this.stpShowSpecs(),
       ...this.vlanVtpShowSpecs(),
+      ...this.l2TableSpecs(),
     ];
   }
 
@@ -1983,6 +1992,94 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       ...super.socleLegends(),
       [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
     ];
+  }
+
+  private registerMacTableCommands(t: CommandTrie): void {
+    t.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
+      const a = args.map(x => x.toLowerCase());
+      if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
+      if (a[0] === 'aging-time') return this.showMACAddressTableAgingTime(this.d());
+      if (a[0] === 'notification') return this.showMacAddressTableNotification();
+      const filter: { vlan?: number; port?: string; address?: string; type?: 'static' | 'dynamic' } = {};
+      let i = 0;
+      if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
+      else if (a[i] === 'multicast') i++;
+      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) filter.vlan = parseInt(a[i + 1], 10);
+      else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args.slice(i + 1).join(' '));
+        if (!pn) return `% Invalid interface`;
+        filter.port = pn;
+      }
+      else if (a[i] === 'address' && args[i + 1]) filter.address = args[i + 1];
+      return this.showMACAddressTable(this.d(), Object.keys(filter).length ? filter : undefined);
+    });
+
+    t.registerGreedy('clear mac address-table', 'Clear MAC address table entries', (args) => {
+      const a = args.map(x => x.toLowerCase());
+      let i = 0;
+      if (a[i] === 'dynamic') i++;
+      const filter: { vlan?: number; port?: string } = {};
+      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) {
+        filter.vlan = parseInt(a[i + 1], 10);
+      } else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args[i + 1]);
+        if (!pn) return `% Invalid interface name "${args[i + 1]}"`;
+        filter.port = pn;
+      }
+      this.d().clearDynamicMACEntries(Object.keys(filter).length ? filter : undefined);
+      return '';
+    });
+
+  }
+
+  private registerDaiShowCommands(t: CommandTrie): void {
+    t.registerGreedy('show dtp', 'Display DTP information', (args) => {
+      const dtp = this.requireDtp();
+      const ports = this.d().getPortNames();
+      if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+        const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
+        if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
+        const s = dtp.getPortState(name);
+        return [
+          `DTP information for ${name}:`,
+          `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
+          `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
+          `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
+          `  Neighbor address 2:                     000000000000`,
+          `  Hello timer expiration (sec/state):     0/RUNNING`,
+          `  Access timer expiration (sec/state):    never/STOPPED`,
+          `  Negotiation timer expiration (sec/st):  never/STOPPED`,
+          `  Multidrop timer expiration (sec/state): never/STOPPED`,
+          `  FSM state:                              S6:TRUNK`,
+        ].join('\n');
+      }
+      const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
+      lines.push('Interface       Mode             Status         Negotiation');
+      lines.push('--------------- ---------------- -------------- -----------');
+      for (const p of ports) {
+        const s = dtp.getPortState(p);
+        const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
+        lines.push(
+          `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
+          `${s.operationalMode.padEnd(15)}${negotiation}`,
+        );
+      }
+      return lines.join('\n');
+    });
+
+    t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
+    t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
+      this.showArpInspectionVlan(this.d(), args.join(',')));
+    t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
+      this.showArpInspectionStats(this.d()));
+    t.register('show ip arp inspection log', 'Display DAI log buffer', () =>
+      this.showArpInspectionLog(this.d()));
+    t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
+      this.showArpInspectionIfs(this.d()));
+    t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
+    t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
+    t.registerGreedy('show ip device tracking', 'Display IP device tracking table', (args) =>
+      this.showIpDeviceTracking(this.d(), args));
   }
 
   private registerVlanShowCommands(t: CommandTrie): void {
@@ -2390,41 +2487,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       }
       if (!trouve) return lignes[0];
       return lignes.join('\n');
-    });
-
-    this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
-      const a = args.map(x => x.toLowerCase());
-      if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
-      if (a[0] === 'aging-time') return this.showMACAddressTableAgingTime(this.d());
-      if (a[0] === 'notification') return this.showMacAddressTableNotification();
-      const filter: { vlan?: number; port?: string; address?: string; type?: 'static' | 'dynamic' } = {};
-      let i = 0;
-      if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
-      else if (a[i] === 'multicast') i++;
-      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) filter.vlan = parseInt(a[i + 1], 10);
-      else if (a[i] === 'interface' && args[i + 1]) {
-        const pn = this.resolveInterfaceName(args.slice(i + 1).join(' '));
-        if (!pn) return `% Invalid interface`;
-        filter.port = pn;
-      }
-      else if (a[i] === 'address' && args[i + 1]) filter.address = args[i + 1];
-      return this.showMACAddressTable(this.d(), Object.keys(filter).length ? filter : undefined);
-    });
-
-    this.privilegedTrie.registerGreedy('clear mac address-table', 'Clear MAC address table entries', (args) => {
-      const a = args.map(x => x.toLowerCase());
-      let i = 0;
-      if (a[i] === 'dynamic') i++;
-      const filter: { vlan?: number; port?: string } = {};
-      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) {
-        filter.vlan = parseInt(a[i + 1], 10);
-      } else if (a[i] === 'interface' && args[i + 1]) {
-        const pn = this.resolveInterfaceName(args[i + 1]);
-        if (!pn) return `% Invalid interface name "${args[i + 1]}"`;
-        filter.port = pn;
-      }
-      this.d().clearDynamicMACEntries(Object.keys(filter).length ? filter : undefined);
-      return '';
     });
 
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {

@@ -299,14 +299,11 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'private-vlan': ['association', 'community', 'isolated', 'primary'],
   },
   privileged: {
-    'clear mac address-table': ['dynamic', 'interface', 'vlan'],
     'clear port-security': ['all', 'configured', 'dynamic', 'sticky'],
     'no debug ip': ['nat'],
-    'show dtp': ['interface'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
   },
   user: {
-    'show dtp': ['interface'],
     'show interfaces': ['etherchannel', 'status', 'switchport'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
     'show monitor session': ['all'],
