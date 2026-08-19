@@ -7,6 +7,10 @@
 import { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
+
 export function registerIPSecShowCommands(
   trie: CommandTrie,
   getRouter: () => Router,
@@ -124,9 +128,9 @@ export function registerIPSecShowCommands(
     let ipsecCount = 0;
     if (sessions) for (const arr of sessions.ipsecSADB.values()) ipsecCount += arr.length;
     return [
-      'Hardware Encryption Layer : ACTIVE',
+      'Hardware Encryption : ACTIVE',
       '',
-      'Number of crypto engines = 1.',
+      'Number of hardware crypto engines = 1.',
       '',
       'CryptoEngine Onboard VPN details: state = Active',
       ' Capability     : IPPCP, DES, 3DES, AES, RSA',
@@ -210,4 +214,23 @@ function parsePeerFromArgs(args: string[]): string | undefined {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(args[i])) return args[i];
   }
   return undefined;
+}
+
+const DEJA_AU_SOCLE = new Set(
+  SHOW_CRYPTO_FAMILY.map(spec =>
+    spec.path.filter((step): step is string => typeof step === 'string').join(' ')));
+
+export function cryptoShowSpecs(ctx: Parameters<typeof registerIPSecShowCommands>[1]): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIPSecShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      restDescription: 'Filter',
+      restDescriptionFor: (path) => ({
+        'show crypto ipsec sa interface': 'Interface name',
+        'show crypto map interface': 'Interface name',
+      })[path],
+      skip: (path) => !path.startsWith('show crypto') || DEJA_AU_SOCLE.has(path),
+    },
+  );
 }

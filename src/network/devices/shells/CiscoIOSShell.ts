@@ -125,7 +125,7 @@ import {
 import {
   buildGdoiGlobalCommands, buildGdoiGroupCommands,
 } from './cisco/CiscoGdoiCommands';
-import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
+import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
@@ -179,6 +179,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),
       ...natShowSpecs(() => this.d()),
+      ...cryptoShowSpecs(() => this.d()),
       ...ospfClearSpecs(() => this.d()),
       ...ipSlaClearSpecs(this),
       ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
@@ -320,6 +321,18 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
       [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
       [['ipv6', 'nd', 'ra'], 'Router advertisement control'],
+      [['show', 'crypto'], 'Encryption module'],
+      [['show', 'crypto', 'engine'], 'Show crypto engine info'],
+      [['show', 'crypto', 'engine', 'connections'], 'Show crypto engine connections'],
+      [['show', 'crypto', 'pki'], 'Show PKI information'],
+      [['show', 'crypto', 'pki', 'certificates'], 'Show certificates'],
+      [['show', 'crypto', 'ikev2'], 'Show IKEv2 information'],
+      [['show', 'crypto', 'ipsec'], 'Show IPsec information'],
+      [['show', 'crypto', 'isakmp'], 'Show ISAKMP information'],
+      [['show', 'crypto', 'key'], 'Show crypto keys'],
+      [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
+      [['show', 'ip', 'nat'], 'Network Address Translation'],
+      [['show', 'ip', 'nat', 'nvi'], 'NAT Virtual Interface'],
     ];
   }
 
