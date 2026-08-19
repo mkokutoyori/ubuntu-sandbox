@@ -621,16 +621,12 @@ export class CommandTrie {
 
       // Try exact match first, then prefix match
       const exactChildRaw = node.children.get(tokenLower);
-      // Un noeud qui n'est pas une commande reste TRAVERSABLE tant qu'il
-      // porte des enfants : `clear logging` elague garde
-      // `clear logging persistent`, et refuser d'y entrer rendrait la
-      // fille inatteignable en meme temps que le parent.
       // Un noeud de PASSAGE ne s'execute jamais : il existe pour que
       // l'aide s'arrete la, et l'execution doit continuer de passer par
       // le parent glouton — sans quoi `no logging synchronous` tomberait
       // sur le marqueur laisse par `no logging trap`.
       const exactChild = exactChildRaw && !exactChildRaw._migre
-        && (!exactChildRaw._hintOnly || exactChildRaw.children.size > 0)
+        && (!exactChildRaw._hintOnly || this.leadsToACommand(exactChildRaw))
         ? exactChildRaw : undefined;
       if (exactChild) {
         node = exactChild;
@@ -957,6 +953,15 @@ export class CommandTrie {
     return node.params.length > 0
       || node.children.size > 0
       || (node.hintSuggestions?.length ?? 0) > 0;
+  }
+
+  private leadsToACommand(node: CommandNode): boolean {
+    for (const child of node.children.values()) {
+      if (child._migre) continue;
+      if (!child._hintOnly && (child.action || child._porteAction)) return true;
+      if (this.leadsToACommand(child)) return true;
+    }
+    return false;
   }
 
   enumerateDerivedContinuations(): string[] {

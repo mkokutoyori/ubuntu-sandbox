@@ -26,8 +26,8 @@ import {
   EIGRP_MULTICAST_IP, isEigrpPacket, type EigrpPacket,
 } from '../../eigrp/packets';
 import { BGPEngine, type BgpPeerLink } from '../../bgp/BGPEngine';
-import type { BgpTransport } from '../../bgp/BgpSession';
-import { BGP_PORT, isBgpMessage, type BgpMessage } from '../../bgp/messages';
+import { BGP_PORT } from '../../bgp/messages';
+import { bgpTransport } from '../../bgp/bgpTransport';
 import type { TcpStack, TcpSocket } from '../../tcp/TcpStack';
 import type { RibRoute } from '../../routing/types';
 import type {
@@ -293,15 +293,3 @@ export class RouterDynamicRouting {
   }
 }
 
-/**
- * Adapt a TCP socket to the BGP transport seam: BGP messages ride the real
- * byte stream, and only well-formed BGP payloads are surfaced to the FSM.
- */
-function bgpTransport(socket: TcpSocket): BgpTransport {
-  return {
-    send: (msg: BgpMessage) => socket.send(msg),
-    close: () => socket.close(),
-    onMessage: (h) => { socket.onData((d) => { if (isBgpMessage(d)) h(d); }); },
-    onClose: (h) => { socket.onClose(() => h()); },
-  };
-}

@@ -62,7 +62,7 @@ describe('aucune sortie CLI ne parle de son propre substrat', () => {
     const r = await lab();
 
     const eli = await r.executeCommand('show crypto eli');
-    expect(eli).toContain('Number of crypto engines');
+    expect(eli).toContain('Number of hardware crypto engines');
     expect(eli).not.toMatch(/software-only|Node crypto/i);
 
     const hosts = await r.executeCommand('show hosts');

@@ -4394,6 +4394,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const brut = CiscoShellBase.completionStem(input);
     if (brut === '') return brut;
 
+    const negation = CiscoShellBase.motDeNegation(brut);
+    if (negation !== null) {
+      const reste = this.amontCanonique(`${brut.slice(negation.length)} `);
+      return `${negation.trim()} ${reste}`.trim();
+    }
+
     const table = this.socleTable();
     const parLeSocle = table
       ? this.cheminCanonique(table, `${brut} `, this.socleSession(table)) : null;
@@ -4630,7 +4636,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       // filtrer des deux cotes rendait le socle muet la ou il est le
       // mieux renseigne — il connait le type, le trie ne l'avait pas.
       const brutes = socleComplete(table, ligne, this.socleSession(table), trigger).suggestions
-        .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument)
+        .filter(s => trigger === 'QUESTION_MARK' || !s.isArgument || s.completable === true)
         .map(s => ({
           keyword: s.value, description: s.description, isArgument: s.isArgument,
         }));
@@ -4771,13 +4777,9 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // qu'il possede. Il ne le dit que si aucun chemin du trie ne
     // prolonge la frappe — sinon c'est le trie qui a la suite.
     if (parsed.status === 'incomplete') {
-      // Le trie garde la main s'il PROLONGE la frappe ou s'il la porte
-      // exactement : `show snmp` est un noeud intermediaire du socle,
-      // qui declare `show snmp community`, mais c'est une commande
-      // complete du trie. Ne consulter que le prolongement la rendait
-      // incomplete sur une machine qui sait y repondre.
       const mots = cmdPart.trim().replace(/^no\s+/i, '').split(/\s+/).length;
-      const auTrie = this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots);
+      const auTrie = (this.trieProlonge(cmdPart) || this.trieConnait(cmdPart, mots))
+        && this.getActiveTrie().match(cmdPart).status !== 'invalid';
       return auTrie ? null : CISCO_ERRORS.INCOMPLETE;
     }
     // Un refus du socle MONTRE ou l'on s'est trompe. Se taire ici

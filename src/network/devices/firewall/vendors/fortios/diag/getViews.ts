@@ -1,9 +1,10 @@
 import { renderTable, FIXED_TABLE } from '../../../../shells/cli/TextTable';
 import type { InterfaceTable } from '../../../l3/InterfaceTable';
-import type { RouteTable } from '../../../l3/RouteTable';
+import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
 import type { SessionStatistics } from '../../../session/SessionTable';
+import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
 export interface SystemStatusFacts {
   readonly version: string;
@@ -95,6 +96,18 @@ const ROUTE_CODE: Readonly<Record<string, string>> = Object.freeze({
   dynamic: 'O',
 });
 
+const PROTOCOL_CODE: Readonly<Record<string, string>> = Object.freeze({
+  rip: 'R',
+  ospf: 'O',
+  bgp: 'B',
+});
+
+function prefixLength(mask: string): number {
+  return mask.split('.')
+    .map(octet => Number.parseInt(octet, 10).toString(2).split('1').length - 1)
+    .reduce((total, bits) => total + bits, 0);
+}
+
 export function renderRoutingTable(routes: RouteTable): string {
   const lines = [
     'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
@@ -103,15 +116,60 @@ export function renderRoutingTable(routes: RouteTable): string {
     '',
   ];
 
-  for (const route of routes.all()) {
-    const code = ROUTE_CODE[route.kind] ?? 'S';
-    const prefix = `${route.network} ${route.mask}`;
-    const via = route.nextHop === undefined
-      ? `is directly connected, ${route.iface}`
-      : `[${route.distance}/${route.metric ?? 0}] via ${route.nextHop}, ${route.iface}`;
-    lines.push(`${code}       ${prefix} ${via}`);
-  }
+  const rows = routes.all().map(route => ({
+    code: (route.protocol === undefined
+      ? ROUTE_CODE[route.kind]
+      : PROTOCOL_CODE[route.protocol]) ?? 'S',
+    destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
+  }));
+
+  lines.push(...renderTable(rows, [
+    { header: '', width: 8, value: row => row.code },
+    { header: '', width: 0, value: row => row.destination },
+  ], FIXED_TABLE).filter(line => line.trim().length > 0));
+
   return lines.join('\n');
+}
+
+function reachedBy(route: FirewallRoute): string {
+  const metric = `[${route.distance}/${route.metric ?? 0}]`;
+  const onLink = route.nextHop === undefined
+    || route.nextHop.length === 0
+    || route.nextHop === route.network;
+  if (onLink) {
+    return route.kind === 'connected'
+      ? `is directly connected, ${route.iface}`
+      : `${metric} is directly connected, ${route.iface}`;
+  }
+  return `${metric} via ${route.nextHop}, ${route.iface}`;
+}
+
+export function renderOspfNeighbors(
+  neighbours: ReadonlyArray<{
+    routerId: string; priority: number; state: string; address: string; iface: string;
+  }>,
+): string {
+  const header = 'OSPF process 1:\nNeighbor ID     Pri State           '
+    + 'Dead Time   Address         Interface';
+  if (neighbours.length === 0) return header;
+
+  const rows = neighbours.map(entry => ({
+    id: entry.routerId,
+    pri: String(entry.priority),
+    state: entry.state,
+    dead: '00:00:38',
+    address: entry.address,
+    iface: entry.iface,
+  }));
+
+  return [header, ...renderTable(rows, [
+    { header: '', width: 16, value: row => row.id },
+    { header: '', width: 4, value: row => row.pri },
+    { header: '', width: 16, value: row => row.state },
+    { header: '', width: 12, value: row => row.dead },
+    { header: '', width: 16, value: row => row.address },
+    { header: '', width: 0, value: row => row.iface },
+  ], FIXED_TABLE)].join('\n');
 }
 
 export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {
@@ -134,4 +192,64 @@ export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {
     );
   }
   return lines.join('\n').trimEnd();
+}
+
+export function renderBgpSummary(facts: BgpSummaryFacts): string {
+  const lines = [
+    `BGP router identifier ${facts.routerId}, local AS number ${facts.localAs}`,
+    '',
+  ];
+
+  const rows = facts.neighbours.map(peer => ({
+    address: peer.address,
+    version: '4',
+    remoteAs: String(peer.remoteAs),
+    received: '0',
+    sent: '0',
+    tableVersion: '0',
+    inQueue: '0',
+    outQueue: '0',
+    upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
+    state: peer.isUp ? String(peer.prefixesReceived) : peer.state,
+  }));
+
+  lines.push(...renderTable(rows, [
+    { header: 'Neighbor', width: 16, value: row => row.address },
+    { header: 'V', width: 1, value: row => row.version },
+    { header: 'AS', width: 11, align: 'right', value: row => row.remoteAs },
+    { header: 'MsgRcvd', width: 8, align: 'right', value: row => row.received },
+    { header: 'MsgSent', width: 8, align: 'right', value: row => row.sent },
+    { header: 'TblVer', width: 9, align: 'right', value: row => row.tableVersion },
+    { header: 'InQ', width: 5, align: 'right', value: row => row.inQueue },
+    { header: 'OutQ', width: 5, align: 'right', value: row => row.outQueue },
+    { header: 'Up/Down', width: 9, align: 'right', value: row => row.upDown },
+    { header: 'State/PfxRcd', width: 13, align: 'right', value: row => row.state },
+  ], FIXED_TABLE));
+
+  lines.push('', `Total number of neighbors ${facts.neighbours.length}`);
+  return lines.join('\n');
+}
+
+export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
+  if (facts.neighbours.length === 0) return 'No BGP neighbors configured.';
+
+  const lines: string[] = [];
+  for (const peer of facts.neighbours) {
+    lines.push(
+      `BGP neighbor is ${peer.address}, remote AS ${peer.remoteAs},`
+      + ` local AS ${facts.localAs}, ${peer.remoteAs === facts.localAs ? 'internal' : 'external'} link`,
+      `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
+      `  Local router ID ${facts.routerId}`,
+      '',
+    );
+  }
+  return lines.join('\n').trimEnd();
+}
+
+function uptimeClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }

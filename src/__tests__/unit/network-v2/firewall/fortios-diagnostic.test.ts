@@ -389,8 +389,8 @@ describe('les vues `get`', () => {
     const vu = run(sh, 'get router info routing-table all');
 
     expect(vu).toContain('Codes: K - kernel, C - connected, S - static');
-    expect(vu).toMatch(/S\*\s+0\.0\.0\.0 0\.0\.0\.0 \[10\/0\] via 203\.0\.113\.10, port2/);
-    expect(vu).toMatch(/C\s+192\.168\.1\.0 255\.255\.255\.0 is directly connected, port1/);
+    expect(vu).toMatch(/S\*\s+0\.0\.0\.0\/0 \[10\/0\] via 203\.0\.113\.10, port2/);
+    expect(vu).toMatch(/C\s+192\.168\.1\.0\/24 is directly connected, port1/);
   });
 
   it('`get system performance status` compte les sessions et l\'uptime', async () => {

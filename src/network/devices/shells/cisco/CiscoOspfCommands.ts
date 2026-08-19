@@ -2865,6 +2865,9 @@ export function ospfShowSpecs(getRouter: () => Router): CommandSpec[] {
         'show ip ospf database external': 'Link-state ID',
       })[path],
       skip: (path) => !path.startsWith('show ip ospf'),
+      keywordsFor: (path) => /^show ip ospf database (router|network|summary)$/.test(path)
+        ? [{ keyword: 'detail', description: 'Detailed LSA output' }]
+        : undefined,
     },
   );
 }

@@ -144,8 +144,11 @@ export class CommandTable {
     this.authorization = port;
   }
 
-  isReachable(spec: CommandSpec, session: CliSession): boolean {
-    if (!this.modeAdmits(spec, session)) return false;
+  isReachable(
+    spec: CommandSpec, session: CliSession, modeStrict = false,
+  ): boolean {
+    if (modeStrict ? !spec.modes.includes(session.mode)
+      : !this.modeAdmits(spec, session)) return false;
 
     const required = this.requiredPrivilege(spec);
     if (this.authorization) {

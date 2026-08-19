@@ -1,4 +1,4 @@
-import { argumentAccepts, argumentSuggestions } from './ArgumentTypes';
+import { argumentAccepts, argumentSuggestions, argumentCompletableValues } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
 import type { CommandTable, TreeNode } from './CommandTable';
 import { subtreeReachable, tokenize, uniqueChild } from './CommandParser';
@@ -9,6 +9,7 @@ export interface Suggestion {
   readonly value: string;
   readonly description: string;
   readonly isArgument: boolean;
+  readonly completable?: boolean;
 }
 
 export interface CompletionResult {
@@ -54,7 +55,7 @@ export function complete(
   const suggestions = suggestionsAt(cursor, table, session, trigger);
   if (trigger === 'QUESTION_MARK') return { suggestions };
 
-  const words = suggestions.filter(s => !s.isArgument);
+  const words = suggestions.filter(s => !s.isArgument || s.completable === true);
   return {
     suggestions,
     completion: words.length === 1 ? words[0].value : undefined,
@@ -70,7 +71,7 @@ function suggestionsAt(
   for (const child of cursor.node.children.values()) {
     if (child.keyword === undefined) continue;
     if (!child.keyword.toLowerCase().startsWith(lowered)) continue;
-    if (!subtreeReachable(child, table, session)) continue;
+    if (!subtreeReachable(child, table, session, true)) continue;
 
     out.push({
       value: child.keyword,
@@ -86,6 +87,16 @@ function suggestionsAt(
       if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({
         value: suggestion.keyword, description: suggestion.description, isArgument: true,
+      });
+    }
+  }
+
+  if (argument && trigger === 'TAB') {
+    for (const suggestion of argumentCompletableValues(argument)) {
+      if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
+      out.push({
+        value: suggestion.keyword, description: suggestion.description,
+        isArgument: true, completable: true,
       });
     }
   }

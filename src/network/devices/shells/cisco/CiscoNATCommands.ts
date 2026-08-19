@@ -505,6 +505,9 @@ export function buildNATInterfaceCommands(trie: CommandTrie, ctx: CiscoShellCont
 
 // ─── Privileged Mode ──────────────────────────────────────────────────────────
 
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+
 export function registerNATPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
   const debugSvc = () => getRouter().getDebugService();
   trie.registerGreedy('debug ip nat', 'Enable NAT packet-translation debugging', (args) => {
@@ -801,7 +804,10 @@ export function showNATStatistics(router: Router): string {
         ` -- Inside Source [acl ${r.aclId}] ${r.type === 'overload' ? 'overload' : `pool ${r.poolName}`}`
       )),
     ...poolUsage,
-    `Application Layer Gateways: none`,
+    `Total doors: ${engine.getAlgDoors()}`,
+    `Appl doors: ${engine.getAlgDoors()}`,
+    `Normal doors: 0`,
+    `Queued Packets: 0`,
   ].join('\n');
 }
 
@@ -862,4 +868,23 @@ export function runningConfigInterfaceNAT(router: Router, ifName: string): strin
   if (engine.isInsideInterface(ifName)) lines.push(' ip nat inside');
   if (engine.isOutsideInterface(ifName)) lines.push(' ip nat outside');
   return lines;
+}
+
+export function natShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerNATShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      restDescription: 'Filter',
+      restDescriptionFor: (path) => ({
+        'show ip nat translations vrf': 'VRF name',
+        'show ip nat statistics vrf': 'VRF name',
+        'show ip nat translations verbose': 'Optional filter',
+      })[path],
+      skip: (path) => !path.startsWith('show ip nat'),
+      keywordsFor: (path) => path === 'show ip nat translations verbose'
+        ? [{ keyword: 'vrf', description: 'Display NAT translations in VRF' }]
+        : undefined,
+    },
+  );
 }

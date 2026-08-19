@@ -289,8 +289,9 @@ describe('Group 4: Cisco IOS — show ip nat translations', () => {
 
   it('4.3b show ip nat statistics ne commente pas ses propres limites', async () => {
     const out = await r.executeCommand('show ip nat statistics');
-    expect(out).toMatch(/Application Layer Gateways:\s+none\b/);
     expect(out).not.toContain('not supported in this simulator');
+    expect(out).not.toContain('simulator');
+    expect(out).toMatch(/Appl doors:\s+\d+/);
   });
 
   it('4.4 show running-config includes ip nat inside/outside on interface', async () => {

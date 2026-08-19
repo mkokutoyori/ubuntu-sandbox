@@ -21,20 +21,36 @@ const SECURITY_KEY = Symbol.for('CiscoSecurityConfig');
 
 const USERNAME_KEYWORDS = new Set(['nohangup', 'nopassword', 'one-time']);
 
-export const RADIUS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }> = [
-  { keyword: 'host', description: 'Specify a RADIUS server', leadingOnly: true },
-  { keyword: 'key', description: 'Per-server encryption key' },
-  { keyword: 'auth-port', description: 'UDP port for RADIUS authentication server' },
-  { keyword: 'acct-port', description: 'UDP port for RADIUS accounting server' },
-  { keyword: 'timeout', description: 'Time to wait for a RADIUS server to reply' },
-  { keyword: 'retransmit', description: 'Number of retries to an active server' },
+export const RADIUS_SERVER_CONTINUATIONS: ReadonlyArray<{
+  keyword: string; description: string; leadingOnly?: boolean;
+  valeur?: ReadonlyArray<{ keyword: string; description: string }>;
+}> = [
+  { keyword: 'host', description: 'Specify a RADIUS server', leadingOnly: true,
+    valeur: [{ keyword: 'A.B.C.D', description: 'IP address of the RADIUS server' }] },
+  { keyword: 'key', description: 'Per-server encryption key',
+    valeur: [{ keyword: 'LINE', description: 'The shared key itself' }] },
+  { keyword: 'auth-port', description: 'UDP port for RADIUS authentication server',
+    valeur: [{ keyword: '<0-65535>', description: 'Port number' }] },
+  { keyword: 'acct-port', description: 'UDP port for RADIUS accounting server',
+    valeur: [{ keyword: '<0-65535>', description: 'Port number' }] },
+  { keyword: 'timeout', description: 'Time to wait for a RADIUS server to reply',
+    valeur: [{ keyword: '<1-1000>', description: 'Wait time in seconds' }] },
+  { keyword: 'retransmit', description: 'Number of retries to an active server',
+    valeur: [{ keyword: '<0-100>', description: 'Number of retries' }] },
 ];
 
-export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string; leadingOnly?: boolean }> = [
-  { keyword: 'host', description: 'Specify a TACACS+ server', leadingOnly: true },
-  { keyword: 'key', description: 'Per-server encryption key' },
-  { keyword: 'port', description: 'TCP port the server listens on' },
-  { keyword: 'timeout', description: 'Time to wait for a TACACS+ server to reply' },
+export const TACACS_SERVER_CONTINUATIONS: ReadonlyArray<{
+  keyword: string; description: string; leadingOnly?: boolean;
+  valeur?: ReadonlyArray<{ keyword: string; description: string }>;
+}> = [
+  { keyword: 'host', description: 'Specify a TACACS+ server', leadingOnly: true,
+    valeur: [{ keyword: 'A.B.C.D', description: 'IP address of the TACACS+ server' }] },
+  { keyword: 'key', description: 'Per-server encryption key',
+    valeur: [{ keyword: 'LINE', description: 'The shared key itself' }] },
+  { keyword: 'port', description: 'TCP port the server listens on',
+    valeur: [{ keyword: '<1-65535>', description: 'Port number' }] },
+  { keyword: 'timeout', description: 'Time to wait for a TACACS+ server to reply',
+    valeur: [{ keyword: '<1-1000>', description: 'Wait time in seconds' }] },
 ];
 
 export const IP_SSH_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: string }> = [
@@ -442,8 +458,9 @@ export function buildIdentityConfigCommands(
   trie.registerGreedy('radius-server', 'Legacy radius host', (args) => {
     if (args[0] === 'key' && args[1]) { sec().radiusDefaults.key = args.slice(1).join(' '); return ''; }
     if (args[0] === 'timeout' || args[0] === 'retransmit') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const n = Number(args[1]);
-      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] ?? args[0] });
+      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] });
       if (args[0] === 'timeout') sec().radiusDefaults.timeoutSec = n;
       else sec().radiusDefaults.retransmit = n;
       return '';
@@ -502,8 +519,9 @@ export function buildIdentityConfigCommands(
   trie.registerGreedy('tacacs-server', 'Legacy tacacs host', (args) => {
     if (args[0] === 'key' && args[1]) { sec().tacacsDefaults.key = args.slice(1).join(' '); return ''; }
     if (args[0] === 'timeout') {
+      if (args[1] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const n = Number(args[1]);
-      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] ?? args[0] });
+      if (!Number.isInteger(n) || n < 0) throw new CliInvalidInput({ token: args[1] });
       sec().tacacsDefaults.timeoutSec = n;
       return '';
     }

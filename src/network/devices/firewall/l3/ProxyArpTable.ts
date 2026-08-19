@@ -45,3 +45,20 @@ export class ProxyArpTable {
     return Object.freeze(out);
   }
 }
+
+export function publishPoolProxyArp(
+  table: ProxyArpTable,
+  pool: {
+    name: string; startIP: string; endIP: string;
+    arpReply?: boolean; arpInterface?: string; associatedInterface?: string;
+  },
+): void {
+  const owner = proxyOwnerKey('ippool', pool.name);
+  if (!pool.arpReply) { table.clear(owner); return; }
+
+  table.set(owner, [{
+    from: pool.startIP,
+    to: pool.endIP,
+    iface: pool.arpInterface ?? pool.associatedInterface,
+  }]);
+}

@@ -138,7 +138,7 @@ describe('non-regression — ce qui allait deja bien ne bouge pas', () => {
   it('les groupes a corps partage QUI SONT DECLARES gardent leur aide', async () => {
     const r = new CiscoRouter('RN1') as unknown as Dev;
     await r.executeCommand('enable');
-    expect(mots(r.cliHelp('debug vrrp '))).toContain('WORD');
+    expect(mots(r.cliHelp('debug vrrp '))).toContain('LINE');
     expect(mots(r.cliHelp('show ip vrf '))).toContain('detail');
     await r.executeCommand('configure terminal');
     expect(mots(r.cliHelp('ntp server '))).toContain('A.B.C.D');

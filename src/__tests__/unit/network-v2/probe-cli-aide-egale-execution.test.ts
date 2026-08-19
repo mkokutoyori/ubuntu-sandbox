@@ -26,6 +26,8 @@ function entries(help: string): Array<{ keyword: string; description: string }> 
 }
 
 const IS_ARGUMENT = /^[<A-Z]/;
+const isPlaceholder = (mot: string): boolean =>
+  IS_ARGUMENT.test(mot) || (mot.includes(':') && !mot.endsWith(':'));
 const DEPTH = 3;
 
 /**
@@ -57,7 +59,7 @@ async function balayer(
     const help = dev.cliHelp(prefix);
     if (help.includes('Invalid input') || help.includes('Ambiguous') || help.trim() === '') return;
     for (const e of entries(help)) {
-      if (e.keyword.startsWith('%') || IS_ARGUMENT.test(e.keyword)) continue;
+      if (e.keyword.startsWith('%') || isPlaceholder(e.keyword)) continue;
       if (e.keyword !== '<cr>' && NE_PAS_EXECUTER.has(e.keyword.toLowerCase())) continue;
       const faute = await verdict(prefix, e.keyword, help);
       if (faute) fautes.push(faute);

@@ -55,7 +55,8 @@ const offerts = (t: string): string[] =>
  * prenait pour un mot-cle faute de cette nuance.
  */
 const estSubstitut = (k: string): boolean =>
-  k.startsWith('<') || /^[A-Z0-9.:$/<>-]+$/.test(k);
+  k.startsWith('<') || /^[A-Z0-9.:$/<>-]+$/.test(k)
+  || (k.includes(':') && !k.endsWith(':'));
 
 let serie = 0;
 async function neuf(prelude: readonly string[]): Promise<Dev> {

@@ -350,6 +350,7 @@ export function buildConfigCommands(trie: CommandTrie, ctx: CiscoShellContext): 
     getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = algo;
     return '';
   });
+  trie.describeNode('ip cef load-sharing', 'CEF load-sharing');
   trie.registerGreedy('no ip cef load-sharing algorithm', 'Restore the default algorithm', () => {
     getGlobalConfig(ctx.r()).cefLoadSharingAlgorithm = null; return '';
   });

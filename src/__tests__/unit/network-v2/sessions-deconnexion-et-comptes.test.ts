@@ -209,7 +209,6 @@ describe('les mots-cles de `username` sont ceux d\'IOS', () => {
     'username f access-class 10',
     'username g autocommand show users',
     'username h nohangup',
-    'username i noescape',
     'username j one-time secret Abcdef@1',
   ];
   it.each(VRAIS)('`%s` est acceptee', async (cmd) => {
@@ -219,6 +218,19 @@ describe('les mots-cles de `username` sont ceux d\'IOS', () => {
     await d.executeCommand('end');
     expect(r, cmd).not.toContain('% Invalid input');
   }, 30_000);
+
+  const NO_MECHANISM_BEHIND = [
+    'username i noescape', 'username i dnis', 'username i nocallback-verify',
+  ];
+  it.each(NO_MECHANISM_BEHIND)(
+    '`%s` existe sur IOS et est REFUSEE faute de mecanisme derriere',
+    async (cmd) => {
+      const d = await routeur();
+      await d.executeCommand('configure terminal');
+      const r = await d.executeCommand(cmd);
+      await d.executeCommand('end');
+      expect(r, cmd).toContain('% Invalid input');
+    }, 30_000);
 
   /**
    * Ni `disable` ni `lock` n'existent sur un IOS — la liste reelle des
