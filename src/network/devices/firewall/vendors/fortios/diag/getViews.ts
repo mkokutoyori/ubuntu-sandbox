@@ -4,6 +4,7 @@ import type { FirewallRoute, RouteTable } from '../../../l3/RouteTable';
 import type { ArpService } from '../../../l3/ArpService';
 import type { SecurityRule } from '../../../model/SecurityRule';
 import type { SessionStatistics } from '../../../session/SessionTable';
+import type { BgpSummaryFacts } from '../../../routing/DynamicRoutingTypes';
 
 export interface SystemStatusFacts {
   readonly version: string;
@@ -191,4 +192,64 @@ export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {
     );
   }
   return lines.join('\n').trimEnd();
+}
+
+export function renderBgpSummary(facts: BgpSummaryFacts): string {
+  const lines = [
+    `BGP router identifier ${facts.routerId}, local AS number ${facts.localAs}`,
+    '',
+  ];
+
+  const rows = facts.neighbours.map(peer => ({
+    address: peer.address,
+    version: '4',
+    remoteAs: String(peer.remoteAs),
+    received: '0',
+    sent: '0',
+    tableVersion: '0',
+    inQueue: '0',
+    outQueue: '0',
+    upDown: peer.isUp ? uptimeClock(peer.uptimeSec) : 'never',
+    state: peer.isUp ? String(peer.prefixesReceived) : peer.state,
+  }));
+
+  lines.push(...renderTable(rows, [
+    { header: 'Neighbor', width: 16, value: row => row.address },
+    { header: 'V', width: 1, value: row => row.version },
+    { header: 'AS', width: 11, align: 'right', value: row => row.remoteAs },
+    { header: 'MsgRcvd', width: 8, align: 'right', value: row => row.received },
+    { header: 'MsgSent', width: 8, align: 'right', value: row => row.sent },
+    { header: 'TblVer', width: 9, align: 'right', value: row => row.tableVersion },
+    { header: 'InQ', width: 5, align: 'right', value: row => row.inQueue },
+    { header: 'OutQ', width: 5, align: 'right', value: row => row.outQueue },
+    { header: 'Up/Down', width: 9, align: 'right', value: row => row.upDown },
+    { header: 'State/PfxRcd', width: 13, align: 'right', value: row => row.state },
+  ], FIXED_TABLE));
+
+  lines.push('', `Total number of neighbors ${facts.neighbours.length}`);
+  return lines.join('\n');
+}
+
+export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
+  if (facts.neighbours.length === 0) return 'No BGP neighbors configured.';
+
+  const lines: string[] = [];
+  for (const peer of facts.neighbours) {
+    lines.push(
+      `BGP neighbor is ${peer.address}, remote AS ${peer.remoteAs},`
+      + ` local AS ${facts.localAs}, ${peer.remoteAs === facts.localAs ? 'internal' : 'external'} link`,
+      `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
+      `  Local router ID ${facts.routerId}`,
+      '',
+    );
+  }
+  return lines.join('\n').trimEnd();
+}
+
+function uptimeClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }

@@ -22,16 +22,16 @@
  *      forme ; sinon rien ne se passe.
  *   3. **Le moteur est CELUI du depot.** Un second moteur donnerait deux
  *      reponses possibles a « cette route est-elle apprise ? ».
- *   4. **BGP reste refuse**, et sa note nomme la brique qui manque : le
- *      moteur BGP est reel, la session TCP ne lui est pas ouverte.
+ *   4. **BGP n'est plus refuse.** La note de cette phase disait « la
+ *      session TCP ne lui est pas ouverte » ; c'etait faux, le pare-feu
+ *      porte un `TcpStack` depuis la phase 7. Voir `fortios-bgp.test.ts`.
  *
  * Discrimination (`git stash push -- src/network/`) : 11 des 15 cas
  * tombent avant correctif. Les 4 autres sont nommes ici plutot que
  * laisses a decouvrir — deux sont les temoins NEGATIFS (« sans RIP en
  * face », « sans OSPF en face »), dont c'est l'objet de passer des deux
- * cotes ; les deux cas BGP passent avant correctif pour une raison qui
- * ne prouve rien du refus, le schema entier etant alors absent, donc la
- * commande refusee parce qu'inconnue et non parce qu'indisponible.
+ * cotes ; le cas BGP restant porte sur la phase 11 et non sur
+ * celle-ci.
  *
  * Le laboratoire n'a AUCUNE commande de convergence : les deux bouts
  * portent de vrais minuteurs, et le test avance une horloge virtuelle.
@@ -299,21 +299,13 @@ describe('config router ospf', () => {
   });
 });
 
-describe('BGP reste refuse, et la note dit vrai', () => {
-  it('`config router bgp` est refuse', async () => {
+describe('BGP n`est plus refuse — voir fortios-bgp.test.ts', () => {
+  it('`config router bgp` est accepte', async () => {
     const { sh } = await laboratoire();
 
-    const sortie = run(sh, 'config router bgp');
+    const sortie = run(sh, 'config router bgp', 'set as 65001', 'end');
 
-    expect(sortie).toMatch(/Command fail/);
-  });
-
-  it('la note nomme la brique qui manque, pas un couplage a `Router`', async () => {
-    const { sh } = await laboratoire();
-
-    const sortie = run(sh, 'config router bgp');
-
-    expect(sortie).toMatch(/NOTE:/);
-    expect(sortie).not.toMatch(/coupled to .Router.|couple a la classe/);
+    expect(sortie).not.toMatch(/Command fail/);
+    expect(sh.execute('show router bgp')).toMatch(/set as 65001/);
   });
 });

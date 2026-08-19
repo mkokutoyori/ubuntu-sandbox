@@ -38,6 +38,28 @@ export interface OspfConfiguration {
   readonly redistributeStatic: boolean;
 }
 
+export interface BgpNeighbour {
+  readonly ip: string;
+  readonly remoteAs: number;
+  readonly weight?: number;
+}
+
+export interface BgpConfiguration {
+  readonly enabled: boolean;
+  readonly asn: number;
+  readonly routerId: string;
+  readonly neighbours: readonly BgpNeighbour[];
+  readonly networks: readonly DynamicNetwork[];
+}
+
+export const BGP_DEFAULTS: BgpConfiguration = Object.freeze({
+  enabled: false,
+  asn: 0,
+  routerId: '',
+  neighbours: Object.freeze([]),
+  networks: Object.freeze([]),
+});
+
 export const RIP_DEFAULTS: RipConfiguration = Object.freeze({
   enabled: false,
   version: 2,
@@ -55,3 +77,18 @@ export const OSPF_DEFAULTS: OspfConfiguration = Object.freeze({
   redistributeConnected: false,
   redistributeStatic: false,
 });
+
+export interface BgpPeerSummary {
+  readonly address: string;
+  readonly remoteAs: number;
+  readonly state: string;
+  readonly isUp: boolean;
+  readonly uptimeSec: number;
+  readonly prefixesReceived: number;
+}
+
+export interface BgpSummaryFacts {
+  readonly routerId: string;
+  readonly localAs: number;
+  readonly neighbours: readonly BgpPeerSummary[];
+}

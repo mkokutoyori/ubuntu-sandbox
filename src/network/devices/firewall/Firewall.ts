@@ -73,9 +73,6 @@ import type { FirewallRouting } from './routing/FirewallRouting';
 import {
   createFirewallRouting, deliverToRoutingProtocol, routingPortFacts,
 } from './routing/RoutingWiring';
-import type {
-  OspfConfiguration, RipConfiguration,
-} from './routing/DynamicRoutingTypes';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { FirewallHa, serialNumberOf } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
@@ -286,6 +283,7 @@ export class Firewall extends Equipment {
       connectedRoutes: () => this.interfaces.connectedRoutes(),
       interfaceAddresses: () => routingPortFacts(this.interfaces, (n) => this.getPort(n)),
       resolvedMac: (ip) => this.arp.resolved(ip) ?? undefined,
+      tcp: () => this.tcp,
       emitFrame: (iface, frame) => {
         this.capture.record({ at: this.services.now(), iface, direction: 'out', frame });
         this.sendFrame(iface, frame);
@@ -329,10 +327,6 @@ export class Firewall extends Equipment {
   getSdwan(): SdwanService { return this.sdwan; }
 
   getRouting(): FirewallRouting { return this.routing; }
-
-  applyRip(c: RipConfiguration): string | undefined { return this.routing.applyRip(c); }
-
-  applyOspf(c: OspfConfiguration): string | undefined { return this.routing.applyOspf(c); }
 
 
   getHa(): HaAgent { return this.haService.agent; }

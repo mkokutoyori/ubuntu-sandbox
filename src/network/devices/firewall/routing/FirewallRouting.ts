@@ -8,10 +8,12 @@ import { OSPFEngine } from '../../../ospf/OSPFEngine';
 import type { OSPFPacket } from '../../../ospf/types';
 import { RIPEngine } from '../../../rip/RIPEngine';
 import type { IEventBus } from '../../../../events/EventBus';
+import type { TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type OspfConfiguration, type RipConfiguration,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration,
 } from './DynamicRoutingTypes';
+import { FirewallBgp } from './FirewallBgp';
 
 export interface RoutingPortFacts {
   readonly name: string;
@@ -31,22 +33,42 @@ export interface FirewallRoutingDeps {
   }>;
   readonly installRoute: (route: {
     network: string; mask: string; nextHop?: string; iface: string;
-    distance: number; metric: number; source: 'rip' | 'ospf';
+    distance: number; metric: number; source: RoutingSource;
   }) => void;
-  readonly removeRoutes: (source: 'rip' | 'ospf') => void;
+  readonly removeRoutes: (source: RoutingSource) => void;
   readonly resolvedMac: (ip: string) => MACAddress | undefined;
+  readonly tcp: () => TcpStack;
 }
+
+export type RoutingSource = 'rip' | 'ospf' | 'bgp';
 
 const RIP_DISTANCE = 120;
 const OSPF_DISTANCE = 110;
 
 export class FirewallRouting {
+  private readonly bgpService: FirewallBgp;
   private rip: RIPEngine | null = null;
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
 
-  constructor(private readonly deps: FirewallRoutingDeps) {}
+  constructor(private readonly deps: FirewallRoutingDeps) {
+    this.bgpService = new FirewallBgp({
+      deviceId: deps.deviceId,
+      bus: deps.bus,
+      tcp: deps.tcp,
+      ports: deps.ports,
+      connectedRoutes: deps.connectedRoutes,
+      installRoute: (route) => { deps.installRoute({ ...route, source: 'bgp' }); },
+      removeRoutes: () => { deps.removeRoutes('bgp'); },
+    });
+  }
+
+  applyBgp(config: BgpConfiguration): string | undefined {
+    return this.bgpService.apply(config);
+  }
+
+  getBgp(): FirewallBgp { return this.bgpService; }
 
   applyRip(config: RipConfiguration): string | undefined {
     this.ripConfig = config;
