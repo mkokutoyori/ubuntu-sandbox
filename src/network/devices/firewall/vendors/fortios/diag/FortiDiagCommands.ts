@@ -28,6 +28,7 @@ export interface FortiDiagDeps {
 import {
   renderSdwanHealthCheck, renderSdwanMembers, renderSdwanService,
 } from './sdwanRenderer';
+import { renderHaChecksum, renderHaStatus } from './haRenderer';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -37,6 +38,18 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
+  const ha = deps.fw.getHa();
+
+  if (rest[0] === 'status') {
+    return renderHaStatus(ha, {
+      model: 'FortiGate-VM64', hostname: deps.fw.getName(), now: deps.fw.now(),
+    });
+  }
+  if (rest[0] === 'checksum' && rest[1] === 'show') return renderHaChecksum(ha);
+  return FortiMessages.unknownPath(`sys ha ${rest.join(' ')}`);
 }
 
 function diagnoseSdwan(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -91,6 +104,7 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
 
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
+  if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
 
   const verb = rest[1];
   const filter = deps.state.sessionFilter;

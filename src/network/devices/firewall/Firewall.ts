@@ -1,6 +1,5 @@
 import { Equipment } from '../../equipment/Equipment';
 import { Port } from '../../hardware/Port';
-import { Cable } from '../../hardware/Cable';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
@@ -45,6 +44,8 @@ import {
   GENERIC_PROFILE, type DeploymentMode, type FirewallProfile,
 } from './FirewallProfile';
 import { ROOT_VDOM, VdomRegistry, type VdomContext } from './vdom/VdomRegistry';
+import { VdomLinkTable } from './vdom/VdomLinkTable';
+import { SwitchGroupTable } from './l3/SwitchGroupTable';
 import { logFactsOf } from './logging/logFacts';
 import { emitFirewallEvent } from './logging/emitFirewallEvent';
 import {
@@ -69,6 +70,9 @@ import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import { SdwanService } from './sdwan/SdwanService';
+import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
+import { FirewallHa, serialNumberOf } from './ha/FirewallHa';
+import type { HaConfiguration } from './ha/HaTypes';
 import type { SdwanConfiguration } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
 import type { IPSecEngine } from '../../ipsec/IPSecEngine';
@@ -106,8 +110,8 @@ export interface TrafficLogger {
 export class Firewall extends Equipment {
   private readonly interfaces = new InterfaceTable();
   private readonly vdoms: VdomRegistry;
-  private readonly switchGroups = new Map<string, ReadonlySet<string>>();
-  private readonly vdomLinks = new Map<string, readonly string[]>();
+  private readonly switchGroups = new SwitchGroupTable();
+  private readonly vdomLinks: VdomLinkTable;
   private readonly macTable = new Map<string, string>();
   private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
@@ -126,6 +130,7 @@ export class Firewall extends Equipment {
   private readonly sslVpn: SslVpnPortal;
   private readonly portals: FirewallPortals;
   private readonly sdwan: SdwanService;
+  private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
   private readonly hostsTable = new RouterHostsTable();
   private readonly radius: RadiusClientAgent;
@@ -153,6 +158,17 @@ export class Firewall extends Equipment {
       this.addPort(port);
       this.interfaces.configure(port.getName(), { up: port.getIsUp() });
     }
+
+    this.vdomLinks = new VdomLinkTable({
+      deviceId: this.id,
+      port: (name) => this.getPort(name),
+      addPort: (port) => { this.addPort(port); },
+      declareInterface: (name) => { this.interfaces.configure(name, { up: true }); },
+      forgetInterface: (name) => {
+        this.interfaces.remove(name);
+        this.vdoms.releaseInterface(name);
+      },
+    });
 
     const now = options.now ?? (() => Date.now());
     this.syslog = new SyslogAgent(this, () => this.getBus());
@@ -246,6 +262,15 @@ export class Firewall extends Equipment {
     this.portal = this.portals.auth;
     this.sslVpn = this.portals.sslVpn;
 
+    this.haService = new FirewallHa({
+      serial: () => this.serialNumber(),
+      now,
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+      interfaceMac: (iface) => this.getPort(iface)?.getMAC(),
+      interfaceUp: (iface) => this.getPort(iface)?.isConnected() === true,
+      sessions: () => this.getVdom().sessions,
+    });
+
     this.sdwan = new SdwanService({
       send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
       localIp: (iface) => this.interfaces.get(iface)?.ip,
@@ -282,9 +307,22 @@ export class Firewall extends Equipment {
 
   getSdwan(): SdwanService { return this.sdwan; }
 
+  getHa(): HaAgent { return this.haService.agent; }
+
+  applyHa(c: HaConfiguration): string | undefined {
+    this.haService.agent.configure(c);
+    return undefined;
+  }
+
+  serialNumber(): string { return serialNumberOf(this.name); }
+
   applySdwan(c: SdwanConfiguration): string | undefined { return this.sdwan.apply(c); }
 
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
+
+  bindHaConfiguration(read: () => string, apply: (text: string) => void): void {
+    this.haService.bindConfiguration(read, apply);
+  }
 
   applySslVpnSettings(s: SslVpnSettings): string | undefined { return this.sslVpn.apply(s); }
 
@@ -318,7 +356,7 @@ export class Firewall extends Equipment {
   ): Promise<RemoteAuthOutcome> {
     return remoteAuthenticate({
       tcp: this.tcp,
-      server: (name) => this.getVdom().users.getServer(name),
+      server: (n) => this.getVdom().users.getServer(n),
       radius: this.radius,
       tacacs: this.tacacs,
     }, server, user, password);
@@ -358,16 +396,14 @@ export class Firewall extends Equipment {
     if (!this.getPort(request.ingressPort)) {
       throw new UnknownSimulationInterfaceError(request.ingressPort);
     }
-
     const context = makePacketContext({
       ingressPort: request.ingressPort,
       packet: buildSimulatedPacket(request),
       arrivedAt: this.services.now(),
       simulated: true,
     });
-
-    const outcome = this.processPipeline(context);
-    return summariseSimulation(context, outcome.verdict === 'accepted');
+    return summariseSimulation(
+      context, this.processPipeline(context).verdict === 'accepted');
   }
 
   setInterfaceUp(name: string, up: boolean): void {
@@ -432,73 +468,30 @@ export class Firewall extends Equipment {
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
 
-  assignInterfaceToVdom(iface: string, vdom: string): void {
-    this.vdoms.assignInterface(iface, vdom);
+  assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }
+
+  vdomOfInterface(i: string): string { return this.vdoms.vdomOfInterface(i); }
+
+  createVdomLink(n: string): readonly string[] { return this.vdomLinks.create(n); }
+
+  removeVdomLink(n: string): boolean { return this.vdomLinks.remove(n); }
+
+  vdomLinkEnds(n: string): readonly string[] { return this.vdomLinks.ends(n); }
+
+  vdomLinkPeer(i: string): string | undefined { return this.vdomLinks.peer(i); }
+
+  setSwitchInterface(n: string, members: readonly string[]): void {
+    this.switchGroups.set(n, members);
   }
 
-  vdomOfInterface(iface: string): string {
-    return this.vdoms.vdomOfInterface(iface);
-  }
+  removeSwitchInterface(n: string): boolean { return this.switchGroups.remove(n); }
 
-  createVdomLink(name: string): readonly string[] {
-    const ends = [`${name}0`, `${name}1`];
-    if (this.getPort(ends[0])) return Object.freeze(ends);
+  switchInterfaces(): readonly string[] { return this.switchGroups.names(); }
 
-    const left = new Port(ends[0], 'ethernet');
-    const right = new Port(ends[1], 'ethernet');
-    this.addPort(left);
-    this.addPort(right);
-    for (const end of ends) this.interfaces.configure(end, { up: true });
-
-    new Cable(`vdom-link:${this.id}:${name}`).connect(left, right);
-    this.vdomLinks.set(name, Object.freeze(ends));
-    return Object.freeze(ends);
-  }
-
-  removeVdomLink(name: string): boolean {
-    const ends = this.vdomLinks.get(name);
-    if (!ends) return false;
-
-    for (const end of ends) {
-      this.interfaces.remove(end);
-      this.vdoms.releaseInterface(end);
-    }
-    return this.vdomLinks.delete(name);
-  }
-
-  vdomLinkEnds(name: string): readonly string[] {
-    return this.vdomLinks.get(name) ?? [];
-  }
-
-  vdomLinkPeer(iface: string): string | undefined {
-    for (const ends of this.vdomLinks.values()) {
-      if (ends[0] === iface) return ends[1];
-      if (ends[1] === iface) return ends[0];
-    }
-    return undefined;
-  }
-
-  setSwitchInterface(name: string, members: readonly string[]): void {
-    this.switchGroups.set(name, new Set(members));
-  }
-
-  removeSwitchInterface(name: string): boolean {
-    return this.switchGroups.delete(name);
-  }
-
-  switchInterfaces(): readonly string[] {
-    return Object.freeze([...this.switchGroups.keys()]);
-  }
-
-  switchMembers(name: string): readonly string[] {
-    return Object.freeze([...(this.switchGroups.get(name) ?? [])]);
-  }
+  switchMembers(n: string): readonly string[] { return this.switchGroups.members(n); }
 
   sameSwitchInterface(left: string, right: string): boolean {
-    for (const members of this.switchGroups.values()) {
-      if (members.has(left) && members.has(right)) return true;
-    }
-    return false;
+    return this.switchGroups.sameGroup(left, right);
   }
 
   setOperationMode(mode: DeploymentMode, vdom?: string): void {
@@ -578,8 +571,7 @@ export class Firewall extends Equipment {
     if (!pool.arpReply) { this.proxyArp.clear(owner); return; }
 
     this.setProxyArpEntries(owner, [{
-      from: pool.startIP,
-      to: pool.endIP,
+      from: pool.startIP, to: pool.endIP,
       iface: pool.arpInterface ?? pool.associatedInterface,
     }]);
   }
@@ -624,6 +616,10 @@ export class Firewall extends Equipment {
     });
     this.macTable.set(frame.srcMAC.toString(), portName);
 
+    if (frame.etherType === ETHERTYPE_FGCP) {
+      this.haService.agent.receive(frame);
+      return;
+    }
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleArpFrame(portName, frame.payload as ARPPacket);
       return;
@@ -721,9 +717,7 @@ export class Firewall extends Equipment {
     const vdom = this.vdoms.contextOfInterface(portName);
     return vdom.nat.hasInboundRule(packet, {
       ingressZone: vdom.zones.zoneOf(portName) ?? portName,
-      egressZone: '',
-      ingressInterface: portName,
-      egressInterface: '',
+      egressZone: '', ingressInterface: portName, egressInterface: '',
     });
   }
 

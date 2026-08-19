@@ -4,6 +4,7 @@ import type { PolicyStore } from '../../../model/PolicyStore';
 
 import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
+import type { HaConfiguration } from '../../../ha/HaTypes';
 
 export type FortiAccessGroup = AccessGroup;
 
@@ -39,6 +40,7 @@ export interface FortiAttributeSpec {
   readonly unimplemented?: string;
   readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
+  readonly secret?: boolean;
 }
 
 export interface FortiInterfacePatch {
@@ -205,6 +207,8 @@ export interface FortiCommitDevice {
   applyPhase1(tunnel: FortiPhase1Patch): void;
   applySslVpnSettings(settings: FortiSslVpnPatch): string | void;
   applySdwan(settings: SdwanConfiguration): string | void;
+  applyHa(settings: HaConfiguration): string | void;
+  hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
   applyCaCertificate(entry: FortiCaCertificatePatch): string | void;

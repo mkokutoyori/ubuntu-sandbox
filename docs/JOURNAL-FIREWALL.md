@@ -1976,6 +1976,63 @@ d'extraire le calcul.
 
 ---
 
+### E44 — FGCP : deux FortiGate élisent un primaire, et le fil en décide
+
+`ha/{HaTypes,HaAgent,HaSessionSync,FirewallHa}.ts`,
+`vdom/VdomLinkTable.ts`, `l3/SwitchGroupTable.ts`, `schema/ha.ts`,
+`diag/haRenderer.ts` (tous neufs), `Firewall.ts`, `FortiShell.ts`,
+`FortiSocle.ts` — **28 cas** neufs plus 4 specs Playwright. **27 des 28**
+tombent avant correctif.
+
+**La contrainte P6 est tenue : la synchronisation traverse le fil.** Les
+battements de cœur sont de vraies trames sur `hbdev` (`etherType`
+0x8890), et débrancher le câble de synchronisation produit un cerveau
+divisé observable — les deux membres se croient primaires — puis le
+rebrancher le résorbe. Ce laboratoire n'existe que parce qu'aucune
+synchronisation en mémoire n'a été prise.
+
+**L'ordre de départage est celui de FortiOS et chaque critère a son
+cas** : nombre d'interfaces surveillées ACTIVES, puis priorité, puis
+durée de fonctionnement par tranches de cinq minutes, puis numéro de
+série. Le cas qui porte le chapitre est le premier : on débranche un
+câble surveillé et le rôle bascule bien qu'on n'ait touché à aucune
+priorité.
+
+**Trois défauts trouvés en mesurant, tous dans ma propre conception** :
+
+1. **Un membre fraîchement configuré se déclarait primaire** avant
+   d'avoir entendu la grappe, et la règle de l'occupant le maintenait
+   ensuite indéfiniment. Un membre qui rejoint entre désormais comme
+   secondaire et n'est promu que s'il gagne.
+2. **La règle de l'occupant ne savait pas départager DEUX prétendants** :
+   après un cerveau divisé, les deux se disent primaires et `find`
+   choisissait le premier venu. Quand plus d'un revendique le rôle, la
+   règle se retire et l'élection tranche.
+3. **`execute ha failover set` n'était su que du membre qui l'exécute** :
+   le pair continuait de l'élire sur sa priorité. Le retrait voyage
+   maintenant DANS le battement, comme tout le reste.
+
+**Le condensé de configuration exclut ce qui diffère légitimement d'un
+membre à l'autre** (nom d'hôte, priorité, et le bloc `config system ha`
+lui-même). Ce n'est pas cosmétique : sans cela `diagnose sys ha checksum
+show` aurait annoncé une désynchronisation permanente sur une grappe
+saine, et surtout la configuration rejouée aurait porté `set password ENC
+…` — un condensé que ce simulateur ne sait pas relire — donc la
+synchronisation aurait CASSÉ le mot de passe de la grappe qu'elle
+prétendait maintenir.
+
+**`set password` est rendu `ENC <condensé>`** comme sur une vraie
+machine ; l'attribut porte `secret: true` et le rendu est unique, de
+sorte qu'aucun autre secret du schéma ne puisse être oublié.
+
+**Le laboratoire donne à chaque membre ses PROPRES liens surveillés**, et
+c'est une correction de méthode : au premier essai les deux membres
+partageaient les câbles, donc en couper un faisait perdre une interface
+aux DEUX et le critère ne départageait rien.
+
+Trois extractions imposées par G3, jamais un seuil relâché :
+`ha/FirewallHa.ts`, `vdom/VdomLinkTable.ts`, `l3/SwitchGroupTable.ts`.
+
 ### E43 — SD-WAN : la sonde mesure, et la sélection suit la mesure
 
 `sdwan/{SdwanTable,SdwanHealthProbe,SdwanService}.ts`,
@@ -2261,6 +2318,35 @@ progrès ; le test le dit maintenant dans les deux sens.
 **Quatre extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
 `commit/objectCommits.ts`, `FirewallAgents.ts`, `l3/FirewallEgress.ts`,
 `logging/emitFirewallEvent.ts`.
+
+---
+
+## Périmètre pris — FortiOS phase 9b (haute disponibilité)
+
+**Agent `mandeng`.** `docs/CARNET-FortiGate.md` fait foi pour l'état.
+
+**Prélèvement sur le socle** : `ha/` (nouveau répertoire — `HaAgent`,
+table de configuration, élection, empreinte de configuration), et le
+transport des battements de cœur sur `hbdev`.
+
+**Fichiers FortiOS pris** : `schema/ha.ts` (neuf), `schema/index.ts`,
+`diag/haRenderer.ts` (neuf), `FortiSocle.ts` (chemins `diagnose sys ha`
+et `execute ha`), `Firewall.ts`.
+
+**Réutilisations imposées, à ne pas réécrire** : `Port`/`Cable` pour les
+trames de battement, `EthernetFrame` avec un `etherType` propre au
+protocole, `SessionTable` pour `session-pickup`.
+
+**Décision du BRD §27.3, suivie** : `HaAgent` s'INSPIRE de `VrrpAgent`
+sans le réutiliser — les critères de départage sont différents (nombre
+d'interfaces surveillées actives d'abord, puis priorité, puis durée de
+fonctionnement, puis numéro de série) et forcer la réutilisation
+produirait un agent paramétré au point d'être illisible.
+
+**Contrainte P6, non négociable** : la synchronisation TRAVERSE LE FIL.
+Débrancher `hbdev` doit produire un cerveau divisé observable ; une
+synchronisation en mémoire rendrait ce laboratoire impossible et c'est
+le plus instructif du chapitre.
 
 ---
 
