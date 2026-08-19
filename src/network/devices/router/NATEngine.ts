@@ -62,6 +62,7 @@ export interface NatDynamicRule {
   type: NatDynamicRuleType;
   poolName?: string;
   interfaceName?: string;
+  overload?: boolean;
 }
 
 /** TCP session state (RFC 6146 §2.1). */
@@ -663,17 +664,21 @@ export class NATEngine {
         const sessionKey = makeKey4(proto, srcIP, srcPort, dstIP, dstPort);
         let session = this.sessions.get(sessionKey);
         if (!session) {
-          const poolIP = this.allocatePoolAddress(pool, srcIP);
+          const poolIP = rule.overload
+            ? this.overloadPoolAddress(pool, proto)
+            : this.allocatePoolAddress(pool, srcIP);
           if (poolIP === null) {
             // Exhausted for this rule — try the next dynamic rule rather
             // than counting a Miss here; the final `missCount++` below
             // covers the case where no rule at all can translate the packet.
             continue;
           }
+          const poolPort = rule.overload ? this.allocatePort(proto, poolIP) : srcPort;
+          if (poolPort === null) continue;
           session = {
             protocol: proto,
             localIP: srcIP, localPort: srcPort,
-            globalIP: poolIP, globalPort: srcPort,
+            globalIP: poolIP, globalPort: poolPort,
             outsideIP: dstIP, outsidePort: dstPort,
             outsideLocalIP, outsideLocalPort,
             timestamp: Date.now(),
@@ -681,7 +686,7 @@ export class NATEngine {
             inIface,
           };
           this.sessions.set(sessionKey, session);
-          const revKey = makeKey(proto, poolIP, srcPort);
+          const revKey = makeKey(proto, poolIP, poolPort);
           this.reverseSessions.set(revKey, session);
           this.hitCount++;
           this.updatePeak();
@@ -691,7 +696,7 @@ export class NATEngine {
               ...this.deviceRef(),
               protocol: proto,
               localIp: srcIP, localPort: srcPort,
-              globalIp: pool.startIP, globalPort: srcPort,
+              globalIp: poolIP, globalPort: poolPort,
               outsideIp: dstIP, outsidePort: dstPort,
               kind: 'pool',
             },
@@ -978,6 +983,24 @@ export class NATEngine {
    * inside IP (RFC 6888 REQ-2 — destination-independent mapping). Returns
    * null when the pool is exhausted (no more unique addresses available).
    */
+  private overloadPoolAddress(pool: NatPool, proto: number): string | null {
+    const startN = tryIpToUint32(pool.startIP);
+    const endN = tryIpToUint32(pool.endIP);
+    if (startN == null || endN == null) return null;
+    for (let n = startN; n <= endN; n++) {
+      const ip = uint32ToIp(n);
+      if (this.allocatablePort(proto, ip)) return ip;
+    }
+    return null;
+  }
+
+  private allocatablePort(proto: number, globalIP: string): boolean {
+    for (let port = NAT_EPHEMERAL_MIN; port <= this.maxPort; port++) {
+      if (!this.reverseSessions.has(makeKey(proto, globalIP, port))) return true;
+    }
+    return false;
+  }
+
   private allocatePoolAddress(pool: NatPool, insideIP: string): string | null {
     for (const s of this.sessions.values()) {
       if (s.localIP === insideIP) {

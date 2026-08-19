@@ -78,12 +78,21 @@ export function buildPimInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
   });
 }
 
+export function pimGlobalRunningConfigLines(router: Router): string[] {
+  const a = agent(router);
+  if (!a) return [];
+  return a.listRps()
+    .filter((rp) => rp.isStatic)
+    .map((rp) => `ip pim rp-address ${rp.rpAddress}`);
+}
+
 export function buildPimGlobalConfigCommands(trie: CommandTrie, ctx: ShowCtx): void {
   trie.registerGreedy('ip pim rp-address', 'Configure static PIM RP address', (args) => {
     const a = agent(ctx.r());
     if (!a) return '';
     const rpAddress = args[0];
     if (!rpAddress || !/^\d+\.\d+\.\d+\.\d+$/.test(rpAddress)) return '% Invalid RP address';
+    if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
     a.addStaticRp(rpAddress);
     return '';
   });

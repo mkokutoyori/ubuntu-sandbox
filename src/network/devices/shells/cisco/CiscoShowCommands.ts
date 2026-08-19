@@ -15,7 +15,7 @@ import { runningConfigNAT, runningConfigInterfaceNAT } from './CiscoNATCommands'
 import { ipSlaRunningConfigLines, trackRunningConfigLines } from './ciscoIpSlaRunningConfig';
 import { orderCiscoConfigBlocks, routingProcessConfigLines, policyConfigLines } from './ciscoConfigSerializer';
 import { igmpInterfaceRunningConfigLines } from './CiscoIgmpCommands';
-import { pimInterfaceRunningConfigLines } from './CiscoPimCommands';
+import { pimInterfaceRunningConfigLines, pimGlobalRunningConfigLines } from './CiscoPimCommands';
 
 import { CISCO_HARDWARE_PROFILES, chassisSerial, formatIosUptime, licenseTable, type CiscoChassisProfile } from './CiscoCommonShow';
 import {
@@ -744,6 +744,9 @@ export function showRunningConfig(router: Router): string {
     lines.push(...securityLines);
     lines.push('!');
   }
+
+  const pimLines = pimGlobalRunningConfigLines(router);
+  if (pimLines.length > 0) { lines.push('!'); lines.push(...pimLines); }
 
   const slaLines = ipSlaRunningConfigLines(router);
   if (slaLines.length > 0) { lines.push('!'); lines.push(...slaLines); }

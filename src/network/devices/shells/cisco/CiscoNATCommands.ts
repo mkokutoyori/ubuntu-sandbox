@@ -197,7 +197,12 @@ export function buildNATConfigCommands(trie: CommandTrie, ctx: CiscoShellContext
       const allowed = new Set(['vrf', (vrf ?? '').toLowerCase(), 'overload']);
       const after = args.slice(3).filter(a => !allowed.has(a.toLowerCase()));
       if (after.length > 0) return `% Invalid extra argument(s): ${after.join(' ')}`;
-      engine.addDynamicRule({ aclId, type: 'pool', poolName, ...(vrf ? { vrf } : {}) } as any);
+      const overload = args.some((a, i) => i >= 3 && a.toLowerCase() === 'overload');
+      engine.addDynamicRule({
+        aclId, type: 'pool', poolName,
+        ...(overload ? { overload: true } : {}),
+        ...(vrf ? { vrf } : {}),
+      } as any);
     } else {
       return '% Invalid command syntax.';
     }
@@ -832,7 +837,7 @@ export function runningConfigNAT(router: Router): string[] {
       const iface = r.interfaceName ?? [...engine.getOutsideInterfaces()][0] ?? 'GigabitEthernet0/1';
       lines.push(`ip nat inside source list ${r.aclId} interface ${iface} overload${vrfTail}`);
     } else if (r.type === 'pool' && r.poolName) {
-      lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}${vrfTail}`);
+      lines.push(`ip nat inside source list ${r.aclId} pool ${r.poolName}${r.overload ? ' overload' : ''}${vrfTail}`);
     }
   }
 

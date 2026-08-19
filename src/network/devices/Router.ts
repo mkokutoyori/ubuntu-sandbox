@@ -106,7 +106,7 @@ import {
   IPv6Address, IPv6Packet,
 } from '../core/types';
 import type { IIPv4Route } from '../core/interfaces';
-import { ipv4MulticastToMac } from '../core/ip';
+import { ipv4MulticastToMac, tryIpToUint32 } from '../core/ip';
 import { Logger } from '../core/Logger';
 import { CarPolicer } from './router/qos/CarPolicer';
 import { buildICMPError, mayGenerateICMPError, type ICMPErrorType } from '../core/IcmpErrors';
@@ -2121,6 +2121,24 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ─── Control Plane: ARP Handling ──────────────────────────────
 
+  private ownsNatGlobalAddress(portName: string, target: IPAddress): boolean {
+    const engine = this._getNATEngine?.();
+    if (!engine) return false;
+    if (!engine.getOutsideInterfaces().has(portName)) return false;
+    const wanted = target.toString();
+    for (const entry of engine.getStaticEntries()) {
+      if (entry.globalIP === wanted) return true;
+    }
+    const n = tryIpToUint32(wanted);
+    if (n === null) return false;
+    for (const pool of engine.getPools().values()) {
+      const start = tryIpToUint32(pool.startIP);
+      const end = tryIpToUint32(pool.endIP);
+      if (start !== null && end !== null && n >= start && n <= end) return true;
+    }
+    return false;
+  }
+
   private handleARP(portName: string, arp: ARPPacket): void {
     if (!arp || arp.type !== 'arp') return;
     const port = this.ports.get(portName);
@@ -2150,6 +2168,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     }
 
     if (arp.operation === 'request' && port.ownsIPv4(arp.targetIP)) {
+      const reply: ARPPacket = {
+        type: 'arp', operation: 'reply',
+        senderMAC: port.getMAC(), senderIP: arp.targetIP,
+        targetMAC: arp.senderMAC, targetIP: arp.senderIP,
+      };
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(), dstMAC: arp.senderMAC,
+        etherType: ETHERTYPE_ARP, payload: reply,
+      });
+    } else if (arp.operation === 'request'
+      && !arp.senderIP.equals(arp.targetIP)
+      && this.ownsNatGlobalAddress(portName, arp.targetIP)) {
       const reply: ARPPacket = {
         type: 'arp', operation: 'reply',
         senderMAC: port.getMAC(), senderIP: arp.targetIP,
