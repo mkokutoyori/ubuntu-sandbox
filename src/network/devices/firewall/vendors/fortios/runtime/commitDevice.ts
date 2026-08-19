@@ -111,6 +111,12 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       refreshCaptivePortal() {
         fw.refreshCaptivePortal();
       },
+      applySyslogCollector(settings) {
+        fw.getSyslogCollectors().applySettings(settings);
+      },
+      applySyslogFilter(settings) {
+        fw.getSyslogCollectors().applyFilter(settings);
+      },
       applyVdom(name) {
         fw.getVdomRegistry().create(name);
       },

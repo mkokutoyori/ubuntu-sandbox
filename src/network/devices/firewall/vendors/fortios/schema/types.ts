@@ -6,6 +6,9 @@ import type { AccessGroup } from '../../../authz/AccessMatrix';
 import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type { DhcpScope } from '../../../l3/FirewallDhcp';
+import type {
+  SyslogCollectorSettings, SyslogFilterSettings,
+} from '../../../logging/SyslogCollectors';
 import type { NtpSettings } from '../../../mgmt/FirewallNtp';
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
@@ -189,6 +192,8 @@ export interface FortiCommitDevice {
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;
+  applySyslogCollector(settings: SyslogCollectorSettings): string | void;
+  applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;

@@ -2409,6 +2409,55 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E50 — Les collecteurs syslog émettent, et leur chemin CLI était faux
+
+`logging/SyslogCollectors.ts` (neuf), `schema/log.ts`, `schema/types.ts`,
+`runtime/commitDevice.ts`, `FortiShell.ts`, `FortiSocle.ts`,
+`Firewall.ts` — **8 cas** neufs plus 5 specs Playwright. **7 des 8**
+tombent avant correctif ; le huitième est le témoin négatif.
+
+**Quatre collecteurs déclarés, `onCommit` VIDES** — la famille de défaut
+d'E47 exactement. `config log syslogd` acceptait serveur, port, mode,
+facilité, format, interface source et filtre, `show` les reproduisait, et
+aucun datagramme ne partait. Un vrai `rsyslog` sur une vraie machine
+Linux (`imudp` décommenté, ce que fait le laboratoire) reçoit maintenant
+la ligne dans son `/var/log/syslog` : `FGT fortios %FORTIOS-…: Deny ICMP
+src port1:192.168.1.10/0 dst port2:203.0.113.10/0`. Le test lit ce
+fichier, pas un compteur.
+
+**LE CHEMIN CLI ÉTAIT FAUX, et c'est plus qu'un détail de frappe.** Le
+schéma déclarait `config log syslogd` avec un enfant `filter` ; un vrai
+FortiGate a `config log syslogd setting` et `config log syslogd filter`
+comme **frères**, vérifié contre la référence CLI de Fortinet. La
+conséquence dépasse la saisie : `show` rendait `config log syslogd`, donc
+une configuration exportée d'ici ne se colle pas sur une vraie machine —
+et la configuration rendue est REJOUÉE à l'import d'une topologie. Les
+trois cas de `fortios-diagnostic.test.ts` qui utilisaient l'ancien chemin
+encodaient le défaut ; ils sont corrigés, pas contournés. `FortiShell`
+lisait le format sur ce même chemin et le lisait donc désormais nulle
+part : corrigé dans la foulée, sans quoi les quatre formats seraient
+devenus muets.
+
+**Le filtre FILTRE.** `set severity emergency` retient une notification
+ordinaire, et le cas qui le vérifie a dû être renforcé : il passait des
+deux côtés tant qu'il ne prouvait pas d'abord que le message arrivait
+sans le filtre.
+
+**Un collecteur désactivé disparaît de la liste des destinations** plutôt
+que d'y rester inerte — `listServers()` est ce que l'agent utilise pour
+émettre, donc l'y laisser aurait continué d'envoyer.
+
+`SyslogCollectorTable` projette les quatre collecteurs sur l'agent unique
+du socle. Elle ne réécrit pas `projectLoggingOntoSyslogAgent`, qui
+projette l'AUTRE source (le `LoggingConfig` de style Cisco, que l'ASA
+utilise) : deux sources, un agent, et c'est la table qui décide pour
+FortiOS.
+
+**Trois compactions plutôt qu'un seuil relevé** (G3 a tiré à 802 lignes) :
+`Firewall.ts` retombe à 798.
+
+---
+
 ### E49 — Le portail captif capture, et un défaut du socle TCP tombe avec
 
 `auth/CaptivePortalRedirect.ts`, `mgmt/ManagementWiring.ts`,
@@ -2648,6 +2697,23 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Périmètre pris — FortiOS phase 13 (les collecteurs syslog émettent)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point : « les collecteurs
+syslog sont **configurables et n'émettent pas encore** vers un vrai
+collecteur — `SyslogAgent` existe sur le socle, le branchement du
+formateur FortiOS vers lui reste à faire ». Mesure de départ :
+`schema/log.ts` déclare les quatre collecteurs (`syslogd` à `syslogd4`)
+avec serveur, port, mode, facilité, format, interface source et filtre —
+et leurs `onCommit` sont **vides**, exactement comme l'était celui du
+serveur DHCP en E47.
+
+Le laboratoire peut être vrai de bout en bout : `LinuxRsyslogService`
+existe et écoute pour de bon (`imudp`), donc un datagramme parti du
+pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
