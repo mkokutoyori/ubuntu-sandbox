@@ -203,3 +203,23 @@ describe('la delegation de privileges survit a la migration', () => {
         .not.toContain('Invalid input');
     });
 });
+
+describe('`access-class` nomme sa liste PUIS sa direction', () => {
+  it('`access-class ?` annonce les deux formes de liste', async () => {
+    const aide = (await vty(PLATEFORMES[0][1])).cliHelp('access-class ');
+    expect(aide).toContain('<1-199>');
+    expect(aide).toContain('WORD');
+    expect(aide).not.toContain('Inbound packets');
+  });
+
+  it('la direction revient une fois la liste nommee', async () => {
+    const aide = (await vty(PLATEFORMES[0][1])).cliHelp('access-class 10 ');
+    expect(aide).toContain('in');
+    expect(aide).toContain('out');
+  });
+
+  it('et la commande complete est acceptee', async () => {
+    expect(await (await vty(PLATEFORMES[0][1])).executeCommand('access-class 10 in'))
+      .not.toContain('Invalid input');
+  });
+});

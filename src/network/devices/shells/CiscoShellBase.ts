@@ -248,7 +248,21 @@ const SERVICES_IOS: ReadonlyArray<readonly [string, string]> = [
   ['unsupported-transceiver', 'Enable support for third-party transceivers'],
 ];
 
-const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | null>> = {
+const LINE_ACCESS_CLASS: readonly ArgumentSpec[] = [
+  {
+    name: 'access-list', type: 'WORD', description: 'Access-list name',
+    alternatives: [
+      { keyword: '<1-199>', description: 'IP access list (standard or extended)' },
+      { keyword: 'WORD', description: 'Access-list name' },
+    ],
+  },
+  enumeration('direction', 'Filter direction', [
+    ['in', 'Inbound packets'], ['out', 'Outbound packets'],
+  ]),
+];
+
+const LINE_ARGUMENTS: Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  'access-class': LINE_ACCESS_CLASS,
   'motd-banner': null,
   length: { name: 'lines', type: 'INT', description: 'Number of lines on a screen', range: [0, 512] },
   width: { name: 'characters', type: 'INT', description: 'Width of the display terminal', range: [0, 512] },

@@ -76,7 +76,7 @@ export interface SpecFromTrieOptions {
   restDescription?: string;
   restDescriptionFor?: (path: string) => string | undefined;
   restLiteralFor?: (path: string) => string | undefined;
-  argumentFor?: (path: string) => ArgumentSpec | null | undefined;
+  argumentFor?: (path: string) => ArgumentSpec | readonly ArgumentSpec[] | null | undefined;
   hiddenFor?: (path: string) => boolean;
   reachableWhenFor?: (path: string) => ((session: CliSession) => boolean) | undefined;
   skip?: (path: string) => boolean;
@@ -131,14 +131,20 @@ export function specsFromTrieRegistrations(
       ...(declaredLabel === undefined && restLiteral === undefined
         ? { values: [] } : {}),
     };
-    const argument = declaredArgument === undefined
-      ? (entry.greedy ? reste : null) : declaredArgument;
-    const path: CommandSpec['path'] = argument === null
-      ? [...words] : [...words, argument];
-    const nomValeur = argument === null ? restName : argument.name;
+    const places: readonly ArgumentSpec[] = declaredArgument === undefined
+      ? (entry.greedy ? [reste] : [])
+      : declaredArgument === null ? []
+        : Array.isArray(declaredArgument) ? declaredArgument
+          : [declaredArgument as ArgumentSpec];
+    const argument = places.length === 0 ? null : places[places.length - 1];
+    const path: CommandSpec['path'] = [...words, ...places];
+    const valeursTapees = (args: Record<string, string>): string[] =>
+      places.flatMap(place => {
+        const valeur = String(args[place.name] ?? '').trim();
+        return valeur.length === 0 ? [] : valeur.split(/\s+/);
+      });
     const run = (prefix: readonly string[]) => (_session: unknown, args: Record<string, string>) => {
-      const rest = String(args[nomValeur] ?? '').trim();
-      const argv = [...prefix, ...(rest.length === 0 ? [] : rest.split(/\s+/))];
+      const argv = [...prefix, ...valeursTapees(args)];
       return entry.action(argv, [...words, ...argv].join(' '));
     };
     specs.push({
@@ -156,10 +162,7 @@ export function specsFromTrieRegistrations(
       ...(negation === undefined
         || options.undoFor?.(entry.path) === false ? {} : {
         undo: ((_session: unknown, args: Record<string, string>) => {
-          const nom = argument === null ? restName : argument.name;
-          const valeur = String(args[nom] ?? '').trim();
-          const argv = [...words,
-            ...(valeur.length === 0 ? [] : valeur.split(/\s+/))];
+          const argv = [...words, ...valeursTapees(args)];
           return negation.action(argv, [negation.path, ...argv].join(' '));
         }) as CommandSpec['undo'],
       }),

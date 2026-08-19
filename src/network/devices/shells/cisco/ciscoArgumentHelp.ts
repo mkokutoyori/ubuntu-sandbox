@@ -1005,10 +1005,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ],
   };
   tries.configIf.describeArgs('ip access-group', [LISTE_IP, DIRECTION]);
-  tries.configLine.describeArgs('access-class', [
-    { ...LISTE_IP, alternatives: LISTE_IP.alternatives!.filter((a) => a.literal !== '<1300-2699>') },
-    DIRECTION,
-  ]);
   tries.configIf.describeArgs('service-policy', [
     ENUM('direction', 'Policy direction', [
       ['input', 'Assign policy-map to the input of an interface'],
