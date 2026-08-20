@@ -1022,3 +1022,490 @@ Avant de plonger dans la CLI, voici la carte mentale. **Toutes** les commandes F
 C'est le sujet de la section suivante, et c'est la section la plus rentable de tout ce tutoriel. 🎯
 
 ---
+
+## 5. La CLI FortiOS en profondeur
+
+Si tu ne devais lire qu'une seule section de ce tutoriel, ce serait celle-ci.
+
+La CLI FortiOS a une propriété remarquable : **elle est entièrement régulière**. Une fois que tu as compris sa grammaire — et elle tient en une page — tu peux configurer n'importe quoi, y compris des fonctions que tu n'as jamais vues, en devinant les commandes. Ce n'est pas une figure de style : je vais te montrer comment configurer une fonction sans connaître sa syntaxe.
+
+### 5.1 La grammaire, en une image
+
+Toute la configuration de FortiOS est un **arbre de tables**. Une table contient des **objets**, un objet contient des **attributs**.
+
+```
+config <chemin de la table>        ← j'entre dans une table
+    edit <nom ou numéro de l'objet>    ← je crée ou modifie un objet
+        set <attribut> <valeur>            ← je règle un attribut
+        set <attribut> <valeur>
+    next                               ← j'ai fini cet objet, j'en veux un autre
+    edit <un autre objet>
+        set ...
+    next
+end                                ← j'ai fini la table, applique tout
+```
+
+Voilà. C'est tout. **Absolument tout FortiOS se configure comme ça** : les interfaces, les politiques, les routes, les VPN, les utilisateurs, les profils antivirus, la haute disponibilité.
+
+### 5.2 Les deux formes de tables
+
+Il y a une nuance à connaître, sinon tu vas te demander pourquoi `edit` fonctionne parfois et pas toujours.
+
+**Les tables à objets multiples** — celles qui contiennent une liste. Il faut un `edit` :
+
+```
+config firewall address        ← il peut y avoir 500 objets adresse
+    edit "Reseau-LAN"
+        set subnet 192.168.10.0 255.255.255.0
+    next
+end
+```
+
+**Les tables uniques** — celles dont il n'existe qu'un exemplaire. **Pas de `edit`** :
+
+```
+config system global           ← il n'y a qu'une configuration globale
+    set hostname FGT-01
+end
+```
+
+> 💡 **Astuce — comment savoir dans quel cas on est ?**
+> Tape `config <quelque chose>` puis appuie sur `?`. Si FortiOS te propose `edit`, c'est une table à objets multiples. S'il te propose directement des `set`, c'est une table unique. Tu n'as rien à mémoriser, la CLI te le dit.
+
+### 5.3 `next` contre `end` : la confusion la plus fréquente
+
+Ces deux mots ne font pas la même chose, et les mélanger produit des erreurs incompréhensibles.
+
+| Commande | Effet |
+|---|---|
+| `next` | Valide **l'objet courant** et reste dans la table, prêt pour un autre `edit` |
+| `end` | Valide **la table entière** et sort |
+| `abort` | Sort **en annulant** les modifications non validées |
+
+Concrètement :
+
+```
+config firewall address
+    edit "Serveur-Web"
+        set subnet 192.168.20.10 255.255.255.255
+    next                          ← "Serveur-Web" est enregistré
+    edit "Serveur-Mail"
+        set subnet 192.168.20.11 255.255.255.255
+    next                          ← "Serveur-Mail" est enregistré
+end                               ← on sort de la table
+```
+
+> 💡 **Astuce** : `end` fait implicitement le travail de `next` pour l'objet en cours. Ces deux blocs sont équivalents :
+> ```
+> edit "X"
+>     set subnet ...
+> next
+> end
+> ```
+> ```
+> edit "X"
+>     set subnet ...
+> end
+> ```
+> Beaucoup d'administrateurs écrivent quand même le `next`, par habitude et parce que ça rend les scripts plus faciles à modifier. Fais comme tu préfères, mais sois cohérent.
+
+> ⚠️ **Attention** : `abort` est ton filet de sécurité. Si tu t'es trompé au milieu d'un bloc et que tu ne veux **rien** appliquer, `abort` annule tout le bloc. Retiens-le maintenant, tu en auras besoin un jour où tu seras en train de te couper l'accès.
+
+### 5.4 Les verbes qui agissent sur les objets
+
+À l'intérieur d'une table, au-delà de `edit` :
+
+| Commande | Effet |
+|---|---|
+| `edit <nom>` | Crée l'objet s'il n'existe pas, l'ouvre s'il existe |
+| `delete <nom>` | **Supprime** l'objet |
+| `purge` | 🚨 Supprime **TOUS** les objets de la table |
+| `rename <ancien> to <nouveau>` | Renomme |
+| `clone <source> to <copie>` | Duplique — très pratique |
+| `move <a> after|before <b>` | Change l'**ordre** — capital pour les politiques (§9) |
+| `show` | Affiche la configuration de la table courante |
+| `get` | Affiche les valeurs **effectives** de l'objet courant |
+
+> 🚨 **Danger — `purge`**
+> `purge` ne demande pas toujours confirmation selon le contexte, et il n'y a pas d'annulation. Un `purge` dans `config firewall policy` efface **toutes** tes politiques d'un coup. Un pare-feu sans politique bloque tout : ton entreprise s'arrête, et si tu administrais à distance, ton accès aussi.
+>
+> Ne tape jamais `purge` sur un équipement de production sans une sauvegarde fraîche et un accès console.
+
+> 💡 **Astuce — `clone` est ton meilleur ami**
+> Pour créer une politique proche d'une existante :
+> ```
+> config firewall policy
+>     clone 3 to 10
+>     edit 10
+>         set name "Politique-derivee"
+>         set dstaddr "Autre-Reseau"
+>     next
+> end
+> ```
+> Tu récupères tous les paramètres de la politique 3 et tu ne modifies que ce qui diffère. Bien plus sûr que de tout retaper — et surtout, tu n'oublies pas un paramètre.
+
+### 5.5 L'aide contextuelle : `?`
+
+C'est ce qui rend la CLI FortiOS apprenable sans documentation. **Le `?` fonctionne partout**, à n'importe quel niveau.
+
+```
+FGT-01 # config ?                        ← toutes les tables disponibles
+FGT-01 # config firewall ?               ← toutes les tables firewall
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set ?                       ← tous les attributs d'une politique
+FGT-01 (1) # set action ?                ← toutes les valeurs possibles de "action"
+```
+
+> 💡 **Astuce** : la **tabulation** complète les commandes, comme dans un shell Unix. `con` + Tab donne `config`. Et les flèches haut/bas rappellent l'historique.
+
+### 5.6 🧠 Comprendre : pourquoi `show` cache des choses
+
+Voici une particularité de FortiOS qui déroute, puis qu'on finit par adorer.
+
+**`show` n'affiche que ce qui diffère de la valeur par défaut.**
+
+Prends une interface :
+
+```
+FGT-01 # show system interface port2
+config system interface
+    edit "port2"
+        set vdom "root"
+        set ip 192.168.10.1 255.255.255.0
+        set allowaccess ping https ssh
+        set alias "LAN"
+        set role lan
+    next
+end
+```
+
+Cinq lignes. Or une interface FortiOS a **plus de cent attributs** : MTU, vitesse, duplex, détection d'équipement, mode d'adressage… Ils existent tous, ils ont simplement leur valeur par défaut, donc `show` les tait.
+
+Pour tout voir :
+
+```
+FGT-01 # show full-configuration system interface port2
+```
+
+Là, tu obtiens les cent lignes.
+
+**Pourquoi c'est une bonne idée ?** Parce que ça rend une configuration FortiGate **lisible d'un coup d'œil**. Quand tu récupères un pare-feu inconnu et que tu tapes `show`, tu vois **exactement ce que quelqu'un a délibérément changé** — et rien d'autre. Sur d'autres systèmes, il faut lire des milliers de lignes pour repérer les cinq qui comptent.
+
+> 💡 **Astuce professionnelle** : quand tu demandes de l'aide sur un forum ou au support Fortinet, envoie la sortie de `show` (courte, lisible, pertinente) et pas celle de `show full-configuration` (illisible, et qui contient parfois des informations sensibles).
+
+### 5.7 Filtrer, chercher, canaliser
+
+La CLI FortiOS accepte un `|` (barre verticale) comme un shell Unix :
+
+```
+FGT-01 # show firewall policy | grep name
+FGT-01 # get system status | grep Version
+FGT-01 # show | grep -f "port2"          ← -f : affiche le contexte complet
+```
+
+Le `grep -f` est particulièrement utile : au lieu de te donner la ligne isolée, il te rend **le bloc de configuration entier** qui la contient.
+
+Et pour chercher dans toute la configuration :
+
+```
+FGT-01 # show | grep -i "192.168.10"
+```
+
+### 5.8 Les filtres de table
+
+Sur les grandes tables, tu peux filtrer avant d'afficher :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # show | grep "set name"
+
+FGT-01 (policy) # get                    ← liste tous les objets de la table
+```
+
+Il existe aussi un mécanisme de filtre plus formel :
+
+```
+FGT-01 (policy) # config firewall policy
+FGT-01 (policy) # edit 0                 ← "0" = "crée un nouvel objet, choisis l'ID toi-même"
+```
+
+> 💡 **Astuce — `edit 0`** : dans une table dont les objets sont numérotés (comme les politiques), `edit 0` demande à FortiOS d'**attribuer automatiquement** le prochain identifiant libre. Très pratique en script : tu n'as pas à savoir quels numéros sont déjà pris. Après le `next`, FortiOS t'annonce le numéro qu'il a choisi.
+
+### 5.9 Deviner une commande qu'on ne connaît pas
+
+Je t'avais promis la démonstration. La voici.
+
+Imaginons que tu veuilles activer une fonction dont tu ignores tout : disons désactiver la réponse aux `ping` sur une interface. Tu ne connais pas la commande. Voici le raisonnement, qui marche à chaque fois :
+
+**1. De quoi s'agit-il ?** D'une propriété d'une interface. Donc : `config system interface`.
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+```
+
+**2. Quels attributs existent ?**
+
+```
+FGT-01 (port1) # set ?
+```
+
+Tu lis la liste et tu repères `allowaccess`. Sa description parle des protocoles d'administration autorisés.
+
+**3. Quelles valeurs prend-il ?**
+
+```
+FGT-01 (port1) # set allowaccess ?
+ping    PING access
+https   HTTPS access
+ssh     SSH access
+snmp    SNMP access
+http    HTTP access
+...
+```
+
+**4. Tu conclus** : pour interdire le ping, on redéfinit `allowaccess` **sans** `ping` :
+
+```
+FGT-01 (port1) # set allowaccess https ssh
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Tu viens de configurer une fonction sans documentation, en trois `?`. **C'est la compétence à acquérir dans cette section**, bien plus que la mémorisation d'une liste de commandes.
+
+> ⚠️ **Attention — les attributs à valeurs multiples s'écrivent en entier**
+> C'est un piège classique. `allowaccess` accepte plusieurs valeurs, et `set` **remplace** toujours la liste complète — il n'ajoute pas.
+>
+> Si l'interface a `ping https ssh` et que tu tapes `set allowaccess ssh`, tu n'as pas « gardé ping et https en ajoutant ssh » : tu n'as plus que `ssh`. Le ping et le HTTPS sont partis.
+>
+> **La règle : pour ces attributs, énumère toujours la liste complète que tu veux obtenir.** Cette règle vaut pour `allowaccess`, `srcaddr`, `dstaddr`, `service`, `member`, et tous les attributs de type liste. Elle a coupé l'accès de beaucoup de monde. 😅
+
+### 5.10 Les commandes `execute` utiles dès maintenant
+
+`execute` déclenche une action immédiate. Les indispensables :
+
+```
+FGT-01 # execute ping 8.8.8.8
+FGT-01 # execute ping-options source 192.168.10.1     ← pinguer DEPUIS une IP précise
+FGT-01 # execute traceroute 8.8.8.8
+FGT-01 # execute telnet 192.168.20.10 80              ← tester si un port répond
+FGT-01 # execute date
+FGT-01 # execute reboot
+FGT-01 # execute shutdown
+FGT-01 # execute backup config tftp config.conf 192.168.10.50
+FGT-01 # execute factoryreset                          ← 🚨 remise à zéro totale
+```
+
+> 💡 **Astuce — `execute ping-options source`**
+> Celle-là vaut de l'or en diagnostic. Par défaut, un `ping` émis par le FortiGate part avec l'adresse de l'interface de sortie. Or tu veux souvent tester « est-ce que mon réseau LAN atteint ce serveur ? », donc pinguer **avec l'adresse LAN comme source** :
+> ```
+> FGT-01 # execute ping-options source 192.168.10.1
+> FGT-01 # execute ping 192.168.20.10
+> ```
+> C'est la différence entre tester le pare-feu et tester le chemin réel. Et le réglage **persiste** pour les pings suivants — pense à le remettre à `auto` :
+> ```
+> FGT-01 # execute ping-options source auto
+> ```
+
+---
+
+### 🧪 TP 3 — Maîtriser la CLI par la manipulation
+
+**🎯 Objectif**
+Pratiquer la grammaire CLI jusqu'à ce qu'elle devienne un réflexe : créer, cloner, renommer, supprimer, explorer avec `?`, et comprendre `show` contre `show full-configuration`.
+
+**⏱️ Durée** : 25 minutes
+
+**📋 Prérequis** : TP 2 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer trois objets d'un coup**
+
+On anticipe la section 8, mais peu importe : ce qui compte ici, c'est la mécanique.
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "TP3-Serveur-A"
+FGT-01 (TP3-Serveur-A) # set subnet 10.99.1.10 255.255.255.255
+FGT-01 (TP3-Serveur-A) # next
+FGT-01 (address) # edit "TP3-Serveur-B"
+FGT-01 (TP3-Serveur-B) # set subnet 10.99.1.11 255.255.255.255
+FGT-01 (TP3-Serveur-B) # next
+FGT-01 (address) # edit "TP3-Reseau"
+FGT-01 (TP3-Reseau) # set subnet 10.99.1.0 255.255.255.0
+FGT-01 (TP3-Reseau) # next
+FGT-01 (address) # end
+```
+
+Observe l'invite : elle t'indique **toujours** où tu te trouves dans l'arbre. `(address)` = dans la table, `(TP3-Serveur-A)` = dans l'objet.
+
+**Étape 2 — Lister ce que tu viens de créer**
+
+```
+FGT-01 # show firewall address | grep TP3
+```
+
+**Étape 3 — Explorer avec `?`**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "TP3-Serveur-A"
+FGT-01 (TP3-Serveur-A) # set ?
+```
+
+Lis la liste. Repère `type`, `comment`, `color`, `associated-interface`. Puis :
+
+```
+FGT-01 (TP3-Serveur-A) # set type ?
+```
+
+Tu découvres qu'un objet adresse peut être un sous-réseau, une plage, un nom de domaine, une géolocalisation… **Tu viens d'apprendre la section 8 tout seul.** 😄
+
+```
+FGT-01 (TP3-Serveur-A) # abort
+```
+
+**Étape 4 — Comparer `show` et `show full-configuration`**
+
+```
+FGT-01 # show firewall address TP3-Serveur-A
+```
+```
+config firewall address
+    edit "TP3-Serveur-A"
+        set subnet 10.99.1.10 255.255.255.255
+    next
+end
+```
+
+Puis :
+
+```
+FGT-01 # show full-configuration firewall address TP3-Serveur-A
+```
+
+Compte les lignes. La différence, ce sont **toutes les valeurs par défaut**.
+
+**Étape 5 — Cloner**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # clone "TP3-Serveur-A" to "TP3-Serveur-C"
+FGT-01 (address) # edit "TP3-Serveur-C"
+FGT-01 (TP3-Serveur-C) # set subnet 10.99.1.12 255.255.255.255
+FGT-01 (TP3-Serveur-C) # set comment "Cree par clonage"
+FGT-01 (TP3-Serveur-C) # next
+FGT-01 (address) # end
+```
+
+**Étape 6 — Renommer**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # rename "TP3-Serveur-C" to "TP3-Serveur-Clone"
+FGT-01 (address) # end
+```
+
+**Étape 7 — Provoquer une erreur exprès**
+
+Essaie de supprimer un objet utilisé quelque part. D'abord, crée cette dépendance :
+
+```
+FGT-01 # config firewall addrgrp
+FGT-01 (addrgrp) # edit "TP3-Groupe"
+FGT-01 (TP3-Groupe) # set member "TP3-Serveur-A" "TP3-Serveur-B"
+FGT-01 (TP3-Groupe) # next
+FGT-01 (addrgrp) # end
+```
+
+Puis tente :
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # delete "TP3-Serveur-A"
+```
+
+FortiOS refuse, avec un message du genre :
+
+```
+Entry is used by other entries. Cannot be deleted.
+```
+
+> 🧠 **Comprendre — c'est une protection, pas une contrariété**
+> FortiOS tient un graphe de dépendances et **interdit** de supprimer un objet référencé ailleurs. Sur un pare-feu, c'est vital : imagine qu'un objet adresse utilisé dans une politique d'autorisation disparaisse silencieusement. Que devient la politique ? Elle pourrait se mettre à matcher tout, ou plus rien. Les deux sont catastrophiques.
+>
+> Pour trouver **qui** utilise un objet, dans la GUI : clique droit sur l'objet → **Show Matches** (ou la colonne *Ref.*, qui affiche le nombre de références). En CLI :
+> ```
+> FGT-01 # diagnose sys checkused firewall.address.name "TP3-Serveur-A"
+> ```
+
+**Étape 8 — Nettoyer, dans le bon ordre**
+
+Les dépendances d'abord :
+
+```
+FGT-01 # config firewall addrgrp
+FGT-01 (addrgrp) # delete "TP3-Groupe"
+FGT-01 (addrgrp) # end
+
+FGT-01 # config firewall address
+FGT-01 (address) # delete "TP3-Serveur-A"
+FGT-01 (address) # delete "TP3-Serveur-B"
+FGT-01 (address) # delete "TP3-Reseau"
+FGT-01 (address) # delete "TP3-Serveur-Clone"
+FGT-01 (address) # end
+```
+
+Vérifie :
+
+```
+FGT-01 # show firewall address | grep TP3
+```
+
+Aucune sortie : c'est propre.
+
+---
+
+**✅ Résultat attendu**
+
+- Tu crées, clones, renommes et supprimes sans hésiter
+- Tu as vu FortiOS **refuser** une suppression, et tu sais pourquoi
+- Tu comprends la différence entre `show` et `show full-configuration`
+- Le `?` est devenu ton réflexe
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **`config` / `edit` / `set` / `next` / `end` est LA structure de FortiOS.** Tu ne l'oublieras plus.
+2. **L'invite indique toujours ta position** dans l'arbre de configuration.
+3. **Le `?` remplace la documentation** dans 80 % des cas.
+4. **`clone` évite les oublis** quand on crée un objet proche d'un autre.
+5. **Les dépendances sont protégées** : on supprime toujours du plus dépendant vers le moins dépendant.
+6. **`set` sur un attribut de liste REMPLACE**, il n'ajoute pas. Écris toujours la liste complète.
+
+---
+
+### 5.11 Aide-mémoire de la section
+
+```
+config <table>                  Entrer dans une table
+    edit <objet>                Créer ou modifier un objet
+        set <attr> <valeur>     Régler un attribut
+        unset <attr>            Revenir à la valeur par défaut
+        get                     Voir les valeurs effectives de l'objet
+        show                    Voir la configuration de l'objet
+    next                        Valider l'objet, rester dans la table
+    delete <objet>              Supprimer un objet
+    clone <a> to <b>            Dupliquer
+    rename <a> to <b>           Renommer
+    move <a> after <b>          Réordonner
+end                             Valider la table et sortir
+abort                           Sortir en annulant
+```
+
+---
