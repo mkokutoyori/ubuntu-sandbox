@@ -2326,3 +2326,455 @@ FGT-01 (static) # end
 6. **Le routage ne suffit pas à faire passer le trafic.** Ton PC-LAN ne joint toujours pas la DMZ, alors que les routes sont parfaites. Il manque les politiques : c'est la section 9.
 
 ---
+
+# Partie III — Le cœur du pare-feu
+
+---
+
+## 8. Les objets : adresses, services, horaires
+
+On arrive au cœur du métier. Mais avant d'écrire une politique, il faut fabriquer le vocabulaire avec lequel on va l'écrire. C'est le rôle des **objets**.
+
+### 8.1 Pourquoi des objets plutôt que des adresses en dur
+
+Sur beaucoup de pare-feux, on écrit directement `192.168.10.0/24` dans une règle. FortiOS ne le permet pas : il **exige** que tu nommes d'abord ce réseau, puis que tu utilises ce nom.
+
+C'est agaçant les dix premières minutes, puis on comprend que c'est un des meilleurs choix de conception de FortiOS. Trois raisons :
+
+**1. Ça se relit.** Compare :
+```
+srcaddr 192.168.10.0/24  →  dstaddr 172.16.44.0/24  →  port 3389
+srcaddr "Postes-Support" →  dstaddr "Serveurs-RH"   →  service "RDP"
+```
+La deuxième ligne se comprend sans documentation. La première demande une enquête.
+
+**2. Ça se modifie en un seul endroit.** Le jour où le réseau des postes change de plage, tu modifies **l'objet**, et les trente politiques qui l'utilisent suivent automatiquement. Avec des adresses en dur, tu en oublies une — et l'oubli est silencieux.
+
+**3. Ça se contrôle.** Souviens-toi du TP 3 : FortiOS **refuse** de supprimer un objet utilisé. Impossible de casser une politique par accident.
+
+### 8.2 Les types d'objets adresse
+
+C'est là que FortiOS devient intéressant, parce qu'un « objet adresse » est bien plus qu'une adresse.
+
+| Type | Ce qu'il représente | Cas d'usage |
+|---|---|---|
+| `ipmask` | Un réseau ou un hôte | Le plus courant |
+| `iprange` | Une plage continue | `.10` à `.50` |
+| `fqdn` | Un **nom de domaine** | ⭐ Voir §8.4 |
+| `geography` | Un **pays entier** | ⭐ Voir §8.5 |
+| `dynamic` | Un objet piloté par un connecteur externe | Cloud, SDN |
+| `mac` | Une adresse MAC | Filtrage niveau 2 |
+| `interface-subnet` | Le sous-réseau d'une interface | Suit automatiquement |
+
+**Un hôte unique** — note le masque en `/32` :
+
+```
+config firewall address
+    edit "SRV-WEB-DMZ"
+        set subnet 192.168.20.10 255.255.255.255
+        set comment "Serveur web de la DMZ"
+        set color 3
+    next
+end
+```
+
+**Un réseau :**
+
+```
+config firewall address
+    edit "Reseau-LAN"
+        set subnet 192.168.10.0 255.255.255.0
+    next
+end
+```
+
+**Une plage :**
+
+```
+config firewall address
+    edit "Plage-Imprimantes"
+        set type iprange
+        set start-ip 192.168.10.200
+        set end-ip 192.168.10.220
+    next
+end
+```
+
+> 💡 **Astuce** : `set color` donne une couleur à l'objet dans l'interface web. Ça paraît futile ; sur un pare-feu qui compte 300 objets, coder par couleur (rouge = externe, vert = interne, orange = DMZ) fait gagner un temps réel à la lecture.
+
+### 8.3 Les conventions de nommage
+
+Personne ne t'y oblige, et c'est pourtant ce qui distingue une configuration tenable d'une configuration qu'on finit par ne plus oser toucher.
+
+Un schéma qui marche : **`TYPE-ZONE-DESCRIPTION`**
+
+```
+NET-LAN-Utilisateurs
+NET-DMZ-Serveurs
+HOST-DMZ-Web01
+HOST-LAN-Imprimante-Compta
+RANGE-LAN-DHCP
+GRP-Serveurs-Publies
+FQDN-Microsoft-Update
+GEO-France
+```
+
+Trois règles qui comptent plus que le schéma choisi :
+
+- **Pas d'espaces** — ils obligent à des guillemets partout en CLI et cassent la moitié des scripts
+- **Pas d'accents** — même raison, et certains contextes les rendent mal
+- **Cohérence** — un schéma imparfait appliqué partout vaut mieux que trois schémas parfaits mélangés
+
+> ⚠️ **Attention** : renommer un objet plus tard est possible (`rename`), et FortiOS met à jour toutes les références. Mais si tu as des scripts, des sauvegardes ou de la documentation qui citent l'ancien nom, ils deviennent faux en silence. Choisis bien du premier coup.
+
+### 8.4 🧠 Les objets FQDN : puissants et traîtres
+
+Un objet **FQDN** contient un nom de domaine plutôt qu'une adresse. Le pare-feu résout ce nom et met la règle à jour tout seul quand l'adresse change.
+
+```
+config firewall address
+    edit "FQDN-Windows-Update"
+        set type fqdn
+        set fqdn "update.microsoft.com"
+    next
+end
+```
+
+C'est séduisant : « j'autorise `github.com` » est exactement ce qu'on veut exprimer. Mais il y a **trois pièges**, et ils sont sérieux.
+
+**Piège 1 — Le pare-feu doit pouvoir résoudre le nom.** Si le DNS du FortiGate ne fonctionne pas, l'objet ne contient **aucune adresse**, et la politique qui l'utilise ne correspond à rien. Elle ne bloque pas : elle ne *matche* pas, donc le paquet continue vers les règles suivantes — et finit sur l'`Implicit Deny`. Symptôme : « ma règle a cessé de fonctionner sans que rien n'ait changé ». Vérifie toujours :
+
+```
+FGT-01 # diagnose firewall fqdn list
+```
+
+**Piège 2 — Les grands services ont des centaines d'adresses tournantes.** `google.com` résout vers une adresse différente selon le moment et le lieu. Le pare-feu ne connaît que celles qu'il a lui-même résolues. Un client peut très bien obtenir de son DNS une adresse que le pare-feu n'a jamais vue — et se faire bloquer.
+
+**Piège 3 — C'est contournable.** Un objet FQDN se résume in fine à une liste d'adresses. Rien n'empêche quelqu'un de joindre la même adresse en tapant l'IP directement.
+
+> ⚠️ **La règle à retenir**
+> Les objets FQDN sont excellents pour **autoriser** un service précis à adresse changeante (mises à jour, service SaaS d'un partenaire).
+> Ils sont **mauvais pour bloquer** : pour interdire des sites web, utilise le **filtrage web** (section 14), qui travaille sur le nom réellement demandé dans la requête et non sur une résolution DNS faite par le pare-feu.
+
+### 8.5 Les objets géographiques
+
+Ils représentent **toutes les plages d'adresses attribuées à un pays**.
+
+```
+config firewall address
+    edit "GEO-Corée-du-Nord"
+        set type geography
+        set country "KP"
+    next
+end
+```
+
+Usage typique : tu publies un service qui ne concerne que la France, tu bloques tout le reste. Ça réduit énormément le bruit de fond des scans automatisés.
+
+> ⚠️ **Attention — deux limites à connaître**
+> La base géographique vient de **FortiGuard** : sans abonnement, elle ne se met plus à jour, et les attributions d'adresses changent régulièrement.
+> Et surtout : **un attaquant sérieux utilise un relais dans le pays autorisé.** Le filtrage géographique réduit le bruit ; il n'arrête pas une attaque ciblée. Ne le prends pas pour une protection.
+
+### 8.6 Les groupes
+
+Un groupe rassemble plusieurs objets sous un seul nom. C'est la clé pour tenir dans la limite des trois politiques (§3.3) :
+
+```
+config firewall addrgrp
+    edit "GRP-Serveurs-DMZ"
+        set member "SRV-WEB-DMZ" "SRV-MAIL-DMZ" "SRV-FTP-DMZ"
+        set comment "Tous les serveurs publies"
+    next
+end
+```
+
+> 💡 **Astuce** : un groupe peut contenir un autre groupe. Utile pour construire des hiérarchies (`GRP-Tous-Serveurs` contenant `GRP-Serveurs-DMZ` et `GRP-Serveurs-Internes`). Ne descends pas trop profond : au-delà de deux niveaux, plus personne ne sait ce qu'il y a dedans.
+
+### 8.7 Les services
+
+Un **service** décrit un protocole et des ports. FortiOS en fournit plus d'une centaine de prédéfinis.
+
+```
+FGT-01 # show firewall service custom | grep "edit"
+```
+
+Tu y trouves `HTTP`, `HTTPS`, `DNS`, `SSH`, `PING`, `RDP`, `SMTP`, `ALL`…
+
+**Créer un service personnalisé :**
+
+```
+config firewall service custom
+    edit "APP-Metier-8443"
+        set tcp-portrange 8443
+        set comment "Application metier interne"
+    next
+end
+```
+
+**Plusieurs ports :**
+
+```
+config firewall service custom
+    edit "APP-Multi-Ports"
+        set tcp-portrange 8080 8443 9000-9010
+    next
+end
+```
+
+**TCP et UDP ensemble :**
+
+```
+config firewall service custom
+    edit "APP-Mixte"
+        set tcp-portrange 5000
+        set udp-portrange 5000-5010
+    next
+end
+```
+
+> 🧠 **Comprendre — la notation port source:port destination**
+> FortiOS accepte une syntaxe étendue : `destination:source`.
+> ```
+> set tcp-portrange 443:1024-65535
+> ```
+> signifie « port destination 443, **avec** un port source entre 1024 et 65535 ». On s'en sert rarement, mais tu la croiseras dans certains services prédéfinis et il vaut mieux savoir la lire que la prendre pour une plage bizarre.
+
+**Un groupe de services :**
+
+```
+config firewall service group
+    edit "GRP-Web"
+        set member "HTTP" "HTTPS" "DNS"
+    next
+end
+```
+
+> ⚠️ **Attention — le service `ALL`**
+> Il existe un service prédéfini nommé `ALL` qui correspond à **tous les protocoles et tous les ports**. Il est pratique pour tester, et c'est un aimant à mauvaises habitudes.
+>
+> Une politique en `service ALL` autorise tout : le web, mais aussi SSH, RDP, SMB, et le canal de commande d'un logiciel malveillant. **Utilise-le pour diagnostiquer, jamais comme état final.** On y reviendra en section 25 — c'est l'erreur classique numéro un.
+
+### 8.8 Les horaires
+
+Un objet **schedule** limite une politique à une plage de temps.
+
+**Récurrent** — tous les jours ouvrés, aux heures de bureau :
+
+```
+config firewall schedule recurring
+    edit "Heures-Bureau"
+        set day monday tuesday wednesday thursday friday
+        set start 08:00
+        set end 18:30
+    next
+end
+```
+
+**Ponctuel** — une fenêtre unique, par exemple pour un prestataire :
+
+```
+config firewall schedule onetime
+    edit "Intervention-Prestataire"
+        set start 09:00 2026/09/15
+        set end 17:00 2026/09/15
+    next
+end
+```
+
+> 💡 **Astuce — le cas d'usage qui vaut de l'or**
+> Un accès temporaire pour un prestataire externe, avec un `onetime`, **se ferme tout seul**. C'est infiniment plus fiable que « je penserai à le retirer vendredi » — parce que non, tu n'y penseras pas, et cette règle sera encore ouverte dans trois ans. J'ai vu des audits de sécurité entiers construits sur ce genre d'oubli.
+>
+> Et ça ne marche que si l'horloge est juste. Retour au §4.2. 😉
+
+> ⚠️ **Attention** : le schedule prédéfini `always` est celui qu'utilisent la plupart des politiques. Il est obligatoire dans une politique — pas de schedule, pas de politique.
+
+### 8.9 Les objets Internet Service
+
+FortiOS embarque une base, mise à jour par FortiGuard, qui associe des **noms de services connus** à leurs plages d'adresses réelles : Microsoft Office 365, AWS, Google, Salesforce…
+
+```
+config firewall policy
+    edit 10
+        set name "Autoriser Office 365"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "Reseau-LAN"
+        set internet-service enable
+        set internet-service-name "Microsoft-Office365"
+        set action accept
+        set schedule "always"
+        set nat enable
+    next
+end
+```
+
+C'est la bonne réponse au piège du FQDN (§8.4) pour les grands services : Fortinet maintient la liste des plages, tu n'as rien à résoudre toi-même.
+
+> ⚠️ **Attention** : quand `internet-service` est activé, il **remplace** le `dstaddr` — tu ne peux pas utiliser les deux dans la même politique. FortiOS te le dira, mais autant le savoir.
+
+---
+
+### 🧪 TP 6 — Construire le vocabulaire du laboratoire
+
+**🎯 Objectif**
+Créer tous les objets dont on aura besoin dans les sections suivantes : réseaux, hôtes, groupes, services personnalisés, horaires. Et voir concrètement pourquoi un groupe économise des politiques.
+
+**⏱️ Durée** : 25 minutes
+
+**📋 Prérequis** : TP 4 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Les réseaux du laboratoire**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-LAN"
+FGT-01 (NET-LAN) # set subnet 192.168.10.0 255.255.255.0
+FGT-01 (NET-LAN) # set comment "Reseau des postes utilisateurs"
+FGT-01 (NET-LAN) # set color 2
+FGT-01 (NET-LAN) # next
+FGT-01 (address) # edit "NET-DMZ"
+FGT-01 (NET-DMZ) # set subnet 192.168.20.0 255.255.255.0
+FGT-01 (NET-DMZ) # set comment "Reseau des serveurs publies"
+FGT-01 (NET-DMZ) # set color 3
+FGT-01 (NET-DMZ) # next
+FGT-01 (address) # end
+```
+
+**Étape 2 — Les hôtes**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "HOST-PC-LAN"
+FGT-01 (HOST-PC-LAN) # set subnet 192.168.10.10 255.255.255.255
+FGT-01 (HOST-PC-LAN) # set comment "Poste de test du LAN"
+FGT-01 (HOST-PC-LAN) # next
+FGT-01 (address) # edit "HOST-SRV-DMZ"
+FGT-01 (HOST-SRV-DMZ) # set subnet 192.168.20.10 255.255.255.255
+FGT-01 (HOST-SRV-DMZ) # set comment "Serveur web de la DMZ"
+FGT-01 (HOST-SRV-DMZ) # next
+FGT-01 (address) # end
+```
+
+**Étape 3 — Une plage**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "RANGE-LAN-Imprimantes"
+FGT-01 (RANGE-LAN-Imprimantes) # set type iprange
+FGT-01 (RANGE-LAN-Imprimantes) # set start-ip 192.168.10.200
+FGT-01 (RANGE-LAN-Imprimantes) # set end-ip 192.168.10.220
+FGT-01 (RANGE-LAN-Imprimantes) # next
+FGT-01 (address) # end
+```
+
+**Étape 4 — Un groupe**
+
+```
+FGT-01 # config firewall addrgrp
+FGT-01 (addrgrp) # edit "GRP-Reseaux-Internes"
+FGT-01 (GRP-Reseaux-Internes) # set member "NET-LAN" "NET-DMZ"
+FGT-01 (GRP-Reseaux-Internes) # set comment "Tous les reseaux internes"
+FGT-01 (GRP-Reseaux-Internes) # next
+FGT-01 (addrgrp) # end
+```
+
+> 🧠 **Comprendre — ce que tu viens d'économiser**
+> Sans ce groupe, autoriser le LAN **et** la DMZ vers Internet demanderait **deux politiques**. Avec lui, **une seule** suffit. Sur une licence limitée à trois politiques, tu viens d'en récupérer une — et en production, tu viens d'éviter la duplication qui finit toujours par diverger.
+
+**Étape 5 — Un service personnalisé**
+
+Notre serveur DMZ écoute en HTTP sur 80, mais imaginons une application sur 8080 :
+
+```
+FGT-01 # config firewall service custom
+FGT-01 (custom) # edit "SVC-App-8080"
+FGT-01 (SVC-App-8080) # set tcp-portrange 8080
+FGT-01 (SVC-App-8080) # set comment "Application metier de test"
+FGT-01 (SVC-App-8080) # set category "Web Access"
+FGT-01 (SVC-App-8080) # next
+FGT-01 (custom) # end
+```
+
+**Étape 6 — Un groupe de services**
+
+```
+FGT-01 # config firewall service group
+FGT-01 (group) # edit "GRP-SVC-Web"
+FGT-01 (GRP-SVC-Web) # set member "HTTP" "HTTPS" "DNS"
+FGT-01 (GRP-SVC-Web) # set comment "Navigation web de base"
+FGT-01 (GRP-SVC-Web) # next
+FGT-01 (group) # end
+```
+
+**Étape 7 — Un horaire**
+
+```
+FGT-01 # config firewall schedule recurring
+FGT-01 (recurring) # edit "Heures-Bureau"
+FGT-01 (Heures-Bureau) # set day monday tuesday wednesday thursday friday
+FGT-01 (Heures-Bureau) # set start 08:00
+FGT-01 (Heures-Bureau) # set end 18:30
+FGT-01 (Heures-Bureau) # next
+FGT-01 (recurring) # end
+```
+
+**Étape 8 — Un objet FQDN, et le vérifier**
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "FQDN-Test"
+FGT-01 (FQDN-Test) # set type fqdn
+FGT-01 (FQDN-Test) # set fqdn "www.fortinet.com"
+FGT-01 (FQDN-Test) # next
+FGT-01 (address) # end
+```
+
+Maintenant, regarde ce que le pare-feu a **réellement** résolu :
+
+```
+FGT-01 # diagnose firewall fqdn list
+```
+
+Tu vois les adresses associées au nom. **S'il n'y en a aucune, ton DNS ne fonctionne pas** — c'est exactement le piège 1 du §8.4, et tu viens de voir comment le détecter.
+
+Si la liste est vide, vérifie le DNS du pare-feu :
+
+```
+FGT-01 # show system dns
+FGT-01 # execute ping www.fortinet.com
+```
+
+**Étape 9 — Vérifier l'ensemble**
+
+```
+FGT-01 # show firewall address | grep "edit"
+FGT-01 # show firewall addrgrp
+FGT-01 # show firewall service custom | grep "edit \"SVC"
+FGT-01 # show firewall schedule recurring
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `NET-LAN`, `NET-DMZ`, `HOST-PC-LAN`, `HOST-SRV-DMZ`, `RANGE-LAN-Imprimantes` existent
+- `GRP-Reseaux-Internes` contient bien deux membres
+- `SVC-App-8080` et `GRP-SVC-Web` existent
+- `Heures-Bureau` couvre du lundi au vendredi
+- `diagnose firewall fqdn list` montre des adresses résolues
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **FortiOS impose de nommer avant d'utiliser**, et c'est une force : lisibilité, modification centralisée, protection contre la suppression.
+2. **Un objet adresse peut être bien plus qu'une adresse** : plage, nom de domaine, pays.
+3. **Les groupes économisent des politiques** — vital avec la licence d'évaluation, et bonne pratique partout.
+4. **Les objets FQDN dépendent du DNS du pare-feu**, et `diagnose firewall fqdn list` est la commande qui te le dit.
+5. **Un horaire `onetime` ferme un accès temporaire tout seul**, ce qu'aucun rappel mental ne fait de façon fiable.
+
+---
