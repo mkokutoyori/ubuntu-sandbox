@@ -33,6 +33,7 @@ import {
 } from './sdwanRenderer';
 import { renderHaChecksum, renderHaStatus } from './haRenderer';
 import { renderNtpStatus } from './ntpStatusRenderer';
+import { renderVipList } from './vipListRenderer';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -285,6 +286,10 @@ function diagnoseFqdnList(deps: FortiDiagDeps): string {
 
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
+  if (rest[0] === 'vip') {
+    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
+    return renderVipList(deps.fw.getNatPolicy().ordered(), deps.vdom());
+  }
   if (rest[0] === 'fqdn') {
     if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
     return diagnoseFqdnList(deps);

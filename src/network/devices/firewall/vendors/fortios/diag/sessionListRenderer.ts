@@ -126,13 +126,13 @@ function hooks(session: FirewallSession): string[] {
   const dnat = translation.translatedDest !== translation.originalDest
     || translation.translatedDestPort !== translation.originalDestPort;
 
-  const forward = `hook=post dir=org act=${snat ? 'snat' : 'dnat'}`
+  const forward = `hook=${snat ? 'post' : 'pre'} dir=org act=${snat ? 'snat' : 'dnat'}`
     + ` ${translation.originalSource}:${translation.originalSourcePort}`
     + `->${translation.originalDest}:${translation.originalDestPort}`
     + `(${snat ? translation.translatedSource : translation.translatedDest}`
     + `:${snat ? translation.translatedSourcePort : translation.translatedDestPort})`;
 
-  const reverse = `hook=pre dir=reply act=${dnat ? 'dnat' : 'snat'}`
+  const reverse = `hook=${dnat ? 'post' : 'pre'} dir=reply act=${dnat ? 'dnat' : 'snat'}`
     + ` ${translation.translatedDest}:${translation.translatedDestPort}`
     + `->${translation.translatedSource}:${translation.translatedSourcePort}`
     + `(${translation.originalSource}:${translation.originalSourcePort})`;
