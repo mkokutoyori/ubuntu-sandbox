@@ -340,30 +340,6 @@ export function registerDhcpDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.register('display dhcp-server binding all', 'Display all DHCP bindings', () =>
     getRouter()._getDHCPServerInternal().formatBindingsShow());
 
-  trie.registerGreedy('display dhcp client', 'Display DHCP client status', (args) => {
-    const agent = getRouter().getDhcpClientAgent();
-    const filtre = args.filter(a => a.length > 0);
-    const vise = filtre.length > 0 ? filtre.join('').toLowerCase() : null;
-    const baux = agent.leases().filter(l => vise === null
-      || l.iface.toLowerCase() === vise
-      || huaweiDisplayInterfaceName(l.iface).toLowerCase() === vise);
-    if (baux.length === 0) return 'Info: The DHCP client is not enabled on any interface.';
-    const out: string[] = [];
-    for (const l of baux) {
-      out.push(`DHCP client lease information on interface ${huaweiDisplayInterfaceName(l.iface)} :`);
-      out.push(`  Current machine state          : Bound`);
-      out.push(`  Internet address assigned via  : DHCP`);
-      out.push(`  IP address                     : ${l.ipAddress}`);
-      out.push(`  Subnet mask                    : ${l.subnetMask}`);
-      out.push(`  Gateway ip address             : ${l.defaultGateway ?? '-'}`);
-      out.push(`  DHCP server                    : ${l.serverIdentifier}`);
-      out.push(`  Lease                          : ${l.leaseDuration} seconds`);
-      out.push(`  T1                             : ${l.renewalTime} seconds`);
-      out.push(`  T2                             : ${l.rebindingTime} seconds`);
-    }
-    return out.join('\n');
-  });
-
   trie.register('display dhcp statistics', 'Display DHCP server statistics', () =>
     getRouter()._getDHCPServerInternal().formatStatsShow());
 

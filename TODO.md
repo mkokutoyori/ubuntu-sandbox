@@ -79,16 +79,21 @@ converger le voisin, donc le symptôme est refermé côté VRP.
 
 ## Socle CLI
 
-### [socle] les shells VRP n'ont aucun pont vers le socle
-`HuaweiVRPShell` et `HuaweiSwitchShell` ne connaissent ni `CommandTable`
-ni `CommandSpec` : tout y passe par `CommandTrie`. Une commande VRP
-nouvelle ne peut donc pas suivre la règle du socle posée dans
-`CLAUDE.md`.
-**Mesure** : aucune occurrence de `socleSpecs`/`CommandSpec` dans les
-deux fichiers.
-**Report** : demande de porter les modes VRP (vue système, interface,
-vlan, acl, aaa…), l'invite, le modèle de privilège et les quatre messages
-positionnels de VRP dans le socle — un chantier à part entière.
+### [socle] le commutateur VRP n'a pas encore de pont vers le socle
+Le pont existe pour le ROUTEUR VRP (`src/cli/vendors/vrp/`) ;
+`HuaweiSwitchShell` ne connaît toujours ni `CommandTable` ni
+`CommandSpec`.
+**Mesure** : aucune occurrence de `VrpSocle` dans ce fichier.
+**Report** : le commutateur a ses propres vues (`vlan`, `port-group`,
+`mst-region`, `traffic-*`) qui ne sont pas dans `HUAWEI_VRP_MODES` — il
+faut d'abord décrire cette hiérarchie, ce que le routeur n'exigeait pas.
+
+### [socle] une seule famille VRP est migrée
+Le pont est branché et exercé par la famille du client DHCP. Le reste du
+vocabulaire VRP — plusieurs centaines d'enregistrements — vit toujours
+sur `CommandTrie`.
+**Report** : la migration est incrémentale par construction ; chaque
+famille reprise ferme une part de cette entrée.
 
 ## Serveurs DHCP
 

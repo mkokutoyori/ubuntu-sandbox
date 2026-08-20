@@ -19,6 +19,8 @@
  */
 
 import type { Router } from '../Router';
+import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
+import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
 import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
@@ -681,7 +683,48 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       : output;
   }
 
+  private socleInstance: VrpSocle | null = null;
+
+  private socle(): VrpSocle {
+    if (!this.socleInstance) {
+      this.socleInstance = new VrpSocle(
+        () => this.routerRef?.getHostname() ?? 'Router', this, () => vrpDhcpClientFamily());
+    }
+    return this.socleInstance;
+  }
+
+  vrpSelectedInterface(): string | null { return this.selectedInterface ?? null; }
+
+  vrpDhcpEnabledElsewhere(iface: string): boolean {
+    const agent = this.routerRef?.getDhcpClientAgent();
+    return !!agent && agent.enabledInterfaces().some(i => i !== iface);
+  }
+
+  vrpDhcpEnable(iface: string): void {
+    this.routerRef?.getDhcpClientAgent().enable(iface, 'ip address dhcp-alloc');
+  }
+
+  vrpDhcpDisable(iface: string): void {
+    this.routerRef?.getDhcpClientAgent().disable(iface);
+  }
+
+  vrpDhcpLeases(): VrpDhcpLeaseView[] {
+    return (this.routerRef?.getDhcpClientAgent().leases() ?? []).map(l => ({
+      iface: l.iface,
+      displayName: huaweiDisplayInterfaceName(l.iface),
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      defaultGateway: l.defaultGateway,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
   private executeOnTrie(cmdPart: string): string {
+    const migre = this.socle().run(cmdPart, this.mode);
+    if (migre !== null) return migre;
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 
@@ -710,7 +753,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return HUAWEI_ERRORS.INCOMPLETE(cmdPart, result.errorPos);
 
       case 'invalid':
-        return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart, result.errorPos);
+        return this.socle().diagnostic(cmdPart, this.mode)
+          ?? HUAWEI_ERRORS.UNRECOGNIZED(cmdPart, result.errorPos);
 
       default:
         return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
@@ -965,7 +1009,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(router ? new EquipmentParamResolver(router) : null);
     try {
-      const completions = withVrpCommonHelp(this.vrpView(), input, trie.getCompletions(input));
+      const duSocle = this.socle().suggestions(input, this.mode, 'QUESTION_MARK');
+      const completions = withVrpCommonHelp(this.vrpView(), input,
+        [...trie.getCompletions(input), ...duSocle.filter(s =>
+          !trie.getCompletions(input).some(c => c.keyword === s.keyword))]);
       if (completions.length === 0) return 'Error: Unrecognized command';
       const maxKw = Math.max(...completions.map(c => c.keyword.length));
       return completions
@@ -989,7 +1036,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const trie = this.getActiveTrie();
     trie.setDynamicResolver(new EquipmentParamResolver(router));
     try {
-      return withVrpCommonCandidates(this.vrpView(), input, trie.tabCandidates(input));
+      const duTrie = trie.tabCandidates(input);
+      const duSocle = this.socle().candidates(input, this.mode)
+        .filter(c => !duTrie.includes(c));
+      return withVrpCommonCandidates(this.vrpView(), input, [...duTrie, ...duSocle]);
     } finally {
       trie.setDynamicResolver(null);
     }
