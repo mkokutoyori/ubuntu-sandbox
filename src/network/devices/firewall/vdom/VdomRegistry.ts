@@ -159,7 +159,7 @@ export class VdomRegistry {
     const objects = new ObjectStore({ maxGroupNesting: deps.maxGroupNesting });
     const policy = new PolicyStore();
     const natPolicy = new NatPolicyStore();
-    const pools = new IpPoolAllocator();
+    const pools = new IpPoolAllocator(deps.now);
     const schedules = new ScheduleStore();
 
     const routes = new RouteTable({

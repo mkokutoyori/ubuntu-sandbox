@@ -90,6 +90,7 @@ export interface FortiIpPoolPatch {
   readonly sourceEndIP?: string;
   readonly blockSize: number;
   readonly blocksPerUser: number;
+  readonly pbaTimeout: number;
   readonly permitAnyHost: boolean;
   readonly arpReply: boolean;
   readonly arpInterface?: string;

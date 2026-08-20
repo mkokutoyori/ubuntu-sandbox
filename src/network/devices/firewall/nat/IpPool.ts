@@ -15,6 +15,7 @@ export interface IpPool {
   readonly sourceEndIP?: string;
   readonly blockSize: number;
   readonly blocksPerUser: number;
+  readonly pbaTimeout: number;
   readonly permitAnyHost: boolean;
   readonly arpReply: boolean;
   readonly arpInterface?: string;
@@ -43,6 +44,7 @@ export interface IpPoolDraft {
   sourceEndIP?: string;
   blockSize?: number;
   blocksPerUser?: number;
+  pbaTimeout?: number;
   permitAnyHost?: boolean;
   arpReply?: boolean;
   arpInterface?: string;
@@ -52,6 +54,7 @@ export interface IpPoolDraft {
 
 export const DEFAULT_BLOCK_SIZE = 128;
 export const DEFAULT_BLOCKS_PER_USER = 8;
+export const DEFAULT_PBA_TIMEOUT = 30;
 
 const EPHEMERAL_FROM = 5117;
 const EPHEMERAL_TO = 65533;
@@ -66,6 +69,7 @@ export function makeIpPool(draft: IpPoolDraft): IpPool {
     sourceEndIP: draft.sourceEndIP,
     blockSize: draft.blockSize ?? DEFAULT_BLOCK_SIZE,
     blocksPerUser: draft.blocksPerUser ?? DEFAULT_BLOCKS_PER_USER,
+    pbaTimeout: draft.pbaTimeout ?? DEFAULT_PBA_TIMEOUT,
     permitAnyHost: draft.permitAnyHost ?? false,
     arpReply: draft.arpReply ?? true,
     arpInterface: draft.arpInterface,
@@ -101,12 +105,28 @@ interface OneToOneBinding {
   sessions: number;
 }
 
+interface HeldBlock {
+  readonly address: string;
+  readonly port: number;
+  lastUsedAt: number;
+}
+
 export class IpPoolAllocator {
   private readonly pools = new Map<string, IpPool>();
   private readonly overloadPorts = new Map<string, Set<number>>();
   private readonly overloadMappings = new Map<string, PoolAllocation>();
+  private readonly overloadFlows = new Map<string, string>();
   private readonly oneToOne = new Map<string, OneToOneBinding>();
-  private readonly blocks = new Map<string, PoolAllocation[]>();
+  private readonly blocks = new Map<string, HeldBlock[]>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  blocksHeldBy(name: string, sourceIP: string): readonly PoolAllocation[] {
+    const pool = this.pools.get(name);
+    if (pool) this.expireBlocks(pool);
+    return Object.freeze((this.blocks.get(bindingKey(name, sourceIP)) ?? [])
+      .map(block => Object.freeze({ address: block.address, port: block.port })));
+  }
 
   upsert(pool: IpPool): void {
     this.pools.set(pool.name, pool);
@@ -157,7 +177,12 @@ export class IpPoolAllocator {
     if (pool.type !== 'overload') return;
 
     this.overloadPorts.get(allocation.address)?.delete(allocation.port);
-    this.overloadMappings.delete(mappingKey(name, sourceIP, allocation.port));
+    const endpoint = endpointKey(name, allocation);
+    const flow = this.overloadFlows.get(endpoint);
+    if (flow !== undefined) {
+      this.overloadMappings.delete(flow);
+      this.overloadFlows.delete(endpoint);
+    }
   }
 
   private acceptsSource(pool: IpPool, sourceIP: string): boolean {
@@ -172,6 +197,10 @@ export class IpPoolAllocator {
   }
 
   private allocateOverload(pool: IpPool, request: PoolAllocationRequest): PoolAllocation | null {
+    const flow = mappingKey(pool.name, request.sourceIP, request.sourcePort);
+    const bound = this.overloadMappings.get(flow);
+    if (bound) return bound;
+
     const count = poolAddressCount(pool);
     const preferred = sourceHash(request.sourceIP) % count;
 
@@ -188,8 +217,8 @@ export class IpPoolAllocator {
 
       taken.add(port);
       this.overloadPorts.set(address, taken);
-      this.overloadMappings.set(
-        mappingKey(pool.name, request.sourceIP, request.sourcePort), allocation);
+      this.overloadMappings.set(flow, allocation);
+      this.overloadFlows.set(endpointKey(pool.name, allocation), flow);
       return allocation;
     }
     return null;
@@ -245,6 +274,8 @@ export class IpPoolAllocator {
   }
 
   private allocateBlock(pool: IpPool, request: PoolAllocationRequest): PoolAllocation | null {
+    this.expireBlocks(pool);
+
     const key = bindingKey(pool.name, request.sourceIP);
     const owned = this.blocks.get(key) ?? [];
 
@@ -256,6 +287,7 @@ export class IpPoolAllocator {
         const ports = taken ?? new Set<number>();
         ports.add(port);
         this.overloadPorts.set(block.address, ports);
+        block.lastUsedAt = this.now();
       }
       return Object.freeze({ address: block.address, port });
     }
@@ -266,12 +298,39 @@ export class IpPoolAllocator {
     if (block === null) return null;
 
     if (!request.simulated) {
-      owned.push(block);
+      owned.push({ address: block.address, port: block.port, lastUsedAt: this.now() });
       this.blocks.set(key, owned);
     }
     return Object.freeze({
       address: block.address, port: block.port + (request.sourcePort % pool.blockSize),
     });
+  }
+
+  private expireBlocks(pool: IpPool): void {
+    if (pool.type !== 'port-block-allocation') return;
+
+    const deadline = this.now() - pool.pbaTimeout * 1000;
+    for (const [key, held] of [...this.blocks]) {
+      if (!key.startsWith(`${pool.name}|`)) continue;
+
+      const alive = held.filter(block => block.lastUsedAt > deadline);
+      if (alive.length === held.length) continue;
+
+      for (const block of held) {
+        if (alive.includes(block)) continue;
+        this.releaseBlockPorts(pool, block);
+      }
+      if (alive.length === 0) this.blocks.delete(key);
+      else this.blocks.set(key, alive);
+    }
+  }
+
+  private releaseBlockPorts(pool: IpPool, block: HeldBlock): void {
+    const taken = this.overloadPorts.get(block.address);
+    if (!taken) return;
+    for (let port = block.port; port < block.port + pool.blockSize; port++) {
+      taken.delete(port);
+    }
   }
 
   private reserveBlock(pool: IpPool): PoolAllocation | null {
@@ -305,6 +364,9 @@ export class IpPoolAllocator {
     for (const key of [...this.overloadMappings.keys()]) {
       if (key.startsWith(`${name}|`)) this.overloadMappings.delete(key);
     }
+    for (const key of [...this.overloadFlows.keys()]) {
+      if (key.startsWith(`${name}|`)) this.overloadFlows.delete(key);
+    }
   }
 }
 
@@ -337,4 +399,8 @@ function bindingKey(pool: string, sourceIP: string): string {
 
 function mappingKey(pool: string, sourceIP: string, port: number): string {
   return `${pool}|${sourceIP}:${port}`;
+}
+
+function endpointKey(pool: string, allocation: PoolAllocation): string {
+  return `${pool}|${allocation.address}:${allocation.port}`;
 }

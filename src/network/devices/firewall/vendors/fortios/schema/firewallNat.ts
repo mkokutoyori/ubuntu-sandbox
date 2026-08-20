@@ -107,6 +107,7 @@ export const FIREWALL_IPPOOL: FortiTableSpec = {
       sourceEndIP: ranged && sourceEnd !== '0.0.0.0' ? sourceEnd : undefined,
       blockSize: portNumber(object.effective('block-size')[0], 128),
       blocksPerUser: portNumber(object.effective('num-blocks-per-user')[0], 8),
+      pbaTimeout: portNumber(object.effective('pba-timeout')[0], 30),
       permitAnyHost: object.effective('permit-any-host')[0] === 'enable',
       arpReply: object.effective('arp-reply')[0] !== 'disable',
       arpInterface: object.effective('arp-intf')[0] || undefined,
