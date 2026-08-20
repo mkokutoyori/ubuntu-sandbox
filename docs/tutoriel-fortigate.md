@@ -10484,3 +10484,132 @@ Pour qui vient du monde Cisco :
 > C'est plus simple, et c'est plus dangereux : il n'y a pas de filet du type « je redémarre sans sauvegarder et tout revient ». D'où l'importance de `abort` (§5.3) et des sauvegardes (§25.1).
 
 ---
+
+## 28. Conclusion et pour aller plus loin
+
+### 28.1 Ce que tu sais faire maintenant
+
+Si tu as fait les 24 TP, tu n'as pas « lu un tutoriel ». Tu as monté une infrastructure complète et tu l'as cassée assez souvent pour savoir la réparer.
+
+Regarde le chemin :
+
+| Partie | Ce que tu as construit |
+|---|---|
+| **I** | Un laboratoire avec un routeur Cisco et un pare-feu |
+| **II** | Interfaces, routage, et la grammaire CLI en réflexe |
+| **III** | Politiques, NAT, publication d'un serveur, et l'ordre de traitement |
+| **IV** | DHCP, DNS, une résolution locale qui marche |
+| **V** | Profils de sécurité, inspection TLS, **et la preuve qu'un routeur ne suffit pas** |
+| **VI** | Des règles qui parlent de personnes |
+| **VII** | Un tunnel site-à-site et un accès télétravailleur |
+| **VIII** | Routage dynamique, SD-WAN, cluster HA |
+| **IX** | Journaux, méthode de dépannage, durcissement |
+
+Et surtout, **tu sais diagnostiquer**. C'est ce qui distingue quelqu'un qui a suivi une formation de quelqu'un qui peut travailler.
+
+### 28.2 Les dix idées à ne pas oublier
+
+Si tout le reste s'efface avec le temps, garde ces dix-là :
+
+**1. Une politique n'autorise que le sens de l'OUVERTURE.** Le retour est géré par la table de sessions. Écrire la règle inverse est un trou de sécurité, pas une précaution.
+
+**2. Première correspondance gagne.** Du plus spécifique au plus général, et l'identifiant n'est pas la position.
+
+**3. `policy 0` veut dire qu'il MANQUE une règle**, pas qu'une règle bloque.
+
+**4. DNAT avant les politiques, SNAT après.** D'où le VIP en destination, l'adresse privée en source.
+
+**5. `set` sur une liste REMPLACE.** Énumère toujours la liste complète.
+
+**6. Le routage vient avant le filtrage.** Pas de route, pas de paquet à filtrer.
+
+**7. Les sessions établies survivent aux changements de règles.** D'où `session clear`, avec un filtre.
+
+**8. Sans inspection TLS, l'antivirus et l'IPS ne voient presque rien.** Et l'inspection TLS a un coût technique, humain et juridique.
+
+**9. Un VPN sans second facteur est une porte d'entrée.**
+
+**10. Toujours une seconde session ouverte quand tu touches à l'accès.**
+
+### 28.3 La réponse à la question qui a motivé la section 15
+
+Tu peux maintenant y répondre avec tes propres mesures :
+
+> Un routeur avec des ACL sait dire **d'où vient** un paquet et **où il va**. Il couvre environ 30 % du besoin de sécurité d'une PME, et ce n'est pas rien — c'est même une bonne première ligne, à coût nul en performance.
+>
+> Ce qu'il ne sait pas faire, ce sont précisément les menaces d'aujourd'hui : une application qui se camoufle sur le port 443, un fichier malveillant dans un téléchargement, un utilisateur qui n'est pas celui que son adresse IP prétend.
+>
+> On garde donc le routeur, et on ajoute le pare-feu. Chacun à son étage.
+
+Cette réponse, tu l'as **mesurée** au TP 13 et au TP 14. C'est la différence entre réciter un argumentaire et défendre une position.
+
+### 28.4 Ce que ce tutoriel n'a pas couvert
+
+Par honnêteté, voici ce qui reste :
+
+| Sujet | Pourquoi c'est hors périmètre |
+|---|---|
+| **VDOM** | Découper un pare-feu en pare-feux virtuels — sujet entier, utile surtout en hébergement |
+| **Security Fabric complète** | FortiSwitch, FortiAP, FortiAnalyzer, FortiManager |
+| **ZTNA** | L'accès conditionnel par application, qui remplace progressivement le VPN |
+| **SD-WAN avancé** | Overlay ADVPN, orchestration multi-sites |
+| **Traffic shaping** | Garantir de la bande passante à la voix |
+| **DLP** | Empêcher la fuite de données |
+| **Automatisation** | API REST, Ansible, Terraform |
+| **FortiManager** | Administrer des centaines de pare-feux |
+| **IPv6** | Tout ce qu'on a fait a un équivalent v6 |
+
+> 💡 **Le suivant à apprendre, selon où tu vas** :
+> - Tu administres **un site** → traffic shaping, puis IPv6
+> - Tu administres **plusieurs sites** → FortiManager et FortiAnalyzer
+> - Tu vas vers la **sécurité** → ZTNA, DLP, et l'analyse de journaux
+> - Tu vas vers l'**infrastructure** → VDOM, ADVPN, automatisation
+
+### 28.5 Pour continuer
+
+**Les sources qui valent la peine :**
+
+| Source | Ce qu'on y trouve |
+|---|---|
+| **Fortinet Document Library** (`docs.fortinet.com`) | ⭐ La référence. Guides d'administration, référence CLI, notes de version |
+| **Fortinet Community** | Les *Technical Tips*, souvent plus utiles que la doc officielle |
+| **Fortinet Training Institute** | Formations gratuites et labs, jusqu'à la certification |
+| **Notes de version** | ⭐ À lire avant chaque mise à jour. Sans exception |
+
+**Les certifications** :
+
+| Niveau | Nom | Contenu |
+|---|---|---|
+| Associate | **FCA** | Les bases de la cybersécurité |
+| Professional | **FCP** (ex-NSE 4) | ⭐ L'administration FortiGate — ce tutoriel en couvre une bonne part |
+| Solution Specialist | **FCSS** | Spécialisations : SD-WAN, sécurité réseau, opérations |
+| Expert | **FCX** (ex-NSE 8) | Examen pratique, très exigeant |
+
+> 💡 **Astuce** : si tu vises le FCP, refais les TP de ce tutoriel **sans regarder les commandes**. L'examen teste la compréhension du comportement — l'ordre des politiques, le cheminement d'un paquet, ce que fait le NAT — bien plus que la mémorisation de syntaxe.
+
+### 28.6 Trois conseils pour la suite
+
+**1. Garde ton laboratoire.** Ne le démonte pas. La prochaine fois que tu devras faire quelque chose en production, essaie-le d'abord là. C'est l'écart entre un administrateur serein et un administrateur qui croise les doigts.
+
+**2. Documente ce que tu fais.** Le champ `comments` d'une politique, le `description` d'une interface, un dépôt Git de configurations (§25.1). Ton successeur te remerciera, et ton toi-même dans six mois aussi.
+
+**3. Lis les journaux même quand tout va bien.** C'est comme ça qu'on apprend à quoi ressemble la normale — et donc à repérer ce qui ne l'est pas. Un administrateur qui ne consulte ses journaux qu'en cas de panne ne sait pas ce qu'il regarde.
+
+### 28.7 Un dernier mot
+
+Un pare-feu n'est pas un produit qu'on installe. C'est une **politique de sécurité** qu'on écrit, qu'on mesure et qu'on révise.
+
+Les commandes de ce document changeront — FortiOS 9 arrivera, des fonctions disparaîtront comme le SSL VPN, d'autres apparaîtront. Ce qui ne changera pas, c'est la façon de raisonner : diviser un problème en deux, mesurer plutôt que supposer, et savoir dire « ce n'est pas là » avec une preuve.
+
+C'est ce que tu as vraiment appris ici. 🛡️
+
+---
+
+> **Ce tutoriel fait partie du projet Ubuntu Sandbox.**
+> Il est écrit dans le même esprit que `docs/tutoriel-ospf.md` : partir de zéro, expliquer le *pourquoi* avant le *comment*, et ne jamais affirmer sans montrer.
+>
+> Une erreur, une imprécision, une commande qui a changé de version ? Ouvre une issue ou une pull request. Un tutoriel qui ne se corrige pas devient faux avec le temps — c'est exactement ce qu'on lui reproche quand on le trouve périmé sur Internet.
+
+---
+
+*Bon courage, et surtout : casse des choses dans ton laboratoire. C'est là que ça s'apprend.* 🚀
