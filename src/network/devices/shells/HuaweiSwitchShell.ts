@@ -1213,7 +1213,16 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!vlanIfMatch && !loopMatch) {
         return `Error: 'ip address' is only valid on Vlanif and LoopBack interfaces.`;
       }
+      if (args[0]?.toLowerCase() === 'dhcp-alloc') {
+        if (!vlanIfMatch) {
+          return `Error: 'ip address dhcp-alloc' is only valid on Vlanif interfaces.`;
+        }
+        if (args.length > 1) return refuseMotInattenduVrp(`ip address ${args.join(' ')}`, args[1]);
+        this.swRef.getDhcpClientAgent().enable(`Vlanif${vlanIfMatch[1]}`, 'ip address dhcp-alloc');
+        return '';
+      }
       if (args.length < 2) return 'Error: Incomplete command.';
+      if (vlanIfMatch) this.swRef.getDhcpClientAgent().disable(`Vlanif${vlanIfMatch[1]}`);
       let ip: IPAddress, mask: SubnetMask;
       try { ip = new IPAddress(args[0]); } catch { return `Error: Invalid IP address ${args[0]}.`; }
       try {
@@ -3811,7 +3820,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const svi of svis) {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
-        if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
+        if (svi.dhcpClient) lines.push(' ip address dhcp-alloc');
+        else if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         for (const l of this.renderVlanifVrrpLines(sw, name)) lines.push(l);
         for (const natLine of runningConfigNATHuawei(commeRouteur(sw), name)) lines.push(natLine);
         lines.push('#');

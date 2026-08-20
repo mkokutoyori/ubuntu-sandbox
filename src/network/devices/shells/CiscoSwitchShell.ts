@@ -942,15 +942,24 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (vlan === null) {
         return '% IP addresses may not be configured on L2 links.';
       }
+      if (args[0]?.toLowerCase() === 'dhcp') {
+        if (args.length > 1) return CISCO_ERRORS.INVALID_INPUT;
+        this.d().getDhcpClientAgent().enable(`Vlan${vlan}`, 'ip address dhcp');
+        return '';
+      }
       if (args.length < 2 || !IPAddress.isValid(args[0]) || !IPAddress.isValid(args[1])) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
+      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
       this.d().configureSviIp(vlan, new IPAddress(args[0]), new SubnetMask(args[1]));
       return '';
     });
+    this.configIfTrie.addCompletionKeywords('ip address', ['dhcp']);
     this.configIfTrie.register('no ip address', 'Remove the SVI IP address', () => {
       const vlan = this.sviVlanId(this.selectedInterface ?? '');
-      if (vlan !== null) this.d().clearSviIp(vlan);
+      if (vlan === null) return '';
+      this.d().getDhcpClientAgent().disable(`Vlan${vlan}`);
+      this.d().clearSviIp(vlan);
       return '';
     });
 
@@ -3815,7 +3824,9 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
 
     for (const svi of sw.getSvis()) {
       lines.push(`interface Vlan${svi.vlan}`);
-      if (svi.ip && svi.mask) {
+      if (svi.dhcpClient) {
+        lines.push(' ip address dhcp');
+      } else if (svi.ip && svi.mask) {
         lines.push(` ip address ${svi.ip} ${svi.mask}`);
       } else {
         lines.push(' no ip address');
