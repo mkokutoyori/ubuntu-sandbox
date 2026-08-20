@@ -95,6 +95,20 @@ sur `CommandTrie`.
 **Report** : la migration est incrémentale par construction ; chaque
 famille reprise ferme une part de cette entrée.
 
+## Pare-feu FortiGate
+
+### [admin] pas d'interface d'administration HTTP/HTTPS
+`set allowaccess http https` est accepte, rendu, et gouverne bien le
+filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
+n'ecoute derriere : aucun serveur qui servirait la page de connexion que
+le TP 1 fait ouvrir sur `http://192.168.100.99`.
+**Mesure** : le TP 1 demande d'ouvrir l'adresse dans un navigateur ; la
+seule brique HTTP du pare-feu est `AuthPortal` (portail captif), qui
+n'est pas monte sur les ports d'administration.
+**Report** : `Http1ServerSession` existe et le portail captif montre le
+chemin ; il manque le serveur d'administration lui-meme et ses pages,
+sujet en soi et non une commande de plus.
+
 ## Serveurs DHCP
 
 ### [dhcp] une machine Linux ne peut pas SERVIR le DHCP

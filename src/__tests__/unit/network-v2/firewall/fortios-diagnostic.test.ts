@@ -49,6 +49,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import { FORTIOS_PROFILE } from '@/network/devices/firewall/vendors/fortios/FortiProfile';
 import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShell';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
@@ -547,7 +548,9 @@ describe('les journaux', () => {
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
     const vu = run(sh, 'execute log display');
 
-    expect(vu).toMatch(/^CEF:0\|Fortinet\|Fortigate\|7\.4\.4\|/);
+    expect(vu).toMatch(
+      new RegExp(`^CEF:0\\|Fortinet\\|Fortigate\\|${FORTIOS_PROFILE.defaultVersion}\\|`),
+    );
     expect(vu).toContain('|traffic:forward|');
   });
 

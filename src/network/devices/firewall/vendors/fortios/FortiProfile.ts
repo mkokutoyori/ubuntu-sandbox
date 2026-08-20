@@ -37,7 +37,7 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
   vendor: 'fortios',
   displayName: 'Fortinet FortiGate',
   osName: 'fortios',
-  defaultVersion: '7.4.4',
+  defaultVersion: '7.6.3',
 
   pipeline: Object.freeze({
     nat: FORTIOS_PIPELINE,

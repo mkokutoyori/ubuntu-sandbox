@@ -47,7 +47,7 @@ import {
 
 export { FORTI_COMMAND_FAIL };
 
-export const FORTI_BUILD = '2662';
+export const FORTI_BUILD = '2660';
 
 const PER_MEMBER_LINE = /^set (priority|hostname)\b/;
 
@@ -434,7 +434,12 @@ export class FortiShell {
       vdomsInNat: settings === 'transparent' ? 0 : 1,
       vdomsInTransparent: settings === 'transparent' ? 1 : 0,
       vdomConfiguration: vdomMode === 'no-vdom' ? 'disable' : 'enable',
-      haMode: 'standalone',
+      haMode: this.fw.getHa().getConfiguration().mode === 'standalone'
+        ? 'standalone' : this.fw.getHa().getConfiguration().mode,
+      licenseStatus: 'Valid',
+      vmCpus: 1,
+      vmMemoryMb: 1985,
+      logDisk: 'Available',
       systemTime: new Date(this.fw.now()).toUTCString(),
     });
   }
@@ -461,6 +466,10 @@ export class FortiShell {
     if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
     if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
       return renderDhcpLeases(this.fw.getDhcp().leases());
+    }
+    if (rest[0] === 'ping') {
+      if (rest.length < 2) return FortiMessages.incomplete('a destination');
+      return this.fw.runPing(rest[1]);
     }
     return FortiMessages.commandFail(
       `\`execute ${rest[0]}\` is not implemented in this simulator.`,

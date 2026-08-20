@@ -18,6 +18,10 @@ export interface SystemStatusFacts {
   readonly vdomsInTransparent: number;
   readonly vdomConfiguration: string;
   readonly haMode: string;
+  readonly licenseStatus: string;
+  readonly vmCpus: number;
+  readonly vmMemoryMb: number;
+  readonly logDisk: string;
   readonly systemTime: string;
 }
 
@@ -25,6 +29,9 @@ export function renderSystemStatus(facts: SystemStatusFacts): string {
   return [
     `Version: FortiGate-VM64 v${facts.version},build${facts.build}`,
     `Serial-Number: ${facts.serial}`,
+    `License Status: ${facts.licenseStatus}`,
+    `VM Resources: ${facts.vmCpus} CPU, ${facts.vmMemoryMb} MB RAM`,
+    `Log hard disk: ${facts.logDisk}`,
     `Hostname: ${facts.hostname}`,
     `Operation Mode: ${facts.operationMode}`,
     `Current virtual domain: ${facts.vdom}`,

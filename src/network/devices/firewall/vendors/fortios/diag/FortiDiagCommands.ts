@@ -37,7 +37,30 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'firewall') return diagnoseIprope(tail, deps);
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
+  if (family === 'ip') return diagnoseIp(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'address' || rest[1] !== 'list') {
+    return FortiMessages.unknownPath(`ip ${rest.join(' ')}`);
+  }
+  const lignes: string[] = [];
+  for (const iface of deps.fw.listL3Interfaces()) {
+    if (!iface.ip || iface.ip === '0.0.0.0') continue;
+    lignes.push(`IP=${iface.ip}->${iface.ip}/${maskToPrefix(iface.mask)}`
+      + ` index=${deps.fw.interfaceIndex(iface.name)} devname=${iface.name}`);
+  }
+  return lignes.join('\n');
+}
+
+function maskToPrefix(mask: string | undefined): string {
+  if (!mask) return '32';
+  const octets = mask.split('.').map(Number);
+  if (octets.length !== 4 || octets.some(o => isNaN(o))) return '32';
+  let bits = 0;
+  for (const o of octets) bits += ((o >>> 0).toString(2).match(/1/g) ?? []).length;
+  return String(bits);
 }
 
 function diagnoseHa(rest: readonly string[], deps: FortiDiagDeps): string {
