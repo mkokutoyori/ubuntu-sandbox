@@ -424,3 +424,326 @@ Avec, dessus :
 On y va ? La section suivante monte le laboratoire. 🚀
 
 ---
+
+## 3. Monter ton laboratoire
+
+C'est ici que le tutoriel devient concret. À la fin de cette section, tu auras un FortiGate qui tourne devant toi et sur lequel tu pourras taper des commandes. Tout le reste du document en dépend.
+
+Je vais être franc avec toi dès le départ : **monter un lab FortiGate est plus pénible que monter un lab Cisco**. Il n'existe pas d'équivalent gratuit et libre de Packet Tracer. Mais c'est parfaitement faisable, et je vais te donner les vraies options avec leurs vrais défauts, pas la version marketing.
+
+### 3.1 Les quatre façons d'avoir un FortiGate
+
+| Option | Coût | Réalisme | Difficulté | Verdict |
+|---|---|---|---|---|
+| **A. FortiGate-VM + licence d'évaluation** | Gratuit | Excellent (vrai FortiOS) | Moyenne | ⭐ **Recommandé pour ce tutoriel** |
+| **B. Boîtier physique d'occasion** | 50 à 200 € | Parfait | Faible | Idéal si tu peux investir |
+| **C. Labs de la Fortinet Training Institute** | Gratuit | Excellent | Nulle | Excellent, mais temps limité |
+| **D. Le pare-feu de ton employeur** | — | Parfait | — | 🚨 **Non.** Voir l'encadré |
+
+> 🚨 **Danger — ne t'entraîne JAMAIS sur un équipement de production**
+> Ça paraît évident écrit noir sur blanc, et pourtant. Une commande dans ce tutoriel te fera volontairement couper un accès pour observer ce qui se passe ; une autre te fera vider une table de sessions. Sur un pare-feu de production, ça veut dire une entreprise à l'arrêt et, très concrètement, ton emploi.
+>
+> Si ton employeur possède des FortiGate, demande un **boîtier de rechange** ou une VM de test. C'est une demande normale et bien vue : un administrateur qui veut s'entraîner ailleurs qu'en production est exactement le genre d'administrateur qu'on veut garder.
+
+Je détaille l'option A, qui est celle du tutoriel.
+
+### 3.2 Option A : la FortiGate-VM, et la vérité sur sa licence
+
+C'est la voie gratuite. Fortinet fournit une image de machine virtuelle utilisable avec une **licence d'évaluation permanente** — elle n'expire jamais, ce qui est une excellente nouvelle.
+
+Mais elle est bridée, et **il faut connaître ces limites avant de commencer**, sinon tu vas te heurter à un mur au milieu d'un TP sans comprendre pourquoi :
+
+| Ressource | Limite de la licence d'évaluation |
+|---|---|
+| Processeurs | **1 vCPU** |
+| Mémoire | **2 Gio** |
+| Interfaces réseau | **3 maximum** |
+| **Politiques de sécurité** | **3 maximum** ⚠️ |
+| Routes | **3 maximum** ⚠️ |
+| Chiffrement | Faible uniquement (*low encryption*) |
+| VDOM | 2 maximum |
+| Support Fortinet | Aucun |
+
+> ⚠️ **Attention — la limite qui va te gêner**
+> **Trois politiques de sécurité et trois routes.** C'est très peu. Dès la section 9, on écrira plus de trois règles.
+>
+> Ce n'est pas rédhibitoire, mais il faut le savoir et s'organiser. Je te donne la stratégie en §3.3.
+
+> ⚠️ **La deuxième surprise : pas de HTTPS d'administration**
+> La licence d'évaluation ne permet que le *chiffrement faible*, ce qui a une conséquence directe et déroutante : **l'accès HTTPS à l'interface d'administration ne fonctionne pas**. Tu devras administrer en **HTTP** (et en SSH pour la CLI).
+>
+> Dans un lab isolé, c'est sans danger. En production, ce serait une faute grave — mais en production tu as une vraie licence, et le problème ne se pose pas. Je te le signale simplement pour que tu ne passes pas deux heures à croire que ton installation est ratée parce que `https://192.168.1.99` ne répond pas.
+
+### 3.3 🧠 Comprendre : comment vivre avec 3 politiques
+
+Puisque la limite existe, autant en faire une leçon plutôt qu'un obstacle. Trois stratégies, dans l'ordre où je te conseille de les employer :
+
+**Stratégie 1 — Nettoyer au fur et à mesure (celle du tutoriel)**
+À la fin de chaque TP, je te dirai quelles politiques supprimer avant de passer au suivant. C'est un peu frustrant, mais ça a une vertu pédagogique réelle : **ça t'oblige à savoir exactement ce que fait chacune de tes règles**. Un administrateur qui accumule 200 politiques sans jamais en supprimer une est un administrateur dont le pare-feu est devenu incompréhensible. La contrainte t'apprend l'hygiène.
+
+**Stratégie 2 — Utiliser des groupes**
+Une seule politique peut référencer un **groupe d'adresses** contenant dix réseaux et un **groupe de services** contenant huit protocoles. Tu obtiens la couverture de dix règles en une seule. C'est d'ailleurs une bonne pratique en production, pas seulement une astuce de lab — on l'apprendra en section 8.
+
+**Stratégie 3 — Acheter un boîtier d'occasion**
+Un FortiGate 60E ou 60F d'occasion se trouve autour de 50 à 150 €. Sans abonnement FortiGuard actif, il ne fera ni antivirus ni filtrage web à jour, mais **toutes les autres limites disparaissent** : autant de politiques, de routes et d'interfaces que tu veux, HTTPS d'administration, chiffrement fort. Pour qui veut vraiment apprendre le métier, c'est le meilleur rapport qualité-prix du marché.
+
+> 💡 **Astuce** : si tu vises la certification Fortinet (NSE 4 / FCP), le boîtier d'occasion est un investissement qui se rentabilise. La certification comporte des questions qu'on ne comprend vraiment qu'en ayant manipulé.
+
+### 3.4 Choisir son hyperviseur
+
+La FortiGate-VM existe pour à peu près tout. Voici comment choisir selon ce que tu as :
+
+| Hyperviseur | Format d'image | Gratuit ? | Mon avis |
+|---|---|---|---|
+| **VMware Workstation / Fusion** | `.ovf` | Version Player gratuite | ⭐ Le plus simple pour débuter |
+| **VirtualBox** | `.ovf` (à convertir) | Oui | Fonctionne, réseau un peu capricieux |
+| **Proxmox VE** | `.qcow2` | Oui | ⭐ Excellent si tu as un serveur dédié |
+| **KVM / libvirt** | `.qcow2` | Oui | Parfait sous Linux |
+| **Hyper-V** | `.vhd` | Inclus dans Windows Pro | Correct |
+| **EVE-NG / GNS3** | `.qcow2` | Version communautaire | ⭐⭐ **Le meilleur pour les gros labs** |
+
+> 💡 **Astuce** : si tu comptes faire les sections avancées (17 à 21 : VPN site-à-site, SD-WAN, haute disponibilité), tu auras besoin de **plusieurs FortiGate en même temps**. **EVE-NG** ou **GNS3** sont alors nettement plus confortables, parce qu'ils gèrent le câblage entre machines virtuelles de façon graphique. Avec VMware, tu devras créer des réseaux virtuels à la main, ce qui est faisable mais fastidieux.
+>
+> Pour les sections 1 à 16, une simple VMware Workstation suffit largement. Commence par là.
+
+### 3.5 Récupérer l'image
+
+L'image ne se télécharge pas librement : il faut un compte.
+
+1. **Crée un compte gratuit** sur le portail Fortinet (`support.fortinet.com`). Un compte « FortiCare » gratuit suffit, il ne demande pas de contrat d'achat.
+2. Va dans **Support → VM Images**.
+3. Choisis le produit **FortiGate**, la plateforme (VMware ESXi, KVM, Hyper-V…) et la version **7.6**.
+4. Télécharge l'archive et décompresse-la.
+
+> 💡 **Astuce** : pour VMware Workstation, prends l'image « VMware ESXi » — le format `.ovf` s'importe très bien dans Workstation malgré son nom.
+
+> ⚠️ **Attention** : télécharge la version **7.6.x la plus récente** disponible. Les correctifs de sécurité comptent, même en lab, et tu prendras l'habitude de regarder le numéro de version — c'est un réflexe professionnel.
+
+### 3.6 La topologie du laboratoire
+
+Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaque section.
+
+```
+                    ┌─────────────────────┐
+                    │   « Internet »      │
+                    │  (ta box / le NAT   │
+                    │   de l'hyperviseur) │
+                    └──────────┬──────────┘
+                               │
+                          port1 (WAN)
+                        DHCP ou 192.168.100.99/24
+                    ┌──────────┴──────────┐
+                    │                     │
+                    │      FGT-01         │
+                    │   FortiOS 7.6.x     │
+                    │                     │
+                    └───┬─────────────┬───┘
+                 port2 (LAN)      port3 (DMZ)
+              192.168.10.1/24   192.168.20.1/24
+                    │                 │
+            ┌───────┴──────┐   ┌──────┴───────┐
+            │   PC-LAN     │   │  SRV-DMZ     │
+            │ Linux ou Win │   │ Linux + web  │
+            │192.168.10.10 │   │192.168.20.10 │
+            └──────────────┘   └──────────────┘
+```
+
+### 3.7 Le plan d'adressage
+
+| Réseau | Sous-réseau | Rôle | Interface FortiGate |
+|---|---|---|---|
+| WAN | 192.168.100.0/24 | Simule Internet | `port1` — 192.168.100.99 |
+| LAN | 192.168.10.0/24 | Postes utilisateurs | `port2` — 192.168.10.1 |
+| DMZ | 192.168.20.0/24 | Serveurs publiés | `port3` — 192.168.20.1 |
+
+| Machine | Adresse | Passerelle | Rôle |
+|---|---|---|---|
+| FGT-01 | voir ci-dessus | 192.168.100.1 | Le pare-feu |
+| PC-LAN | 192.168.10.10/24 | 192.168.10.1 | Poste de test côté interne |
+| SRV-DMZ | 192.168.20.10/24 | 192.168.20.1 | Serveur web de test |
+
+> 🧠 **Comprendre : pourquoi une DMZ ?**
+> **DMZ** signifie *zone démilitarisée*. C'est un troisième réseau, ni tout à fait dedans ni tout à fait dehors, où l'on place les serveurs **accessibles depuis Internet** : site web, serveur de messagerie, VPN.
+>
+> Pourquoi ne pas les mettre simplement dans le LAN ? Parce qu'un serveur exposé à Internet est un serveur qui **finira par être compromis** — c'est une question de temps, pas de compétence. La DMZ répond à la question « et après ? » : quand l'attaquant prend le contrôle du serveur web, il se retrouve dans un réseau d'où il **ne peut pas atteindre** les postes de travail ni la comptabilité, parce que le pare-feu l'en empêche.
+>
+> La DMZ ne protège pas le serveur. Elle protège **tout le reste** du serveur. C'est une nuance essentielle, et on la matérialisera concrètement au TP 9.
+
+### 3.8 Les besoins matériels de ta machine
+
+Sois réaliste avant de commencer :
+
+| Ce que tu veux faire | RAM totale | Disque | Processeur |
+|---|---|---|---|
+| Sections 1 à 16 (1 FortiGate + 2 PC) | **8 Gio** | 40 Gio | 4 cœurs |
+| Sections 17 à 18 (2 FortiGate, VPN) | **12 Gio** | 60 Gio | 4 cœurs |
+| Sections 19 à 21 (3 FortiGate, HA) | **16 Gio** | 80 Gio | 6 cœurs |
+
+> 💡 **Astuce pour économiser la RAM** : les « PC » du laboratoire n'ont pas besoin d'être des postes complets. Une VM **Alpine Linux** (128 Mio de RAM) ou une **Debian sans interface graphique** (256 Mio) suffit amplement — tu n'as besoin que de `ping`, `curl` et `ip`. Réserve la mémoire pour les FortiGate, qui en ont réellement besoin.
+>
+> Un conteneur peut même faire l'affaire si ton hyperviseur le permet.
+
+---
+
+### 🧪 TP 1 — Installer et démarrer ton premier FortiGate
+
+**🎯 Objectif**
+Faire tourner une FortiGate-VM, se connecter à sa console, définir un mot de passe et vérifier la version. À la fin, tu auras un pare-feu vivant.
+
+**⏱️ Durée** : 30 à 45 minutes (dont le téléchargement)
+
+**📋 Prérequis**
+- Un hyperviseur installé (VMware Workstation Player fait très bien l'affaire)
+- L'image FortiGate-VM 7.6 téléchargée et décompressée (§3.5)
+- 4 Gio de RAM disponibles
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Importer la machine virtuelle**
+
+Dans VMware Workstation : `Fichier → Ouvrir` puis sélectionne le fichier `.ovf`. Accepte l'import.
+
+Dans Proxmox, depuis un terminal du serveur :
+```bash
+qm create 100 --name FGT-01 --memory 2048 --cores 1 --net0 virtio,bridge=vmbr0
+qm importdisk 100 fortios.qcow2 local-lvm
+qm set 100 --scsi0 local-lvm:vm-100-disk-0
+qm set 100 --boot order=scsi0
+```
+
+**Étape 2 — Régler les ressources**
+
+Avant de démarrer, vérifie :
+- **Mémoire** : 2048 Mio (inutile de donner plus, la licence d'évaluation plafonne à 2 Gio)
+- **Processeurs** : 1 (même raison)
+- **Cartes réseau** : au moins 3
+
+> ⚠️ **Attention — le point qui rate le plus souvent**
+> L'ordre des cartes réseau dans l'hyperviseur détermine l'ordre des `portX` dans FortiOS. La première carte devient `port1`, la deuxième `port2`, et ainsi de suite.
+>
+> Pour ce laboratoire :
+> - **Carte 1 → NAT** (ce sera `port1`, notre accès « Internet »)
+> - **Carte 2 → réseau privé « LAN »** (ce sera `port2`)
+> - **Carte 3 → réseau privé « DMZ »** (ce sera `port3`)
+>
+> Ne mets **pas** les cartes 2 et 3 en mode « ponté » (*bridged*) : elles se retrouveraient sur ton vrai réseau domestique, et ton FortiGate pourrait se mettre à distribuer des adresses DHCP à toute ta maison. Tes colocataires n'apprécieraient pas. 😅
+
+**Étape 3 — Démarrer et se connecter**
+
+Démarre la VM et ouvre sa **console** (pas SSH : on n'a pas encore d'adresse IP). Le démarrage prend une à deux minutes. Tu obtiens :
+
+```
+FortiGate-VM64 login:
+```
+
+Connecte-toi avec :
+- **Nom d'utilisateur** : `admin`
+- **Mot de passe** : *(vide — appuie simplement sur Entrée)*
+
+FortiOS t'oblige immédiatement à changer ce mot de passe vide :
+
+```
+You are forced to change your password. Please input a new password.
+New Password: ********
+Confirm Password: ********
+```
+
+> 💡 **Astuce** : choisis un mot de passe que tu retiendras (`Lab@Forti2026` par exemple). Tu vas le taper des dizaines de fois dans ce tutoriel. Et note-le quelque part — perdre le mot de passe d'un FortiGate implique une réinitialisation d'usine par le port console, ce qui est long et pénible.
+
+**Étape 4 — Vérifier que le système est vivant**
+
+```
+FortiGate-VM64 # get system status
+```
+
+Tu obtiens un pavé d'informations. Les lignes qui comptent :
+
+```
+Version: FortiGate-VM64 v7.6.3,build2660,250401 (GA.F)
+Serial-Number: FGVMEVXXXXXXXXXX
+License Status: Valid
+VM Resources: 1 CPU, 1985 MB RAM
+Log hard disk: Available
+Hostname: FortiGate-VM64
+Operation Mode: NAT
+Current HA mode: standalone
+System time: Thu Aug 20 09:12:44 2026
+```
+
+Décryptons ce qui est important :
+
+| Ligne | Ce qu'elle t'apprend |
+|---|---|
+| `Version` | Ta version de FortiOS. Vérifie que c'est bien du 7.6 |
+| `Serial-Number` | Commence par `FGVM` sur une VM. C'est l'identité du pare-feu |
+| `VM Resources` | Confirme le bridage à 1 CPU / 2 Gio |
+| `Operation Mode: NAT` | Le mode de fonctionnement. On y revient au §6.8 |
+| `Current HA mode` | `standalone` = pas de cluster. Section 21 |
+
+**Étape 5 — Donner une adresse au port1**
+
+Pour l'instant, le pare-feu n'a aucune adresse. Donnons-lui-en une :
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set mode dhcp
+FGT-01 (port1) # set allowaccess ping http https ssh
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Ligne par ligne, parce que c'est ta toute première configuration :
+
+| Commande | Traduction en français |
+|---|---|
+| `config system interface` | « J'entre dans la table des interfaces » |
+| `edit port1` | « Je veux modifier l'interface port1 » |
+| `set mode dhcp` | « Prends ton adresse automatiquement » |
+| `set allowaccess ping http https ssh` | « Autorise qu'on t'administre par ces protocoles, sur cette interface » |
+| `next` | « J'ai fini avec port1, je reste dans la table » |
+| `end` | « J'ai fini avec la table, applique » |
+
+> 🚨 **Danger — `allowaccess` sur une interface WAN**
+> Dans un laboratoire, autoriser l'administration sur `port1` est pratique. **En production, c'est une faute grave.** Cela expose l'interface d'administration de ton pare-feu à Internet entier, et les FortiGate exposés sont scannés en permanence.
+>
+> On corrigera ça proprement en section 24. Pour l'instant, tu es dans un réseau isolé, donc c'est acceptable — mais je veux que tu saches dès la première commande que c'en est une, plutôt que de le découvrir dans six mois.
+
+**Étape 6 — Retrouver l'adresse obtenue**
+
+```
+FGT-01 # get system interface physical
+```
+
+ou, plus lisible :
+
+```
+FGT-01 # diagnose ip address list
+```
+
+Note l'adresse de `port1` : c'est par là que tu accèderas à l'interface web.
+
+---
+
+**✅ Résultat attendu**
+
+Depuis un navigateur sur ta machine hôte, `http://<adresse-du-port1>` doit afficher la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
+
+> ⚠️ Rappel du §3.2 : avec la licence d'évaluation, utilise bien **`http://`** et non `https://`. C'est normal, ce n'est pas une erreur de ta part.
+
+Tu devrais voir le tableau de bord, avec probablement un bandeau rouge signalant que la licence n'est pas enregistrée. C'est attendu — on s'en occupe au TP 2.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+Beaucoup plus que « installer une VM », en réalité :
+
+1. **La structure de la CLI FortiOS.** Tu viens d'utiliser `config` → `edit` → `set` → `next` → `end`. **Cette séquence est la même pour absolument tout dans FortiOS** : les politiques, les routes, les VPN, les utilisateurs. Tu l'as apprise une fois, tu la connais partout. C'est le sujet de toute la section 5.
+2. **`get system status` est ton premier réflexe.** Sur n'importe quel FortiGate inconnu, c'est la première commande à taper : version, modèle, mode, HA, heure.
+3. **`allowaccess` contrôle l'administration par interface.** C'est un paramètre de sécurité de première importance, et il se règle interface par interface.
+4. **La numérotation des ports vient de l'hyperviseur**, pas de FortiOS. Un piège classique quand une VM se comporte bizarrement.
+
+---
