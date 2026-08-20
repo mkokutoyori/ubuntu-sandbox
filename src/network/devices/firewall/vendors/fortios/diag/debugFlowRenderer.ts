@@ -140,6 +140,10 @@ function renderDenial(
     say('noroute', 'no route to destination');
     return [];
   }
+  if (reason === 'no-session-non-syn') {
+    say('dropped', 'no session matched, drop');
+    return [];
+  }
 
   if (reason === 'policy-deny' || reason === 'implicit-deny') {
     say('denied', 'Denied by forward policy check (policy '

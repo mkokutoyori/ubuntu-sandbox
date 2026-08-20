@@ -537,8 +537,9 @@ export class Firewall extends Equipment {
       ingressPort: request.ingressPort, packet: buildSimulatedPacket(request),
       arrivedAt: this.services.now(), simulated: true,
     });
-    return summariseSimulation(
-      context, this.processPipeline(context).verdict === 'accepted');
+    const accepted = this.processPipeline(context).verdict === 'accepted';
+    this.traces.remember(context);
+    return summariseSimulation(context, accepted);
   }
 
   setInterfaceUp(name: string, up: boolean): void {

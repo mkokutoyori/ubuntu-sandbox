@@ -21,6 +21,7 @@ export interface SimulatedFlow {
   readonly sourcePort: number;
   readonly destinationPort: number;
   readonly icmpCode?: number;
+  readonly ackOnly?: boolean;
 }
 
 export class UnsupportedSimulatedProtocolError extends Error {
@@ -94,8 +95,11 @@ function simulatedSegment(flow: SimulatedFlow): TCPPacket {
     sourcePort: flow.sourcePort,
     destinationPort: flow.destinationPort,
     sequenceNumber: 0,
-    acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+    acknowledgementNumber: flow.ackOnly === true ? 1 : 0,
+    flags: {
+      syn: flow.ackOnly !== true, ack: flow.ackOnly === true,
+      fin: false, rst: false, psh: false, urg: false,
+    },
     windowSize: 65535,
     checksum: 0,
     payload: null,

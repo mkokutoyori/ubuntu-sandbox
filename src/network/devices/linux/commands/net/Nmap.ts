@@ -2,7 +2,9 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { Equipment } from '../../../../equipment/Equipment';
 import { IPAddress } from '../../../../core/types';
-import { findHostByAddress, localDeviceOf } from '../../network/HostLookup';
+import {
+  findHostByAddress, localDeviceOf, transitAckAclVerdict,
+} from '../../network/HostLookup';
 import {
   grabBanner,
   grabListenerProcess,
@@ -71,6 +73,12 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
       }
       return grabUdpListener(found.device, port) ? 'open' : 'closed';
     },
+    ackReaches(ip: string, port: number) {
+      const found = resolve(ip);
+      if (!found || found.poweredOff || found.interfaceDown) return false;
+      return transitAckAclVerdict(
+        localSourceAddress(ctx), ip, port, new Date(), localDeviceOf(ctx)) === 'permit';
+    },
     banner(ip: string, port: number) {
       const found = resolve(ip);
       if (!found) return null;
@@ -86,16 +94,25 @@ function buildProbes(ctx: LinuxCommandContext, noDns: boolean): HostProbes {
   };
 }
 
+function localSourceAddress(ctx: LinuxCommandContext): string {
+  const device = localDeviceOf(ctx);
+  for (const port of device?.getPorts() ?? []) {
+    const ip = port.getIPAddress();
+    if (ip && port.getIsUp()) return ip.toString();
+  }
+  return '0.0.0.0';
+}
+
 export const nmapCommand: LinuxCommand = {
   name: 'nmap',
   needsNetworkContext: true,
   complete: makeArgCompleter({
     flags: ['-6', '-A', '-F', '-O', '-P0', '-Pn', '-R', '-T', '-d', '-n',
       '-oA', '-oG', '-oN', '-p', '-p-', '-sP', '-sS', '-sT', '-sU', '-sV',
-      '-sn', '-v', '-vv', '--open', '--reason', '--top-ports'],
+      '-sA', '-sn', '-v', '-vv', '--open', '--reason', '--top-ports'],
     hostsAtBarePosition: true,
   }),
-  usage: 'nmap [-sT|-sS|-sU] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
+  usage: 'nmap [-sT|-sS|-sU|-sA] [-sV] [-O] [-A] [-p SPEC] [-F] [--top-ports N] [-sn] [-Pn] [--open] [--reason] [-n] [-oN file] [-oG file] <target...>',
   help: 'Discover hosts and services on a network.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
