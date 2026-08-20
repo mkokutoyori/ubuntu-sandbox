@@ -4138,3 +4138,493 @@ Récapitulons, parce que c'est le vrai enseignement du TP :
 6. **On met toujours un filtre, et on arrête toujours le débogage.**
 
 ---
+
+# Partie IV — Les services réseau
+
+---
+
+## 12. DHCP et DNS
+
+Un pare-feu ne fait pas que filtrer. Sur un site de petite ou moyenne taille, il rend aussi les deux services sans lesquels un réseau ne fonctionne pas : distribuer les adresses et résoudre les noms.
+
+### 12.1 Le serveur DHCP
+
+**DHCP** (*Dynamic Host Configuration Protocol*) attribue automatiquement aux machines leur adresse IP, leur masque, leur passerelle et leurs serveurs DNS. Sans lui, il faudrait configurer chaque poste à la main.
+
+```
+config system dhcp server
+    edit 1
+        set interface "port2"
+        set default-gateway 192.168.10.1
+        set netmask 255.255.255.0
+        set lease-time 604800
+        config ip-range
+            edit 1
+                set start-ip 192.168.10.100
+                set end-ip 192.168.10.199
+            next
+        end
+        set dns-service default
+        set status enable
+    next
+end
+```
+
+Décryptage des paramètres qui comptent :
+
+| Paramètre | Rôle |
+|---|---|
+| `interface` | Sur quelle interface le serveur écoute |
+| `default-gateway` | La passerelle annoncée aux clients — **presque toujours l'adresse de l'interface** |
+| `ip-range` | La plage distribuée |
+| `lease-time` | Durée du bail, en **secondes** (604800 = 7 jours) |
+| `dns-service` | `default` (ceux du pare-feu), `local` (le pare-feu lui-même) ou `specify` |
+
+> 🧠 **Comprendre — pourquoi la plage ne couvre pas tout le sous-réseau**
+> Note qu'on distribue `.100` à `.199`, pas `.1` à `.254`. Ce n'est pas de la timidité, c'est une méthode :
+> - `.1` est la passerelle
+> - `.2` à `.99` sont réservés aux **adresses fixes** : serveurs, imprimantes, bornes Wi-Fi, switchs
+> - `.100` à `.199` sont distribués par DHCP
+> - `.200` à `.254` restent libres pour un futur besoin
+>
+> Un plan d'adressage qui sépare le fixe du dynamique t'évite le jour où le DHCP attribue à un poste l'adresse que tu avais mise en dur sur une imprimante. Ce conflit-là est pénible à diagnostiquer parce qu'il est **intermittent** : il n'apparaît que quand les deux machines sont allumées en même temps.
+
+### 12.2 Les réservations DHCP
+
+Une **réservation** garantit qu'une machine reçoit toujours la même adresse, identifiée par sa MAC.
+
+```
+config system dhcp server
+    edit 1
+        config reserved-address
+            edit 1
+                set ip 192.168.10.50
+                set mac 00:0c:29:aa:bb:cc
+                set description "Imprimante comptabilite"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — réservation plutôt qu'adresse fixe**
+> C'est le meilleur des deux mondes : la machine est configurée en DHCP (donc rien à toucher sur elle), et tu contrôles son adresse **depuis le pare-feu**. Quand le plan d'adressage change, tu modifies une ligne au lieu de te déplacer devant chaque imprimante.
+
+### 12.3 Options DHCP et exclusions
+
+**Exclure des adresses** de la plage :
+
+```
+config system dhcp server
+    edit 1
+        config exclude-range
+            edit 1
+                set start-ip 192.168.10.150
+                set end-ip 192.168.10.160
+            next
+        end
+    next
+end
+```
+
+**Ajouter des options personnalisées** — utile pour les téléphones IP, les bornes Wi-Fi, le démarrage réseau :
+
+```
+config system dhcp server
+    edit 1
+        config options
+            edit 1
+                set code 66
+                set type string
+                set value "192.168.10.5"
+            next
+        end
+    next
+end
+```
+
+L'option 66 est le serveur TFTP — les téléphones IP y cherchent leur configuration.
+
+### 12.4 Observer et dépanner le DHCP
+
+```
+FGT-01 # execute dhcp lease-list
+FGT-01 # execute dhcp lease-list port2
+FGT-01 # execute dhcp lease-clear 192.168.10.101
+FGT-01 # diagnose sys dhcp lease list
+```
+
+> 💡 **Astuce de diagnostic** : si un client n'obtient pas d'adresse, la vraie question est « ses trames arrivent-elles ? ». Le DHCP fonctionne en **diffusion** (broadcast), donc :
+> ```
+> FGT-01 # diagnose sniffer packet port2 'udp port 67 or udp port 68' 4 20
+> ```
+> Si tu ne vois **rien**, le problème est physique ou de VLAN — le pare-feu n'est même pas sollicité. Si tu vois le `DISCOVER` mais pas d'`OFFER`, le problème est dans la configuration du serveur (plage épuisée, mauvaise interface).
+
+### 12.5 Le relais DHCP
+
+Quand le serveur DHCP est ailleurs (un contrôleur de domaine, typiquement), le pare-feu doit **relayer** les demandes — parce qu'une diffusion ne traverse pas un routeur.
+
+```
+config system interface
+    edit "port2"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip "192.168.20.5"
+        set dhcp-relay-type regular
+    next
+end
+```
+
+> ⚠️ **Attention** : le serveur distant doit avoir une **étendue** correspondant au sous-réseau du client. Il reconnaît ce sous-réseau grâce au champ `giaddr` que le relais insère. Un relais qui fonctionne côté pare-feu et un serveur sans étendue pour ce réseau donnent le même symptôme qu'un relais cassé.
+
+### 12.6 Le DNS : trois rôles à ne pas confondre
+
+Le mot « DNS » recouvre **trois choses différentes** sur un FortiGate, et les mélanger est une source de confusion permanente.
+
+| Rôle | Qui interroge qui | Où ça se configure |
+|---|---|---|
+| **Client DNS** | Le pare-feu résout des noms pour **lui-même** | `config system dns` |
+| **Serveur DNS** | Les postes du réseau interrogent **le pare-feu** | `config system dns-server` |
+| **Filtrage DNS** | Le pare-feu **inspecte** les requêtes qui le traversent | Profil de sécurité (§14) |
+
+**Le client DNS** — le pare-feu a besoin de résoudre des noms pour ses propres besoins : contacter FortiGuard, résoudre un objet FQDN (§8.4), joindre un serveur NTP.
+
+```
+config system dns
+    set primary 9.9.9.9
+    set secondary 1.1.1.1
+    set protocol cleartext dot
+    set ssl-certificate "Fortinet_Factory"
+end
+```
+
+Vérification :
+
+```
+FGT-01 # execute ping www.fortinet.com
+FGT-01 # diagnose test application dnsproxy 3
+```
+
+> 💡 **Astuce** : FortiOS sait faire du **DNS over TLS** (`dot`). Ça chiffre les requêtes DNS du pare-feu, qui autrement circulent en clair et révèlent tout ce qu'il consulte. Fortinet fournit des serveurs compatibles, et Quad9 (`9.9.9.9`) aussi.
+
+**Le serveur DNS** — le pare-feu répond aux requêtes des postes :
+
+```
+config system dns-server
+    edit "port2"
+        set mode forward-only
+    next
+end
+```
+
+Trois modes :
+
+| Mode | Comportement |
+|---|---|
+| `recursive` | Le pare-feu résout lui-même depuis la racine |
+| `non-recursive` | Il ne répond que sur ses zones locales |
+| `forward-only` | ⭐ Il transmet aux serveurs du §client. Le plus courant |
+
+**Les zones locales** — pour résoudre des noms internes :
+
+```
+config system dns-database
+    edit "zone-interne"
+        set domain "lab.local"
+        set type primary
+        set view shadow
+        config dns-entry
+            edit 1
+                set hostname "srv-web"
+                set ip 192.168.20.10
+            next
+            edit 2
+                set hostname "fgt"
+                set ip 192.168.10.1
+            next
+        end
+    next
+end
+```
+
+Désormais, `srv-web.lab.local` résout vers `192.168.20.10` pour les postes internes.
+
+### 12.7 🧠 Comprendre : le DNS *split horizon*
+
+Voici un problème très courant et sa solution élégante.
+
+Ton serveur web est en `192.168.20.10` (privé) et publié sur `203.0.113.5` (public). Un visiteur d'Internet tape `www.entreprise.fr` et obtient `203.0.113.5` : parfait.
+
+Mais **un employé au bureau** tape la même adresse et obtient aussi `203.0.113.5`. Son paquet part vers le pare-feu, ressort vers Internet, revient… ou plus souvent échoue, parce que ce demi-tour (*hairpin NAT*) n'est pas toujours configuré.
+
+**La solution** : que le DNS réponde **différemment** selon qui demande. C'est le *split horizon* — ou *split-brain DNS*.
+
+```
+config system dns-database
+    edit "vue-interne"
+        set domain "entreprise.fr"
+        set type primary
+        set view shadow          ← ⭐ répond uniquement aux clients INTERNES
+        config dns-entry
+            edit 1
+                set hostname "www"
+                set ip 192.168.20.10      ← l'adresse PRIVÉE
+            next
+        end
+    next
+end
+```
+
+Le paramètre `view` fait tout le travail :
+
+| Valeur | Qui reçoit la réponse |
+|---|---|
+| `shadow` | Les clients **internes** uniquement |
+| `public` | Les clients **externes** |
+
+Résultat : l'employé obtient l'adresse privée et joint le serveur directement, le visiteur externe obtient l'adresse publique. Chacun emprunte le chemin le plus court, et le NAT en épingle devient inutile.
+
+---
+
+### 🧪 TP 10 — Rendre le réseau autonome
+
+**🎯 Objectif**
+Activer le DHCP sur le LAN, faire obtenir une adresse au PC, poser une réservation, configurer le pare-feu en serveur DNS avec une zone locale, et vérifier chaque étape en observant les paquets.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer le serveur DHCP**
+
+```
+FGT-01 # config system dhcp server
+FGT-01 (server) # edit 1
+FGT-01 (1) # set interface "port2"
+FGT-01 (1) # set default-gateway 192.168.10.1
+FGT-01 (1) # set netmask 255.255.255.0
+FGT-01 (1) # set lease-time 86400
+FGT-01 (1) # config ip-range
+FGT-01 (ip-range) # edit 1
+FGT-01 (1) # set start-ip 192.168.10.100
+FGT-01 (1) # set end-ip 192.168.10.199
+FGT-01 (1) # next
+FGT-01 (ip-range) # end
+FGT-01 (1) # set dns-service default
+FGT-01 (1) # set status enable
+FGT-01 (1) # next
+FGT-01 (server) # end
+```
+
+**Étape 2 — Observer une attribution en direct**
+
+C'est plus instructif que de regarder le résultat. Lance d'abord la capture :
+
+```
+FGT-01 # diagnose sniffer packet port2 'udp port 67 or udp port 68' 4 20
+```
+
+Puis, sur le PC du LAN, demande une adresse :
+
+```bash
+user@pc-lan:~$ sudo ip addr flush dev eth0
+user@pc-lan:~$ sudo dhclient -v eth0
+```
+
+Sur Windows :
+
+```cmd
+C:\Users\Lab> ipconfig /release
+C:\Users\Lab> ipconfig /renew
+```
+
+Sur la console du pare-feu, tu vois passer les quatre étapes du DHCP :
+
+```
+0.0.0.0.68 -> 255.255.255.255.67: udp 300     ← DISCOVER
+192.168.10.1.67 -> 255.255.255.255.68: udp 300 ← OFFER
+0.0.0.0.68 -> 255.255.255.255.67: udp 300     ← REQUEST
+192.168.10.1.67 -> 255.255.255.255.68: udp 300 ← ACK
+```
+
+> 💡 **Le moyen mnémotechnique** : **DORA** — *Discover, Offer, Request, Acknowledge*. Le client crie « quelqu'un ? », le serveur propose, le client accepte, le serveur confirme.
+>
+> Savoir **où** la séquence s'interrompt est tout le diagnostic DHCP :
+> - Pas de DISCOVER → problème physique ou VLAN
+> - DISCOVER sans OFFER → serveur mal configuré ou plage épuisée
+> - OFFER sans REQUEST → le client a reçu une autre offre (⚠️ serveur DHCP pirate !)
+
+**Étape 3 — Vérifier le bail**
+
+```
+FGT-01 # execute dhcp lease-list port2
+```
+```
+port2
+    IP              MAC-Address        Hostname       VCI   Expiry
+    192.168.10.100  00:0c:29:1a:2b:3c  pc-lan               Thu Aug 21 09:52:11 2026
+```
+
+Et côté client :
+
+```bash
+user@pc-lan:~$ ip addr show eth0
+user@pc-lan:~$ ip route show
+user@pc-lan:~$ cat /etc/resolv.conf
+```
+
+**Étape 4 — Poser une réservation**
+
+Note la MAC de ton PC, puis :
+
+```
+FGT-01 # config system dhcp server
+FGT-01 (server) # edit 1
+FGT-01 (1) # config reserved-address
+FGT-01 (reserved-address) # edit 1
+FGT-01 (1) # set ip 192.168.10.50
+FGT-01 (1) # set mac 00:0c:29:1a:2b:3c
+FGT-01 (1) # set description "Poste de test du LAN"
+FGT-01 (1) # next
+FGT-01 (reserved-address) # end
+FGT-01 (1) # next
+FGT-01 (server) # end
+```
+
+Force le renouvellement :
+
+```bash
+user@pc-lan:~$ sudo dhclient -r eth0 && sudo dhclient -v eth0
+user@pc-lan:~$ ip addr show eth0
+```
+
+Le PC obtient maintenant `192.168.10.50`, quelle que soit la plage.
+
+> ⚠️ **Attention** : si le client garde son ancienne adresse, c'est que son bail est toujours valide. Force-le côté pare-feu :
+> ```
+> FGT-01 # execute dhcp lease-clear 192.168.10.100
+> ```
+
+**Étape 5 — Configurer le client DNS du pare-feu**
+
+```
+FGT-01 # config system dns
+FGT-01 (dns) # set primary 9.9.9.9
+FGT-01 (dns) # set secondary 1.1.1.1
+FGT-01 (dns) # end
+
+FGT-01 # execute ping www.fortinet.com
+```
+
+**Étape 6 — Faire du pare-feu un serveur DNS**
+
+```
+FGT-01 # config system dns-server
+FGT-01 (dns-server) # edit "port2"
+FGT-01 (port2) # set mode forward-only
+FGT-01 (port2) # next
+FGT-01 (dns-server) # end
+```
+
+Autorise le DNS sur l'interface :
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port2
+FGT-01 (port2) # set allowaccess ping https ssh fgfm
+FGT-01 (port2) # next
+FGT-01 (interface) # end
+```
+
+> 💡 **Astuce** : le service DNS ne passe pas par `allowaccess` — il est activé par `config system dns-server`. C'est une exception à retenir : tous les services locaux ne se contrôlent pas au même endroit.
+
+**Étape 7 — Créer une zone DNS locale**
+
+```
+FGT-01 # config system dns-database
+FGT-01 (dns-database) # edit "lab-local"
+FGT-01 (lab-local) # set domain "lab.local"
+FGT-01 (lab-local) # set type primary
+FGT-01 (lab-local) # set view shadow
+FGT-01 (lab-local) # set authoritative disable
+FGT-01 (lab-local) # config dns-entry
+FGT-01 (dns-entry) # edit 1
+FGT-01 (1) # set hostname "srv-web"
+FGT-01 (1) # set ip 192.168.20.10
+FGT-01 (1) # next
+FGT-01 (dns-entry) # edit 2
+FGT-01 (2) # set hostname "fgt"
+FGT-01 (2) # set ip 192.168.10.1
+FGT-01 (2) # next
+FGT-01 (dns-entry) # end
+FGT-01 (lab-local) # next
+FGT-01 (dns-database) # end
+```
+
+**Étape 8 — Tester la résolution**
+
+Depuis le PC du LAN, en interrogeant explicitement le pare-feu :
+
+```bash
+user@pc-lan:~$ dig @192.168.10.1 srv-web.lab.local
+user@pc-lan:~$ nslookup srv-web.lab.local 192.168.10.1
+```
+
+Tu dois obtenir `192.168.20.10`.
+
+Et le test qui prouve que tout se combine :
+
+```bash
+user@pc-lan:~$ curl http://srv-web.lab.local
+```
+```html
+<h1>Serveur DMZ - lab FortiGate</h1>
+```
+
+**Le nom a été résolu par le pare-feu, la politique a laissé passer, le serveur a répondu.** Trois sections de tutoriel qui fonctionnent ensemble. 🎉
+
+**Étape 9 — Vérifier la résolution externe**
+
+```bash
+user@pc-lan:~$ dig @192.168.10.1 www.fortinet.com
+```
+
+Le pare-feu transmet aux serveurs du §Étape 5 et rend la réponse.
+
+**Étape 10 — Diagnostiquer le DNS**
+
+```
+FGT-01 # diagnose test application dnsproxy 3
+```
+
+Cette commande affiche les serveurs utilisés, leur temps de réponse et leur état. C'est **le** réflexe quand la résolution est lente ou erratique.
+
+```
+FGT-01 # diagnose sniffer packet any 'udp port 53' 4 20
+```
+
+---
+
+**✅ Résultat attendu**
+
+- Le PC obtient une adresse par DHCP, et tu as vu la séquence DORA
+- La réservation force l'adresse `192.168.10.50`
+- `execute dhcp lease-list` montre le bail
+- `dig @192.168.10.1 srv-web.lab.local` renvoie `192.168.20.10`
+- `curl http://srv-web.lab.local` affiche la page du serveur
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Un plan d'adressage sépare le fixe du dynamique**, sinon on récolte des conflits intermittents.
+2. **La réservation DHCP** contrôle l'adresse depuis le pare-feu, sans toucher à la machine.
+3. **DORA se lit dans une capture**, et l'endroit où la séquence s'arrête donne le diagnostic.
+4. **« DNS » désigne trois rôles distincts** sur un FortiGate : client, serveur, filtrage.
+5. **Le split horizon** fait répondre différemment selon qui demande, et supprime le besoin de NAT en épingle.
+6. **`diagnose test application dnsproxy 3`** est le réflexe du diagnostic DNS.
+
+---
