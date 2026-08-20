@@ -76,6 +76,7 @@ import type { ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing } from './diag/FirewallPing';
+import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -363,6 +364,20 @@ export class Firewall extends Equipment {
   });
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
+
+  private readonly traceroute = new FirewallTraceroute({
+    resolve: (destination) => {
+      const route = this.getVdom().routes.resolveNextHop(destination);
+      const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
+      if (iface === undefined) return null;
+      const source = this.interfaces.get(iface)?.ip;
+      if (source === undefined) return null;
+      return { iface, gateway: route?.nextHop, source };
+    },
+    send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
+  });
+
+  runTraceroute(target: string): string { return this.traceroute.run(target); }
 
   listL3Interfaces(): readonly import('./l3/InterfaceTable').L3Interface[] {
     return this.interfaces.all();
@@ -765,7 +780,8 @@ export class Firewall extends Equipment {
     deliverLocally({
       ikeDatagram: (p) => ikeDatagram(p),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
-      observedBySdwan: (p) => this.ping.observeReply(p) || this.sdwan.observeReply(p),
+      observedBySdwan: (p) => this.traceroute.observe(p) || this.ping.observeReply(p)
+        || this.sdwan.observeReply(p),
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
       admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),

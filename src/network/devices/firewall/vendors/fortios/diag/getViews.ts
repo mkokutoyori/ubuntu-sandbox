@@ -125,7 +125,11 @@ function prefixLength(mask: string): number {
     .reduce((total, bits) => total + bits, 0);
 }
 
-export function renderRoutingTable(routes: RouteTable): string {
+export type RoutingView = 'all' | 'static' | 'connected' | 'database';
+
+export function renderRoutingTable(routes: RouteTable, view: RoutingView): string {
+  if (view === 'database') return renderRoutingDatabase(routes);
+
   const lines = [
     'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
     '       O - OSPF, IA - OSPF inter area',
@@ -133,12 +137,12 @@ export function renderRoutingTable(routes: RouteTable): string {
     '',
   ];
 
-  const rows = routes.all().map(route => ({
-    code: (route.protocol === undefined
-      ? ROUTE_CODE[route.kind]
-      : PROTOCOL_CODE[route.protocol]) ?? 'S',
-    destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
-  }));
+  const rows = routes.selected()
+    .filter(route => keptBy(view, route))
+    .map(route => ({
+      code: routeCode(route),
+      destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`,
+    }));
 
   lines.push(...renderTable(rows, [
     { header: '', width: 8, value: row => row.code },
@@ -146,6 +150,39 @@ export function renderRoutingTable(routes: RouteTable): string {
   ], FIXED_TABLE).filter(line => line.trim().length > 0));
 
   return lines.join('\n');
+}
+
+export function renderRoutingDatabase(routes: RouteTable): string {
+  const lines = [
+    'Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP',
+    '       O - OSPF, IA - OSPF inter area',
+    '       > - selected route, * - FIB route',
+    '',
+  ];
+
+  for (const route of routes.all()) {
+    const kept = routes.isSelected(route);
+    lines.push(`${protocolLetter(route).padEnd(5)}${kept ? '*>' : '  '} `
+      + `${route.network}/${prefixLength(route.mask)} ${reachedBy(route)}`
+      + (kept ? '' : ' inactive'));
+  }
+  return lines.join('\n');
+}
+
+function keptBy(view: RoutingView, route: FirewallRoute): boolean {
+  if (view === 'static') return route.kind === 'static' || route.kind === 'default';
+  if (view === 'connected') return route.kind === 'connected';
+  return true;
+}
+
+function protocolLetter(route: FirewallRoute): string {
+  return routeCode(route).replace('*', '');
+}
+
+function routeCode(route: FirewallRoute): string {
+  return (route.protocol === undefined
+    ? ROUTE_CODE[route.kind]
+    : PROTOCOL_CODE[route.protocol]) ?? 'S';
 }
 
 function reachedBy(route: FirewallRoute): string {

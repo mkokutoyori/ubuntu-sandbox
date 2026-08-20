@@ -41,6 +41,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'sys', 'ntp'], 'NTP client diagnostics.'],
   [['diagnose', 'sys', 'checkused'], 'Find what references an object.'],
   [['execute', 'ping'], 'Send ICMP echo requests.'],
+  [['execute', 'traceroute'], 'Trace the route to a destination.'],
   [['execute', 'time'], 'Display or set the system time.'],
   [['execute', 'date'], 'Display or set the system date.'],
   [['execute'], 'Execute static commands.'],

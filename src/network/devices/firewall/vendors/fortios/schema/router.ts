@@ -36,6 +36,7 @@ export const ROUTER_STATIC: FortiTableSpec = {
       gateway: object.effective('gateway')[0] ?? '0.0.0.0',
       iface: object.effective('device')[0] ?? '',
       distance: Number.parseInt(object.effective('distance')[0] ?? '10', 10),
+      priority: Number.parseInt(object.effective('priority')[0] ?? '0', 10),
       blackhole: object.effective('blackhole')[0] === 'enable',
       enabled: object.effective('status')[0] !== 'disable',
     });

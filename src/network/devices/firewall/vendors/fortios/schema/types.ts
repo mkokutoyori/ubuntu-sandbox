@@ -76,6 +76,7 @@ export interface FortiStaticRoute {
   readonly gateway: string;
   readonly iface: string;
   readonly distance: number;
+  readonly priority: number;
   readonly blackhole: boolean;
   readonly enabled: boolean;
 }

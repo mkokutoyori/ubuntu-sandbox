@@ -39,7 +39,10 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         if (!route.enabled || route.blackhole) return;
         routes.addStatic(route.destination, route.mask,
           route.gateway === '0.0.0.0' ? undefined : route.gateway,
-          { iface: route.iface || undefined, distance: route.distance, id: route.id });
+          {
+            iface: route.iface || undefined, distance: route.distance,
+            priority: route.priority, id: route.id,
+          });
       },
       applySdwan(patch) {
         return fw.applySdwan(patch);

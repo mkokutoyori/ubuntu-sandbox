@@ -10,6 +10,7 @@ export interface FirewallRoute {
   readonly iface: string;
   readonly kind: RouteKind;
   readonly distance: number;
+  readonly priority: number;
   readonly metric?: number;
   readonly protocol?: string;
 }
@@ -22,6 +23,7 @@ export interface ResolvedNextHop {
 
 export interface StaticRouteOptions {
   distance?: number;
+  priority?: number;
   metric?: number;
   iface?: string;
   id?: string;
@@ -39,12 +41,24 @@ interface StaticRecord {
   nextHop?: string;
   iface?: string;
   distance: number;
+  priority: number;
   metric?: number;
   isDefault: boolean;
   id?: string;
 }
 
 const DEFAULT_STATIC_DISTANCE = 1;
+
+export function sameRoute(a: FirewallRoute, b: FirewallRoute): boolean {
+  return a.network === b.network && a.mask === b.mask
+    && a.nextHop === b.nextHop && a.iface === b.iface
+    && a.distance === b.distance && a.priority === b.priority;
+}
+
+function outranks(candidate: FirewallRoute, held: FirewallRoute): boolean {
+  if (candidate.distance !== held.distance) return candidate.distance < held.distance;
+  return candidate.priority < held.priority;
+}
 
 export class RouteTable {
   private readonly statics: StaticRecord[] = [];
@@ -63,6 +77,7 @@ export class RouteTable {
       nextHop,
       iface: options.iface,
       distance: options.distance ?? DEFAULT_STATIC_DISTANCE,
+      priority: options.priority ?? 0,
       metric: options.metric,
       isDefault: mask === '0.0.0.0' && network === '0.0.0.0',
       id: options.id,
@@ -111,7 +126,7 @@ export class RouteTable {
     let best: FirewallRoute | undefined;
     let bestPrefix = -1;
 
-    for (const route of this.all()) {
+    for (const route of this.selected()) {
       const mask = tryIpToUint32(route.mask);
       const network = tryIpToUint32(route.network);
       if (mask === null || network === null) continue;
@@ -151,11 +166,26 @@ export class RouteTable {
         iface,
         kind: kindOf(route),
         distance: route.distance,
+        priority: route.priority,
         metric: route.metric,
         protocol: protocolOf(route),
       }));
     }
     return Object.freeze(routes);
+  }
+
+  selected(): readonly FirewallRoute[] {
+    const best = new Map<string, FirewallRoute>();
+    for (const route of this.all()) {
+      const prefix = `${route.network}/${route.mask}`;
+      const held = best.get(prefix);
+      if (held === undefined || outranks(route, held)) best.set(prefix, route);
+    }
+    return Object.freeze([...best.values()]);
+  }
+
+  isSelected(route: FirewallRoute): boolean {
+    return this.selected().some(kept => sameRoute(kept, route));
   }
 
   statics_(): readonly StaticRecord[] {

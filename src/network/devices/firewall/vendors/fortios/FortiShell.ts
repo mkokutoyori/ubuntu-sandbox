@@ -426,8 +426,11 @@ export class FortiShell {
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
     }
-    if (path === 'router info routing-table all') {
-      return renderRoutingTable(this.fw.getRouteTable());
+    if (path.startsWith('router info routing-table ')) {
+      const view = path.slice('router info routing-table '.length);
+      if (view !== 'all' && view !== 'static'
+        && view !== 'connected' && view !== 'database') return null;
+      return renderRoutingTable(this.fw.getRouteTable(), view);
     }
     if (path === 'router info bgp summary') {
       return renderBgpSummary(this.fw.getRouting().getBgp().summaryFacts());
@@ -510,6 +513,10 @@ export class FortiShell {
     if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
     if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
       return renderDhcpLeases(this.fw.getDhcp().leases());
+    }
+    if (rest[0] === 'traceroute') {
+      if (rest.length < 2) return FortiMessages.incomplete('a destination');
+      return this.fw.runTraceroute(rest[1]);
     }
     if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
     if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
