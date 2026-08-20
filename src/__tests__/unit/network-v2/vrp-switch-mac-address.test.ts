@@ -3,6 +3,7 @@ import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { pingOnSimulatedClock } from '../../support/fastPing';
+import { replayVendorConfig } from '@/store/topologySerializer';
 
 function neuf(): HuaweiSwitch {
   return new HuaweiSwitch('switch-huawei', 'SW1', 4, 0, 0);
@@ -111,7 +112,8 @@ describe('la table d\'adresses MAC du commutateur VRP', () => {
     ]);
 
     const copie = neuf();
-    await taper(copie, ['system-view', 'vlan 10', 'quit', ...lignes]);
+    await taper(copie, ['system-view', 'vlan 10', 'return']);
+    await replayVendorConfig(copie, lignes.join('\n'));
     expect(copie.getMACAgingTime()).toBe(120);
     expect(copie.getMACTable().map(e => [e.mac, e.vlan, e.port, e.type]).sort())
       .toEqual(sw.getMACTable().map(e => [e.mac, e.vlan, e.port, e.type]).sort());

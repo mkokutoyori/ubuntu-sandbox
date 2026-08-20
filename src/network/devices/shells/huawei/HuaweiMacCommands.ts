@@ -62,6 +62,34 @@ export function analyserMacAddress(args: readonly string[]): MacAnalyse {
   return { statut: 'refus', token: mots[0] };
 }
 
+export type ApprentissageAnalyse =
+  | { statut: 'ok'; action: 'discard' | 'forward' }
+  | { statut: 'refus'; token: string | null };
+
+export function analyserApprentissageMac(args: readonly string[]): ApprentissageAnalyse {
+  const mots = args.filter(a => a.length > 0);
+  if ((mots[0] ?? '').toLowerCase() !== 'learning') {
+    return { statut: 'refus', token: mots[0] ?? null };
+  }
+  if ((mots[1] ?? '').toLowerCase() !== 'disable') {
+    return { statut: 'refus', token: mots[1] ?? null };
+  }
+  if (mots.length === 2) return { statut: 'ok', action: 'forward' };
+  if ((mots[2] ?? '').toLowerCase() !== 'action') return { statut: 'refus', token: mots[2] };
+  const action = (mots[3] ?? '').toLowerCase();
+  if (action !== 'discard' && action !== 'forward') {
+    return { statut: 'refus', token: mots[3] ?? null };
+  }
+  if (mots.length > 4) return { statut: 'refus', token: mots[4] };
+  return { statut: 'ok', action };
+}
+
+export function ligneApprentissageMac(action: 'discard' | 'forward'): string {
+  return action === 'forward'
+    ? 'mac-address learning disable'
+    : `mac-address learning disable action ${action}`;
+}
+
 export function macRunningConfigLines(
   entries: readonly MACTableEntry[], agingTime: number,
 ): string[] {

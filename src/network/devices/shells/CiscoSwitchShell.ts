@@ -2796,6 +2796,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // type `static` est dans le modèle, et l'apprentissage respecte déjà
     // une entrée statique (elle n'est ni vieillie ni écrasée). Seule la
     // commande manquait (audit 11, §4.2).
+    this.configTrie.registerGreedy('mac address-table learning', 'Enable MAC learning', (args) => {
+      const r = this.parseMacLearningArgs(args);
+      if (typeof r === 'string') return r;
+      if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, true);
+      if (r.iface !== undefined) this.d().setPortMacLearning(r.iface, true);
+      return '';
+    });
+    this.configTrie.registerGreedy('no mac address-table learning', 'Disable MAC learning', (args) => {
+      const r = this.parseMacLearningArgs(args);
+      if (typeof r === 'string') return r;
+      if (r.vlan !== undefined) this.d().setVlanMacLearning(r.vlan, false);
+      if (r.iface !== undefined) this.d().setPortMacLearning(r.iface, false);
+      return '';
+    });
+
     this.configTrie.registerGreedy('mac address-table static', 'Add a static MAC entry', (args) => {
       const r = this.parseStaticMacArgs(args);
       if (typeof r === 'string') return r;
@@ -3464,6 +3479,35 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private static readonly DEFAULT_PORT_MTU = 1500;
   private static readonly DEFAULT_LACP_PORT_PRIORITY = 32768;
 
+  private parseMacLearningArgs(
+    args: readonly string[],
+  ): { vlan?: number; iface?: string } | string {
+    const mots = args.filter(a => a.length > 0);
+    if (mots.length === 0) return CISCO_ERRORS.INCOMPLETE;
+    const out: { vlan?: number; iface?: string } = {};
+    let i = 0;
+    while (i < mots.length) {
+      const mot = mots[i].toLowerCase();
+      if (mot === 'vlan') {
+        const id = parseInt(mots[i + 1] ?? '', 10);
+        if (isNaN(id) || id < 1 || id > 4094) return CISCO_ERRORS.INVALID_INPUT;
+        out.vlan = id;
+        i += 2;
+        continue;
+      }
+      if (mot === 'interface') {
+        const nom = this.resolveInterfaceName(mots.slice(i + 1).join(' '));
+        if (!nom || !this.d().getPort(nom)) return CISCO_ERRORS.INVALID_INPUT;
+        out.iface = nom;
+        i = mots.length;
+        continue;
+      }
+      return CISCO_ERRORS.INVALID_INPUT;
+    }
+    if (out.vlan === undefined && out.iface === undefined) return CISCO_ERRORS.INCOMPLETE;
+    return out;
+  }
+
   private renderSwitchGlobalLines(sw: CiscoSwitch): string[] {
     const out: string[] = [];
 
@@ -3473,6 +3517,12 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     for (const e of sw.getMACTable()) {
       if (e.type !== 'static') continue;
       out.push(`mac address-table static ${e.mac} vlan ${e.vlan} interface ${e.port}`);
+    }
+    for (const [vlan] of sw.getMacLearningDisabledVlans()) {
+      out.push(`no mac address-table learning vlan ${vlan}`);
+    }
+    for (const [port] of sw.getMacLearningDisabledPorts()) {
+      out.push(`no mac address-table learning interface ${port}`);
     }
 
     const snoop = sw._getDHCPSnoopingConfig();

@@ -191,6 +191,17 @@ Single Zustand store (`networkStore.ts`) holds the full topology: devices (`Netw
 
 Design/analysis documents accumulate at the repo root and under `docs/`: PRDs and BRDs (`PRD.md`, `BRD-Oracle-DBMS.md`, `BRD-PowerShell.md`, `BRD-SSH-SFTP.md`), design docs (`DESIGN-*.md`), gap analyses (`*_gap.md`, `*-gap-analysis.md`, `evaluation.md`), tutorials (`tutoriel-*.md`, `Lan_tuto.md`, `TUTORIAL.md`), and roadmaps (`roadmap.md`). Consult these for historical context and rationale before large refactors of a subsystem.
 
+## TODO — le registre des manquements
+
+`TODO.md` (racine) tient la liste des manquements MESURÉS et non encore
+fermés. La règle : tout manquement identifié en chemin est soit
+**implémenté**, soit **inscrit dans `TODO.md`** — jamais laissé dans un
+message de commit seul, où personne ne le retrouvera. Une entrée n'y
+figure que si elle a été mesurée (commande tapée, état relu, écart
+constaté) et dit ce qui est cassé, comment on l'a vu, et pourquoi ce
+n'est pas fermé. Fermer une entrée, c'est la retirer de `TODO.md` et
+raconter le correctif dans son message de commit.
+
 ## Conventions worth knowing
 
 - **A domain value is a TYPE, never a primitive.** An IP address is an `IPAddress`, a transport port is a `PortNumber` (`core/ports/PortNumber.ts`, RFC 6335), a MAC is a `MACAddress`, a mask is a `SubnetMask` — in every function signature, not merely in storage. A `string` host and a `number` port push validation to nobody and let a malformed address or an impossible port (`0`, `99999`, `NaN`) travel until something far away misbehaves; the value object parses once, fails fast, and makes the invalid state unrepresentable thereafter. **Parse at the boundary**: the place that reads a CLI argument, a config line or a wire field is the place that converts, so everything downstream receives a value already known good — that is what makes `telnet <host> 99999` a refusal instead of a dial. Existing APIs that still take primitives (`tcpConnect(string, number)` and its many call sites) are legacy: keep them compiling, implement them by parsing and delegating to the typed form, and write anything NEW against the types. Before writing a new value object, **search the whole repository for one that already exists** — `core/ports/` already holds the port system used by Linux services and the Windows service manager, and a second one would be exactly the duplication this project keeps undoing.

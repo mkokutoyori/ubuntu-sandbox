@@ -46,7 +46,7 @@ import {
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
-import { analyserMacAddress, macRunningConfigLines, normaliserMacVrp, VRP_MAC_AGING_DEFAUT } from './huawei/HuaweiMacCommands';
+import { analyserMacAddress, analyserApprentissageMac, ligneApprentissageMac, macRunningConfigLines, normaliserMacVrp, VRP_MAC_AGING_DEFAUT } from './huawei/HuaweiMacCommands';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -1546,6 +1546,36 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
+    this.vlanTrie.registerGreedy('mac-address', 'VLAN MAC address configuration', (args, ligne) => {
+      const vlan = this.selectedVlan;
+      if (vlan === null || !this.swRef) return HUAWEI_ERRORS.INCOMPLETE(ligne ?? 'mac-address');
+      const a = analyserApprentissageMac(args);
+      const brut = ligne ?? `mac-address ${args.join(' ')}`;
+      if (a.statut === 'refus') {
+        return a.token === null
+          ? HUAWEI_ERRORS.INCOMPLETE(brut)
+          : refuseMotInattenduVrp(brut, a.token);
+      }
+      this.swRef.setVlanMacLearning(vlan, false, a.action);
+      return '';
+    });
+    this.vlanTrie.addCompletionKeywords('mac-address', [
+      { keyword: 'learning', description: 'MAC address learning' },
+    ]);
+    this.vlanTrie.registerGreedy('undo mac-address', 'Re-enable VLAN MAC learning', (args, ligne) => {
+      const vlan = this.selectedVlan;
+      if (vlan === null || !this.swRef) return HUAWEI_ERRORS.INCOMPLETE(ligne ?? 'undo mac-address');
+      const a = analyserApprentissageMac(args);
+      const brut = ligne ?? `undo mac-address ${args.join(' ')}`;
+      if (a.statut === 'refus') {
+        return a.token === null
+          ? HUAWEI_ERRORS.INCOMPLETE(brut)
+          : refuseMotInattenduVrp(brut, a.token);
+      }
+      this.swRef.setVlanMacLearning(vlan, true);
+      return '';
+    });
+
     this.vlanTrie.registerGreedy('igmp-snooping', 'VLAN IGMP snooping configuration', (args, raw) => {
       if (this.selectedVlan === null) return '';
       const v = this.swRef.getVLAN(this.selectedVlan);
@@ -2729,6 +2759,36 @@ export class HuaweiSwitchShell implements ISwitchShell {
       port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
       return '';
     });
+    trie.registerGreedy('mac-address', 'Interface MAC address configuration', (args, ligne) => {
+      const port = this.selectedInterface;
+      if (!port || !this.swRef) return HUAWEI_ERRORS.INCOMPLETE(ligne ?? 'mac-address');
+      const a = analyserApprentissageMac(args);
+      const brut = ligne ?? `mac-address ${args.join(' ')}`;
+      if (a.statut === 'refus') {
+        return a.token === null
+          ? HUAWEI_ERRORS.INCOMPLETE(brut)
+          : refuseMotInattenduVrp(brut, a.token);
+      }
+      this.swRef.setPortMacLearning(port, false, a.action);
+      return '';
+    });
+    trie.addCompletionKeywords('mac-address', [
+      { keyword: 'learning', description: 'MAC address learning' },
+    ]);
+    trie.registerGreedy('undo mac-address', 'Re-enable interface MAC learning', (args, ligne) => {
+      const port = this.selectedInterface;
+      if (!port || !this.swRef) return HUAWEI_ERRORS.INCOMPLETE(ligne ?? 'undo mac-address');
+      const a = analyserApprentissageMac(args);
+      const brut = ligne ?? `undo mac-address ${args.join(' ')}`;
+      if (a.statut === 'refus') {
+        return a.token === null
+          ? HUAWEI_ERRORS.INCOMPLETE(brut)
+          : refuseMotInattenduVrp(brut, a.token);
+      }
+      this.swRef.setPortMacLearning(port, true);
+      return '';
+    });
+
     for (const kw of [
       'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
@@ -3574,6 +3634,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       // Ces lignes etaient rangees et rendues par personne : la
       // configuration d'un VLAN les perdait, et l'import avec.
       for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
+      const apprentissage = new Map(sw.getMacLearningDisabledVlans()).get(id);
+      if (apprentissage) lines.push(` ${ligneApprentissageMac(apprentissage)}`);
       lines.push('#');
     }
 
@@ -3708,6 +3770,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (cfg.accessVlan !== 1) lines.push(` port default vlan ${cfg.accessVlan}`);
     }
 
+    const apprentissage = new Map(sw.getMacLearningDisabledPorts()).get(portName);
+    if (apprentissage) lines.push(` ${ligneApprentissageMac(apprentissage)}`);
     for (const l of this.ifCfg.get(portName) ?? []) lines.push(` ${l}`);
     for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
     for (const l of sw.getLldpAgent?.()?.vrpInterfaceLines(portName) ?? []) lines.push(` ${l}`);

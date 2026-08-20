@@ -201,6 +201,8 @@ export interface MqcPolicyBinding {
 
 // ─── MAC Table Entry ────────────────────────────────────────────────
 
+export type MacLearningAction = 'discard' | 'forward';
+
 export interface MACTableEntry {
   mac: string;
   vlan: number;
@@ -251,6 +253,8 @@ export abstract class Switch extends Equipment {
   }
 
   private macTable: Map<string, MACTableEntry> = new Map(); // key: "vlan:mac"
+  private macLearningPorts = new Map<string, MacLearningAction>();
+  private macLearningVlans = new Map<number, MacLearningAction>();
   private macAgingTime: number = 300; // seconds
   /**
    * STP topology-change fast aging (802.1D-1998 §8.3.5): while set,
@@ -1691,6 +1695,34 @@ export abstract class Switch extends Equipment {
     return true;
   }
 
+  setPortMacLearning(port: string, enabled: boolean, action: MacLearningAction = 'forward'): void {
+    if (enabled) this.macLearningPorts.delete(port);
+    else this.macLearningPorts.set(port, action);
+  }
+
+  setVlanMacLearning(vlan: number, enabled: boolean, action: MacLearningAction = 'forward'): void {
+    if (enabled) this.macLearningVlans.delete(vlan);
+    else this.macLearningVlans.set(vlan, action);
+  }
+
+  getMacLearningDisabledPorts(): [string, MacLearningAction][] {
+    return [...this.macLearningPorts].sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  getMacLearningDisabledVlans(): [number, MacLearningAction][] {
+    return [...this.macLearningVlans].sort((a, b) => a[0] - b[0]);
+  }
+
+  isMacLearningEnabled(port: string, vlan: number): boolean {
+    return !this.macLearningPorts.has(port) && !this.macLearningVlans.has(vlan);
+  }
+
+  macLearningAction(port: string, vlan: number): MacLearningAction {
+    if (this.macLearningPorts.get(port) === 'discard') return 'discard';
+    if (this.macLearningVlans.get(vlan) === 'discard') return 'discard';
+    return 'forward';
+  }
+
   addBlackholeMAC(mac: string, vlan: number): boolean {
     const key = `${vlan}:${mac.toLowerCase()}`;
     this.macTable.set(key, {
@@ -1911,7 +1943,20 @@ export abstract class Switch extends Equipment {
       return;
     }
 
-    if (!existing || existing.type === 'dynamic') {
+    if (!this.isMacLearningEnabled(portName, ingressVlan)) {
+      if (!existing && this.macLearningAction(portName, ingressVlan) === 'discard') {
+        Logger.debug(this.id, 'switch:mac-learning-disabled',
+          `${this.name}: dropped frame from unknown ${srcMAC} VLAN ${ingressVlan} on ${portName} (learning disabled, action discard)`);
+        this.getBus().publish({
+          topic: 'switch.mac.learning-discard',
+          payload: {
+            deviceId: this.id, hostname: this.getHostname(),
+            mac: srcMAC.toString(), vlan: ingressVlan, port: portName,
+          },
+        });
+        return;
+      }
+    } else if (!existing || existing.type === 'dynamic') {
       // MAC move detection: if MAC exists on a different port
       if (existing && existing.type === 'dynamic' && existing.port !== portName) {
         this.macMoveCount++;
