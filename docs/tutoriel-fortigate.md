@@ -228,3 +228,199 @@ Fais-toi un rapide auto-test. Si tu réponds à ces cinq questions, tu peux avan
 </details>
 
 ---
+
+## 2. Qu'est-ce qu'un FortiGate exactement ?
+
+Tu sais maintenant ce qu'est un pare-feu en général. Voyons ce qu'est **celui-là** en particulier, et surtout ce qui le distingue — parce que ces distinctions expliquent la façon dont on le configure.
+
+### 2.1 FortiGate, FortiOS, Fortinet : qui est qui ?
+
+Ces trois mots sont constamment confondus. Mettons-les au clair une bonne fois :
+
+- **Fortinet** est l'entreprise. Elle vend des dizaines de produits dont le nom commence par *Forti*.
+- **FortiGate** est le produit pare-feu. C'est une **boîte** (ou une machine virtuelle).
+- **FortiOS** est le **système d'exploitation** qui tourne dedans. C'est lui que tu configures.
+
+L'analogie qui marche : Fortinet est à Apple ce que FortiGate est à l'iPhone et FortiOS à iOS.
+
+Ça a une conséquence pratique importante : **FortiOS est le même sur toute la gamme**. Le FortiGate à 400 € posé dans une agence et le châssis à 200 000 € d'un opérateur font tourner le *même* système, avec la *même* CLI et les *mêmes* commandes. Ce que tu apprends dans ce tutoriel sur une machine virtuelle s'applique tel quel sur n'importe quel modèle.
+
+C'est une excellente nouvelle pour apprendre, et c'est assez rare dans l'industrie pour être signalé.
+
+### 2.2 La gamme, en une image
+
+Tu croiseras des noms de modèles ; voici comment les lire. Le principe est simple : **plus le nombre est grand, plus la machine est puissante**.
+
+| Famille | Modèles typiques | Pour qui | Ordre de grandeur du débit |
+|---|---|---|---|
+| **Entrée de gamme** | FortiGate 40F, 50G, 60F, 70G, 90G | Télétravail, petite boutique, agence | 1 à 10 Gbit/s |
+| **Milieu de gamme** | FortiGate 100F, 200G, 400F, 600F | PME, site principal d'une entreprise | 10 à 100 Gbit/s |
+| **Haut de gamme** | FortiGate 1800F, 2600F, 3500F | Grande entreprise, datacenter | 100 Gbit/s et au-delà |
+| **Châssis** | FortiGate 7000 series | Opérateur, très gros datacenter | Térabits |
+| **Virtuel** | **FortiGate-VM** | Cloud, virtualisation… **et notre lab** | Ça dépend du CPU alloué |
+
+La lettre finale indique la génération : `F` puis `G` sont les générations récentes. Un `60F` et un `60G` occupent la même place dans la gamme, le `G` étant simplement plus récent et plus rapide.
+
+> 💡 **Astuce** : le modèle qu'on rencontre le plus souvent en formation et en petite entreprise est le **FortiGate 60F**. Si tu vois un tutoriel « pour 60F », il s'applique à tout le reste — voir §2.1.
+
+### 2.3 Les versions de FortiOS : laquelle apprendre ?
+
+C'est une vraie question, et beaucoup de tutoriels sur Internet ne se la posent pas — c'est pour ça qu'on y trouve encore des instructions pour des versions mortes depuis des années.
+
+Au moment où j'écris ces lignes (2026), la situation est la suivante :
+
+| Version | Statut | Commentaire |
+|---|---|---|
+| **8.0** | La plus récente | Sortie en 2026, support jusqu'en 2030 |
+| **7.6** | Mature et largement déployée | Support jusqu'en janvier 2030 |
+| **7.4** | Encore très répandue | Toujours supportée |
+| **7.2** | En fin de vie | Support qui s'arrête en septembre 2026 |
+| 7.0 et antérieures | **Mortes** | Plus aucun correctif de sécurité |
+
+**Ce tutoriel cible FortiOS 7.6**, et voici pourquoi ce choix plutôt qu'un autre :
+
+- C'est la version qu'on trouve le plus en production aujourd'hui, donc celle que tu rencontreras en entreprise ;
+- Elle est supportée jusqu'en 2030, donc ce que tu apprends ne périmera pas dans six mois ;
+- Elle contient déjà les grands changements récents (notamment sur les VPN, voir §2.6), donc tu n'apprends pas des choses à désapprendre.
+
+Si tu es sur 7.4 ou 8.0, **99 % de ce document s'applique tel quel**. Je signale explicitement les rares endroits où la version compte, comme ceci :
+
+> ⚠️ **Différence de version** : cette commande n'existe qu'à partir de 7.6.
+
+> 🚨 **Danger — ne travaille jamais sur une version morte**
+> Si tu hérites d'un FortiGate en 6.4 ou 7.0 dans une entreprise, ce n'est pas un détail administratif : ces versions ne reçoivent **plus aucun correctif de sécurité**. Or les FortiGate sont une cible de choix, et plusieurs vulnérabilités critiques les concernant ont été activement exploitées ces dernières années. Un pare-feu non corrigé n'est pas un pare-feu ; c'est une porte d'entrée avec un logo dessus. Planifier la mise à jour fait partie du travail — on verra comment en section 24.
+
+### 2.4 NGFW, UTM : deux mots pour presque la même chose
+
+Tu vas voir ces deux sigles partout dans la documentation Fortinet, souvent dans la même phrase. Voici la distinction :
+
+- **UTM** (*Unified Threat Management*) est le terme historique. Il veut dire : « une seule boîte qui fait tout » — pare-feu, antivirus, filtrage web, antispam, VPN — au lieu de cinq boîtiers différents. C'est le marché sur lequel Fortinet s'est construit.
+- **NGFW** (*Next-Generation Firewall*) est le terme moderne. Il insiste sur la capacité à reconnaître les **applications** et les **utilisateurs**, pas seulement les ports.
+
+En pratique, sur un FortiGate, les deux mots désignent la même chose : les **profils de sécurité** de la partie V de ce tutoriel. Tu verras d'ailleurs le mot « UTM » directement dans la CLI et dans les journaux — Fortinet ne l'a jamais abandonné.
+
+### 2.5 🧠 Comprendre : pourquoi le port ne suffit plus
+
+Voici l'idée qui justifie à elle seule l'existence des NGFW. Prends le temps, elle vaut le détour.
+
+Un pare-feu classique raisonne en **ports**. Le port 443, c'est HTTPS, donc du web, donc on l'autorise — sinon plus personne ne travaille.
+
+Sauf que sur le port 443 passent aujourd'hui :
+
+- le site de ta banque ;
+- l'intranet de ton entreprise ;
+- Facebook, YouTube, TikTok ;
+- Dropbox, WeTransfer et n'importe quel service d'exfiltration de fichiers ;
+- des tunnels VPN grand public qui contournent tous tes filtres ;
+- et le canal de commande d'un logiciel malveillant déjà installé sur un poste.
+
+**Tout ça sur le même port, avec la même apparence.** « Autoriser le 443 » ne veut donc plus rien dire en termes de sécurité. C'est comme autoriser « tout ce qui roule sur la route » : techniquement exact, opérationnellement vide.
+
+Un NGFW regarde **ce qu'il y a dans le paquet** plutôt que le numéro de porte par lequel il entre. Il peut alors dire : « le port 443 est ouvert, mais l'application *BitTorrent* est refusée, la catégorie *Jeux d'argent* est bloquée, et l'utilisateur *stagiaire* n'a pas le droit d'uploader sur Dropbox ».
+
+C'est exactement ce qu'on construira dans la partie V.
+
+### 2.6 ⚠️ Le grand changement à connaître : la fin du SSL VPN tunnel
+
+Il faut que je te prévienne tout de suite, parce que c'est le point sur lequel **la quasi-totalité des tutoriels que tu trouveras sur Internet est périmée**, et que tu vas perdre des heures si tu ne le sais pas.
+
+Pendant quinze ans, la façon standard de connecter un télétravailleur à son entreprise avec un FortiGate a été le **SSL VPN en mode tunnel** : l'utilisateur lançait FortiClient, se connectait en HTTPS sur le pare-feu, et obtenait un accès au réseau interne. C'est ce que décrivent des milliers de pages de blog, de vidéos et de cours.
+
+**Ce n'est plus vrai.**
+
+| Version | Ce qui se passe |
+|---|---|
+| **7.6.0** | SSL VPN (mode web et tunnel) **retiré** des modèles à 2 Go de RAM ou moins, et des modèles G d'entrée de gamme (50G, 70G, 90G…) |
+| **7.6.3 et au-delà** | SSL VPN **mode tunnel retiré de TOUS les modèles**, remplacé par IPsec |
+
+La solution officielle de remplacement est le **VPN IPsec en mode dial-up**, qui peut être configuré pour écouter sur le **port TCP 443** — précisément pour traverser les réseaux d'hôtel et de café qui ne laissent sortir que le web, ce qui était le principal argument du SSL VPN.
+
+> 🚨 **Si tu administres un parc en production**
+> La migration doit être faite **AVANT** de monter en 7.6.3, pas après. Si tu mets à jour un pare-feu dont les télétravailleurs dépendent du SSL VPN tunnel, ils se retrouvent tous dehors, et toi avec s'il s'agit de ton accès distant. C'est un cas classique de panne auto-infligée un vendredi soir.
+
+**Conséquence pour ce tutoriel** : la section 18 t'apprendra l'accès distant en **IPsec dial-up**, pas en SSL VPN. C'est plus long à configurer, c'est moins bien documenté sur le web, et c'est la seule chose qui a un avenir. On fera l'effort.
+
+### 2.7 Le modèle de licences, expliqué sans langue de bois
+
+Sujet ingrat mais indispensable, parce qu'il explique pourquoi certaines fonctions ne marcheront pas dans ton laboratoire.
+
+Sur un FortiGate, il y a deux choses distinctes :
+
+**1. Le matériel et FortiOS.** Tu les achètes une fois. Le pare-feu fonctionne pour toujours : routage, politiques, NAT, VPN, journaux. Tout ce qui est dans les parties I à IV et VI à IX de ce tutoriel fonctionne **sans aucun abonnement**.
+
+**2. Les abonnements FortiGuard.** Ce sont les **bases de connaissances** mises à jour en permanence par Fortinet : signatures antivirus, signatures IPS, catégories de sites web, base d'applications. Sans abonnement actif, ces bases ne se mettent plus à jour — et une signature antivirus de l'an dernier ne sert pas à grand-chose.
+
+| Ce que tu veux faire | Abonnement nécessaire ? |
+|---|---|
+| Filtrer par IP, port, interface | ❌ Non |
+| Faire du NAT | ❌ Non |
+| Monter un VPN IPsec | ❌ Non |
+| Faire du routage OSPF/BGP, du SD-WAN, de la HA | ❌ Non |
+| Antivirus, IPS | ✅ Oui |
+| Filtrage web par catégorie | ✅ Oui |
+| Contrôle applicatif | ✅ Oui |
+
+> 💡 **Astuce pour le laboratoire** : les fonctions FortiGuard qu'on verra en partie V se configureront quand même — tu apprendras les commandes et la logique — mais elles ne bloqueront rien de réel sans abonnement, et le pare-feu affichera un avertissement de licence expirée. Je te le rappellerai au moment venu. Tout le reste du tutoriel fonctionne à 100 % dans un lab gratuit.
+
+### 2.8 La Security Fabric, en deux minutes
+
+Tu vas voir ce terme partout dans l'interface, alors autant savoir ce que c'est.
+
+La **Security Fabric** est le nom que Fortinet donne à l'idée de faire **coopérer** ses produits : le FortiGate parle au FortiSwitch, qui parle au FortiAP (borne Wi-Fi), qui parle au FortiClient sur le poste, le tout supervisé par un FortiAnalyzer.
+
+Concrètement, ça permet des choses comme : un poste est détecté compromis par le FortiClient → l'information remonte au FortiGate → qui demande au FortiSwitch de mettre le port en quarantaine. Trois équipements, une seule décision.
+
+C'est une vraie force commerciale de Fortinet, et c'est hors du périmètre de ce tutoriel : on se concentre sur le FortiGate seul, qui est déjà largement de quoi occuper 5 000 lignes. 😄 Sache simplement que le bandeau « Security Fabric » de l'interface, c'est ça.
+
+### 2.9 Les deux façons de configurer un FortiGate
+
+Il y en a deux, et **il faut connaître les deux**. Ce n'est pas une préférence de style :
+
+**L'interface web (GUI)**
+- ✅ Visuelle, on découvre les fonctions en se promenant, parfaite pour apprendre
+- ✅ Les assistants (VPN, SD-WAN) font en trois clics ce qui prend vingt lignes en CLI
+- ❌ **Certaines options n'y sont tout simplement pas.** C'est le point crucial.
+
+**La ligne de commande (CLI)**
+- ✅ **Accès à 100 % des paramètres** — la GUI n'expose qu'un sous-ensemble
+- ✅ Scriptable, copiable-collable, sauvegardable en texte
+- ✅ C'est le langage de la documentation, des forums et du support Fortinet
+- ❌ Il faut connaître le chemin des commandes
+
+> ⚠️ **Attention** : ce déséquilibre est réel et il te surprendra. Il t'arrivera de chercher une case à cocher qui n'existe pas dans l'interface, alors que l'option existe bel et bien en CLI. C'est normal, c'est assumé par Fortinet, et c'est la raison principale pour laquelle **ce tutoriel privilégie la CLI**.
+>
+> Je donnerai systématiquement le chemin GUI quand il existe, parce que c'est utile pour se repérer. Mais la référence, ce sera toujours la commande.
+
+### 2.10 Ce qu'on va construire ensemble
+
+Pour te donner un cap, voici l'infrastructure qu'on aura montée à la fin de ce document :
+
+```
+                          Internet (simulé)
+                                 │
+                          ┌──────┴──────┐
+                          │   FGT-01    │  ← ton pare-feu principal
+                          │  FortiOS 7.6│
+                          └──┬───┬───┬──┘
+                   ┌─────────┘   │   └─────────┐
+                   │             │             │
+            ┌──────┴─────┐ ┌─────┴────┐ ┌──────┴─────┐
+            │    LAN     │ │   DMZ    │ │   VPN IPsec│
+            │ Utilisateurs│ │ Serveurs│ │  ↔ Site B  │
+            └────────────┘ └──────────┘ └────────────┘
+```
+
+Avec, dessus :
+- des politiques de sécurité propres et journalisées ;
+- du NAT sortant et un serveur publié depuis Internet ;
+- un serveur DHCP et une résolution DNS ;
+- des profils de sécurité (antivirus, filtrage web, contrôle applicatif, IPS) ;
+- de l'inspection SSL ;
+- des utilisateurs authentifiés ;
+- un tunnel IPsec vers un site distant et un accès télétravailleur ;
+- du routage dynamique, du SD-WAN et un cluster haute disponibilité ;
+- et surtout : la capacité à **diagnostiquer** tout ça quand ça ne marche pas.
+
+On y va ? La section suivante monte le laboratoire. 🚀
+
+---
