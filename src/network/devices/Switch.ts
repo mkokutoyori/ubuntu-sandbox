@@ -34,6 +34,7 @@ import { CliShellSession } from './shells/vty/CliShellSession';
 import { getSessionRegistry } from '../equipment/RouterServiceCapabilities';
 import { EthernetFrame, DeviceType, MACAddress, ETHERTYPE_ARP, ARPPacket, IPAddress, SubnetMask, ETHERTYPE_IPV4, IPv4Packet } from '../core/types';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
+import { VlanSet } from './switch/VlanSet';
 import { SwitchSvi, type SviInterface } from './SwitchSvi';
 import { RouterUdpEndpoint } from './router/RouterUdpEndpoint';
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
@@ -120,7 +121,7 @@ export interface SwitchportConfig {
   explicitMode: boolean;
   accessVlan: number;           // VLAN for access mode (default 1)
   trunkNativeVlan: number;      // Native VLAN for trunk mode (default 1)
-  trunkAllowedVlans: Set<number>; // Allowed VLANs on trunk (default: all)
+  trunkAllowedVlans: VlanSet;
   voiceVlan?: number;             // Voice VLAN (switchport voice vlan N)
   voiceVlanAutoOui?: boolean;
   hybridPvid?: number;
@@ -745,7 +746,7 @@ export abstract class Switch extends Equipment {
         explicitMode: false,
         accessVlan: 1,
         trunkNativeVlan: 1,
-        trunkAllowedVlans: new Set(Array.from({ length: 4094 }, (_, i) => i + 1)),
+        trunkAllowedVlans: VlanSet.all(),
       });
 
       // STP initial state
@@ -827,7 +828,7 @@ export abstract class Switch extends Equipment {
       cfg.mode = 'access';
       cfg.accessVlan = 1;
       cfg.trunkNativeVlan = 1;
-      cfg.trunkAllowedVlans = new Set(Array.from({ length: 4094 }, (_, i) => i + 1));
+      cfg.trunkAllowedVlans = VlanSet.all();
       const port = this.getPort(portName);
       if (port) port.setUp(true);
     }
@@ -1462,10 +1463,10 @@ export abstract class Switch extends Equipment {
     return true;
   }
 
-  setTrunkAllowedVlans(portName: string, vlans: Set<number>): boolean {
+  setTrunkAllowedVlans(portName: string, vlans: Set<number> | VlanSet): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
-    cfg.trunkAllowedVlans = vlans;
+    cfg.trunkAllowedVlans = VlanSet.from(vlans);
     return true;
   }
 
@@ -1500,27 +1501,21 @@ export abstract class Switch extends Equipment {
   setTrunkAllowedVlansAll(portName: string): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
-    const all = new Set<number>();
-    for (let i = 1; i <= 4094; i++) all.add(i);
-    cfg.trunkAllowedVlans = all;
+    cfg.trunkAllowedVlans = VlanSet.all();
     return true;
   }
 
   setTrunkAllowedVlansNone(portName: string): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
-    cfg.trunkAllowedVlans = new Set();
+    cfg.trunkAllowedVlans = VlanSet.none();
     return true;
   }
 
   setTrunkAllowedVlansExcept(portName: string, vlans: Set<number>): boolean {
     const cfg = this.switchportConfigs.get(portName);
     if (!cfg) return false;
-    const all = new Set<number>();
-    for (let i = 1; i <= 4094; i++) {
-      if (!vlans.has(i)) all.add(i);
-    }
-    cfg.trunkAllowedVlans = all;
+    cfg.trunkAllowedVlans = VlanSet.allExcept(vlans);
     return true;
   }
 
@@ -1542,8 +1537,8 @@ export abstract class Switch extends Equipment {
       if (cfg.l2ptProtocols?.has('stp')) return [];
       return this.vlans.has(cfg.accessVlan) ? [cfg.accessVlan] : [1];
     }
-    const out = [...cfg.trunkAllowedVlans]
-      .filter((v) => this.vlans.has(v))
+    const out = [...this.vlans.keys()]
+      .filter((v) => cfg.trunkAllowedVlans.has(v))
       .sort((a, b) => a - b);
     return out.length ? out : [1];
   }
