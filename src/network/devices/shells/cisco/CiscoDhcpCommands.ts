@@ -9,6 +9,9 @@
 
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { getGlobalConfig } from '../../router/config/CiscoGlobalConfig';
 
@@ -170,6 +173,64 @@ export function buildConfigDhcpCommands(trie: CommandTrie, ctx: CiscoShellContex
   });
 }
 
+
+const REST = (literal: string, description: string): ArgumentSpec =>
+  ({ name: 'valeur', type: 'REST', literal, description });
+
+const DHCP_POOL_ARGUMENTS:
+Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
+  network: [
+    { name: 'reseau', type: 'IP_ADDR', description: 'Network number' },
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Network mask' },
+  ],
+  host: [
+    { name: 'adresse', type: 'IP_ADDR', description: 'Client IP address' },
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Client subnet mask' },
+  ],
+  'default-router': REST('A.B.C.D', 'Default router IP address'),
+  'dns-server': REST('A.B.C.D', 'DNS server IP address'),
+  'netbios-name-server': REST('A.B.C.D', 'NetBIOS name server IP address'),
+  lease: REST('<0-365>', 'Days'),
+  option: REST('<0-254>', 'DHCP option code'),
+  'next-server': { name: 'adresse', type: 'IP_ADDR', description: 'Boot server IP address' },
+  bootfile: { name: 'fichier', type: 'WORD', description: 'Boot file name' },
+  class: { name: 'nom', type: 'WORD', description: 'Name of the DHCP class' },
+  'client-name': { name: 'nom', type: 'WORD', description: 'Client name, without the domain' },
+  'domain-name': { name: 'domaine', type: 'WORD', description: 'Domain name given to clients' },
+  'hardware-address': { name: 'mac', type: 'MAC_ADDR', description: 'Client hardware address' },
+  'client-identifier': { name: 'identifiant', type: 'WORD', description: 'Client identifier' },
+  'client-identifier deny': { name: 'identifiant', type: 'WORD', description: 'Client identifier to deny' },
+  'netbios-node-type': {
+    name: 'type', type: 'ENUM', description: 'NetBIOS node type',
+    values: [
+      { keyword: 'b-node', description: 'Broadcast node' },
+      { keyword: 'h-node', description: 'Hybrid node' },
+      { keyword: 'm-node', description: 'Mixed node' },
+      { keyword: 'p-node', description: 'Peer-to-peer node' },
+    ],
+  },
+};
+
+const DHCP_POOL_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string; argument?: null }>>> = {
+  lease: [{ keyword: 'infinite', description: 'Infinite lease', argument: null }],
+  option: [
+    { keyword: 'ascii', description: 'ASCII text' },
+    { keyword: 'hex', description: 'Hexadecimal' },
+  ],
+};
+
+export function dhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => buildConfigDhcpCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['config-dhcp'], minPrivilege: 15,
+      argumentFor: (path) => DHCP_POOL_ARGUMENTS[path],
+      keywordsFor: (path) => DHCP_POOL_KEYWORDS[path],
+    },
+  );
+}
+
 export function buildConfigDhcpPoolClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   trie.registerGreedy('address range', 'DHCP class address range', (args) => {
     const r = ctx.r() as any;
@@ -315,6 +376,16 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
   trie.register('show ip dhcp snooping binding', 'Display DHCP snooping bindings', () =>
     getRouter()._getDHCPServerInternal().formatBindingsShow());
 
+}
+
+export function dhcpIpv6ShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerDhcpShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      skip: (path) => !path.startsWith('show ipv6 dhcp'),
+    },
+  );
 }
 
 // ─── DHCP Privileged Commands (debug, clear) ─────────────────────────

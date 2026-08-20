@@ -57,6 +57,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       { keyword: 'check-new', description: 'Keep existing sessions, check new ones.' },
       { keyword: 'check-policy-option', description: 'Use the policy setting.' },
     ], 'check-all'),
+    count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
+    count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
     count('timezone', 'Time zone index.', 0, 86, 4),
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
@@ -69,6 +71,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     context.device.applyGlobalSettings({
       hostname: object.effective('hostname')[0],
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
+      authHttpPort: Number.parseInt(object.effective('auth-http-port')[0] ?? '1000', 10),
+      authHttpsPort: Number.parseInt(object.effective('auth-https-port')[0] ?? '1003', 10),
     });
   },
 };
@@ -165,6 +169,10 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       { keyword: 'up', description: 'Bring the interface up.' },
       { keyword: 'down', description: 'Shut down the interface.' },
     ], 'up'),
+    choice('security-mode', 'Turn on the captive portal for this interface.', [
+      { keyword: 'none', description: 'No captive portal.' },
+      { keyword: 'captive-portal', description: 'Capture unauthenticated HTTP.' },
+    ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
   ],
@@ -182,6 +190,8 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
     });
     if (mode === 'dhcp') context.device.acquireDhcpLease(object.key);
+    context.device.setCaptivePortalInterface(object.key,
+      object.effective('security-mode')[0] === 'captive-portal');
   },
 };
 
@@ -289,6 +299,58 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_NTP: FortiTableSpec = {
+  path: ['system', 'ntp'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 75,
+  help: 'Configure system NTP information.',
+  attributes: [
+    enable('ntpsync', 'Enable/disable setting the FortiGate clock by NTP.'),
+    choice('type', 'Use FortiGuard or a custom NTP server.', [
+      { keyword: 'fortiguard', description: 'Use the FortiGuard NTP servers.' },
+      { keyword: 'custom', description: 'Use the servers configured below.' },
+    ], 'fortiguard'),
+    count('syncinterval', 'NTP synchronization interval, in minutes.', 1, 1440, 60),
+    reference('source-ip-interface', 'Interface the NTP requests leave by.',
+      ['system interface']),
+  ],
+  children: [
+    {
+      path: ['ntpserver'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'global',
+      accessGroup: 'sysgrp',
+      renderOrder: 76,
+      help: 'Configure the NTP servers.',
+      attributes: [
+        { ...word('id', 'NTP server ID.'), readOnly: true },
+        word('server', 'IP address or hostname of the NTP server.'),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    const servers = object.childEntries('ntpserver')
+      .map(entry => entry.effective('server')[0] ?? '')
+      .filter(server => server.length > 0);
+    const enabled = object.effective('ntpsync')[0] === 'enable';
+
+    if (enabled && object.effective('type')[0] === 'custom' && servers.length === 0) {
+      return 'a custom NTP configuration needs at least one server.';
+    }
+
+    return context.device.applyNtp({
+      enabled,
+      servers,
+      syncIntervalMin: Number.parseInt(object.effective('syncinterval')[0] ?? '60', 10),
+      sourceInterface: object.effective('source-ip-interface')[0] ?? '',
+    });
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_SETTINGS,
@@ -296,4 +358,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_ZONE,
   SYSTEM_DNS,
   SYSTEM_DHCP_SERVER,
+  SYSTEM_NTP,
 ]);

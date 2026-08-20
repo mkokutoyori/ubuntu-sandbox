@@ -7,6 +7,10 @@ import type { SdwanConfiguration } from '../../../sdwan/SdwanTable';
 import type { HaConfiguration } from '../../../ha/HaTypes';
 import type { DhcpScope } from '../../../l3/FirewallDhcp';
 import type {
+  SyslogCollectorSettings, SyslogFilterSettings,
+} from '../../../logging/SyslogCollectors';
+import type { NtpSettings } from '../../../mgmt/FirewallNtp';
+import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
 
@@ -150,6 +154,8 @@ export interface FortiPolicyRoutePatch {
 export interface FortiGlobalSettings {
   readonly hostname?: string;
   readonly multiVdom: boolean;
+  readonly authHttpPort?: number;
+  readonly authHttpsPort?: number;
 }
 
 export interface FortiVdomSettings {
@@ -184,6 +190,10 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  setCaptivePortalInterface(iface: string, on: boolean): void;
+  refreshCaptivePortal(): void;
+  applySyslogCollector(settings: SyslogCollectorSettings): string | void;
+  applySyslogFilter(settings: SyslogFilterSettings): string | void;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
@@ -218,6 +228,13 @@ export interface FortiCommitDevice {
   applyDhcpScope(scope: DhcpScope): void;
   removeDhcpScope(id: string): void;
   acquireDhcpLease(iface: string): void;
+  applyOnetimeSchedule(schedule: {
+    name: string; start: string; end: string;
+  }): string | void;
+  applyScheduleGroup(group: {
+    name: string; members: readonly string[];
+  }): string | void;
+  applyNtp(settings: NtpSettings): string | void;
   hasInterface(name: string): boolean;
   applyLocalCertificate(entry: FortiLocalCertificatePatch): string | void;
   removeLocalCertificate(name: string): void;
@@ -629,6 +646,19 @@ export function addressMask(
       { name: `${name}-mask`, type: 'SUBNET_MASK', description: 'Subnet mask.' },
     ],
     defaultValue: byDefault === undefined ? undefined : [...byDefault],
+  };
+}
+
+export function moment(name: string, help: string): FortiAttributeSpec {
+  return {
+    name,
+    help,
+    quoted: false,
+    parts: [
+      { name, type: 'TIME', description: 'Time of day, format hh:mm.' },
+      { name: `${name}-date`, type: 'WORD', description: 'Date, format yyyy/mm/dd.' },
+    ],
+    defaultValue: undefined,
   };
 }
 

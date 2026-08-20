@@ -46,10 +46,6 @@ export const SOCLE: ContinuationTable = {
   configArchiveLog: {
     'notify syslog contenttype': ['xml'],
   },
-  configDhcp: {
-    'lease': ['infinite'],
-    'option': ['ascii', 'hex'],
-  },
   configRadiusServer: {
     'address': ['acct-port', 'auth-port', 'ipv4'],
   },
@@ -226,12 +222,8 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'show flow monitor': ['cache'],
     'show interfaces': ['accounting', 'description', 'rate-limit', 'stats', 'summary'],
     'show ip igmp groups': ['detail'],
-    'show ip pim interface': ['count'],
-    'show ip pim neighbor': ['count', 'detail'],
     'show ip sla statistics': ['aggregated', 'details'],
     'show ipv6 interface': ['brief'],
-    'show ipv6 ospf': ['database', 'interface', 'neighbor'],
-    'show ipv6 route': ['summary'],
     'show track': ['brief', 'up'],
     'show traffic-shape': ['statistics'],
   },
@@ -243,12 +235,8 @@ export const ROUTEUR_SEUL: ContinuationTable = {
     'show ip eigrp neighbors': ['detail'],
     'show ip eigrp topology': ['all-links'],
     'show ip igmp groups': ['detail'],
-    'show ip pim interface': ['count'],
-    'show ip pim neighbor': ['count', 'detail'],
     'show ip sla statistics': ['aggregated', 'details'],
     'show ipv6 interface': ['brief'],
-    'show ipv6 ospf': ['database', 'interface', 'neighbor'],
-    'show ipv6 route': ['summary'],
     'show track': ['brief', 'up'],
     'show traffic-shape': ['statistics'],
   },
@@ -303,19 +291,14 @@ export const COMMUTATEUR_SEUL: ContinuationTable = {
     'private-vlan': ['association', 'community', 'isolated', 'primary'],
   },
   privileged: {
-    'clear mac address-table': ['dynamic', 'interface', 'vlan'],
     'clear port-security': ['all', 'configured', 'dynamic', 'sticky'],
     'no debug ip': ['nat'],
-    'show dtp': ['interface'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
-    'show spanning-tree vlan': ['bridge', 'detail', 'root'],
   },
   user: {
-    'show dtp': ['interface'],
     'show interfaces': ['etherchannel', 'status', 'switchport'],
     'show ip igmp snooping': ['groups', 'mrouter', 'querier', 'vlan'],
     'show monitor session': ['all'],
-    'show spanning-tree vlan': ['bridge', 'detail', 'root'],
   },
 };
 

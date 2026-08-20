@@ -62,6 +62,8 @@ export function complete(
   };
 }
 
+const AIDE = { modeStrict: true, forHelp: true } as const;
+
 function suggestionsAt(
   cursor: Cursor, table: CommandTable, session: CliSession, trigger: CompletionTrigger,
 ): Suggestion[] {
@@ -71,7 +73,7 @@ function suggestionsAt(
   for (const child of cursor.node.children.values()) {
     if (child.keyword === undefined) continue;
     if (!child.keyword.toLowerCase().startsWith(lowered)) continue;
-    if (!subtreeReachable(child, table, session, true)) continue;
+    if (!subtreeReachable(child, table, session, AIDE)) continue;
 
     out.push({
       value: child.keyword,
@@ -103,7 +105,7 @@ function suggestionsAt(
 
   if (trigger === 'QUESTION_MARK' && cursor.node.spec && cursor.prefix.length === 0
     && !cursor.node.spec.existsOnlyNegated
-    && table.isReachable(cursor.node.spec, session)) {
+    && table.isReachable(cursor.node.spec, session, AIDE)) {
     out.push({ value: '<cr>', description: '', isArgument: true });
   }
 

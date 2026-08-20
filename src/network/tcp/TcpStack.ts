@@ -1317,8 +1317,9 @@ export class TcpStack {
       window: this.encodeWindowField(socket, flags), checksum: 0, urgentPointer: 0,
       options, payload,
     };
-    seg.checksum = computeTcpChecksum(seg, egress.srcIp, socket.remoteIp);
-    this.shipSegment(egress, egress.srcIp, socket.remoteIp, seg);
+    const source = sourceAddressOf(socket, egress.srcIp);
+    seg.checksum = computeTcpChecksum(seg, source, socket.remoteIp);
+    this.shipSegment(egress, source, socket.remoteIp, seg);
     return sentTsVal;
   }
 
@@ -1708,4 +1709,10 @@ export class TcpStack {
     if (!srcIp) return null;
     return { name: port.getName(), port, srcIp, nextHopIp: route.nextHopIp };
   }
+}
+
+function sourceAddressOf(socket: TcpSocket, routed: string): string {
+  const pinned = socket.localIp;
+  if (pinned === '' || pinned === '0.0.0.0' || pinned === '::') return routed;
+  return pinned;
 }

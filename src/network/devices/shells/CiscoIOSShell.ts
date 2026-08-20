@@ -47,10 +47,11 @@ import {
   buildBfdInterfaceCommands, registerBfdShowCommands,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands,
+  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
@@ -68,7 +69,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow,
+  buildPolicyConfig, registerPolicyShow, policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -81,10 +82,10 @@ import {
   buildConfigCommands, buildConfigIfCommands,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands,
+  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
-  registerDhcpShowCommands,
+  registerDhcpShowCommands, dhcpIpv6ShowSpecs,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
 import {
@@ -103,12 +104,13 @@ import {
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands,
+  registerACLShowCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
   registerOSPFInterfaceCommands, registerOSPFShowCommands, ospfShowSpecs, ospfClearSpecs,
+  ospfIpv6ShowSpecs,
   setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
   setOspfv3InterfaceAuthentication,
 } from './cisco/CiscoOspfCommands';
@@ -174,9 +176,89 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     ];
   }
 
+  private multicastShowContext(): {
+    r: () => Router;
+    resolveInterfaceName: (input: string) => string | null;
+  } {
+    return {
+      r: () => this.d(),
+      resolveInterfaceName: (input: string) => this.resolveInterfaceName(input),
+    };
+  }
+
+  private ipv6ExecSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    const routeur = () => this.d();
+    const nomInterface = (brut: string): string | null =>
+      this.resolveInterfaceName(brut);
+
+    return [
+      {
+        id: 'show-ipv6-interface',
+        path: ['show', 'ipv6', 'interface', {
+          name: 'cible', type: 'WORD', optional: true,
+          description: 'Interface name, or brief',
+          alternatives: [
+            { keyword: 'WORD', description: 'Interface name' },
+            { keyword: 'brief', description: 'Brief summary' },
+          ],
+        }],
+        description: 'Display IPv6 interface state',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          const cible = String(args.cible ?? '').trim();
+          if (cible === '' || cible.toLowerCase() === 'brief') {
+            return Show.showIpv6InterfaceBrief(routeur());
+          }
+          const nom = nomInterface(cible);
+          if (!nom) throw new CliInvalidInput({ token: cible });
+          return Show.showIpv6Interface(routeur(), nom);
+        },
+      },
+      {
+        id: 'show-ipv6-neighbors',
+        path: ['show', 'ipv6', 'neighbors', {
+          name: 'interface', type: 'WORD', optional: true,
+          description: 'Interface name',
+        }],
+        description: 'Display IPv6 neighbour cache',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          const cible = String(args.interface ?? '').trim();
+          if (cible === '') return Show.showIpv6Neighbors(routeur());
+          const nom = nomInterface(cible);
+          if (!nom) throw new CliInvalidInput({ token: cible });
+          return Show.showIpv6Neighbors(routeur(), nom);
+        },
+      },
+      {
+        id: 'show-ipv6-traffic',
+        path: ['show', 'ipv6', 'traffic'],
+        description: 'Display IPv6 traffic statistics',
+        modes: exec, minPrivilege: 1,
+        run: () => Show.showIpv6Traffic(routeur()),
+      },
+      {
+        id: 'show-ipv6-static',
+        path: ['show', 'ipv6', 'static'],
+        description: 'Display IPv6 static routes',
+        modes: exec, minPrivilege: 1,
+        run: () => Show.showIpv6Static(routeur()),
+      },
+    ];
+  }
+
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...this.ipv6ExecSpecs(),
+      ...dhcpPoolSpecs(this),
+      ...ospfIpv6ShowSpecs(() => this.d()),
+      ...dhcpIpv6ShowSpecs(() => this.d()),
+      ...pimShowSpecs(this.multicastShowContext()),
+      ...aclShowSpecs(() => this.d()),
+      ...policyShowSpecs(this.policy),
+      ...igmpShowSpecs(this.multicastShowContext()),
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),
       ...natShowSpecs(() => this.d()),
@@ -335,6 +417,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
       [['show', 'ip'], 'IP information'],
       [['show', 'ip', 'bgp'], 'BGP information'],
+      [['show', 'ipv6', 'dhcp'], 'Dynamic Host Configuration Protocol'],
+      [['show', 'ipv6', 'eigrp'], 'Enhanced Interior Gateway Routing Protocol'],
+      [['show', 'ip', 'pim'], 'PIM information'],
+      [['show', 'ip', 'pim', 'rp'], 'PIM Rendezvous Point information'],
+      [['show', 'ip', 'igmp'], 'IGMP information'],
       [['show', 'ip', 'eigrp'], 'IP-EIGRP information'],
       [['show', 'eigrp'], 'EIGRP information'],
       [['show', 'eigrp', 'address-family'], 'Address family'],
@@ -1369,8 +1456,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
-    registerIgmpShowCommands(trie, { r: () => this.d() });
-    registerPimShowCommands(trie, { r: () => this.d() });
+    registerIgmpShowCommands(trie, this.multicastShowContext());
+    registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
     registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
@@ -1488,26 +1575,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
-    trie.registerGreedy('show ipv6 interface', 'Display IPv6 interface state', (args) => {
-      const sub = (args[0] || '').toLowerCase();
-      if (sub === '' || sub === 'brief') return Show.showIpv6InterfaceBrief(getRouter());
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid input detected at '^' marker.`;
-      return Show.showIpv6Interface(getRouter(), ifName);
-    });
-
-    trie.register('show ipv6 traffic', 'Display IPv6 traffic statistics', () =>
-      Show.showIpv6Traffic(getRouter()));
-    trie.register('show ipv6 static', 'Display IPv6 static routes', () =>
-      Show.showIpv6Static(getRouter()));
-
-    trie.registerGreedy('show ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
-      if (args.length === 0) return Show.showIpv6Neighbors(getRouter());
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) throw new CliInvalidInput({ token: args[0] });
-      return Show.showIpv6Neighbors(getRouter(), ifName);
-    });
-
     // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
     const showIpInterfaceCmd = (args: string[]): string => {
       const sub = (args[0] || '').toLowerCase();

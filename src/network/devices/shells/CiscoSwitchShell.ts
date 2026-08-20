@@ -18,6 +18,11 @@ import { CiscoShellBase } from './CiscoShellBase';
 import { privilegeConfigLines } from './cli/CliAuthorization';
 import { getPrivilegeRules } from '../router/security/CiscoPrivilegeStore';
 import { CommandTrie, formatInvalidInput } from './CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import { collectRegistrations, specsFromTrieRegistrations }
+  from '@/cli/commands/trieAdapter';
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch, SwitchportConfig } from '../Switch';
 import type { CiscoSwitch } from '../CiscoSwitch';
@@ -49,7 +54,7 @@ import {
 import { showSwitchVersion, showIpTraffic } from './cisco/CiscoCommonShow';
 import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './cisco/CiscoArchiveCommands';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
-import { buildConfigDhcpCommands } from './cisco/CiscoDhcpCommands';
+import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import type { CiscoShellContext } from './cisco/CiscoConfigCommands';
 import type { Router } from '../Router';
 import { vrrpVirtualMac } from '../../vrrp/types';
@@ -107,6 +112,63 @@ const STP_GLOBAL_CONTINUATIONS: ReadonlyArray<{ keyword: string; description: st
   { keyword: 'uplinkfast', description: 'Enable UplinkFast' },
   { keyword: 'vlan', description: 'Per-VLAN spanning tree configuration' },
 ];
+
+const MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'address', description: 'A specific MAC address' },
+  { keyword: 'count', description: 'MAC address count' },
+  { keyword: 'dynamic', description: 'Dynamic MAC entries' },
+  { keyword: 'interface', description: 'Entries for a given interface' },
+  { keyword: 'multicast', description: 'Multicast MAC entries' },
+  { keyword: 'static', description: 'Static MAC entries' },
+  { keyword: 'vlan', description: 'Entries for a given VLAN' },
+];
+
+const CLEAR_MAC_TABLE_FILTERS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'dynamic', description: 'Dynamically learnt' },
+  { keyword: 'interface', description: 'Interface configuration' },
+  { keyword: 'vlan', description: 'VLAN configuration' },
+];
+
+const STP_VLAN_NUMBER: ArgumentSpec = {
+  name: 'vlan', type: 'INT', optional: true, range: [1, 4094],
+  description: 'VLAN number',
+};
+
+const STP_VLAN_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'bridge', description: 'Bridge information' },
+  { keyword: 'detail', description: 'Detailed output' },
+  { keyword: 'root', description: 'Root bridge' },
+];
+
+function stpVlanSpecs(action: (args: string[]) => string): CommandSpec[] {
+  const words = ['show', 'spanning-tree', 'vlan'];
+  const exec = ['user', 'privileged'];
+  const lire = (args: Record<string, string>): string =>
+    String(args[STP_VLAN_NUMBER.name] ?? '').trim();
+
+  const specs: CommandSpec[] = [{
+    id: words.join('-'),
+    path: [...words, STP_VLAN_NUMBER],
+    description: 'STP for a VLAN',
+    modes: exec, minPrivilege: 1,
+    run: ((_session: unknown, args: Record<string, string>) => {
+      const vlan = lire(args);
+      return action(vlan.length === 0 ? [] : [vlan]);
+    }) as CommandSpec['run'],
+  }];
+
+  for (const vue of STP_VLAN_VIEWS) {
+    specs.push({
+      id: [...words, vue.keyword].join('-'),
+      path: [...words, STP_VLAN_NUMBER, vue.keyword],
+      description: vue.description,
+      modes: exec, minPrivilege: 1,
+      run: ((_session: unknown, args: Record<string, string>) =>
+        action([lire(args), vue.keyword])) as CommandSpec['run'],
+    });
+  }
+  return specs;
+}
 
 export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISwitchShell {
   override versionText(): string {
@@ -707,55 +769,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // ── Show ──
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.registerGreedy('show dtp', 'Display DTP information', (args) => {
-        const dtp = this.requireDtp();
-        const ports = this.d().getPortNames();
-        if (args[0]?.toLowerCase() === 'interface' && args[1]) {
-          const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
-          if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
-          const s = dtp.getPortState(name);
-          return [
-            `DTP information for ${name}:`,
-            `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
-            `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
-            `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
-            `  Neighbor address 2:                     000000000000`,
-            `  Hello timer expiration (sec/state):     0/RUNNING`,
-            `  Access timer expiration (sec/state):    never/STOPPED`,
-            `  Negotiation timer expiration (sec/st):  never/STOPPED`,
-            `  Multidrop timer expiration (sec/state): never/STOPPED`,
-            `  FSM state:                              S6:TRUNK`,
-          ].join('\n');
-        }
-        const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
-        lines.push('Interface       Mode             Status         Negotiation');
-        lines.push('--------------- ---------------- -------------- -----------');
-        for (const p of ports) {
-          const s = dtp.getPortState(p);
-          const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
-          lines.push(
-            `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
-            `${s.operationalMode.padEnd(15)}${negotiation}`,
-          );
-        }
-        return lines.join('\n');
-      });
-
-      t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
-      t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
-        this.showArpInspectionVlan(this.d(), args.join(',')));
-      t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
-        this.showArpInspectionStats(this.d()));
-      t.register('show ip arp inspection log', 'Display DAI log buffer', () =>
-        this.showArpInspectionLog(this.d()));
-      t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
-        this.showArpInspectionIfs(this.d()));
-      t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
-      t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
-      t.registerGreedy('show ip device tracking', 'Display IP device tracking table', (args) =>
-        this.showIpDeviceTracking(this.d(), args));
-    }
 
     // ── clear / recovery ──
     this.privilegedTrie.register('clear ip arp inspection statistics',
@@ -1378,63 +1391,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return '';
     });
 
-    this.privilegedTrie.registerGreedy('vtp primary', 'Force this switch to become the VTP Primary Server', (args) => {
-      const force = args.some(a => a.toLowerCase() === 'force');
-      return this.requireVtp().becomePrimary(force).message;
-    });
-
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show vtp password', 'Display the VTP password', () => {
-        const cfg = this.requireVtp().getConfig();
-        return cfg.password
-          ? `VTP Password: ${cfg.password}`
-          : 'The VTP password is not configured.';
-      });
-      t.register('show vtp status', 'Display VTP status', () => {
-        const cfg = this.requireVtp().getConfig();
-        const numVlans = this.d().getVLANs().size;
-        const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
-        const updaterIp = cfg.lastUpdaterIdentity;
-        const modifiedAt = cfg.lastUpdateTimestamp ? this.formatVtpTimestamp(cfg.lastUpdateTimestamp) : '0-0-00 00:00:00';
-        return [
-          `VTP Version capable             : 1 to 2`,
-          `VTP version running             : ${cfg.version}`,
-          `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
-          `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
-          `VTP Traps Generation            : Disabled`,
-          `Device ID                       : ${deviceId}`,
-          `Configuration last modified by ${updaterIp} at ${modifiedAt}`,
-          `Local updater ID is ${updaterIp} on interface Vl1 (lowest numbered VLAN interface found)`,
-          ``,
-          `Feature VLAN:`,
-          `--------------`,
-          `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}${cfg.version === 3 && cfg.primaryServer ? ', Primary Server' : ''}`,
-          `Maximum VLANs supported locally : ${cfg.version === 3 ? 4094 : 1005}`,
-          `Number of existing VLANs        : ${numVlans}`,
-          `Configuration Revision          : ${cfg.revision}`,
-        ].join('\n');
-      });
-      t.register('show vtp counters', 'Display VTP counters', () => {
-        return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
-      });
-      t.register('show vtp devices', 'Display VTP devices in the domain', () => {
-        const cdp = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
-        const switches = (cdp?.getNeighbors() ?? []).filter(n => n.remoteType.startsWith('switch'));
-        if (switches.length === 0) {
-          return 'Retrieving device ID with revision > 0 from the ring...\nNo device found.';
-        }
-        const lines = [
-          'Retrieving information from the VTP domain...',
-          '',
-          'Device ID          Platform           Local Interface',
-          '----------------   ----------------   ----------------',
-        ];
-        for (const n of switches) {
-          lines.push(`${n.remoteHost.padEnd(19)}${n.remotePlatform.padEnd(19)}${this.abbreviateInterface(n.localPort)}`);
-        }
-        return lines.join('\n');
-      });
-    }
   }
 
   private registerUdldCommands(): void {
@@ -1922,99 +1878,396 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     });
 
     // show spanning-tree summary | mst configuration | interface <if>
-    for (const t of [this.userTrie, this.privilegedTrie]) {
-      t.register('show spanning-tree summary', 'STP summary', () => {
-        const sw = this.d();
-        const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
-        const stpStates = sw._getSTPStates();
-        const ports = sw._getPortsInternal();
-        const rootVlans = [...sw.getVLANs().keys()]
-          .sort((a, b) => a - b)
-          .filter(v => agent?.isRootForVlan(v) ?? false)
-          .map(v => `VLAN${String(v).padStart(4, '0')}`);
-        const rootForVlan = rootVlans.length ? rootVlans.join(', ') : 'none';
-        let blocking = 0, listening = 0, learning = 0, forwarding = 0;
-        for (const [name, state] of stpStates) {
-          const port = ports.get(name);
-          if (!port || !port.getIsUp() || !port.isConnected()) continue;
-          if (state === 'blocking') blocking++;
-          else if (state === 'listening') listening++;
-          else if (state === 'learning') learning++;
-          else if (state === 'forwarding') forwarding++;
-        }
-        const total = blocking + listening + learning + forwarding;
-        const g = agent?.getGlobalStp();
-        const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
-        return [
-          `Switch is in ${this.stpMode} mode`,
-          `Root bridge for: ${rootForVlan}`,
-          `Extended system ID           is enabled`,
-          `Portfast Default             ${onOff(g?.portfastDefault)}`,
-          `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
-          `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
-          `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
-          `UplinkFast                   ${onOff(g?.uplinkFast)}`,
-          `BackboneFast                 ${onOff(g?.backboneFast)}`,
-          `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
-          ``,
-          `Name                   Blocking Listening Learning Forwarding STP Active`,
-          `---------------------- -------- --------- -------- ---------- ----------`,
-          `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
-        ].join('\n');
-      });
-      t.register('show spanning-tree mst configuration', 'MST region config', () =>
-        this.showMstConfig());
-      t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
-        const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
-        const lines = this.ifStp.get(name) ?? [];
-        return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
-      });
-      t.register('show spanning-tree', 'Display spanning tree state', () => this.showSpanningTree(this.d()));
-      t.register('show spanning-tree detail', 'Detailed STP state', () => this.showStpDetail(this.d()));
-      t.register('show spanning-tree root', 'STP root bridge info', () => this.showStpRoot(this.d()));
-      t.register('show spanning-tree bridge', 'STP local bridge info', () => this.showStpBridge(this.d()));
-      t.register('show spanning-tree blockedports', 'STP blocked ports', () => this.showStpBlockedPorts(this.d()));
-      t.registerGreedy('show spanning-tree vlan', 'STP for a VLAN', (a) => {
-        const id = parseInt(a[0], 10);
-        if (isNaN(id)) return this.showSpanningTree(this.d());
-        if (a[1]?.toLowerCase() === 'detail') return this.showStpDetail(this.d(), id);
-        if (a[1]?.toLowerCase() === 'bridge') return this.showStpBridge(this.d(), id);
-        if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
-        return this.showSpanningTree(this.d(), id);
-      });
-      t.register('show spanning-tree summary totals', 'STP summary totals', () =>
-        `Switch is in ${this.stpMode} mode\n` +
-        `Root bridge for: ${this.stpAgentOf(this.d())?.isRoot() ? 'VLAN0001' : 'none'}\n` +
-        `                     Blocking Listening Learning Forwarding STP Active\n` +
-        `-------------------- -------- --------- -------- ---------- ----------\n` +
-        `1 vlan               ${this.stpSummaryCounts(this.d())}`);
-      t.register('show spanning-tree inconsistentports', 'STP inconsistent ports', () => {
-        const agent = this.stpAgentOf(this.d());
-        const bad: string[] = [];
-        for (const [portName] of this.d()._getSTPStates()) {
-          if (agent?.isRootInconsistent(portName)) bad.push(this.abbreviateInterface(portName));
-        }
-        return [
-          'Name                 Interface                Inconsistency',
-          '-------------------- ------------------------ ------------------',
-          ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
-          '',
-          `Number of inconsistent ports (segments) in the system : ${bad.length}`,
-        ].join('\n');
-      });
-      t.register('show spanning-tree active', 'STP state on active interfaces', () =>
-        this.showSpanningTree(this.d()));
-      t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
-        `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
-      t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
-        if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
-        if (!a[0]) return this.showMstInstances();
-        const id = parseInt(a[0], 10);
-        if (isNaN(id)) return CISCO_ERRORS.INVALID_INPUT;
-        return this.showMstInstances(id);
-      });
-    }
     this.registerSwitchDebugCommands();
+  }
+
+  private dhcpPoolContext(): CiscoShellContext {
+    return {
+      r: () => this.d() as unknown as Router,
+      setMode: (m: string) => { this.mode = m as CLIMode; },
+      getSelectedDHCPPool: () => this.selectedDhcpPool,
+      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
+    } as unknown as CiscoShellContext;
+  }
+
+  private stpShowSpecs(): CommandSpec[] {
+    const register = (collector: SpecCollector) =>
+      this.registerStpShowCommands(collector as unknown as CommandTrie);
+
+    const specs = specsFromTrieRegistrations(register, {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      skip: (path) => path === 'show spanning-tree vlan',
+      restDescriptionFor: (path) => ({
+        'show spanning-tree interface': 'Interface name',
+        'show spanning-tree mst': 'Instance number, or configuration',
+      })[path],
+      restLiteralFor: (path) => ({
+        'show spanning-tree interface': 'WORD',
+        'show spanning-tree mst': '<0-4094>',
+      })[path],
+    });
+
+    const vlan = collectRegistrations(register)
+      .find((entry) => entry.path === 'show spanning-tree vlan');
+    return vlan ? [...specs, ...stpVlanSpecs(vlan.action)] : specs;
+  }
+
+  private vlanVtpShowSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerVlanShowCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          restDescriptionFor: (path) => ({
+            'show vlan id': 'VLAN number',
+            'show vlan name': 'VLAN name',
+          })[path],
+          restLiteralFor: (path) => path === 'show vlan id' ? '<1-4094>' : 'WORD',
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerVtpShowCommands(collector as unknown as CommandTrie),
+        { modes: exec, minPrivilege: 1 },
+      ),
+      {
+        id: 'vtp-primary',
+        path: ['vtp', 'primary', {
+          name: 'force', type: 'ENUM', optional: true,
+          description: 'Force the takeover without confirmation',
+          values: [{ keyword: 'force', description: 'Do not ask for confirmation' }],
+        }],
+        description: 'Force this switch to become the VTP Primary Server',
+        modes: ['privileged'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.requireVtp().becomePrimary(String(args.force ?? '') === 'force').message,
+      },
+    ];
+  }
+
+  private l2TableSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    return [
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerDaiShowCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          restDescriptionFor: (path) => ({
+            'show ip arp inspection vlan': 'VLAN number, or a range',
+            'show ip device tracking': 'Interface name, or an address',
+          })[path],
+          restLiteralFor: (path) => ({
+            'show ip arp inspection vlan': '<1-4094>',
+            'show ip device tracking': 'WORD',
+          })[path],
+          keywordsFor: (path) => path === 'show dtp'
+            ? [{ keyword: 'interface', description: 'Interface configuration' }]
+            : undefined,
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerMacTableCommands(collector as unknown as CommandTrie),
+        {
+          modes: exec, minPrivilege: 1,
+          skip: (path) => path.startsWith('clear '),
+          keywordsFor: (path) => path === 'show mac address-table'
+            ? MAC_TABLE_FILTERS : undefined,
+        },
+      ),
+      ...specsFromTrieRegistrations(
+        (collector) => this.registerMacTableCommands(collector as unknown as CommandTrie),
+        {
+          modes: ['privileged'], minPrivilege: 15,
+          skip: (path) => !path.startsWith('clear '),
+          keywordsFor: (path) => path === 'clear mac address-table'
+            ? CLEAR_MAC_TABLE_FILTERS : undefined,
+        },
+      ),
+    ];
+  }
+
+  protected override socleSpecs(): readonly CommandSpec[] {
+    return [
+      ...super.socleSpecs(),
+      ...this.stpShowSpecs(),
+      ...dhcpPoolSpecs(this.dhcpPoolContext()),
+      ...this.vlanVtpShowSpecs(),
+      ...this.l2TableSpecs(),
+    ];
+  }
+
+  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+    return [
+      ...super.socleLegends(),
+      [['show', 'spanning-tree', 'pathcost'], 'Path cost method'],
+    ];
+  }
+
+  private registerMacTableCommands(t: CommandTrie): void {
+    t.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
+      const a = args.map(x => x.toLowerCase());
+      if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
+      if (a[0] === 'aging-time') return this.showMACAddressTableAgingTime(this.d());
+      if (a[0] === 'notification') return this.showMacAddressTableNotification();
+      const filter: { vlan?: number; port?: string; address?: string; type?: 'static' | 'dynamic' } = {};
+      let i = 0;
+      if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
+      else if (a[i] === 'multicast') i++;
+      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) filter.vlan = parseInt(a[i + 1], 10);
+      else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args.slice(i + 1).join(' '));
+        if (!pn) return `% Invalid interface`;
+        filter.port = pn;
+      }
+      else if (a[i] === 'address' && args[i + 1]) filter.address = args[i + 1];
+      return this.showMACAddressTable(this.d(), Object.keys(filter).length ? filter : undefined);
+    });
+
+    t.registerGreedy('clear mac address-table', 'Clear MAC address table entries', (args) => {
+      const a = args.map(x => x.toLowerCase());
+      let i = 0;
+      if (a[i] === 'dynamic') i++;
+      const filter: { vlan?: number; port?: string } = {};
+      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) {
+        filter.vlan = parseInt(a[i + 1], 10);
+      } else if (a[i] === 'interface' && args[i + 1]) {
+        const pn = this.resolveInterfaceName(args[i + 1]);
+        if (!pn) return `% Invalid interface name "${args[i + 1]}"`;
+        filter.port = pn;
+      }
+      this.d().clearDynamicMACEntries(Object.keys(filter).length ? filter : undefined);
+      return '';
+    });
+
+  }
+
+  private registerDaiShowCommands(t: CommandTrie): void {
+    t.registerGreedy('show dtp', 'Display DTP information', (args) => {
+      const dtp = this.requireDtp();
+      const ports = this.d().getPortNames();
+      if (args[0]?.toLowerCase() === 'interface' && args[1]) {
+        const name = this.resolveInterfaceName(args.slice(1).join(' ')) ?? args.slice(1).join(' ');
+        if (!this.d().getPort(name)) return `% Invalid interface "${args.slice(1).join(' ')}"`;
+        const s = dtp.getPortState(name);
+        return [
+          `DTP information for ${name}:`,
+          `  TOS/TAS/TNS:                            ${s.operationalMode === 'trunk' ? 'TRUNK' : 'ACCESS'}/${this.dtpAdminLabel(s.adminMode)}/NONE`,
+          `  TOT/TAT/TNT:                            ${s.trunkEncapsulation.toUpperCase()}/NEGOTIATE/NONE`,
+          `  Neighbor address 1:                     ${s.peerMac ?? '000000000000'}`,
+          `  Neighbor address 2:                     000000000000`,
+          `  Hello timer expiration (sec/state):     0/RUNNING`,
+          `  Access timer expiration (sec/state):    never/STOPPED`,
+          `  Negotiation timer expiration (sec/st):  never/STOPPED`,
+          `  Multidrop timer expiration (sec/state): never/STOPPED`,
+          `  FSM state:                              S6:TRUNK`,
+        ].join('\n');
+      }
+      const lines = ['Global DTP information', `  Sending DTP Hello packets every ${dtp.getConfig().helloSec} seconds`, '  Dynamic Trunk timeout is 300 seconds', ''];
+      lines.push('Interface       Mode             Status         Negotiation');
+      lines.push('--------------- ---------------- -------------- -----------');
+      for (const p of ports) {
+        const s = dtp.getPortState(p);
+        const negotiation = s.adminMode === 'access' || s.adminMode === 'nonegotiate' ? 'off' : 'on';
+        lines.push(
+          `${this.abbreviateInterface(p).padEnd(16)}${this.dtpAdminLabel(s.adminMode).padEnd(17)}` +
+          `${s.operationalMode.padEnd(15)}${negotiation}`,
+        );
+      }
+      return lines.join('\n');
+    });
+
+    t.register('show ip arp inspection', 'Display DAI status', () => this.showArpInspection(this.d()));
+    t.registerGreedy('show ip arp inspection vlan', 'Display DAI per VLAN', (args) =>
+      this.showArpInspectionVlan(this.d(), args.join(',')));
+    t.register('show ip arp inspection statistics', 'Display DAI counters', () =>
+      this.showArpInspectionStats(this.d()));
+    t.register('show ip arp inspection log', 'Display DAI log buffer', () =>
+      this.showArpInspectionLog(this.d()));
+    t.register('show ip arp inspection interfaces', 'Display DAI per interface', () =>
+      this.showArpInspectionIfs(this.d()));
+    t.register('show arp access-list', 'Display ARP ACLs', () => this.showArpAcls(this.d()));
+    t.register('show errdisable recovery', 'Display errdisable recovery state', () => this.showErrdisableRecovery());
+    t.registerGreedy('show ip device tracking', 'Display IP device tracking table', (args) =>
+      this.showIpDeviceTracking(this.d(), args));
+  }
+
+  private registerVlanShowCommands(t: CommandTrie): void {
+    t.register('show vlan summary', 'Display VLAN count summary', () => {
+      const ids = [...this.d().getVLANs().keys()];
+      const extended = ids.filter((id) => id >= 1006).length;
+      const normal = ids.length - extended;
+      return [
+        `Number of existing VLANs          : ${ids.length}`,
+        `Number of existing VTP VLANs      : ${normal}`,
+        `Number of existing extended VLANs : ${extended}`,
+      ].join('\n');
+    });
+
+    t.register('show vlan brief', 'Display VLAN summary', () => {
+      return this.showVlanBrief(this.d());
+    });
+
+    t.register('show vlan', 'Display VLAN information', () => {
+      return this.showVlanFull(this.d());
+    });
+
+    t.registerGreedy('show vlan id', 'Display a VLAN by id', (args) => {
+      const id = parseInt(args[0], 10);
+      if (isNaN(id)) return '% Invalid VLAN id';
+      return this.showVlanBrief(this.d(), { id });
+    });
+
+    t.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
+      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
+      return this.showVlanBrief(this.d(), { name: args[0] });
+    });
+  }
+
+  private registerVtpShowCommands(t: CommandTrie): void {
+    t.register('show vtp password', 'Display the VTP password', () => {
+      const cfg = this.requireVtp().getConfig();
+      return cfg.password
+        ? `VTP Password: ${cfg.password}`
+        : 'The VTP password is not configured.';
+    });
+    t.register('show vtp status', 'Display VTP status', () => {
+      const cfg = this.requireVtp().getConfig();
+      const numVlans = this.d().getVLANs().size;
+      const deviceId = this.formatMacCisco(new MACAddress(cfg.updaterMac));
+      const updaterIp = cfg.lastUpdaterIdentity;
+      const modifiedAt = cfg.lastUpdateTimestamp ? this.formatVtpTimestamp(cfg.lastUpdateTimestamp) : '0-0-00 00:00:00';
+      return [
+        `VTP Version capable             : 1 to 2`,
+        `VTP version running             : ${cfg.version}`,
+        `VTP Domain Name                 : ${cfg.domain || '<empty>'}`,
+        `VTP Pruning Mode                : ${cfg.pruning ? 'Enabled' : 'Disabled'}`,
+        `VTP Traps Generation            : Disabled`,
+        `Device ID                       : ${deviceId}`,
+        `Configuration last modified by ${updaterIp} at ${modifiedAt}`,
+        `Local updater ID is ${updaterIp} on interface Vl1 (lowest numbered VLAN interface found)`,
+        ``,
+        `Feature VLAN:`,
+        `--------------`,
+        `VTP Operating Mode              : ${cfg.mode.charAt(0).toUpperCase() + cfg.mode.slice(1)}${cfg.version === 3 && cfg.primaryServer ? ', Primary Server' : ''}`,
+        `Maximum VLANs supported locally : ${cfg.version === 3 ? 4094 : 1005}`,
+        `Number of existing VLANs        : ${numVlans}`,
+        `Configuration Revision          : ${cfg.revision}`,
+      ].join('\n');
+    });
+    t.register('show vtp counters', 'Display VTP counters', () => {
+      return 'VTP statistics:\nSummary advertisements received    : 0\nSubset advertisements received     : 0\nRequest advertisements received    : 0\nSummary advertisements transmitted : 0\nSubset advertisements transmitted  : 0\nRequest advertisements transmitted : 0\nNumber of config revision errors   : 0\nNumber of config digest errors     : 0';
+    });
+    t.register('show vtp devices', 'Display VTP devices in the domain', () => {
+      const cdp = (this.d() as unknown as { getCdpAgent?: () => import('../../cdp/CdpAgent').CdpAgent }).getCdpAgent?.();
+      const switches = (cdp?.getNeighbors() ?? []).filter(n => n.remoteType.startsWith('switch'));
+      if (switches.length === 0) {
+        return 'Retrieving device ID with revision > 0 from the ring...\nNo device found.';
+      }
+      const lines = [
+        'Retrieving information from the VTP domain...',
+        '',
+        'Device ID          Platform           Local Interface',
+        '----------------   ----------------   ----------------',
+      ];
+      for (const n of switches) {
+        lines.push(`${n.remoteHost.padEnd(19)}${n.remotePlatform.padEnd(19)}${this.abbreviateInterface(n.localPort)}`);
+      }
+      return lines.join('\n');
+    });
+  }
+
+  private registerStpShowCommands(t: CommandTrie): void {
+    t.register('show spanning-tree summary', 'STP summary', () => {
+      const sw = this.d();
+      const agent = (sw as unknown as { getStpAgent?: () => import('../../stp/StpAgent').StpAgent }).getStpAgent?.();
+      const stpStates = sw._getSTPStates();
+      const ports = sw._getPortsInternal();
+      const rootVlans = [...sw.getVLANs().keys()]
+        .sort((a, b) => a - b)
+        .filter(v => agent?.isRootForVlan(v) ?? false)
+        .map(v => `VLAN${String(v).padStart(4, '0')}`);
+      const rootForVlan = rootVlans.length ? rootVlans.join(', ') : 'none';
+      let blocking = 0, listening = 0, learning = 0, forwarding = 0;
+      for (const [name, state] of stpStates) {
+        const port = ports.get(name);
+        if (!port || !port.getIsUp() || !port.isConnected()) continue;
+        if (state === 'blocking') blocking++;
+        else if (state === 'listening') listening++;
+        else if (state === 'learning') learning++;
+        else if (state === 'forwarding') forwarding++;
+      }
+      const total = blocking + listening + learning + forwarding;
+      const g = agent?.getGlobalStp();
+      const onOff = (b: boolean | undefined) => (b ? 'is enabled' : 'is disabled');
+      return [
+        `Switch is in ${this.stpMode} mode`,
+        `Root bridge for: ${rootForVlan}`,
+        `Extended system ID           is enabled`,
+        `Portfast Default             ${onOff(g?.portfastDefault)}`,
+        `PortFast BPDU Guard Default  ${onOff(g?.bpduGuardGlobal)}`,
+        `Portfast BPDU Filter Default ${onOff(g?.bpduFilterGlobal)}`,
+        `Loopguard Default            ${onOff(g?.loopGuardGlobal)}`,
+        `UplinkFast                   ${onOff(g?.uplinkFast)}`,
+        `BackboneFast                 ${onOff(g?.backboneFast)}`,
+        `Configured Pathcost method used is ${agent?.getPathcostMethod() ?? 'short'}`,
+        ``,
+        `Name                   Blocking Listening Learning Forwarding STP Active`,
+        `---------------------- -------- --------- -------- ---------- ----------`,
+        `VLAN0001               ${String(blocking).padStart(8)} ${String(listening).padStart(9)} ${String(learning).padStart(8)} ${String(forwarding).padStart(10)} ${String(total).padStart(10)}`,
+      ].join('\n');
+    });
+    t.register('show spanning-tree mst configuration', 'MST region config', () =>
+      this.showMstConfig());
+    t.registerGreedy('show spanning-tree interface', 'STP for an interface', (a) => {
+      const name = this.resolvePortName(a.join(' ')) ?? a.join(' ');
+      const lines = this.ifStp.get(name) ?? [];
+      return `${name}\n` + (lines.length ? lines.join('\n') : '  (default STP settings)');
+    });
+    t.register('show spanning-tree', 'Display spanning tree state', () => this.showSpanningTree(this.d()));
+    t.register('show spanning-tree detail', 'Detailed STP state', () => this.showStpDetail(this.d()));
+    t.register('show spanning-tree root', 'STP root bridge info', () => this.showStpRoot(this.d()));
+    t.register('show spanning-tree bridge', 'STP local bridge info', () => this.showStpBridge(this.d()));
+    t.register('show spanning-tree blockedports', 'STP blocked ports', () => this.showStpBlockedPorts(this.d()));
+    t.registerGreedy('show spanning-tree vlan', 'STP for a VLAN', (a) => {
+      const id = parseInt(a[0], 10);
+      if (isNaN(id)) return this.showSpanningTree(this.d());
+      if (a[1]?.toLowerCase() === 'detail') return this.showStpDetail(this.d(), id);
+      if (a[1]?.toLowerCase() === 'bridge') return this.showStpBridge(this.d(), id);
+      if (a[1]?.toLowerCase() === 'root') return this.showStpRoot(this.d(), id);
+      return this.showSpanningTree(this.d(), id);
+    });
+    t.register('show spanning-tree summary totals', 'STP summary totals', () =>
+      `Switch is in ${this.stpMode} mode\n` +
+      `Root bridge for: ${this.stpAgentOf(this.d())?.isRoot() ? 'VLAN0001' : 'none'}\n` +
+      `                     Blocking Listening Learning Forwarding STP Active\n` +
+      `-------------------- -------- --------- -------- ---------- ----------\n` +
+      `1 vlan               ${this.stpSummaryCounts(this.d())}`);
+    t.register('show spanning-tree inconsistentports', 'STP inconsistent ports', () => {
+      const agent = this.stpAgentOf(this.d());
+      const bad: string[] = [];
+      for (const [portName] of this.d()._getSTPStates()) {
+        if (agent?.isRootInconsistent(portName)) bad.push(this.abbreviateInterface(portName));
+      }
+      return [
+        'Name                 Interface                Inconsistency',
+        '-------------------- ------------------------ ------------------',
+        ...bad.map((p) => `VLAN0001             ${p.padEnd(24)} Root Inconsistent`),
+        '',
+        `Number of inconsistent ports (segments) in the system : ${bad.length}`,
+      ].join('\n');
+    });
+    t.register('show spanning-tree active', 'STP state on active interfaces', () =>
+      this.showSpanningTree(this.d()));
+    t.register('show spanning-tree pathcost method', 'STP default path-cost method', () =>
+      `Spanning tree default pathcost method used is ${this.stpAgentOf(this.d())?.getPathcostMethod() ?? 'short'}`);
+    t.registerGreedy('show spanning-tree mst', 'MST instance state', (a) => {
+      if (a[0]?.toLowerCase() === 'configuration') return this.showMstConfig();
+      if (!a[0]) return this.showMstInstances();
+      const id = parseInt(a[0], 10);
+      if (isNaN(id)) return CISCO_ERRORS.INVALID_INPUT;
+      return this.showMstInstances(id);
+    });
   }
 
   private registerSwitchDebugCommands(): void {
@@ -2246,41 +2499,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       return lignes.join('\n');
     });
 
-    this.privilegedTrie.registerGreedy('show mac address-table', 'Display MAC address table', (args) => {
-      const a = args.map(x => x.toLowerCase());
-      if (a[0] === 'count') return this.showMACAddressTableCount(this.d());
-      if (a[0] === 'aging-time') return this.showMACAddressTableAgingTime(this.d());
-      if (a[0] === 'notification') return this.showMacAddressTableNotification();
-      const filter: { vlan?: number; port?: string; address?: string; type?: 'static' | 'dynamic' } = {};
-      let i = 0;
-      if (a[i] === 'dynamic' || a[i] === 'static') { filter.type = a[i] as 'static' | 'dynamic'; i++; }
-      else if (a[i] === 'multicast') i++;
-      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) filter.vlan = parseInt(a[i + 1], 10);
-      else if (a[i] === 'interface' && args[i + 1]) {
-        const pn = this.resolveInterfaceName(args.slice(i + 1).join(' '));
-        if (!pn) return `% Invalid interface`;
-        filter.port = pn;
-      }
-      else if (a[i] === 'address' && args[i + 1]) filter.address = args[i + 1];
-      return this.showMACAddressTable(this.d(), Object.keys(filter).length ? filter : undefined);
-    });
-
-    this.privilegedTrie.registerGreedy('clear mac address-table', 'Clear MAC address table entries', (args) => {
-      const a = args.map(x => x.toLowerCase());
-      let i = 0;
-      if (a[i] === 'dynamic') i++;
-      const filter: { vlan?: number; port?: string } = {};
-      if (a[i] === 'vlan' && a[i + 1] && /^\d+$/.test(a[i + 1])) {
-        filter.vlan = parseInt(a[i + 1], 10);
-      } else if (a[i] === 'interface' && args[i + 1]) {
-        const pn = this.resolveInterfaceName(args[i + 1]);
-        if (!pn) return `% Invalid interface name "${args[i + 1]}"`;
-        filter.port = pn;
-      }
-      this.d().clearDynamicMACEntries(Object.keys(filter).length ? filter : undefined);
-      return '';
-    });
-
     this.privilegedTrie.registerGreedy('show interfaces trunk', 'Display trunk ports', () => {
       return this.showTrunkTable(this.d().getPortNames());
     });
@@ -2407,36 +2625,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
         return formatInvalidInput(23);
       }
       return this.showQueuingInterface(name);
-    });
-
-    this.privilegedTrie.register('show vlan summary', 'Display VLAN count summary', () => {
-      const ids = [...this.d().getVLANs().keys()];
-      const extended = ids.filter((id) => id >= 1006).length;
-      const normal = ids.length - extended;
-      return [
-        `Number of existing VLANs          : ${ids.length}`,
-        `Number of existing VTP VLANs      : ${normal}`,
-        `Number of existing extended VLANs : ${extended}`,
-      ].join('\n');
-    });
-
-    this.privilegedTrie.register('show vlan brief', 'Display VLAN summary', () => {
-      return this.showVlanBrief(this.d());
-    });
-
-    this.privilegedTrie.register('show vlan', 'Display VLAN information', () => {
-      return this.showVlanFull(this.d());
-    });
-
-    this.privilegedTrie.registerGreedy('show vlan id', 'Display a VLAN by id', (args) => {
-      const id = parseInt(args[0], 10);
-      if (isNaN(id)) return '% Invalid VLAN id';
-      return this.showVlanBrief(this.d(), { id });
-    });
-
-    this.privilegedTrie.registerGreedy('show vlan name', 'Display a VLAN by name', (args) => {
-      if (!args[0]) return CISCO_ERRORS.INCOMPLETE;
-      return this.showVlanBrief(this.d(), { name: args[0] });
     });
 
     this.privilegedTrie.register('write', 'Save running-config to startup-config', () => {
@@ -4517,13 +4705,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // handful of accessors the pool commands actually call need to be
     // populated; the rest of CiscoShellContext is irrelevant on a
     // switch (no IPSec / routing-proto state here).
-    const dhcpCtx = {
-      r: () => this.d() as unknown as Router,
-      setMode: (m: string) => { this.mode = m as CLIMode; },
-      getSelectedDHCPPool: () => this.selectedDhcpPool,
-      setSelectedDHCPPool: (p: string | null) => { this.selectedDhcpPool = p; },
-    } as unknown as CiscoShellContext;
-    buildConfigDhcpCommands(this.configDhcpTrie, dhcpCtx);
+    buildConfigDhcpCommands(this.configDhcpTrie, this.dhcpPoolContext());
 
     // ── AAA / TACACS+ / RADIUS / protection force brute ──
     // Un Catalyst 2960 connait toute cette famille ; elle vivait dans le

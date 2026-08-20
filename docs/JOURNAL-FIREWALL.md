@@ -2409,6 +2409,175 @@ progrès ; le test le dit maintenant dans les deux sens.
 
 ---
 
+### E50 — Les collecteurs syslog émettent, et leur chemin CLI était faux
+
+`logging/SyslogCollectors.ts` (neuf), `schema/log.ts`, `schema/types.ts`,
+`runtime/commitDevice.ts`, `FortiShell.ts`, `FortiSocle.ts`,
+`Firewall.ts` — **8 cas** neufs plus 5 specs Playwright. **7 des 8**
+tombent avant correctif ; le huitième est le témoin négatif.
+
+**Quatre collecteurs déclarés, `onCommit` VIDES** — la famille de défaut
+d'E47 exactement. `config log syslogd` acceptait serveur, port, mode,
+facilité, format, interface source et filtre, `show` les reproduisait, et
+aucun datagramme ne partait. Un vrai `rsyslog` sur une vraie machine
+Linux (`imudp` décommenté, ce que fait le laboratoire) reçoit maintenant
+la ligne dans son `/var/log/syslog` : `FGT fortios %FORTIOS-…: Deny ICMP
+src port1:192.168.1.10/0 dst port2:203.0.113.10/0`. Le test lit ce
+fichier, pas un compteur.
+
+**LE CHEMIN CLI ÉTAIT FAUX, et c'est plus qu'un détail de frappe.** Le
+schéma déclarait `config log syslogd` avec un enfant `filter` ; un vrai
+FortiGate a `config log syslogd setting` et `config log syslogd filter`
+comme **frères**, vérifié contre la référence CLI de Fortinet. La
+conséquence dépasse la saisie : `show` rendait `config log syslogd`, donc
+une configuration exportée d'ici ne se colle pas sur une vraie machine —
+et la configuration rendue est REJOUÉE à l'import d'une topologie. Les
+trois cas de `fortios-diagnostic.test.ts` qui utilisaient l'ancien chemin
+encodaient le défaut ; ils sont corrigés, pas contournés. `FortiShell`
+lisait le format sur ce même chemin et le lisait donc désormais nulle
+part : corrigé dans la foulée, sans quoi les quatre formats seraient
+devenus muets.
+
+**Le filtre FILTRE.** `set severity emergency` retient une notification
+ordinaire, et le cas qui le vérifie a dû être renforcé : il passait des
+deux côtés tant qu'il ne prouvait pas d'abord que le message arrivait
+sans le filtre.
+
+**Un collecteur désactivé disparaît de la liste des destinations** plutôt
+que d'y rester inerte — `listServers()` est ce que l'agent utilise pour
+émettre, donc l'y laisser aurait continué d'envoyer.
+
+`SyslogCollectorTable` projette les quatre collecteurs sur l'agent unique
+du socle. Elle ne réécrit pas `projectLoggingOntoSyslogAgent`, qui
+projette l'AUTRE source (le `LoggingConfig` de style Cisco, que l'ASA
+utilise) : deux sources, un agent, et c'est la table qui décide pour
+FortiOS.
+
+**Trois compactions plutôt qu'un seuil relevé** (G3 a tiré à 802 lignes) :
+`Firewall.ts` retombe à 798.
+
+---
+
+### E49 — Le portail captif capture, et un défaut du socle TCP tombe avec
+
+`auth/CaptivePortalRedirect.ts`, `mgmt/ManagementWiring.ts`,
+`l3/Ipv4Ingress.ts` (neufs), `tcp/TcpStack.ts`, `Firewall.ts`,
+`schema/system.ts`, `schema/firewallPolicy.ts`, `schema/types.ts`,
+`runtime/commitDevice.ts` — **9 cas** neufs plus 5 specs Playwright.
+**6 des 9** tombent avant correctif ; les trois autres sont nommés dans
+l'en-tête (un témoin de non-régression, deux témoins négatifs).
+
+**Le détournement est une vraie réponse HTTP sur une vraie connexion
+TCP.** Un `curl` d'un `LinuxPC` vers un serveur distant reçoit
+`303 See Other` avec `Location: http://192.168.1.1:1000/fgtauth` — format
+vérifié contre la documentation Fortinet, port pris de
+`config system global auth-http-port`. Une fois l'identité liée, le même
+`curl` atteint nginx : un portail dont on ne sort pas serait une
+souricière, pas un portail.
+
+**Le mécanisme est celui d'un vrai portail captif** : un écouteur TCP
+générique (`0.0.0.0:80`) répond À LA PLACE de la destination. Le paquet
+refusé par `auth-check` est remis à la pile TCP du pare-feu au lieu
+d'être jeté, et la pile — dont l'écouteur générique accepte n'importe
+quelle destination — termine la connexion et sert la redirection.
+
+**UN DÉFAUT DU SOCLE TCP EST TOMBÉ AVEC, et il dépasse le portail.**
+`TcpStack.transmit` sourçait chaque segment depuis `egress.srcIp`,
+l'adresse que le ROUTAGE choisit vers le pair, au lieu de
+`socket.localIp`, l'adresse que le pair a réellement adressée. Pour une
+socket ordinaire les deux coïncident, ce qui rendait le défaut invisible ;
+pour une socket acceptée sur un écouteur générique elles diffèrent, et le
+SYN-ACK partait de `192.168.1.1` alors que le client attendait
+`203.0.113.10` — le client répondait RST, mesuré. C'est la même forme que
+plusieurs défauts déjà refermés ici : une valeur re-dérivée d'une
+deuxième façon au lieu d'être lue là où elle est décidée. 168 fichiers
+TCP, HTTP, SSH et telnet restent verts.
+
+**Un flux capturé n'est plus du transit.** Après le SYN, l'ACK et la
+requête tombaient plus tôt, à `tcp-state-check` (`no-session-non-syn`) :
+aucune session n'existe, puisque le SYN a été refusé. Le portail retient
+donc les quadruplets qu'il a capturés et les réclame AVANT le pipeline,
+à côté des autres revendications de plan de contrôle — ce qui est la
+vérité du modèle : une connexion que le pare-feu termine lui-même n'est
+pas du trafic qui le traverse.
+
+**`security-mode captive-portal` est l'autre forme**, par interface au
+lieu de par politique, et elle détourne sans qu'aucune politique n'exige
+d'authentification. `set security-mode none` la retire vraiment — le cas
+qui le vérifie a dû être renforcé, car il passait des deux côtés tant
+qu'il ne prouvait pas d'abord que le détournement avait lieu.
+
+**Ce qui n'est pas du HTTP est REFUSÉ, pas détourné** : on ne redirige
+pas un ping vers un formulaire, et prétendre le contraire serait pire que
+le refus. HTTPS n'est pas capturé non plus : il faudrait présenter un
+certificat pour un nom qu'on n'a pas, ce que la phase 6 refuse déjà faute
+de point de terminaison TLS re-signant.
+
+**Trois extractions plutôt qu'un seuil relevé** (G3 a tiré à 865 lignes) :
+`mgmt/ManagementWiring.ts` rassemble le câblage des quatre services qui
+terminent des connexions (portails, HA, NTP, portail captif) —
+le constructeur en faisait 166 lignes —, `l3/Ipv4Ingress.ts` prend la
+CLASSIFICATION d'un paquet entrant (consommé, désencapsulé, local,
+transit) et la rend lisible d'un coup d'œil, et la glu du portail
+descend dans le module du portail. `Firewall.ts` retombe à 798.
+
+---
+
+### E48 — Horaires ponctuels, groupes d'horaires, NTP
+
+`mgmt/FirewallNtp.ts`, `pipeline/PipelineCache.ts`,
+`runtime/commitDevice.ts` (neufs), `model/ScheduleObject.ts`,
+`schema/firewallObjects.ts`, `schema/system.ts`, `schema/types.ts`,
+`FortiShell.ts`, `Firewall.ts` — **12 cas** neufs plus 5 specs Playwright.
+**9 des 12** tombent avant correctif ; les trois autres sont nommés dans
+l'en-tête, et aucun ne prouve quoi que ce soit du mécanisme.
+
+**Une vérification a démenti le carnet, et c'était une bonne nouvelle.**
+§6.2 bis annonçait `PolicyEvaluator.scheduleActive` « câblé par
+personne » : il l'est depuis `VdomRegistry:183`. La porte existait ; il
+manquait les deux formes d'horaire qui la traversent.
+
+**`onetime` est une fenêtre ABSOLUE, et c'est ce qui le distingue du
+récurrent.** `HH:MM YYYY/MM/DD` des deux côtés, format vérifié contre la
+référence CLI de Fortinet. Avant sa date la politique bloque, pendant
+elle passe, après elle bloque à nouveau — les trois sont mesurées par un
+vrai ping, pas par un affichage. `startAt`/`endAt` sont des instants
+absolus et non des minutes dans la journée : réutiliser
+`startMinutes`/`endMinutes` aurait fait d'un horaire ponctuel un horaire
+récurrent portant une date décorative.
+
+**Un groupe est l'UNION de ses membres**, et la récursion porte un jeu de
+noms déjà visités : un groupe qui se contiendrait lui-même boucle
+autrement. Un membre inexistant est refusé au lieu d'être stocké — sans
+quoi une faute de frappe donnerait un groupe silencieusement vide, donc
+une politique qui ne s'ouvre jamais sans que rien ne le dise.
+
+**`moment()` est un attribut à DEUX parties**, heure puis date. Le
+déclarer en `text()` ne captait rien : `set start 23:00 2026/12/31`
+laissait `effective('start')` vide et l'horaire naissait sans bornes.
+La moitié heure est typée `TIME` donc `25:99` est refusé par la CLI, et
+la moitié date est vérifiée au commit par `makeOnetimeSchedule`, qui
+refuse aussi une fin antérieure au début.
+
+**NTP branche l'agent du dépôt.** `NtpAgent` sert déjà le routeur ;
+`FirewallNtp` lui donne le port d'hôte du pare-feu. Un `type custom` sans
+serveur est refusé plutôt que stocké — c'est une configuration qui
+promet une synchronisation que rien ne peut faire.
+
+**Trois extractions plutôt qu'un seuil relevé** (G1 et G3 ont tiré) :
+`runtime/commitDevice.ts` sort les 245 lignes de la fabrique de commit
+hors du shell vendeur — avec les quatre fonctions utilitaires qu'elle
+seule employait —, `pipeline/PipelineCache.ts` prend le cache de
+pipelines, et `buildFirewallNtp` rejoint son propre module. `FortiShell.ts`
+retombe de 808 à 544, `Firewall.ts` à 798.
+
+**Deux cas de sonde corrigés, pas le code** : la lecture de la
+configuration NTP passe par `associations`, pas par un champ `servers`
+que ce type n'a pas ; et le refus d'un membre inconnu tombe sur `set`,
+pas sur `next`.
+
+---
+
 ### E47 — DHCP : le schéma existait, `onCommit` était VIDE
 
 `l3/FirewallDhcp.ts`, `l3/L3ServiceWiring.ts` (neufs), `schema/system.ts`,
@@ -2528,6 +2697,39 @@ est celle de FortiOS, `Command fail. Return code -61` précédé de
 
 Les deux cas de `fortios-routage-dynamique.test.ts` qui affirmaient BGP
 refusé sont remplacés par un cas qui l'affirme disponible.
+
+---
+
+## Périmètre pris — FortiOS phase 13 (les collecteurs syslog émettent)
+
+**Agent `mandeng`.** §6.5 du carnet nomme le point : « les collecteurs
+syslog sont **configurables et n'émettent pas encore** vers un vrai
+collecteur — `SyslogAgent` existe sur le socle, le branchement du
+formateur FortiOS vers lui reste à faire ». Mesure de départ :
+`schema/log.ts` déclare les quatre collecteurs (`syslogd` à `syslogd4`)
+avec serveur, port, mode, facilité, format, interface source et filtre —
+et leurs `onCommit` sont **vides**, exactement comme l'était celui du
+serveur DHCP en E47.
+
+Le laboratoire peut être vrai de bout en bout : `LinuxRsyslogService`
+existe et écoute pour de bon (`imudp`), donc un datagramme parti du
+pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
+
+---
+
+## Périmètre pris — FortiOS phase 12 (le portail captif capture)
+
+**Agent `mandeng`.** §6.8 du carnet nomme le point : « le portail sert le
+formulaire et traite le POST, mais **rien n'INTERCEPTE encore le premier
+flux HTTP pour y rediriger** : le laboratoire s'authentifie en appelant
+le portail, pas en étant détourné vers lui ». Un portail captif qui ne
+capture pas est exactement la famille de défaut que ce module referme —
+la fonction a un nom, une configuration et une vue, et le mécanisme
+qu'elle promet n'a pas lieu.
+
+S'y ajoute `security-mode captive-portal` sur une interface, l'autre
+forme du portail (par interface au lieu de par politique), qui n'a pas de
+schéma.
 
 ---
 

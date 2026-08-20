@@ -6,7 +6,6 @@ import {
   IPAddress,
   MACAddress,
   SubnetMask,
-  IP_PROTO_ESP,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
@@ -29,6 +28,7 @@ import { FirewallNatEngine, clearVdomTranslations } from './nat/FirewallNatEngin
 import { IpPoolAllocator, type IpPool } from './nat/IpPool';
 import { PolicyRouteTable } from './l3/PolicyRouteTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
+import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
 import { flowKeyFromPacket } from './session/FlowKey';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
@@ -51,14 +51,12 @@ import {
   arpFrame, buildEgressFrame, type BridgedFrame, type EgressDeps,
 } from './l3/FirewallEgress';
 import { deliverLocally } from './l3/LocalDelivery';
-import type { DhcpScope, FirewallDhcp } from './l3/FirewallDhcp';
+import type { FirewallDhcp } from './l3/FirewallDhcp';
 import type { TcpStack } from '../../tcp/TcpStack';
 import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
-import {
-  buildFirewallPortals, type FirewallPortals, type PortalPorts,
-} from './auth/FirewallPortals';
+import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
 import {
   applyAdminAccount, adminTrustsSource, authenticateAdmin, remoteAuthenticate,
   type AdminAccountDraft,
@@ -70,12 +68,15 @@ import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
-import {
-  buildL3Services, claimedByControlPlane, type L3Services,
-} from './l3/L3ServiceWiring';
+import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
+import { classifyIpv4, type Ipv4IngressHost } from './l3/Ipv4Ingress';
+import type { FirewallNtp } from './mgmt/FirewallNtp';
+import { buildManagementServices } from './mgmt/ManagementWiring';
+import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
+import type { NtpAgent } from '../../ntp/NtpAgent';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
-import { buildFirewallHa, serialNumberOf, type FirewallHa } from './ha/FirewallHa';
+import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
 import type { HaConfiguration } from './ha/HaTypes';
 import type { SdwanConfiguration } from './sdwan/SdwanTable';
 import type { SslVpnPortal, SslVpnSettings } from './vpn/SslVpnPortal';
@@ -92,6 +93,7 @@ import type { FirewallSession, SessionCloseReason } from './session/SessionTable
 import type { SecurityRule } from './model/SecurityRule';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
+import { SyslogCollectorTable } from './logging/SyslogCollectors';
 import {
   projectLoggingOntoSyslogAgent,
 } from '../../syslog/loggingProjection';
@@ -120,11 +122,12 @@ export class Firewall extends Equipment {
   private readonly proxyArp = new ProxyArpTable();
   private readonly arp: ArpService;
   private readonly registry = new PipelineStageRegistry();
-  private readonly pipelines = new Map<string, FirewallPipeline>();
+  private readonly pipelines: PipelineCache;
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
   private readonly syslog: SyslogAgent;
+  private readonly syslogCollectors: SyslogCollectorTable;
   private readonly boundPolicyInterfaces = new Set<string>();
   private readonly allowedAccess = new Map<string, ReadonlySet<string>>();
   private readonly capture = new PacketCapture();
@@ -137,6 +140,8 @@ export class Firewall extends Equipment {
   private readonly routing: FirewallRouting;
   private readonly dhcp: FirewallDhcp;
   private readonly l3: L3Services;
+  private readonly ntp: FirewallNtp;
+  private readonly captivePortal: CaptivePortalRedirect;
 
   private readonly haService: FirewallHa;
   private readonly ipsec: IPSecEngine;
@@ -159,6 +164,7 @@ export class Firewall extends Equipment {
 
     const profile = options.profile ?? GENERIC_PROFILE;
     this.profile = profile;
+    this.pipelines = new PipelineCache(this.id, profile, this.registry);
 
     const first = profile.portFirstIndex;
     for (let index = first; index < first + profile.portCount; index++) {
@@ -180,6 +186,7 @@ export class Firewall extends Equipment {
 
     const now = options.now ?? (() => Date.now());
     this.syslog = new SyslogAgent(this, () => this.getBus());
+    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
       now,
       deviceId: this.id,
@@ -259,22 +266,30 @@ export class Firewall extends Equipment {
     this.radius = agents.radius;
     this.tacacs = agents.tacacs;
 
-    this.portals = buildFirewallPortals({
-      tcp: this.tcp, now,
-      vdom: (name?: string) => this.getVdom(name),
+    const mgmt = buildManagementServices({
+      deviceId: this.id, deviceName: name, hostname: () => this.getName(),
+      bus: () => this.getBus(), now, tcp: () => this.tcp,
+      vdom: (v?: string) => this.getVdom(v),
       certificates: () => this.getCertificateStore(),
       remoteAuthenticate: (s1, u, p) => this.remoteAuthenticate(s1, u, p),
-    });
-    this.portal = this.portals.auth;
-    this.sslVpn = this.portals.sslVpn;
-
-    this.haService = buildFirewallHa({
       serial: () => this.serialNumber(),
-      now,
-      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       port: (iface) => this.getPort(iface),
+      ports: () => [...this.getPorts().values()],
+      sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
       sessions: () => this.getVdom().sessions,
+      connectedRoutes: () => this.interfaces.connectedRoutes(),
+      addressOf: (iface) => this.interfaces.get(iface)?.ip,
+      authenticated: (iface, address) =>
+        this.vdoms.contextOfInterface(iface).identities.lookup(address) !== undefined,
+      authRequiredByPolicy: () => this.getVdom().policy.ordered()
+        .some(r => (r.authUsers?.length ?? 0) > 0 || (r.authGroups?.length ?? 0) > 0),
     });
+    this.portals = mgmt.portals;
+    this.portal = mgmt.portals.auth;
+    this.sslVpn = mgmt.portals.sslVpn;
+    this.haService = mgmt.ha;
+    this.ntp = mgmt.ntp;
+    this.captivePortal = mgmt.captivePortal;
 
     const l3 = buildL3Services({
       deviceId: this.id,
@@ -292,6 +307,8 @@ export class Firewall extends Equipment {
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
     });
+
+
     this.l3 = l3;
     this.routing = l3.routing;
     this.dhcp = l3.dhcp;
@@ -299,38 +316,34 @@ export class Firewall extends Equipment {
 
   }
 
-  private pipelineFor(mode: DeploymentMode): FirewallPipeline {
-    const cached = this.pipelines.get(mode);
-    if (cached) return cached;
-
-    const built = FirewallPipeline.fromStageNames(
-      this.profile.pipeline[mode], this.registry, `firewall.${this.id}.${mode}`);
-    this.pipelines.set(mode, built);
-    return built;
-  }
-
   private processPipeline(context: PacketContext) {
     const vdom = this.vdoms.contextOfInterface(context.ingressPort);
-    return this.pipelineFor(vdom.settings.opmode).process(context);
+    return this.pipelines.forMode(vdom.settings.opmode).process(context);
   }
 
   getTcpStack(): TcpStack { return this.tcp; }
-
   getAccessMatrix(): AccessMatrix { return this.access; }
-
   getAuthPortal(): AuthPortal { return this.portal; }
-
   getIpsecEngine(): IPSecEngine { return this.ipsec; }
-
   getCertificateStore(v?: string): CertificateStore { return this.getVdom(v).certificates; }
-
   getSslVpnPortal(): SslVpnPortal { return this.sslVpn; }
-
   getSdwan(): SdwanService { return this.sdwan; }
-
   getRouting(): FirewallRouting { return this.routing; }
-
   getDhcp(): FirewallDhcp { return this.dhcp; }
+  getNtp(): FirewallNtp { return this.ntp; }
+  getNtpAgent(): NtpAgent { return this.ntp.getAgent(); }
+  getCaptivePortal(): CaptivePortalRedirect { return this.captivePortal; }
+  setPortalPorts(http: number, https: number): void { this.portals.setPorts(http, https); }
+
+  setCaptivePortalInterface(iface: string, on: boolean): void {
+    this.captivePortal.setInterfaceMode(iface, on);
+  }
+
+  refreshCaptivePortal(): void {
+    this.captivePortal.refresh();
+    if (this.captivePortal.isArmed()) this.portals.startAuth();
+  }
+
 
 
   getHa(): HaAgent { return this.haService.agent; }
@@ -341,9 +354,7 @@ export class Firewall extends Equipment {
   }
 
   serialNumber(): string { return serialNumberOf(this.name); }
-
   applySdwan(c: SdwanConfiguration): string | undefined { return this.sdwan.apply(c); }
-
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
 
   bindHaConfiguration(read: () => string, apply: (text: string) => void): void {
@@ -393,7 +404,6 @@ export class Firewall extends Equipment {
   }
 
   getAuthPortalPorts(): PortalPorts { return this.portals.ports(); }
-
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void {
@@ -424,10 +434,8 @@ export class Firewall extends Equipment {
       throw new UnknownSimulationInterfaceError(request.ingressPort);
     }
     const context = makePacketContext({
-      ingressPort: request.ingressPort,
-      packet: buildSimulatedPacket(request),
-      arrivedAt: this.services.now(),
-      simulated: true,
+      ingressPort: request.ingressPort, packet: buildSimulatedPacket(request),
+      arrivedAt: this.services.now(), simulated: true,
     });
     return summariseSimulation(
       context, this.processPipeline(context).verdict === 'accepted');
@@ -439,14 +447,11 @@ export class Firewall extends Equipment {
   }
 
   now(): number { return this.services.now(); }
-
   getLoggingConfig(): LoggingConfig { return this.logging; }
-
   getSyslogAgent(): SyslogAgent { return this.syslog; }
+  getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
 
-  syncSyslogAgent(): void {
-    projectLoggingOntoSyslogAgent(this.logging, this.syslog);
-  }
+  syncSyslogAgent(): void { projectLoggingOntoSyslogAgent(this.logging, this.syslog); }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
     emitFirewallEvent({
@@ -457,9 +462,7 @@ export class Firewall extends Equipment {
     }, event, facts);
   }
 
-  clearTranslations(): number {
-    return clearVdomTranslations(this.vdoms.all());
-  }
+  clearTranslations(): number { return clearVdomTranslations(this.vdoms.all()); }
 
   setSchedule(schedule: ScheduleObject, vdom?: string): boolean {
     return this.getVdom(vdom).schedules.upsert(schedule);
@@ -491,20 +494,13 @@ export class Firewall extends Equipment {
   }
 
   activeVdomName(): string { return this.activeVdom; }
-
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
-
   assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }
-
   vdomOfInterface(i: string): string { return this.vdoms.vdomOfInterface(i); }
-
   createVdomLink(n: string): readonly string[] { return this.vdomLinks.create(n); }
-
   removeVdomLink(n: string): boolean { return this.vdomLinks.remove(n); }
-
   vdomLinkEnds(n: string): readonly string[] { return this.vdomLinks.ends(n); }
-
   vdomLinkPeer(i: string): string | undefined { return this.vdomLinks.peer(i); }
 
   setSwitchInterface(n: string, members: readonly string[]): void {
@@ -512,9 +508,7 @@ export class Firewall extends Equipment {
   }
 
   removeSwitchInterface(n: string): boolean { return this.switchGroups.remove(n); }
-
   switchInterfaces(): readonly string[] { return this.switchGroups.names(); }
-
   switchMembers(n: string): readonly string[] { return this.switchGroups.members(n); }
 
   sameSwitchInterface(left: string, right: string): boolean {
@@ -607,7 +601,7 @@ export class Firewall extends Equipment {
     return kind === 'inter-interface' ? this.sameSecurityInter : this.sameSecurityIntra;
   }
   getPipeline(mode: DeploymentMode = 'nat'): FirewallPipeline {
-    return this.pipelineFor(mode);
+    return this.pipelines.forMode(mode);
   }
 
   getPacketCapture(): PacketCapture { return this.capture; }
@@ -655,7 +649,6 @@ export class Firewall extends Equipment {
   private handleArpFrame(portName: string, packet: ARPPacket): void {
     if (!packet || packet.type !== 'arp') return;
     if (packet.operation === 'reply') { this.arp.handleReply(packet, portName); return; }
-
     const answer = this.arp.handleRequest(packet, portName);
     if (answer) this.emitArp(answer, portName);
   }
@@ -665,55 +658,55 @@ export class Firewall extends Equipment {
   ): void {
     if (!packet || packet.type !== 'ipv4') return;
 
-    if (claimedByControlPlane(
-      this.l3, portName, packet, frame?.srcMAC.toString() ?? '')) return;
-
-    if (packet.protocol === IP_PROTO_ESP
-      && this.interfaces.owningInterface(packet.destinationIP.toString()) !== undefined) {
-      const opened = decryptFromTunnel(this.ipsec, this.getVdom().tunnels, packet);
-      if (opened) this.handleIpv4Frame(opened.tunnel, opened.inner);
-      return;
-    }
-
     const vdom = this.vdoms.contextOfInterface(portName);
-    const belongsToSession = vdom.sessions.lookup(flowKeyFromPacket(packet)) !== undefined;
-    if (!belongsToSession && this.destinedToSelf(portName, vdom, packet)
-      && !this.destinationIsTranslated(portName, packet)) {
-      this.deliverLocally(portName, packet);
+    const decision = classifyIpv4(this.ingressHost(), portName, vdom, packet, frame);
+    if (decision.kind === 'consumed') return;
+    if (decision.kind === 'decapsulated') {
+      this.handleIpv4Frame(decision.tunnel, decision.inner);
       return;
     }
+    if (decision.kind === 'local') { this.deliverLocally(portName, packet); return; }
 
     const context = makePacketContext({
-      ingressPort: portName,
-      packet,
-      arrivedAt: this.services.now(),
+      ingressPort: portName, packet, arrivedAt: this.services.now(),
       ingressFrameDestination: frame?.dstMAC,
     });
     const outcome = this.processPipeline(context);
     this.traces.remember(context);
     this.logPipelineOutcome(context, outcome.verdict === 'accepted');
-    if (outcome.verdict !== 'accepted') return;
+    if (outcome.verdict !== 'accepted') {
+      if (context.verdict?.reason === 'auth-required') {
+        this.captivePortal.capture(portName, packet);
+      }
+      return;
+    }
 
     const forwarded = outcome.payload ?? context;
     if (forwarded.egressPort === undefined) return;
-
-    const bridged = frame !== undefined
-      && (forwarded.bridged === true || vdom.settings.opmode === 'transparent')
-      ? { srcMAC: frame.srcMAC, dstMAC: frame.dstMAC }
-      : undefined;
     this.forward(forwarded.egressPort, forwarded.packet as IPv4Packet,
-      forwarded.policyRouteGateway, bridged);
+      forwarded.policyRouteGateway,
+      bridgedFrameOf(frame, forwarded.bridged === true
+        || vdom.settings.opmode === 'transparent'));
   }
 
-  private destinedToSelf(
-    portName: string, vdom: VdomContext, packet: IPv4Packet,
-  ): boolean {
+  private ingressHost(): Ipv4IngressHost {
+    return {
+      l3: this.l3,
+      captivePortal: this.captivePortal,
+      ownsAddress: (a) => this.interfaces.owningInterface(a) !== undefined,
+      decapsulate: (p) => decryptFromTunnel(this.ipsec, this.getVdom().tunnels, p) ?? null,
+      hasSession: (v, p) => v.sessions.lookup(flowKeyFromPacket(p)) !== undefined,
+      destinedToSelf: (v, p) => this.destinedToSelf(v, p),
+      destinationIsTranslated: (iface, p) => this.destinationIsTranslated(iface, p),
+    };
+  }
+
+  private destinedToSelf(vdom: VdomContext, packet: IPv4Packet): boolean {
     const destination = packet.destinationIP.toString();
-    if (vdom.settings.opmode === 'transparent') {
-      return vdom.settings.manageIP === destination;
-    }
+    if (vdom.settings.opmode === 'transparent') return vdom.settings.manageIP === destination;
     return this.interfaces.owningInterface(destination) !== undefined;
   }
+
 
   private logPipelineOutcome(context: PacketContext, accepted: boolean): void {
     logPipelineOutcome(
@@ -725,8 +718,8 @@ export class Firewall extends Equipment {
   private destinationIsTranslated(portName: string, packet: IPv4Packet): boolean {
     const vdom = this.vdoms.contextOfInterface(portName);
     return vdom.nat.hasInboundRule(packet, {
-      ingressZone: vdom.zones.zoneOf(portName) ?? portName,
-      egressZone: '', ingressInterface: portName, egressInterface: '',
+      ingressZone: vdom.zones.zoneOf(portName) ?? portName, egressZone: '',
+      ingressInterface: portName, egressInterface: '',
     });
   }
 
@@ -776,14 +769,21 @@ export class Firewall extends Equipment {
 
   private egressDeps(): EgressDeps {
     return {
-      nextHopFor: (iface, to) =>
-        this.vdoms.contextOfInterface(iface).routes.resolveNextHop(to)?.nextHop,
+      nextHopFor: (i, to) => this.vdoms.contextOfInterface(i).routes.resolveNextHop(to)?.nextHop,
       resolvedMac: (ip) => this.arp.resolved(ip),
-      buildRequest: (ip, iface) => this.arp.buildRequest(ip, iface),
-      emitArp: (request, iface) => this.emitArp(request, iface),
-      portMac: (iface) => this.portMac(iface),
+      buildRequest: (ip, i) => this.arp.buildRequest(ip, i),
+      emitArp: (r, i) => this.emitArp(r, i),
+      portMac: (i) => this.portMac(i),
     };
   }
+}
+
+function bridgedFrameOf(
+  frame: EthernetFrame | undefined, bridged: boolean,
+): BridgedFrame | undefined {
+  return frame !== undefined && bridged
+    ? { srcMAC: frame.srcMAC, dstMAC: frame.dstMAC }
+    : undefined;
 }
 
 function vdomServices(context: VdomContext): VdomServices {

@@ -7,6 +7,20 @@ import type { CliSession } from './CliSession';
 
 export type CommandStep = string | ArgumentSpec;
 
+/**
+ * Ce qu'on demande a une commande : peut-on l'EXECUTER, ou doit-on la
+ * PROPOSER ?
+ *
+ * `hidden` distingue les deux. Une commande cachee s'execute et ne se
+ * propose pas — c'est ce que le trie exprimait par son filtre de
+ * completion, et le champ existait au socle sans que personne ne le
+ * lise. `modeStrict` refuse les modes ANCETRES, que l'execution admet.
+ */
+export interface ReachabilityOptions {
+  readonly modeStrict?: boolean;
+  readonly forHelp?: boolean;
+}
+
 export type CommandHandler = (
   session: CliSession,
   args: Readonly<Record<string, string>>,
@@ -24,6 +38,16 @@ export interface CommandSpec {
   readonly run: CommandHandler;
   readonly undo?: CommandHandler;
   readonly hidden?: boolean;
+  /**
+   * Ce que le CONTEXTE autorise, quand le mode ne suffit pas a le dire.
+   *
+   * `parity` existe sur une ligne console et pas sur une vty : ce n'est
+   * ni un mode different ni un niveau different, c'est la ligne
+   * selectionnee. Le predicat est consulte par l'aide ET par
+   * l'execution, sans quoi `?` cacherait une commande que la machine
+   * accepte — ou l'inverse.
+   */
+  readonly reachableWhen?: (session: CliSession) => boolean;
   readonly existsOnlyNegated?: boolean;
   readonly undoDescription?: string;
 }
@@ -145,9 +169,11 @@ export class CommandTable {
   }
 
   isReachable(
-    spec: CommandSpec, session: CliSession, modeStrict = false,
+    spec: CommandSpec, session: CliSession, options: ReachabilityOptions = {},
   ): boolean {
-    if (modeStrict ? !spec.modes.includes(session.mode)
+    if (options.forHelp && spec.hidden) return false;
+    if (spec.reachableWhen && !spec.reachableWhen(session)) return false;
+    if (options.modeStrict ? !spec.modes.includes(session.mode)
       : !this.modeAdmits(spec, session)) return false;
 
     const required = this.requiredPrivilege(spec);
@@ -155,6 +181,10 @@ export class CommandTable {
       return this.authorization.authorizes(pathTextOf(spec), required, session);
     }
     return session.privilegeLevel >= required;
+  }
+
+  admetLeMode(spec: CommandSpec, session: CliSession): boolean {
+    return this.modeAdmits(spec, session);
   }
 
   private modeAdmits(spec: CommandSpec, session: CliSession): boolean {

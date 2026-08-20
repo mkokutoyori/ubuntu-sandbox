@@ -195,9 +195,11 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       sessionTimeoutOverrideSec: sessionTtl(object.effective('session-ttl')[0]),
       comment: comment === '' ? undefined : comment,
     });
+    context.device.refreshCaptivePortal();
   },
   onDelete(key, context) {
     context.policy.remove(key);
+    context.device.refreshCaptivePortal();
   },
 };
 

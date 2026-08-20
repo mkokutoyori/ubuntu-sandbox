@@ -12,6 +12,8 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import { IOS_ACL_NUMBERING } from '../../router/ACLEngine';
 
 /** Les quatre plages de numéros qu'IOS accepte pour une liste IP. */
@@ -824,6 +826,24 @@ export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Rout
   trie.registerGreedy('show access-lists', 'Display all access lists', (args) => showAccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ip access-lists', 'Display IP access lists', (args) => showAccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
+}
+
+const ACL_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show access-lists': ['WORD', 'Access list name or number'],
+  'show ip access-lists': ['WORD', 'Access list name or number'],
+  'show ipv6 access-lists': ['WORD', 'Access list name'],
+};
+
+export function aclShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerACLShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[0],
+    },
+  );
 }
 
 export function showIPv6AccessLists(router: Router, name?: string): string {

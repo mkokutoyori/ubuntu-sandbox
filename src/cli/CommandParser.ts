@@ -1,5 +1,6 @@
 import { argumentAccepts, resolveEnumValue } from './ArgumentTypes';
 import type { CliSession } from './CliSession';
+import type { ReachabilityOptions } from './CommandTable';
 import type { CommandSpec, CommandTable, TreeNode } from './CommandTable';
 
 export type ParseResult =
@@ -48,7 +49,12 @@ export function parseCommand(
     }
     if (matches.length === 1) { node = matches[0]; continue; }
 
-    const argument = node.argumentChild;
+    // La place d'argument appartient au MODE qui l'a declaree : sans ce
+    // filtre, le glouton d'un sous-mode avalait le mot d'un autre mode
+    // et rendait « incomplete » une frappe que celui-ci refuse.
+    const argument = node.argumentChild
+      && subtreeReachable(node.argumentChild, table, session)
+      ? node.argumentChild : undefined;
     if (argument?.argument?.type === 'REST') {
       args[argument.argument.name] = tokens.slice(index).join(' ');
       node = argument;
@@ -69,7 +75,11 @@ export function parseCommand(
     return { status: 'invalid', token, position: index };
   }
 
-  const spec = node.spec;
+  // Une commande d'un AUTRE mode n'est pas la commande de celui-ci : la
+  // traiter comme telle faisait repondre `% Invalid input` la ou le
+  // noeud porte, dans ce mode, des continuations parfaitement valides.
+  const spec = node.spec && table.admetLeMode(node.spec, session)
+    ? node.spec : undefined;
   if (!spec) return { status: 'incomplete', consumed: tokens.length };
   if (spec.existsOnlyNegated && !negated) {
     return { status: 'incomplete', consumed: tokens.length };
@@ -108,14 +118,15 @@ export function keywordMatches(
 }
 
 export function subtreeReachable(
-  node: TreeNode, table: CommandTable, session: CliSession, modeStrict = false,
+  node: TreeNode, table: CommandTable, session: CliSession,
+  options: ReachabilityOptions = {},
 ): boolean {
-  if (node.spec && table.isReachable(node.spec, session, modeStrict)) return true;
+  if (node.spec && table.isReachable(node.spec, session, options)) return true;
   if (node.argumentChild
-    && subtreeReachable(node.argumentChild, table, session, modeStrict)) return true;
+    && subtreeReachable(node.argumentChild, table, session, options)) return true;
 
   for (const child of node.children.values()) {
-    if (subtreeReachable(child, table, session, modeStrict)) return true;
+    if (subtreeReachable(child, table, session, options)) return true;
   }
   return false;
 }
