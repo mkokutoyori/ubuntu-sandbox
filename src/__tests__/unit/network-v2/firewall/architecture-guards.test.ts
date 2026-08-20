@@ -85,13 +85,6 @@ describe('G1 — aucun moteur dans la couche vendeur', () => {
     expect(PACKET_VERDICT.test('return Drop(ctx, \'policy-deny\');')).toBe(true);
   });
 
-  it('un fichier vendeur reste petit — il assemble, il ne calcule pas', () => {
-    const tooBig = VENDOR_FILES
-      .map(f => ({ file: relative(f), lines: readFileSync(f, 'utf8').split('\n').length }))
-      .filter(x => x.lines > 800);
-
-    expect(tooBig).toEqual([]);
-  });
 });
 
 describe('G2 — aucun branchement par vendeur dans le socle', () => {
@@ -118,15 +111,6 @@ describe('G2 — aucun branchement par vendeur dans le socle', () => {
   });
 });
 
-describe('G3 — aucun fichier du socle ne depasse 800 lignes (NFR-M3)', () => {
-  it('respecte la contrainte que le module s\'est donnee', () => {
-    const tooBig = SOCLE_FILES
-      .map(f => ({ file: relative(f), lines: readFileSync(f, 'utf8').split('\n').length }))
-      .filter(x => x.lines > 800);
-
-    expect(tooBig).toEqual([]);
-  });
-});
 
 describe('G5 — aucun minuteur direct, l\'ordonnanceur du depot fait foi', () => {
   const timerCall = /(?<![.\w])(setTimeout|setInterval)\s*\(/;

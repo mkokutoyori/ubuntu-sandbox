@@ -156,6 +156,13 @@ export interface FortiGlobalSettings {
   readonly multiVdom: boolean;
   readonly authHttpPort?: number;
   readonly authHttpsPort?: number;
+  readonly adminSshPort?: number;
+  readonly adminTelnetPort?: number;
+  readonly adminHttpPort?: number;
+  readonly adminHttpsPort?: number;
+  readonly adminTimeoutMin?: number;
+  readonly adminLockoutThreshold?: number;
+  readonly adminLockoutDurationSec?: number;
 }
 
 export interface FortiVdomSettings {

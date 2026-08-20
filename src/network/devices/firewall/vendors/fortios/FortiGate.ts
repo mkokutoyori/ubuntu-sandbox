@@ -18,6 +18,16 @@ export class FortiGate extends Firewall {
     return this.shellInstance;
   }
 
+  protected override createManagementCli(user: string): FortiShell {
+    const shell = new FortiShell(this);
+    shell.setAdminIdentity(user.length > 0 ? user : null);
+    return shell;
+  }
+
+  protected override managementRunningConfig(): string {
+    return this.getShell().execute('show');
+  }
+
   executeCommand(command: string): Promise<string> {
     return Promise.resolve(this.getShell().execute(command));
   }

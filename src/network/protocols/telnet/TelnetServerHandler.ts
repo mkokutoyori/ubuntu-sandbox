@@ -92,8 +92,12 @@ class TelnetSession {
 
     const header = this.ctx.authHeader?.();
     if (header) this.write(`\n${header}\n`);
-    if (prompt === 'username-password') { this.phase = 'username'; this.write('\nUsername: '); }
-    else { this.phase = 'password'; this.write('\nPassword: '); }
+    if (prompt === 'username-password') { this.phase = 'username'; this.write(`\n${this.prompts().username}`); }
+    else { this.phase = 'password'; this.write(`\n${this.prompts().password}`); }
+  }
+
+  private prompts(): { username: string; password: string } {
+    return this.ctx.credentialPrompts?.() ?? { username: 'Username: ', password: 'Password: ' };
   }
 
   private onData(chunk: string): void {
@@ -174,7 +178,7 @@ class TelnetSession {
 
   private async dispatch(line: string): Promise<void> {
     if (this.phase === 'closed') return;
-    if (this.phase === 'username') { this.username = line.trim(); this.phase = 'password'; this.write('Password: '); return; }
+    if (this.phase === 'username') { this.username = line.trim(); this.phase = 'password'; this.write(this.prompts().password); return; }
     if (this.phase === 'password') { await this.verifyPassword(line); return; }
     await this.runCommand(line);
   }
@@ -197,8 +201,8 @@ class TelnetSession {
       return;
     }
     this.write('\n% Login invalid\n');
-    if (this.ctx.authPrompt() === 'username-password') { this.phase = 'username'; this.write('\nUsername: '); }
-    else { this.phase = 'password'; this.write('\nPassword: '); }
+    if (this.ctx.authPrompt() === 'username-password') { this.phase = 'username'; this.write(`\n${this.prompts().username}`); }
+    else { this.phase = 'password'; this.write(`\n${this.prompts().password}`); }
   }
 
   private beginExec(username: string): void {

@@ -45,6 +45,12 @@ export interface ITelnetServerContext {
   /** Header IOS prints above the credential prompts, e.g. "User Access Verification". */
   authHeader?(): string | null;
   authPrompt(): TelnetAuthPrompt;
+  /**
+   * The two credential prompts in this vendor's own wording. IOS asks
+   * `Username:`/`Password:`, a FortiGate asks `<hostname> login:`.
+   * Absent leaves the IOS wording, which every existing caller relies on.
+   */
+  credentialPrompts?(): { readonly username: string; readonly password: string };
   /** ACL / quiet-mode / free-line verdict, evaluated before any prompt. */
   admit(sourceIp: string): TelnetAdmission;
   authenticate(username: string | null, password: string): boolean | Promise<boolean>;

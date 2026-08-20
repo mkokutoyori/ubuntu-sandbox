@@ -2700,6 +2700,77 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 14 (le plan de gestion a une porte)
+
+**Agent `mandeng`.** §6.8 du carnet nomme le point : « l'authentification
+d'un compte administrateur à l'ouverture de session **n'est pas branchée
+sur une vraie connexion SSH** au pare-feu — le pare-feu n'a pas encore de
+serveur SSH ». Les « prochaines étapes » de ce journal le nomment aussi,
+depuis la phase 3 : « démon SSH sur le pare-feu, la CLI est là, il lui
+manque le transport (E27) ».
+
+Mesure de départ, et elle est plus large que le point annoncé :
+
+- `set allowaccess ssh|telnet|http|https|snmp` est **stocké et lu par
+  personne**. `Firewall.allowsAccess()` n'a qu'un seul appelant,
+  `allowsPing` ; toute connexion TCP vers une adresse du pare-feu est
+  livrée localement sans qu'aucune de ces valeurs soit consultée. Le
+  seul autre lecteur du dépôt est un test qui interroge le magasin.
+- `admin-ssh-port`, `admin-telnet-port`, `admin-port`, `admin-sport`,
+  `admin-lockout-threshold`, `admin-lockout-duration` et `admintimeout`
+  sont déclarés dans `config system global` et **ne sont passés à
+  personne** : l'`onCommit` n'en transmet que quatre autres.
+
+**Fichiers pris** :
+
+```
+firewall/mgmt/ManagementAccess.ts      ← nouveau : le tableau service → port
+firewall/mgmt/FirewallSshServer.ts     ← nouveau : le démon et son contexte
+firewall/Firewall.ts                   ← la porte locale et le montage
+firewall/l3/LocalDelivery.ts           ← le filtre par port de destination
+vendors/fortios/schema/system.ts       ← les réglages transmis
+vendors/fortios/FortiGate.ts           ← la CLI par session
+```
+
+**Ce qu'elle touchera du socle SSH** : rien. `SshServerHandler` et
+`ISshServerContext` existent et servent déjà quatre familles d'appareils
+(Linux, Windows, Cisco, Huawei) ; le pare-feu en devient la cinquième.
+
+**Critère de sortie** : `ssh admin@<pare-feu>` depuis un vrai `LinuxPC`
+ouvre une vraie session, les trames sont comptées sur le câble, une
+interface sans `allowaccess ssh` refuse, un `trusthost` qui ne couvre pas
+la source refuse, et `admin-ssh-port` déplace vraiment la porte.
+
+**Livrée.** Les six points du critère sont tenus, et telnet est monté par
+le même chemin avec sa propre invite (`credentialPrompts()`, crochet
+optionnel du contexte telnet partagé, donc Cisco et Huawei gardent le
+libellé d'IOS). Deux points appris en mesurant :
+
+- **le refus est un rejet SILENCIEUX**, pas un refus — la documentation
+  Fortinet décrit le paquet jeté avant que le serveur ne le voie, donc le
+  client n'obtient pas même une invite de mot de passe. La sonde l'affirme
+  par l'absence d'invite plutôt que par un message ;
+- **l'invite de configuration reproduisait le CHEMIN et non le dernier
+  mot** — `config system global` rendait `FGT (system global) #` là où une
+  vraie machine rend `FGT (global) #`. `FortiNavigator.label()` prenait la
+  CLÉ de l'objet, ce qui est juste pour une entrée de table (`edit port1`
+  → `(port1)`) et faux pour un objet unique, dont la clé EST le chemin.
+
+**Trouvé en mesurant et laissé au socle TCP**, parce que c'est un défaut
+général et non un défaut du pare-feu : `EndHost.tcpConnect` rend une
+promesse qui ne se résout JAMAIS quand le SYN est jeté en silence. La pile
+a bien ses minuteurs de retransmission (`onRtoFired` →
+`_teardown(socket, 'timeout')`), mais aucun test à horloge réelle ne les
+atteint — c'est ce qui rend le refus muet plutôt que « timed out ».
+
+**Contrainte retirée dans la même livraison** : la limite de 800 lignes par
+fichier (NFR-M3, garde-fous G1 et G3). Le comptage de lignes s'est révélé un
+mauvais indicateur de couplage — il imposait des extractions dictées par un
+compteur plutôt que par la cohésion. Ce qui gouverne le découpage reste
+NFR-M1, NFR-M2, NFR-M4 et NFR-M6, qui parlent tous de dépendances.
+
+---
+
 ## Périmètre pris — FortiOS phase 13 (les collecteurs syslog émettent)
 
 **Agent `mandeng`.** §6.5 du carnet nomme le point : « les collecteurs

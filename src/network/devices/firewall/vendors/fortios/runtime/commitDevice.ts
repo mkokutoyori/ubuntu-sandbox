@@ -102,7 +102,21 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
       applyGlobalSettings(settings) {
         fw.setMultiVdom(settings.multiVdom);
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
-          fw.setPortalPorts(settings.authHttpPort, settings.authHttpsPort);
+          fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
+        }
+        fw.setManagementPorts({
+          ssh: settings.adminSshPort,
+          telnet: settings.adminTelnetPort,
+          http: settings.adminHttpPort,
+          https: settings.adminHttpsPort,
+        });
+        if (settings.adminTimeoutMin !== undefined) {
+          fw.setAdminIdleTimeout(settings.adminTimeoutMin);
+        }
+        if (settings.adminLockoutThreshold !== undefined
+          && settings.adminLockoutDurationSec !== undefined) {
+          fw.setAdminLockout(
+            settings.adminLockoutThreshold, settings.adminLockoutDurationSec);
         }
       },
       setCaptivePortalInterface(iface, on) {

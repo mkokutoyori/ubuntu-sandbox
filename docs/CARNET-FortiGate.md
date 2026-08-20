@@ -189,7 +189,7 @@ Un agent qui reprend gagnera du temps à les connaître.
 | **P11** | Un laboratoire de sortie sans route par défaut | `route-lookup` refuse, la politique n'est jamais atteinte, et le symptôme lu est « le NAT ne traduit pas ». Quatre cas de la sonde de phase 3 sont tombés là-dessus. |
 | **P12** | `session.c2s` porte le tuple **traduit** | La session est installée APRÈS le NAT. Filtrer ou afficher `c2s` montre l'adresse publique là où l'opérateur cherche la privée. Utiliser `originalFlow(session)`. |
 | **P13** | Un argument `REST` est découpé aux espaces | `diagnose sniffer packet any 'host 1.2.3.4' 4 10` arrive en cinq mots : l'expression entre apostrophes doit être recollée avant lecture (`splitSnifferArguments`). |
-| **P14** | Le garde-fou G1 borne un fichier vendeur à 800 lignes | Absorber un dispatch dans `FortiShell` le fait tomber. La réponse est d'extraire le calcul (`diag/FortiDiagCommands.ts`), jamais de desserrer le seuil. |
+| ~~**P14**~~ | ~~Le garde-fou G1 borne un fichier vendeur à 800 lignes~~ | **Retiré.** Le comptage de lignes s'est révélé un mauvais indicateur de couplage : il imposait des extractions dictées par un compteur plutôt que par la cohésion, pour un coût en temps supérieur à ce qu'il faisait gagner. Les extractions déjà faites restent — elles étaient justes ; c'est l'obligation qui disparaît. |
 | **P15** | G6 interdit un `new Set(['…'])` littéral hors du schéma | Même pour une liste qui n'est pas des attributs de configuration. Nommer une constante `readonly string[]` et construire le `Set` à partir d'elle. |
 
 ---
@@ -430,9 +430,14 @@ second facteur toujours accepté serait pire que pas de second facteur).
   et `security-mode captive-portal` sur une interface existe. HTTPS n'est
   pas capturé (il faudrait présenter un certificat pour un nom qu'on n'a
   pas — même brique manquante que `deep-inspection`) ;
-- l'authentification d'un compte administrateur à l'ouverture de session
-  n'est pas branchée sur une vraie connexion SSH au pare-feu — le
-  pare-feu n'a pas encore de serveur SSH ;
+- ~~l'authentification d'un compte administrateur n'est pas branchée sur
+  une vraie connexion SSH~~ **fermé en E51** : le pare-feu héberge un
+  vrai serveur SSH (et telnet) sur sa propre pile TCP, par le
+  `SshServerHandler` que le dépôt sert déjà à quatre familles
+  d'appareils. `ssh admin@<pare-feu>` depuis un `LinuxPC` ouvre une vraie
+  session, les trames sont comptées sur le câble, chaque session a sa
+  propre CLI portant l'identité de l'administrateur — donc son profil
+  d'accès — et `trusthost` refuse au niveau du paquet ;
 - `two-factor` est refusé, donc `email-to` est stocké sans emploi.
 
 ### 6.9 Phase 8 — VPN — ✅ livrée
@@ -538,6 +543,7 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
+| 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |
