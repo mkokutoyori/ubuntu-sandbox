@@ -620,7 +620,9 @@ export function displayCurrentConfig(
     lines.push(`interface ${renderedName}`);
     const desc = descs.get(name);
     if (desc) lines.push(` description ${desc}`);
-    if (ip && mask) {
+    if (port.isDhcpClient()) {
+      lines.push(' ip address dhcp-alloc');
+    } else if (ip && mask) {
       lines.push(` ip address ${ip} ${mask}`);
     } else {
       lines.push(` shutdown`);
@@ -1192,7 +1194,9 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
     `interface ${huaweiDisplayInterfaceName(portName)}`,
   ];
   if (desc) lines.push(` description ${desc}`);
-  if (ip && mask) {
+  if (port.isDhcpClient()) {
+    lines.push(' ip address dhcp-alloc');
+  } else if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
   } else {
     lines.push(` shutdown`);

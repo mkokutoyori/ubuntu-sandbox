@@ -340,7 +340,6 @@ export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Rou
     if (!bindings || bindings.size === 0) return 'No IPv6 DHCP bindings.';
     return [...bindings.values()].map(b => `${b.client} → ${b.address}`).join('\n');
   });
-  trie.register('show dhcp lease', 'Display DHCP client leases', () => 'No DHCP leases.');
   trie.register('show dhcp server', 'Display DHCP server status', () => {
     const r = getRouter() as any;
     return r._ciscoDhcpServerEnabled === false ? 'DHCP server disabled.' : 'DHCP server enabled.';

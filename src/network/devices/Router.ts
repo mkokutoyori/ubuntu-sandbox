@@ -135,6 +135,7 @@ import { RouterRIPEngine } from './router/RouterRIPEngine';
 export type { RIPConfig } from './router/RouterRIPEngine';
 import { IPv6DataPlane } from './router/IPv6DataPlane';
 export type { IPv6RouteEntry, NeighborState, NeighborCacheEntry, RAConfig } from './router/IPv6DataPlane';
+import { RouterDhcpClient } from './router/RouterDhcpClient';
 import { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
 import { RouterDynamicRouting } from './router/RouterDynamicRouting';
 import { NetworkOsCredentialStore } from './router/aaa/NetworkOsCredentialStore';
@@ -557,6 +558,27 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       return port?.getIPAddress()?.toString() ?? null;
     });
     this.createPorts();
+    this.dhcpClientAgent = new RouterDhcpClient({
+      macOf: (iface) => this.ports.get(iface)?.getMAC().toString() ?? '00:00:00:00:00:00',
+      linkUsable: (iface) => {
+        const port = this.ports.get(iface);
+        return !!port && port.getIsUp() && port.isConnected();
+      },
+      applyLease: (iface, ip, mask, gateway) => {
+        this.ports.get(iface)?.configureIP(new IPAddress(ip), new SubnetMask(mask), 'dhcp');
+        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask));
+        if (gateway) this.setDefaultRoute(new IPAddress(gateway), 0, { iface });
+      },
+      clearLease: (iface) => {
+        this.ports.get(iface)?.clearIP();
+        this.routingTable = this.routingTable.filter(r =>
+          !((r.type === 'connected' || r.type === 'default') && r.iface === iface));
+      },
+      sendDhcpFrame: (iface, pkt) => this.sendDhcpClientFrame(iface, pkt),
+      markClient: (iface, on) => this.ports.get(iface)?.setDhcpClient(on),
+      bus: () => this.getBus(),
+      identity: () => ({ deviceId: this.id, hostname: this.getHostname() }),
+    });
     this._setupPortMonitoring();
     const tcpHost = {
       id: this.id, name: this.name,
@@ -1173,11 +1195,35 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return [...best.values()].flat();
   }
 
+  private readonly dhcpClientAgent: RouterDhcpClient;
+
+  getDhcpClientAgent(): RouterDhcpClient { return this.dhcpClientAgent; }
+
+  private sendDhcpClientFrame(iface: string, pkt: DHCPPacket): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 68, destinationPort: 67,
+      length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv4Packet(
+      new IPAddress('0.0.0.0'), new IPAddress('255.255.255.255'),
+      IP_PROTO_UDP, 64, udp, 8 + 300);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_IPV4,
+      payload: ipPkt,
+    });
+  }
+
   private _setupPortMonitoring(): void {
     for (const [name, port] of this.ports) {
       port.onLinkChange((state) => {
         this.syncRouteDebug();
         this.emitLinkTrap(name, port, state === 'up');
+        if (state === 'up') this.dhcpClientAgent.onLinkUp(name);
+        else this.dhcpClientAgent.onLinkDown(name);
         if (state === 'up') {
           this.ospfIntegration.onPortUp(name);
           this._ospfAutoConverge();
@@ -2585,6 +2631,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         this.ripEngine.processPacket(inPort, ipPkt.sourceIP, rip);
       } else if (udp.destinationPort === 67) {
         this.handleDhcpUdp(inPort, ipPkt, udp);
+      } else if (udp.destinationPort === 68) {
+        const reply = udp.payload as DHCPPacket | undefined;
+        if (reply && reply.type === 'dhcp') {
+          this.dhcpClientAgent.deliver(inPort, reply);
+        }
       } else if (udp.destinationPort === UDP_PORT_IKE) {
         this.ipsecEngine?.handleIkeUdp(inPort, ipPkt, udp);
       } else if (this.ipSlaEngine.handleUdp(ipPkt.sourceIP, udp)) {

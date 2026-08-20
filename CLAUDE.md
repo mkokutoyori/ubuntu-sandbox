@@ -202,6 +202,45 @@ Single Zustand store (`networkStore.ts`) holds the full topology: devices (`Netw
 
 Design/analysis documents accumulate at the repo root and under `docs/`: PRDs and BRDs (`PRD.md`, `BRD-Oracle-DBMS.md`, `BRD-PowerShell.md`, `BRD-SSH-SFTP.md`), design docs (`DESIGN-*.md`), gap analyses (`*_gap.md`, `*-gap-analysis.md`, `evaluation.md`), tutorials (`tutoriel-*.md`, `Lan_tuto.md`, `TUTORIAL.md`), and roadmaps (`roadmap.md`). Consult these for historical context and rationale before large refactors of a subsystem.
 
+## Déclarer une commande — le socle, pas le trie
+
+**Toute commande NOUVELLE se déclare sur le socle** (`src/cli/`), en
+`CommandSpec`, dans une famille sous `src/cli/commands/<famille>/`.
+`CommandTrie` est l'ancien moteur : il porte encore l'essentiel du
+vocabulaire et la migration est incrémentale, mais on ne lui ajoute plus
+rien.
+
+Une famille est une fonction qui rend des `CommandSpec[]` :
+
+```ts
+export function maFamille(): CommandSpec[] {
+  return [{
+    id: 'ip-address-dhcp',
+    path: ['ip', 'address', 'dhcp'],
+    description: 'IP Address negotiated via DHCP',
+    modes: ['config-if', 'config-subif'], minPrivilege: 15,
+    run: (session, args) => { … },
+  }];
+}
+```
+
+Ce que le socle apporte et que le trie n'a pas : un seul arbre construit
+une fois (le vocabulaire appartient à la PLATEFORME, la session ne porte
+que le mode, le privilège et la vue) ; l'abréviation et l'ambiguïté par
+le même mécanisme ; un argument **typé et PARSÉ**, donc `ip address
+zorglub` refusé au lieu d'accepté ; un gestionnaire qui peut être
+asynchrone. Une déclaration en double est refusée au lieu d'écraser.
+
+La famille se branche dans `socleSpecs()` du shell concerné
+(`CiscoShellBase`, `CiscoIOSShell`, `CiscoSwitchShell`). Le `session.device`
+est le SHELL : les méthodes dont la famille a besoin se déclarent en
+interface étroite (`DhcpClientHost`, `TunnelHost`) et le shell les
+implémente en déléguant à l'équipement.
+
+**Les shells VRP n'ont pas encore de pont vers le socle** — c'est inscrit
+dans `TODO.md`. Tant qu'il n'existe pas, une commande VRP se déclare sur
+son trie et l'entrée du registre est mise à jour.
+
 ## TODO — le registre des manquements
 
 `TODO.md` (racine) tient la liste des manquements MESURÉS et non encore

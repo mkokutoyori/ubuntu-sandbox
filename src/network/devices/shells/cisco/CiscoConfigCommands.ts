@@ -514,6 +514,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
       return "% Invalid input detected at '^' marker.";
     }
     try {
+      if (!secondary) ctx.r().getDhcpClientAgent().disable(ctx.getSelectedInterface()!);
       ctx.r().configureInterface(ctx.getSelectedInterface()!, new IPAddress(args[0]), new SubnetMask(args[1]), secondary);
       return '';
     } catch (e: any) {
@@ -524,6 +525,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   trie.registerGreedy('no ip address', 'Remove interface IP address', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
+    ctx.r().getDhcpClientAgent().disable(ifName);
     if (args[2]?.toLowerCase() === 'secondary' && isValidIPv4(args[0]) && isValidSubnetMask(args[1])) {
       ctx.r().removeSecondaryAddress(ifName, new IPAddress(args[0]), new SubnetMask(args[1]));
       return '';
@@ -967,16 +969,6 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
 
-  trie.registerGreedy('ip address dhcp', 'Configure IP via DHCP', (args, raw) => {
-    const ifName = ctx.getSelectedInterface();
-    if (!ifName) return '';
-    const port = ctx.r().getPort(ifName);
-    if (port) {
-      (port as any).ipAddressDhcp = true;
-      (port as any).ipAddressDhcpRaw = raw ?? `ip address dhcp ${args.join(' ')}`;
-    }
-    return '';
-  });
   trie.registerGreedy('load-interval', 'Set load calculation interval', (args) => {
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);

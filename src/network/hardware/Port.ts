@@ -83,6 +83,7 @@ export class Port {
   private ipAddress: IPAddress | null = null;
   private subnetMask: SubnetMask | null = null;
   private ipv4Origin: IPv4AddressOrigin = 'manual';
+  private dhcpClient = false;
   private secondaryIPs: Array<{ ip: IPAddress; mask: SubnetMask }> = [];
   // IPv6 configuration (multiple addresses per interface)
   private ipv6Addresses: IPv6AddressEntry[] = [];
@@ -380,6 +381,9 @@ export class Port {
 
   /** Provenance of the primary IPv4 address — see {@link IPv4AddressOrigin}. */
   getIPv4Origin(): IPv4AddressOrigin { return this.ipv4Origin; }
+
+  isDhcpClient(): boolean { return this.dhcpClient; }
+  setDhcpClient(on: boolean): void { this.dhcpClient = on; }
 
   configureIP(ip: IPAddress, mask: SubnetMask, origin: IPv4AddressOrigin = 'manual'): void {
     this.ipAddress = ip;

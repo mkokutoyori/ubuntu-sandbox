@@ -77,6 +77,42 @@ converger le voisin, donc le symptôme est refermé côté VRP.
 
 ---
 
+## Socle CLI
+
+### [socle] les shells VRP n'ont aucun pont vers le socle
+`HuaweiVRPShell` et `HuaweiSwitchShell` ne connaissent ni `CommandTable`
+ni `CommandSpec` : tout y passe par `CommandTrie`. Une commande VRP
+nouvelle ne peut donc pas suivre la règle du socle posée dans
+`CLAUDE.md`.
+**Mesure** : aucune occurrence de `socleSpecs`/`CommandSpec` dans les
+deux fichiers.
+**Report** : demande de porter les modes VRP (vue système, interface,
+vlan, acl, aaa…), l'invite, le modèle de privilège et les quatre messages
+positionnels de VRP dans le socle — un chantier à part entière.
+
+## Serveurs DHCP
+
+### [dhcp] une machine Linux ne peut pas SERVIR le DHCP
+`new DHCPServer` n'est instancié que par `Router`, `Switch`,
+`WindowsDhcpServerRole` et le pare-feu. Un `LinuxServer` n'a ni `dhcpd`,
+ni `/etc/dhcp/dhcpd.conf`, ni unité `isc-dhcp-server`.
+**Mesure** : le cas « serveur générique (Linux) » de
+`routeur-adresse-par-dhcp.test.ts` a dû être remplacé par un commutateur
+de niveau 3.
+**Report** : demande un vrai démon `dhcpd` (fichier de configuration lu,
+unité systemd, journal) — la brique serveur existe, c'est l'enveloppe
+Linux qui manque.
+
+### [dhcp] pas de détection de conflit d'adresse côté serveur
+Un pool qui couvre l'adresse du serveur lui-même la propose : les
+laboratoires doivent poser `ip dhcp excluded-address`. Le vrai IOS teste
+l'adresse par deux pings avant de l'offrir.
+**Mesure** : sans `excluded-address`, le client reçoit `192.168.51.1`,
+l'adresse du serveur.
+**Report** : demande un aller-retour ICMP synchrone dans le chemin
+d'offre ; `setAddressConflictChecker` existe côté CLIENT et n'a pas de
+pendant côté serveur.
+
 ## Outillage
 
 ### [typecheck] 347 erreurs de type au compteur

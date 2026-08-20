@@ -106,5 +106,6 @@ export function iosShortInterfaceName(name: string): string {
 }
 
 export function iosAddressMethod(port: Port): 'manual' | 'unset' | 'DHCP' {
+  if (port.isDhcpClient()) return 'DHCP';
   return port.getIPAddress() ? 'manual' : 'unset';
 }

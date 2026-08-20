@@ -425,6 +425,7 @@ function cmdIpAddress(
     return refuseMotInattenduVrp(ligne ?? `ip address ${args.join(' ')}`, args[3]);
   }
   try {
+    router.getDhcpClientAgent().disable(ctx.getSelectedInterface()!);
     const ip = new IPAddress(args[0]);
     const maskArg = args[1];
     const mask = /^\d+$/.test(maskArg) && !maskArg.includes('.')
@@ -629,6 +630,25 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
 
   trie.registerGreedy('ip address', 'Configure IP address', (args, raw) => {
     return cmdIpAddress(getRouter(), ctx, args, raw);
+  });
+
+  trie.register('ip address dhcp-alloc', 'Obtain an IP address through DHCP', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected';
+    const agent = getRouter().getDhcpClientAgent();
+    const deja = agent.enabledInterfaces().filter(i => i !== ifName);
+    if (deja.length > 0) {
+      return 'Error: The DHCP client function has been enabled on another interface.';
+    }
+    agent.enable(ifName, 'ip address dhcp-alloc');
+    return '';
+  });
+
+  trie.register('undo ip address dhcp-alloc', 'Disable the DHCP client', () => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return 'Error: No interface selected';
+    getRouter().getDhcpClientAgent().disable(ifName);
+    return '';
   });
 
   trie.register('shutdown', 'Shutdown interface', () => {

@@ -961,7 +961,8 @@ function interfaceConfigLines(
   // pas de distinguer une interface sans adresse d'une interface dont
   // l'adresse aurait été omise — et c'est ce texte que l'import de
   // topologie rejoue.
-  if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
+  if (port.isDhcpClient()) lines.push(' ip address dhcp');
+  else if (ip && mask) lines.push(` ip address ${ip} ${mask}`);
   else if (!/^(Tunnel|Loopback|Vlan|BVI|Port-channel|Null)/i.test(name)) {
     lines.push(' no ip address');
   }

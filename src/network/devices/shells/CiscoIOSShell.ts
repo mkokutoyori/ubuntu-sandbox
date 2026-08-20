@@ -20,6 +20,7 @@
 import type { ExecScope } from './cisco/CiscoExecScope';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
 import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
@@ -251,6 +252,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   protected override socleSpecs(): readonly CommandSpec[] {
     return [
       ...super.socleSpecs(),
+      ...dhcpClientFamily(),
       ...this.ipv6ExecSpecs(),
       ...dhcpPoolSpecs(this),
       ...ospfIpv6ShowSpecs(() => this.d()),
@@ -628,6 +630,38 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   selectedInterfaceName(): string | null {
     return this.selectedInterface ?? null;
+  }
+
+  dhcpClientEnable(iface: string, line: string): void {
+    this.d().getDhcpClientAgent().enable(iface, line);
+  }
+
+  dhcpClientDisable(iface: string): boolean {
+    return this.d().getDhcpClientAgent().disable(iface);
+  }
+
+  dhcpClientRelease(iface: string): boolean {
+    return this.d().getDhcpClientAgent().release(iface);
+  }
+
+  dhcpClientRenew(iface: string): boolean {
+    return this.d().getDhcpClientAgent().renew(iface);
+  }
+
+  dhcpClientLeases(): DhcpClientLeaseView[] {
+    return this.d().getDhcpClientAgent().leases().map(l => ({
+      iface: l.iface,
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
+  dhcpClientResolveInterface(name: string): string | null {
+    return this.resolveInterfaceNameForDebug(name);
   }
 
   pendingInterfaceConfig(iface: string): Record<string, unknown> {
