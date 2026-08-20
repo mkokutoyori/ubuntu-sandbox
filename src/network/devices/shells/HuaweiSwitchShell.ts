@@ -46,6 +46,7 @@ import {
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
+import { analyserMacAddress, macRunningConfigLines, normaliserMacVrp, VRP_MAC_AGING_DEFAUT } from './huawei/HuaweiMacCommands';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -1033,17 +1034,36 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     });
 
-    // mac-address aging-time <seconds>
-    this.systemTrie.registerGreedy('mac-address', 'MAC address configuration', (args) => {
-      if (!this.swRef || args.length < 2) return 'Error: Incomplete command.';
-      if (args[0].toLowerCase() === 'aging-time') {
-        const seconds = parseInt(args[1], 10);
-        if (isNaN(seconds) || seconds < 0) return 'Error: Invalid parameter.';
-        this.swRef.setMACAgingTime(seconds);
-        return '';
+    this.systemTrie.registerGreedy('mac-address', 'MAC address configuration', (args, ligne) => {
+      const sw = this.swRef;
+      if (!sw) return HUAWEI_ERRORS.INCOMPLETE(ligne ?? 'mac-address');
+      const a = analyserMacAddress(args);
+      const brut = ligne ?? `mac-address ${args.join(' ')}`;
+      switch (a.statut) {
+        case 'aging-time':
+          sw.setMACAgingTime(a.secondes);
+          return '';
+        case 'blackhole':
+          sw.addBlackholeMAC(a.mac, a.vlan);
+          return '';
+        case 'static': {
+          const port = this.resolveInterfaceName(a.iface);
+          if (!port || !sw.getPort(port)) return refuseMotInattenduVrp(brut, a.iface);
+          if (!sw.getVLANs().has(a.vlan)) return `Error: The VLAN ${a.vlan} does not exist.`;
+          sw.addStaticMAC(a.mac, a.vlan, port);
+          return '';
+        }
+        default:
+          return a.token === null
+            ? HUAWEI_ERRORS.INCOMPLETE(brut)
+            : refuseMotInattenduVrp(brut, a.token);
       }
-      return 'Error: Incomplete command.';
     });
+    this.systemTrie.addCompletionKeywords('mac-address', [
+      { keyword: 'aging-time', description: 'Aging time of dynamic MAC address entries' },
+      { keyword: 'blackhole', description: 'Blackhole MAC address entry' },
+      { keyword: 'static', description: 'Static MAC address entry' },
+    ]);
 
     this.systemTrie.register('ip routing-enable', 'Enable IP routing', () => {
       this.swRef?.setIpRoutingEnabled(true);
@@ -2129,20 +2149,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return this.displayMacAgingTime(this.swRef);
     });
 
-    // display mac-address [vlan <id> | <if> | dynamic | static]
-    trie.registerGreedy('display mac-address', 'Display MAC address table', (args) => {
-      if (!this.swRef) return '';
-      const full = this.displayMacAddress(this.swRef);
-      if (args.length === 0) return full;
-      if (args[0].toLowerCase() === 'vlan' && args[1]) {
-        const id = args[1];
-        const lines = full.split('\n');
-        const head = lines.slice(0, 2);
-        const body = lines.slice(2).filter(l =>
-          new RegExp(`\\b${id}\\b`).test(l));
-        return [...head, ...body].join('\n');
+    trie.registerGreedy('display mac-address', 'Display MAC address table', (args, ligne) => {
+      const sw = this.swRef;
+      if (!sw) return '';
+      const mots = args.filter(a => a.length > 0);
+      let entries = sw.getMACTable();
+      let i = 0;
+      while (i < mots.length) {
+        const mot = mots[i].toLowerCase();
+        if (mot === 'static' || mot === 'dynamic' || mot === 'blackhole') {
+          entries = entries.filter(e => e.type === mot);
+          i += 1;
+          continue;
+        }
+        if (mot === 'vlan') {
+          const id = parseInt(mots[i + 1] ?? '', 10);
+          if (isNaN(id)) {
+            return HUAWEI_ERRORS.WRONG(ligne ?? `display mac-address ${args.join(' ')}`);
+          }
+          entries = entries.filter(e => e.vlan === id);
+          i += 2;
+          continue;
+        }
+        const port = this.resolveInterfaceName(mots.slice(i).join(''));
+        if (!port || !sw.getPort(port)) {
+          return refuseMotInattenduVrp(
+            ligne ?? `display mac-address ${args.join(' ')}`, mots[i]);
+        }
+        entries = entries.filter(e => e.port === port);
+        i = mots.length;
       }
-      return full;
+      return this.displayMacAddress(entries);
     });
 
     trie.register('display current-configuration', 'Display running configuration', () => {
@@ -3161,6 +3198,48 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Undo Command ────────────────────────────────────────────────
 
+  private undoMacAddress(reste: readonly string[], brut: string): string {
+    const sw = this.swRef;
+    if (!sw) return HUAWEI_ERRORS.INCOMPLETE(brut);
+    const sub = (reste[0] ?? '').toLowerCase();
+    if (sub === 'aging-time') {
+      sw.setMACAgingTime(VRP_MAC_AGING_DEFAUT);
+      return '';
+    }
+    if (sub !== 'static' && sub !== 'blackhole') {
+      return reste.length === 0
+        ? HUAWEI_ERRORS.INCOMPLETE(brut)
+        : refuseMotInattenduVrp(brut, reste[0]);
+    }
+    if (reste.length === 1) {
+      for (const e of sw.getMACTable()) {
+        if (e.type !== sub) continue;
+        if (sub === 'static') sw.removeStaticMAC(e.mac, e.vlan);
+        else sw.removeBlackholeMAC(e.mac, e.vlan);
+      }
+      return '';
+    }
+    const a = analyserMacAddress(reste);
+    if (a.statut === 'static') {
+      return sw.removeStaticMAC(a.mac, a.vlan) ? '' : 'Error: The MAC address entry does not exist.';
+    }
+    if (a.statut === 'blackhole') {
+      return sw.removeBlackholeMAC(a.mac, a.vlan) ? '' : 'Error: The MAC address entry does not exist.';
+    }
+    const mac = normaliserMacVrp(reste[1] ?? '');
+    if (mac) {
+      let retire = false;
+      for (const e of sw.getMACTable()) {
+        if (e.type !== sub || e.mac !== mac) continue;
+        retire = (sub === 'static' ? sw.removeStaticMAC(e.mac, e.vlan) : sw.removeBlackholeMAC(e.mac, e.vlan)) || retire;
+      }
+      return retire ? '' : 'Error: The MAC address entry does not exist.';
+    }
+    return a.token === null
+      ? HUAWEI_ERRORS.INCOMPLETE(brut)
+      : refuseMotInattenduVrp(brut, a.token);
+  }
+
   private undoStpSysteme(reste: readonly string[]): string {
     const sub = (reste[0] ?? '').toLowerCase();
     switch (sub) {
@@ -3262,6 +3341,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     if (args[0].toLowerCase() === 'stp' && this.mode === 'system') {
       return this.undoStpSysteme(args.slice(1));
+    }
+
+    if (args[0].toLowerCase() === 'mac-address' && this.mode === 'system') {
+      return this.undoMacAddress(args.slice(1), `undo ${args.join(' ')}`);
     }
 
     // VRP accepts `undo` of essentially any prior config. The L2 sim
@@ -3430,8 +3513,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
-  private displayMacAddress(sw: Switch): string {
-    const entries = sw.getMACTable();
+  private displayMacAddress(entries: readonly import('../Switch').MACTableEntry[]): string {
     const lines = [
       'MAC address table of slot 0:',
       '-------------------------------------------------------------------------------',
@@ -3445,7 +3527,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const e of entries) {
         lines.push(...rendreMacAddress([{
           mac: huaweiMacAddress(e.mac), vlan: String(e.vlan),
-          port: huaweiDisplayInterfaceName(e.port), type: e.type,
+          port: e.type === 'blackhole' ? '-' : huaweiDisplayInterfaceName(e.port),
+          type: e.type,
         }]).slice(1));
       }
     }
@@ -3493,6 +3576,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
       lines.push('#');
     }
+
+    const macLignes = macRunningConfigLines(sw.getMACTable(), sw.getMACAgingTime());
+    if (macLignes.length > 0) { lines.push(...macLignes); lines.push('#'); }
 
     const stpLignes = vrpStpGlobalLines(sw.getStpAgent?.());
     if (stpLignes.length > 0) { lines.push(...stpLignes); lines.push('#'); }

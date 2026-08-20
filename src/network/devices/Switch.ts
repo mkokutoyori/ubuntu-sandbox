@@ -205,7 +205,7 @@ export interface MACTableEntry {
   mac: string;
   vlan: number;
   port: string;
-  type: 'static' | 'dynamic';
+  type: 'static' | 'dynamic' | 'blackhole';
   age: number;           // seconds remaining before expiry
   timestamp: number;     // last refresh time
 }
@@ -1691,6 +1691,29 @@ export abstract class Switch extends Equipment {
     return true;
   }
 
+  addBlackholeMAC(mac: string, vlan: number): boolean {
+    const key = `${vlan}:${mac.toLowerCase()}`;
+    this.macTable.set(key, {
+      mac: mac.toLowerCase(),
+      vlan,
+      port: '',
+      type: 'blackhole',
+      age: -1,
+      timestamp: Date.now(),
+    });
+    return true;
+  }
+
+  removeBlackholeMAC(mac: string, vlan: number): boolean {
+    const key = `${vlan}:${mac.toLowerCase()}`;
+    if (this.macTable.get(key)?.type !== 'blackhole') return false;
+    return this.macTable.delete(key);
+  }
+
+  isBlackholedMAC(mac: string, vlan: number): boolean {
+    return this.macTable.get(`${vlan}:${mac.toLowerCase()}`)?.type === 'blackhole';
+  }
+
   // ─── Frame Handling Pipeline ──────────────────────────────────────
 
   protected handleFrame(portName: string, frame: EthernetFrame): void {
@@ -1882,6 +1905,12 @@ export abstract class Switch extends Equipment {
     const macKey = `${ingressVlan}:${srcMAC}`;
     const existing = this.macTable.get(macKey);
 
+    if (existing?.type === 'blackhole') {
+      Logger.debug(this.id, 'switch:mac-blackhole',
+        `${this.name}: dropped frame from ${srcMAC} VLAN ${ingressVlan} (blackhole source)`);
+      return;
+    }
+
     if (!existing || existing.type === 'dynamic') {
       // MAC move detection: if MAC exists on a different port
       if (existing && existing.type === 'dynamic' && existing.port !== portName) {
@@ -1967,6 +1996,12 @@ export abstract class Switch extends Equipment {
     const dstOctets = frame.dstMAC.getOctets();
     const isMulticast = frame.dstMAC.isBroadcast() ||
                         (dstOctets[0] & 0x01) === 0x01;
+
+    if (!isMulticast && this.macTable.get(`${ingressVlan}:${dstMAC}`)?.type === 'blackhole') {
+      Logger.debug(this.id, 'switch:mac-blackhole',
+        `${this.name}: dropped frame to ${dstMAC} VLAN ${ingressVlan} (blackhole destination)`);
+      return;
+    }
 
     if (isMulticast || !this.macTable.has(`${ingressVlan}:${dstMAC}`)) {
       const snoopedPorts = isMulticast ? this.resolveSnoopedMulticastEgressPorts(portName, frame, ingressVlan) : null;

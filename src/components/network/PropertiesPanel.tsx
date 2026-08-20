@@ -17,7 +17,7 @@ interface MACTableEntry {
   interfaceId: string;
   vlan: number;
   timestamp: number;
-  type: 'dynamic' | 'static';
+  type: 'dynamic' | 'static' | 'blackhole';
 }
 
 interface SwitchInstance {
