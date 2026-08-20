@@ -9869,3 +9869,336 @@ FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDeP
 6. **Un pare-feu à jour mal configuré vaut mieux qu'un pare-feu parfait en version vulnérable.**
 
 ---
+
+## 26. Les erreurs classiques
+
+Voici les pièges qui font perdre le plus de temps. Certains, tu les as déjà rencontrés dans les TP — c'était volontaire. Les autres t'attendent.
+
+Chaque erreur suit le même format : **symptôme**, **cause**, **vérification**, **correction**.
+
+---
+
+### Erreur #1 — La règle est écrite, et elle ne s'applique pas
+
+**Symptôme** : tu as créé une politique qui autorise le trafic, et il est quand même refusé.
+
+**Cause n°1 — Une règle plus large est au-dessus.** Première correspondance gagne (§9.2), et l'identifiant n'est pas la position.
+
+**Vérification :**
+```
+FGT-01 # show firewall policy | grep -e "edit " -e "set name"
+FGT-01 # diagnose debug flow filter addr <destination>
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Si tu lis `Denied by forward policy check (policy 0)` → **aucune** règle ne correspond, il en manque une.
+Si tu lis `Denied by forward policy check (policy N)` → la règle N refuse, va la voir.
+Si tu lis `Allowed by Policy-N` alors que ça ne marche pas → **le problème n'est pas le pare-feu**.
+
+**Cause n°2 — Un critère ne correspond pas.** L'interface, le service, l'horaire, ou un objet dont le contenu a changé.
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # move <ta-regle> before <la-regle-large>
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #2 — Le changement de règle ne produit aucun effet
+
+**Symptôme** : tu modifies une politique, et le comportement reste identique.
+
+**Cause** : les sessions **déjà établies** ne repassent pas par l'évaluation (§11.3 ④).
+
+**Vérification :**
+```
+FGT-01 # diagnose sys session filter dst <destination>
+FGT-01 # diagnose sys session list
+```
+
+**Correction :**
+```
+FGT-01 # diagnose sys session filter dst <destination>
+FGT-01 # diagnose sys session clear
+```
+
+> 🚨 **Toujours poser le filtre avant.** Un `session clear` sans filtre coupe **toutes** les connexions de tous les utilisateurs.
+
+---
+
+### Erreur #3 — Le VIP ne fonctionne pas
+
+**Symptôme** : le serveur publié est injoignable depuis l'extérieur.
+
+**Cause n°1 — La destination de la politique est l'adresse interne** au lieu du VIP (§10.5).
+
+**Cause n°2 — `set nat enable` sur la politique de publication.** Le serveur voit alors toutes les connexions venir du pare-feu.
+
+**Cause n°3 — Le `mappedip` pointe vers une adresse inexistante.**
+
+**Vérification :**
+```
+FGT-01 # show firewall vip <nom>
+FGT-01 # show firewall policy <id>
+FGT-01 # execute ping <mappedip>
+FGT-01 # diagnose debug flow filter addr <extip>
+```
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit <id>
+FGT-01 (id) # set dstaddr "<nom-du-VIP>"
+FGT-01 (id) # set nat disable
+FGT-01 (id) # next
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #4 — `set` a effacé la moitié de la configuration
+
+**Symptôme** : tu ajoutes une valeur à un attribut de liste, et les autres ont disparu. Parfois, tu perds ton accès.
+
+**Cause** : `set` **remplace** la liste entière (§5.9). `set allowaccess ssh` sur une interface qui avait `ping https ssh` ne laisse que `ssh`.
+
+**Vérification :**
+```
+FGT-01 # show system interface <nom>
+```
+
+**Correction** : énumère **toujours** la liste complète voulue.
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port2
+FGT-01 (port2) # set allowaccess ping https ssh
+FGT-01 (port2) # next
+FGT-01 (interface) # end
+```
+
+Les attributs concernés : `allowaccess`, `srcaddr`, `dstaddr`, `service`, `member`, `srcintf`, `dstintf`, `groups`.
+
+---
+
+### Erreur #5 — Le tunnel IPsec « est up » et ne transporte rien
+
+**Symptôme** : la GUI affiche le tunnel comme actif, aucun trafic ne passe.
+
+**Cause** : la phase 1 est montée, la phase 2 non. Les sélecteurs ne sont pas le miroir exact (§18.5).
+
+**Vérification :**
+```
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' ... selectors(total,up): 1/0     ← le 0 est le symptôme
+```
+
+**Correction** : vérifie que `src-subnet` et `dst-subnet` sont **inversés** entre les deux sites.
+```
+FGT-01 # show vpn ipsec phase2-interface
+```
+
+---
+
+### Erreur #6 — Le profil de sécurité ne bloque rien
+
+**Symptôme** : tu as configuré un antivirus ou un filtrage web, il est attaché, et rien n'est bloqué.
+
+**Cause n°1 — `utm-status` n'est pas activé** (§13, TP 11).
+**Cause n°2 — Le mode du profil ne correspond pas à celui de la politique** (flow/proxy).
+**Cause n°3 — En HTTPS, il faut l'inspection SSL** (§16).
+**Cause n°4 — Sans abonnement FortiGuard, la base est figée** (§2.7).
+
+**Vérification :**
+```
+FGT-01 # show firewall policy <id> | grep -e utm -e profile -e inspection
+FGT-01 # diagnose autoupdate versions
+```
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit <id>
+FGT-01 (id) # set utm-status enable
+FGT-01 (id) # set inspection-mode flow
+FGT-01 (id) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (id) # next
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #7 — Je me suis enfermé dehors
+
+**Symptôme** : plus d'accès à l'administration.
+
+**Causes classiques** :
+- `set trusthost` posé sur son propre compte depuis une adresse non listée (§4.4) ;
+- `set allowaccess` réécrit sans le protocole qu'on utilisait (§5.9) ;
+- `set status down` sur l'interface d'administration ;
+- une local-in policy trop stricte (§11.5) ;
+- un changement de port d'administration non testé (§25.4).
+
+**Correction** : la **console** de l'hyperviseur ou le port console physique. Ils ne sont filtrés par aucun de ces mécanismes.
+
+> 💡 **La prévention vaut mieux** : garde **toujours** une seconde session ouverte quand tu touches à l'accès, et teste depuis cette seconde session **avant** de fermer la première. C'est un réflexe qui s'acquiert après s'être enfermé dehors une fois — autant l'acquérir sans y passer.
+
+---
+
+### Erreur #8 — L'objet FQDN ne correspond plus à rien
+
+**Symptôme** : une règle utilisant un nom de domaine a cessé de fonctionner, sans qu'on ait rien changé.
+
+**Cause** : le DNS du pare-feu ne répond plus, donc l'objet est **vide** (§8.4).
+
+**Vérification :**
+```
+FGT-01 # diagnose firewall fqdn list
+FGT-01 # show system dns
+FGT-01 # execute ping <un-nom-de-domaine>
+```
+
+**Correction** : réparer le DNS du pare-feu. Et pour du **blocage**, utiliser le filtrage web plutôt qu'un FQDN.
+
+---
+
+### Erreur #9 — Le pare-feu répond au ping depuis Internet malgré la règle qui l'interdit
+
+**Symptôme** : une politique refuse tout depuis le WAN, et le pare-feu répond quand même.
+
+**Cause** : ce trafic est **local-in** (§11.5). Il ne traverse rien, il est destiné au pare-feu. Il est gouverné par `allowaccess`, pas par tes politiques.
+
+**Vérification :**
+```
+FGT-01 # show system interface port1 | grep allowaccess
+```
+
+**Correction :**
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+---
+
+### Erreur #10 — `service ALL` partout
+
+**Symptôme** : aucun. C'est ce qui la rend dangereuse.
+
+**Cause** : on met `ALL` pour tester, ça marche, et on ne revient jamais le restreindre.
+
+**Vérification :**
+```
+FGT-01 # show firewall policy | grep -B8 'set service "ALL"'
+```
+
+**Correction** : restreindre au strict nécessaire. Pour savoir **quels** services sont réellement utilisés, la vue FortiView Applications ou les journaux te le disent (§23) — tu restreins alors sur des faits et non sur des suppositions.
+
+---
+
+### Erreur #11 — Le SD-WAN refuse de se configurer
+
+**Symptôme** : impossible d'ajouter une interface comme membre.
+
+**Cause** : l'interface est encore référencée dans une politique ou une route statique (§21.4).
+
+**Vérification :**
+```
+FGT-01 # diagnose sys checkused system.interface.name port1
+```
+
+**Correction** : modifier toutes les références pour qu'elles citent la **zone** SD-WAN, puis ajouter le membre.
+
+---
+
+### Erreur #12 — Le cluster HA ne se forme pas
+
+**Symptôme** : les deux équipements restent indépendants.
+
+**Causes** :
+- versions de FortiOS différentes ;
+- modèles différents ;
+- `group-name` ou `password` différents ;
+- interfaces de battement de cœur non reliées ;
+- interfaces de battement de cœur portant une configuration IP.
+
+**Vérification :**
+```
+FGT-01 # get system ha status
+FGT-01 # diagnose sys ha status
+FGT-01 # get system status | grep Version
+```
+
+---
+
+### Erreur #13 — Les journaux ne montrent rien
+
+**Symptôme** : tu cherches un événement, tu ne trouves rien.
+
+**Causes** :
+- mauvaise **catégorie** (§23.1) — un refus de politique est en `0`, un blocage web en `1` ;
+- un **filtre persistant** d'une recherche précédente ;
+- `logtraffic` désactivé sur la politique ;
+- les journaux étaient en mémoire et le pare-feu a redémarré.
+
+**Correction :**
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log display
+```
+
+---
+
+### Erreur #14 — Tout est lent, sans erreur
+
+**Symptôme** : le réseau fonctionne mais tout traîne, et rien n'est signalé.
+
+**Cause n°1 — Le conserve mode** (§23.6). L'inspection est arrêtée, ou le trafic est ralenti.
+**Cause n°2 — L'inspection profonde sur un équipement sous-dimensionné.**
+**Cause n°3 — Trop de journalisation** sur un petit boîtier.
+
+**Vérification :**
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose sys top 5 20
+```
+
+---
+
+### Erreur #15 — On a mis à jour, et les télétravailleurs sont dehors
+
+**Symptôme** : après une montée en 7.6.3, plus personne ne se connecte en VPN.
+
+**Cause** : le SSL VPN en mode tunnel est **retiré** (§2.6, §19.1).
+
+**Correction** : migrer vers IPsec dial-up — ce qui aurait dû être fait **avant** la mise à jour.
+
+> 🧠 **La leçon générale** : lire les notes de version n'est pas une formalité. C'est là que sont annoncés les changements qui cassent, et ils sont annoncés à l'avance.
+
+---
+
+### 26.1 La liste de contrôle avant de dire « ça ne marche pas »
+
+Avant d'appeler quelqu'un ou d'ouvrir un ticket, passe ces huit points :
+
+- [ ] L'interface est-elle `up`, avec une adresse ? → `get system interface physical`
+- [ ] Y a-t-il une route ? → `get router info routing-table all`
+- [ ] Le paquet arrive-t-il ? → `diagnose sniffer packet`
+- [ ] Que décide le pare-feu ? → `diagnose debug flow`
+- [ ] Quelle politique correspond ? → `diagnose sys session list`
+- [ ] Le NAT s'applique-t-il ? → `hook=pre` / `hook=post`
+- [ ] Les sessions ont-elles été vidées après le changement ?
+- [ ] Les journaux disent-ils quelque chose ? → `execute log display`
+
+**Huit questions.** Si tu peux répondre aux huit, tu sais où est le problème — ou tu sais qu'il n'est pas sur le pare-feu, ce qui est une réponse tout aussi utile.
+
+---
