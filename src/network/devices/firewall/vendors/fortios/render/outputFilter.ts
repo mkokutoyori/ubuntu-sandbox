@@ -36,32 +36,41 @@ function parseGrep(tail: string): OutputFilter {
   let before = 0;
   let after = 0;
 
-  const words = tail.match(/"[^"]*"|\S+/g) ?? [];
-  const rest: string[] = [];
-  for (let index = 0; index < words.length; index++) {
-    const word = words[index];
-    const context = /^-([ABC])(\d*)$/.exec(word);
+  let rest = tail;
+  for (;;) {
+    const option = /^(-[A-Za-z]+)(\d*)\s*/.exec(rest);
+    if (!option) break;
+    const context = /^-([ABC])$/.exec(option[1]);
     if (context) {
-      const amount = context[2].length > 0
-        ? Number(context[2])
-        : Number(words[++index] ?? '0');
+      rest = rest.slice(option[0].length);
+      let amount = option[2].length > 0 ? Number(option[2]) : 0;
+      if (amount === 0) {
+        const number = /^(\d+)\s*/.exec(rest);
+        if (number) { amount = Number(number[1]); rest = rest.slice(number[0].length); }
+      }
       if (context[1] !== 'A') before = amount;
       if (context[1] !== 'B') after = amount;
       continue;
     }
-    if (/^-[ivcf]+$/.test(word)) {
-      ignoreCase ||= word.includes('i');
-      invert ||= word.includes('v');
-      countOnly ||= word.includes('c');
-      wholeBlock ||= word.includes('f');
-      continue;
-    }
-    rest.push(word.replace(/^"|"$/g, ''));
+    if (!/^-[ivcf]+$/.test(option[1])) break;
+    ignoreCase ||= option[1].includes('i');
+    invert ||= option[1].includes('v');
+    countOnly ||= option[1].includes('c');
+    wholeBlock ||= option[1].includes('f');
+    rest = rest.slice(option[0].length);
   }
 
   return {
-    pattern: rest.join(' '), ignoreCase, invert, countOnly, wholeBlock, before, after,
+    pattern: unquotePattern(rest.trim()),
+    ignoreCase, invert, countOnly, wholeBlock, before, after,
   };
+}
+
+function unquotePattern(raw: string): string {
+  const stripped = raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2
+    ? raw.slice(1, -1)
+    : raw;
+  return stripped.replace(/\\"/g, '"');
 }
 
 function matches(line: string, filter: OutputFilter): boolean {

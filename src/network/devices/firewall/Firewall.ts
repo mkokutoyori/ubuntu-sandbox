@@ -77,6 +77,9 @@ import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing } from './diag/FirewallPing';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
+import {
+  FirewallDnsClient, dnsQueryDatagram,
+} from './l3/FirewallDnsClient';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -202,6 +205,7 @@ export class Firewall extends Equipment {
       implicitPolicy: profile.implicitPolicy,
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
+      resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
       connectedRoutes: (vdom) => this.interfaces.connectedRoutes()
         .filter(route => this.vdoms.vdomOfInterface(route.iface) === vdom),
       interfaceForDestination: (vdom, address) => {
@@ -378,6 +382,20 @@ export class Firewall extends Equipment {
   });
 
   runTraceroute(target: string): string { return this.traceroute.run(target); }
+
+  private readonly dnsClient = new FirewallDnsClient({
+    send: (destination, sourcePort, payload) => {
+      const route = this.getVdom().routes.resolveNextHop(destination);
+      const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
+      const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+      if (iface === undefined || source === undefined) return false;
+      this.forward(iface,
+        dnsQueryDatagram(source, destination, sourcePort, payload), route?.nextHop);
+      return true;
+    },
+  });
+
+  getDnsClient(): FirewallDnsClient { return this.dnsClient; }
 
   listL3Interfaces(): readonly import('./l3/InterfaceTable').L3Interface[] {
     return this.interfaces.all();
@@ -780,7 +798,8 @@ export class Firewall extends Equipment {
     deliverLocally({
       ikeDatagram: (p) => ikeDatagram(p),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
-      observedBySdwan: (p) => this.traceroute.observe(p) || this.ping.observeReply(p)
+      observedBySdwan: (p) => this.dnsClient.observe(p)
+        || this.traceroute.observe(p) || this.ping.observeReply(p)
         || this.sdwan.observeReply(p),
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
       admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),

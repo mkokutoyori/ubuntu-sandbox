@@ -10,6 +10,7 @@ import type {
   SyslogCollectorSettings, SyslogFilterSettings,
 } from '../../../logging/SyslogCollectors';
 import type { NtpSettings } from '../../../mgmt/FirewallNtp';
+import type { FirewallDnsSettings } from '../../../l3/FirewallDnsClient';
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
@@ -208,6 +209,8 @@ export interface FortiCommitDevice {
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   applyHostname(hostname: string): void;
+  applyDnsSettings(settings: FirewallDnsSettings): void;
+  resolveFqdnNow(fqdn: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;

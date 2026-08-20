@@ -63,6 +63,7 @@ export interface VdomRegistryDeps {
   readonly implicitPolicy: 'deny-all' | 'security-level';
   readonly applicationShift: boolean;
   readonly maxGroupNesting: number;
+  readonly resolveFqdn?: (fqdn: string) => readonly string[];
   readonly connectedRoutes: (vdom: string) => readonly ConnectedRoute[];
   readonly interfaceForDestination: (vdom: string, address: string) => string | undefined;
   readonly isInterfaceUp: (iface: string) => boolean;
@@ -156,7 +157,10 @@ export class VdomRegistry {
     const deps = this.deps;
     const settings: VdomSettings = { opmode: 'nat', centralNat: false };
     const zones = new ZoneTable();
-    const objects = new ObjectStore({ maxGroupNesting: deps.maxGroupNesting });
+    const objects = new ObjectStore({
+      maxGroupNesting: deps.maxGroupNesting,
+      resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
+    });
     const policy = new PolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);

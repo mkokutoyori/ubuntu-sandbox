@@ -103,6 +103,13 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
             settings.manageMask ?? '255.255.255.0', settings.gateway);
         }
       },
+      applyDnsSettings(settings) {
+        fw.getDnsClient().applySettings(settings);
+      },
+      resolveFqdnNow(fqdn) {
+        fw.getDnsClient().forget(fqdn);
+        fw.getDnsClient().query(fqdn);
+      },
       applyHostname(hostname) {
         if (hostname.length > 0) fw.setName(hostname);
       },

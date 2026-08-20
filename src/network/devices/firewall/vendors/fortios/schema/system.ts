@@ -279,7 +279,13 @@ export const SYSTEM_DNS: FortiTableSpec = {
     address('secondary', 'Secondary DNS server IP address.', '96.45.46.46'),
     word('domain', 'Search suffix list for hostname lookup.'),
   ],
-  onCommit() {},
+  onCommit(object, context) {
+    context.device.applyDnsSettings({
+      primary: object.effective('primary')[0] ?? '',
+      secondary: object.effective('secondary')[0] ?? '',
+      domain: object.effective('domain')[0] ?? '',
+    });
+  },
 };
 
 export const SYSTEM_DHCP_SERVER: FortiTableSpec = {

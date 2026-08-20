@@ -254,8 +254,23 @@ function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
   }
 }
 
+function diagnoseFqdnList(deps: FortiDiagDeps): string {
+  const lignes: string[] = [];
+  for (const entry of deps.fw.getDnsClient().entries()) {
+    lignes.push(`${entry.fqdn}:`);
+    for (const address of entry.addresses) {
+      lignes.push(`\t${address}\t${entry.ttl}`);
+    }
+  }
+  return lignes.join('\n');
+}
+
 function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'auth') return diagnoseAuth(rest.slice(1), deps);
+  if (rest[0] === 'fqdn') {
+    if (rest[1] !== 'list') return FortiMessages.unknownPath(`firewall ${rest.join(' ')}`);
+    return diagnoseFqdnList(deps);
+  }
   if (rest[0] !== 'iprope') return FortiMessages.unknownPath(rest.join(' '));
 
   const options = { zones: deps.fw.getZoneTable(), vdom: 0 };
