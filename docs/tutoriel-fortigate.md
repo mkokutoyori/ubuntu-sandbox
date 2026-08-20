@@ -5663,3 +5663,585 @@ FGT-01 (policy) # end
 7. **En HTTPS, le filtrage d'URL ne voit que le nom du serveur** — ce qui amène directement la section suivante.
 
 ---
+
+## 15. ⭐ Routeur + ACL contre pare-feu : la démonstration
+
+On a promis au §2.10 de ne pas se contenter d'un argumentaire. Cette section tient la promesse.
+
+On va **essayer sincèrement** de protéger le réseau avec R1 tout seul, comme si le FortiGate n'existait pas. On va y arriver partiellement. Puis on va buter, une par une, sur quatre limites — et à chaque fois, on montrera le pare-feu faire ce que le routeur ne sait pas faire.
+
+C'est la section la plus importante du tutoriel pour ta **carrière**, parce que c'est celle qui te permettra de justifier un budget devant quelqu'un qui n'est pas technicien.
+
+### 15.1 La règle du jeu
+
+Pour cette section, on fait comme si R1 était notre seule défense.
+
+```
+   Internet ────► [R1-EDGE + ACL] ────► [FGT-01 (transparent)] ────► LAN / DMZ
+                   ↑                     ↑
+            notre "pare-feu"      on l'ignore pour l'instant
+```
+
+**Objectif de sécurité**, celui de n'importe quelle PME :
+1. Les postes du LAN doivent pouvoir naviguer sur le web
+2. Rien ne doit pouvoir entrer depuis Internet, sauf vers le serveur web de la DMZ
+3. Les utilisateurs ne doivent pas faire de peer-to-peer
+4. Aucun fichier exécutable ne doit être téléchargé
+5. Le stagiaire n'a pas les mêmes droits que le directeur
+
+Cinq exigences banales. Voyons combien R1 peut en satisfaire.
+
+---
+
+### 15.2 🧠 Limite n°1 : une ACL n'a pas de mémoire
+
+C'est la limite fondamentale, celle dont découlent la moitié des autres.
+
+**Le problème, posé simplement.** Un poste du LAN consulte un site web :
+
+```
+Aller  : 192.168.10.10:54321  →  93.184.216.34:443
+Retour : 93.184.216.34:443    →  192.168.10.10:54321
+```
+
+Le paquet **retour** entre depuis Internet. Ton exigence n°2 dit « rien ne doit pouvoir entrer ». Si tu appliques littéralement cette règle sur R1, la navigation ne fonctionne plus.
+
+Alors tu es obligé d'ouvrir. Mais **quoi** ouvrir ? Tu ne connais pas à l'avance le port source qu'utilisera le poste (`54321` ici, autre chose la prochaine fois). Tu n'as qu'une possibilité :
+
+```cisco
+! L'ACL "naïve" qu'on est obligé d'écrire
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+Traduction : « laisse entrer **tout le TCP** venant de n'importe où vers **n'importe quel port au-dessus de 1023** de mon réseau ».
+
+> 🚨 **Mesure ce que tu viens d'écrire.**
+> Tu as ouvert **64 512 ports** sur **tout ton réseau interne**, en permanence, à **la Terre entière**. Un serveur RDP mal configuré sur le port 3389, un service de développement sur le 8080, une base de données sur le 5432 : tout est accessible.
+>
+> Ce n'est pas une caricature. C'est **la seule chose qu'une ACL sans état permet d'écrire** si l'on veut que la navigation fonctionne.
+
+### 15.3 La demi-solution de Cisco : le mot-clé `established`
+
+IOS propose un palliatif :
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 established
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+`established` ne laisse entrer que les paquets TCP dont le drapeau **ACK** ou **RST** est positionné — c'est-à-dire, en théorie, uniquement des paquets appartenant à une conversation déjà entamée.
+
+C'est nettement mieux. Et c'est **quand même insuffisant**, pour trois raisons précises :
+
+**① Ça ne vérifie rien.** `established` regarde **un bit dans l'en-tête**. Il ne consulte aucune table, il ne sait pas si une conversation existe vraiment. **N'importe qui peut fabriquer un paquet avec le bit ACK positionné.** C'est une technique de scan classique — l'*ACK scan* de `nmap` — qui traverse tranquillement ce type d'ACL.
+
+**② Ça ne marche que pour TCP.** UDP n'a pas de drapeau ACK. Le DNS, le NTP, la voix sur IP, QUIC — tout ce qui est UDP reste sans protection possible autrement qu'en ouvrant les ports en grand.
+
+**③ Ça ne protège pas ICMP.** Même problème.
+
+> 🧠 **La différence, dite en une phrase**
+> `established` demande : « **ce paquet ressemble-t-il** à une réponse ? »
+> Un pare-feu à états demande : « **ce paquet EST-il** la réponse à une conversation que j'ai moi-même autorisée, entre ces deux adresses, sur ces deux ports, dans le bon état TCP ? »
+>
+> La première question se répond en lisant un bit. La seconde exige une **mémoire** — la table de sessions du §9, TP 7 étape 6.
+
+### 15.4 Ce que Cisco propose au-delà
+
+Soyons complets, parce que dire « Cisco ne sait pas faire » serait faux :
+
+| Mécanisme | Ce qu'il apporte | Sa limite |
+|---|---|---|
+| **ACL réflexives** (`reflect`/`evaluate`) | Une vraie table d'état, créée dynamiquement | Pas de suivi applicatif, gestion pénible, pas de FTP actif |
+| **CBAC** (`ip inspect`) | Inspection avec état, quelques protocoles applicatifs | Obsolète, remplacé par ZBF |
+| **Zone-Based Firewall** (ZBF) | Un vrai pare-feu à états dans IOS | ⭐ Bon, mais voir ci-dessous |
+
+Une ACL réflexive, pour l'exemple :
+
+```cisco
+R1-EDGE(config)# ip access-list extended VERS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any any reflect TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# permit udp any any reflect TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# evaluate TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+**Là, on a une vraie gestion d'état.** Honneur à qui de droit.
+
+> ⚠️ **Alors pourquoi acheter un pare-feu ?**
+> Parce que la gestion d'état n'était que **la première** des cinq exigences du §15.1. Le ZBF de Cisco résout le point n°1 et le n°2. Il ne résout **ni le 3, ni le 4, ni le 5** — et c'est là que la discussion se termine.
+>
+> Il y a aussi un argument de terrain qu'aucune fiche technique ne dit : activer sérieusement l'inspection d'état sur un routeur généraliste **effondre son débit**, parce que le traitement quitte le chemin accéléré matériel pour retomber sur le processeur principal. Un routeur qui acheminait 1 Gbit/s sans effort tombe à quelques centaines de Mbit/s. Sur un pare-feu, ce traitement **est** le métier, et le matériel est conçu pour.
+
+---
+
+### 🧪 TP 13 — Prouver l'absence de mémoire
+
+**🎯 Objectif**
+Écrire une ACL sur R1, constater qu'elle casse la navigation, la « réparer » en ouvrant les ports hauts, puis **mesurer le trou** qu'on vient de créer. Enfin, faire la même chose côté FortiGate et comparer.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 7 terminé, R1 opérationnel
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Poser l'ACL « sécurisée » sur R1**
+
+On applique l'exigence n°2 à la lettre : rien n'entre depuis Internet.
+
+```cisco
+R1-EDGE# configure terminal
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip access-group DEPUIS-INTERNET in
+R1-EDGE(config-if)# end
+```
+
+Sous Linux :
+
+```bash
+root@r1-edge:~# iptables -A FORWARD -i eth0 -j LOG --log-prefix "ACL-DENY: "
+root@r1-edge:~# iptables -A FORWARD -i eth0 -j DROP
+```
+
+**Étape 2 — Constater les dégâts**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -m 10 http://neverssl.com
+curl: (28) Connection timed out
+```
+
+**La navigation est morte.** Pourtant tu n'as rien bloqué en sortie : c'est le **retour** qui ne passe plus.
+
+Sur R1, regarde les compteurs :
+
+```cisco
+R1-EDGE# show ip access-lists DEPUIS-INTERNET
+```
+```
+Extended IP access list DEPUIS-INTERNET
+    10 deny ip any any log (247 matches)
+```
+
+247 paquets jetés — ce sont **les réponses aux requêtes de tes propres utilisateurs**.
+
+> 🧠 **Tu viens de vivre le problème du §1.6 depuis l'autre côté.** Sur le FortiGate, tu n'as jamais eu à y penser : la table de sessions s'en occupait. Ici, il n'y a pas de table.
+
+**Étape 3 — La « réparation » naïve**
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# no deny ip any any log
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# permit udp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# end
+```
+
+Depuis le PC :
+
+```bash
+user@pc-lan:~$ curl -m 10 -I http://neverssl.com
+HTTP/1.1 200 OK
+```
+
+**Ça remarche.** 🎉 … et c'est précisément le problème.
+
+**Étape 4 — Mesurer le trou**
+
+Depuis une machine du réseau de transit (qui joue « Internet »), lance un service quelconque sur le PC du LAN, puis essaie de l'atteindre.
+
+Sur le PC du LAN, ouvre un service sur un port haut :
+
+```bash
+user@pc-lan:~$ python3 -m http.server 8080
+```
+
+Depuis la machine « externe » :
+
+```bash
+attaquant@ext:~$ curl http://<adresse-publique-de-R1>:8080
+```
+
+> ⚠️ Selon ton NAT, tu devras peut-être tester depuis le réseau de transit directement vers `192.168.10.10:8080`. L'important est de constater que **l'ACL ne s'y oppose pas** : le port 8080 est > 1023, donc `permit`.
+
+**Un scan le montre encore mieux :**
+
+```bash
+attaquant@ext:~$ nmap -p 1024-10000 192.168.10.10
+```
+
+Tous les ports ouverts au-dessus de 1023 sont **visibles et joignables**. Ton ACL les autorise explicitement.
+
+**Étape 5 — Essayer `established`**
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# no permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# no permit udp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 established
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# end
+```
+
+La navigation web fonctionne toujours, et le port 8080 n'est plus joignable par une connexion normale. **C'est un vrai progrès.**
+
+**Étape 6 — Contourner `established`**
+
+Maintenant, la démonstration. Depuis la machine externe :
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+```
+
+`-sA` est le **scan ACK** : `nmap` envoie des paquets dont le bit ACK est positionné, sans qu'aucune connexion n'existe.
+
+Ces paquets **traversent l'ACL**, parce qu'`established` ne regarde que ce bit. `nmap` peut ainsi cartographier ce que ton ACL filtre et ce qu'elle laisse passer — c'est exactement ce pour quoi ce mode de scan a été conçu.
+
+> 🧠 **Ce que tu viens de démontrer** : `established` juge sur l'**apparence** d'un paquet, pas sur la **réalité** d'une conversation. Un attaquant qui fabrique ses paquets n'est pas gêné.
+
+**Étape 7 — La même chose côté FortiGate**
+
+Retire tout de R1 :
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# no ip access-group DEPUIS-INTERNET in
+R1-EDGE(config-if)# end
+```
+
+Sur le FortiGate, tu n'as **rien à faire**. Aucune politique `port1 → port2` n'existe, donc rien n'entre. Et la navigation fonctionne, grâce à la seule politique `LAN → Internet` du TP 7.
+
+Refais le scan ACK :
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+```
+
+Cette fois, **rien ne passe**. Vérifie pourquoi :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.10.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Tu verras des messages du type :
+
+```
+msg="no session matched, drop"
+```
+ou
+```
+msg="Denied by forward policy check (policy 0)"
+```
+
+**Le pare-feu ne demande pas si le paquet ressemble à une réponse. Il demande s'il correspond à une session qu'il connaît.** Il n'y en a pas, donc il jette.
+
+N'oublie pas :
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+---
+
+**✅ Résultat attendu**
+
+| Test | R1 + ACL stricte | R1 + ports hauts | R1 + `established` | FortiGate |
+|---|---|---|---|---|
+| Navigation web | ❌ cassée | ✅ | ✅ | ✅ |
+| Port 8080 exposé | ✅ protégé | ❌ **ouvert** | ✅ protégé | ✅ protégé |
+| Scan ACK (`nmap -sA`) | ✅ bloqué | ❌ passe | ❌ **passe** | ✅ **bloqué** |
+| Nombre de règles écrites | 1 | 3 | 2 | **0** de plus |
+
+Lis la dernière ligne : sur le pare-feu, tu n'as écrit **aucune** règle supplémentaire. La protection est le **comportement par défaut**.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Une ACL sans état oblige à choisir** entre « la navigation marche » et « rien n'entre ». Les deux sont impossibles ensemble.
+2. **La « réparation » par les ports hauts ouvre 64 512 portes.** Ce n'est pas une mauvaise configuration : c'est la seule possible.
+3. **`established` juge sur un bit**, donc se contourne avec un paquet fabriqué.
+4. **Le pare-feu à états ne juge pas l'apparence mais l'appartenance à une session réelle.**
+5. **Et il le fait sans qu'on écrive quoi que ce soit** — c'est le défaut, pas une option.
+
+---
+
+### 15.5 🧠 Limite n°2 : le port n'est pas l'application
+
+Passons à l'exigence n°3 : **interdire le peer-to-peer**.
+
+**Avec R1**, tu vas chercher les ports de BitTorrent. La documentation dit 6881-6889. Tu écris :
+
+```cisco
+R1-EDGE(config)# ip access-list extended VERS-INTERNET
+R1-EDGE(config-ext-nacl)# deny tcp any any range 6881 6889
+R1-EDGE(config-ext-nacl)# permit ip any any
+```
+
+**Et ça ne sert à rien.** Voici pourquoi, et c'est instructif :
+
+| Ce que fait BitTorrent | Ce que ton ACL peut y faire |
+|---|---|
+| Utilise des ports **aléatoires** configurables | Rien — tu ne peux pas tous les bloquer |
+| Sait passer en **HTTPS sur le port 443** | Rien — tu ne vas pas bloquer le web |
+| Utilise **UDP** et le protocole µTP | Rien |
+| Chiffre son trafic (*protocol encryption*) | Rien |
+| Fonctionne en **DHT**, sans serveur central | Rien |
+
+Pour bloquer BitTorrent avec des ports, il faudrait **fermer tout Internet sauf une liste blanche**. Ce qui est une stratégie défendable dans un environnement industriel, et impraticable ailleurs.
+
+**Avec le FortiGate**, le contrôle applicatif (§14.4) reconnaît **la signature du protocole**, quel que soit le port :
+
+```
+config application list
+    edit "APP-Bloquer-P2P"
+        config entries
+            edit 1
+                set category 2          ← catégorie P2P entière
+                set action block
+                set log enable
+            next
+        end
+    next
+end
+```
+
+Une catégorie, une règle. Et elle attrape BitTorrent sur le port 443 chiffré aussi bien que sur le 6881.
+
+> 🧠 **La différence de nature**
+> R1 demande : « **par quelle porte** ce paquet passe-t-il ? »
+> Le FortiGate demande : « **qu'est-ce que** ce paquet transporte ? »
+>
+> La première question a une réponse que l'attaquant contrôle. La seconde, non.
+
+### 15.6 🧠 Limite n°3 : le contenu est invisible
+
+Exigence n°4 : **aucun exécutable téléchargé**.
+
+**Avec R1** : impossible. Point final. Un routeur achemine des paquets, il ne reconstitue pas de fichiers, il n'a pas de signatures antivirus, et il n'a pas la puissance de calcul pour analyser un flux. Il n'existe aucune configuration IOS qui réponde à cette exigence.
+
+Ce n'est pas une question de compétence de l'administrateur ni de version d'IOS : la fonction n'existe pas.
+
+**Avec le FortiGate** : c'est le TP 12, étape 7. Tu l'as déjà fait, et tu as même bloqué un exécutable déguisé en `.jpg` — parce que le pare-feu lit les octets, pas l'extension.
+
+| Menace | R1 | FortiGate |
+|---|---|---|
+| Virus dans un téléchargement | ❌ invisible | ✅ antivirus |
+| Site d'hameçonnage | ❌ invisible | ✅ filtrage web |
+| Exécutable déguisé | ❌ invisible | ✅ filtrage de fichiers |
+| Tentative d'injection SQL | ❌ invisible | ✅ IPS |
+| Poste contactant son serveur de commande | ❌ invisible | ✅ filtrage DNS botnet |
+
+### 15.7 🧠 Limite n°4 : une adresse IP n'est pas une personne
+
+Exigence n°5 : **le stagiaire n'a pas les droits du directeur**.
+
+**Avec R1**, ta règle parle d'adresses :
+
+```cisco
+R1-EDGE(config)# permit ip host 192.168.10.47 any
+```
+
+Cette règle protège **une prise réseau**, pas une personne. Elle se trompe dès que :
+- le stagiaire s'assoit au bureau du directeur ;
+- le DHCP attribue une autre adresse ;
+- quelqu'un configure son poste en adresse fixe ;
+- l'utilisateur se connecte en Wi-Fi plutôt qu'en filaire.
+
+**Avec le FortiGate**, la règle parle de personnes :
+
+```
+config firewall policy
+    edit 20
+        set groups "Direction"      ← un groupe d'utilisateurs
+        ...
+    next
+end
+```
+
+L'utilisateur s'authentifie (section 17), et la politique le suit **où qu'il se branche**. C'est le sujet de la partie VI.
+
+---
+
+### 🧪 TP 14 — Le bilan, exigence par exigence
+
+**🎯 Objectif**
+Reprendre les cinq exigences du §15.1 et établir, mesure à l'appui, ce que chaque équipement sait faire. C'est le tableau que tu montreras à ta direction.
+
+**⏱️ Durée** : 20 minutes
+
+**📋 Prérequis** : TP 13 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Exigence n°1 : la navigation fonctionne**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -s -o /dev/null -w "%{http_code}\n" http://neverssl.com
+200
+```
+
+✅ R1 sait faire. ✅ Le FortiGate aussi.
+
+**Étape 2 — Exigence n°2 : rien n'entre**
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+attaquant@ext:~$ sudo nmap -sS -p 1-1000 192.168.10.10
+```
+
+⚠️ R1 : partiellement (échoue sur le scan ACK). ✅ Le FortiGate : oui.
+
+**Étape 3 — Exigence n°3 : pas de peer-to-peer**
+
+Simule un trafic sur un port non standard. Sur le serveur DMZ :
+
+```bash
+user@srv-dmz:~$ python3 -m http.server 6881
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -m 5 http://192.168.20.10:6881
+```
+
+Puis change de port et recommence sur `9999`. **Une ACL par port ne suivra jamais.**
+
+❌ R1 : non. ✅ Le FortiGate : oui, par signature applicative.
+
+**Étape 4 — Exigence n°4 : pas d'exécutable**
+
+Reprends le test du TP 12 étape 7, avec le faux `photo.jpg` :
+
+```bash
+user@pc-lan:~$ curl -O http://192.168.20.10/photo.jpg
+```
+
+❌ R1 : structurellement impossible. ✅ Le FortiGate : bloqué, tu l'as vu.
+
+**Étape 5 — Exigence n°5 : par utilisateur**
+
+```
+FGT-01 # diagnose firewall auth list
+```
+
+❌ R1 : ne connaît que des adresses. ✅ Le FortiGate : section 17.
+
+**Étape 6 — Le tableau de synthèse**
+
+Remplis-le toi-même à partir de tes propres mesures :
+
+| # | Exigence | R1 + ACL | R1 + ZBF | FortiGate |
+|---|---|---|---|---|
+| 1 | La navigation fonctionne | ✅ | ✅ | ✅ |
+| 2 | Rien n'entre depuis Internet | ⚠️ contournable | ✅ | ✅ |
+| 3 | Pas de peer-to-peer | ❌ | ❌ | ✅ |
+| 4 | Pas d'exécutable téléchargé | ❌ | ❌ | ✅ |
+| 5 | Droits par utilisateur | ❌ | ❌ | ✅ |
+| | **Score** | **1,5 / 5** | **2 / 5** | **5 / 5** |
+
+---
+
+**✅ Résultat attendu**
+
+Tu disposes d'un tableau **que tu as mesuré toi-même**, et non recopié d'une plaquette commerciale. C'est ce qui fait la différence quand quelqu'un te demande de justifier une dépense.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Un routeur avec des ACL couvre environ 30 % du besoin de sécurité d'une PME.** Ce n'est pas rien, et ce n'est pas assez.
+2. **Les trois exigences qu'il ne couvre pas sont précisément les menaces d'aujourd'hui** : applications qui se camouflent, contenu malveillant, usurpation d'identité.
+3. **Le ZBF de Cisco comble la première lacune**, pas les autres.
+4. **Le pare-feu protège par défaut**, là où l'ACL protège par énumération — et une énumération est toujours incomplète.
+
+---
+
+### 15.8 Alors, où mettre la frontière ?
+
+Terminons par ce qui se fait vraiment en entreprise, parce que la réponse n'est pas « jetez le routeur ».
+
+**L'architecture recommandée**, celle de notre laboratoire :
+
+```
+Internet ──► [Routeur de bordure] ──► [Pare-feu] ──► Réseaux internes
+                    │                      │
+            ACL grossière           Politique de sécurité
+            anti-bruit              complète + inspection
+```
+
+**Ce qu'on met sur le routeur :**
+- Le routage vers l'opérateur (BGP, routes statiques)
+- Une ACL **anti-bruit** : filtrage des adresses non routables (*bogons*), anti-usurpation (RFC 2827), blocage des protocoles manifestement illégitimes
+- Éventuellement une limitation de débit contre les inondations volumétriques
+
+**Ce qu'on met sur le pare-feu :**
+- Toute la politique de sécurité
+- Le NAT
+- Les profils d'inspection
+- L'identité des utilisateurs
+- Les VPN
+
+> 💡 **Astuce — pourquoi cette répartition et pas une autre**
+> Une ACL sur le routeur coûte presque **zéro** en performance et élimine une part importante du bruit de fond d'Internet. Faire filtrer ce même bruit par le pare-feu lui coûterait des sessions et du processeur pour du trafic qui n'avait aucune chance d'être légitime.
+>
+> Autrement dit : **le routeur fait le tri grossier à coût nul, le pare-feu fait le travail fin sur ce qui reste.** Chacun à son étage.
+
+**Une ACL anti-bruit type**, à poser sur R1 :
+
+```cisco
+R1-EDGE(config)# ip access-list extended ANTI-BRUIT
+ ! Anti-usurpation : personne sur Internet ne doit prétendre être chez nous
+R1-EDGE(config-ext-nacl)# deny ip 192.168.0.0 0.0.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 10.0.0.0 0.255.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 172.16.0.0 0.15.255.255 any log
+ ! Adresses qui n'ont rien à faire sur Internet
+R1-EDGE(config-ext-nacl)# deny ip 127.0.0.0 0.255.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 169.254.0.0 0.0.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 224.0.0.0 15.255.255.255 any log
+ ! Le reste passe, le pare-feu prendra la suite
+R1-EDGE(config-ext-nacl)# permit ip any any
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip access-group ANTI-BRUIT in
+```
+
+> 🧠 **Comprendre l'anti-usurpation**
+> La première règle mérite qu'on s'y arrête. Un paquet qui **arrive d'Internet** en prétendant venir de `192.168.10.10` est forcément un mensonge : cette adresse est chez toi, à l'intérieur. Personne sur Internet ne peut légitimement l'utiliser comme source.
+>
+> C'est le principe de la **RFC 2827** (*Network Ingress Filtering*), et c'est l'une des rares mesures que tout opérateur devrait appliquer. Elle coûte trois lignes et elle élimine une famille entière d'attaques par usurpation.
+>
+> Note que c'est exactement ce que fait le **RPF** du §11.4 sur le FortiGate — mais l'appliquer aussi sur le routeur évite au pare-feu de traiter ces paquets du tout.
+
+### 15.9 Ce qu'il faut répondre quand on te pose la question
+
+Pour finir, la version courte, celle qui tient en réunion :
+
+> « Le routeur sait dire **d'où vient** un paquet et **où il va**. Le pare-feu sait dire **ce que c'est**, **qui l'envoie** et **s'il est dangereux**.
+>
+> Aujourd'hui, les menaces n'arrivent plus par des ports inhabituels : elles arrivent par le port 443, dans un fichier Word que quelqu'un a ouvert. Un routeur ne voit rien de tout ça — non pas parce qu'il est mal configuré, mais parce que ce n'est pas son métier.
+>
+> On garde le routeur : il achemine vite et il fait le tri grossier. On ajoute le pare-feu : il fait le travail que le routeur ne peut structurellement pas faire. »
+
+---
