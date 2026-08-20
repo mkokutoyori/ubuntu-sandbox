@@ -4628,3 +4628,304 @@ FGT-01 # diagnose sniffer packet any 'udp port 53' 4 20
 6. **`diagnose test application dnsproxy 3`** est le réflexe du diagnostic DNS.
 
 ---
+
+# Partie V — La sécurité applicative
+
+---
+
+## 13. Les modes d'inspection
+
+On entre dans ce qui fait d'un FortiGate un pare-feu **nouvelle génération** : l'inspection du contenu. Mais avant de configurer un antivirus ou un filtrage web, il faut comprendre une décision qui conditionne tout le reste — le **mode d'inspection**.
+
+C'est un réglage qu'on fait une fois et qui détermine ce qui sera possible ensuite. Le rater, c'est se retrouver avec des options grisées sans comprendre pourquoi.
+
+### 13.1 Les deux modes
+
+**Le mode *flow* (flux)**
+
+Le pare-feu examine les paquets **au fil de l'eau**, sans les retenir. Il applique des motifs de reconnaissance sur le flux qui passe, comme un contrôleur qui regarde défiler les wagons d'un train sans l'arrêter.
+
+- ✅ **Rapide** — latence quasi nulle, débit maximal
+- ✅ Bénéficie de l'accélération matérielle sur les boîtiers physiques
+- ❌ Ne peut pas voir un fichier **dans son ensemble**
+
+**Le mode *proxy***
+
+Le pare-feu **retient** le contenu, le reconstitue entièrement, l'examine, puis le retransmet. Le train est arrêté en gare, les wagons sont ouverts, puis le train repart.
+
+- ✅ **Analyse complète** — le fichier entier est reconstruit avant d'être jugé
+- ✅ Beaucoup plus de fonctions disponibles
+- ❌ Plus lent, consomme plus de mémoire
+- ❌ Ajoute de la latence
+
+### 13.2 🧠 Comprendre : pourquoi ça change ce qu'on peut faire
+
+Voici la raison profonde, et une fois qu'on l'a saisie, tout le reste découle.
+
+Imagine qu'un utilisateur télécharge un fichier de 50 Mo contenant un virus, et que la signature du virus se trouve **à cheval sur deux paquets réseau** : la moitié à la fin du paquet 1 200, l'autre au début du paquet 1 201.
+
+**En mode flow**, le pare-feu voit passer le paquet 1 200, puis le 1 201. Il a une mémoire tampon limitée. Reconnaître un motif coupé en deux est difficile, et reconnaître un motif dans une archive compressée est impossible — il faudrait décompresser, donc avoir le fichier entier.
+
+**En mode proxy**, le pare-feu accumule les 50 Mo, reconstitue le fichier, le décompresse s'il le faut, et l'analyse comme un antivirus classique le ferait sur un disque.
+
+**D'où le principe :**
+
+> Le mode **flow** protège contre ce qui se reconnaît **au passage**.
+> Le mode **proxy** protège contre ce qui ne se comprend qu'**en entier**.
+
+**Et la contrepartie**, qui n'est pas seulement une question de vitesse : en mode proxy, l'utilisateur ne reçoit **rien** tant que le fichier n'est pas entièrement analysé. Sur un gros téléchargement, son navigateur semble figé. FortiOS propose deux réponses à ce problème :
+
+| Réglage | Comportement |
+|---|---|
+| `client-comfort` | Envoie quelques octets régulièrement pour que le client ne coupe pas la connexion |
+| `oversize-limit` | Au-delà d'une certaine taille, le fichier n'est **pas** analysé |
+
+> ⚠️ **Attention — `oversize-limit` est un compromis de sécurité, pas un réglage de confort**
+> Un fichier qui dépasse la limite passe **sans être analysé**. C'est un trou connu, et les attaquants le connaissent aussi : gonfler artificiellement un fichier malveillant pour dépasser la limite est une technique documentée.
+>
+> Tu peux choisir de bloquer les fichiers trop gros plutôt que de les laisser passer :
+> ```
+> config antivirus profile
+>     edit "AV-Strict"
+>         set av-block-log enable
+>         config http
+>             set options scan avmonitor
+>         end
+>     next
+> end
+> ```
+> C'est plus sûr, et c'est plus pénible pour les utilisateurs. Comme souvent en sécurité, il faut choisir et assumer.
+
+### 13.3 Le tableau de décision
+
+| Fonction | Mode flow | Mode proxy |
+|---|---|---|
+| Antivirus (signatures) | ✅ | ✅ |
+| Antivirus dans une archive | ⚠️ Limité | ✅ |
+| Filtrage web par catégorie | ✅ | ✅ |
+| Filtrage web par mot-clé dans la page | ❌ | ✅ |
+| Contrôle applicatif | ✅ | ✅ |
+| IPS | ✅ | ✅ |
+| Filtrage DNS | ✅ | ✅ |
+| **DLP** (fuite de données) | ❌ | ✅ |
+| **Antispam** | ❌ | ✅ |
+| **Inspection ICAP** | ❌ | ✅ |
+| Remplacement de page (*block page*) riche | ⚠️ Basique | ✅ |
+| Authentification web | ⚠️ Limitée | ✅ |
+
+> 💡 **Astuce — la recommandation qui marche en pratique**
+> **Commence en mode flow.** C'est le défaut de FortiOS depuis plusieurs versions, c'est plus rapide, et ça couvre les besoins de la grande majorité des organisations.
+>
+> **Passe en proxy uniquement sur les politiques qui en ont besoin.** Le mode se règle **par politique**, pas globalement : tu peux avoir la navigation générale en flow et le trafic de messagerie en proxy pour l'antispam.
+>
+> Mélanger les deux n'est pas un défaut de conception : c'est la bonne façon de faire.
+
+### 13.4 Régler le mode
+
+**Par politique** — la méthode moderne, celle à retenir :
+
+```
+config firewall policy
+    edit 1
+        set inspection-mode flow      ← ou proxy
+    next
+end
+```
+
+**Le réglage global** — il existe encore, et il détermine le défaut :
+
+```
+config system settings
+    set inspection-mode flow
+end
+```
+
+> ⚠️ **Attention** : un **profil de sécurité** est lui aussi de type flow ou proxy (`set feature-set`). Le profil et la politique doivent **correspondre**. Si tu attaches un profil proxy à une politique flow, FortiOS affiche un avertissement et les fonctions propres au proxy **ne s'appliquent pas** — silencieusement du point de vue de l'utilisateur.
+>
+> Symptôme classique : « j'ai activé le filtrage par mot-clé et ça ne bloque rien ». Vérifie la correspondance des modes avant de chercher ailleurs.
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        set feature-set proxy         ← doit correspondre à la politique
+    next
+end
+```
+
+### 13.5 Où se voit la différence, concrètement
+
+```
+FGT-01 # diagnose sys session list
+```
+
+Sur une session inspectée en mode proxy, tu verras apparaître des indications de redirection vers le processus proxy (`proxy-id`, ou un état `may_dirty` accompagné d'un renvoi interne). En mode flow, la session ressemble à une session ordinaire.
+
+Et pour mesurer le coût :
+
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose sys top 5 20
+```
+
+`diagnose sys top` liste les processus les plus consommateurs. En mode proxy sous charge, tu verras `wad` (le démon proxy) grimper. C'est normal, et c'est le prix de l'analyse complète.
+
+---
+
+### 🧪 TP 11 — Comparer les deux modes
+
+**🎯 Objectif**
+Régler le mode d'inspection sur une politique, observer la différence de comportement, et provoquer volontairement l'incompatibilité profil/politique pour reconnaître son symptôme.
+
+**⏱️ Durée** : 20 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+> ⚠️ **Rappel du §2.7** : sans abonnement FortiGuard actif, les profils de sécurité se configurent et s'attachent, mais ne bloquent rien de réel. Ce TP porte sur le **mécanisme** et sur la façon de vérifier qu'il est en place — c'est ce qui te servira le jour où tu auras une vraie licence.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Voir le mode actuel**
+
+```
+FGT-01 # show firewall policy 1 | grep inspection
+```
+
+S'il n'y a aucune sortie, c'est que la politique est sur la valeur par défaut. Vérifie-la :
+
+```
+FGT-01 # show full-configuration firewall policy 1 | grep inspection-mode
+```
+```
+    set inspection-mode flow
+```
+
+**Étape 2 — Créer un profil de filtrage web en mode flow**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Flow"
+FGT-01 (WF-Flow) # set feature-set flow
+FGT-01 (WF-Flow) # set comment "Profil de test - mode flow"
+FGT-01 (WF-Flow) # next
+FGT-01 (profile) # end
+```
+
+**Étape 3 — L'attacher à la politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set utm-status enable
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Flow"
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+> 💡 **Astuce** : `set utm-status enable` est la case maîtresse. Sans elle, tes profils sont attachés mais **inactifs**. C'est un oubli fréquent — et le symptôme est le même que celui d'un profil mal configuré, ce qui envoie chercher au mauvais endroit.
+
+**Étape 4 — Provoquer l'incompatibilité**
+
+Crée maintenant un profil en mode **proxy** et attache-le à une politique en mode **flow** :
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Proxy"
+FGT-01 (WF-Proxy) # set feature-set proxy
+FGT-01 (WF-Proxy) # next
+FGT-01 (profile) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set webfilter-profile "WF-Proxy"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+Selon la version, FortiOS refuse ou accepte avec un avertissement. Dans la GUI, une **icône d'alerte** apparaît sur le profil avec une infobulle expliquant que les fonctions proxy ne s'appliquent pas.
+
+> 🧠 **Retiens ce symptôme.** « J'ai configuré la fonction, elle est bien attachée, et elle ne fait rien » a très souvent cette cause. La première vérification n'est pas la configuration de la fonction, c'est la **correspondance des modes**.
+
+**Étape 5 — Passer la politique en proxy**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set inspection-mode proxy
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+Maintenant, les deux correspondent. Vérifie :
+
+```
+FGT-01 # show firewall policy 1
+```
+
+**Étape 6 — Mesurer le coût**
+
+```
+FGT-01 # get system performance status
+```
+
+Puis génère du trafic depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ for i in $(seq 1 50); do curl -s -o /dev/null http://192.168.20.10; done
+```
+
+Et observe :
+
+```
+FGT-01 # diagnose sys top 5 20
+```
+
+Cherche le processus `wad`. En mode proxy, c'est lui qui traite le trafic.
+
+Appuie sur `q` pour quitter.
+
+**Étape 7 — Revenir en flow**
+
+Pour la suite du tutoriel, on reste en mode flow, plus léger sur une VM à 1 vCPU :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Flow"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 8 — Nettoyer**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # delete "WF-Proxy"
+FGT-01 (profile) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- Tu sais lire le mode d'inspection d'une politique
+- Un profil proxy sur une politique flow produit un avertissement
+- `set utm-status enable` conditionne l'activation des profils
+- `diagnose sys top` montre `wad` en mode proxy
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Flow inspecte au passage, proxy reconstitue avant d'inspecter.** C'est la seule différence, et elle explique tout le reste.
+2. **Le mode détermine les fonctions disponibles** — DLP et antispam n'existent qu'en proxy.
+3. **Le mode se règle par politique**, et les mélanger est la bonne pratique.
+4. **Profil et politique doivent être du même mode**, sinon la fonction ne s'applique pas silencieusement.
+5. **`utm-status enable` est la case maîtresse** que tout le monde oublie une fois.
+6. **`oversize-limit` est un trou de sécurité assumé**, pas un réglage de confort.
+
+---
