@@ -50,6 +50,7 @@ export interface DHCPPoolConfig {
   leaseDuration: number;
   /** Client-identifier deny patterns */
   denyPatterns: string[];
+  active?: boolean;
   /** Option 58: T1 renewal time in seconds (default: 50% of lease) */
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds (default: 87.5% of lease) */

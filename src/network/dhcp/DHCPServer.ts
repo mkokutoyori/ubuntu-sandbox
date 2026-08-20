@@ -381,6 +381,19 @@ export class DHCPServer implements IProtocolEngine {
     this.excludedRanges.push({ start, end });
   }
 
+  removeExcludedRange(start: string, end: string): boolean {
+    const before = this.excludedRanges.length;
+    this.excludedRanges = this.excludedRanges.filter(r => !(r.start === start && r.end === end));
+    return this.excludedRanges.length < before;
+  }
+
+  setPoolActive(name: string, active: boolean): boolean {
+    const pool = this.getPool(name);
+    if (!pool) return false;
+    pool.active = active;
+    return true;
+  }
+
   getExcludedRanges(): DHCPExcludedRange[] {
     return [...this.excludedRanges];
   }
@@ -487,6 +500,7 @@ export class DHCPServer implements IProtocolEngine {
 
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
+      if (pool.active === false) continue;
 
       // Only consider pools whose subnet actually contains the anchor.
       if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;

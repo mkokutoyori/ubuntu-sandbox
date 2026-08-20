@@ -917,7 +917,12 @@ export interface IDnsServerProvider {
 // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
 
 export interface DhcpOpResult { ok: boolean; message: string }
-export interface DhcpScopeInfo { name: string; startRange: string; endRange: string; subnetMask: string; leaseDuration: number }
+export interface DhcpScopeInfo { name: string; startRange: string; endRange: string; subnetMask: string; leaseDuration: number; state: 'Active' | 'Inactive' }
+export interface DhcpReservationInfo { scopeName: string; ipAddress: string; clientId: string }
+export interface DhcpExclusionInfo { start: string; end: string }
+export interface DhcpOptionInfo { optionId: number; name: string; values: string[] }
+export interface DhcpScopeStats { total: number; inUse: number; free: number; percentInUse: number }
+export interface DhcpServerStats { scopes: number; totalAddresses: number; inUse: number; free: number }
 export interface DhcpLeaseInfo { ipAddress: string; clientId: string; scopeName: string; leaseExpiration: number; type: 'automatic' | 'manual' }
 
 export interface IDhcpServerProvider {
@@ -927,10 +932,27 @@ export interface IDhcpServerProvider {
 
   addExclusionRange(startRange: string, endRange: string): DhcpOpResult;
   addReservation(scopeName: string, ipAddress: string, clientId: string): DhcpOpResult;
-  setOptionValue(scopeName: string, optionId: number, values: string[]): DhcpOpResult;
+  setOptionValue(scopeName: string | undefined, optionId: number, values: string[]): DhcpOpResult;
   getLeases(scopeName?: string): DhcpLeaseInfo[];
 
+  setScope(name: string, changes: { newName?: string; leaseDuration?: number; state?: 'Active' | 'Inactive' }): DhcpOpResult;
+  removeScope(name: string): DhcpOpResult;
+  listExclusionRanges(): DhcpExclusionInfo[];
+  removeExclusionRange(startRange: string, endRange: string): DhcpOpResult;
+  listReservations(scopeName?: string): DhcpReservationInfo[];
+  removeReservation(scopeName: string, ipAddress: string): DhcpOpResult;
+  removeLease(ipAddress: string): DhcpOpResult;
+  listOptionValues(scopeName?: string): DhcpOptionInfo[];
+  removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult;
+  scopeStatistics(scopeName: string): DhcpScopeStats | null;
+  serverStatistics(): DhcpServerStats;
+
   authorizeInDC(): DhcpOpResult;
+  isAuthorizedInDC(): boolean;
+  isRegisteredInDC(): boolean;
+  revokeInDC(): DhcpOpResult;
+  serverAddress(): string;
+  serverName(): string;
 }
 
 // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9) ─────────────────────────

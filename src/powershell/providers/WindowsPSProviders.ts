@@ -1049,10 +1049,35 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
 
   addExclusionRange(startRange: string, endRange: string): DhcpOpResult { return this.role().addExclusionRange(startRange, endRange); }
   addReservation(scopeName: string, ipAddress: string, clientId: string): DhcpOpResult { return this.role().addReservation(scopeName, ipAddress, clientId); }
-  setOptionValue(scopeName: string, optionId: number, values: string[]): DhcpOpResult { return this.role().setOptionValue(scopeName, optionId, values); }
+  setOptionValue(scopeName: string | undefined, optionId: number, values: string[]): DhcpOpResult { return this.role().setOptionValue(scopeName, optionId, values); }
   getLeases(scopeName?: string): DhcpLeaseInfo[] { return this.role().getLeases(scopeName); }
 
+  setScope(name: string, changes: { newName?: string; leaseDuration?: number; state?: 'Active' | 'Inactive' }): DhcpOpResult {
+    return this.role().setScope(name, changes);
+  }
+  removeScope(name: string): DhcpOpResult { return this.role().removeScope(name); }
+  listExclusionRanges() { return this.role().listExclusionRanges(); }
+  removeExclusionRange(startRange: string, endRange: string): DhcpOpResult {
+    return this.role().removeExclusionRange(startRange, endRange);
+  }
+  listReservations(scopeName?: string) { return this.role().listReservations(scopeName); }
+  removeReservation(scopeName: string, ipAddress: string): DhcpOpResult {
+    return this.role().removeReservation(scopeName, ipAddress);
+  }
+  removeLease(ipAddress: string): DhcpOpResult { return this.role().removeLease(ipAddress); }
+  listOptionValues(scopeName?: string) { return this.role().listOptionValues(scopeName); }
+  removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult {
+    return this.role().removeOptionValue(scopeName, optionId);
+  }
+  scopeStatistics(scopeName: string) { return this.role().scopeStatistics(scopeName); }
+  serverStatistics() { return this.role().serverStatistics(); }
+
   authorizeInDC(): DhcpOpResult { return this.role().authorizeInDC(); }
+  isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
+  isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }
+  revokeInDC(): DhcpOpResult { return this.role().revokeInDC(); }
+  serverAddress(): string { return this.pc.getPorts()[0]?.getIPAddress()?.toString() ?? ''; }
+  serverName(): string { return this.pc.getHostname(); }
 }
 
 // ── NPS (RADIUS) adapter (PRD-Windows-Server.md §5 P9) ───────────────────

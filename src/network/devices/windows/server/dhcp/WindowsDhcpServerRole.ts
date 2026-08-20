@@ -35,6 +35,7 @@ export interface DhcpScopeInfo {
   endRange: string;
   subnetMask: string;
   leaseDuration: number;
+  state: 'Active' | 'Inactive';
 }
 
 export interface DhcpLeaseInfo {
@@ -59,6 +60,9 @@ function bindingToLease(binding: DHCPBinding): DhcpLeaseInfo {
 export class WindowsDhcpServerRole {
   private readonly engine = new DHCPServer();
   private readonly scopeRanges = new Map<string, { start: string; end: string }>();
+  private readonly scopeState = new Map<string, boolean>();
+  private readonly serverOptions = new Map<number, string[]>();
+  private readonly scopeOptions = new Map<string, Map<number, string[]>>();
   private running = false;
   private domainExists = false;
   private authorized = false;
@@ -92,6 +96,13 @@ export class WindowsDhcpServerRole {
 
   /** An unauthorized DHCP server in a domain never leases addresses — real Windows shuts down leasing (Event 1042) rather than refusing the cmdlet calls that configure it. */
   isAuthorizedInDC(): boolean { return !this.domainExists || this.authorized; }
+
+  isRegisteredInDC(): boolean { return this.authorized; }
+
+  revokeInDC(): DhcpOpResult {
+    this.authorized = false;
+    return { ok: true, message: '' };
+  }
 
   private readonly handleDatagram = (dgram: { inPort: string; udp: UDPPacket }): void => {
     if (!this.isAuthorizedInDC()) return;
@@ -180,7 +191,9 @@ export class WindowsDhcpServerRole {
     this.engine.configurePoolNetwork(name, network, subnetMask);
     if (leaseDurationSeconds) this.engine.configurePoolLease(name, leaseDurationSeconds);
     this.scopeRanges.set(name, { start: startRange, end: endRange });
+    this.scopeState.set(name, true);
     this.excludeOutsideRange(network, mask, startRange, endRange);
+    this.projectOptions();
     return { ok: true, message: '' };
   }
 
@@ -205,6 +218,7 @@ export class WindowsDhcpServerRole {
     return {
       name: pool.name, startRange: range?.start ?? '', endRange: range?.end ?? '',
       subnetMask: pool.mask ?? '', leaseDuration: pool.leaseDuration,
+      state: this.scopeState.get(name) === false ? 'Inactive' : 'Active',
     };
   }
 
@@ -234,17 +248,21 @@ export class WindowsDhcpServerRole {
 
   // ─── Options (Set-DhcpServerv4OptionValue) ──────────────────────────
 
-  setOptionValue(scopeName: string, optionId: number, values: string[]): DhcpOpResult {
-    if (!this.engine.getPool(scopeName)) {
+  setOptionValue(scopeName: string | undefined, optionId: number, values: string[]): DhcpOpResult {
+    if (scopeName !== undefined && !this.engine.getPool(scopeName)) {
       return { ok: false, message: `Set-DhcpServerv4OptionValue : ScopeId "${scopeName}" does not exist on this DHCP server.` };
     }
-    switch (optionId) {
-      case 3: this.engine.configurePoolRouter(scopeName, values[0]); break;
-      case 6: this.engine.configurePoolDNS(scopeName, values); break;
-      case 15: this.engine.configurePoolDomain(scopeName, values[0]); break;
-      case 51: this.engine.configurePoolLease(scopeName, Number(values[0])); break;
-      default: return { ok: false, message: `Set-DhcpServerv4OptionValue : Option ID ${optionId} is not supported.` };
+    if (!ALL_OPTION_IDS.includes(optionId)) {
+      return { ok: false, message: `Set-DhcpServerv4OptionValue : Option ID ${optionId} is not supported.` };
     }
+    if (scopeName === undefined) {
+      this.serverOptions.set(optionId, values);
+    } else {
+      const own = this.scopeOptions.get(scopeName) ?? new Map<number, string[]>();
+      own.set(optionId, values);
+      this.scopeOptions.set(scopeName, own);
+    }
+    this.projectOptions();
     return { ok: true, message: '' };
   }
 
@@ -254,4 +272,144 @@ export class WindowsDhcpServerRole {
     const all = [...this.engine.getBindings().values()].map(bindingToLease);
     return scopeName ? all.filter(l => l.scopeName === scopeName) : all;
   }
+
+  setScope(
+    name: string,
+    changes: { newName?: string; leaseDuration?: number; state?: 'Active' | 'Inactive' },
+  ): DhcpOpResult {
+    if (!this.engine.getPool(name)) {
+      return { ok: false, message: `Set-DhcpServerv4Scope : ScopeId "${name}" does not exist on this DHCP server.` };
+    }
+    if (changes.leaseDuration !== undefined) {
+      this.engine.configurePoolLease(name, changes.leaseDuration);
+    }
+    if (changes.state !== undefined) {
+      const active = changes.state === 'Active';
+      this.scopeState.set(name, active);
+      this.engine.setPoolActive(name, active);
+    }
+    if (changes.newName !== undefined && changes.newName !== name) {
+      const pool = this.engine.getPool(name);
+      if (pool) pool.name = changes.newName;
+    }
+    return { ok: true, message: '' };
+  }
+
+  removeScope(name: string): DhcpOpResult {
+    if (!this.engine.getPool(name)) {
+      return { ok: false, message: `Remove-DhcpServerv4Scope : ScopeId "${name}" does not exist on this DHCP server.` };
+    }
+    for (const lease of this.getLeases(name)) this.engine.clearBinding(lease.ipAddress);
+    this.engine.deletePool(name);
+    this.scopeRanges.delete(name);
+    this.scopeState.delete(name);
+    this.scopeOptions.delete(name);
+    return { ok: true, message: '' };
+  }
+
+  listExclusionRanges(): Array<{ start: string; end: string }> {
+    return this.engine.getExcludedRanges().map(r => ({ start: r.start, end: r.end }));
+  }
+
+  removeExclusionRange(startRange: string, endRange: string): DhcpOpResult {
+    return this.engine.removeExcludedRange(startRange, endRange)
+      ? { ok: true, message: '' }
+      : { ok: false, message: `Remove-DhcpServerv4ExclusionRange : The specified exclusion range does not exist.` };
+  }
+
+  listReservations(scopeName?: string): Array<{ scopeName: string; ipAddress: string; clientId: string }> {
+    const scopes = scopeName ? [scopeName] : [...this.engine.getAllPools().keys()];
+    const out: Array<{ scopeName: string; ipAddress: string; clientId: string }> = [];
+    for (const scope of scopes) {
+      for (const b of this.engine.getStaticBindings(scope)) {
+        out.push({ scopeName: scope, ipAddress: b.ipAddress, clientId: b.clientId });
+      }
+    }
+    return out;
+  }
+
+  removeReservation(scopeName: string, ipAddress: string): DhcpOpResult {
+    if (!this.engine.removeStaticBinding(scopeName, ipAddress)) {
+      return { ok: false, message: `Remove-DhcpServerv4Reservation : The reservation ${ipAddress} does not exist.` };
+    }
+    this.engine.clearBinding(ipAddress);
+    return { ok: true, message: '' };
+  }
+
+  removeLease(ipAddress: string): DhcpOpResult {
+    return this.engine.clearBinding(ipAddress)
+      ? { ok: true, message: '' }
+      : { ok: false, message: `Remove-DhcpServerv4Lease : The lease ${ipAddress} does not exist.` };
+  }
+
+  listOptionValues(scopeName?: string): Array<{ optionId: number; name: string; values: string[] }> {
+    const source = scopeName
+      ? this.scopeOptions.get(scopeName) ?? new Map<number, string[]>()
+      : this.serverOptions;
+    const merged = new Map<number, string[]>();
+    if (scopeName) for (const [id, v] of this.serverOptions) merged.set(id, v);
+    for (const [id, v] of source) merged.set(id, v);
+    return [...merged].sort((a, b) => a[0] - b[0])
+      .map(([optionId, values]) => ({ optionId, name: OPTION_NAMES[optionId] ?? `Option ${optionId}`, values }));
+  }
+
+  removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult {
+    const store = scopeName ? this.scopeOptions.get(scopeName) : this.serverOptions;
+    if (!store || !store.delete(optionId)) {
+      return { ok: false, message: `Remove-DhcpServerv4OptionValue : Option ID ${optionId} is not configured.` };
+    }
+    this.projectOptions();
+    return { ok: true, message: '' };
+  }
+
+  scopeStatistics(scopeName: string): { total: number; inUse: number; free: number; percentInUse: number } | null {
+    const range = this.scopeRanges.get(scopeName);
+    if (!range) return null;
+    const start = new IPAddress(range.start).toUint32();
+    const end = new IPAddress(range.end).toUint32();
+    const total = Math.max(0, end - start + 1);
+    const inUse = this.getLeases(scopeName).length;
+    const free = Math.max(0, total - inUse);
+    return { total, inUse, free, percentInUse: total === 0 ? 0 : Math.round((inUse / total) * 100) };
+  }
+
+  serverStatistics(): { scopes: number; totalAddresses: number; inUse: number; free: number } {
+    let totalAddresses = 0;
+    let inUse = 0;
+    for (const name of this.engine.getAllPools().keys()) {
+      const s = this.scopeStatistics(name);
+      if (!s) continue;
+      totalAddresses += s.total;
+      inUse += s.inUse;
+    }
+    return {
+      scopes: this.engine.getAllPools().size,
+      totalAddresses, inUse, free: Math.max(0, totalAddresses - inUse),
+    };
+  }
+
+  private projectOptions(): void {
+    for (const name of this.engine.getAllPools().keys()) {
+      const own = this.scopeOptions.get(name) ?? new Map<number, string[]>();
+      for (const id of ALL_OPTION_IDS) {
+        const values = own.get(id) ?? this.serverOptions.get(id);
+        this.applyOption(name, id, values);
+      }
+    }
+  }
+
+  private applyOption(scope: string, optionId: number, values: string[] | undefined): void {
+    switch (optionId) {
+      case 3: this.engine.configurePoolRouter(scope, values?.[0] ?? null); break;
+      case 6: this.engine.configurePoolDNS(scope, values ?? []); break;
+      case 15: this.engine.configurePoolDomain(scope, values?.[0] ?? null); break;
+      case 51: if (values?.[0]) this.engine.configurePoolLease(scope, Number(values[0])); break;
+    }
+  }
 }
+
+const OPTION_NAMES: Record<number, string> = {
+  3: 'Router', 6: 'DNS Servers', 15: 'DNS Domain Name', 51: 'Lease',
+};
+
+const ALL_OPTION_IDS = [3, 6, 15, 51];

@@ -118,6 +118,15 @@ l'adresse du serveur.
 d'offre ; `setAddressConflictChecker` existe côté CLIENT et n'a pas de
 pendant côté serveur.
 
+### [dhcp] Windows : le basculement et l'export restent absents
+`Add-DhcpServerv4Failover`, `Get-DhcpServerv4Failover`,
+`Export-DhcpServer`/`Import-DhcpServer`, `Get-DhcpServerv4Binding` et
+`Set-DhcpServerv4DnsSetting` ne sont pas déclarés.
+**Mesure** : le module compte 20 applets ; ces cinq familles n'y sont
+pas.
+**Report** : le basculement demande un second serveur et un protocole de
+synchronisation entre les deux — un sujet en soi, pas une applet de plus.
+
 ## Outillage
 
 ### [typecheck] 347 erreurs de type au compteur
