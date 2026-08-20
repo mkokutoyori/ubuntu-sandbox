@@ -380,8 +380,9 @@ describe('les vues `get`', () => {
 
     const vu = run(sh, 'get system interface');
 
-    expect(vu).toMatch(/port1\s+192\.168\.1\.1 255\.255\.255\.0\s+up/);
-    expect(vu).toMatch(/port2\s+203\.0\.113\.1 255\.255\.255\.0\s+up/);
+    expect(vu).toMatch(/== \[port1\]\n\tmode: static\n\tip: 192\.168\.1\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(/== \[port2\]\n\tmode: static\n\tip: 203\.0\.113\.1 255\.255\.255\.0/);
+    expect(vu).toMatch(/\tstatus: up/);
   });
 
   it('`get router info routing-table all` rend la route par defaut', async () => {

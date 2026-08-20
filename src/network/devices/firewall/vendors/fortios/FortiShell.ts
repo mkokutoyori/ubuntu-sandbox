@@ -40,6 +40,7 @@ import { FortiDiagnostics } from './diag/FortiDiagnostics';
 import { deniedLog, runDiagnose, runExecuteLog } from './diag/FortiDiagCommands';
 import {
   renderArpTable, renderInterfaceStatus, renderPerformanceStatus,
+  type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases,
   renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
 } from './diag/getViews';
@@ -67,6 +68,7 @@ export class FortiShell {
   constructor(private readonly fw: FortiGate) {
     this.tree = new FortiConfigTree(schemaIndex());
     this.tree.bindScope(() => this.vdom);
+    this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({
@@ -418,7 +420,8 @@ export class FortiShell {
       });
     }
     if (path === 'system interface' || path === 'system interface physical') {
-      return renderInterfaceStatus(this.fw.getInterfaceTable());
+      return renderInterfaceStatus(
+        this.interfaceStatusFacts(), path.endsWith('physical'));
     }
     if (path === 'router info ospf neighbor') {
       return renderOspfNeighbors(this.fw.getRouting().ospfNeighbors());
@@ -433,6 +436,30 @@ export class FortiShell {
       return renderBgpNeighbors(this.fw.getRouting().getBgp().summaryFacts());
     }
     return null;
+  }
+
+  private interfaceStatusFacts(): InterfaceStatusFacts[] {
+    return this.fw.listL3Interfaces().map((iface) => {
+      const port = this.fw.getPort(iface.name);
+      const linked = port !== undefined && port.isConnected() && port.isOperationallyUp();
+      return {
+        name: iface.name,
+        mode: this.interfaceSetting(iface.name, 'mode') ?? 'static',
+        ip: `${iface.ip ?? '0.0.0.0'} ${iface.mask ?? '0.0.0.0'}`,
+        ipv6: '::/0',
+        status: iface.up && (port === undefined || linked) ? 'up' : 'down',
+        speed: linked && port !== undefined
+          ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
+          : 'n/a',
+        physical: port !== undefined,
+      };
+    });
+  }
+
+  private interfaceSetting(name: string, attribute: string): string | undefined {
+    const spec = this.tree.spec(['system', 'interface']);
+    if (!spec) return undefined;
+    return this.tree.table(spec).get(name)?.effective(attribute)[0];
   }
 
   private systemStatus(): string {

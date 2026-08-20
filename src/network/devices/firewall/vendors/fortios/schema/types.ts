@@ -20,6 +20,7 @@ export type FortiScope = 'global' | 'vdom' | 'both';
 
 export interface FortiObjectView {
   key: string;
+  hasPhysicalKey(): boolean;
   effective(attribute: string): readonly string[];
   isExplicit(attribute: string): boolean;
   setting(path: string, attribute: string): readonly string[];
@@ -30,6 +31,7 @@ export interface FortiObjectView {
 
 export interface FortiSchemaEnvironment {
   setting(path: string, attribute: string): readonly string[];
+  isPhysicalPort?(name: string): boolean;
 }
 
 export const EMPTY_ENVIRONMENT: FortiSchemaEnvironment = Object.freeze({

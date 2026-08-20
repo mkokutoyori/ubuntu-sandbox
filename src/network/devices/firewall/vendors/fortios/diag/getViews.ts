@@ -64,20 +64,30 @@ export function renderPerformanceStatus(facts: PerformanceFacts): string {
   ].join('\n');
 }
 
-export function renderInterfaceStatus(interfaces: InterfaceTable): string {
-  const rows = interfaces.all().map(iface => ({
-    name: iface.name,
-    address: iface.ip === undefined ? '0.0.0.0 0.0.0.0' : `${iface.ip} ${iface.mask ?? ''}`,
-    status: iface.up ? 'up' : 'down',
-    mtu: String(iface.mtu),
-  }));
+export interface InterfaceStatusFacts {
+  readonly name: string;
+  readonly mode: string;
+  readonly ip: string;
+  readonly ipv6: string;
+  readonly status: string;
+  readonly speed: string;
+  readonly physical: boolean;
+}
 
-  return renderTable(rows, [
-    { header: 'name', width: 18, value: row => row.name },
-    { header: 'ip', width: 34, value: row => row.address },
-    { header: 'status', width: 8, value: row => row.status },
-    { header: 'mtu', width: 0, value: row => row.mtu },
-  ], FIXED_TABLE).join('\n');
+export function renderInterfaceStatus(
+  facts: readonly InterfaceStatusFacts[], physicalOnly: boolean,
+): string {
+  const lines: string[] = [];
+  for (const iface of facts) {
+    if (physicalOnly && !iface.physical) continue;
+    lines.push(`== [${iface.name}]`);
+    lines.push(`\tmode: ${iface.mode}`);
+    lines.push(`\tip: ${iface.ip}`);
+    lines.push(`\tipv6: ${iface.ipv6}`);
+    lines.push(`\tstatus: ${iface.status}`);
+    lines.push(`\tspeed: ${iface.speed}`);
+  }
+  return lines.join('\n');
 }
 
 export function renderArpTable(arp: ArpService): string {

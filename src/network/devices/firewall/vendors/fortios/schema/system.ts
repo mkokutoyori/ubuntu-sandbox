@@ -32,8 +32,13 @@ function isTransparent(object: FortiObjectView): boolean {
   return object.effective('opmode')[0] === 'transparent';
 }
 
+export function interfaceType(object: FortiObjectView): string {
+  if (object.isExplicit('type')) return object.effective('type')[0] ?? 'physical';
+  return object.hasPhysicalKey() ? 'physical' : 'vlan';
+}
+
 function isVlan(object: FortiObjectView): boolean {
-  return object.effective('type')[0] === 'vlan';
+  return interfaceType(object) === 'vlan';
 }
 
 export const SYSTEM_GLOBAL: FortiTableSpec = {
@@ -174,12 +179,15 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       { keyword: 'dmz', description: 'Connected to a server network.' },
       { keyword: 'undefined', description: 'No specific role.' },
     ], 'undefined'),
-    choice('type', 'Interface type.', [
-      { keyword: 'physical', description: 'Physical interface.' },
-      { keyword: 'vlan', description: 'VLAN sub-interface.' },
-      { keyword: 'loopback', description: 'Loopback interface.' },
-      { keyword: 'aggregate', description: 'Link aggregate interface.' },
-    ], 'physical'),
+    {
+      ...choice('type', 'Interface type.', [
+        { keyword: 'physical', description: 'Physical interface.' },
+        { keyword: 'vlan', description: 'VLAN sub-interface.' },
+        { keyword: 'loopback', description: 'Loopback interface.' },
+        { keyword: 'aggregate', description: 'Link aggregate interface.' },
+      ], 'physical'),
+      availableWhen: (object) => !object.hasPhysicalKey(),
+    },
     { ...reference('interface', 'Parent interface name.', ['system interface']),
       availableWhen: isVlan },
     { ...count('vlanid', 'VLAN ID.', 1, 4094, 0), availableWhen: isVlan },
@@ -222,7 +230,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       mask: ip[1],
       up: object.effective('status')[0] !== 'down',
       allowAccess: object.effective('allowaccess'),
-      type: object.effective('type')[0],
+      type: interfaceType(object),
       parent: object.effective('interface')[0],
       vlanId: Number.parseInt(object.effective('vlanid')[0] ?? '', 10) || undefined,
     });
