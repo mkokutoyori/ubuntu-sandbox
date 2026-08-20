@@ -6587,3 +6587,391 @@ FGT-01 (policy) # end
 7. **Une inspection trop agressive pousse les gens à désactiver leur propre sécurité.**
 
 ---
+
+# Partie VI — Les utilisateurs
+
+---
+
+## 17. Authentification et gestion des utilisateurs
+
+C'est la réponse à la limite n°4 du §15.7 : faire des règles qui parlent de **personnes** plutôt que d'adresses IP.
+
+### 17.1 Pourquoi c'est une rupture
+
+Une politique classique dit : « `192.168.10.47` peut accéder au serveur RH ». Cette règle protège **une prise réseau**. Elle se trompe dès que quelqu'un change de bureau, dès que le DHCP redistribue, dès qu'un poste passe en Wi-Fi.
+
+Une politique authentifiée dit : « les membres du groupe **RH** peuvent accéder au serveur RH ». La règle suit la personne, où qu'elle se branche et quel que soit son poste.
+
+C'est aussi ce qui rend les **journaux exploitables** : « `192.168.10.47` a téléchargé 40 Go » n'accuse personne ; « `marie.durand` a téléchargé 40 Go » est une information.
+
+### 17.2 Les sources d'identité
+
+| Source | Où vivent les comptes | Usage typique |
+|---|---|---|
+| **Local** | Sur le FortiGate | Petits sites, comptes de service, VPN |
+| **LDAP / Active Directory** | Sur un contrôleur de domaine | ⭐ Le cas d'entreprise standard |
+| **RADIUS** | Sur un serveur RADIUS | Wi-Fi 802.1X, VPN, NAC |
+| **FSSO** | AD, en **transparent** | ⭐ Voir §17.6 |
+| **SAML** | Fournisseur d'identité externe | Entra ID, Okta, authentification moderne |
+| **Certificat (PKI)** | Certificat client | Environnements à forte exigence |
+
+### 17.3 Les utilisateurs locaux
+
+```
+config user local
+    edit "marie.durand"
+        set type password
+        set passwd "MotDePasseSolide2026!"
+        set status enable
+    next
+end
+
+config user group
+    edit "GRP-Direction"
+        set member "marie.durand"
+    next
+end
+```
+
+> 💡 **Astuce** : les comptes locaux ne se gèrent pas au-delà d'une vingtaine d'utilisateurs. Ils restent utiles pour les **comptes de service**, les accès VPN d'un prestataire, et comme **solution de secours** quand l'annuaire est injoignable — ce dernier point est important : un pare-feu dont l'authentification dépend entièrement d'un AD en panne devient inadministrable au pire moment.
+
+### 17.4 L'intégration LDAP / Active Directory
+
+```
+config user ldap
+    edit "AD-Entreprise"
+        set server "192.168.10.5"
+        set cnid "sAMAccountName"
+        set dn "dc=entreprise,dc=local"
+        set type regular
+        set username "cn=svc-fortigate,ou=Services,dc=entreprise,dc=local"
+        set password "MotDePasseDuCompteDeService"
+        set secure ldaps
+        set port 636
+        set ca-cert "CA-Entreprise"
+    next
+end
+```
+
+Décryptage des paramètres qui posent problème :
+
+| Paramètre | Ce qu'il faut savoir |
+|---|---|
+| `cnid` | L'attribut d'identification. **`sAMAccountName` pour AD**, `uid` pour OpenLDAP |
+| `dn` | La racine de recherche. Une erreur ici et rien ne remonte |
+| `type regular` | Le pare-feu se connecte avec un compte de service pour **chercher** les utilisateurs |
+| `secure ldaps` | ⭐ Chiffre la connexion. **Sans ça, les mots de passe circulent en clair** |
+
+> 🚨 **Danger** : LDAP en clair (port 389) fait transiter les identifiants **en clair sur ton réseau**. N'importe qui avec un accès au segment peut les capturer. Utilise **toujours** `ldaps` (636) ou STARTTLS. Ce n'est pas une bonne pratique parmi d'autres : c'est la différence entre une authentification et une distribution de mots de passe.
+
+**Tester la connexion** — la commande qui économise des heures :
+
+```
+FGT-01 # diagnose test authserver ldap AD-Entreprise marie.durand SonMotDePasse
+```
+
+Elle te dit immédiatement si le problème vient de l'annuaire, du compte de service, du `dn` ou du mot de passe.
+
+**Importer un groupe de l'annuaire :**
+
+```
+config user group
+    edit "GRP-Direction-AD"
+        set member "AD-Entreprise"
+        config match
+            edit 1
+                set server-name "AD-Entreprise"
+                set group-name "CN=Direction,OU=Groupes,DC=entreprise,DC=local"
+            next
+        end
+    next
+end
+```
+
+### 17.5 RADIUS
+
+```
+config user radius
+    edit "RADIUS-NPS"
+        set server "192.168.10.6"
+        set secret "SecretPartage2026"
+        set auth-type auto
+        set nas-ip 192.168.10.1
+    next
+end
+```
+
+```
+FGT-01 # diagnose test authserver radius RADIUS-NPS pap marie.durand SonMotDePasse
+```
+
+> 💡 **Astuce** : RADIUS peut renvoyer des **attributs** en plus du verdict — notamment le groupe d'appartenance, via l'attribut `Fortinet-Group-Name`. C'est ainsi qu'on fait de l'attribution de droits dynamique sans dupliquer les groupes sur le pare-feu.
+
+### 17.6 🧠 FSSO : l'authentification que l'utilisateur ne voit pas
+
+C'est la fonction qui change le plus la vie des utilisateurs, et la moins comprise.
+
+**Le problème** : demander à quelqu'un de s'authentifier une deuxième fois sur le pare-feu, alors qu'il vient d'ouvrir sa session Windows, est mal vécu — et à juste titre.
+
+**La solution FSSO** (*Fortinet Single Sign-On*) : le pare-feu **apprend** qui est connecté sans jamais rien demander.
+
+**Comment ?** Un agent installé sur les contrôleurs de domaine surveille les **journaux d'ouverture de session** Active Directory. Quand `marie.durand` ouvre sa session sur le poste `192.168.10.47`, l'agent le voit et prévient le FortiGate : « l'adresse `192.168.10.47` est maintenant `marie.durand`, membre des groupes X, Y, Z ».
+
+Le pare-feu maintient alors une table adresse ↔ utilisateur, mise à jour en permanence.
+
+**Résultat** : tes politiques parlent de groupes AD, et l'utilisateur ne voit **jamais** de demande d'authentification.
+
+```
+config user fsso
+    edit "FSSO-Agent"
+        set server "192.168.10.5"
+        set password "SecretDeLAgent"
+    next
+end
+
+config user group
+    edit "GRP-FSSO-Direction"
+        set group-type fsso-service
+        set member "CN=Direction,OU=Groupes,DC=entreprise,DC=local"
+    next
+end
+```
+
+Vérifier ce que le pare-feu sait :
+
+```
+FGT-01 # diagnose debug authd fsso list
+FGT-01 # diagnose firewall auth list
+```
+
+> ⚠️ **Attention — deux limites de FSSO à connaître**
+> **① Il ne fonctionne que pour les machines du domaine.** Un téléphone, une tablette, un poste invité ne produisent aucun événement d'ouverture de session AD. Il faut prévoir un mécanisme complémentaire pour eux.
+>
+> **② Il fait confiance à l'adresse IP.** Si deux personnes utilisent successivement le même poste sans fermer proprement la session, ou si une adresse change de main rapidement, l'association peut être fausse pendant un moment. C'est un compromis assumé : la transparence contre une certitude absolue.
+
+### 17.7 L'authentification par portail captif
+
+Quand FSSO ne s'applique pas, le pare-feu peut **intercepter** la première requête web et présenter une page de connexion.
+
+```
+config firewall policy
+    edit 5
+        set name "Acces-authentifie"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "NET-LAN"
+        set dstaddr "all"
+        set groups "GRP-Direction"     ← ⭐ la politique devient authentifiée
+        set service "ALL"
+        set schedule "always"
+        set action accept
+        set nat enable
+    next
+end
+```
+
+> 🧠 **Comprendre** : dès qu'une politique contient `set groups`, elle **exige** une authentification. Un utilisateur non authentifié ne correspond pas à la règle — le paquet continue vers les politiques suivantes, et finit sur l'`Implicit Deny` s'il n'en trouve pas d'autre.
+>
+> C'est cohérent avec tout ce qu'on a appris au §9.2, et ça produit un symptôme reconnaissable : « certains utilisateurs passent, d'autres non, sans logique apparente ». La logique est là — les premiers sont authentifiés.
+
+Les réglages du portail :
+
+```
+config user setting
+    set auth-timeout 480
+    set auth-timeout-type idle-timeout
+    set auth-secure-http enable
+    set auth-on-demand implicitly
+end
+```
+
+| Paramètre | Rôle |
+|---|---|
+| `auth-timeout 480` | 480 **minutes** avant de redemander |
+| `auth-timeout-type` | `idle-timeout` (inactivité) ou `hard-timeout` (absolu) |
+| `auth-secure-http` | ⭐ Force le portail en HTTPS. **Indispensable** |
+
+---
+
+### 🧪 TP 16 — Une politique qui parle de personnes
+
+**🎯 Objectif**
+Créer des utilisateurs locaux et des groupes, écrire une politique authentifiée, se connecter par le portail captif, et observer la table d'authentification. Puis constater dans les journaux la différence entre une adresse et un nom.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer deux utilisateurs**
+
+```
+FGT-01 # config user local
+FGT-01 (local) # edit "marie.durand"
+FGT-01 (marie.durand) # set type password
+FGT-01 (marie.durand) # set passwd "Direction2026!"
+FGT-01 (marie.durand) # set status enable
+FGT-01 (marie.durand) # next
+FGT-01 (local) # edit "paul.stagiaire"
+FGT-01 (paul.stagiaire) # set type password
+FGT-01 (paul.stagiaire) # set passwd "Stagiaire2026!"
+FGT-01 (paul.stagiaire) # set status enable
+FGT-01 (paul.stagiaire) # next
+FGT-01 (local) # end
+```
+
+**Étape 2 — Créer deux groupes**
+
+```
+FGT-01 # config user group
+FGT-01 (group) # edit "GRP-Direction"
+FGT-01 (GRP-Direction) # set member "marie.durand"
+FGT-01 (GRP-Direction) # next
+FGT-01 (group) # edit "GRP-Stagiaires"
+FGT-01 (GRP-Stagiaires) # set member "paul.stagiaire"
+FGT-01 (GRP-Stagiaires) # next
+FGT-01 (group) # end
+```
+
+**Étape 3 — Rendre la politique Internet authentifiée**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set groups "GRP-Direction" "GRP-Stagiaires"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 4 — Régler le portail**
+
+```
+FGT-01 # config user setting
+FGT-01 (setting) # set auth-timeout 480
+FGT-01 (setting) # set auth-timeout-type idle-timeout
+FGT-01 (setting) # set auth-secure-http enable
+FGT-01 (setting) # end
+```
+
+**Étape 5 — Tester**
+
+Depuis le PC du LAN, ouvre un navigateur vers un site en **HTTP** (le portail intercepte plus facilement) :
+
+```bash
+user@pc-lan:~$ curl -m 10 -L http://neverssl.com
+```
+
+Tu es **redirigé vers le portail d'authentification** du FortiGate. Dans un vrai navigateur, tu verras la page de connexion.
+
+Connecte-toi avec `marie.durand`. La navigation reprend.
+
+**Étape 6 — Voir la table d'authentification**
+
+```
+FGT-01 # diagnose firewall auth list
+```
+```
+192.168.10.10, marie.durand
+        type: fw, id: 0, duration: 142, idled: 12
+        expire: 28658, allow-idle: 28800
+        flag(10): auth
+        packets: 214, bytes: 38121
+        group_id: 3
+        group_name: GRP-Direction
+```
+
+**Le pare-feu associe désormais une adresse IP à une PERSONNE.** C'est toute la différence avec le §15.7.
+
+**Étape 7 — Différencier les droits**
+
+Bloquons un service pour les stagiaires uniquement. Crée une règle plus spécifique **au-dessus** :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 4
+FGT-01 (4) # set name "Stagiaires-restreints"
+FGT-01 (4) # set srcintf "port2"
+FGT-01 (4) # set dstintf "port3"
+FGT-01 (4) # set srcaddr "NET-LAN"
+FGT-01 (4) # set dstaddr "NET-DMZ"
+FGT-01 (4) # set groups "GRP-Stagiaires"
+FGT-01 (4) # set service "PING"
+FGT-01 (4) # set schedule "always"
+FGT-01 (4) # set action deny
+FGT-01 (4) # set logtraffic all
+FGT-01 (4) # next
+FGT-01 (policy) # move 4 before 2
+FGT-01 (policy) # end
+```
+
+> 🧠 Souviens-toi du §9.2 : cette règle doit être **avant** la règle générale `LAN-vers-DMZ`, sinon elle ne sera jamais lue. Tu appliques ici, sans y penser, ce que le TP 7 t'a appris.
+
+**Étape 8 — Vérifier la différence**
+
+Déconnecte l'utilisateur courant :
+
+```
+FGT-01 # diagnose firewall auth clear
+```
+
+Puis, depuis le PC, authentifie-toi en **stagiaire** et teste :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10       ← doit être bloqué
+```
+
+Recommence en **Direction** :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10       ← doit passer
+```
+
+**La même machine, la même adresse IP, deux comportements différents selon qui est connecté.** C'est exactement ce qu'un routeur ne saura jamais faire.
+
+**Étape 9 — Lire les journaux**
+
+```
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field user "paul.stagiaire"
+FGT-01 # execute log display
+```
+
+Le champ `user` apparaît dans chaque entrée. Compare avec les journaux du TP 7, où il n'y avait qu'une adresse.
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # delete 4
+FGT-01 (policy) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # unset groups
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `diagnose firewall auth list` associe l'adresse à un nom
+- La même machine se comporte différemment selon l'utilisateur connecté
+- Les journaux portent le champ `user`
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **`set groups` transforme une politique en politique authentifiée**, et un non-authentifié n'y correspond simplement pas.
+2. **La règle suit la personne**, pas la prise réseau.
+3. **FSSO authentifie sans rien demander**, en lisant les ouvertures de session AD.
+4. **LDAP doit être en LDAPS.** Sinon tu distribues des mots de passe.
+5. **`diagnose test authserver`** te dit d'où vient un échec d'authentification.
+6. **Les journaux nommés sont exploitables**, les journaux d'adresses ne le sont pas.
+
+---
