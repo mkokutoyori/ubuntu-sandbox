@@ -5099,15 +5099,20 @@ doit donc être conçue restrictive dès le départ.
 |---|---|
 | **NFR-M1** | Aucun branchement par vendeur dans le socle |
 | **NFR-M2** | Aucun moteur dans la couche vendeur |
-| **NFR-M3** | Aucun fichier du socle ne dépasse 800 lignes |
+| **NFR-M3** | ~~Aucun fichier du socle ne dépasse 800 lignes~~ — **retirée** |
 | **NFR-M4** | Chaque magasin est indépendamment testable |
 | **NFR-M5** | Les primitives NAT partagées ont un seul exemplaire |
 | **NFR-M6** | Les accès aux sous-systèmes passent par des capacités ségrégées, pas des casts |
 
-NFR-M3 est une contrainte volontaire, motivée par l'état de `Router.ts`
-(5615 lignes) et `EndHost.ts` (4762 lignes) : ces fichiers sont devenus
-difficiles à modifier sans effet de bord. Le module pare-feu commence avec
-une limite.
+NFR-M3 était une contrainte volontaire, motivée par l'état de `Router.ts`
+(5615 lignes) et `EndHost.ts` (4762 lignes). **Elle est retirée** : le
+comptage de lignes s'est révélé un mauvais indicateur de couplage — il
+imposait des extractions dictées par un compteur plutôt que par la
+cohésion, et il coûtait plus de temps qu'il n'en faisait gagner. Ce qui
+gouverne le découpage reste NFR-M1, NFR-M2, NFR-M4 et NFR-M6, qui parlent
+tous de dépendances plutôt que de taille. Les garde-fous G1 et G3 qui
+comptaient les lignes sont supprimés de
+`architecture-guards.test.ts` ; les autres restent.
 
 ### 33.4 Testabilité
 
@@ -6013,7 +6018,7 @@ Tests mécaniques, exécutés en continu :
 |---|---|---|
 | **G1** | Aucun moteur dans la couche vendeur | Aucun fichier de `vendors/` n'importe un moteur du socle |
 | **G2** | Aucun branchement par vendeur dans le socle | Aucune occurrence de `vendor ===` hors des profils |
-| **G3** | Aucun fichier du socle > 800 lignes | Comptage |
+| ~~**G3**~~ | ~~Aucun fichier du socle > 800 lignes~~ | **Retiré** — voir §33.3 |
 | **G4** | Toute commande enregistrée a une description | Le dépôt possède déjà `cisco-help-every-keyword-described` |
 | **G5** | Aucun `setTimeout` direct | Recherche |
 | **G6** | Chaque `VerdictReason` a au moins un producteur | Recherche croisée |

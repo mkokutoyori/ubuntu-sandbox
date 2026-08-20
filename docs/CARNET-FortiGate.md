@@ -189,7 +189,7 @@ Un agent qui reprend gagnera du temps à les connaître.
 | **P11** | Un laboratoire de sortie sans route par défaut | `route-lookup` refuse, la politique n'est jamais atteinte, et le symptôme lu est « le NAT ne traduit pas ». Quatre cas de la sonde de phase 3 sont tombés là-dessus. |
 | **P12** | `session.c2s` porte le tuple **traduit** | La session est installée APRÈS le NAT. Filtrer ou afficher `c2s` montre l'adresse publique là où l'opérateur cherche la privée. Utiliser `originalFlow(session)`. |
 | **P13** | Un argument `REST` est découpé aux espaces | `diagnose sniffer packet any 'host 1.2.3.4' 4 10` arrive en cinq mots : l'expression entre apostrophes doit être recollée avant lecture (`splitSnifferArguments`). |
-| **P14** | Le garde-fou G1 borne un fichier vendeur à 800 lignes | Absorber un dispatch dans `FortiShell` le fait tomber. La réponse est d'extraire le calcul (`diag/FortiDiagCommands.ts`), jamais de desserrer le seuil. |
+| ~~**P14**~~ | ~~Le garde-fou G1 borne un fichier vendeur à 800 lignes~~ | **Retiré.** Le comptage de lignes s'est révélé un mauvais indicateur de couplage : il imposait des extractions dictées par un compteur plutôt que par la cohésion, pour un coût en temps supérieur à ce qu'il faisait gagner. Les extractions déjà faites restent — elles étaient justes ; c'est l'obligation qui disparaît. |
 | **P15** | G6 interdit un `new Set(['…'])` littéral hors du schéma | Même pour une liste qui n'est pas des attributs de configuration. Nommer une constante `readonly string[]` et construire le `Set` à partir d'elle. |
 
 ---
