@@ -39,6 +39,16 @@ export interface SnmpUser {
   authAlgo?: 'md5' | 'sha';
   authPassword?: string;
   privAlgo?: 'des' | '3des' | 'aes';
+  /**
+   * La longueur de clé d'AES (`priv aes 256 <mot de passe>`).
+   *
+   * Elle n'existait pas, et son absence ne coûtait pas qu'un affichage :
+   * l'analyseur lisait le mot suivant `aes` comme l'algorithme et le
+   * SUIVANT comme le mot de passe, donc `256` DEVENAIT le mot de passe
+   * et le vrai secret était jeté. La machine chiffrait avec une clé que
+   * personne n'avait saisie, et la configuration relue la reproduisait.
+   */
+  privKeyBits?: 128 | 192 | 256;
   privPassword?: string;
   acl?: string;
 }
@@ -79,7 +89,16 @@ export class SnmpService {
   private readonly groups: Map<string, SnmpGroup> = new Map();
   private readonly users: Map<string, SnmpUser> = new Map();
   private readonly views: Map<string, SnmpView[]> = new Map();
-  private readonly enabledTraps: Set<string> = new Set();
+  /**
+   * `snmp-server enable traps [type [option ...]]` — a TYPE and its
+   * options.
+   *
+   * This was a `Set<string>` filled by a loop that added every suffix of
+   * the line, so one typed command rendered as three, two of which
+   * nobody wrote. That matters beyond display: the rendered
+   * configuration is REPLAYED when a topology is imported.
+   */
+  private readonly enabledTraps: Map<string, Set<string>> = new Map();
   private readonly stats: SnmpStats = SnmpService.zeroStats();
 
   configure(args: string[]): void {
@@ -93,8 +112,18 @@ export class SnmpService {
       case 'view': this.configView(args); break;
       case 'enable':
         if (args[1]?.toLowerCase() === 'traps') {
-          for (let i = 2; i < args.length; i++) this.enabledTraps.add(args.slice(i).join(' '));
-          if (args.length === 2) this.enabledTraps.add('all');
+          if (args.length === 2) {
+            // Bare `snmp-server enable traps`: every notification the
+            // platform can emit.
+            this.enabledTraps.set('all', new Set());
+          } else {
+            const type = args[2].toLowerCase();
+            const options = this.enabledTraps.get(type) ?? new Set<string>();
+            // A second command on the same type ADDS its options, as on
+            // real IOS where the two lines merge into one.
+            for (let i = 3; i < args.length; i++) options.add(args[i].toLowerCase());
+            this.enabledTraps.set(type, options);
+          }
           this.enable();
         }
         break;
@@ -198,9 +227,16 @@ export class SnmpService {
         i += 3;
         if (args[i]?.toLowerCase() === 'priv' && args[i + 1] && args[i + 2]) {
           user.privAlgo = args[i + 1].toLowerCase() as 'des' | '3des' | 'aes';
-          user.privPassword = args[i + 2];
+          i += 2;
+          // `aes` prend une longueur de clé AVANT le mot de passe. Sans
+          // ce pas, `256` était lu comme le secret.
+          if (user.privAlgo === 'aes' && /^(128|192|256)$/.test(args[i] ?? '')) {
+            user.privKeyBits = Number(args[i]) as 128 | 192 | 256;
+            i++;
+          }
+          user.privPassword = args[i];
           user.v3Level = 'priv';
-          i += 3;
+          i++;
         } else {
           user.v3Level = 'auth';
         }
@@ -260,7 +296,26 @@ export class SnmpService {
   getGroups(): readonly SnmpGroup[] { return [...this.groups.values()]; }
   getUsers(): readonly SnmpUser[] { return [...this.users.values()]; }
   getViews(): ReadonlyMap<string, readonly SnmpView[]> { return this.views; }
-  getEnabledTraps(): readonly string[] { return [...this.enabledTraps]; }
+  getEnabledTraps(): readonly string[] {
+    return [...this.enabledTraps].map(([type, options]) =>
+      options.size > 0 ? `${type} ${[...options].join(' ')}` : type);
+  }
+
+  /**
+   * Is this notification armed?
+   *
+   * Bare `enable traps` arms everything; `enable traps snmp` arms the
+   * whole type; `enable traps snmp linkdown` arms only that one. Nobody
+   * asked this question before — `enabledTraps` was read only by the
+   * configuration renderer, so no trap was ever emitted.
+   */
+  isTrapEnabled(type: string, option?: string): boolean {
+    if (this.enabledTraps.has('all')) return true;
+    const options = this.enabledTraps.get(type.toLowerCase());
+    if (!options) return false;
+    if (!option || options.size === 0) return true;
+    return options.has(option.toLowerCase());
+  }
   getEngineId(): string { return this.engineId; }
   getContact(): string { return this.contact; }
   getLocation(): string { return this.location; }
@@ -296,7 +351,11 @@ export class SnmpService {
       let line = `snmp-server user ${u.name} ${u.group} v${u.version}`;
       if (u.authAlgo && u.authPassword) {
         line += ` auth ${u.authAlgo} ${u.authPassword}`;
-        if (u.privAlgo && u.privPassword) line += ` priv ${u.privAlgo} ${u.privPassword}`;
+        if (u.privAlgo && u.privPassword) {
+          line += ` priv ${u.privAlgo}`
+            + (u.privKeyBits ? ` ${u.privKeyBits}` : '')
+            + ` ${u.privPassword}`;
+        }
       }
       if (u.acl) line += ` access ${u.acl}`;
       lines.push(line);
@@ -311,8 +370,8 @@ export class SnmpService {
       if (h.notifications.length) line += ' ' + h.notifications.join(' ');
       lines.push(line);
     }
-    for (const t of this.enabledTraps) {
-      lines.push(t === 'all' ? 'snmp-server enable traps' : `snmp-server enable traps ${t}`);
+    for (const ligne of this.getEnabledTraps()) {
+      lines.push(ligne === 'all' ? 'snmp-server enable traps' : `snmp-server enable traps ${ligne}`);
     }
     return lines;
   }

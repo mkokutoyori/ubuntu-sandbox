@@ -18,6 +18,7 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { IPAddress, SubnetMask } from '../../../../core/types';
+import { classfulMask } from '@/network/core/ip';
 
 export const ifconfigCommand: LinuxCommand = {
   name: 'ifconfig',
@@ -45,7 +46,9 @@ export const ifconfigCommand: LinuxCommand = {
   run(ctx: LinuxCommandContext, args: string[]): string {
     const ports = ctx.net.getPorts();
     const showAll = args.includes('-a');
-    const positional = args.filter(a => !a.startsWith('-'));
+    const positional = args
+      .filter(a => !a.startsWith('-'))
+      .map(a => a.replace(/^["']|["']$/g, ''));
 
     // ── No interface argument: list interfaces ─────────────────
     if (positional.length === 0) {
@@ -58,7 +61,7 @@ export const ifconfigCommand: LinuxCommand = {
 
     const ifName = positional[0];
     const port = ports.get(ifName);
-    if (!port) return `ifconfig: interface ${ifName} not found`;
+    if (!port) return `ifconfig: error: ${ifName}: Device not found`;
 
     // ── Single-interface show ─────────────────────────────────
     if (positional.length === 1) return ctx.fmt.formatInterface(port);
@@ -70,18 +73,51 @@ export const ifconfigCommand: LinuxCommand = {
       return '';
     }
 
-    // ── ifconfig <if> <ip> [netmask M] ────────────────────────
+    // ── ifconfig <if> <ip> [netmask M] [broadcast B] ──────────
     const ipStr = positional[1];
-    let maskStr = '255.255.255.0';
+    if (ipStr === 'netmask' || ipStr === 'broadcast' || !/^\d+\.\d+\.\d+\.\d+$/.test(ipStr)) {
+      return `Usage: ${this.usage}`;
+    }
+
+    let ip: IPAddress;
+    try { ip = new IPAddress(ipStr); }
+    catch { return `ifconfig: error: invalid IP address: ${ipStr}`; }
+
+    if (ip.isLoopback()) {
+      return `ifconfig: error: cannot assign loopback address ${ipStr} to ${ifName}`;
+    }
+
     const nmIdx = positional.indexOf('netmask');
-    if (nmIdx !== -1 && positional[nmIdx + 1]) maskStr = positional[nmIdx + 1];
+    let maskStr: string;
+    if (nmIdx !== -1) {
+      maskStr = positional[nmIdx + 1];
+      if (!maskStr) return `Usage: ${this.usage}`;
+      if (!isValidMask(maskStr)) return `ifconfig: error: invalid netmask: ${maskStr}`;
+    } else {
+      maskStr = classfulMask(ipStr);
+    }
+
+    const bcIdx = positional.indexOf('broadcast');
+    if (bcIdx !== -1) {
+      const bc = positional[bcIdx + 1];
+      if (!bc || !/^\d+\.\d+\.\d+\.\d+$/.test(bc) || !IPAddress.isValid(bc)) {
+        return `ifconfig: error: invalid broadcast address: ${bc ?? ''}`;
+      }
+    }
 
     try {
-      ctx.net.configureInterface(ifName, new IPAddress(ipStr), new SubnetMask(maskStr));
+      ctx.net.configureInterface(ifName, ip, new SubnetMask(maskStr));
       return '';
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return `ifconfig: ${msg}`;
+      return `ifconfig: error: ${msg}`;
     }
   },
 };
+
+function isValidMask(mask: string): boolean {
+  const parts = mask.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every(p => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+}
+

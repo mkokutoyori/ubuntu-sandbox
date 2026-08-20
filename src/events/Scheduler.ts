@@ -151,6 +151,52 @@ export class VirtualTimeScheduler implements IScheduler {
   }
 
   /**
+   * Milliseconds until the earliest pending task, or null when none is
+   * armed. A driver that steps by a fixed amount cannot measure a wait
+   * shorter than its own step, so the virtual clock ends up reporting the
+   * driver's cadence rather than the code's; advancing by exactly this
+   * makes the clock read the delays that were actually requested.
+   */
+  msUntilNextTask(): number | null {
+    let soonest: number | null = null;
+    for (const t of this.tasks) {
+      if (t.cancelled) continue;
+      const due = Math.max(0, t.due - this.currentTime);
+      if (soonest === null || due < soonest) soonest = due;
+    }
+    return soonest;
+  }
+
+  /**
+   * Run `work` to completion, advancing to each next due task as the code
+   * asks for it. Under a virtual clock nothing moves unless it is advanced,
+   * so awaiting a call that sleeps inside — `ping` between two echoes, say
+   * — otherwise deadlocks until the caller's own timeout. This is the
+   * fast-forward the ×N control needs anyway, so it lives here rather than
+   * being copied into every test that hits the problem.
+   *
+   * Microtasks are drained before each step because the code under way arms
+   * its next timer in a continuation; advancing first would step past a
+   * task not yet scheduled. The turn budget bounds a promise that never
+   * settles — a failing test beats a hanging run.
+   */
+  async advanceUntilSettled<T>(work: Promise<T>, maxTurns = 10_000): Promise<T> {
+    let settled = false;
+    const tracked = work.then(
+      (v) => { settled = true; return v; },
+      (e) => { settled = true; throw e; },
+    );
+    for (let turn = 0; turn < maxTurns && !settled; turn++) {
+      await Promise.resolve();
+      await Promise.resolve();
+      if (settled) break;
+      const due = this.msUntilNextTask();
+      if (due !== null) this.advance(due);
+    }
+    return tracked;
+  }
+
+  /**
    * Advance the virtual clock by `ms` and run every task whose due time
    * falls within the window. Tasks scheduled by other tasks during the
    * advance are processed in chronological order within the same window.
@@ -252,6 +298,7 @@ export class VirtualTimeScheduler implements IScheduler {
 // ──────────────────────────────────────────────────────────────────────────
 
 let defaultSchedulerInstance: IScheduler | null = null;
+let defaultSchedulerGeneration = 0;
 
 export function getDefaultScheduler(): IScheduler {
   if (!defaultSchedulerInstance) {
@@ -260,6 +307,11 @@ export function getDefaultScheduler(): IScheduler {
   return defaultSchedulerInstance;
 }
 
+export function defaultSchedulerGeneration_(): number {
+  return defaultSchedulerGeneration;
+}
+
 export function __setDefaultScheduler(scheduler: IScheduler | null): void {
   defaultSchedulerInstance = scheduler;
+  defaultSchedulerGeneration++;
 }

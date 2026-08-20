@@ -11,7 +11,7 @@ function exec(sql: string, on: OracleExecutor = sys) {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   sys = db.connectAsSysdba().executor;
   exec("CREATE DIRECTORY ext_dir AS '/home/oracle/files'");
   exec('CREATE USER alice IDENTIFIED BY pw');

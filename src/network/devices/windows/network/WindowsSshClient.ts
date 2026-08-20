@@ -27,6 +27,11 @@ export interface WinSshClientOpts {
   sourceHostname: string;
   /** Local IP — the "from" address of the connection. */
   sourceIp: string;
+  /**
+   * The machine running `ssh`. The target is resolved by walking the
+   * cable plant from here (docs/PRD-Frame-Only-Refactor.md P6).
+   */
+  sourceDevice?: object | null;
   /** Local user invoking `ssh` (the default remote user). */
   sourceUser: string;
   /** Optional NTFS filesystem — needed to persist known_hosts on first connect. */
@@ -52,6 +57,8 @@ export interface WindowsSshTarget {
   recordSshLogin(user: string, fromIp: string, fromHost: string, accepted: boolean): void;
   /** The remote's command-prompt version banner. */
   sshBanner(): string;
+  /** The remote's post-auth MOTD (Windows: the cmd.exe version banner). */
+  getSshMotd(): string;
   /** Run a command on the remote as `user`, in exec mode. */
   runSshCommand(
     user: string,
@@ -145,7 +152,7 @@ export async function runWindowsSshClient(
   // A loopback target resolves to this very machine — look it up by the
   // local source IP, which the topology registry knows.
   const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
-  const found = findHostByAddress(isLoopback ? opts.sourceIp : host);
+  const found = findHostByAddress(isLoopback ? opts.sourceIp : host, undefined, opts.sourceDevice as never);
   if (!found) {
     return {
       output: `ssh: Could not resolve hostname ${host}: Name or service not known\n`,
@@ -224,6 +231,6 @@ export async function runWindowsSshClient(
 
   // Interactive form: the remote command-prompt banner, then the
   // OpenSSH "Connection to <host> closed." line.
-  const lines = [remote.sshBanner().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
+  const lines = [remote.getSshMotd().replace(/^\n+/, ''), '', `Connection to ${host} closed.`];
   return { output: lines.join('\n'), exitCode: 0 };
 }

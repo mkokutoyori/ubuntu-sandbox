@@ -8,8 +8,8 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 
 // ── Priority levels (syslog) ─────────────────────────────────────
 const PRIORITY_NAMES: Record<string, number> = {
-  emerg: 0, alert: 1, crit: 2, err: 3,
-  warning: 4, notice: 5, info: 6, debug: 7,
+  emerg: 0, emergency: 0, panic: 0, alert: 1, crit: 2, err: 3, error: 3,
+  warning: 4, warn: 4, notice: 5, info: 6, debug: 7,
 };
 const PRIORITY_LABELS: Record<number, string> = {
   0: 'emerg', 1: 'alert', 2: 'crit', 3: 'err',
@@ -20,14 +20,9 @@ const PRIORITY_LABELS: Record<number, string> = {
 const FACILITY_NAMES: Record<string, number> = {
   kern: 0, user: 1, mail: 2, daemon: 3,
   auth: 4, syslog: 5, lpr: 6, news: 7,
-  cron: 8, local0: 16, local1: 17, local2: 18,
+  cron: 8, authpriv: 10, ftp: 11,
+  local0: 16, local1: 17, local2: 18,
   local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
-};
-
-// ── Log file routing ─────────────────────────────────────────────
-const FACILITY_LOG_FILES: Record<string, string> = {
-  auth: '/var/log/auth.log',
-  kern: '/var/log/kern.log',
 };
 
 // ── Journal entry ────────────────────────────────────────────────
@@ -35,6 +30,7 @@ interface JournalEntry {
   timestamp: Date;
   monotonicUsec: number;  // microseconds since boot
   priority: number;
+  displayPid?: boolean;
   facility: number;
   unit: string;
   tag: string;
@@ -49,6 +45,24 @@ interface DmesgEntry {
   level: number;
   message: string;
 }
+
+const JOURNALCTL_HELP = `journalctl [OPTIONS...] [MATCHES...]
+
+Query the journal.
+
+Options:
+  -n --lines=INTEGER   Number of journal entries to show
+  -r --reverse         Show the newest entries first
+  -u --unit=UNIT       Show logs from the specified unit
+  -p --priority=RANGE  Show entries with the specified priority
+  -k --dmesg           Show kernel message log from the current boot
+  -o --output=STRING   Change journal output mode
+  -b --boot[=ID]       Show data only from the specified boot
+  -N --fields          List all field names currently used
+  --since=DATE         Show entries not older than the specified date
+  --until=DATE         Show entries not newer than the specified date
+     --no-pager        Do not pipe output into a pager
+  -h --help            Show this help text`;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -130,12 +144,17 @@ export class LinuxLogManager {
         if (e.payload.name === 'systemd-journald') this.journaldActive = false;
       }),
       bus.subscribeWhere('linux.service.started', isSyslog, (e) => {
-        if (e.payload.name !== 'systemd-journald') this.syslogDaemonActive = true;
+        if (e.payload.name !== 'systemd-journald') {
+          this.syslogDaemonActive = true;
+          // A starting daemon opens its files by name (§F7.11).
+          this.reopenLogFiles();
+        }
         if (e.payload.name === 'systemd-journald') this.journaldActive = true;
       }),
       bus.subscribeWhere('linux.service.restarted', isSyslog, () => {
         this.syslogDaemonActive = true;
         this.journaldActive = true;
+        this.reopenLogFiles();
       }),
     ];
   }
@@ -145,37 +164,60 @@ export class LinuxLogManager {
     let tag = currentUser;
     let priority = 'user.notice';
     let includePid = false;
+    let toStderr = false;
+    let expandNewlines = false;
+    let fromFile: string | null = null;
     const msgParts: string[] = [];
 
     let i = 0;
     while (i < args.length) {
-      switch (args[i]) {
-        case '-t': tag = args[++i] || tag; i++; break;
-        case '-p': priority = args[++i] || priority; i++; break;
-        case '-i': includePid = true; i++; break;
-        case '-s': i++; break; // stderr flag, no-op in simulator
-        default: msgParts.push(args[i]); i++; break;
-      }
+      const a = args[i];
+      if (a === '-t' || a === '--tag') { tag = args[++i] ?? tag; i++; }
+      else if (a === '-p' || a === '--priority') { priority = args[++i] ?? priority; i++; }
+      else if (a === '-i' || a === '--id') { includePid = true; i++; }
+      else if (a === '-s' || a === '--stderr') { toStderr = true; i++; }
+      else if (a === '-e') { expandNewlines = true; i++; }
+      else if (a === '-f' || a === '--file') { fromFile = args[++i] ?? null; i++; }
+      else { msgParts.push(a); i++; }
     }
 
-    // Parse facility.priority
     const parsed = this.parsePriority(priority);
     if (!parsed) return `logger: unknown priority name: ${priority}`;
 
-    const message = msgParts.join(' ');
-    const pid = includePid ? this.nextPid++ : 0;
+    let messages: string[];
+    if (fromFile !== null) {
+      const content = this.vfs.readFile(fromFile);
+      if (content === null) return `logger: ${fromFile}: No such file or directory`;
+      messages = content.split('\n').filter((l) => l.length > 0);
+    } else {
+      if (args.length === 0) return 'Usage: logger [options] [<message>]';
+      let msg = msgParts.join(' ');
+      if (expandNewlines) msg = msg.replace(/\\n/g, '\n');
+      if (msg.length > 2048) msg = msg.slice(0, 2048);
+      messages = [msg];
+    }
 
-    this.addEntry({
-      priority: parsed.priority,
-      facility: parsed.facility,
-      unit: '',
-      tag,
-      message,
-      pid,
-      hostname: this.hostname,
-    });
+    const safeTag = tag.length > 255 ? tag.slice(0, 255) : tag;
+    const pid = this.nextPid++;
+    const echoed: string[] = [];
+    for (const message of messages) {
+      this.addEntry({
+        priority: parsed.priority,
+        facility: parsed.facility,
+        unit: '',
+        tag: safeTag,
+        message,
+        pid,
+        displayPid: includePid,
+        hostname: this.currentHostname(),
+      });
+      if (toStderr) {
+        const last = this.journal[this.journal.length - 1];
+        echoed.push(this.formatSyslogLine(last));
+      }
+    }
 
-    return '';
+    return echoed.join('\n');
   }
 
   /**
@@ -194,7 +236,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
     return true;
   }
@@ -219,7 +261,7 @@ export class LinuxLogManager {
       // caller passes its own so `journalctl -u ssh` shows that single
       // pid instead of one per emitted line.
       pid: pid ?? this.nextPid++,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -228,15 +270,15 @@ export class LinuxLogManager {
    * socket bind / release the way systemd-journald notes a daemon opening
    * or closing its listening port.
    */
-  logDaemon(tag: string, message: string): void {
+  logDaemon(tag: string, message: string, pid?: number, unit?: string): void {
     this.addEntry({
       priority: PRIORITY_NAMES.info,
       facility: FACILITY_NAMES.daemon,
-      unit: tag,
+      unit: unit ?? tag,
       tag,
       message,
-      pid: this.nextPid++,
-      hostname: this.hostname,
+      pid: pid ?? this.nextPid++,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -253,7 +295,7 @@ export class LinuxLogManager {
       tag,
       message,
       pid: 0,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -265,7 +307,7 @@ export class LinuxLogManager {
       tag: 'systemd',
       message,
       pid: 1,
-      hostname: this.hostname,
+      hostname: this.currentHostname(),
     });
   }
 
@@ -273,6 +315,12 @@ export class LinuxLogManager {
   executeJournalctl(args: string[]): string {
     for (const arg of args) {
       if (arg === '--version') return 'systemd 249 (249.11-0ubuntu3)';
+      if (arg === '-h' || arg === '--help') return JOURNALCTL_HELP;
+      if (arg === '-N' || arg === '--fields') {
+        return ['MESSAGE', 'PRIORITY', 'SYSLOG_FACILITY', 'SYSLOG_IDENTIFIER',
+          '_PID', '_UID', '_GID', '_HOSTNAME', '_TRANSPORT', '_SYSTEMD_UNIT',
+          '__REALTIME_TIMESTAMP', '__MONOTONIC_TIMESTAMP'].join('\n');
+      }
       if (arg === '--disk-usage') return this.cmdDiskUsage();
       if (arg === '--list-boots') return this.cmdListBoots();
       if (arg === '--rotate') return 'Rotating journal files...';
@@ -291,23 +339,50 @@ export class LinuxLogManager {
     let priorityFilter = -1;
     let pidFilter = -1;
     let outputFields: string[] = [];
+    let kernelOnly = false;
+    let sinceMs = -1;
+    let untilMs = -1;
 
     let i = 0;
     while (i < args.length) {
       switch (args[i]) {
         case '-n':
-        case '--lines':
-          n = parseInt(args[++i]) || 0;
+        case '--lines': {
+          const v = args[++i] ?? '';
+          if (!/^\d+$/.test(v)) return `journalctl: invalid number of lines: "${v}".`;
+          n = parseInt(v, 10);
           i++; break;
+        }
         case '-r':
         case '--reverse':
           reverse = true; i++; break;
         case '-q':
         case '--quiet':
           quiet = true; i++; break;
+        case '-k':
+        case '--dmesg':
+          kernelOnly = true; i++; break;
+        case '-x': case '--catalog':
+        case '-f': case '--follow':
+          i++; break;
         case '-b':
-        case '--boot':
-          i++; break;  // always current boot in simulator
+        case '--boot': {
+          const nxt = args[i + 1];
+          if (nxt && /^-?\d+$/.test(nxt)) {
+            if (parseInt(nxt, 10) < 0) return `Failed to look up boot ${nxt}: no such boot ID`;
+            i++;
+          }
+          i++; break;
+        }
+        case '-D': case '--directory': {
+          const dir = args[++i] ?? '';
+          if (dir.startsWith('/sys') || dir.startsWith('/proc')) return `Failed to open directory ${dir}: error`;
+          i++; break;
+        }
+        case '--since': case '-S':
+          sinceMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
+        case '--until': case '-U':
+          untilMs = this.parseJournalTime(args[++i] ?? ''); i++; break;
         case '--no-pager':
           i++; break;  // no-op
         case '-o':
@@ -328,14 +403,9 @@ export class LinuxLogManager {
           i++; break;
         }
         default: {
-          // Check for _PID=N
-          if (args[i].startsWith('_PID=')) {
-            pidFilter = parseInt(args[i].slice(5));
-          }
-          // Check for --output-fields=
-          if (args[i].startsWith('--output-fields=')) {
-            outputFields = args[i].slice(16).split(',');
-          }
+          if (args[i].startsWith('--facility')) { i++; break; }
+          if (args[i].startsWith('_PID=')) pidFilter = parseInt(args[i].slice(5));
+          if (args[i].startsWith('--output-fields=')) outputFields = args[i].slice(16).split(',');
           i++; break;
         }
       }
@@ -344,11 +414,14 @@ export class LinuxLogManager {
     // Validate output format
     const validFormats = ['short', 'short-iso', 'json', 'json-pretty', 'cat', 'verbose'];
     if (!validFormats.includes(outputFormat)) {
-      return `Invalid output format: ${outputFormat}`;
+      return `Invalid argument: unknown output format "${outputFormat}".`;
     }
 
     // Filter entries
     let entries = this.filterEntries(unitFilter, priorityFilter, pidFilter);
+    if (kernelOnly) entries = entries.filter((e) => e.facility === FACILITY_NAMES.kern);
+    if (sinceMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() >= sinceMs);
+    if (untilMs >= 0) entries = entries.filter((e) => e.timestamp.getTime() <= untilMs);
 
     // Hide entries with timestamps in the future. The boot-time canned
     // messages (kernel + systemd + sshd "Server listening on …") are
@@ -375,8 +448,8 @@ export class LinuxLogManager {
     // Format output
     const lines = entries.map(e => this.formatEntry(e, outputFormat, outputFields));
 
-    // Add header unless quiet or non-short format
-    if (!quiet && (outputFormat === 'short' || outputFormat === 'short-iso')) {
+    // Add header unless quiet, reversed, or non-short format
+    if (!quiet && !reverse && (outputFormat === 'short' || outputFormat === 'short-iso')) {
       const first = this.journal[0];
       const last = this.journal[this.journal.length - 1];
       if (first && last) {
@@ -389,74 +462,128 @@ export class LinuxLogManager {
   }
 
   // ── dmesg command ──────────────────────────────────────────────
-  executeDmesg(args: string[], uid: number): string {
+  executeDmesg(args: string[]): string {
     let humanTime = false;
-    let clearBuf = false;
+    let clearBuf = false;      // -c: print then clear
+    let clearOnly = false;     // -C: clear, no print
+    let raw = false;
     let levelFilter: string[] = [];
+    let setConsoleLevel: number | null = null;
 
     let i = 0;
     while (i < args.length) {
-      switch (args[i]) {
-        case '-T':
-        case '--ctime':
-          humanTime = true; i++; break;
-        case '-c':
-        case '--read-clear':
-          clearBuf = true; i++; break;
-        case '-H':
-        case '--human':
-          humanTime = true; i++; break;
-        case '-l':
-        case '--level': {
-          const levels = args[++i] || '';
-          levelFilter = levels.split(',').map(l => l.trim());
+      const a = args[i];
+      switch (a) {
+        case '-T': case '--ctime': case '-H': case '--human': humanTime = true; i++; break;
+        case '-c': case '--read-clear': clearBuf = true; i++; break;
+        case '-C': case '--clear': clearOnly = true; i++; break;
+        case '-r': case '--raw': raw = true; i++; break;
+        case '-x': case '--decode': i++; break;
+        case '-w': case '--follow': case '-d': case '--show-delta': i++; break;
+        case '-h': case '--help':
+          return 'Usage:\n dmesg [options]\n\nDisplay or control the kernel ring buffer.\n\nOptions:\n -C, --clear        clear the kernel ring buffer\n -c, --read-clear   read and clear all messages\n -T, --ctime        show human-readable timestamp\n -l, --level <list> restrict output to defined levels\n -n, --console-level <level> set level of messages printed to console\n -r, --raw          print the raw message buffer\n -x, --decode       decode facility and level\n -h, --help         display this help\n -V, --version      display version';
+        case '-V': case '--version':
+          return 'dmesg from util-linux 2.37.2';
+        case '-n': case '--console-level': {
+          const lvl = args[++i] ?? '';
+          const n = /^\d+$/.test(lvl) ? parseInt(lvl, 10) : (PRIORITY_NAMES[lvl] ?? -1);
+          if (n < 1 || n > 8) return `dmesg: invalid console level: ${lvl}`;
+          setConsoleLevel = n; i++; break;
+        }
+        case '-l': case '--level': {
+          levelFilter = (args[++i] || '').split(',').map(l => l.trim()).filter(Boolean);
           i++; break;
         }
-        default: {
-          if (args[i].startsWith('--level=')) {
-            levelFilter = args[i].slice(8).split(',').map(l => l.trim());
-          }
+        case '-f': case '--facility': i += 2; break;
+        default:
+          if (a.startsWith('--level=')) levelFilter = a.slice(8).split(',').map(l => l.trim()).filter(Boolean);
           i++; break;
-        }
       }
     }
 
-    // Permission check for -c
-    if (clearBuf && uid !== 0) {
-      return 'dmesg: read kernel buffer failed: Permission denied';
+    if (setConsoleLevel !== null) return '';
+
+    if (clearOnly) { this.dmesgBuffer = []; return ''; }
+
+    // Validate level filter names.
+    for (const l of levelFilter) {
+      if (PRIORITY_NAMES[l] === undefined) return `dmesg: unknown level '${l}'`;
     }
 
-    // Filter by level
     let entries = [...this.dmesgBuffer];
     if (levelFilter.length > 0) {
-      const levelNums = levelFilter.map(l => PRIORITY_NAMES[l] ?? -1).filter(n => n >= 0);
+      const levelNums = levelFilter.map(l => PRIORITY_NAMES[l]);
       entries = entries.filter(e => levelNums.includes(e.level));
     }
 
-    // Format output
-    const lines = entries.map(e => {
-      if (humanTime) {
-        const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
-        return `[${fmtHumanDate(ts)}] ${e.message}`;
-      }
-      const secs = e.offsetSec.toFixed(6);
-      const padded = secs.padStart(12, ' ');
-      return `[${padded}] ${e.message}`;
-    });
+    const lines = entries.map(e => this.formatDmesgEntry(e, { raw, humanTime }));
 
-    // Clear buffer after display
-    if (clearBuf) {
-      this.dmesgBuffer = [];
-    }
+    if (clearBuf) this.dmesgBuffer = [];
 
     return lines.join('\n');
   }
 
+  private formatDmesgEntry(e: DmesgEntry, opts: { raw: boolean; humanTime: boolean }): string {
+    if (opts.raw) return e.message;
+    if (opts.humanTime) {
+      const ts = new Date(this.bootTime.getTime() + e.offsetSec * 1000);
+      return `[${fmtHumanDate(ts)}] ${e.message}`;
+    }
+    return `[${e.offsetSec.toFixed(6).padStart(12, ' ')}] ${e.message}`;
+  }
+
+  private readonly dmesgFollowSubs = new Set<{
+    raw: boolean;
+    humanTime: boolean;
+    levels: number[] | null;
+    listener: (line: string) => void;
+  }>();
+
+  followDmesg(
+    opts: { raw?: boolean; humanTime?: boolean; levelFilter?: readonly string[] },
+    listener: (line: string) => void,
+  ): () => void {
+    const filter = opts.levelFilter && opts.levelFilter.length > 0
+      ? opts.levelFilter
+          .map((l) => PRIORITY_NAMES[l])
+          .filter((n): n is number => typeof n === 'number')
+      : null;
+    const sub = {
+      raw: !!opts.raw,
+      humanTime: !!opts.humanTime,
+      levels: filter && filter.length > 0 ? filter : null,
+      listener,
+    };
+    this.dmesgFollowSubs.add(sub);
+    return () => { this.dmesgFollowSubs.delete(sub); };
+  }
+
+  private emitToDmesgFollowers(entry: DmesgEntry): void {
+    if (this.dmesgFollowSubs.size === 0) return;
+    for (const sub of this.dmesgFollowSubs) {
+      if (sub.levels && !sub.levels.includes(entry.level)) continue;
+      sub.listener(this.formatDmesgEntry(entry, { raw: sub.raw, humanTime: sub.humanTime }));
+    }
+  }
+
   // ── Internal methods ───────────────────────────────────────────
+
+  logService(unit: string, tag: string, message: string, pid: number): void {
+    this.addEntry({
+      priority: PRIORITY_NAMES.info,
+      facility: FACILITY_NAMES.daemon,
+      unit,
+      tag,
+      message,
+      pid,
+      hostname: this.currentHostname(),
+    });
+  }
 
   private addEntry(opts: {
     priority: number; facility: number; unit: string;
     tag: string; message: string; pid: number; hostname: string;
+    displayPid?: boolean;
   }): void {
     this.monotonicCounter += 1000;
     const entry: JournalEntry = {
@@ -468,10 +595,22 @@ export class LinuxLogManager {
       tag: opts.tag,
       message: opts.message,
       pid: opts.pid,
-      hostname: opts.hostname,
+      displayPid: opts.displayPid,
+      hostname: this.currentHostname(),
     };
     // journald keeps the in-memory journal regardless of rsyslog's state.
     this.journal.push(entry);
+    // Kernel-facility messages also land in the kernel ring buffer (dmesg).
+    if (opts.facility === FACILITY_NAMES.kern) {
+      const dEntry: DmesgEntry = {
+        offsetSec: (entry.timestamp.getTime() - this.bootTime.getTime()) / 1000,
+        level: opts.priority,
+        message: opts.message,
+      };
+      this.dmesgBuffer.push(dEntry);
+      this.emitToDmesgFollowers(dEntry);
+    }
+    this.emitToFollowers(entry);
 
     // The on-disk /var/log/* files are written by rsyslog: when that daemon
     // is stopped they freeze, but `journalctl` keeps working.
@@ -480,12 +619,8 @@ export class LinuxLogManager {
     const facilityName = this.facilityName(opts.facility);
     const logLine = this.formatSyslogLine(entry);
 
-    this.appendToLogFile('/var/log/syslog', logLine);
-
-    // Route to facility-specific log
-    const specificFile = FACILITY_LOG_FILES[facilityName];
-    if (specificFile) {
-      this.appendToLogFile(specificFile, logLine);
+    for (const file of this.routeLogFiles(facilityName, opts.priority)) {
+      this.appendToLogFile(file, logLine);
     }
 
     if (this.attachedBus && this.attachedDeviceId) {
@@ -503,55 +638,177 @@ export class LinuxLogManager {
 
   private formatSyslogLine(entry: JournalEntry): string {
     const ts = fmtSyslogTimestamp(entry.timestamp);
-    const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+    const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
     return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
+  }
+
+  /**
+   * Log files rsyslog currently holds open, and how much has been written
+   * into one after its name was removed (docs/PRD-Pannes.md §F7.11).
+   *
+   * A daemon writes through a file DESCRIPTOR, not through a path. It opens
+   * `/var/log/syslog` once at start-up and keeps that descriptor for its
+   * whole life, so `rm` only removes the NAME: the inode stays alive
+   * because rsyslog still references it, every subsequent line lands in a
+   * file nobody can open any more, and the disk space is not freed. This
+   * is the single most common "I deleted the log and the disk is still
+   * full" incident, and until now the simulator did the opposite of it —
+   * `appendToLogFile` recreated the path on the very next line, which is
+   * what would happen only if the daemon reopened by name each time.
+   */
+  private readonly openLogFiles = new Map<string, { lostLines: number; lostBytes: number }>();
+
+  /**
+   * Le processus qui tient ces fichiers ouverts (§F9.3).
+   *
+   * Le descripteur d'un fichier journal appartient au PROCESSUS rsyslog,
+   * pas à ce gestionnaire : c'est ce qui fait que `/proc/<pid>/fd`, `lsof`
+   * et le plafond `RLIMIT_NOFILE` parlent du même. La comptabilité des
+   * octets perdus, elle, reste ici — c'est une propriété du démon, pas du
+   * noyau, et elle n'a rien à faire dans une table de descripteurs.
+   */
+  private descriptorSink?: {
+    open(path: string): void;
+    closeAll(): void;
+  };
+
+  attachDescriptorSink(sink: { open(path: string): void; closeAll(): void }): void {
+    this.descriptorSink = sink;
+  }
+
+  /**
+   * Écrit une ligne brute dans un journal applicatif — celui d'un démon
+   * qui tient son propre format, pas celui de syslog. nginx en est le cas
+   * type : `access.log` est au format `combined`, sans préfixe de
+   * facilité ni horodatage syslog.
+   *
+   * Passe par le même chemin que les journaux système pour hériter du
+   * traitement du fichier supprimé sous un descripteur ouvert (§F7) et de
+   * la comptabilité de descripteurs.
+   */
+  appendLine(path: string, line: string): void {
+    this.appendToLogFile(path, line);
   }
 
   private appendToLogFile(path: string, line: string): void {
     const existing = this.vfs.readFile(path);
     if (existing !== null) {
       this.vfs.writeFile(path, existing + line + '\n', 0, 0, 0o022);
-    } else {
-      // Create log file if missing
-      this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4); // syslog group = adm (4)
+      if (!this.openLogFiles.has(path)) {
+        this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+        this.descriptorSink?.open(path);
+      }
+      return;
     }
+
+    const held = this.openLogFiles.get(path);
+    if (held) {
+      // The descriptor outlived the name. The write succeeds — rsyslog has
+      // no way to notice — but it goes somewhere no path leads to, and the
+      // file stays absent until the daemon reopens it.
+      held.lostLines += 1;
+      held.lostBytes += line.length + 1;
+      return;
+    }
+
+    // Never opened: this is the daemon opening it for the first time, which
+    // really does create the file (syslog group = adm, gid 4).
+    this.vfs.createFileAt(path, line + '\n', 0o640, 0, 4);
+    this.openLogFiles.set(path, { lostLines: 0, lostBytes: 0 });
+    this.descriptorSink?.open(path);
+  }
+
+  /**
+   * What rsyslog is writing into a deleted inode right now — the answer
+   * `lsof +L1` gives an operator who cannot work out where the disk went.
+   * Empty when nothing has been unlinked under the daemon.
+   */
+  deletedLogHandles(): Array<{ path: string; lostLines: number; lostBytes: number }> {
+    const out: Array<{ path: string; lostLines: number; lostBytes: number }> = [];
+    for (const [path, held] of this.openLogFiles) {
+      if (held.lostLines > 0 && this.vfs.readFile(path) === null) {
+        out.push({ path, lostLines: held.lostLines, lostBytes: held.lostBytes });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Drop every held descriptor, so the next line reopens by name and
+   * recreates the file. This is what `systemctl restart rsyslog` does (and
+   * what `logrotate`'s postrotate `kill -HUP` does for the same reason) —
+   * the only way back, and the reason the fix for a deleted log is to
+   * restart the daemon rather than to `touch` the file.
+   */
+  reopenLogFiles(): void {
+    // Un rsyslog qui redémarre est un processus NEUF : les descripteurs du
+    // précédent partent avec lui. Les laisser ferait apparaître dans `lsof`
+    // un descripteur appartenant à un pid mort.
+    this.descriptorSink?.closeAll();
+    this.openLogFiles.clear();
   }
 
   private filterEntries(unit: string, priority: number, pid: number): JournalEntry[] {
-    let entries = [...this.journal];
+    return this.journal.filter((e) => this.entryMatches(e, unit, priority, pid));
+  }
 
+  private entryMatches(e: JournalEntry, unit: string, priority: number, pid: number): boolean {
     if (unit) {
-      entries = entries.filter(e => {
-        // Match unit name against tag or unit field
-        if (e.unit && e.unit.includes(unit)) return true;
-        if (e.tag && e.tag.includes(unit)) return true;
-        // Match "systemd" unit to entries with tag "systemd" or unit containing "systemd"
-        return false;
-      });
+      const u = unit.replace(/\.service$/, '');
+      const hit = (e.unit && e.unit.includes(u))
+        || (e.tag && e.tag.includes(u))
+        || e.message.startsWith(`${u}.service`)
+        || e.message.includes(`${u}.service:`)
+        || e.message.includes(`${u}[`);
+      if (!hit) return false;
     }
+    if (priority >= 0 && e.priority > priority) return false;
+    if (pid >= 0 && e.pid !== pid) return false;
+    return true;
+  }
 
-    if (priority >= 0) {
-      // Show entries at this priority or more severe (lower number)
-      entries = entries.filter(e => e.priority <= priority);
+  private parseJournalTime(spec: string): number {
+    const s = spec.trim().toLowerCase();
+    if (s === '' || s === 'now') return Date.now();
+    const ago = s.match(/^(\d+)\s*(second|minute|hour|day|week)s?\s*(ago)?$/);
+    if (ago) {
+      const mult: Record<string, number> = {
+        second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
+      };
+      return Date.now() - parseInt(ago[1], 10) * mult[ago[2]];
     }
+    const t = Date.parse(spec);
+    return isNaN(t) ? Date.now() : t;
+  }
 
-    if (pid >= 0) {
-      entries = entries.filter(e => e.pid === pid);
+  private readonly followSubs = new Set<{ unit: string; priority: number; pid: number; listener: (line: string) => void }>();
+
+  /** Subscribe to live journal lines (journalctl -f). Returns an unsubscribe. */
+  followJournal(opts: { unit?: string; priority?: number; pid?: number }, listener: (line: string) => void): () => void {
+    const sub = { unit: opts.unit ?? '', priority: opts.priority ?? -1, pid: opts.pid ?? -1, listener };
+    this.followSubs.add(sub);
+    return () => { this.followSubs.delete(sub); };
+  }
+
+  private emitToFollowers(entry: JournalEntry): void {
+    if (this.followSubs.size === 0) return;
+    for (const sub of this.followSubs) {
+      if (this.entryMatches(entry, sub.unit, sub.priority, sub.pid)) {
+        sub.listener(this.formatEntry(entry, 'short', []));
+      }
     }
-
-    return entries;
   }
 
   private formatEntry(entry: JournalEntry, format: string, outputFields: string[]): string {
     switch (format) {
       case 'short': {
         const ts = fmtSyslogTimestamp(entry.timestamp);
-        const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
       case 'short-iso': {
         const ts = fmtIsoTimestamp(entry.timestamp);
-        const pidPart = entry.pid > 0 ? `[${entry.pid}]` : '';
+        const pidPart = entry.pid > 0 && entry.displayPid !== false ? `[${entry.pid}]` : '';
         return `${ts} ${entry.hostname} ${entry.tag}${pidPart}: ${entry.message}`;
       }
       case 'cat':
@@ -599,12 +856,16 @@ export class LinuxLogManager {
   }
 
   private parsePriority(spec: string): { facility: number; priority: number } | null {
+    // Whole numeric priority: PRI = facility*8 + severity.
+    if (/^\d+$/.test(spec)) {
+      const n = parseInt(spec, 10);
+      if (n < 0 || n > 191) return null;
+      return { facility: Math.floor(n / 8), priority: n % 8 };
+    }
     const dot = spec.indexOf('.');
     if (dot >= 0) {
-      const facName = spec.slice(0, dot);
-      const priName = spec.slice(dot + 1);
-      const fac = FACILITY_NAMES[facName];
-      const pri = PRIORITY_NAMES[priName];
+      const fac = FACILITY_NAMES[spec.slice(0, dot)];
+      const pri = PRIORITY_NAMES[spec.slice(dot + 1)];
       if (fac === undefined || pri === undefined) return null;
       return { facility: fac, priority: pri };
     }
@@ -612,6 +873,36 @@ export class LinuxLogManager {
     const pri = PRIORITY_NAMES[spec];
     if (pri === undefined) return null;
     return { facility: 1, priority: pri };
+  }
+
+  private currentHostname(): string {
+    const h = this.vfs.readFile('/etc/hostname');
+    return h ? h.trim() : this.hostname;
+  }
+
+  /**
+   * Which files rsyslog copies a message into, per Debian's shipped
+   * `/etc/rsyslog.d/50-default.conf`.
+   *
+   * The catch-all line there is `*.*;auth,authpriv.none -/var/log/syslog`:
+   * authentication messages are deliberately EXCLUDED from syslog, because
+   * they can carry usernames and are given their own, more tightly
+   * permissioned file. Copying them into both meant every ssh login showed
+   * up twice on the same machine, and `/var/log/syslog` — the file people
+   * skim for "what is this host doing" — was full of auth noise that its
+   * real counterpart never contains.
+   */
+  private routeLogFiles(facilityName: string, priority: number): string[] {
+    const isAuth = facilityName === 'auth' || facilityName === 'authpriv';
+    const files = isAuth ? [] : ['/var/log/syslog'];
+    if (isAuth) files.push('/var/log/auth.log');
+    else if (facilityName === 'kern') files.push('/var/log/kern.log');
+    else if (facilityName === 'cron') files.push('/var/log/cron.log');
+    else if (facilityName === 'mail') {
+      files.push('/var/log/mail.log');
+      if (priority <= PRIORITY_NAMES.err) files.push('/var/log/mail.err');
+    }
+    return files;
   }
 
   private resolvePriority(val: string): number {
@@ -663,6 +954,12 @@ export class LinuxLogManager {
       { offset: 0.100000, level: 6, msg: 'CPU: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz' },
       { offset: 0.500000, level: 6, msg: 'NET: Registered PF_INET protocol family' },
       { offset: 0.600000, level: 6, msg: 'NET: Registered PF_INET6 protocol family' },
+      { offset: 0.300000, level: 6, msg: 'PCI: Using configuration type 1 for base access' },
+      { offset: 0.310000, level: 6, msg: 'pci 0000:00:01.0: PIIX/ICH IDE controller' },
+      { offset: 0.320000, level: 6, msg: 'usbcore: registered new interface driver usbfs' },
+      { offset: 0.330000, level: 6, msg: 'usbcore: registered new interface driver hub' },
+      { offset: 0.340000, level: 6, msg: 'e1000: Intel(R) PRO/1000 Network Driver' },
+      { offset: 0.350000, level: 6, msg: 'e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up' },
       { offset: 1.000000, level: 6, msg: 'EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)' },
       { offset: 1.200000, level: 6, msg: 'EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro' },
     ];
@@ -679,7 +976,7 @@ export class LinuxLogManager {
         tag: 'kernel',
         message: km.msg,
         pid: 0,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
@@ -705,31 +1002,27 @@ export class LinuxLogManager {
         tag: sm.tag,
         message: sm.msg,
         pid: sm.pid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 
-    // SSH daemon messages
-    const sshPid = 1234;
-    const sshMsgs = [
-      'Server listening on 0.0.0.0 port 22.',
-      'Server listening on :: port 22.',
-    ];
-    offset = 3.0;
-    for (const msg of sshMsgs) {
-      offset += 0.1;
-      this.journal.push({
-        timestamp: new Date(bt.getTime() + offset * 1000),
-        monotonicUsec: Math.floor(offset * 1000000),
-        priority: 6,
-        facility: 3, // daemon
-        unit: 'ssh',
-        tag: 'sshd',
-        message: msg,
-        pid: sshPid,
-        hostname: this.hostname,
-      });
-    }
+    // No seeded sshd lines here, deliberately.
+    //
+    // `Server listening on 0.0.0.0 port 22.` is already produced by the
+    // real event — `tcp.listener.changed` when the ssh unit binds its
+    // socket — and `PortActivityLogProjection` writes it with the pid the
+    // daemon actually has in the process table. Seeding a copy meant the
+    // same machine showed that line twice, once under an invented
+    // `sshd[1234]` that `ps aux | grep sshd` never matched.
+    //
+    // Son jumeau IPv6 (`Server listening on :: port 22.`) n'est pas
+    // ensemencé non plus, et pour la même raison : il vient de
+    // l'événement réel. Il l'a d'ailleurs longtemps été à tort — cette
+    // ligne était absente parce que le simulateur ne liait aucune écoute
+    // IPv6, et l'annoncer aurait décrit une socket inexistante. Depuis
+    // que `attachSshTcpListeners` ouvre les deux familles
+    // (docs/PRD-Sockets-Une-Seule-Verite.md §P2b), la socket existe, donc
+    // la ligne existe — écrite par le même pid que sa jumelle v4.
 
     // Auth/logind messages
     const logindPid = 456;
@@ -749,7 +1042,7 @@ export class LinuxLogManager {
         tag: 'systemd-logind',
         message: msg,
         pid: logindPid,
-        hostname: this.hostname,
+        hostname: this.currentHostname(),
       });
     }
 

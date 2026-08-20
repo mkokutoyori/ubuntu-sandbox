@@ -1,0 +1,799 @@
+import {
+  subnetAddress, hostAddress, rangeAddress, type AddressObject,
+} from '../../model/AddressObject';
+import type { RuleAction } from '../../model/SecurityRule';
+import type { AsaFirewall } from './AsaFirewall';
+import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
+import type { FirewallSession } from '../../session/SessionTable';
+import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../../../core/types';
+import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
+import { renderPacketTracer } from './AsaPacketTracer';
+import { ASA_COMMAND_HELP, ASA_VOCABULARY } from './AsaVocabulary';
+import {
+  ASA_INVALID_INPUT,
+  ASA_UNIMPLEMENTED_REASONS,
+  asaNotImplemented,
+  asaSecurityLevelNotice,
+  asaAmbiguous,
+} from './AsaMessages';
+import { CLIStateMachine } from '../../../shells/CLIStateMachine';
+import { buildPrompt } from '../../../shells/PromptBuilder';
+import {
+  AsaSocle, mergeHelpLines, stemOf,
+  wordwiseCandidates, uniqueWordCompletion, knownCommandLines,
+  renderContinuationHelp, helpOrRefusal, type HelpLine,
+} from '@/cli/vendors/asa/asaSocle';
+import { resolveAbbreviation, expandsTo } from '@/cli/vendors/asa/asaAbbreviation';
+import {
+  ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL,
+} from '@/cli/vendors/asa/asaModes';
+import type { AsaShowHost, AsaShowView } from '@/cli/vendors/asa/asaShowFamily';
+
+export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group';
+
+interface AclLine {
+  readonly acl: string;
+  readonly action: RuleAction;
+  readonly protocol: string;
+  readonly source: string;
+  readonly destination: string;
+  readonly port?: string;
+}
+
+function parseTracerFlow(args: string[]): SimulatedFlow | undefined {
+  const protocol = args[0];
+  if (protocol === 'icmp') {
+    if (args.length < 5) return undefined;
+    return numericFlow('icmp', args[1], args[4], 0, args[2], args[3]);
+  }
+  if (protocol !== 'tcp' && protocol !== 'udp') return undefined;
+  if (args.length < 5) return undefined;
+
+  return numericFlow(protocol, args[1], args[3], undefined, args[2], undefined, args[4]);
+}
+
+function numericFlow(
+  protocol: SimulatedProtocol, sourceIP: string, destinationIP: string,
+  sourcePort: number | undefined, sourceField: string,
+  icmpCode?: string, destinationField?: string,
+): SimulatedFlow | undefined {
+  const first = Number(sourceField);
+  const second = destinationField === undefined ? 0 : Number(destinationField);
+  if (!Number.isInteger(first) || !Number.isInteger(second)) return undefined;
+
+  if (protocol === 'icmp') {
+    const code = Number(icmpCode);
+    if (!Number.isInteger(code)) return undefined;
+    return {
+      protocol, sourceIP, destinationIP,
+      sourcePort: sourcePort ?? 0, destinationPort: first, icmpCode: code,
+    };
+  }
+  return { protocol, sourceIP, destinationIP, sourcePort: first, destinationPort: second };
+}
+
+const XLATE_FLAGS = 'Flags: D - DNS, i - dynamic, r - portmap, s - static, I - identity';
+
+function protocolName(protocol: number): string {
+  if (protocol === IP_PROTO_TCP) return 'TCP';
+  if (protocol === IP_PROTO_UDP) return 'UDP';
+  if (protocol === IP_PROTO_ICMP) return 'ICMP';
+  return String(protocol);
+}
+
+function idleClock(sinceMs: number): string {
+  const total = Math.max(0, Math.floor(sinceMs / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function connFlags(session: FirewallSession): string {
+  const flags: string[] = [];
+  if (session.tcpState === 'established' || session.tcpState === undefined) flags.push('U');
+  if (session.counters.bytesS2C > 0) flags.push('I');
+  if (session.counters.bytesC2S > 0) flags.push('O');
+  return flags.join('');
+}
+
+function connLine(
+  session: FirewallSession, now: number, zoneName: (iface: string) => string,
+): string {
+  const bytes = session.counters.bytesC2S + session.counters.bytesS2C;
+  return `${protocolName(session.c2s.protocol)}`
+    + ` ${zoneName(session.egressInterface)} ${session.c2s.destIP}:${session.c2s.destPort}`
+    + ` ${zoneName(session.ingressInterface)} ${session.c2s.sourceIP}:${session.c2s.sourcePort},`
+    + ` idle ${idleClock(now - session.lastSeenAt)}, bytes ${bytes},`
+    + ` flags ${connFlags(session)}`;
+}
+
+function xlateLine(
+  session: FirewallSession, now: number, zoneName: (iface: string) => string,
+): string {
+  const translation = session.translation!;
+  const kind = session.natRuleId === undefined ? 'i' : 'ri';
+  return `NAT from ${zoneName(session.ingressInterface)}:${translation.originalSource}`
+    + `/${translation.originalSourcePort}`
+    + ` to ${zoneName(session.egressInterface)}:${translation.translatedSource}`
+    + `/${translation.translatedSourcePort}`
+    + ` flags ${kind} idle ${idleClock(now - session.lastSeenAt)}`
+    + ` timeout ${idleClock(session.timeoutSec * 1000)}`;
+}
+
+function natSectionTitle(section: number): string {
+  if (section === ASA_NAT_SECTIONS.manual) return 'Manual NAT Policies (Section 1)';
+  if (section === ASA_NAT_SECTIONS.auto) return 'Auto NAT Policies (Section 2)';
+  return 'Manual NAT Policies (Section 3)';
+}
+
+function addressObjectLine(object: AddressObject): string | undefined {
+  if (object.kind === 'host') return `host ${object.value}`;
+  if (object.kind === 'range') return `range ${object.value} ${object.endValue}`;
+  if (object.kind === 'subnet' && object.value && object.careMask) {
+    return `subnet ${object.value} ${object.careMask}`;
+  }
+  return undefined;
+}
+
+interface ManualNatSpec {
+  readonly fromZone: string;
+  readonly toZone: string;
+  readonly afterAuto: boolean;
+  readonly sourceStatic: boolean;
+  readonly realSource: string;
+  readonly mappedSource?: string;
+  readonly mappedDestination?: string;
+  readonly realDestination?: string;
+}
+
+function parseInterfacePair(word: string | undefined): [string, string] | undefined {
+  if (word === undefined || !word.startsWith('(') || !word.endsWith(')')) return undefined;
+  const zones = word.slice(1, -1).split(',');
+  if (zones.length !== 2 || !zones[0] || !zones[1]) return undefined;
+  return [zones[0], zones[1]];
+}
+
+function parseManualNat(tokens: string[]): ManualNatSpec | undefined {
+  const pair = parseInterfacePair(tokens[1]);
+  if (!pair) return undefined;
+
+  let index = 2;
+  const afterAuto = tokens[index] === 'after-auto';
+  if (afterAuto) index++;
+
+  if (tokens[index] !== 'source') return undefined;
+  const sourceKind = tokens[index + 1];
+  if (sourceKind !== 'static' && sourceKind !== 'dynamic') return undefined;
+
+  const realSource = tokens[index + 2];
+  const mappedSource = tokens[index + 3];
+  if (realSource === undefined || mappedSource === undefined) return undefined;
+  index += 4;
+
+  let mappedDestination: string | undefined;
+  let realDestination: string | undefined;
+  if (tokens[index] === 'destination') {
+    if (tokens[index + 1] !== 'static') return undefined;
+    mappedDestination = tokens[index + 2];
+    realDestination = tokens[index + 3];
+    if (mappedDestination === undefined || realDestination === undefined) return undefined;
+  }
+
+  return {
+    fromZone: pair[0], toZone: pair[1], afterAuto,
+    sourceStatic: sourceKind === 'static',
+    realSource,
+    mappedSource: mappedSource === 'interface' ? undefined : mappedSource,
+    mappedDestination, realDestination,
+  };
+}
+
+interface ObjectNatSpec {
+  readonly fromZone: string;
+  readonly toZone: string;
+  readonly static: boolean;
+  readonly translated?: string;
+}
+
+function parseObjectNat(tokens: string[]): ObjectNatSpec | undefined {
+  const [, pair, kind, target] = tokens;
+  const zones = parseInterfacePair(pair);
+  if (!zones) return undefined;
+  if (kind !== 'static' && kind !== 'dynamic') return undefined;
+
+  if (kind === 'static' && target === undefined) return undefined;
+  if (kind === 'dynamic' && target === undefined) return undefined;
+
+  return {
+    fromZone: zones[0], toZone: zones[1],
+    static: kind === 'static',
+    translated: target === 'interface' ? undefined : target,
+  };
+}
+
+export class AsaShell implements AsaShowHost {
+  private readonly fsm = new CLIStateMachine<AsaMode>(
+    'exec', ASA_MODES, ASA_TOP_LEVEL as AsaMode, ASA_EXEC_LEVEL as AsaMode,
+  );
+  private socleInstance?: AsaSocle;
+  private negatedLine = false;
+  private readonly objectNatLines = new Map<string, string>();
+  private readonly manualNatLines = new Map<string, string>();
+  private readonly loggingHostInterfaces = new Map<string, string>();
+  private manualRuleCounter = 0;
+  private currentInterface?: string;
+  private currentObject?: string;
+  private currentGroup?: string;
+  private ruleCounter = 0;
+  private readonly aclLines: AclLine[] = [];
+
+  constructor(private readonly fw: AsaFirewall) {}
+
+  private get mode(): AsaMode { return this.fsm.mode; }
+  private set mode(value: AsaMode) { this.fsm.mode = value; }
+
+  getPrompt(): string {
+    return buildPrompt(this.mode, this.fw.getName(), ASA_PROMPTS);
+  }
+
+  getMode(): AsaMode {
+    return this.mode;
+  }
+
+  private socle(): AsaSocle {
+    if (!this.socleInstance) {
+      this.socleInstance = new AsaSocle(() => this.fw.getName(), this.fw, () => this);
+    }
+    return this.socleInstance;
+  }
+
+  showView(view: AsaShowView): string {
+    const vues: Record<AsaShowView, () => string> = {
+      nameif: () => this.showNameif(),
+      conn: () => this.showConn(true),
+      'conn-count': () => this.showConn(false),
+      xlate: () => this.showXlate(),
+      version: () => this.showVersion(),
+      'running-config': () => this.showRunningConfig(),
+      'access-list': () => this.showAccessList(),
+      nat: () => this.showNat(),
+      logging: () => this.fw.getLoggingConfig().render(),
+    };
+    return vues[view]();
+  }
+
+  private legacyLines(input: string): HelpLine[] {
+    const prefix = input.trimStart();
+    return this.vocabulary().filter(word => word.startsWith(prefix))
+      .map(word => ({ keyword: word, description: ASA_COMMAND_HELP[word] ?? '' }));
+  }
+
+  private socleLines(input: string): HelpLine[] {
+    const stem = stemOf(input);
+    return this.socle().suggestions(input, this.mode, 'QUESTION_MARK')
+      .map(line => ({ keyword: `${stem} ${line.keyword}`.trim(), description: line.description }));
+  }
+
+  private knownLines(input: string): string[] {
+    return knownCommandLines(input, this.vocabulary(),
+      (at) => this.socle().suggestions(at, this.mode, 'QUESTION_MARK'));
+  }
+
+  completions(input: string): readonly string[] {
+    return wordwiseCandidates(input, this.knownLines(input));
+  }
+
+  tabComplete(input: string): string | null {
+    return uniqueWordCompletion(input, this.knownLines(input));
+  }
+
+  help(inputBeforeQuestion: string): readonly string[] {
+    return helpOrRefusal(renderContinuationHelp(inputBeforeQuestion, mergeHelpLines(
+      this.legacyLines(inputBeforeQuestion), this.socleLines(inputBeforeQuestion))),
+      ASA_INVALID_INPUT);
+  }
+
+  private vocabulary(): readonly string[] {
+    return ASA_VOCABULARY[this.mode];
+  }
+
+  execute(rawLine: string): string {
+    const line = rawLine.trim();
+    if (line.length === 0) return '';
+
+    if (line.endsWith('?')) {
+      return this.help(line.slice(0, -1)).join('\n') || ASA_INVALID_INPUT;
+    }
+
+    const unimplemented = this.unimplementedMatch(line);
+    if (unimplemented) return asaNotImplemented(unimplemented, ASA_UNIMPLEMENTED_REASONS[unimplemented]);
+
+    const fromSocle = this.socle().run(line, this.mode);
+    if (fromSocle !== null) return fromSocle;
+
+    const negated = line.startsWith('no ');
+    const body = negated ? line.slice(3).trim() : line;
+    const tokens = body.split(/\s+/);
+    this.negatedLine = negated;
+
+    const navigated = this.navigate(tokens, negated);
+    if (navigated !== null) return navigated;
+
+    return this.dispatch(tokens, negated);
+  }
+
+  private dispatch(tokens: string[], negated: boolean): string {
+    if (this.mode === 'exec' || this.mode === 'privileged') return this.execCommand(tokens);
+
+    const answer = this.configFamilyCommand(tokens, negated);
+    if (answer !== ASA_INVALID_INPUT) return answer;
+
+    return this.execCommand(tokens);
+  }
+
+  private configFamilyCommand(tokens: string[], negated: boolean): string {
+    switch (this.mode) {
+      case 'config': return this.configCommand(tokens, negated);
+      case 'config-if': return this.interfaceCommand(tokens, negated);
+      case 'config-object': return this.objectCommand(tokens);
+      case 'config-group': return this.groupCommand(tokens);
+      default: return ASA_INVALID_INPUT;
+    }
+  }
+
+  private unimplementedMatch(line: string): string | undefined {
+    return Object.keys(ASA_UNIMPLEMENTED_REASONS).find(key => line.startsWith(key));
+  }
+
+  private navigationVocabulary(): string[] {
+    const words = ['exit'];
+    if (this.mode !== 'exec' && this.mode !== 'privileged') words.push('end');
+    if (this.mode === 'exec') words.push('enable');
+    if (this.mode === 'privileged') words.push('disable', 'configure');
+    if (this.mode === 'config' || this.mode === 'config-if') words.push('interface');
+    if (this.mode === 'config' || this.mode === 'config-object') words.push('object');
+    if (this.mode === 'config' || this.mode === 'config-group') words.push('object-group');
+    return words;
+  }
+
+  private navigate(tokens: string[], negated: boolean): string | null {
+    const [typed, ...rest] = tokens;
+    const vocabulary = this.navigationVocabulary();
+    const match = resolveAbbreviation(typed, vocabulary);
+    if (match.kind === 'ambiguous') return asaAmbiguous(typed ?? '');
+    if (match.kind === 'none') return null;
+    const head = match.keyword;
+
+    if (head === 'enable') { this.mode = 'privileged'; return ''; }
+    if (head === 'disable') { this.mode = 'exec'; return ''; }
+
+    if (head === 'configure') {
+      if (!expandsTo(rest[0], 'terminal', ['terminal'])) return ASA_INVALID_INPUT;
+      this.mode = 'config';
+      return '';
+    }
+
+    if (head === 'end') {
+      this.fsm.end();
+      this.clearSubMode();
+      return '';
+    }
+
+    if (head === 'exit') {
+      this.fsm.exit();
+      this.clearSubMode();
+      return '';
+    }
+
+    if (head === 'interface' && !negated) {
+      if (!this.fw.getPort(rest[0])) return ASA_INVALID_INPUT;
+      this.currentInterface = rest[0];
+      this.mode = 'config-if';
+      return '';
+    }
+
+    if (head === 'object' && expandsTo(rest[0], 'network', ['network']) && !negated) {
+      this.currentObject = rest[1];
+      this.mode = 'config-object';
+      return '';
+    }
+
+    if (head === 'object-group' && expandsTo(rest[0], 'network', ['network']) && !negated) {
+      this.currentGroup = rest[1];
+      this.fw.getObjectStore().addAddressGroup(rest[1], []);
+      this.mode = 'config-group';
+      return '';
+    }
+
+    return null;
+  }
+
+  private clearSubMode(): void {
+    this.currentInterface = undefined;
+    this.currentObject = undefined;
+    this.currentGroup = undefined;
+  }
+
+  private execCommand(tokens: string[]): string {
+    const [head, ...rest] = tokens;
+    if (head === 'packet-tracer') return this.packetTracer(rest);
+    if (head === 'clear') return this.clearCommand(rest);
+    return ASA_INVALID_INPUT;
+  }
+
+  private configCommand(tokens: string[], negated: boolean): string {
+    const [head, ...rest] = tokens;
+
+    if (head === 'logging') return this.loggingCommand(tokens.slice(1), negated);
+    if (head === 'nat') return this.manualNat(tokens);
+    if (head === 'access-list') return this.accessList(rest);
+    if (head === 'access-group') return this.accessGroup(rest, negated);
+    if (head === 'same-security-traffic') return this.sameSecurityTraffic(rest, negated);
+    if (head === 'hostname') { this.fw.setName(rest[0]); return ''; }
+    return ASA_INVALID_INPUT;
+  }
+
+  private interfaceCommand(tokens: string[], negated: boolean): string {
+    const iface = this.currentInterface;
+    if (!iface) return ASA_INVALID_INPUT;
+    const [head, ...rest] = tokens;
+
+    if (head === 'nameif') {
+      const name = rest[0];
+      if (!name) return ASA_INVALID_INPUT;
+      const level = asaDefaultSecurityLevel(name);
+      this.fw.nameif(iface, name, level);
+      return asaSecurityLevelNotice(name, level);
+    }
+
+    if (head === 'security-level') {
+      const level = Number(rest[0]);
+      if (!Number.isInteger(level) || level < 0 || level > 100) return ASA_INVALID_INPUT;
+      return this.fw.setSecurityLevel(iface, level) ? '' : ASA_INVALID_INPUT;
+    }
+
+    if (head === 'ip' && rest[0] === 'address') {
+      this.fw.configureInterface(iface, { ip: rest[1], mask: rest[2] });
+      return '';
+    }
+
+    if (head === 'shutdown') {
+      this.fw.setInterfaceUp(iface, negated);
+      return '';
+    }
+
+    return ASA_INVALID_INPUT;
+  }
+
+  private objectCommand(tokens: string[]): string {
+    const name = this.currentObject;
+    if (!name) return ASA_INVALID_INPUT;
+    const [head, ...rest] = tokens;
+    const store = this.fw.getObjectStore();
+
+    if (head === 'host') { store.addAddress(hostAddress(name, rest[0])); return ''; }
+    if (head === 'subnet') { store.addAddress(subnetAddress(name, rest[0], rest[1])); return ''; }
+    if (head === 'range') { store.addAddress(rangeAddress(name, rest[0], rest[1])); return ''; }
+    if (head === 'nat') return this.objectNat(name, tokens);
+    return ASA_INVALID_INPUT;
+  }
+
+  private manualNat(tokens: string[]): string {
+    const spec = parseManualNat(tokens);
+    if (!spec) return ASA_INVALID_INPUT;
+
+    if (!this.interfaceNamed(spec.fromZone) || !this.interfaceNamed(spec.toZone)) {
+      return ASA_INVALID_INPUT;
+    }
+
+    this.manualRuleCounter++;
+    const id = `manual#${this.manualRuleCounter}`;
+    this.manualNatLines.set(id, tokens.join(' '));
+
+    this.fw.getNatPolicy().append({
+      id,
+      section: spec.afterAuto ? ASA_NAT_SECTIONS.autoAfter : ASA_NAT_SECTIONS.manual,
+      type: spec.sourceStatic ? 'static' : 'dynamic-pat',
+      fromZone: [spec.fromZone],
+      toZone: [spec.toZone],
+      originalSource: [spec.realSource],
+      originalDestination: spec.mappedDestination === undefined
+        ? undefined
+        : [spec.mappedDestination],
+      bidirectional: spec.sourceStatic,
+      sourceTranslation: spec.mappedSource === undefined
+        ? { kind: 'interface-address' }
+        : {
+          kind: spec.sourceStatic ? 'static-ip' : 'dynamic-ip-and-port',
+          translatedAddress: [spec.mappedSource],
+        },
+      destinationTranslation: spec.realDestination === undefined
+        ? undefined
+        : { kind: 'static-ip', translatedAddress: spec.realDestination },
+    });
+    return '';
+  }
+
+  private objectNat(objectName: string, tokens: string[]): string {
+    if (this.negatedLine) {
+      return this.fw.getNatPolicy().remove(objectName) ? '' : ASA_INVALID_INPUT;
+    }
+
+    const spec = parseObjectNat(tokens);
+    if (!spec) return ASA_INVALID_INPUT;
+
+    const fromPort = this.interfaceNamed(spec.fromZone);
+    const toPort = this.interfaceNamed(spec.toZone);
+    if (!fromPort || !toPort) return ASA_INVALID_INPUT;
+
+    this.fw.getNatPolicy().remove(objectName);
+    this.objectNatLines.set(objectName, tokens.join(' '));
+    this.fw.getNatPolicy().append({
+      id: objectName,
+      section: ASA_NAT_SECTIONS.auto,
+      type: spec.static ? 'static' : 'dynamic-pat',
+      fromZone: [spec.fromZone],
+      toZone: [spec.toZone],
+      originalSource: [objectName],
+      bidirectional: spec.static,
+      sourceTranslation: spec.translated === undefined
+        ? { kind: 'interface-address' }
+        : {
+          kind: spec.static ? 'static-ip' : 'dynamic-ip-and-port',
+          translatedAddress: [spec.translated],
+        },
+    });
+    return '';
+  }
+
+  private groupCommand(tokens: string[]): string {
+    const group = this.currentGroup;
+    if (!group) return ASA_INVALID_INPUT;
+    const [head, ...rest] = tokens;
+
+    if (head === 'network-object' && rest[0] === 'object') {
+      const result = this.fw.getObjectStore().addGroupMember(group, rest[1]);
+      return result.ok ? '' : ASA_INVALID_INPUT;
+    }
+    return ASA_INVALID_INPUT;
+  }
+
+  private accessList(rest: string[]): string {
+    const [acl, kind, keyword, protocol, source, destination, ...tail] = rest;
+    if (kind !== 'extended') return ASA_INVALID_INPUT;
+    if (keyword !== 'permit' && keyword !== 'deny') return ASA_INVALID_INPUT;
+
+    const port = tail[0] === 'eq' ? tail[1] : undefined;
+    this.aclLines.push({
+      acl, action: keyword === 'permit' ? 'allow' : 'deny',
+      protocol, source, destination, port,
+    });
+
+    this.ruleCounter++;
+    this.fw.getPolicyStore().append({
+      id: `${acl}#${this.ruleCounter}`,
+      name: acl,
+      from: ['any'], to: ['any'],
+      source: [source === 'any' ? 'any' : source],
+      destination: [destination === 'any' ? 'any' : destination],
+      service: ['any'],
+      action: keyword === 'permit' ? 'allow' : 'deny',
+    });
+    return '';
+  }
+
+  private accessGroup(rest: string[], negated: boolean): string {
+    const [acl, direction, keyword, zoneName] = rest;
+    if (direction !== 'in' && direction !== 'out') return ASA_INVALID_INPUT;
+    if (keyword !== 'interface') return ASA_INVALID_INPUT;
+
+    const iface = this.interfaceNamed(zoneName);
+    if (!iface) return ASA_INVALID_INPUT;
+
+    if (negated) this.fw.removeAccessGroup(iface);
+    else this.fw.accessGroup(acl, iface);
+    return '';
+  }
+
+  private sameSecurityTraffic(rest: string[], negated: boolean): string {
+    if (rest[0] !== 'permit') return ASA_INVALID_INPUT;
+    if (rest[1] !== 'inter-interface' && rest[1] !== 'intra-interface') return ASA_INVALID_INPUT;
+
+    this.fw.setSameSecurityTraffic(rest[1], !negated);
+    return '';
+  }
+
+  private interfaceNamed(zoneName: string): string | undefined {
+    return this.fw.getZoneTable().interfacesOf(zoneName)[0];
+  }
+
+  private packetTracer(rest: string[]): string {
+    if (this.mode === 'exec') return ASA_INVALID_INPUT;
+    if (rest[0] !== 'input') return ASA_INVALID_INPUT;
+
+    const ingressPort = this.interfaceNamed(rest[1]);
+    if (!ingressPort) return ASA_INVALID_INPUT;
+
+    const flow = parseTracerFlow(rest.slice(2));
+    if (!flow) return ASA_INVALID_INPUT;
+
+    const result = this.fw.simulate({ ingressPort, ...flow });
+    return renderPacketTracer(result, iface => this.fw.getZoneTable().zoneOf(iface));
+  }
+
+  private showNameif(): string {
+    const lines = ['Interface                Name                     Security'];
+    for (const iface of this.fw.getInterfaceTable().names()) {
+      const zone = this.fw.getZoneTable().zoneOf(iface);
+      if (!zone) continue;
+      const level = this.fw.getZoneTable().getZone(zone)?.securityLevel ?? 0;
+      lines.push(`${iface.padEnd(25)}${zone.padEnd(25)}${level}`);
+    }
+    return lines.join('\n');
+  }
+
+  private showConn(withLines: boolean): string {
+    const sessions = this.fw.getSessionTable().view().all();
+    const header = `${sessions.length} in use, ${sessions.length} most used`;
+    if (!withLines || sessions.length === 0) return header;
+
+    const now = this.fw.now();
+    return [header, ...sessions.map(session => connLine(session, now, this.zoneName.bind(this)))]
+      .join('\n');
+  }
+
+  private showXlate(): string {
+    const translated = this.fw.getSessionTable().view()
+      .find(session => session.translation !== undefined);
+    const header = `${translated.length} in use, ${translated.length} most used`;
+    if (translated.length === 0) return header;
+
+    const now = this.fw.now();
+    return [header, XLATE_FLAGS,
+      ...translated.map(session => xlateLine(session, now, this.zoneName.bind(this)))].join('\n');
+  }
+
+  private clearCommand(rest: string[]): string {
+    if (rest[0] === 'conn') { this.fw.getSessionTable().clear(); return ''; }
+    if (rest[0] === 'xlate') { this.fw.clearTranslations(); return ''; }
+    if (rest[0] === 'logging' && rest[1] === 'buffer') {
+      this.fw.getLoggingConfig().clearBuffer();
+      return '';
+    }
+    if (rest[0] === 'nat' && rest[1] === 'counters') {
+      this.fw.getNatPolicy().resetCounters();
+      return '';
+    }
+    return ASA_INVALID_INPUT;
+  }
+
+  private loggingCommand(args: string[], negated: boolean): string {
+    let translated = args;
+    if (args[0] === 'enable') translated = ['on', ...args.slice(1)];
+
+    if (args[0] === 'host') {
+      const iface = args[1];
+      const address = args[2];
+      if (iface === undefined || address === undefined) return ASA_INVALID_INPUT;
+      if (!this.interfaceNamed(iface)) return ASA_INVALID_INPUT;
+
+      if (negated) this.loggingHostInterfaces.delete(address);
+      else this.loggingHostInterfaces.set(address, iface);
+      translated = ['host', address, ...args.slice(3)];
+    }
+    const error = this.fw.getLoggingConfig().applyLogging(translated, negated);
+    if (error !== null) return ASA_INVALID_INPUT;
+
+    this.fw.syncSyslogAgent();
+    return '';
+  }
+
+  private asaLoggingLine(line: string): string {
+    const host = /^logging host (\S+)(.*)$/.exec(line);
+    if (!host) return line;
+
+    const iface = this.loggingHostInterfaces.get(host[1]);
+    return iface === undefined ? line : `logging host ${iface} ${host[1]}${host[2]}`;
+  }
+
+  private zoneName(iface: string): string {
+    return this.fw.getZoneTable().zoneOf(iface) ?? iface;
+  }
+
+  private showVersion(): string {
+    return [
+      `Cisco Adaptive Security Appliance Software Version ${ASA_PROFILE.defaultVersion}`,
+      '',
+      `${this.fw.getName()} up 0 days 0 hours`,
+    ].join('\n');
+  }
+
+  private showAccessList(): string {
+    if (this.aclLines.length === 0) return '';
+    return this.aclLines.map((l, index) => {
+      const rule = this.fw.getPolicyStore().ordered()[index];
+      const port = l.port ? ` eq ${l.port}` : '';
+      const keyword = l.action === 'allow' ? 'permit' : 'deny';
+      return `access-list ${l.acl} line ${index + 1} extended ${keyword} `
+        + `${l.protocol} ${l.source} ${l.destination}${port} (hitcnt=${rule?.hitCount ?? 0})`;
+    }).join('\n');
+  }
+
+  private showNat(): string {
+    const lines: string[] = [];
+    let heading: number | undefined;
+    let index = 0;
+
+    for (const rule of this.fw.getNatPolicy().ordered()) {
+      if (rule.section !== heading) {
+        heading = rule.section;
+        index = 0;
+        lines.push(`${natSectionTitle(rule.section)}:`);
+      }
+      index++;
+      lines.push(`${index} (${rule.fromZone[0]}) to (${rule.toZone[0]})`
+        + ` source ${rule.type === 'static' ? 'static' : 'dynamic'} ${rule.originalSource[0]}`
+        + ` ${rule.sourceTranslation?.translatedAddress?.[0] ?? 'interface'}`);
+      lines.push(`    translate_hits = ${rule.hitCount}, untranslate_hits = 0`);
+    }
+
+    return lines.length === 0 ? 'There are no NAT policies' : lines.join('\n');
+  }
+
+  private objectLines(): string[] {
+    const lines: string[] = [];
+    for (const object of this.fw.getObjectStore().listAddresses()) {
+      const body = addressObjectLine(object);
+      if (!body) continue;
+
+      lines.push(`object network ${object.name}`);
+      lines.push(` ${body}`);
+      const nat = this.objectNatLines.get(object.name);
+      if (nat) lines.push(` ${nat}`);
+    }
+    return lines;
+  }
+
+  private showRunningConfig(): string {
+    const lines: string[] = [`hostname ${this.fw.getName()}`, '!'];
+
+    for (const iface of this.fw.getInterfaceTable().names()) {
+      const zone = this.fw.getZoneTable().zoneOf(iface);
+      const info = this.fw.getInterfaceTable().get(iface);
+      if (!zone && !info?.ip) continue;
+
+      lines.push(`interface ${iface}`);
+      if (zone) {
+        lines.push(` nameif ${zone}`);
+        lines.push(` security-level ${this.fw.getZoneTable().getZone(zone)?.securityLevel ?? 0}`);
+      }
+      if (info?.ip && info.mask) lines.push(` ip address ${info.ip} ${info.mask}`);
+      if (!this.fw.getInterfaceTable().isUp(iface)) lines.push(' shutdown');
+      lines.push('!');
+    }
+
+    const objects = this.objectLines();
+    if (objects.length > 0) { lines.push(...objects, '!'); }
+
+    for (const line of this.manualNatLines.values()) lines.push(line);
+
+    for (const line of this.aclLines) {
+      const keyword = line.action === 'allow' ? 'permit' : 'deny';
+      const port = line.port ? ` eq ${line.port}` : '';
+      lines.push(`access-list ${line.acl} extended ${keyword} `
+        + `${line.protocol} ${line.source} ${line.destination}${port}`);
+    }
+
+    if (this.fw.getLoggingConfig().enabled) lines.push('logging enable');
+    for (const line of this.fw.getLoggingConfig().asRunningConfigLines()) {
+      if (line === 'no logging on') continue;
+      lines.push(this.asaLoggingLine(line));
+    }
+
+    if (this.fw.sameSecurityTrafficEnabled('inter-interface')) {
+      lines.push('same-security-traffic permit inter-interface');
+    }
+    return lines.join('\n');
+  }
+}

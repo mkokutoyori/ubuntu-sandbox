@@ -47,9 +47,9 @@ describe('STP — single switch is the root', () => {
 
   it('connected ports stay forwarding when there is no peer BPDU', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
-    const port = sw.getPort('FastEthernet0/0')!;
+    const port = sw.getPort('FastEthernet0/1')!;
     port.setUp(true);
-    expect(sw.getSTPState('FastEthernet0/0')).toBe('forwarding');
+    expect(sw.getSTPState('FastEthernet0/1')).toBe('forwarding');
   });
 });
 
@@ -61,15 +61,16 @@ describe('STP — root election across a cable', () => {
     await winner.executeCommand('configure terminal');
     await winner.executeCommand('spanning-tree vlan 1 priority 4096');
     await winner.executeCommand('end');
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
 
     const winnerStp = winner.getStpAgent();
     const loserStp = loser.getStpAgent();
     expect(winnerStp.isRoot()).toBe(true);
     expect(loserStp.isRoot()).toBe(false);
-    expect(loserStp.getRootBridge().priority).toBe(4096);
-    expect(loserStp.getRootPort()).toBe('FastEthernet0/0');
+    // 802.1t: `priority 4096` on VLAN 1 is a bridge ID priority of 4097.
+    expect(loserStp.getRootBridge().priority).toBe(4097);
+    expect(loserStp.getRootPort()).toBe('FastEthernet0/1');
   });
 
   it('losing switch puts its facing port into the root role and keeps it forwarding', async () => {
@@ -79,10 +80,10 @@ describe('STP — root election across a cable', () => {
     await winner.executeCommand('configure terminal');
     await winner.executeCommand('spanning-tree vlan 1 priority 4096');
     await winner.executeCommand('end');
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
-    expect(loser.getStpAgent().getPortRole('FastEthernet0/0')).toBe('root');
-    expect(loser.getSTPState('FastEthernet0/0')).toBe('forwarding');
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
+    expect(loser.getStpAgent().getPortRole('FastEthernet0/1')).toBe('root');
+    expect(loser.getSTPState('FastEthernet0/1')).toBe('forwarding');
   });
 
   it('on the root bridge the facing port is designated', async () => {
@@ -92,9 +93,9 @@ describe('STP — root election across a cable', () => {
     await winner.executeCommand('configure terminal');
     await winner.executeCommand('spanning-tree vlan 1 priority 4096');
     await winner.executeCommand('end');
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
-    expect(winner.getStpAgent().getPortRole('FastEthernet0/0')).toBe('designated');
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
+    expect(winner.getStpAgent().getPortRole('FastEthernet0/1')).toBe('designated');
   });
 });
 
@@ -106,18 +107,18 @@ describe('STP — loop breaking', () => {
     await root.executeCommand('configure terminal');
     await root.executeCommand('spanning-tree vlan 1 priority 4096');
     await root.executeCommand('end');
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!,
-                            other.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(root.getPort('FastEthernet0/1')!,
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!,
                             other.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/2')!,
+                            other.getPort('FastEthernet0/2')!);
 
     const otherStp = other.getStpAgent();
-    const role0 = otherStp.getPortRole('FastEthernet0/0');
-    const role1 = otherStp.getPortRole('FastEthernet0/1');
+    const role0 = otherStp.getPortRole('FastEthernet0/1');
+    const role1 = otherStp.getPortRole('FastEthernet0/2');
     expect([role0, role1].sort()).toEqual(['alternate', 'root']);
 
-    const blocked = role0 === 'alternate' ? 'FastEthernet0/0' : 'FastEthernet0/1';
-    const forwarding = role0 === 'root' ? 'FastEthernet0/0' : 'FastEthernet0/1';
+    const blocked = role0 === 'alternate' ? 'FastEthernet0/1' : 'FastEthernet0/2';
+    const forwarding = role0 === 'root' ? 'FastEthernet0/1' : 'FastEthernet0/2';
     expect(other.getSTPState(blocked)).toBe('blocking');
     expect(other.getSTPState(forwarding)).toBe('forwarding');
   });
@@ -138,8 +139,8 @@ describe('STP — reactive events', () => {
     const changes: Array<{ deviceId: string; newRootMac: string }> = [];
     bus.subscribe('stp.root.changed', (e) => changes.push(e.payload));
 
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
 
     expect(changes.some(c => c.deviceId === loser.id)).toBe(true);
   });
@@ -152,8 +153,8 @@ describe('STP — reactive events', () => {
     s2.setEventBus(bus);
     const sent: Array<{ port: string }> = [];
     bus.subscribe('stp.bpdu.sent', (e) => sent.push(e.payload));
-    new Cable('w').connect(s1.getPort('FastEthernet0/0')!,
-                            s2.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(s1.getPort('FastEthernet0/1')!,
+                            s2.getPort('FastEthernet0/1')!);
     expect(sent.length).toBeGreaterThan(0);
   });
 
@@ -171,9 +172,9 @@ describe('STP — reactive events', () => {
     bus.subscribe('stp.role.changed', (e) => {
       if (e.payload.deviceId === loser.id) roles.push(e.payload);
     });
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
-    expect(roles.some(r => r.newRole === 'root' && r.port === 'FastEthernet0/0')).toBe(true);
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
+    expect(roles.some(r => r.newRole === 'root' && r.port === 'FastEthernet0/1')).toBe(true);
   });
 });
 
@@ -196,8 +197,8 @@ describe('STP — wire format', () => {
         };
       }
     });
-    cable.connect(s1.getPort('FastEthernet0/0')!,
-                  s2.getPort('FastEthernet0/0')!);
+    cable.connect(s1.getPort('FastEthernet0/1')!,
+                  s2.getPort('FastEthernet0/1')!);
     expect(seen).not.toBeNull();
     expect(seen!.dst).toBe(STP_BRIDGE_MAC);
     expect(seen!.ether).toBe(ETHERTYPE_STP);
@@ -228,12 +229,12 @@ describe('STP — running-config & show', () => {
     await winner.executeCommand('configure terminal');
     await winner.executeCommand('spanning-tree vlan 1 priority 4096');
     await winner.executeCommand('end');
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
     const out = await loser.executeCommand('enable')
       .then(() => loser.executeCommand('show spanning-tree'));
     expect(out).toMatch(/Priority\s+4097/);
-    expect(out).toMatch(/Fa0\/0.*Root.*FWD/);
+    expect(out).toMatch(/Fa0\/1.*Root.*FWD/);
   });
 });
 
@@ -261,14 +262,14 @@ describe('STP — 802.1D listening/learning transitions', () => {
     await root.executeCommand('configure terminal');
     await root.executeCommand('spanning-tree vlan 1 priority 4096');
     await root.executeCommand('end');
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!,
-                            other.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(root.getPort('FastEthernet0/1')!,
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!,
                             other.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/2')!,
+                            other.getPort('FastEthernet0/2')!);
     const stp = other.getStpAgent();
-    const role0 = stp.getPortRole('FastEthernet0/0');
-    const blockedPort = role0 === 'alternate' ? 'FastEthernet0/0' : 'FastEthernet0/1';
-    const rootPort = role0 === 'root' ? 'FastEthernet0/0' : 'FastEthernet0/1';
+    const role0 = stp.getPortRole('FastEthernet0/1');
+    const blockedPort = role0 === 'alternate' ? 'FastEthernet0/1' : 'FastEthernet0/2';
+    const rootPort = role0 === 'root' ? 'FastEthernet0/1' : 'FastEthernet0/2';
     return { root, other, blockedPort, rootPort };
   }
 
@@ -286,11 +287,16 @@ describe('STP — 802.1D listening/learning transitions', () => {
   });
 
   it('honors a non-default forward-time during reconvergence', async () => {
-    const { other, blockedPort, rootPort } = await buildRedundantPair();
-    await other.executeCommand('enable');
-    await other.executeCommand('configure terminal');
-    await other.executeCommand('spanning-tree vlan 1 forward-time 4');
-    await other.executeCommand('end');
+    const { root, other, blockedPort, rootPort } = await buildRedundantPair();
+    // 802.1D: only the root's timers are in force. Setting forward-time on
+    // the non-root bridge is the classic no-op; it has to come from the
+    // root and reach the other bridge through its BPDUs.
+    await root.executeCommand('enable');
+    await root.executeCommand('configure terminal');
+    await root.executeCommand('spanning-tree vlan 1 forward-time 4');
+    await root.executeCommand('end');
+    // The new timer reaches the other bridge on the root's next Hello.
+    vts.advance(2_000);
 
     other.getPort(rootPort)!.setUp(false);
 
@@ -311,15 +317,15 @@ describe('STP — 802.1D listening/learning transitions', () => {
     await root.executeCommand('configure terminal');
     await root.executeCommand('spanning-tree vlan 1 priority 4096');
     await root.executeCommand('end');
-    new Cable('a').connect(root.getPort('FastEthernet0/0')!,
-                            other.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(root.getPort('FastEthernet0/1')!,
+    new Cable('a').connect(root.getPort('FastEthernet0/1')!,
                             other.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(root.getPort('FastEthernet0/2')!,
+                            other.getPort('FastEthernet0/2')!);
     const stp = other.getStpAgent();
-    const blockedPort = stp.getPortRole('FastEthernet0/0') === 'alternate'
-      ? 'FastEthernet0/0' : 'FastEthernet0/1';
-    const rootPort = blockedPort === 'FastEthernet0/0'
-      ? 'FastEthernet0/1' : 'FastEthernet0/0';
+    const blockedPort = stp.getPortRole('FastEthernet0/1') === 'alternate'
+      ? 'FastEthernet0/1' : 'FastEthernet0/2';
+    const rootPort = blockedPort === 'FastEthernet0/1'
+      ? 'FastEthernet0/2' : 'FastEthernet0/1';
 
     const seen: string[] = [];
     bus.subscribe('stp.port-state.changed', (e) => {
@@ -376,10 +382,10 @@ describe('STP — link-down clears the peer state', () => {
     await winner.executeCommand('configure terminal');
     await winner.executeCommand('spanning-tree vlan 1 priority 4096');
     await winner.executeCommand('end');
-    new Cable('w').connect(winner.getPort('FastEthernet0/0')!,
-                            loser.getPort('FastEthernet0/0')!);
+    new Cable('w').connect(winner.getPort('FastEthernet0/1')!,
+                            loser.getPort('FastEthernet0/1')!);
     expect(loser.getStpAgent().isRoot()).toBe(false);
-    loser.getPort('FastEthernet0/0')!.setUp(false);
+    loser.getPort('FastEthernet0/1')!.setUp(false);
     expect(loser.getStpAgent().isRoot()).toBe(true);
   });
 });

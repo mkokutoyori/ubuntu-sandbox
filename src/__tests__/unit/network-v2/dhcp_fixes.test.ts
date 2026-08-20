@@ -797,7 +797,7 @@ describe('DHCP pool exhaustion observability', () => {
 
     // Drain the pool with distinct clients.
     for (let i = 1; i <= 4; i++) {
-      server.processDiscover({ clientMAC: `AA:BB:CC:DD:EE:0${i}`, xid: i });
+      server.processDiscover({ clientMAC: `AA:BB:CC:DD:EE:0${i}`, xid: i, clientIdentifier: `AA:BB:CC:DD:EE:0${i}`, parameterRequestList: [] });
     }
 
     expect(exhausted.length).toBeGreaterThanOrEqual(1);

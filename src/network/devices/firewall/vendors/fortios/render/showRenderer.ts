@@ -1,0 +1,122 @@
+import {
+  isQuoted, keyAttributeName,
+  type FortiAttributeSpec, type FortiTableSpec,
+} from '../schema/types';
+import type { FortiConfigTree } from '../runtime/FortiConfigTree';
+import type { FortiObject } from '../runtime/FortiObject';
+import type { FortiTable } from '../runtime/FortiTable';
+
+const STEP = '    ';
+
+export interface ShowOptions {
+  readonly full: boolean;
+}
+
+export function renderValue(spec: FortiAttributeSpec, values: readonly string[]): string {
+  if (spec.secret === true) return `ENC ${encodeSecret(values.join(' '))}`;
+  if (!isQuoted(spec)) return values.join(' ');
+  return values.map(v => `"${v}"`).join(' ');
+}
+
+function encodeSecret(clear: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < clear.length; index++) {
+    hash ^= clear.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${hash.toString(16)}${clear.length.toString(16).padStart(2, '0')}`;
+}
+
+export function renderKey(spec: FortiTableSpec, key: string): string {
+  if (spec.quotedKey !== undefined) return spec.quotedKey ? `"${key}"` : key;
+  return spec.keyType === 'integer' || spec.keyType === 'address' ? key : `"${key}"`;
+}
+
+function attributeLines(
+  object: FortiObject, options: ShowOptions, indent: string,
+): string[] {
+  const out: string[] = [];
+  const key = keyAttributeName(object.spec);
+  for (const spec of object.spec.attributes) {
+    if (spec.name === key) continue;
+    if (!object.isAvailable(spec)) continue;
+    if (spec.unimplemented) continue;
+    if (!options.full && !object.isExplicit(spec.name)) continue;
+
+    const values = object.effective(spec.name);
+    if (values.length === 0) continue;
+    out.push(`${indent}set ${spec.name} ${renderValue(spec, values)}`);
+  }
+  return out;
+}
+
+function childLines(object: FortiObject, options: ShowOptions, indent: string): string[] {
+  const out: string[] = [];
+  for (const name of object.childNames()) {
+    const table = object.child(name);
+    if (table) {
+      if (table.size() === 0) continue;
+      out.push(`${indent}config ${name}`);
+      out.push(...tableBody(table, options, indent + STEP));
+      out.push(`${indent}end`);
+      continue;
+    }
+
+    const single = object.childObject(name);
+    if (!single) continue;
+
+    const body = objectLines(single, options, indent + STEP);
+    if (body.length === 0) continue;
+
+    out.push(`${indent}config ${name}`);
+    out.push(...body);
+    out.push(`${indent}end`);
+  }
+  return out;
+}
+
+function objectLines(object: FortiObject, options: ShowOptions, indent: string): string[] {
+  return [...attributeLines(object, options, indent), ...childLines(object, options, indent)];
+}
+
+function tableBody(table: FortiTable, options: ShowOptions, indent: string): string[] {
+  const out: string[] = [];
+  for (const object of table.all()) {
+    out.push(`${indent}edit ${renderKey(table.spec, object.key)}`);
+    out.push(...objectLines(object, options, indent + STEP));
+    out.push(`${indent}next`);
+  }
+  return out;
+}
+
+export function renderTableConfig(
+  table: FortiTable, options: ShowOptions,
+): string[] {
+  const path = table.spec.path.join(' ');
+  return [`config ${path}`, ...tableBody(table, options, STEP), 'end'];
+}
+
+export function renderSingletonConfig(
+  object: FortiObject, options: ShowOptions,
+): string[] {
+  const path = object.spec.path.join(' ');
+  return [`config ${path}`, ...objectLines(object, options, STEP), 'end'];
+}
+
+export function renderPath(
+  tree: FortiConfigTree, path: readonly string[], options: ShowOptions,
+): string[] | null {
+  const spec = tree.spec(path);
+  if (!spec) return null;
+
+  if (spec.kind === 'table') return renderTableConfig(tree.table(spec), options);
+  return renderSingletonConfig(tree.singleton(spec), options);
+}
+
+export function renderWholeConfig(tree: FortiConfigTree, options: ShowOptions): string[] {
+  const out: string[] = [];
+  for (const spec of tree.populatedPaths()) {
+    out.push(...(renderPath(tree, spec.path, options) ?? []));
+  }
+  return out;
+}

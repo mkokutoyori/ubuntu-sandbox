@@ -1,10 +1,15 @@
 /**
- * vty session isolation — terminal_gap.md §5.1.
+ * vty session isolation — terminal_gap.md §5.1, docs/PRD-Lignes-Terminal.md.
  *
  * Real Cisco IOS / Huawei VRP keeps one console + 5 vty lines, each with
  * its own privilege level, mode, selectedInterface, terminalLength, etc.
  * `enable` in one vty does NOT elevate the others. The simulator used to
  * collapse all that onto a single shell instance shared across terminals.
+ *
+ * The first window is the CONSOLE — a chassis has one console port, so a
+ * second window on the same line would be the same session. Sessions
+ * after the first therefore take a vty, which is what a second connection
+ * to a real router actually is.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -34,10 +39,13 @@ describe('Cisco IOS vty session isolation', () => {
     manager = new TerminalManager(bus);
     router = new CiscoRouter('R1');
     router.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<CiscoTerminalSession> {
-    const sid = manager.openTerminal(router)!;
+    const sid = manager.openTerminal(router, opened++ === 0 ? 'console' : 'vty')!;
     const session = manager.getSession(sid) as CiscoTerminalSession;
     await waitBoot(session);
     return session;

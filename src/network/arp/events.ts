@@ -51,6 +51,16 @@ export interface ArpErrRecoveredPayload extends ArpSwitchRef {
   port: string;
 }
 
+/** A router answered an ARP request on behalf of a host on another subnet (proxy ARP). */
+export interface ArpProxyRespondedPayload {
+  deviceId: string;
+  hostname: string;
+  port: string;
+  targetIp: string;
+  senderIp: string;
+  viaIface: string;
+}
+
 export interface ArpSnoopLearnedPayload extends ArpSwitchRef {
   /** Sender IP that the switch's *management* ARP cache just absorbed. */
   ip: string;
@@ -65,4 +75,5 @@ export type ArpDomainEvent =
   | { topic: 'arp.rate-limit-exceeded'; payload: ArpRateExceededPayload }
   | { topic: 'arp.errdisable.set';    payload: ArpErrDisabledPayload }
   | { topic: 'arp.errdisable.cleared'; payload: ArpErrRecoveredPayload }
-  | { topic: 'arp.snoop.learned';     payload: ArpSnoopLearnedPayload };
+  | { topic: 'arp.snoop.learned';     payload: ArpSnoopLearnedPayload }
+  | { topic: 'arp.proxy.responded';   payload: ArpProxyRespondedPayload };

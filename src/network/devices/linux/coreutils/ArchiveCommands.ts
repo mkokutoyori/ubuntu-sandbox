@@ -408,7 +408,9 @@ export function cmdGzip(ctx: ArchiveCtx, args: string[],
       continue;
     }
     const raw = ctx.fs.readFile(abs) ?? node.content;
-    if (decompress || invokedAs === 'zcat') {
+    // decompress is already true whenever invokedAs is 'zcat' (it's
+    // defined as `invokedAs !== 'gzip'`), so the OR was redundant.
+    if (decompress) {
       const body = unpackGzip(raw);
       if (!body) {
         lines.push(`gzip: ${op}: not in gzip format`);

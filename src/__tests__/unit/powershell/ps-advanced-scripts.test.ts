@@ -4,8 +4,7 @@ import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 let ps: PSInterpreter;
 beforeEach(() => { ps = new PSInterpreter(); });
 function run(code: string): string {
-  const r = ps.execute(code);
-  return typeof r === 'string' ? r : (r?.output ?? '');
+  return ps.execute(code);
 }
 
 describe('A. ValueFromPipeline binding', () => {

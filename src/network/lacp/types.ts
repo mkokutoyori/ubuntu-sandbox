@@ -38,6 +38,13 @@ export interface LacpPortInfo {
   portName: string;
   groupId: number;
   mode: LacpAdminMode;
+  /**
+   * Advertised in every LACPDU. It is what the partner reads to break
+   * ties when it has more candidates than it can bundle; this engine
+   * has no bundle-size cap of its own, so the value travels rather than
+   * arbitrating locally.
+   */
+  portPriority: number;
   state: LacpPortState;
   partner: LacpActorInfo | null;
   selected: boolean;

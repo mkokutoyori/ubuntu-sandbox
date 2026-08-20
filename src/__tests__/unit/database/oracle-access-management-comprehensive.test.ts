@@ -765,16 +765,19 @@ describe('12. Object-access enforcement under non-SYS sessions', () => {
     // dev_team has column-level SELECT on employee_id + first_name only.
     { sql: 'CONNECT dev_team/DevTeam1#@orcl',                                                           want: /\bConnected\b/i },
     { sql: 'SELECT employee_id, first_name FROM hr.employees FETCH FIRST 3 ROWS ONLY;',                 want: /\bFIRST_NAME\b/i },
-    // dev_team has only column-level SELECT on (employee_id, first_name).
-    // Real Oracle refuses with ORA-01031 when projecting a non-granted
-    // column; the simulator's column-restriction enforcement is partial
-    // — accept either the refusal or the actual value.
-    { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                   want: /(ORA-01031|^\s*\d+\s*$)/m },
+    // dev_team has only column-level SELECT on (employee_id, first_name),
+    // plus the PUBLIC grant on four others. SALARY is in neither, so the
+    // projection is refused.
+    { sql: 'SELECT salary FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                   want: /ORA-01031/ },
     // app_user — UNLIMITED TABLESPACE + write_role.
     { sql: 'CONNECT app_user/App1#@orcl',                                                               want: /\bConnected\b/i },
     { sql: 'CREATE TABLE app_user.demo (x NUMBER);',                                                    want: /Table created\./i },
     { sql: 'INSERT INTO app_user.demo VALUES (1);',                                                      want: /1 row created\./i },
-    { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                        want: /\bFIRST_NAME\b/i },
+    // app_user's only read access to HR.EMPLOYEES is the PUBLIC
+    // column grant on (employee_id, first_name, last_name, email).
+    // `SELECT *` reaches past it, so it is refused as a whole rather
+    // than quietly pruned to the four granted columns.
+    { sql: 'SELECT * FROM hr.employees FETCH FIRST 1 ROW ONLY;',                                        want: /ORA-01031/ },
     // PUBLIC SELECT on HR.REGIONS — readonly user can see it.
     { sql: 'CONNECT readonly/ReadOnly1#@orcl',                                                          want: /\bConnected\b/i },
     { sql: 'SELECT region_name FROM hr.regions ORDER BY region_id;',                                    want: /\bEurope\b/i },
@@ -815,9 +818,9 @@ describe('13. Session, process, and resource inspection', () => {
     { sql: 'SELECT sid, statistic#, value FROM v$sesstat WHERE statistic# = 0 FETCH FIRST 5 ROWS ONLY;', want: /\bVALUE\b/i },
     { sql: "SELECT name FROM v$sysstat WHERE name LIKE 'logons%';",                                     want: /\blogons\b/i },
     // V$LOCK / V$TRANSACTION
-    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /\bLMODE\b/i },
+    { sql: 'SELECT sid, type, lmode, request FROM v$lock FETCH FIRST 5 ROWS ONLY;',                     want: /(?:\bLMODE\b)|no rows selected/i },
     { sql: 'SELECT COUNT(*) FROM v$lock WHERE block > 0;',                                              want: /^\s*\d+\s*$/m },
-    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /\bSTATUS\b/i },
+    { sql: 'SELECT addr, status FROM v$transaction FETCH FIRST 3 ROWS ONLY;',                            want: /(?:\bSTATUS\b)|no rows selected/i },
     { sql: 'SELECT sid, sql_id FROM v$open_cursor FETCH FIRST 5 ROWS ONLY;',                             want: /\bSQL_ID\b/i },
     // V$SQL / V$SQLAREA — at least the columns we asked for.
     { sql: 'SELECT sql_id, sql_text FROM v$sql FETCH FIRST 5 ROWS ONLY;',                                 want: /\bSQL_ID\b/i },
@@ -1342,7 +1345,7 @@ describe('23. Cross-cutting metadata views', () => {
 describe('24. SYSDATE / TIMESTAMP arithmetic across views', () => {
   it.each<Case>([
     // SYSDATE / SYSTIMESTAMP — current date markers (year >= 2024).
-    { sql: 'SELECT SYSDATE FROM dual;',                                                                want: /\b20\d{2}\b/ },
+    { sql: 'SELECT SYSDATE FROM dual;',                                                                want: /\d{2}-[A-Z]{3}-\d{2}/ },
     { sql: 'SELECT SYSDATE - 1 AS yesterday FROM dual;',                                                want: /\b20\d{2}\b/ },
     { sql: 'SELECT SYSTIMESTAMP FROM dual;',                                                            want: /\b20\d{2}\b/ },
     // Comparing DATE columns with SYSDATE arithmetic must NOT raise ORA-01722.
@@ -1533,10 +1536,12 @@ describe('29. Negative paths — privilege denial and bad input', () => {
     { sql: 'AUDIT CREATE SESSION;',                                                want: /ORA-01031/ },
     { sql: 'CREATE AUDIT POLICY rogue ACTIONS ALL;',                               want: /ORA-01031/ },
     { sql: 'ALTER SYSTEM FLUSH SHARED_POOL;',                                       want: /ORA-01031/ },
-    // GUEST exists right now (it was created above and has not been
-    // dropped yet) — query DBA_USERS to confirm the row is visible to
-    // SYS, matching what real Oracle would show in this state.
-    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'GUEST';",              want: /^\s*1\s*$/m },
+    // The session is still connected as GUEST here (reconnect to SYS
+    // happens further below) and GUEST only holds CREATE SESSION — real
+    // Oracle hides DBA_ views from a user without SELECT_CATALOG_ROLE /
+    // SELECT ANY DICTIONARY / DBA behind ORA-00942, so guest cannot see
+    // its own row this way.
+    { sql: "SELECT COUNT(*) FROM dba_users WHERE username = 'GUEST';",              want: /ORA-00942/ },
     { sql: 'GRANT SELECT ON hr.employees TO guest;',                                want: /ORA-01031/ },
     { sql: 'CONNECT / AS SYSDBA',                                                   want: /\bConnected\b/i },
     // Malformed statements — must raise a parse error (ORA-00900-class).

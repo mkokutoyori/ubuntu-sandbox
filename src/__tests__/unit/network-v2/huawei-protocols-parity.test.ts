@@ -46,7 +46,7 @@ describe('Huawei LLDP — switch parity', () => {
     const huawei = new HuaweiSwitch('switch-huawei', 'HW1', 4);
     const cisco = new CiscoSwitch('switch-cisco', 'CSCO1', 4);
     new Cable('w').connect(huawei.getPort('GigabitEthernet0/0/0')!,
-                            cisco.getPort('FastEthernet0/0')!);
+                            cisco.getPort('FastEthernet0/1')!);
     await enableLldp(huawei);
     await cisco.executeCommand('enable');
     await cisco.executeCommand('configure terminal');
@@ -149,7 +149,7 @@ describe('Huawei STP — interoperability with Cisco', () => {
     await cisco.executeCommand('configure terminal');
     await cisco.executeCommand('spanning-tree vlan 1 priority 4096');
     await cisco.executeCommand('end');
-    new Cable('w').connect(cisco.getPort('FastEthernet0/0')!,
+    new Cable('w').connect(cisco.getPort('FastEthernet0/1')!,
                             huawei.getPort('GigabitEthernet0/0/0')!);
     expect(cisco.getStpAgent().isRoot()).toBe(true);
     expect(huawei.getStpAgent().isRoot()).toBe(false);

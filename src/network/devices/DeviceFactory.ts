@@ -8,12 +8,17 @@ import { Equipment } from '../equipment/Equipment';
 import { LinuxPC } from './LinuxPC';
 import { LinuxServer } from './LinuxServer';
 import { WindowsPC } from './WindowsPC';
+import { WindowsServer } from './WindowsServer';
 import { CiscoSwitch } from './CiscoSwitch';
 import { HuaweiSwitch } from './HuaweiSwitch';
 import { GenericSwitch } from './GenericSwitch';
 import { Hub } from './Hub';
 import { CiscoRouter } from './CiscoRouter';
 import { HuaweiRouter } from './HuaweiRouter';
+import { AsaFirewall } from './firewall/vendors/asa/AsaFirewall';
+import { FortiGate } from './firewall/vendors/fortios/FortiGate';
+// eslint-disable-next-line no-restricted-imports -- the factory resets the registry it fills; it is not a device discovering peers
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 const deviceCounters: Map<string, number> = new Map();
 
@@ -38,11 +43,11 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
     case 'linux-server':
       return new LinuxServer('linux-server', name, x, y);
     case 'windows-server':
-      return new WindowsPC('windows-server', name, x, y);
+      return new WindowsServer(name, x, y);
 
     // Switches
     case 'switch-cisco':
-      return new CiscoSwitch('switch-cisco', name, 24, x, y);
+      return new CiscoSwitch('switch-cisco', name, 26, x, y);
     case 'switch-huawei':
       return new HuaweiSwitch('switch-huawei', name, 24, x, y);
     case 'switch-generic':
@@ -58,9 +63,9 @@ export function createDevice(type: DeviceType, x: number = 0, y: number = 0): Eq
 
     // Firewalls (stub as LinuxPC for now)
     case 'firewall-cisco':
-      return new LinuxPC('firewall-cisco', name, x, y);
+      return new AsaFirewall('firewall-cisco', name, x, y);
     case 'firewall-fortinet':
-      return new LinuxPC('firewall-fortinet', name, x, y);
+      return new FortiGate('firewall-fortinet', name, x, y);
     case 'firewall-paloalto':
       return new LinuxPC('firewall-paloalto', name, x, y);
 
@@ -85,5 +90,5 @@ export function isFullyImplemented(type: DeviceType): boolean {
 
 export function resetDeviceCounters(): void {
   deviceCounters.clear();
-  Equipment.clearRegistry();
+  EquipmentRegistry.getInstance().clear();
 }

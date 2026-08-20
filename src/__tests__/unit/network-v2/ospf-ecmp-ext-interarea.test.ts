@@ -70,8 +70,11 @@ function makeFakeNeighbor(
 function makeRouterLSA(
   routerId: string,
   flags = 0,
-  links: RouterLSA['links'] = [],
+  linksIn: Array<Omit<RouterLSA['links'][number], 'numTOS'> & { numTOS?: number }> = [],
 ): RouterLSA {
+  // TOS-based metrics are unused by every real deployment this simulator
+  // targets; tests build links without numTOS, so default it to 0 here.
+  const links: RouterLSA['links'] = linksIn.map(l => ({ numTOS: 0, ...l }));
   return {
     lsAge: 0,
     options: 0x02,

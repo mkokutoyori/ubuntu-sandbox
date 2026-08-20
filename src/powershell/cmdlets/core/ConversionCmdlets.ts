@@ -71,6 +71,51 @@ export class ConvertToCsvCmdlet implements ICmdlet {
   }
 }
 
+function serializeCsv(arr: PSValue[], delim: string, noTypeInfo: boolean): string[] {
+  if (arr.length === 0) return [];
+  const first   = arr[0] as Record<string, PSValue>;
+  const headers = Object.keys(first);
+  const lines: string[] = [];
+  if (!noTypeInfo) lines.push('#TYPE System.Management.Automation.PSCustomObject');
+  lines.push(headers.map(h => `"${h}"`).join(delim));
+  for (const row of arr) {
+    const r = row as Record<string, PSValue>;
+    lines.push(headers.map(h => `"${psValueToString(r[h] ?? '')}"`).join(delim));
+  }
+  return lines;
+}
+
+// ─── Export-Csv ───────────────────────────────────────────────────────────
+
+export class ExportCsvCmdlet implements ICmdlet {
+  readonly name = 'export-csv';
+  readonly displayName = 'Export-Csv';
+  readonly parameters = ['Path', 'LiteralPath', 'Delimiter', 'NoTypeInformation', 'Append', 'Encoding', 'Force'] as const;
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const path = psValueToString(ctx.named['path'] ?? ctx.named['literalpath'] ?? ctx.positional[0] ?? '');
+    if (!path) { ctx.emitError('Export-Csv requires -Path'); return null; }
+    const fs = ctx.providers.filesystem;
+    if (!fs) { ctx.emitError('Export-Csv: no filesystem provider in this context'); return null; }
+    const delim = ctx.named['delimiter'] !== undefined ? psValueToString(ctx.named['delimiter']) : ',';
+    const noTypeInfo = ctx.named['notypeinformation'] === true || ctx.named['notypeinformation'] === 'true';
+    const arr = toArray(ctx.pipeInput ?? ctx.positional[1] ?? ctx.named['inputobject']);
+    const lines = serializeCsv(arr, delim, noTypeInfo);
+    const text = lines.join('\n') + (lines.length > 0 ? '\n' : '');
+    if ((ctx.named['append'] === true || ctx.named['append'] === 'true')) {
+      const existing = (() => { try { return fs.readFile(path); } catch { return ''; } })();
+      if (existing.length > 0) {
+        const body = noTypeInfo ? lines.slice(1) : lines.slice(2);
+        fs.appendFile(path, body.join('\n') + '\n');
+        return null;
+      }
+    }
+    fs.writeFile(path, text);
+    return null;
+  }
+}
+
 // ─── ConvertFrom-Csv ──────────────────────────────────────────────────────
 
 export class ConvertFromCsvCmdlet implements ICmdlet {

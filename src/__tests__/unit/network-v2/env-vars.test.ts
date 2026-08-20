@@ -92,7 +92,7 @@ describe('EV-03 — Windows $env: never leaks the Node host environment', () => 
     const pc = new WindowsPC('windows-pc', 'WIN-EV');
     const { subShell } = PowerShellSubShell.create(pc);
     const r = await subShell.processLine(line);
-    return typeof r === 'string' ? r : (r?.output ?? '');
+    return r.output.join('\n');
   }
 
   it('an env var present only in the host process resolves to empty', async () => {

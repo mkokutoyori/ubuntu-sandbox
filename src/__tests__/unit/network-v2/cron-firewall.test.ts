@@ -90,18 +90,23 @@ describe('CF-02 — LinuxCronManager crontab table', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe('CF-03 — cron logs a reload / firing to syslog', () => {
-  it('installing a crontab while cron runs writes a CRON line to syslog', async () => {
+  it('installing a crontab while cron runs logs a RELOAD, and ticking logs the CMD', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand('echo "* * * * * /bin/true" | crontab -');
-    const out = await pc.executeCommand('tail -100 /var/log/syslog');
+    let out = await pc.executeCommand('tail -100 /var/log/syslog');
     expect(out).toMatch(/cron\[\d+\]/i);
-    expect(out).toContain('/bin/true');
+    expect(out).toMatch(/RELOAD \(crontabs\/\w+\)/);
+
+    pc.cronTick(new Date(2030, 0, 1, 12, 0));
+    out = await pc.executeCommand('tail -100 /var/log/syslog');
+    expect(out).toMatch(/CRON\[\d+\]: \(\w+\) CMD \(\/bin\/true\)/);
   });
 
   it('no syslog cron line once the cron service is stopped', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand('systemctl stop cron');
     await pc.executeCommand('echo "* * * * * /bin/true" | crontab -');
+    pc.cronTick(new Date(2030, 0, 1, 12, 0));
     const out = await pc.executeCommand('tail -100 /var/log/syslog');
     expect(out).not.toContain('/bin/true');
   });
@@ -115,9 +120,9 @@ describe('CF-04 — ufw records blocked SSH in /var/log/ufw.log', () => {
   function buildPair() {
     const pc1 = new LinuxPC('linux-pc', 'pc1');
     const pc2 = new LinuxPC('linux-pc', 'pc2');
-    const sw = new GenericSwitch('switch', 'sw');
-    new Cable(pc1.getPorts()[0], sw.getPorts()[0]);
-    new Cable(pc2.getPorts()[0], sw.getPorts()[1]);
+    const sw = new GenericSwitch('switch-generic', 'sw');
+    new Cable('c1').connect(pc1.getPorts()[0], sw.getPorts()[0]);
+    new Cable('c2').connect(pc2.getPorts()[0], sw.getPorts()[1]);
     const mask = new SubnetMask('255.255.255.0');
     pc1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
     pc2.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);

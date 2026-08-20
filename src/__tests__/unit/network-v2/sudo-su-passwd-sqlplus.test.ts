@@ -134,14 +134,15 @@ describe('Group 1: sudo command execution', () => {
 describe('Group 2: su command execution', () => {
   it('should switch to root user with su', async () => {
     const server = new LinuxServer('linux-server', 'SRV1');
-    // Create a regular user and switch to it first
+    server.setUserPassword('root', 'rootpw');
+    // Create a regular user and switch to it first (root su's without a password)
     await server.executeCommand('useradd -m bob');
     await server.executeCommand('su bob');
     const whoami = await server.executeCommand('whoami');
     expect(whoami).toBe('bob');
 
-    // Now su back to root
-    await server.executeCommand('su root');
+    // su back to root must authenticate (bob is unprivileged)
+    await server.executeCommand('echo rootpw | su root');
     const afterWhoami = await server.executeCommand('whoami');
     expect(afterWhoami).toBe('root');
   });
@@ -187,11 +188,13 @@ describe('Group 2: su command execution', () => {
     const server = new LinuxServer('linux-server', 'SRV1');
     await server.executeCommand('useradd -m user1');
     await server.executeCommand('useradd -m user2');
+    server.setUserPassword('user2', 'pw2');
 
-    await server.executeCommand('su user1');
+    await server.executeCommand('su user1'); // root -> user1, no password
     expect(await server.executeCommand('whoami')).toBe('user1');
 
-    await server.executeCommand('su user2');
+    // user1 -> user2 is a non-root switch and must authenticate
+    await server.executeCommand('echo pw2 | su user2');
     expect(await server.executeCommand('whoami')).toBe('user2');
 
     server.handleExit();
@@ -229,6 +232,15 @@ describe('Group 2: su command execution', () => {
     const exitResult = server.handleExit();
     expect(exitResult.inSu).toBe(true);
     expect(await server.executeCommand('whoami')).toBe('alice');
+  });
+
+  it('$EUID reflects root after sudo su, letting `[[ $EUID -ne 0 ]]` root-checks pass', async () => {
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    expect((await pc.executeCommand('echo $EUID')).trim()).toBe('1000');
+
+    await pc.executeCommand('sudo su');
+    expect((await pc.executeCommand('echo $EUID')).trim()).toBe('0');
+    expect(await pc.executeCommand('bash -c \'if [[ $EUID -ne 0 ]]; then echo FAIL; else echo OK; fi\'')).toBe('OK');
   });
 });
 

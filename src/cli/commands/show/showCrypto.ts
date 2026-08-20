@@ -1,0 +1,165 @@
+import type { CommandSpec } from '../../CommandTable';
+
+export interface IpsecShowHost {
+  ipsecShow(method: string): string;
+}
+
+function ipsecText(device: unknown, method: string): string {
+  const host = device as IpsecShowHost | null;
+  return typeof host?.ipsecShow === 'function' ? host.ipsecShow(method) : 'IPSec not configured.';
+}
+
+export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
+  {
+    id: 'show-crypto-isakmp-sa',
+    path: ['show', 'crypto', 'isakmp', 'sa'],
+    description: 'Display IKEv1 ISAKMP SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPSA'),
+  },
+  {
+    id: 'show-crypto-isakmp-sa-detail',
+    path: ['show', 'crypto', 'isakmp', 'sa', 'detail'],
+    description: 'Display detailed IKEv1 ISAKMP SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPSADetail'),
+  },
+  {
+    id: 'show-crypto-isakmp-policy',
+    path: ['show', 'crypto', 'isakmp', 'policy'],
+    description: 'Display IKEv1 ISAKMP policies',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPPolicy'),
+  },
+  {
+    id: 'show-crypto-isakmp',
+    path: ['show', 'crypto', 'isakmp'],
+    description: 'Display IKE global config',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMP'),
+  },
+  {
+    id: 'show-crypto-ipsec-sa',
+    path: ['show', 'crypto', 'ipsec', 'sa'],
+    description: 'Display IPSec SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecSA'),
+  },
+  {
+    id: 'show-crypto-ipsec-sa-detail',
+    path: ['show', 'crypto', 'ipsec', 'sa', 'detail'],
+    description: 'Display detailed IPSec SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecSADetail'),
+  },
+  {
+    id: 'show-crypto-ipsec-transform-set',
+    path: ['show', 'crypto', 'ipsec', 'transform-set'],
+    description: 'Display IPSec transform sets',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecTransformSet'),
+  },
+  {
+    id: 'show-crypto-ipsec-profile',
+    path: ['show', 'crypto', 'ipsec', 'profile'],
+    description: 'Display IPSec profiles',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIPSecProfile'),
+  },
+  {
+    id: 'show-crypto-map',
+    path: ['show', 'crypto', 'map'],
+    description: 'Display crypto maps',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoMap'),
+  },
+  {
+    id: 'show-crypto-dynamic-map',
+    path: ['show', 'crypto', 'dynamic-map'],
+    description: 'Display dynamic crypto maps',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoDynamicMap'),
+  },
+  {
+    id: 'show-crypto-ikev2-sa',
+    path: ['show', 'crypto', 'ikev2', 'sa'],
+    description: 'Display IKEv2 SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2SA'),
+  },
+  {
+    id: 'show-crypto-ikev2-sa-detail',
+    path: ['show', 'crypto', 'ikev2', 'sa', 'detail'],
+    description: 'Display detailed IKEv2 SAs',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2SADetail'),
+  },
+  {
+    id: 'show-crypto-session',
+    path: ['show', 'crypto', 'session'],
+    description: 'Display crypto session status',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoSession'),
+  },
+  {
+    id: 'show-crypto-ipsec-security-policy',
+    path: ['show', 'crypto', 'ipsec', 'security-policy'],
+    description: 'Display IPSec security policies (SPD)',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showSecurityPolicy'),
+  },
+  {
+    id: 'show-crypto-ikev2-proposal',
+    path: ['show', 'crypto', 'ikev2', 'proposal'],
+    description: 'Display IKEv2 proposals',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2Proposal'),
+  },
+  {
+    id: 'show-crypto-ikev2-policy',
+    path: ['show', 'crypto', 'ikev2', 'policy'],
+    description: 'Display IKEv2 policies',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2Policy'),
+  },
+  {
+    id: 'show-crypto-ikev2-profile',
+    path: ['show', 'crypto', 'ikev2', 'profile'],
+    description: 'Display IKEv2 profiles',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2Profile'),
+  },
+  {
+    id: 'show-crypto-ikev2-keyring',
+    path: ['show', 'crypto', 'ikev2', 'keyring'],
+    description: 'Display IKEv2 keyrings',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoIKEv2Keyring'),
+  },
+  {
+    id: 'show-crypto-isakmp-key',
+    path: ['show', 'crypto', 'isakmp', 'key'],
+    description: 'Display ISAKMP pre-shared keys',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: (session) => ipsecText(session.device, 'showCryptoISAKMPKey'),
+  },
+]);

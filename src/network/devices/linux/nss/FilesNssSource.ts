@@ -24,17 +24,16 @@ import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { LinuxUserManager } from '../LinuxUserManager';
 import { HostsFile } from '../../HostsFile';
 import type { INssSource } from './INssSource';
+import { parseAliasesFile } from './aliasesFile';
 import type {
   NssEnumResult, NssResult,
   NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
 
-const SUCCESS = <T>(entry: T): NssResult<T> => ({ status: 'SUCCESS', entry });
-const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
-const ENUM_OK = <T>(entries: T[]): NssEnumResult<T> => ({ status: 'SUCCESS', entries });
-const ENUM_EMPTY = <T>(): NssEnumResult<T> => ({ status: 'NOTFOUND', entries: [] });
+import { nssOk as SUCCESS, nssNotFound as NOTFOUND, nssEnumOk as ENUM_OK, nssEnumEmpty as ENUM_EMPTY } from './nssResult';
 
 /**
  * Read a colon/whitespace-separated file as a list of trimmed lines,
@@ -226,9 +225,13 @@ export class FilesNssSource implements INssSource {
 
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const matches: NssHostEntry[] = [];
+    const seenFamilies = new Set<2 | 10>();
     for (const h of this.iterateHosts()) {
       if (family && h.addressFamily !== family) continue;
-      if (h.canonicalName === name || h.aliases.includes(name)) matches.push(h);
+      if (h.canonicalName !== name && !h.aliases.includes(name)) continue;
+      if (seenFamilies.has(h.addressFamily)) continue;
+      seenFamilies.add(h.addressFamily);
+      matches.push(h);
     }
     return matches.length ? SUCCESS(matches) : NOTFOUND();
   }
@@ -444,4 +447,29 @@ export class FilesNssSource implements INssSource {
       yield { name: parts[0], triples };
     }
   }
+
+  // ── aliases (/etc/aliases) ─────────────────────────────────────────
+
+  getaliasbyname(name: string): NssResult<NssAliasEntry> {
+    const wanted = name.toLowerCase();
+    for (const a of this.iterateAliases()) {
+      if (a.name.toLowerCase() === wanted) return SUCCESS(a);
+    }
+    return NOTFOUND();
+  }
+
+  enumAliases(): NssEnumResult<NssAliasEntry> {
+    const list = [...this.iterateAliases()];
+    return list.length ? ENUM_OK(list) : ENUM_EMPTY();
+  }
+
+  /**
+   * `/etc/aliases` lines are `name: dest[, dest...]`. Continuation lines
+   * (leading whitespace) belong to the previous entry, as in a real
+   * aliases(5) file.
+   */
+  private iterateAliases(): NssAliasEntry[] {
+    return parseAliasesFile(this.vfs.readFile('/etc/aliases'));
+  }
+
 }

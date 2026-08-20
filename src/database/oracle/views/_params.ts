@@ -66,7 +66,7 @@ export function paramType(value: string): number {
 
 import type { ResultSet } from '../../engine/executor/ResultSet';
 import { queryResult } from '../../engine/executor/ResultSet';
-import { oracleVarchar2 } from '../../engine/catalog/DataType';
+import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import type { OracleInstance } from '../OracleInstance';
 
 /** Shared row builder for V$PARAMETER / V$SYSTEM_PARAMETER. */
@@ -74,9 +74,9 @@ export function buildVParameter(instance: OracleInstance): ResultSet {
   const params = instance.getAllParameters();
   return queryResult(
     [
-      { name: 'NUM', dataType: { name: 'NUMBER', nullable: true } },
+      { name: 'NUM', dataType: oracleNumber() },
       { name: 'NAME', dataType: oracleVarchar2(80) },
-      { name: 'TYPE', dataType: { name: 'NUMBER', nullable: true } },
+      { name: 'TYPE', dataType: oracleNumber() },
       { name: 'VALUE', dataType: oracleVarchar2(512) },
       { name: 'DISPLAY_VALUE', dataType: oracleVarchar2(512) },
       { name: 'ISDEFAULT', dataType: oracleVarchar2(9) },

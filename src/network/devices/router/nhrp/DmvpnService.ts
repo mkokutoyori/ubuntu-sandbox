@@ -58,6 +58,23 @@ export class DmvpnService {
     return session;
   }
 
+  /**
+   * Insert-or-update by (ifName, peerTunnelAddress) — used by the real NHRP
+   * engine so a session only ever shows UP once an actual Registration/
+   * Resolution Reply has been received, never at CLI-config time.
+   */
+  upsertSession(s: Omit<DmvpnSession, 'createdAtMs' | 'uptimeMs' | 'pktsSent' | 'pktsRcvd' | 'bytesSent' | 'bytesRcvd'>): DmvpnSession {
+    const existing = this.sessions.find(x => x.ifName === s.ifName && x.peerTunnelAddress === s.peerTunnelAddress);
+    if (existing) {
+      existing.peerNbmaAddress = s.peerNbmaAddress;
+      existing.role = s.role;
+      existing.state = s.state;
+      existing.attribute = s.attribute;
+      return existing;
+    }
+    return this.registerSession(s);
+  }
+
   listProfiles(): readonly DmvpnTunnelProfile[] { return [...this.profiles.values()]; }
   listSessions(): readonly DmvpnSession[] { return [...this.sessions]; }
 

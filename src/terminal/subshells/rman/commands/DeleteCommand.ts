@@ -42,7 +42,7 @@ export class DeleteCommand implements IRmanCommand<string[] | void> {
           return policy;
         })();
         const snap = catalog.listAll();
-        if (!snap.ok) return snap;
+        if (snap.ok === false) return snap;
         const obsolete = activePolicy.findObsolete(snap.value.sets).map(s => s.bsKey);
         return engine.run(JobBuilder.deleteObsolete(obsolete));
       }
@@ -51,7 +51,7 @@ export class DeleteCommand implements IRmanCommand<string[] | void> {
         const tag = (args[0] ?? '').toUpperCase();
         if (!tag) return err({ code: 'RMAN_01009', message: "DELETE BACKUP TAG requires a tag" });
         const snap = catalog.listAll();
-        if (!snap.ok) return snap;
+        if (snap.ok === false) return snap;
         const matching = snap.value.sets.filter(s => s.tag.label.toUpperCase() === tag).map(s => s.bsKey);
         return engine.run(JobBuilder.deleteObsolete(matching));
       }

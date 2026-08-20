@@ -1385,3 +1385,986 @@ Périmètre prioritaire : les PCs (`EndHost`, `LinuxPC`/`LinuxMachine`, `Windows
   reçus est l'étape suivante.
 - **OSPFv3** conserve son propre chemin hors-bande (`v3ComputeRoutes` lit
   directement les tables de routage des pairs) — à traiter séparément.
+
+---
+
+## Entrée n°27 — 2026-06-19 — Switch L2 : plan de gestion SVI (ping/ARP/ICMP réellement sur le câble)
+
+### Défaillances constatées
+
+Le commutateur de niveau 2 (`Switch` / `CiscoSwitch`) n'avait **aucun plan de
+gestion L3** fonctionnel, contrairement à un vrai Catalyst :
+
+1. **`ping` était un stub** : `% Ping not yet implemented on switch.` — le
+   switch ne pouvait pas vérifier la connectivité de son réseau de gestion.
+2. **L'adresse d'une SVI partait dans le vide** : `interface Vlan N` /
+   `ip address …` appelait `getPort('Vlan1')?.configureIP(...)`. Or aucun port
+   physique ne s'appelle `Vlan1`, donc `getPort` renvoyait `undefined` et
+   l'adresse n'était **jamais stockée** (`show ip interface brief` montrait une
+   ligne `Vlan1` figée et codée en dur).
+3. **`interface Vlan N` n'était même pas reconnu** : `virtualInterfaceName` ne
+   gérait que les `Port-channel`. Entrer dans une SVI échouait.
+4. **`no shutdown` sur une SVI** renvoyait `% Error` (la SVI n'étant pas un port).
+5. Aucune validation : on pouvait « entrer » dans `interface Vlan9999`
+   (hors plage 1–4094), et `speed`/`duplex` étaient acceptés sur une interface
+   virtuelle où ils n'ont pas de sens.
+
+### Correction (structurelle)
+
+Nouveau module **`SwitchSvi`** (`src/network/devices/SwitchSvi.ts`) : un plan de
+gestion L3 minimal mais fidèle (IP/masque par VLAN, état admin, ARP, écho ICMP).
+Il **ne duplique pas** la pile hôte de `EndHost` (2918 lignes, couplée aux
+sockets/DNS/routage) : il s'appuie sur les **primitives partagées**
+(`core/types` : `createIPv4Packet`, `ARPPacket`, `ICMPPacket`) et **réutilise le
+plan de données L2 existant** du switch.
+
+- **Émission** : `egressOnVlan(vlan, frame)` rejoue la **même décision
+  flood / unicast** que `handleFrame` pour le trafic de transit (extraction d'un
+  point unique, pas de copie). Une trame issue de la SVI quitte le switch
+  exactement comme celle d'un hôte connecté → **tout passe par le câble**.
+- **Réception** : `intercept(vlan, port, frame)` est appelé dans `handleFrame`
+  après l'apprentissage MAC. Il répond à l'ARP visant l'IP de la SVI, répond à
+  l'écho ICMP, et règle les `echo-reply` du ping en cours. L'ARP de diffusion
+  est traité **mais laissé inonder** (retour `false`), l'unicast adressé à la
+  SVI est **consommé** (retour `true`).
+- **ARP** : aucune deuxième table — la SVI lit/écrit la **table ARP de gestion
+  existante** du switch via `lookupArp`/`learnArp`.
+- **MAC** : toutes les SVI partagent le **MAC de bridge** (1er port), comme le
+  vrai IOS.
+- **Ping** : `executePingSequence` calque l'API de `Router`. La livraison sur
+  câble étant **synchrone** (`Cable.transmit`), l'aller-retour ARP/écho se
+  règle dans la pile d'appel — déterministe, sans minuterie temps-réel.
+
+Déduplication CLI : extraction de **`ciscoPing.ts`** (`parsePingArgs` +
+`formatCiscoPing`, le rendu `Success rate is N percent`) — destiné à être
+partagé par les shells routeur et switch (le switch l'utilise déjà ; la
+migration du routeur suivra). Le switch borne `repeat` (`MAX_PING_REPEAT`)
+puisque les sondes sont pilotées de façon synchrone.
+
+Côté shell (`CiscoSwitchShell`) : `virtualInterfaceName` reconnaît `Vlan N` ;
+`ip address`/`no ip address`, `shutdown`/`no shutdown` ciblent la SVI ; `ping`
+(user + privileged) passe par le pipeline async partagé (`_pendingAsync`) ;
+`show ip interface brief` est rendu dynamiquement ; `speed`/`duplex` et les
+VLAN hors plage sont rejetés (`%`), conformément à IOS.
+
+### Fichiers
+
+`src/network/devices/SwitchSvi.ts` (nouveau),
+`src/network/devices/shells/cisco/ciscoPing.ts` (nouveau, partagé),
+`src/network/devices/Switch.ts` (plan SVI + `egressOnVlan` + hook `intercept`),
+`src/network/devices/shells/CiscoSwitchShell.ts` (SVI, ping, show),
+`src/__tests__/unit/network-v2/switch-svi.test.ts` (nouveau).
+
+### Validation
+
+- Nouveau `switch-svi.test.ts` : **8 tests verts** — adressage SVI, ping
+  aller-retour réel sur le câble (`Success rate is 100 percent` + MAC du pair
+  apprise), réponse à l'écho d'un hôte, 0 % si injoignable, `repeat`, SVI
+  admin-down muette, rejet `speed`/`duplex` et VLAN hors plage.
+- `other-commands.test.ts` (suite Cisco L2) : **154 → 156 verts**, aucune
+  régression (les 4 corrections SVI compensées en supprimant 2 régressions
+  introduites — `speed`/`duplex` et `interface Vlan9999`).
+- Fichiers neufs : **lint propre**, tsc propre.
+
+### Limites connues / suites futures
+
+- **Indexation des ports du switch (bug de fidélité)** : un switch « 24 ports »
+  crée `FastEthernet0/0`…`0/23`. Un vrai Catalyst est **1-indexé**
+  (`0/1`…`0/24`, pas de `Fa0/0`). Le helper de test `setupManagementLAN` câble
+  `FastEthernet0/24` (inexistant) et **plante au montage** — ce qui bloque ~9
+  tests « Management Plane » indépendamment du plan SVI. La correction
+  (réindexation 1-based) touche ~53 fichiers de test : **migration dédiée à
+  faire dans un commit séparé**.
+- ~~Le routeur garde encore son propre parseur/rendu de ping~~ → fait
+  (Entrée n°28).
+- SSH/telnet sortants, `crypto key generate rsa`, gating VTY : hors périmètre de
+  ce commit (plan de gestion *protocolaire*, à traiter ensuite).
+
+---
+
+## Entrée n°28 — 2026-06-19 — Dédup : le routeur réutilise `ciscoPing.ts`
+
+### Défaillance constatée
+
+Suite à l'Entrée n°27, le rendu IOS du ping (`Type escape sequence to abort.` /
+`Success rate is N percent (s/t)` / `round-trip min/avg/max`) **existait en
+double** : une copie privée `_formatCiscoPing` dans `CiscoIOSShell`, et la
+version partagée `ciscoPing.ts`. Le parsing des options (`repeat`/`timeout`/
+`size`/`source`) était lui aussi dupliqué entre routeur et switch.
+
+### Correction
+
+`CiscoIOSShell._handlePing` utilise désormais `parsePingArgs` +
+`formatCiscoPing` du module partagé ; la méthode privée `_formatCiscoPing`
+(31 lignes) est supprimée. Le rendu est **identique au bit près** (taille par
+défaut 100 octets). Bilan : **−74 lignes**, une seule source de vérité pour le
+ping Cisco (routeur + switch).
+
+### Fichiers
+
+`src/network/devices/shells/CiscoIOSShell.ts`.
+
+### Validation
+
+- `router-architecture`, `no-ip-address`, `nat-icmp-pat`, `switch-svi` :
+  **28 tests verts**, aucune régression. Aucune nouvelle erreur lint/tsc.
+
+---
+
+## Entrée n°29 — 2026-06-20 — IPSec : sélection du pair découplée du registre global (god-mode)
+
+### Défaillance constatée
+
+Le transport IKE est déjà entièrement sur le fil : `IPSecEngine.initiateIkeWire`
+émet l'offre via `Router._sendIkeUdp` (vraie trame UDP/500 → IP → Ethernet →
+`sendFrame` → port → câble), et le pair la reçoit via `handleIkeUdp` dans son
+plan de données. **Mais la sélection du pair restait god-mode** : `determinePeer`
+gateait chaque pair configuré (`crypto map … set peer X`) par
+`IPSecEngine.findRouterByIP(peerIP)`, qui **parcourt le registre global**
+(`Equipment.getAllEquipment()`) pour vérifier qu'un `Router` porte cette IP
+quelque part dans la simulation, avant même de regarder la table de routage.
+
+C'est doublement faux par rapport à un vrai IOS :
+
+1. **Couplage au registre global** — un routeur réel ne « sait » pas si un objet
+   pair existe ailleurs ; il ne connaît que sa config et sa FIB.
+2. **Sémantique de failover incorrecte** — un pair configuré mais momentanément
+   injoignable était *écarté* (au lieu d'être tenté puis abandonné via DPD),
+   parce que `findRouterByIP` répond sur l'existence de l'objet, pas sur la
+   joignabilité réelle.
+
+### Correction (structurelle)
+
+`determinePeer` ne consulte plus que la **table de routage locale**
+(`lookupRoute`) : on sélectionne le premier pair configuré pour lequel la FIB a
+une route, exactement comme IOS. L'établissement réel se joue ensuite sur le fil
+(`_sendIkeUdp`) et échoue proprement (`createFailedIKESA`) si aucun pair ne
+répond. Le gate `findRouterByIP` disparaît du chemin de sélection.
+
+`findRouterByIP` **reste** utilisé par la détection NAT-T (`findRouterBehindNAT`)
+— pas de code mort. Cette résolution NAT-T par scan du registre est la
+**prochaine cible** (migration vers une détection par observation NAT-D à la
+réception, le NAT étant déjà réellement appliqué sur le câble par l'équipement
+intermédiaire).
+
+### Fichiers
+
+`src/network/ipsec/IPSecEngine.ts` (`determinePeer`).
+
+### Validation
+
+- Suite IPSec complète (8 fichiers : failures, ikev1-psk, ikev2-psk, advanced,
+  nat-dpd, ike-messages, modes-pfs, dpd-wire) : **47 tests verts**, aucune
+  régression — les tunnels se forment toujours, NAT-T et DPD inclus, en
+  s'appuyant uniquement sur le routage + le fil.
+- Lint : **inchangé** (52 = 52 ; dette `as any` pré-existante du fichier non
+  aggravée). Aucune nouvelle erreur introduite par la modification.
+
+### Limites connues / suite
+
+- **NAT-T god-mode** (`getApparentSourceIP` / `findRouterBehindNAT` /
+  `findEquipmentByIP`) : prédiction de l'adresse post-NAT par introspection des
+  règles iptables d'un autre équipement. À remplacer par l'observation de la
+  source réelle des paquets IKE reçus (le NAT étant déjà appliqué sur le câble)
+  + détection NAT-D conforme RFC 3947. Incrément dédié.
+
+---
+
+## Entrée n°30 — 2026-06-20 — DHCP : fin du scan global god-mode pour les hôtes câblés (isolation de sous-réseau)
+
+### Défaillance constatée
+
+Le client DHCP essaie déjà **le fil d'abord** (`WireDhcpChannel` : vrai DISCOVER
+broadcast UDP 68→67 sur le câble, OFFER dans l'inbox au retour synchrone — voir
+Entrée n°25). Mais `EndHost.autoDiscoverDHCPServers` conservait une **Stratégie 2
+god-mode** : si la marche de topologie (Stratégie 1) ne trouvait rien, il
+**scannait le registre global** (`Equipment.getAllEquipment()`) et enregistrait
+*tout* serveur DHCP de la simulation comme `DirectServerChannel`.
+
+Conséquence : un hôte **physiquement isolé** (broadcast n'atteignant aucun
+serveur, aucun relais `ip helper-address`) pouvait quand même obtenir un bail
+d'un serveur qu'il **ne peut pas toucher**, par simple appel d'objet — rupture
+totale de l'isolation de sous-réseau, l'antithèse du principe « tout passe par le
+câble ».
+
+### Correction (structurelle)
+
+La Stratégie 2 (scan global) est désormais **gatée sur l'absence totale de
+câble** : `const hasCabledInterface = [...ports].some(p => p.getCable())`. Dès
+qu'un hôte possède **au moins une interface câblée**, il ne peut plus tomber sur
+le registre global — il dépend exclusivement du **broadcast réel sur le segment
+local** (déjà tenté en premier sur le fil) ou d'un **relais configuré**, comme un
+vrai client DHCP. Le scan global ne subsiste **que** pour les hôtes jamais câblés
+(pure commodité de tests unitaires hors topologie).
+
+Stratégie 1 (marche de câbles, topologie-consciente) est conservée : elle
+n'enregistre que des serveurs réellement atteignables et le fil reste prioritaire.
+
+### Fichiers
+
+`src/network/devices/EndHost.ts` (`autoDiscoverDHCPServers`, garde Stratégie 2).
+
+### Validation
+
+- DHCP unitaire (7 fichiers : `dhcp_complete`, `dhcp_fixes`,
+  `dhcp-client-wire-channel`, `dhcp-relay-wire`, `dhcp-server-identifier`,
+  `dhcp-resolv-conf`, `cisco-dhcp-pool-options`) : **76 verts**.
+- Suites élargies acquérant des baux en topologie câblée (netsh DHCP/DNS, netsh,
+  cisco-wan, huawei-vrp, basic-commandes, windows-consistency,
+  linux-command-options) : **302 verts**.
+- Debug topologies réelles (`protocols/dhcp`, `router/cisco-router-dhcp-nat`,
+  `linux-networking`) : **3 verts** (montage OK, aucun crash).
+- **681 tests au total, zéro régression** — confirmant empiriquement que les
+  hôtes câblés obtenaient déjà leurs baux par le fil/Stratégie 1 et que le scan
+  global était un fallback god-mode redondant. Lint inchangé (4 = 4).
+
+### Limites connues / suite
+
+- **Stratégie 1** délivre encore via `DirectServerChannel` (appel d'objet) plutôt
+  que par le broadcast/relais ; le fil étant prioritaire, c'est un fallback rare,
+  mais sa suppression complète (tout-fil) est un incrément ultérieur.
+
+---
+
+## Entrée n°31 — 2026-06-19 — Switch Cisco : indexation 1-based des ports (fidélité Catalyst)
+
+### Défaillance constatée
+
+Un commutateur Cisco « 24 ports » créait `FastEthernet0/0`…`0/23`. Un vrai
+Catalyst est **1-indexé** : `FastEthernet0/1`…`0/24` (et liaisons montantes
+`GigabitEthernet0/1`…), **il n'existe pas de `FastEthernet0/0`**. Conséquences :
+
+1. **Bug de fidélité** : numérotation des interfaces non conforme au matériel réel.
+2. **Tests bloqués au montage** : le helper `setupManagementLAN` câblait
+   `FastEthernet0/24` (le 24ᵉ port, en 1-based) — inexistant en 0-based — d'où un
+   crash `_setCableNoNotify` qui faisait échouer ~9 tests « Management Plane »
+   (ping/SSH/telnet sur SVI) indépendamment du plan SVI de l'entrée n°27.
+
+### Correction
+
+`CiscoSwitch.getPortName` passe en 1-based : `index < 24 ? FastEthernet0/${index+1}
+: GigabitEthernet0/${index-23}`. Le routeur (`GigabitEthernet0/0`-based) et le
+switch Huawei (`GigabitEthernet0/0/N`) ne sont **pas** touchés.
+
+### Migration des références de tests (87 fichiers, ~1300 occurrences)
+
+Fait crucial qui rend la migration sûre : `FastEthernet` est **exclusif au
+switch Cisco** (le routeur n'utilise que `GigabitEthernet`). Toute référence
+`FastEthernet0/N` est donc du contexte switch et se décale de +1 sans risque
+de toucher un port de routeur.
+
+Décalage `N → N+1` **borné à `N ≤ 23`**, ce qui protège automatiquement les
+références déjà correctes en 1-based (`FastEthernet0/24` du helper) et le port
+volontairement invalide (`FastEthernet0/99` d'un test d'erreur). Catégories de
+formes traitées, chacune ayant nécessité une passe dédiée :
+
+- littéraux simples `FastEthernet0/N`, `Fa0/N`, `fa0/N` ;
+- littéraux **échappés** dans les regex (`FastEthernet0\/N`) ;
+- **template literals** de boucle (`FastEthernet0/${i}`) — bornes de boucle
+  ajustées à la main (la variable sert parfois aussi à dériver un VLAN) ;
+- **plages** `interface range fa0/X-Y` — la borne de fin (nombre nu) décalée ;
+- classes de caractères regex (`/Fa0\/[01]/` → `/Fa0\/[12]/`) ;
+- **liaisons montantes Gig du switch** (`<sw>.getPort('GigabitEthernet0/0')`)
+  décalées au cas par cas, sans toucher les `GigabitEthernet` des routeurs sur
+  la même ligne.
+
+### Fichiers
+
+`src/network/devices/CiscoSwitch.ts` (device, 1-based) + 65 fichiers de tests
+`unit/network-v2/`.
+
+### Validation
+
+- `unit/network-v2` : retour à la **baseline pré-migration** (seuls subsistent
+  les échecs pré-existants `other-commands` et `auditctl-other`), **zéro
+  nouvelle régression** sur 8366 tests.
+- `other-commands` (suite L2) : bloc « Management Plane » **15 → 8 échecs**
+  (les 7 tests SVI ping/connectivité, jusque-là bloqués par le crash de montage,
+  passent désormais). `switch-svi` : 8/8.
+
+### Limites connues / suites futures
+
+- **Switch Huawei** (`GigabitEthernet0/0/N`) toujours 0-based — même correction
+  à appliquer dans un commit dédié (367 références de tests).
+- **Labs de diagnostic `__tests__/debug/cisco-l2/`** : laissés en l'état
+  (0-based) — ce sont des *dumps* non assertifs, à **régénérer** contre le
+  device 1-based séparément.
+
+---
+
+## Entrée n°32 — 2026-06-20 — Arbre de commandes : élimination des doublons d'enregistrement (trie CLI)
+
+### Défaillance constatée
+
+`CommandTrie.register`/`registerGreedy` **écrasent silencieusement** l'action
+d'un chemin déjà enregistré (`node.action = action`). Or tout l'enregistrement
+des shells se fait à la construction, avant toute commande — donc un chemin
+enregistré deux fois sur le même trie rend la **première registration morte**
+(jamais exécutée) et masque parfois la *bonne* implémentation derrière une plus
+ancienne. C'est de la duplication pure, et une source de bugs latents.
+
+Détection par **vérité d'exécution** (instrumentation du trie pendant la
+construction de chaque équipement, capture de la pile pour localiser les deux
+sites) — bien plus fiable qu'une analyse statique (qui produit des faux
+positifs quand un même nom de paramètre `trie`/`t` est réutilisé par des
+fonctions ciblant des tries différents). Résultat : **34 doublons** côté
+routeur Cisco, 6 côté switch (et 44 côté Huawei, traités plus tard).
+
+### Correction
+
+Suppression des **registrations perdantes** (mortes), garantissant **zéro
+changement de comportement** (le gagnant — la dernière registration, déjà
+active — est conservé). 24 doublons accidentels supprimés :
+
+- **Cluster crypto** (le plus gros) : `CiscoIPSecShowCommands` et
+  `CiscoIPSecIKEv1Commands` enregistraient tous deux `clear/debug/no debug
+  crypto isakmp|ipsec|ikev2`, `clear crypto session`, `undebug all`,
+  `show crypto engine brief|configuration` (12). Les versions ShowCommands
+  étaient mortes → supprimées.
+- `crypto isakmp keepalive` / `no …` (doublon interne IKEv1).
+- OSPF : `log-adjacency-changes`, `show ip ospf neighbor` (greedy adjacent).
+- Routeur (`CiscoIOSShell`) : `show ip route`, `show interfaces`, `show ip cef`,
+  `show ip traffic` (perdants ; gagnants dans les builders dédiés).
+- `random-detect` (register + registerGreedy adjacents), `clear errdisable
+  interface` (switch, perdant moins capable), `show snmp` (handlers identiques),
+  `ip domain-lookup`/`no …` (toggle `flag()` perdant ; gagnant = register direct).
+- `arp`/`no arp` : `registerArpConfigCommands` était appelé **deux fois** sur le
+  trie config du routeur (via `buildConfigCommands` *et* la base partagée) ;
+  l'appel routeur redondant est retiré (la base couvre les deux vendeurs).
+
+### Garde structurelle (anti-régression)
+
+Ajout d'un **observateur d'écrasement** optionnel sur `CommandTrie`
+(`overwriteObserver`, `null` par défaut → coût nul en prod). Nouveau test
+`command-trie-hygiene.test.ts` : construit routeur + switch Cisco et **échoue
+si un doublon accidentel apparaît**. Les rares doublons *intentionnels*
+restants (base partagée + override vendeur) sont explicitement en liste blanche
+et documentés.
+
+### Doublons restants (intentionnels ou bug à traiter ailleurs)
+
+- **base/override** (8) : `aaa`, `username`, `ip ssh`, `ip cef`/`no ip cef`,
+  `show ssh`, `no ip routing`, `show mac address-table` — la base partagée
+  fournit un défaut que le module spécifique au vendeur surcharge ;
+  supprimer la base casserait l'autre vendeur. Listés en garde.
+- **`copy` (bug latent)** : la version *simple* (`copy complete`) écrase la
+  version *riche* (`copy running-config startup-config` → `onSave()`). C'est la
+  cause de l'échec du cluster « Storage & Configuration Lifecycle » de
+  `other-commands` — à corriger dans le commit dédié config-lifecycle (changer
+  le gagnant change le comportement, hors périmètre « dédup »).
+- **Huawei** (44 doublons) : même traitement, commit dédié.
+
+### Fichiers
+
+`CommandTrie.ts` (observateur), `CiscoIPSecShowCommands.ts`,
+`CiscoIPSecIKEv1Commands.ts`, `CiscoOspfCommands.ts`, `CiscoIOSShell.ts`,
+`CiscoSecurityCommands.ts`, `CiscoSwitchShell.ts`, `CiscoShellBase.ts`,
+`cisco/CiscoConfigCommands.ts`, `command-trie-hygiene.test.ts` (nouveau).
+
+### Validation
+
+- `command-trie-hygiene` : 2/2 verts (doublons accidentels = 0).
+- `network-v2` complet : `other-commands` inchangé (37 — échecs config-lifecycle
+  pré-existants), **aucune régression** sur 8389 tests. Aucune nouvelle erreur
+  lint/tsc.
+
+---
+
+## Entrée n°33 — 2026-06-20 — Switch L2 : cycle de vie de la configuration (NVRAM texte, copy/write/erase fidèles IOS)
+
+### Défaillances constatées
+
+Le cluster « Storage & Configuration Lifecycle » de la suite L2 échouait
+massivement (14 tests). Causes structurelles :
+
+1. **NVRAM sérialisée en JSON** : `show startup-config` affichait
+   `Startup config (serialized):\n{"hostname":…}` au lieu du texte IOS. La
+   NVRAM du switch était un `JSON.stringify` de l'état (`serializeConfig`),
+   doublant la représentation déjà produite par `buildRunningConfig`.
+2. **`copy` masqué** (bug latent de l'entrée n°32) : un `copy` *simple*
+   (`X → Y: copy complete`), enregistré pour **les modes user ET privileged**
+   via `registerCommonShowCommands`, écrasait le `copy` *riche* (run→start,
+   restore, flash). D'où : `copy run start` ne sauvegardait pas, `copy` était
+   accepté en mode user (au lieu d'être refusé), et la gestion d'erreurs
+   (NVRAM vide, fichier absent) ne s'exécutait jamais.
+3. **`erase startup-config`** n'effaçait rien sur le switch (`_eraseStartupConfig`
+   inexistant) et n'affichait pas `complete`.
+4. **`copy running-config startup-config`** ne prévenait pas
+   (`Destination filename …`).
+5. **Pas de système de fichiers flash** (`copy run flash:X` / `copy flash:X run`).
+
+### Correction (structurelle)
+
+- **NVRAM = texte** (`Switch`) : `writeMemory()` capture le running-config
+  *rendu* (`getRunningConfig()`), `show startup-config` l'affiche, et `reload`
+  le **rejoue** via un parseur (`applyConfigText`) — une seule représentation,
+  comme le vrai IOS qui relit le startup-config au boot. `serializeConfig`
+  (JSON) supprimé. Ajout de `_eraseStartupConfig`, `_restoreStartupConfig`,
+  `_applyConfigText`.
+- **`copy` unifié** (base partagée) : suppression du `copy` simple shadow ; un
+  seul handler greedy gère toutes les paires source/destination (un
+  enregistrement exact `copy running-config startup-config` créait un nœud
+  intermédiaire masquant les autres destinations au greedy). Abréviations IOS
+  (`copy run start`) normalisées. Refus en mode user (privileged-only).
+- **Sémantique fidèle** : prompt `Destination filename [startup-config]?` ;
+  `Erase of nvram: complete` ; NVRAM vide → `%% Non-volatile configuration
+  memory is not present` ; source flash absente → `%Error opening … (No such
+  file or directory)`.
+- **Flash simulé** (`Switch`) : `_writeFlashFile`/`_readFlashFile` (Map en
+  mémoire) — `copy run flash:X` puis `copy flash:X run` fonctionne ; un fichier
+  jamais écrit est en erreur. Le routeur (sans ces méthodes) conserve son
+  comportement via gardes `typeof … === 'function'`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (NVRAM texte + flash + parseur),
+`src/network/devices/shells/CiscoShellBase.ts` (copy/write/erase unifiés),
+`src/network/devices/shells/CiscoSwitchShell.ts` (show startup-config / write),
+`command-trie-hygiene.test.ts` (retrait de `copy` de la liste blanche — dédupé).
+
+### Validation
+
+- Cluster config-lifecycle : **14 → 1 échec** (13 corrigés). `other-commands`
+  global : **37 → 24**.
+- Non-régression routeur (base partagée) : `cisco-router-operational-show`
+  + `cross-equipment-ssh-suite` = **238 verts**. `command-trie-hygiene` : 2/2.
+
+### Limite connue
+
+- **Test 44** (base de comptes locaux du switch préservée au reload) : nécessite
+  une vraie base d'utilisateurs locaux côté switch (`_upsertCiscoUsername`,
+  rendu `username …` dans `buildRunningConfig`, restauration avec round-trip du
+  hash de secret) — fonctionnalité AAA distincte, à traiter séparément.
+
+---
+
+## Entrée n°34 — 2026-06-20 — Switch L2 : plan de gestion (domaine, clés RSA/SSH, default-gateway)
+
+### Défaillances constatées
+
+Le switch n'avait aucun état de plan de gestion : `ip domain-name`,
+`crypto key generate rsa`, `ip ssh version`, `ip default-gateway` étaient soit
+ignorés, soit absents. D'où les échecs « Management Plane » :
+
+- `ip ssh version 2` sans clés RSA ne refusait pas (IOS exige les clés d'hôte).
+- `crypto key generate rsa` inexistant.
+- `ip domain-name` partait dans le vide (le handler partagé n'écrit que via
+  `getManagementService()`, que le switch n'a pas) et n'apparaissait pas dans
+  le running-config.
+- `ip default-gateway` (route de gestion d'un switch L2) inexistant.
+
+### Correction
+
+- **État de gestion minimal sur le `Switch`** : `domainName`, `hasRsaKeys`,
+  `ipDefaultGateway` + accesseurs (`_setDomainName`, `_generateRsaKeys`,
+  `hasRsaKeys`, `_setDefaultGateway`, …).
+- **Réutilisation du handler partagé `ip domain-name`** : ajout d'un *fallback*
+  device-level (`dev._setDomainName?.()`) quand `getManagementService()` est
+  absent — le routeur (qui a le service) est inchangé, le switch est couvert
+  par le même handler (DRY, pas de doublon de trie).
+- **Commandes switch** (`CiscoSwitchShell`) : `crypto key generate rsa` (exige
+  un domaine, pose les clés, sortie « RSA key pair generated ») ;
+  `ip ssh version N` refusée sans clés (« Please create RSA keys… ») ;
+  `ip default-gateway` / `no …`.
+- **Rendu** : `buildRunningConfig` émet `ip domain-name …` et
+  `ip default-gateway …`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (état + accesseurs),
+`src/network/devices/shells/CiscoShellBase.ts` (fallback `ip domain-name`),
+`src/network/devices/shells/CiscoSwitchShell.ts` (commandes + rendu).
+
+### Validation
+
+- Cluster « Management Plane » : **8 → 3** ; `other-commands` global :
+  **24 → 19**. `command-trie-hygiene` 2/2 (aucun nouveau doublon).
+- Non-régression : `switch-cli`, `cisco-switch-reference-scenarios`,
+  `cisco-router-operational-show`, `cisco-interface-description` = **83 verts**.
+
+### Limites connues (cluster AAA/VTY à traiter ensemble)
+
+- **81 / 87 / 98** (avertissement `login` sans mot de passe ; rejet des
+  connexions SSH/Telnet entrantes selon la config VTY + sous-réseau SVI) et
+  **44** (base de comptes locaux préservée au reload) nécessitent un vrai
+  modèle d'authentification VTY/AAA entrante côté switch — fonctionnalité
+  distincte, prochain incrément.
+
+---
+
+## Entrée n°35 — 2026-06-20 — Switch L2 : base de comptes locaux + télnet sortant injoignable
+
+### Défaillances constatées
+
+- **Test 44** : `username admin password secret` n'était pas mémorisé (le switch
+  n'avait pas de base de comptes locaux ; le handler partagé appelle
+  `dev._upsertCiscoUsername`, inexistant côté switch), donc `username …`
+  n'apparaissait pas dans le running-config et ne survivait pas à un reload.
+- **Test 87** : `telnet <injoignable>` sur un switch sans interface de gestion
+  renvoyait `% No usable interface for outbound Telnet` (ne matchait pas
+  `/unreachable|error|failed/`).
+
+### Correction
+
+- **Base de comptes locaux sur le `Switch`** : réutilisation des composants AAA
+  du routeur (`NetworkOsCredentialStore`, `NetworkOsAccount`). Ajout de
+  `getCredentialStore`, `_upsertCiscoUsername`, `_listLocalUsers`,
+  `_removeLocalUser` — le handler `username` partagé fonctionne donc tel quel
+  sur le switch. Rendu `username NAME privilege N secret …` dans
+  `buildRunningConfig`, et **restauration au reload** via `applyConfigText`
+  (parsing des lignes `username …`). Ajout aussi de `_getVtyLineConfig`
+  (`VtyLineConfigStore`) pour que la config `line vty` persiste réellement.
+- **Télnet sortant** : message « no source interface » reformulé en
+  `% Destination unreachable; …`.
+
+### Fichiers
+
+`src/network/devices/Switch.ts` (credential store, vty store, parsing username),
+`src/network/devices/shells/CiscoSwitchShell.ts` (rendu username),
+`src/network/devices/shells/CiscoShellBase.ts` (message télnet).
+
+### Validation
+
+- `other-commands` : **19 → 17** (44 + 87). Non-régression : `switch-cli`,
+  `cisco-switch-reference-scenarios`, `cross-equipment-ssh-suite`,
+  `command-trie-hygiene` = **302 verts**.
+
+### Limites connues (reste du cluster AAA/VTY)
+
+- **81** (avertissement `login` sans mot de passe) : `VtyLineConfig` n'expose
+  pas le mot de passe de ligne — nécessite d'étendre le modèle VTY partagé.
+- **98** (rejet d'une connexion télnet/SSH **entrante** selon la config VTY) :
+  nécessite un modèle de connexion entrante (listener TCP de gestion + auth
+  VTY) côté switch — incrément dédié.
+
+---
+
+## Entrée n°36 — 2026-06-20 — Trie CLI : suppression des enregistrements de raccourcis
+
+### Défaillance constatée
+
+Le `CommandTrie` résout déjà les abréviations par *préfixe unique* (`sh` →
+`show`, `conf t` → `configure terminal`, `wr mem` → `write memory`). Or
+quelques commandes enregistraient en plus une **épellation abrégée explicite**
+— pur doublon « qui ne devrait pas être dans le trie ».
+
+### Détection
+
+Repérage précis (instrumentation à la construction) : une registration P est un
+raccourci si son chemin est une **abréviation token-à-token** d'un autre chemin
+enregistré Q (même nombre de tokens, chaque token de P préfixe de celui de Q,
+≥1 strict) **et** partage la **même description** — signature d'un copier-coller
+d'auteur. Cela évite les faux positifs `ip`/`ipv6`, `exec`/`exec-timeout`
+(préfixes de chaîne mais mots-clés canoniques distincts).
+
+Faux positif écarté manuellement : `no ip ospf authentication` n'est **pas** un
+raccourci de `no ip ospf authentication-key` (commandes IOS distinctes, même
+description générique) — conservé.
+
+### Correction
+
+5 enregistrements de raccourcis supprimés (la résolution par préfixe les couvre,
+**comportement inchangé**) :
+- `u` / `u all` (switch) → `undebug` / `undebug all` (handlers identiques).
+- `show flash` → `show flash:` (base).
+- `show ipv6 access-list` → `show ipv6 access-lists` (ACL).
+- `statistic enable` → `statistics enable` (Huawei policy).
+
+### Fichiers
+
+`CiscoSwitchShell.ts`, `CiscoShellBase.ts`, `cisco/CiscoAclCommands.ts`,
+`huawei/HuaweiPolicyCommands.ts`.
+
+### Validation
+
+- `show flash` (test 33), ACL (47), Huawei parity : verts. `u all` résout
+  toujours vers `undebug all` (préfixe), sortie identique — le test 58, déjà en
+  échec avant (sortie attendue « disabled »), reste inchangé : **aucune
+  régression**.
+- Suite `network-v2` complète : **8368 verts**, seuls les échecs pré-existants
+  de `other-commands` (17) subsistent.
+
+---
+
+## Entrée n°37 — 2026-06-20 — VTY : socle du modèle d'authentification de ligne (mot de passe + mode login + rendu)
+
+### Défaillance constatée
+
+Le modèle VTY partagé était **mal câblé et fragmenté** :
+- `VtyLineConfig` (router/vty) ne savait représenter que `login none|local|aaa`
+  — **impossible** d'exprimer le `login` simple (auth par mot de passe de
+  ligne) — et **ne stockait pas le mot de passe**.
+- Le handler config-line partagé écrivait `update.loginMethod` / `update.password`
+  que `VtyLineConfig.withFields` **ignorait** (champs inexistants) : la config
+  `login`/`password` des VTY n'était donc jamais réellement mémorisée.
+- Le switch ne rendait **aucune** ligne `line vty` dans `show running-config`.
+- (Au passage : deux classes `VtyLineConfig` coexistent — `router/vty` (utilisée
+  par les shells) et `router/aaa` (testée isolément) — duplication à consolider.)
+
+Conséquence : la condition exacte testée par les tests 81/98 (« login actif +
+pas de mot de passe ») n'était pas représentable.
+
+### Correction (socle, additif)
+
+- `VtyLineConfig` (router/vty) : ajout du mode `login: 'password'` (auth par
+  mot de passe de ligne) et du champ `linePassword`, avec rendu IOS
+  (` password …` / ` login`) et un prédicat **`requiresPasswordButUnset()`**
+  (login par mot de passe mais aucun mot de passe → IOS refuse la session) qui
+  servira de verdict de connexion entrante.
+- Handler config-line partagé **recâblé** : `login`/`login local`/`login
+  authentication` → `login` correct ; `password X` → `linePassword` ;
+  `no password`/`no login` → effacement. Suppression des écritures mortes
+  `loginMethod`/`password`.
+- `show running-config` du switch : rendu des blocs `line vty` (via
+  `_getVtyLineConfig().renderAllCisco()`).
+
+### Fichiers
+
+`src/network/devices/router/vty/VtyLineConfig.ts`,
+`src/network/devices/shells/CiscoShellBase.ts`,
+`src/network/devices/shells/CiscoSwitchShell.ts`.
+
+### Validation
+
+- Suites AAA/SSH/show routeur + switch (`cisco-huawei-aaa-security`,
+  `cisco-aaa-acl`, `cross-equipment-ssh-suite`, `cisco-router-operational-show`,
+  `switch-cli`, `cisco-switch-reference-scenarios`) : **381 verts**, aucune
+  régression (le routeur rend désormais correctement les directives VTY).
+
+### Suite (incrément dédié)
+
+Avec ce socle en place, le **verdict de connexion entrante** (`findHostByAddress`
+conscient des SVI + client telnet LinuxPC + appel à `requiresPasswordButUnset`)
+débloque les tests 81 (avertissement `login`) et 98 (rejet télnet entrant).
+
+## Entrée n°38 — 2026-06-21 — VTY : verdict de connexion entrante télnet (chemin câble + SVI)
+
+### Constat
+
+Le socle n°37 modélisait l'état (`login`/`password`, `requiresPasswordButUnset`)
+mais **rien ne consommait ce verdict** : un télnet entrant sur un switch était
+toujours accepté. Trois manques bloquaient les tests 81 et 98 :
+
+1. **`telnet` côté LinuxPC inexistant.** Aucun client télnet ; impossible de
+   solliciter le plan de gestion d'un équipement réseau depuis un hôte.
+2. **Résolution d'adresse aveugle aux SVI.** `findHostByAddress` ne regardait
+   que les IP des ports physiques ; l'IP de management d'un SVI (`interface
+   Vlan N`), qui ne vit sur aucun port physique, n'était jamais résolue.
+3. **Joignabilité aveugle aux SVI.** `isPathReachable` (BFS sur le plan de
+   câblage) ne comparait l'IP cible qu'aux ports physiques des voisins → l'IP
+   de SVI au bout du câble n'était jamais atteinte → « No route to host ».
+
+De plus, `login` (mode mot de passe) sans mot de passe configuré n'émettait
+**aucun avertissement** côté CLI (test 81), contrairement à IOS.
+
+### Correction (structurelle)
+
+- **Client télnet** (`LinuxCommandExecutor.runTelnetClient`) : résout la cible,
+  vérifie la joignabilité, puis interroge le **verdict de ligne VTY** de
+  l'équipement distant (`_getVtyLineConfig().incomingVerdict()`). Une ligne
+  exigeant un mot de passe non posé renvoie « Password required, but none set »
+  et ferme la session, exactement comme IOS.
+- **Résolution + joignabilité conscientes des SVI** (`HostLookup`) :
+  `findHostByAddress` parcourt les SVI (`getSvis()` + `isSviLineUp()`) ;
+  nouvelle fonction exportée **`findReachableHost(src, dst)`** qui fait le BFS
+  sur les câbles et **retourne l'équipement réellement joignable** possédant
+  l'IP (port physique *ou* SVI en service). `isPathReachable` se réduit à
+  `findReachableHost(...) !== null`.
+- **Désambiguïsation par le câble.** Le registre statique partage des IP de
+  fixtures entre tests ; le verdict est désormais évalué sur l'équipement
+  *physiquement joignable* (`findReachableHost`), pas sur le premier homonyme
+  du registre.
+- **Verdict d'entrée** (`VtyLineConfigStore.incomingVerdict()`) : balaye les
+  lignes et refuse si l'une exige un mot de passe non posé.
+- **Avertissement `login`** (handler config-line partagé) : `login` en mode
+  mot de passe sans secret renvoie `% Login disabled on line vty F L, until
+  'password' is set` (test 81).
+- **IOS : commandes globales depuis un sous-mode.** `executeOnTrie` réessaie
+  les verbes de navigation majeurs (`interface`/`line`/`router`/`vlan`) contre
+  le trie de config global lorsqu'un sous-mode (`config-if`, …) ne les reconnaît
+  pas — fidèle à IOS qui quitte implicitement le sous-mode. C'est ce qui permet
+  `line vty 0 4` juste après `interface Vlan1` (test 98).
+
+### Hygiène de test
+
+`other-commands.test.ts` : ajout de `EquipmentRegistry.resetInstance()` au
+`beforeEach` (motif déjà standard dans le corpus) — les fixtures réutilisent
+`10.0.0.1`/`10.0.0.100`, le registre statique faisait fuiter des équipements
+périmés vers les recherches par chemin câble.
+
+### Fichiers
+
+`src/network/devices/linux/network/HostLookup.ts`,
+`src/network/devices/linux/LinuxCommandExecutor.ts`,
+`src/network/devices/router/vty/VtyLineConfigStore.ts`,
+`src/network/devices/shells/CiscoShellBase.ts`,
+`src/__tests__/unit/network-v2/other-commands.test.ts`.
+
+### Validation
+
+- Tests 81 et 98 : **verts**. Suite `other-commands` : 15 échecs résiduels
+  **pré-existants** (clusters `undebug`/`sntp`/`mac address-table`/autocomplete/
+  ISL n°163), aucune régression introduite.
+- Suites Cisco/switch (`cisco-switch-reference-scenarios`, `switch-svi`,
+  `command-trie-hygiene`, `cisco-aaa-acl`, `cisco-huawei-aaa-security`) : vertes.
+
+## Entrée n°39 — 2026-06-21 — VTY : consolidation des deux classes `VtyLineConfig`
+
+### Constat (dette signalée n°37)
+
+Deux classes `VtyLineConfig` modélisaient **le même concept** (un bloc
+`line vty` / `user-interface vty`) :
+
+- **`router/vty/VtyLineConfig`** — le modèle **vivant** : câblé dans
+  `VtyLineConfigStore`, `Router`, `Switch` et les shells ; **bi-vendeur**
+  (`renderCisco()` *et* `renderHuawei()`) ; porte le verdict
+  `requiresPasswordButUnset()` ; philosophie « `null` = non positionné » (le
+  `show running-config` n'émet que les directives réellement modifiées).
+- **`router/aaa/VtyLineConfig`** — un modèle **orphelin** : riche (≈33 champs,
+  value-object `VtyLineRange`, API fluide `withX()`, `forRange()`,
+  `toRunningConfig()`) mais **Cisco-only**, branché sur **aucun** équipement, et
+  exercé uniquement par le bloc `§M` d'un test. Deux philosophies de défauts
+  incompatibles (défauts concrets vs `null`).
+
+### Décision
+
+Le modèle **vivant** est l'unique survivant : il est bi-vendeur (essentiel pour
+ce simulateur Cisco + Huawei), déjà câblé dans toute la pile, et porte la
+logique de verdict. Migrer vers l'orphelin aurait régressé Huawei et imposé une
+réécriture risquée du store + des shells.
+
+### Correction (consolidation, additive puis suppression)
+
+- **Absorption de la meilleure idée de l'orphelin** : le value-object
+  **`VtyLineRange`** (membership / overlap / size / equals, validation
+  `last < first`) est intégré au modèle canonique `router/vty`, avec un getter
+  `range` calculé et une fabrique `VtyLineConfig.forRange(range, init?)`.
+  `first`/`last` restent inchangés → store, shells, `Router`, `Switch`
+  intacts.
+- **Suppression du doublon** `router/aaa/VtyLineConfig.ts` (orphelin).
+- **Test `§M` re-pointé** sur le modèle survivant : il couvre désormais l'API
+  réelle qui *expédie* (defaults `null`, immutabilité de `withFields`, rendu
+  IOS **et** VRP, verdict `requiresPasswordButUnset`, value-object
+  `VtyLineRange`) — fin du test d'un orphelin, vraie couverture du code livré.
+
+### Fichiers
+
+`src/network/devices/router/vty/VtyLineConfig.ts` (enrichi),
+`src/network/devices/router/aaa/VtyLineConfig.ts` (**supprimé**),
+`src/__tests__/unit/network-v2/cisco-huawei-aaa-security.test.ts` (re-pointé).
+
+### Validation
+
+- `tsc --noEmit` : **0 erreur**. Aucune référence résiduelle à
+  `aaa/VtyLineConfig`.
+- `cisco-huawei-aaa-security` : **72 verts**. Suites VTY-dépendantes
+  (`cisco-aaa-acl`, `switch-svi`, `cross-equipment-ssh-suite`,
+  `huawei-aaa-mgmt`) : **vertes**. `other-commands` : 15 échecs résiduels
+  pré-existants inchangés, aucune régression.
+
+## Entrée n°40 — 2026-06-21 — E2E : audit UI d'une architecture PME sécurisée (Playwright)
+
+### Objectif
+
+Banc de diagnostic e2e mono-fichier (`e2e/secure-smb-architecture.spec.ts`)
+qui **construit puis attaque** une petite architecture d'entreprise durcie
+*via la vraie UI* et **fait remonter tout ce qui cloche** côté interface et
+simulation. La valeur n'est pas « prouver que ça marche » mais produire un
+**rapport de défauts** (`test-results/smb-defect-report.{json,md}`) classé par
+sévérité (`blocker`/`major`/`minor`).
+
+### Topologie (PME « Acme »)
+
+VLAN10 users `10.10.10.0/24` (LinuxPC + WindowsPC → switch Cisco) — routeur
+Cisco R-EDGE — liaison WAN `/30` — routeur Huawei R-CORE — switch Huawei —
+VLAN20 serveurs `10.20.20.0/24` (LinuxServer + WindowsServer). Durcissement :
+SSH-only sur les VTY, AAA/utilisateur local, `enable secret`,
+`service password-encryption`, ACL inter-VLAN, port-security d'accès, routes
+statiques cross-vendor.
+
+### Couverture des sondes
+
+Palette (8 classes d'équipement + badges « Limited »), drag-and-drop HTML5
+(régression 1er drop), construction/câblage, **indexation des ports** des
+switchs, acceptation CLI bi-vendeur, connectivité **L2 réelle à travers le
+câble**, routage **L3 inter-VLAN cross-vendor**, présence effective du
+durcissement dans la conf, refus de telnet après durcissement, cycle de vie
+du terminal + équipement éteint, câblage par l'UI (bouton Connect +
+popover d'interface), panneau de logs réseau, parité du shell Windows.
+
+### Défauts remontés (39 checks OK, 0 blocker, 3 major, 1 minor)
+
+1. **[major] vendeur — ports Huawei 0-indexés.** Le premier port du switch
+   Huawei est `GigabitEthernet0/0/0` au lieu de `…0/0/1` (VRP numérote à
+   partir de 1). Même classe de bug que celui corrigé côté Cisco.
+2. **[major] vendeur — conséquence CLI.** `interface GigabitEthernet0/0/24`
+   est rejeté (« Wrong parameter found at '^' ») alors qu'un 24ᵉ port existe :
+   le nom CLI et le port physique sont décalés d'un cran.
+3. **[major] sécurité — telnet non bloqué après durcissement.** Après
+   `transport input ssh` sur les VTY, un `telnet` depuis le PC vers le routeur
+   **se connecte quand même** (« Connected to 10.10.10.1 ») : la restriction de
+   transport entrant n'est pas appliquée.
+4. **[minor] UI — terminal d'un équipement éteint.** Le terminal ne s'ouvre pas
+   sur un équipement hors tension (pas d'accès lecture-seule / indication
+   OFFLINE attendue).
+
+Bons points confirmés : connectivité L2 cross-OS réelle à travers les câbles,
+routage L3 inter-VLAN cross-vendor bout-en-bout, ACL/secret/SSH présents dans
+la conf, panneau de logs alimenté par le trafic réel, drag-and-drop au 1er
+essai, câblage par l'UI.
+
+### Qualité du banc
+
+Deux faux positifs initiaux (causés par l'ordre de mes propres sondes) ont été
+éliminés : une sonde éteignait `WindowsPC` sans le rallumer (→ `ipconfig`
+« powered off ») — désormais un équipement **jetable** est utilisé puis
+supprimé ; le sélecteur du panneau de logs était erroné — recâblé sur
+`button[title="Logs"]` + `[data-testid="logs-row"]`. Sondes en mode
+enregistrement (non bloquantes) : la suite reste verte tout en produisant le
+rapport ; seul un canevas vide ferait échouer franchement le banc.
+
+### Fichiers
+
+`e2e/secure-smb-architecture.spec.ts` (neuf). Rapport généré sous
+`test-results/` (ignoré par git).
+
+### Validation
+
+- `npx playwright test secure-smb-architecture.spec.ts` : **13 tests verts**,
+  rapport écrit (`blockers=0 major=3 minor=1`). `eslint` propre.
+
+## Entrée n°41 — 2026-06-21 — E2E : remise au vert de toute la suite Playwright (73/73)
+
+### Constat
+
+`npx playwright test` (suite complète) : **4 échecs / 73**, tous dans des specs
+**préexistants** (pas dans le banc SMB n°40). Diagnostic au cas par cas — les
+tests unitaires correspondants passant tous (210 verts), le cœur était sain ;
+les échecs venaient d'un **décalage tests/produit**.
+
+1. **3× `user-creation.spec.ts` (`adduser bob`).** Un LinuxPC neuf contient déjà
+   `bob` : `LinuxCommandExecutor` pré-provisionne un casting `alice/bob/carl/
+   dave` (ajouté le 13/06, **postérieur** à ces tests du 22/05) pour les suites
+   SSH cross-équipement. `sudo adduser bob` répondait donc « The user `bob'
+   already exists ». Ce seed est **porteur** (des dizaines de tests SSH
+   unitaires font `ssh alice@… / bob@…`) : on ne peut pas le retirer sans gros
+   refactor. Les tests entraient juste en collision de nom.
+2. **1× `ssh.spec.ts` (« Permission denied » not duplicated).** Le simulateur
+   reproduit désormais le flux **OpenSSH réaliste** sur 3 essais : 2×
+   « Permission denied, please try again. » + 1× « Permission denied
+   (password). ». L'ancien test attendait `toHaveCount(1)` (message unique).
+   C'est le simulateur qui s'est **rapproché du réel**, pas une régression.
+
+### Correctif (tests alignés sur le comportement réel)
+
+- `user-creation.spec.ts` : `bob → frank`, `dave → grace` (noms hors casting
+  seedé) pour que `adduser` teste une **vraie création** fraîche. Le test
+  « ajout à un groupe » dépendait en fait du seed (`useradd dave` échouait
+  silencieusement en non-root, mais `dave` existait déjà) : réécrit pour être
+  autonome — création d'un groupe `developers` puis ajout de l'utilisateur
+  existant `alice`, avec gestion d'un éventuel re-prompt sudo.
+- `ssh.spec.ts` : assertion mise à jour sur le flux réaliste — exactement
+  2× « please try again » + 1× « Permission denied (password). » (l'intention
+  « non dupliqué » est préservée : chaque essai produit un message, pas deux).
+
+### Fichiers
+
+`e2e/user-creation.spec.ts`, `e2e/ssh.spec.ts`.
+
+### Validation
+
+- `npx playwright test` (suite e2e complète) : **73/73 verts**.
+- Aucune modification de code produit ; tests unitaires `adduser`/`sudo`/`ssh`
+  inchangés et verts (210).
+
+## Entrée n°42 — 2026-07-01 — DNS phase 9 (1ʳᵉ tranche) : le chemin DNS vivant des PC parle RFC 1035 binaire sur le câble
+
+### Contexte
+
+Les phases 1 à 6 du PRD-DNS (`docs/PRD-DNS.md`) ont livré un moteur DNS complet
+(codec binaire avec compression de noms, zones, serveur autoritaire, résolveur
+récursif, EDNS(0), NOTIFY/AXFR/IXFR) — mais le chemin DNS **vivant** des PC
+(résolution de noms de `ping`/`ssh`, `dig`/`nslookup`/`host`, la source NSS
+`dns`, le dnsmasq de `LinuxMachine`) continuait d'échanger des payloads JSON
+`{kind: 'dns-query', …}` sur UDP 53 (`DnsWire.ts`). Deux formats de « wire »
+coexistaient donc : un vrai (le moteur) et un simulacre (les PC). La phase 9 du
+PRD prévoit la résorption de cette duplication, fichier par fichier.
+
+### Défaillances corrigées
+
+1. **Wire format irréaliste** — un sniffer sur le câble voyait un objet JSON, pas
+   un datagramme DNS ; la taille UDP était *estimée* (`estimateDnsMessageSize`)
+   au lieu d'être la longueur réelle de l'encodage.
+2. **QNAME PTR faux** — pour une requête inverse, le client envoyait l'IP brute
+   (`10.0.1.88`) comme nom de question ; un vrai stub resolver envoie le nom
+   `88.1.0.10.in-addr.arpa` (RFC 1035 §3.5). Le serveur avait en conséquence un
+   chemin spécial `reverseQuery` côté wire, désormais inutile.
+3. **Pas de troncature** — le dnsmasq simulé répondait sans limite de taille ;
+   il applique maintenant TC=1 + élagage des sections au-delà de 512 octets (ou
+   de la taille EDNS négociée), via le `bindDnsUdpServer` du moteur — la même
+   troncature que le serveur autoritaire, dédupliquée.
+4. **Réponses non validées** — le client acceptait tout objet ayant le bon `id` ;
+   il exige désormais un message binaire bien formé, `id` correspondant **et**
+   bit QR levé (anti-spoofing minimal d'un vrai résolveur, testé).
+5. **Duplication de l'allocation d'id et du serveur UDP 53** — le compteur de
+   transaction et le binding serveur vivent maintenant à un seul endroit
+   (`compat/DnsWireCompat.ts`, `transport/DnsUdpTransport.ts`).
+
+### Correction (structurelle, conforme au plan de migration du PRD §5/§7)
+
+- **Nouveau pont transitoire `src/network/dns/compat/DnsWireCompat.ts`** :
+  conversions bidirectionnelles `DnsRecord` ⇄ `ResourceRecord` (avec découpage
+  des TXT en character-strings ≤ 255 octets RFC 1035 §3.3.14, SOA sérialisé en
+  7 champs), rcodes nom ⇄ numérique, mnémoniques ⇄ types RR numériques
+  (`TYPEnnn` RFC 3597 pour l'inconnu), normalisation PTR → in-addr.arpa,
+  constructeurs de messages requête/réponse. Un enregistrement inencodable sur
+  le wire est omis (comme dans la réalité) au lieu de circuler par magie.
+- **`EndHost.queryDnsServer`/`queryDnsServerSync`** (partagés Linux + Windows) :
+  encodent la requête avec `DnsMessageCodec`, envoient les octets réels
+  (longueur UDP exacte), décodent et valident la réponse binaire. Un nom
+  qu'un vrai `getaddrinfo()` refuserait (label > 63 octets, type inconnu)
+  échoue **avant** d'atteindre le câble.
+- **`LinuxMachine`** : dnsmasq répond via `bindDnsUdpServer` du moteur
+  (décodage, troncature TC, taille EDNS négociée gratuits) ; la sémantique
+  NXDOMAIN/NOERROR-sans-réponse existante est préservée ; QDCOUNT=0 → FORMERR.
+  `bindDnsUdpServer` gagne un paramètre `processName` pour que `ss -ulpn`
+  continue d'afficher `dnsmasq` (et non un tag générique).
+- **`DnsWire.ts` réduit aux formes d'API** (`DnsRecord`, `DnsWireResponse`,
+  `DnsQueryFn`) : `DnsWireQuery`, `isDnsWireQuery/Response`,
+  `estimateDnsMessageSize`, `nextDnsTransactionId` supprimés du module (le
+  compteur d'id vit dans le pont). Prochaines tranches : migrer les outils et
+  la source NSS vers le modèle natif du moteur, puis supprimer `DnsWire.ts`.
+
+### Anti-doublon
+
+Le serveur UDP 53, la troncature et la négociation EDNS ne sont **pas**
+réimplémentés côté dnsmasq : réutilisation de `bindDnsUdpServer`/
+`truncateForUdp` déjà livrés en phases 3/5. Aucune nouvelle table de
+correspondance type↔nom : dérivée de l'objet `RRType` existant.
+
+### Interopérabilité prouvée
+
+Le client natif du moteur (`queryDnsOverUdp`) interroge le dnsmasq migré et
+obtient une réponse binaire correcte (id, QR/RA, question écho, RR A) — les
+deux mondes parlent désormais le même protocole sur le même câble.
+
+### Fichiers
+
+`src/network/dns/compat/DnsWireCompat.ts` (nouveau),
+`src/network/dns/transport/DnsUdpTransport.ts`,
+`src/network/devices/EndHost.ts`, `src/network/devices/LinuxMachine.ts`,
+`src/network/dns/DnsWire.ts`,
+`src/__tests__/unit/network-v2/dns-wire-binary.test.ts` (nouveau, 9 tests).
+
+### Validation
+
+- Nouveau banc `dns-wire-binary` : **9/9 verts** (binaire sur le câble décodé
+  par un listener brut, réponse forgée au codec consommée par le stub, spoof
+  d'id ignoré, interop moteur↔dnsmasq, tag processus `dnsmasq`, TC=1 sur
+  réponse > 512 octets, QNAME in-addr.arpa sur le câble + résolution PTR de
+  bout en bout, échecs pré-wire pour nom/type invalides).
+- Golden masters : `dns-over-wire`, `nss-dns-wire`, `nslookup-skeleton1`,
+  `windows-dns-cache`, `windows-netsh-dhcp-dns` : **99/99 verts**.
+- `tsc --noEmit` : 0 erreur. `eslint` : aucune erreur nouvelle (5 préexistantes
+  inchangées ailleurs). Suite `network-v2` complète lancée en fond au moment du
+  commit ; verdict consigné ici dès réception.

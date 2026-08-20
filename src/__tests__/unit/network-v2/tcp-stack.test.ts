@@ -26,8 +26,8 @@ function pair(): { bus: EventBus; client: CiscoRouter; server: CiscoRouter } {
   const server = new CiscoRouter('SRV');
   const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
   client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-  new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-  new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
   client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
   server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
   return { bus, client, server };
@@ -330,9 +330,9 @@ describe('TCP — multiple concurrent connections', () => {
     const srv = new CiscoRouter('SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cliA.setEventBus(bus); cliB.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cliA.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(cliB.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    new Cable('c').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('a').connect(cliA.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(cliB.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('c').connect(srv.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
     cliA.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.10'), new SubnetMask('255.255.255.0'));
     cliB.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.11'), new SubnetMask('255.255.255.0'));
     srv.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.99'), new SubnetMask('255.255.255.0'));

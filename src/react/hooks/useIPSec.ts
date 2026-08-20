@@ -14,7 +14,7 @@ import type {
   IPSecRuntimeStatsVM,
 } from '@/network/ipsec/observables';
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_STATS: IPSecRuntimeStatsVM = {
   running: false,
   activeIkeSAs: 0, activeIPSecSAs: 0, fragGroupsInFlight: 0,

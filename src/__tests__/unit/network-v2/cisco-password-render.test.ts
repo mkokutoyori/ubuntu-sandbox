@@ -51,8 +51,16 @@ describe('renderSecretField (enable secret / username secret)', () => {
     expect(out).not.toContain(' cisco');
   });
 
-  it('renders a plaintext (type 0) secret verbatim', () => {
-    expect(renderSecretField('cisco', 'plain')).toBe('0 cisco');
+  // Le type 0 d'un `secret` decrit la SAISIE, pas le stockage : un
+  // `secret` est irreversible par definition, et IOS rend
+  // `enable secret 0 cisco` en `enable secret 5 $1$…`. Ce cas figeait le
+  // rendu verbatim, donc la fuite du mot de passe en clair dans la
+  // configuration. La famille REVERSIBLE garde son rendu propre, ce que
+  // le bloc `renderPasswordField` plus bas verifie.
+  it('hashes a type-0 secret, because a secret is irreversible', () => {
+    const out = renderSecretField('cisco', 'plain');
+    expect(out).toMatch(/^5 \$1\$/);
+    expect(out).not.toContain(' cisco');
   });
 
   it('is deterministic', () => {

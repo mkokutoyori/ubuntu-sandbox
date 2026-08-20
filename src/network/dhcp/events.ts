@@ -127,6 +127,45 @@ export interface DhcpReservationAddedPayload extends DhcpDeviceRef {
   ip: string;
 }
 
+// ── Relay agent (router acting as DHCP relay) ──────────────────────────
+
+export interface DhcpRelayForwardedPayload extends DhcpDeviceRef {
+  iface: string;
+  giaddr: string;
+  helpers: string[];
+  clientMac: string;
+  hops: number;
+  circuitId: string | null;
+  remoteId: string | null;
+}
+
+export interface DhcpRelayReplyForwardedPayload extends DhcpDeviceRef {
+  iface: string;
+  clientMac: string;
+  assignedIp: string;
+}
+
+export interface DhcpRelayDroppedPayload extends DhcpDeviceRef {
+  iface: string;
+  reason: 'hops-exceeded';
+  hops: number;
+  clientMac: string;
+}
+
+export interface DhcpServerOption82ReceivedPayload extends DhcpDeviceRef {
+  messageType: import('./types').DHCPMessageType | undefined;
+  clientMac: string;
+  giaddr: string | null;
+  circuitId: string;
+  remoteId: string;
+}
+
+export interface DhcpPoolExhaustedPayload extends DhcpDeviceRef {
+  pool: string;
+  network: string;
+  clientMac: string;
+}
+
 // ── Discriminated union ───────────────────────────────────────────────
 
 export type DhcpDomainEvent =
@@ -147,4 +186,9 @@ export type DhcpDomainEvent =
   | { topic: 'dhcp.address-conflict'; payload: DhcpAddressConflictPayload }
   | { topic: 'dhcp.pool.lease-allocated'; payload: DhcpPoolLeaseAllocatedPayload }
   | { topic: 'dhcp.pool.lease-released'; payload: DhcpPoolLeaseReleasedPayload }
-  | { topic: 'dhcp.reservation.added'; payload: DhcpReservationAddedPayload };
+  | { topic: 'dhcp.reservation.added'; payload: DhcpReservationAddedPayload }
+  | { topic: 'dhcp.relay.forwarded'; payload: DhcpRelayForwardedPayload }
+  | { topic: 'dhcp.relay.reply-forwarded'; payload: DhcpRelayReplyForwardedPayload }
+  | { topic: 'dhcp.relay.dropped'; payload: DhcpRelayDroppedPayload }
+  | { topic: 'dhcp.server.option82-received'; payload: DhcpServerOption82ReceivedPayload }
+  | { topic: 'dhcp.pool.exhausted'; payload: DhcpPoolExhaustedPayload };

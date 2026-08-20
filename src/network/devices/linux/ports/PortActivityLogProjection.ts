@@ -15,6 +15,7 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { LinuxLogManager } from '../LinuxLogManager';
 import type { PortBoundPayload, PortReleasedPayload } from '../events';
+import type { MACAddress, IPAddress, SubnetMask } from '../../../core/types';
 
 export class PortActivityLogProjection {
   private readonly subscriptions: Unsubscribe[] = [];
@@ -23,6 +24,14 @@ export class PortActivityLogProjection {
     bus: IEventBus,
     private readonly logManager: LinuxLogManager,
     private readonly deviceId: string,
+    /**
+     * The machine's actual sshd process, when it is running.
+     *
+     * `ps`, `/var/log/auth.log` and `journalctl -u ssh` all describe the
+     * same daemon; reading its pid from the real process table is what
+     * keeps them from naming three different ones.
+     */
+    private readonly sshdPid: () => number | undefined = () => undefined,
   ) {
     this.subscriptions.push(
       bus.subscribe('linux.port.bound', (e) => this.onBound(e.payload)),
@@ -41,6 +50,7 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.process.spawned', (e) => this.onProcessSpawned(e.payload)),
       bus.subscribe('linux.process.exited', (e) => this.onProcessExited(e.payload)),
       bus.subscribe('arp.violation', (e) => this.onArpViolation(e.payload)),
+      bus.subscribe('host.arp.ip-conflict', (e) => this.onArpIpConflict(e.payload)),
       bus.subscribe('linux.service.failed', (e) => this.onServiceFailed(e.payload)),
       bus.subscribe('linux.service.enabled', (e) => this.onServiceEnabled(e.payload)),
       bus.subscribe('linux.service.disabled', (e) => this.onServiceDisabled(e.payload)),
@@ -90,14 +100,12 @@ export class PortActivityLogProjection {
       `${p.comm}[${p.pid}] received signal ${p.signal} from ${p.sender ?? 'unknown'}`);
   }
 
-  private onProcessReaped(p: {
-    deviceId: string; pid: number; comm: string; exitCode: number;
-  }): void {
-    if (p.deviceId !== this.deviceId) return;
-    if (p.exitCode === 0) return;
-    this.logManager.logDaemon('systemd',
-      `${p.comm}[${p.pid}] exited with code ${p.exitCode}`);
-  }
+  // `linux.process.reaped` (ProcessReapedPayload) carries no exit code —
+  // it fires when a zombie is reaped from the process table, after the
+  // exit code was already reported via `linux.process.exited`.
+  private onProcessReaped(_p: {
+    deviceId: string; pid: number; comm: string;
+  }): void {}
 
   private onIcmpEchoFailed(p: { deviceId: string; target?: string; reason?: string }): void {
     if (p.deviceId !== this.deviceId) return;
@@ -144,16 +152,10 @@ export class PortActivityLogProjection {
     this.logManager.logKernel('kernel', `${ours}: cable connected`);
   }
 
-  private onCableDisconnected(p: {
-    portA?: { deviceId?: string; portName?: string };
-    portB?: { deviceId?: string; portName?: string };
-  }): void {
-    const ours = p.portA?.deviceId === this.deviceId ? p.portA?.portName
-               : p.portB?.deviceId === this.deviceId ? p.portB?.portName
-               : null;
-    if (!ours) return;
-    this.logManager.logKernel('kernel', `${ours}: cable disconnected`);
-  }
+  // `cable.disconnected`'s real payload (CableDisconnectedPayload) only
+  // carries `cableId` — Cable.ts nulls out its port refs before publishing,
+  // so unlike `cable.connected` there is no per-device port name to log here.
+  private onCableDisconnected(_p: { cableId: string }): void {}
 
   private onDhcpClientState(p: {
     deviceId: string; iface?: string; oldState?: string; newState?: string;
@@ -240,7 +242,7 @@ export class PortActivityLogProjection {
   }
 
   private onIpChanged(p: {
-    deviceId: string; portName: string; ip?: string | null; mask?: string | null;
+    deviceId: string; portName: string; ip?: IPAddress | string | null; mask?: SubnetMask | string | null;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.ip) {
@@ -259,7 +261,7 @@ export class PortActivityLogProjection {
   }
 
   private onPortSecurityViolation(p: {
-    deviceId: string; portName: string; mac: string; mode: string; action: string;
+    deviceId: string; portName: string; mac: MACAddress | string; mode: string; action: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
@@ -267,7 +269,7 @@ export class PortActivityLogProjection {
   }
 
   private onPortSecurityErrdisable(p: {
-    deviceId: string; portName: string; mac: string;
+    deviceId: string; portName: string; mac: MACAddress | string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
@@ -281,12 +283,13 @@ export class PortActivityLogProjection {
     if (p.deviceId !== this.deviceId) return;
     if (p.serviceName) return;
     if (p.user === 'root' && p.comm !== 'sudo') return;
+    if (p.comm === '-bash' || p.comm === 'bash') return;
     this.logManager.logDaemon(p.comm,
       `[${p.pid}] ${p.user}: ${p.command}`);
   }
 
   private onProcessExited(p: {
-    deviceId: string; pid: number; comm: string; exitCode: number; signal?: string;
+    deviceId: string; pid: number; comm: string; exitCode?: number; signal?: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (p.signal) {
@@ -295,25 +298,44 @@ export class PortActivityLogProjection {
     }
   }
 
+  // `arp.violation` is a switch-scoped DAI event (ArpViolationPayload, keyed
+  // by switchId) — never published for a Linux host, so this never matches
+  // `this.deviceId`. Kept for shape/type correctness only.
   private onArpViolation(p: {
-    deviceId: string; iface?: string; senderIp?: string; senderMac?: string;
+    switchId: string; ingressPort?: string; senderIp?: string; senderMac?: string;
     reason?: string;
+  }): void {
+    if (p.switchId !== this.deviceId) return;
+    this.logManager.logKernel('kernel',
+      `arp-inspection: ${p.ingressPort ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+  }
+
+  private onArpIpConflict(p: {
+    deviceId: string; iface: string; ip: string; foreignMac: string; localMac: string;
   }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
-      `arp-inspection: ${p.iface ?? '?'}: violation ${p.reason ?? 'invalid'} from ${p.senderMac ?? '?'}/${p.senderIp ?? '?'}`);
+      `IPv4: ${p.ip} duplicate arp reply received from ${p.foreignMac} on ${p.iface} (local ${p.localMac})`);
   }
 
+  /**
+   * A link change leaves two traces on a systemd host, from two different
+   * writers: the driver's own line, and networkd's — which is the one an
+   * operator greps for, since it is what the manager of the link says it
+   * saw.
+   */
   private onLinkUp(p: { deviceId: string; portName: string }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
       `${p.portName}: Link is Up - 1000 Mbps Full Duplex`);
+    this.logManager.logSystemd('systemd-networkd', `${p.portName}: Gained carrier`);
   }
 
   private onLinkDown(p: { deviceId: string; portName: string }): void {
     if (p.deviceId !== this.deviceId) return;
     this.logManager.logKernel('kernel',
       `${p.portName}: Link is Down`);
+    this.logManager.logSystemd('systemd-networkd', `${p.portName}: Lost carrier`);
   }
 
   private onDhcpGranted(p: {
@@ -356,9 +378,8 @@ export class PortActivityLogProjection {
     deviceId: string; localIp: string; localPort: number; added: boolean;
   }): void {
     if (p.deviceId !== this.deviceId) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    this.logConnection(
+      p.localPort,
       p.added
         ? `Server listening on ${p.localIp} port ${p.localPort}.`
         : `Closed TCP listening socket ${p.localIp}:${p.localPort}`,
@@ -371,23 +392,48 @@ export class PortActivityLogProjection {
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (!p.passive) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    this.logConnection(
+      p.localPort,
       `Accepted connection from ${p.remoteIp}:${p.remotePort} on ${p.localIp}:${p.localPort}`,
     );
   }
 
   private onTcpConnectionClosed(p: {
     deviceId: string; remoteIp: string; remotePort: number;
-    localIp: string; localPort: number; reason: string;
+    localIp: string; localPort: number; reason: string; passive: boolean;
   }): void {
     if (p.deviceId !== this.deviceId) return;
-    const tag = this.tagForPort(p.localPort);
-    this.logManager.logDaemon(
-      tag,
+    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
+    // not a "Connection from" anybody, and `sshd` has no business logging
+    // the close of a connection it never accepted.
+    if (!p.passive) return;
+    this.logConnection(
+      p.localPort,
       `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`,
     );
+  }
+
+  /**
+   * Record one connection event under the facility its daemon really uses.
+   *
+   * sshd logs to authpriv, which is why an operator looks for SSH activity
+   * in `/var/log/auth.log`. Sending these lines through the daemon facility
+   * put them in `/var/log/syslog` while the authentications for the very
+   * same connection — written by `SshSyslogger`, which already calls
+   * `logAuth` — landed in auth.log: one daemon, one connection, two files,
+   * and the file everybody checks was the one missing half the story.
+   *
+   * The unit is `ssh` (Debian's unit name) while the tag stays `sshd` (what
+   * the binary calls itself), the same split `SshSyslogger` uses, so
+   * `journalctl -u ssh` shows both halves too.
+   */
+  private logConnection(localPort: number, message: string): void {
+    const tag = this.tagForPort(localPort);
+    if (tag === 'sshd') {
+      this.logManager.logAuth(tag, message, this.sshdPid(), 'ssh');
+      return;
+    }
+    this.logManager.logDaemon(tag, message);
   }
 
   private tagForPort(port: number): string {

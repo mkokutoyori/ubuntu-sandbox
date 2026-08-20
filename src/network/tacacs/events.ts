@@ -38,9 +38,16 @@ export interface TacacsAcctCompletedPayload extends TacacsDeviceRef {
   status: TacacsAcctStatus | 'timeout';
 }
 
+export interface TacacsSessionErrorPayload extends TacacsDeviceRef {
+  fromIp: string;
+  sessionId: number;
+  reason: 'bad-secret';
+}
+
 export type TacacsDomainEvent =
   | { topic: 'tacacs.packet.sent'; payload: TacacsPacketSentPayload }
   | { topic: 'tacacs.packet.received'; payload: TacacsPacketReceivedPayload }
   | { topic: 'tacacs.authen.completed'; payload: TacacsAuthenCompletedPayload }
   | { topic: 'tacacs.author.completed'; payload: TacacsAuthorCompletedPayload }
-  | { topic: 'tacacs.acct.completed'; payload: TacacsAcctCompletedPayload };
+  | { topic: 'tacacs.acct.completed'; payload: TacacsAcctCompletedPayload }
+  | { topic: 'tacacs.session.error'; payload: TacacsSessionErrorPayload };

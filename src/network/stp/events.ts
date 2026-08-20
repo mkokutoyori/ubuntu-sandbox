@@ -52,6 +52,44 @@ export interface StpRootGuardChangedPayload extends StpDeviceRef {
   state: 'consistent' | 'inconsistent';
 }
 
+export interface StpErrDisableChangedPayload extends StpDeviceRef {
+  port: string;
+  cause: 'bpduguard';
+  state: 'err-disabled' | 'recovered';
+}
+
+export interface StpPortfastLostPayload extends StpDeviceRef {
+  port: string;
+  senderMac: string;
+}
+
+export interface StpTcnReceivedPayload extends StpDeviceRef {
+  port: string;
+}
+
+export interface StpTcnSentPayload extends StpDeviceRef {
+  port: string;
+}
+
+export interface StpTopologyChangeDetectedPayload extends StpDeviceRef {
+  isRoot: boolean;
+}
+
+/** Per-VLAN (PVST+) BPDU info aged out on a port. */
+export interface StpBpduInfoExpiredPayload extends StpDeviceRef {
+  port: string;
+  vlan: number;
+  designatedBridge: string;
+}
+
+/** Per-VLAN (PVST+) forwarding-state transition on a port. */
+export interface StpPortStateChangedPayload extends StpDeviceRef {
+  port: string;
+  vlan: number;
+  oldState: string | null;
+  newState: string;
+}
+
 export type StpDomainEvent =
   | { topic: 'stp.bpdu.sent'; payload: StpBpduSentPayload }
   | { topic: 'stp.bpdu.received'; payload: StpBpduReceivedPayload }
@@ -60,4 +98,11 @@ export type StpDomainEvent =
   | { topic: 'stp.root.changed'; payload: StpRootChangedPayload }
   | { topic: 'stp.topology.change'; payload: StpTopologyChangePayload }
   | { topic: 'stp.bpdu-guard.violation'; payload: StpBpduGuardViolationPayload }
-  | { topic: 'stp.root-guard.changed'; payload: StpRootGuardChangedPayload };
+  | { topic: 'stp.root-guard.changed'; payload: StpRootGuardChangedPayload }
+  | { topic: 'stp.errdisable.changed'; payload: StpErrDisableChangedPayload }
+  | { topic: 'stp.portfast.lost'; payload: StpPortfastLostPayload }
+  | { topic: 'stp.tcn.received'; payload: StpTcnReceivedPayload }
+  | { topic: 'stp.tcn.sent'; payload: StpTcnSentPayload }
+  | { topic: 'stp.topology-change.detected'; payload: StpTopologyChangeDetectedPayload }
+  | { topic: 'stp.bpdu-info.expired'; payload: StpBpduInfoExpiredPayload }
+  | { topic: 'stp.port-state.changed'; payload: StpPortStateChangedPayload };

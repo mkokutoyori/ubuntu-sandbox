@@ -9,10 +9,31 @@
 
 import type { Router } from '../../Router';
 import type { CommandTrie } from '../CommandTrie';
-import { IPAddress } from '../../../core/types';
+import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
+import { nqaRunningConfigLines } from './HuaweiNqaCommands';
+import {
+  getHuaweiRoutingExtras, getSwitchSecurityService,
+} from '../../../equipment/RouterServiceCapabilities';
+import { IPAddress, IPv6Address } from '../../../core/types';
+import { renderTable, VRP_TABLE, type TableColumn } from '../cli/TextTable';
+import type { IPv6AddressEntry } from '../../../hardware/Port';
 import { huaweiCipher, huaweiIrreversibleCipher } from '@/crypto';
-import { resolveHuaweiInterfaceName as resolveHuaweiIfName } from '../cli-utils';
+import { looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { resolveHuaweiInterfaceName as resolveHuaweiIfName, normaliserBlocsVrp, huaweiRipExtras, huaweiDisplayInterfaceName, HUAWEI_ERRORS } from '../cli-utils';
+import { displayNtpServiceStatus, displayNtpServiceSessions, lignesConfigNtpVrp, displayNtpStatisticsPacket } from './huaweiNtpCommands';
+import {
+  AUCUN_GROUPE, groupesDeLInterface, lignesConfigVrrp,
+  rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
+} from './huaweiVrrpViews';
+import { iosInterfaceStatus } from '@/network/devices/inspection/InterfaceStatusView';
+import {
+  type LigneIpBrief, type LigneInterface, type LigneArp,
+  protocoleVrp, protocoleSpoofe, rendreIpInterfaceBrief,
+  rendreInterfaceBrief, rendreInterfaceDescription,
+  huaweiMacAddress, rendreArp,
+} from './huaweiTableLayouts';
 import { runningConfigACL, runningConfigInterfaceACL } from './HuaweiAclCommands';
+import { isInterfacePoolName } from './HuaweiDhcpCommands';
 import {
   displayClock as commonDisplayClock,
   displayCpuUsage as commonDisplayCpuUsage,
@@ -30,13 +51,16 @@ import {
 import {
   AR2220_HARDWARE_PROFILE, renderHardwareVersion,
 } from './HuaweiHardwareProfile';
+import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
+import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
+import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
+import { interfacePoolName } from './HuaweiDhcpCommands';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
   isDhcpEnabled(): boolean;
   isDhcpSnoopingEnabled(): boolean;
-  getDhcpSelectGlobal(): Set<string>;
-  renderLogbuffer?(): string;
+  renderLogbuffer?(seuil?: number | null): string;
 }
 
 // ─── Pure Display Functions ──────────────────────────────────────────
@@ -56,19 +80,22 @@ export function displayInterface(router: Router, ifName: string): string {
 
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const isConn = port.isConnected();
-  const isVirtual = /^(LoopBack|Tunnel)/i.test(portName);
-
+  // Une sixieme facon de calculer l'etat, et une liste d'interfaces
+  // virtuelles ecrite a la main qui oubliait `Vlanif` et `NULL`.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${isUp ? (isConn || isVirtual ? 'UP' : 'DOWN') : 'Administratively DOWN'}`,
-    `Line protocol current state : ${isConn || isVirtual ? 'UP' : 'DOWN'}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`
+      + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
   ];
 
   const desc = router.getInterfaceDescription(portName);
   if (desc) lines.push(`Description: ${desc}`);
 
-  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask}` : 'not configured'}`);
+  // VRP ecrit le masque en longueur de prefixe, ici comme dans
+  // `display ip interface` : les deux vues divergeaient.
+  lines.push(`Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'not configured'}`);
 
   // Tunnel-specific info
   const isTunnel = /^Tunnel/i.test(portName);
@@ -117,10 +144,10 @@ export function displayIpPool(router: Router, poolName: string): string {
 
 export function displayIpPoolAll(router: Router): string {
   const dhcp = router._getDHCPServerInternal();
-  const pools = dhcp.getAllPools();
-  if (pools.size === 0) return 'No DHCP pools configured.';
+  const pools = [...dhcp.getAllPools().values()].filter(p => !isInterfacePoolName(p.name));
+  if (pools.length === 0) return 'No DHCP pools configured.';
   const lines: string[] = [];
-  for (const [, pool] of pools) {
+  for (const pool of pools) {
     lines.push(displayIpPool(router, pool.name));
     lines.push('');
   }
@@ -174,8 +201,48 @@ function renderHuaweiRouteRows(router: Router, table: any[]): string[] {
   return rows;
 }
 
+/**
+ * La table telle qu'un VRP la montre : seulement les routes RÉELLEMENT
+ * installées.
+ *
+ * Ces vues lisaient `getRoutingTable()` brut, sans jamais demander si la
+ * route était utilisable — si bien qu'une statique survivait à un
+ * `shutdown` de son interface de sortie sur Huawei alors qu'elle
+ * disparaissait sur Cisco, pour la même topologie et le même défaut.
+ * Mesuré avant correction, et le piège est là : la forme `permanent`
+ * semblait juste (la route restait), mais la forme ORDINAIRE restait
+ * aussi — rien ne filtrait, la conformité apparente était un hasard.
+ */
+function installedRoutes(router: Router) {
+  return router.getRoutingTable().filter((r) => router.isRouteUsable(r));
+}
+
+/**
+ * La queue d'une ligne `ip route-static` : cible, préférence,
+ * `permanent` — même correction que côté IOS et pour la même raison,
+ * une configuration relue REFAIT la route au lieu de la décrire. VRP
+ * écrit la distance derrière le mot-clé `preference`, contrairement à
+ * IOS qui la pose nue.
+ */
+function vrpStaticRouteTail(r: {
+  nextHop: { toString(): string } | null; iface: string;
+  ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
+}): string {
+  const nh = r.nextHop ? r.nextHop.toString() : '';
+  const parts: string[] = [];
+  if (r.ifaceConfigured && r.iface) {
+    parts.push(r.iface);
+    if (nh && nh !== '0.0.0.0') parts.push(nh);
+  } else {
+    parts.push(nh);
+  }
+  if (r.preference !== undefined) parts.push('preference', String(r.preference));
+  if (r.permanent) parts.push('permanent');
+  return parts.join(' ');
+}
+
 export function displayIpRoutingTable(router: Router): string {
-  const table = router.getRoutingTable();
+  const table = installedRoutes(router);
   const destSet = new Set(table.map(r => `${r.network}/${r.mask.toCIDR()}`));
   const lines = [
     'Route Flags: R - relay, D - download to fib',
@@ -191,7 +258,7 @@ export function displayIpRoutingTable(router: Router): string {
 
 export function displayIpRoutingTableProtocol(router: Router, proto: string): string {
   const wanted = proto.toLowerCase();
-  const table = router.getRoutingTable().filter(r => {
+  const table = installedRoutes(router).filter(r => {
     const name = huaweiProtoName(r).toLowerCase();
     if (wanted === 'direct') return r.type === 'connected';
     if (wanted === 'static') return r.type === 'static' || r.type === 'default';
@@ -210,7 +277,7 @@ export function displayIpRoutingTableProtocol(router: Router, proto: string): st
 }
 
 export function displayIpRoutingTableForDest(router: Router, dest: string): string {
-  const table = router.getRoutingTable();
+  const table = installedRoutes(router);
   const targetInt = (() => {
     try { return new IPAddress(dest).toUint32(); } catch { return null; }
   })();
@@ -232,46 +299,50 @@ export function displayIpRoutingTableForDest(router: Router, dest: string): stri
   return [...head, ...renderHuaweiRouteRows(router, matches)].join('\n');
 }
 
-export function displayIpIntBrief(router: Router): string {
+export function displayIpIntBrief(router: Router, filtre?: string): string {
   const ports = router._getPortsInternal();
-  const lines = [
-    '*down: administratively down',
-    '^down: standby',
-    '(l): loopback',
-    '(s): spoofing',
-    'The number of interface that is UP in Physical is 0',
-    'The number of interface that is DOWN in Physical is 0',
-    'The number of interface that is UP in Protocol is 0',
-    'The number of interface that is DOWN in Protocol is 0',
-    '',
-    'Interface                         IP Address/Mask      Physical   Protocol',
-  ];
+  const lignes: LigneIpBrief[] = [];
   for (const [name, port] of ports) {
     const ip = port.getIPAddress();
     const mask = port.getSubnetMask();
-    const ipStr = ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned';
-    const phys = (port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down').toUpperCase();
-    const proto = (port.getIsUp() && port.isConnected() ? 'up' : 'down').toUpperCase();
-    lines.push(`${name.padEnd(34)}${ipStr.padEnd(21)}${phys.padEnd(11)}${proto}`);
+    const { phys, proto } = vrpEtatPort(port, name, router._getPortsInternal());
+    const nom = huaweiDisplayInterfaceName(name);
+    lignes.push({
+      nom,
+      adresse: ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned',
+      physique: phys,
+      protocole: protocoleVrp(nom, proto),
+    });
   }
-  return lines.join('\n');
+  if (filtre !== undefined) {
+    // L'argument etait LU puis jete : `display ip interface brief
+    // GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+    // n'existe pas aussi.
+    const cible = resolveHuaweiInterfaceName(router, filtre);
+    if (!cible) return `Error: Wrong parameter found at '^' position.`;
+    const attendu = huaweiDisplayInterfaceName(cible);
+    return rendreIpInterfaceBrief(lignes.filter((l) => l.nom === attendu));
+  }
+  return rendreIpInterfaceBrief(lignes);
 }
 
 export function displayIpInterface(router: Router, ifName: string): string {
-  const portName = resolveHuaweiInterfaceName(router, ifName) || ifName;
-  const port = router.getPort(portName);
-  if (!port) return `Error: Wrong parameter found at '^' position.`;
+  const portName = resolveHuaweiInterfaceName(router, ifName);
+  const port = portName ? router.getPort(portName) : null;
+  if (!port || !portName) return `Error: Wrong parameter found at '^' position.`;
   const ip = port.getIPAddress();
   const mask = port.getSubnetMask();
-  const isUp = port.getIsUp();
-  const conn = port.isConnected();
-  const phys = (isUp ? (conn ? 'up' : 'down') : 'administratively down');
-  const proto = (isUp && conn ? 'up' : 'down');
+  // Cette vue calculait l'etat a sa facon (`getIsUp()`/`isConnected()`),
+  // d'ou un LoopBack rendu DOWN ici et UP par `display interface` sur la
+  // meme machine au meme instant. Un objet, un etat, une source.
+  const st = iosInterfaceStatus(port, portName, router._getPortsInternal());
   const lines = [
-    `${portName} current state : ${phys.toUpperCase()}`,
-    `Line protocol current state : ${proto.toUpperCase()}`,
+    `${huaweiDisplayInterfaceName(portName)} current state : `
+      + `${st.status === 'administratively down' ? 'Administratively DOWN' : st.status.toUpperCase()}`,
+    `Line protocol current state : ${st.protocol.toUpperCase()}`
+      + `${protocoleSpoofe(portName) && st.protocol === 'up' ? ' (spoofing)' : ''}`,
     `Internet Address is ${ip && mask ? `${ip}/${mask.toCIDR()}` : 'unassigned'}`,
-    `Broadcast address : ${ip && mask ? ip.toString() : '0.0.0.0'}`,
+    `Broadcast address : ${ip && mask ? ip.broadcastAddress(mask).toString() : '0.0.0.0'}`,
     `The Maximum Transmit Unit : 1500 bytes`,
     `Input bandwidth utilization  : 0%`,
     `Output bandwidth utilization : 0%`,
@@ -290,78 +361,129 @@ export function displayInterfaceAll(router: Router): string {
   return names.map((n) => displayInterface(router, n)).join('\n');
 }
 
-/** `display interface brief` — real status table. */
-export function displayInterfaceBrief(router: Router): string {
-  const rows = [
-    'PHY: Physical   *down: administratively down',
-    'Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors',
-  ];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-    rows.push(`${name.padEnd(28)}${phy.padEnd(8)}${proto.padEnd(10)}` +
-      `0%    0%       0          0`);
+
+/**
+ * L'etat d'un port pour les vues VRP.
+ *
+ * Chaque vue calculait le sien (`getIsUp() && isConnected()`), ce qui se
+ * trompe de trois facons : une porteuse tombee a l'autre bout n'est pas
+ * vue, `administratively down` est aplati, et une interface VIRTUELLE —
+ * qui n'a pas de porteuse — est declaree morte alors que sa route est
+ * installee. `iosInterfaceStatus` decrit l'etat d'un PORT, pas un modele
+ * par constructeur : les deux CLI le lisent maintenant, chacun avec ses
+ * mots.
+ */
+function vrpEtatPort(port: import('../../../hardware/Port').Port, nom: string,
+  ports?: ReadonlyMap<string, import('../../../hardware/Port').Port>): { phys: string; proto: string } {
+  const st = iosInterfaceStatus(port, nom, ports);
+  return {
+    phys: st.status === 'administratively down' ? '*down' : st.status,
+    proto: st.protocol,
+  };
+}
+
+/**
+ * `display interface brief`.
+ *
+ * Mise en page relevée sur du texte capturé sur de vraies machines (jeu
+ * de référence `huawei_vrp/display_interface_brief` de
+ * `ntc-templates`) :
+ *
+ * ```
+ * Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+ * Aux0/0/1                    down  down         0%     0%          0          0
+ * Eth-Trunk4                  up    down      0.69% 13.57%       4625          0
+ * ```
+ *
+ * Deux écarts que la mesure a montrés et que l'œil ne voyait pas : la
+ * colonne `PHY` était large de huit caractères au lieu de six — donc
+ * TOUT ce qui suit était décalé de deux — et les quatre colonnes de
+ * droite étaient écrites à la main, chacune avec son propre décompte,
+ * si bien que `outErrors` finissait un caractère après son intitulé.
+ * Les quatre compteurs sont alignés à DROITE sur la vraie machine.
+ */
+export function displayInterfaceBrief(router: Router, filtre?: string): string {
+  const lignes = lignesInterfaceVrp(router);
+  const retenues = filtrerInterfaces(router, lignes, filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceBrief(retenues);
+}
+
+/** Les lignes de la famille « brief », une seule fois pour ses deux vues. */
+function lignesInterfaceVrp(router: Router): LigneInterface[] {
+  const ports = router._getPortsInternal();
+  const out: LigneInterface[] = [];
+  for (const [name, port] of ports) {
+    const { phys, proto } = vrpEtatPort(port, name, ports);
+    out.push({
+      nom: huaweiDisplayInterfaceName(name),
+      physique: phys,
+      protocole: proto,
+      description: router.getInterfaceDescription(name) || '',
+    });
   }
-  return rows.join('\n');
+  return out;
+}
+
+/**
+ * Le filtre par interface. Il etait LU puis jete : `display interface
+ * brief GigabitEthernet0/0/0` rendait tout le tableau, et un nom qui
+ * n'existe pas aussi.
+ */
+function filtrerInterfaces(
+  router: Router, lignes: LigneInterface[], filtre?: string,
+): LigneInterface[] | string {
+  if (filtre === undefined || filtre === '') return lignes;
+  const cible = resolveHuaweiInterfaceName(router, filtre);
+  if (!cible) return `Error: Wrong parameter found at '^' position.`;
+  const attendu = huaweiDisplayInterfaceName(cible);
+  return lignes.filter((l) => l.nom === attendu);
 }
 
 /** `display interface description` — real description table. */
-export function displayInterfaceDescription(router: Router): string {
-  const rows = ['Interface                     PHY     Protocol Description'];
-  for (const [name, port] of router._getPortsInternal()) {
-    const phy = port.getIsUp() ? (port.isConnected() ? 'up' : 'down') : '*down';
-    const proto = port.getIsUp() && port.isConnected() ? 'up' : 'down';
-    const desc = router.getInterfaceDescription(name) || '';
-    rows.push(`${name.padEnd(30)}${phy.padEnd(8)}${proto.padEnd(9)}${desc}`);
-  }
-  return rows.join('\n');
+export function displayInterfaceDescription(router: Router, filtre?: string): string {
+  const retenues = filtrerInterfaces(router, lignesInterfaceVrp(router), filtre);
+  return typeof retenues === 'string' ? retenues : rendreInterfaceDescription(retenues);
 }
 
 export function displayArp(router: Router): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  if (arpTable.size === 0) {
-    lines.push('No ARP entries found.');
-  }
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
-    const type = (entry as any).type === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    const type = (entry as { type?: string }).type === 'static' ? 'static' : 'D';
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpFiltered(router: Router, filterType: 'static' | 'dynamic'): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const isStatic = (entry as any).type === 'static';
     if (filterType === 'static' && !isStatic) continue;
     if (filterType === 'dynamic' && isStatic) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = isStatic ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push(`No ${filterType} ARP entries found.`);
-  return lines.join('\n');
+  return rendreArp(lignes, `No ${filterType} ARP entries found.`);
 }
 
 export function displayArpInterface(router: Router, ifName: string): string {
   const arpTable = router._getArpTableInternal();
-  const lines = ['IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE'];
-  let found = false;
+  const lignes: LigneArp[] = [];
   for (const [ip, entry] of arpTable) {
     const et = (entry as { type?: string }).type;
     if (entry.iface !== ifName && !entry.iface.endsWith(ifName)) continue;
-    found = true;
     const age = Math.floor((Date.now() - entry.timestamp) / 60000);
     const type = et === 'static' ? 'static' : 'D';
-    lines.push(`${ip.padEnd(16)}${entry.mac.toString().padEnd(16)}${String(age).padEnd(11)}${type.padEnd(10)}${entry.iface}`);
+    lignes.push({ ip, mac: huaweiMacAddress(entry.mac), expire: String(age), type,
+      iface: huaweiDisplayInterfaceName(entry.iface) });
   }
-  if (!found) lines.push('No ARP entries found.');
-  return lines.join('\n');
+  return rendreArp(lignes, 'No ARP entries found.');
 }
 
 export function displayArpStatistics(router: Router): string {
@@ -401,7 +523,6 @@ export function displayCurrentConfig(
   router: Router,
   dhcpEnabled: boolean,
   dhcpSnoopingEnabled: boolean,
-  dhcpSelectGlobal: Set<string>,
 ): string {
   const ports = router._getPortsInternal();
   const table = router._getRoutingTableInternal();
@@ -410,6 +531,19 @@ export function displayCurrentConfig(
     `sysname ${router._getHostnameInternal()}`,
     '#',
   ];
+
+  const dnsCfg = router._getDnsConfig();
+  const dnsLignes: string[] = [];
+  if (dnsCfg.lookupEnabled) dnsLignes.push('dns resolve');
+  for (const s of dnsCfg.nameServers) dnsLignes.push(`dns server ${s}`);
+  for (const d of dnsCfg.domainList) dnsLignes.push(`dns domain ${d}`);
+  for (const e of router._getHostsTable().entries()) {
+    if (e.permanent) dnsLignes.push(`ip host ${e.name} ${e.ips.join(' ')}`);
+  }
+  if (dnsLignes.length > 0) {
+    lines.push(...dnsLignes);
+    lines.push('#');
+  }
 
   if (dhcpEnabled) {
     lines.push('dhcp enable');
@@ -423,6 +557,7 @@ export function displayCurrentConfig(
   // DHCP pool config
   const dhcp = router._getDHCPServerInternal();
   for (const [, pool] of dhcp.getAllPools()) {
+    if (isInterfacePoolName(pool.name)) continue;
     lines.push(`ip pool ${pool.name}`);
     if (pool.network && pool.mask) lines.push(` network ${pool.network} mask ${pool.mask}`);
     if (pool.defaultRouter) lines.push(` gateway-list ${pool.defaultRouter}`);
@@ -453,9 +588,26 @@ export function displayCurrentConfig(
   const arpTable = router._getArpTableInternal();
   for (const [ip, entry] of arpTable) {
     if ((entry as any).type === 'static') {
-      lines.push(`arp static ${ip} ${entry.mac.toString()}`);
+      lines.push(`arp static ${ip} ${huaweiMacAddress(entry.mac)}`);
     }
   }
+
+  const prefixV4 = router.getIpPrefixListStore().renderHuawei('ipv4');
+  if (prefixV4) { lines.push(...prefixV4.split('\n')); lines.push('#'); }
+  const prefixV6 = router.getIpPrefixListStore().renderHuawei('ipv6');
+  if (prefixV6) { lines.push(...prefixV6.split('\n')); lines.push('#'); }
+  const politiques = router.getRoutePolicyStore().renderHuawei();
+  if (politiques) { lines.push(...politiques.split('\n')); lines.push('#'); }
+  const mqc = router.getTrafficPolicyStore().renderHuawei();
+  if (mqc.length > 0) lines.push(...mqc);
+
+  const trLignes = vrpTimeRangeLines(router);
+  if (trLignes.length > 0) { lines.push(...trLignes); lines.push('#'); }
+
+  const aclAvant = runningConfigACL(router);
+  if (aclAvant.length > 0) lines.push(...aclAvant);
+  const natAvant = vrpNatGlobalLines(router);
+  if (natAvant.length > 0) { lines.push(...natAvant); lines.push('#'); }
 
   const descs = router._getInterfaceDescriptions();
   const ospfExtra = router._getOSPFExtraConfig();
@@ -464,58 +616,42 @@ export function displayCurrentConfig(
     const mask = port.getSubnetMask();
     // Real VRP renders the canonical interface name (GigabitEthernet*)
     // rather than the abbreviated 'GE*' device label.
-    const renderedName = name.startsWith('GE') ? name.replace(/^GE/, 'GigabitEthernet') : name;
+    const renderedName = huaweiDisplayInterfaceName(name);
     lines.push(`interface ${renderedName}`);
     const desc = descs.get(name);
     if (desc) lines.push(` description ${desc}`);
-    if (ip && mask) {
+    if (port.isDhcpClient()) {
+      lines.push(' ip address dhcp-alloc');
+    } else if (ip && mask) {
       lines.push(` ip address ${ip} ${mask}`);
     } else {
       lines.push(` shutdown`);
     }
-    if (dhcpSelectGlobal.has(name)) {
-      lines.push(` dhcp select global`);
-    }
-    // DHCP relay helper addresses
-    const helpers = dhcp.getHelperAddresses(name);
-    for (const h of helpers) {
-      lines.push(` dhcp relay server-ip ${h}`);
-    }
-    if (dhcp.isSnoopingEnabled(name)) {
-      lines.push(` dhcp snooping enable`);
-    }
     lines.push(...renderHuaweiInterfaceExtras(router, port, name));
-    // IPSec policy/profile applied to interface
-    const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
-    if (ipsecEng2) {
-      const ifCrypto = (ipsecEng2 as any).ifaceCryptoMap?.get(name);
-      if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
-      const tp = (ipsecEng2 as any).tunnelProtection?.get(name);
-      if (tp) lines.push(` ipsec profile ${tp.profileName}`);
-    }
-    lines.push(...runningConfigInterfaceACL(router, name));
     lines.push('#');
-  }
-
-  // ACL configuration
-  const aclLines = runningConfigACL(router);
-  if (aclLines.length > 0) {
-    lines.push(...aclLines);
   }
 
   for (const r of table) {
     if (r.type === 'static' && r.nextHop) {
-      lines.push(`ip route-static ${r.network} ${r.mask} ${r.nextHop}`);
+      lines.push(`ip route-static ${r.network} ${r.mask} ${vrpStaticRouteTail(r)}`);
     }
     if (r.type === 'default' && r.nextHop) {
-      lines.push(`ip route-static 0.0.0.0 0.0.0.0 ${r.nextHop}`);
+      lines.push(`ip route-static 0.0.0.0 0.0.0.0 ${vrpStaticRouteTail(r)}`);
     }
   }
   // RIP config
   if (router.isRIPEnabled()) {
     lines.push('#');
     lines.push('rip 1');
-    lines.push(' version 2');
+    // La version etait ecrite en dur : un routeur en `version 1`
+    // revenait en `version 2` apres rechargement.
+    lines.push(` version ${(router as unknown as { _ripVersion?: number })._ripVersion ?? 2}`);
+    if (huaweiRipExtras(router).autoSummary === false) lines.push(' undo summary');
+    // `maximum load-balancing` n'etait rendu nulle part, sur AUCUN des
+    // quatre protocoles : une configuration rejouee a l'import perdait
+    // donc le plafond d'ECMP.
+    const ripMax = huaweiRipExtras(router).maximumPaths;
+    if (ripMax !== undefined) lines.push(` maximum load-balancing ${ripMax}`);
     const cfg = router.getRIPConfig();
     for (const net of cfg.networks) {
       lines.push(` network ${net.network}`);
@@ -530,6 +666,8 @@ export function displayCurrentConfig(
     if (config.routerId && config.routerId !== '0.0.0.0') {
       lines.push(` router-id ${config.routerId}`);
     }
+    const ospfMax = (router._getOSPFExtraConfig() as { maximumPaths?: number }).maximumPaths;
+    if (ospfMax !== undefined) lines.push(` maximum load-balancing ${ospfMax}`);
     // Group network statements by area
     const areaNetworks = new Map<string, Array<{ network: string; wildcard: string }>>();
     for (const net of config.networks) {
@@ -583,7 +721,8 @@ export function displayCurrentConfig(
       for (const [seq, entry] of cmap.staticEntries as Map<number, any>) {
         lines.push('#');
         lines.push(`ipsec policy ${mapName} ${seq} isakmp`);
-        if (entry.peers?.length > 0) lines.push(` ike-peer ${entry.peers[0]}`);
+        const peerRef = entry.ikePeerName ?? (entry.peers?.length > 0 ? entry.peers[0] : null);
+        if (peerRef) lines.push(` ike-peer ${peerRef}`);
         if (entry.transformSets?.length > 0) lines.push(` proposal ${entry.transformSets.join(' ')}`);
       }
     }
@@ -603,28 +742,59 @@ export function displayCurrentConfig(
   }
 
   const listUsers = (router as unknown as {
-    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean }>;
+    _listLocalUsers?: () => ReadonlyArray<{ name: string; privilege: number; secret: string; secretAlgo?: string; factoryDefault?: boolean; serviceTypes?: readonly string[] }>;
   })._listLocalUsers;
   if (listUsers) {
-    const users = listUsers.call(router).filter(u => !u.factoryDefault);
-    if (users.length > 0) {
+    const users = listUsers.call(router);
+    const p = router.getHuaweiAaaService().passwordPolicy;
+    const hasPasswordPolicy = Object.keys(p).length > 0;
+    if (users.length > 0 || hasPasswordPolicy) {
       lines.push('aaa');
+      if (p.level) lines.push(` password-policy level ${p.level}`);
+      if (p.minLength) lines.push(` password-policy min-length ${p.minLength}`);
+      if (p.expireDays) lines.push(` password-policy expire ${p.expireDays}`);
+      if (p.alertBeforeExpireDays) lines.push(` password-policy alert-before-expire ${p.alertBeforeExpireDays}`);
+      if (p.historyMaxRecords) lines.push(` password-policy history-record max-record-number ${p.historyMaxRecords}`);
       for (const u of users) {
         // Real VRP never echoes the cleartext: 'cipher' is reversible
         // (AES), everything else is hashed one-way (irreversible-cipher).
+        // Le secret RANGE est deja sous sa forme rendue depuis que le
+        // parseur reconnait la valeur transformee ; le re-transformer
+        // ici donnait un texte que le rejeu ne pouvait pas reproduire.
         const field = u.secretAlgo === 'cipher'
-          ? `password cipher ${huaweiCipher(u.secret)}`
-          : `password irreversible-cipher ${huaweiIrreversibleCipher(u.secret)}`;
+          ? `password cipher ${looksLikeReversibleCipher(u.secret) ? u.secret : huaweiCipher(u.secret)}`
+          : `password irreversible-cipher ${looksLikeIrreversibleCipher(u.secret) ? u.secret : huaweiIrreversibleCipher(u.secret)}`;
         lines.push(` local-user ${u.name} ${field}`);
         lines.push(` local-user ${u.name} privilege level ${u.privilege}`);
-        lines.push(` local-user ${u.name} service-type ssh`);
+        const types = u.serviceTypes && u.serviceTypes.length > 0 ? u.serviceTypes : ['ssh'];
+        lines.push(` local-user ${u.name} service-type ${types.join(' ')}`);
       }
       lines.push('#');
     }
   }
 
+  const routingExtras = getHuaweiRoutingExtras(router);
+  if (routingExtras) {
+    const rl = routingExtras.asRunningConfigLines();
+    if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
+  }
+
+  const bfd = (router as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
+  if (bfd) {
+    const bl = bfd.asRunningConfigLines();
+    if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
+  }
+
+  const aaaService = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
+  if (aaaService) {
+    const al = aaaService.asRunningConfigLines();
+    if (al.length > 0) lines.push(...al);
+  }
+
+  appendManagementConfig(lines, router);
+
   lines.push('#');
-  return lines.join('\n');
+  return normaliserBlocsVrp(lines).join('\n');
 }
 
 export function displayCounters(router: Router): string {
@@ -760,7 +930,7 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
     `IPv6 protocol current state : ${ipv6Enabled ? 'UP' : 'DOWN'}`,
   ];
   if (addrs.length === 0) lines.push('IPv6 is enabled, link-local address is not assigned');
-  for (const a of addrs as Array<{ address: string; prefixLength: number }>) {
+  for (const a of addrs as IPv6AddressEntry[]) {
     lines.push(`  Global unicast address(es):`);
     lines.push(`    ${a.address}, subnet is ${a.address}/${a.prefixLength}`);
   }
@@ -769,37 +939,129 @@ export function displayIpv6Interface(router: Router, ifName: string): string {
   return lines.join('\n');
 }
 
+/**
+ * Three defects here, all made visible the day `ipv6 enable` started
+ * creating a real link-local address (RFC 4862 §5.3) instead of setting
+ * a flag: the ZONE INDEX was concatenated with the prefix length
+ * (`fe80::1%GE0/0/0/64` — an address that does not exist), several
+ * addresses were joined on ONE line so the column overflowed and glued
+ * the state onto the address, and a link-local was given a `/64` VRP
+ * does not print. One row per address, the zone dropped — the Interface
+ * column already names it.
+ */
 export function displayIpv6InterfaceBrief(router: Router): string {
-  const ports = router._getPortsInternal();
-  const lines = ['Interface                         IPv6 Address                    State'];
-  for (const [name, port] of ports) {
-    const addrs = port.getIPv6Addresses?.() || [];
-    const addrStr = addrs.length > 0 ? addrs.map((a: any) => `${a.address}/${a.prefixLength}`).join(', ') : 'unassigned';
+  const lignes: LigneIpv6Brief[] = [];
+  for (const [name, port] of router._getPortsInternal()) {
+    const addrs = (port.getIPv6Addresses?.() ?? []) as IPv6AddressEntry[];
     const state = port.isConnected() ? 'up' : 'down';
-    lines.push(`${name.padEnd(34)}${addrStr.padEnd(32)}${state}`);
+    if (addrs.length === 0) {
+      lignes.push({ iface: name, address: 'unassigned', state });
+      continue;
+    }
+    addrs.forEach((a, i) => lignes.push({
+      iface: i === 0 ? name : '',
+      address: a.origin === 'link-local'
+        ? `${a.address.withScopeId(null)}`
+        : `${a.address.withScopeId(null)}/${a.prefixLength}`,
+      state: i === 0 ? state : '',
+    }));
   }
+  return renderTable(lignes, IPV6_BRIEF_COLUMNS, VRP_TABLE).join('\n');
+}
+
+interface LigneIpv6Brief { iface: string; address: string; state: string }
+
+const IPV6_BRIEF_COLUMNS: ReadonlyArray<TableColumn<LigneIpv6Brief>> = [
+  { header: 'Interface', width: 32, value: (r) => r.iface },
+  { header: 'IPv6 Address', width: 30, value: (r) => r.address },
+  { header: 'State', value: (r) => r.state },
+];
+
+/**
+ * `display ipv6 neighbors`. VRP renders one RECORD per neighbour rather
+ * than a table, and the fields it shows are not the ones IOS shows: an
+ * age in seconds, the router flag learned from the advertisement, and
+ * the totals split between dynamic and static entries.
+ *
+ * `VLAN`/`CEVLAN` are `-` here because a routed port carries neither;
+ * `VPN name` is empty and `Secure` FALSE for the same reason the rest of
+ * this simulator has no VPN instance or secure-ND model — writing
+ * anything else would describe a mechanism that does not run.
+ */
+/**
+ * `display ipv6 statistics` and `display icmpv6 statistics` read the
+ * SAME counters as IOS's `show ipv6 traffic` — one data plane, one set
+ * of numbers. VRP splits them across two commands where IOS prints one
+ * block, so what changes is the layout, never the count.
+ */
+export function displayIpv6Statistics(router: Router): string {
+  const c = router.getIpv6Counters();
+  return [
+    'IPv6 Protocol:',
+    `  Received packets:`,
+    `    Total: ${c.inReceives}`,
+    `    Local host: ${c.inDelivers}`,
+    `    Hoplimit exceeded: ${c.inHopLimitExceeded}`,
+    `    No route: ${c.inNoRoutes}`,
+    `    Filtered: ${c.inFiltered}`,
+    `  Sent packets:`,
+    `    Total: ${c.outRequests}`,
+    `    Forwarded: ${c.outForwarded}`,
+    `    Filtered: ${c.outFiltered}`,
+  ].join('\n');
+}
+
+export function displayIcmpv6Statistics(router: Router): string {
+  const c = router.getIpv6Counters();
+  return [
+    'ICMPv6 Protocol:',
+    '  Received packets:',
+    `    Echo request: ${c.icmpInEchoRequests}`,
+    `    Echo reply: ${c.icmpInEchoReplies}`,
+    `    Neighbor solicit: ${c.ndInSolicits}`,
+    `    Neighbor advert: ${c.ndInAdverts}`,
+    `    Router solicit: ${c.ndInRouterSolicits}`,
+    '  Sent packets:',
+    `    Echo reply: ${c.icmpOutEchoReplies}`,
+    `    Errors: ${c.icmpOutErrors}`,
+    `    Neighbor solicit: ${c.ndOutSolicits}`,
+    `    Neighbor advert: ${c.ndOutAdverts}`,
+    `    Router advert: ${c.ndOutRouterAdverts}`,
+  ].join('\n');
+}
+
+export function displayIpv6Neighbors(router: Router, ifFilter?: string): string {
+  const rule = '-'.repeat(79);
+  const lines: string[] = [rule];
+  let total = 0;
+  // Same clock the cache stamped the entry with — the scheduler's.
+  const nowMs = router.getNeighborCacheNow();
+  for (const [ip, entry] of router.getNeighborCache()) {
+    if (ifFilter && entry.iface !== ifFilter) continue;
+    total++;
+    const age = Math.floor(Math.max(0, nowMs - entry.timestamp) / 1000);
+    lines.push(`IPv6 Address : ${ip.split('%')[0].toUpperCase()}`);
+    lines.push(`Link-layer   : ${huaweiMacAddress(entry.mac).padEnd(22)}State : ${VRP_NEIGHBOR_STATE[entry.state]}`);
+    lines.push(`Interface    : ${entry.iface.padEnd(22)}Age   : ${age}`);
+    lines.push(`VLAN         : -                     CEVLAN: -`);
+    lines.push(`VPN name     :                       Is Router: ${entry.isRouter ? 'TRUE' : 'FALSE'}`);
+    lines.push('Secure       : FALSE');
+    lines.push(rule);
+  }
+  lines.push(`Total: ${total}        Dynamic: ${total}     Static: 0`);
   return lines.join('\n');
 }
 
+const VRP_NEIGHBOR_STATE: Record<string, string> = {
+  incomplete: 'INCMP', reachable: 'REACH', stale: 'STALE',
+  delay: 'DELAY', probe: 'PROBE',
+};
+
 export function displayDebugging(router: Router): string {
-  const lines: string[] = [];
-  const flags = (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags;
-  if (flags) for (const f of [...flags].sort()) lines.push(f);
-  const dhcp = router._getDHCPServerInternal();
-  const dhcpDebug = dhcp.formatDebugShow();
-  if (!dhcpDebug.includes('No')) {
-    lines.push('DHCP debugging:');
-    lines.push(dhcpDebug);
-  }
-  const ipsecEng = (router as any)._getIPSecEngineInternal?.();
-  if (ipsecEng) {
-    const debug = (ipsecEng as any).debugFlags || {};
-    if (debug.isakmp) lines.push('IKE debugging is on');
-    if (debug.ipsec) lines.push('IPSec debugging is on');
-    if (debug.ikev2) lines.push('IKEv2 debugging is on');
-  }
-  if (lines.length === 0) return 'No debugging is enabled.';
-  return lines.join('\n');
+  const debugSvc = (router as unknown as {
+    getHuaweiDebugService?: () => HuaweiDebugService;
+  }).getHuaweiDebugService?.();
+  return debugSvc ? debugSvc.format() : 'No debugging is on';
 }
 
 export function displayIpProtocols(router: Router): string {
@@ -845,26 +1107,6 @@ export function displayRip(router: Router): string {
     lines.push(`    ${key} cost ${info.metric} via ${info.learnedFrom} age ${info.age}s${info.garbageCollect ? ' [garbage-collect]' : ''}`);
   }
 
-  appendManagementConfig(lines, router);
-
-  const routingExtras = (router as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
-  if (routingExtras) {
-    const rl = routingExtras.asRunningConfigLines();
-    if (rl.length > 0) { lines.push('#'); lines.push(...rl); }
-  }
-
-  const bfd = (router as unknown as { getHuaweiBfdService?: () => import('../../router/bfd/HuaweiBfdService').HuaweiBfdService }).getHuaweiBfdService?.();
-  if (bfd) {
-    const bl = bfd.asRunningConfigLines();
-    if (bl.length > 0) { lines.push('#'); lines.push(...bl); }
-  }
-
-  const aaa = (router as unknown as { getHuaweiAaaService?: () => import('../../router/aaa/HuaweiAaaService').HuaweiAaaService }).getHuaweiAaaService?.();
-  if (aaa) {
-    const al = aaa.asRunningConfigLines();
-    if (al.length > 0) { lines.push('#'); lines.push(...al); }
-  }
-
   return lines.join('\n');
 }
 
@@ -882,34 +1124,20 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('ssh server enable');
     if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
   }
-  const snmp = mgmt.getSnmp();
-  if (snmp.enabled) {
+  if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
+  if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
+
+  const snmpLines = mgmt.snmpRunningConfigLines();
+  if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }
+  // Lot N2 : ces lignes sortaient d'un sac de chaines brutes, donc elles
+  // reproduisaient la saisie sans decrire l'etat — deux lignes pour une
+  // adresse configuree deux fois, et un `authentication-mode` ecrit deux
+  // fois avec la cle perdue. Elles decrivent l'agent, donc elles se
+  // relisent.
+  const ntpLignes = lignesConfigNtpVrp(huaweiNtpAgent(router));
+  if (ntpLignes.length > 0) {
     lines.push('#');
-    if (snmp.sysContact) lines.push(`snmp-agent sys-info contact ${snmp.sysContact}`);
-    if (snmp.sysLocation) lines.push(`snmp-agent sys-info location ${snmp.sysLocation}`);
-    for (const [, c] of snmp.communities) {
-      lines.push(`snmp-agent community ${c.access} ${c.name}${c.aclName ? ' acl ' + c.aclName : ''}`);
-    }
-    for (const t of snmp.trapHosts) {
-      lines.push(`snmp-agent target-host ${t.host} params securityname ${t.community} ${t.version}`);
-    }
-    for (const r of mgmt.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
-  }
-  const ntp = mgmt.getNtp();
-  const ntpRaw = mgmt.getRawEntries('ntp');
-  if (ntpRaw.length > 0 || ntp.sourceInterface || ntp.authentication || ntp.masterStratum) {
-    lines.push('#');
-    if (ntp.sourceInterface) lines.push(`ntp-service source-interface ${ntp.sourceInterface}`);
-    if (ntp.authentication) lines.push('ntp-service authentication enable');
-    for (const [id, k] of ntp.authKeys) {
-      lines.push(`ntp-service authentication-keyid ${id} authentication-mode ${k.algo} ${k.key}`);
-    }
-    for (const id of ntp.trustedKeys) {
-      lines.push(`ntp-service reliable authentication-keyid ${id}`);
-    }
-    if (ntp.accessAcl) lines.push(`ntp-service access-acl ${ntp.accessAcl}`);
-    if (ntp.masterStratum !== undefined) lines.push(`ntp-service refclock-master ${ntp.masterStratum}`);
-    for (const r of ntpRaw) lines.push(`ntp-service ${r.line}`);
+    lines.push(...ntpLignes);
   }
   const clock = mgmt.getClock();
   if (clock.timezone !== 'UTC' || clock.summerTimezone) {
@@ -923,13 +1151,13 @@ function appendManagementConfig(lines: string[], router: Router): void {
       lines.push(`clock daylight-saving-time ${clock.summerTimezone} repeating ${clock.daylightStart} ${clock.daylightEnd}`);
     }
   }
-  const info = mgmt.getInfoCenter();
-  if (info.enabled && (info.sources.length > 0 || info.loghosts.length > 0)) {
+  // La configuration est REJOUÉE à l'import : elle rend maintenant ce
+  // qui a été tapé, transport, port, précision d'horodatage et type
+  // d'enregistrement compris. Ce qui vaut l'usine n'est pas rendu.
+  const infoLines = mgmt.getInfoCenter().toRunningConfig();
+  if (infoLines.length > 0) {
     lines.push('#');
-    lines.push(`info-center enable`);
-    if (info.timestamp !== 'date') lines.push(`info-center timestamp ${info.timestamp}`);
-    for (const s of info.sources) lines.push(`info-center source ${s.source} channel ${s.channel} level ${s.severity}`);
-    for (const h of info.loghosts) lines.push(`info-center loghost ${h.ip} channel ${h.channel} facility ${h.facility}`);
+    lines.push(...infoLines);
   }
   const sflow = mgmt.getSflow();
   if (sflow.enabled) {
@@ -943,6 +1171,11 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('#');
     lines.push(`ip routing-table limit ${routingLimit.max}${routingLimit.thresholdPct !== undefined ? ' ' + routingLimit.thresholdPct : ''}`);
   }
+  const nqa = nqaRunningConfigLines(router);
+  if (nqa.length > 0) {
+    lines.push('#');
+    lines.push(...nqa);
+  }
 }
 
 export function displayCurrentConfigInterface(router: Router, ifName: string): string {
@@ -955,10 +1188,15 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
   const desc = router.getInterfaceDescription(portName);
   const lines = [
     '#',
-    `interface ${portName}`,
+    // Le nom canonique, comme la configuration complete le rend deja :
+    // cette vue-ci ecrivait `interface GE0/0/0`, le nom court interne,
+    // dans un bloc de CONFIGURATION (lots V3/V11, puis V15).
+    `interface ${huaweiDisplayInterfaceName(portName)}`,
   ];
   if (desc) lines.push(` description ${desc}`);
-  if (ip && mask) {
+  if (port.isDhcpClient()) {
+    lines.push(' ip address dhcp-alloc');
+  } else if (ip && mask) {
     lines.push(` ip address ${ip} ${mask}`);
   } else {
     lines.push(` shutdown`);
@@ -966,17 +1204,140 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
 
   lines.push(...renderHuaweiInterfaceExtras(router, port, portName));
 
-  const vrrp = (router as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
-  if (vrrp) lines.push(...vrrp.asInterfaceRunningConfigLines(portName));
-
   lines.push('#');
   return lines.join('\n');
 }
 
+/**
+ * Ce que les deux rendus de configuration ajoutent apres l'adresse.
+ *
+ * Les lignes `vrrp` y entrent au lot V15 parce que les deux chemins qui
+ * rendaient une configuration se contredisaient : le complet n'en
+ * rendait AUCUNE, celui par interface les rendait toutes. Les mettre ici
+ * est ce qui rend le desaccord impossible plutot que rattrape.
+ */
+const JOURS_VERS_VRP: Record<string, string> = {
+  daily: 'daily', weekdays: 'working-day', weekend: 'off-day',
+  Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu',
+  Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun',
+};
+
+export function vrpTimeRangeLines(router: Router): string[] {
+  const sec = (router as unknown as {
+    [s: symbol]: { timeRanges?: Map<string, {
+      name: string;
+      periodic: Array<{ days: string; startHour: number; startMinute: number; endHour: number; endMinute: number }>;
+    }> } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')];
+  const deuxChiffres = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const out: string[] = [];
+  for (const tr of sec?.timeRanges?.values() ?? []) {
+    for (const p of tr.periodic) {
+      const jours = p.days.split(' ').map((j) => JOURS_VERS_VRP[j] ?? j).join(' ');
+      out.push(`time-range ${tr.name} ${deuxChiffres(p.startHour)}:${deuxChiffres(p.startMinute)}`
+        + ` to ${deuxChiffres(p.endHour)}:${deuxChiffres(p.endMinute)} ${jours}`);
+    }
+  }
+  return out;
+}
+
+export function vrpNatInterfaceLines(router: Router, portName: string): string[] {
+  const engine = (router as any)._getNATEngine?.();
+  if (!engine) return [];
+  const lines: string[] = [];
+  for (const rule of engine.getDynamicRules() as Array<{
+    aclId: string | number; type: string; poolName?: string;
+    interfaceName?: string; noPat?: boolean;
+  }>) {
+    if (rule.interfaceName !== portName) continue;
+    const groupe = rule.type === 'pool' && rule.poolName ? ` address-group ${rule.poolName}` : '';
+    lines.push(` nat outbound ${rule.aclId}${groupe}${rule.noPat ? ' no-pat' : ''}`);
+  }
+  if (!engine.getOutsideInterfaces().has(portName)) return lines;
+  for (const e of engine.getStaticEntries() as Array<{
+    localIP: string; globalIP: string; protocol?: string;
+    localPort?: number; globalPort?: number;
+  }>) {
+    if (!e.protocol || e.globalPort === undefined || e.localPort === undefined) continue;
+    lines.push(` nat server protocol ${e.protocol} global ${e.globalIP} ${e.globalPort}`
+      + ` inside ${e.localIP} ${e.localPort}`);
+  }
+  return lines;
+}
+
+export function vrpNatGlobalLines(router: Router): string[] {
+  const engine = (router as any)._getNATEngine?.();
+  if (!engine) return [];
+  const lines: string[] = [];
+  for (const [, pool] of engine.getPools() as Map<string, { name: string; startIP: string; endIP: string }>) {
+    lines.push(`nat address-group ${pool.name} ${pool.startIP} ${pool.endIP}`);
+  }
+  return lines;
+}
+
+const VRP_OSPF_IF_DEFAULTS: Record<string, unknown> = {
+  priority: 1, helloInterval: 10, deadInterval: 40,
+  networkType: 'broadcast', authType: 0,
+};
+
+export function vrpOspfInterfaceLines(pending: Record<string, unknown> | undefined): string[] {
+  if (!pending) return [];
+  const lines: string[] = [];
+  const ecart = (cle: string) =>
+    pending[cle] !== undefined && pending[cle] !== VRP_OSPF_IF_DEFAULTS[cle];
+
+  if (pending.cost !== undefined) lines.push(` ospf cost ${pending.cost}`);
+  if (ecart('priority')) lines.push(` ospf dr-priority ${pending.priority}`);
+  if (ecart('helloInterval')) lines.push(` ospf timer hello ${pending.helloInterval}`);
+  if (ecart('deadInterval')) lines.push(` ospf timer dead ${pending.deadInterval}`);
+  if (ecart('networkType')) lines.push(` ospf network-type ${pending.networkType}`);
+  if (pending.authType === 1) {
+    lines.push(` ospf authentication-mode simple${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
+  }
+  if (pending.authType === 2) {
+    const keyId = pending.authKeyId ?? 1;
+    lines.push(` ospf authentication-mode md5 ${keyId}${pending.authKey ? ` cipher ${pending.authKey}` : ''}`);
+  }
+  if (pending.silent) lines.push(' ospf silent-interface');
+  return lines;
+}
+
+export function vrpRipInterfaceLines(port: {
+  getRipSendVersion?: () => string | null;
+  getRipReceiveVersion?: () => string | null;
+  getRipAuthMode?: () => string | null;
+  getRipAuthKeyChain?: () => string | null;
+  isRipV2Broadcast?: () => boolean;
+  getRipSummaries?: () => readonly string[];
+}): string[] {
+  const lines: string[] = [];
+  const version = port.getRipSendVersion?.() ?? port.getRipReceiveVersion?.() ?? null;
+  if (version) {
+    const diffusion = port.isRipV2Broadcast?.() ? ' broadcast' : version === '2' ? ' multicast' : '';
+    lines.push(` rip version ${version}${diffusion}`);
+  }
+  const mode = port.getRipAuthMode?.();
+  if (mode) {
+    const cle = port.getRipAuthKeyChain?.();
+    lines.push(` rip authentication-mode ${mode}${cle ? ` cipher ${cle}` : ''}`);
+  }
+  for (const l of port.getRipSummaries?.() ?? []) lines.push(` ${l}`);
+  return lines;
+}
+
 export function renderHuaweiInterfaceExtras(router: Router, port: any, portName: string): string[] {
   const lines: string[] = [];
+  lines.push(...lignesConfigVrrp(huaweiVrrpAgent(router)?.listGroups() ?? [], portName));
   const extra = router._getOSPFExtraConfig();
   const pending = extra.pendingIfConfig?.get(portName) as any;
+  lines.push(...vrpOspfInterfaceLines(pending));
+  lines.push(...vrpRipInterfaceLines(port));
+  if (port.isNegotiationAuto?.() === false) {
+    const vitesse = port.getSpeed?.();
+    if (vitesse) lines.push(` speed ${vitesse}`);
+    const duplex = port.getDuplex?.();
+    if (duplex) lines.push(` duplex ${duplex}`);
+  }
   if (pending?.tunnelProtocol) lines.push(` tunnel-protocol ${pending.tunnelProtocol}`);
   if (pending?.tunnelSource) lines.push(` source ${pending.tunnelSource}`);
   if (pending?.tunnelDest) lines.push(` destination ${pending.tunnelDest}`);
@@ -986,6 +1347,33 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
     const kp = pending.tunnelKeepalivePeriod;
     const kr = pending.tunnelKeepaliveRetry;
     lines.push(` keepalive period ${kp}${kr !== undefined ? ` retry-times ${kr}` : ''}`);
+  }
+  const dhcp = router._getDHCPServerInternal();
+  const dhcpMode = dhcp.getInterfaceMode(portName);
+  if (dhcpMode === 'global' || dhcpMode === 'relay' || dhcpMode === 'interface') {
+    lines.push(` dhcp select ${dhcpMode}`);
+  }
+  if (dhcpMode === 'interface') {
+    const dns = dhcp.getPool(interfacePoolName(portName))?.dnsServers ?? [];
+    if (dns.length > 0) lines.push(` dhcp server dns-list ${dns.join(' ')}`);
+  }
+  for (const h of dhcp.getHelperAddresses(portName)) lines.push(` dhcp relay server-ip ${h}`);
+  if (dhcp.isSnoopingEnabled(portName)) lines.push(' dhcp snooping enable');
+  const ipsecEngine = (router as any)._getIPSecEngineInternal?.();
+  if (ipsecEngine) {
+    const ifCrypto = ipsecEngine.ifaceCryptoMap?.get(portName);
+    if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
+    const tp = ipsecEngine.tunnelProtection?.get(portName);
+    if (tp) lines.push(` ipsec profile ${tp.profileName}`);
+  }
+  for (const regle of router.getCarPolicer(portName)?.list() ?? []) {
+    lines.push(` ${regle.raw.trim()}`);
+  }
+  lines.push(...runningConfigInterfaceACL(router, portName));
+  lines.push(...vrpNatInterfaceLines(router, portName));
+  for (const app of router.getTrafficPolicyStore().listApplications()) {
+    if (app.iface !== portName) continue;
+    lines.push(` traffic-policy ${app.policy} ${app.direction}`);
   }
   if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
   if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
@@ -1001,6 +1389,13 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   if (port.loopbackInternal) lines.push(` loopback internal`);
   if (port.flowControl) lines.push(` flow-control`);
   if (port.ipv6Enabled) lines.push(` ipv6 enable`);
+  for (const entry of port.getIPv6Addresses?.() ?? []) {
+    if (entry.origin !== 'static') continue;
+    lines.push(` ipv6 address ${entry.address}/${entry.prefixLength}`);
+  }
+  const v3 = (router as any)._getOSPFv3EngineInternal?.();
+  const v3Iface = v3?.getInterface?.(portName);
+  if (v3Iface) lines.push(` ospfv3 ${v3.getProcessId?.() ?? 1} area ${v3Iface.areaId}`);
   if (port.ipv6Mtu) lines.push(` ipv6 mtu ${port.ipv6Mtu}`);
   if (port.ipv6NdRaHalt) lines.push(` ipv6 nd ra halt`);
   return lines;
@@ -1008,20 +1403,12 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
 
 // ─── Trie Registration ──────────────────────────────────────────────
 
-function huaweiVrrpAgent(router: Router): import('../../../vrrp/VrrpAgent').VrrpAgent | undefined {
-  return (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+function huaweiNtpAgent(router: Router): import('../../../ntp/NtpAgent').NtpAgent | undefined {
+  return (router as unknown as { getNtpAgent?: () => import('../../../ntp/NtpAgent').NtpAgent }).getNtpAgent?.();
 }
 
-function huaweiVrrpLiveState(
-  router: Router,
-  ifName: string,
-  vrid: number,
-): 'Initialize' | 'Backup' | 'Master' | undefined {
-  const live = huaweiVrrpAgent(router)?.getGroup(ifName, vrid);
-  if (!live) return undefined;
-  if (live.state === 'master') return 'Master';
-  if (live.state === 'backup') return 'Backup';
-  return 'Initialize';
+function huaweiVrrpAgent(router: Router): import('../../../vrrp/VrrpAgent').VrrpAgent | undefined {
+  return (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
 }
 
 /**
@@ -1052,12 +1439,12 @@ export function registerDisplayCommands(
     displayArpInterface(getRouter(), args.join(' ')));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled());
   });
 
   trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
     const s = getState();
-    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled());
     const module = (args[0] ?? '').toLowerCase();
     if (!module) return full;
     const keywords = module === 'dhcp' ? ['dhcp', 'ip pool'] : [module];
@@ -1077,8 +1464,13 @@ export function registerDisplayCommands(
     displayTrafficFilterApplied(getRouter()));
 
   trie.register('display saved-configuration', 'Display saved configuration', () => {
-    const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    // Real semantics: render the snapshot captured by `save` — NOT a
+    // mirror of the running configuration. An unsaved device has no
+    // configuration file, exactly like real VRP.
+    const snapshot = (getRouter() as unknown as { getStartupConfigSnapshot?: () => string | null })
+      .getStartupConfigSnapshot?.();
+    if (!snapshot) return "Error: The configuration file doesn't exist.";
+    return snapshot;
   });
 
   trie.register('display startup', 'Display startup configuration', () => {
@@ -1142,23 +1534,15 @@ export function registerDisplayCommands(
   });
 
   trie.register('display user-interface', 'Display user interface info', () => {
-    const vty = (getRouter() as unknown as { _getVtyLineConfig?: () => { renderAllHuawei: () => string[] } })._getVtyLineConfig?.();
-    const cfg = vty ? vty.renderAllHuawei() : [];
-    const lines = [
-      '  Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int',
-      '+ 0      CON 0           9600     -      0      0            N      -',
-      '  34     VTY 0           -        -      0      0            N      -',
-      '  35     VTY 1           -        -      0      0            N      -',
-      '  36     VTY 2           -        -      0      0            N      -',
-      '  37     VTY 3           -        -      0      0            N      -',
-      '  38     VTY 4           -        -      0      0            N      -',
-    ];
+    const store = getVtyLineConfig(getRouter());
+    const lines = [renderDisplayUserInterface(getSessionRegistry(getRouter()), store)];
+    const cfg = store ? store.renderAllHuawei() : [];
     if (cfg.length > 0) { lines.push(''); lines.push(...cfg); }
     return lines.join('\n');
   });
 
   trie.register('display dhcp snooping configuration', 'Display DHCP snooping configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: DHCP snooping is not configured';
     const enabled = sw.isDhcpSnoopingEnabled();
     const vlans = sw.getDhcpSnoopingVlans();
@@ -1175,7 +1559,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display arp anti-attack configuration', 'Display ARP anti-attack configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: ARP anti-attack is not configured';
     const policies = sw.getArpAntiAttackPolicies();
     if (policies.length === 0) return 'Info: ARP anti-attack is not configured';
@@ -1185,7 +1569,7 @@ export function registerDisplayCommands(
   });
 
   trie.register('display ip source check user-bind configuration', 'Display IP source guard configuration', () => {
-    const sw = (getRouter() as unknown as { getSecurityService?: () => import('../../switch/SwitchSecurityService').SwitchSecurityService }).getSecurityService?.();
+    const sw = getSwitchSecurityService(getRouter());
     if (!sw) return 'Info: IP source guard is not configured';
     const enabled = sw.isIpSourceGuardEnabled();
     const bindings = sw.getIpSourceGuardBindings();
@@ -1200,10 +1584,16 @@ export function registerDisplayCommands(
     }
     return lines.join('\n');
   });
+  // `source` et `check` ne sont créés qu'en CHEMIN par la ligne
+  // ci-dessus : ils naissaient donc avec leur propre mot pour
+  // description, que le rendu blanchit — `display ip ?` répondait
+  // « source  Source », qui n'apprend rien.
+  trie.describeNode('display ip source', 'IP source guard information');
+  trie.describeNode('display ip source check', 'IP source check information');
 
   trie.register('display dhcp server statistics', 'Display DHCP server statistics', () => {
     const dhcp = getRouter()._getDHCPServerInternal();
-    const pools = dhcp.getAllPools();
+    const poolCount = [...dhcp.getAllPools().keys()].filter(n => !isInterfacePoolName(n)).length;
     const s = (dhcp as unknown as { getStats?: () => { discovers: number; offers: number; requests: number; acks: number; naks: number; releases: number; informs: number; declines: number } }).getStats?.() ?? {
       discovers: 0, offers: 0, requests: 0, acks: 0, naks: 0, releases: 0, informs: 0, declines: 0,
     };
@@ -1217,7 +1607,7 @@ export function registerDisplayCommands(
       `  Request: ${s.requests}       Ack: ${s.acks}`,
       `  Nak: ${s.naks}           Release: ${s.releases}`,
       `  Inform: ${s.informs}        Decline: ${s.declines}`,
-      `Pool number: ${pools.size}`,
+      `Pool number: ${poolCount}`,
     ].join('\n');
   });
 
@@ -1239,33 +1629,31 @@ export function registerDisplayCommands(
     return [...pools.values()].map(p => `${p.name}: ${p.startIP} - ${p.endIP}`).join('\n');
   });
 
-  trie.register('display vrrp', 'Display VRRP groups', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
-    const groups = svc?.list() ?? [];
-    if (groups.length === 0) return 'Info: No VRRP backup group is configured.';
-    return groups.map(g => [
-      `${g.ifName} | Virtual Router ${g.vrid}`,
-      `    State : ${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state}`,
-      `    Virtual IP : ${g.virtualIps.join(', ') || '<none>'}`,
-      `    Priority : ${g.priority}`,
-      `    Advertisement timer : ${g.advertiseTimerSec} seconds`,
-      `    Preempt mode : ${g.preemptMode ? 'Yes' : 'No'}${g.preemptDelaySec > 0 ? ' (delay ' + g.preemptDelaySec + 's)' : ''}`,
-      `    Authentication : ${g.authMode}`,
-      g.description ? `    Description : ${g.description}` : '',
-    ].filter(Boolean).join('\n')).join('\n');
-  });
+  // Lot V15 : ces vues lisaient la facade `HuaweiVrrpService` — un
+  // second magasin — et rendaient donc une priorite que le `track`
+  // n'avait jamais fait bouger, sous le nom court interne de
+  // l'interface. Elles lisent l'agent, par le rendu partage avec le
+  // commutateur.
+  trie.register('display vrrp', 'Display VRRP groups', () =>
+    rendreDisplayVrrp(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
   trie.registerGreedy('display vrrp interface', 'Display VRRP on interface', (args) => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
-    const ifName = args.join(' ');
-    const groups = svc?.list().filter(g => g.ifName === ifName) ?? [];
-    if (groups.length === 0) return `Info: No VRRP group on ${ifName}`;
-    return groups.map(g => `VRID ${g.vrid}: state=${huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state} virtual-ip=${g.virtualIps.join(',')}`).join('\n');
+    const demande = args.join(' ');
+    const ifName = resolveHuaweiInterfaceName(getRouter(), demande);
+    if (!ifName) return HUAWEI_ERRORS.WRONG(`display vrrp interface ${demande}`, 'display vrrp interface '.length);
+    const groups = groupesDeLInterface(huaweiVrrpAgent(getRouter()), ifName);
+    if (groups.length === 0) return AUCUN_GROUPE;
+    return rendreDisplayVrrp(groups);
   });
   trie.register('display vrrp statistics', 'Display VRRP statistics', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
-    const groups = svc?.list() ?? [];
-    if (groups.length === 0) return 'Info: No VRRP groups';
-    return groups.map(g => `${g.ifName} | VRID ${g.vrid} | Adv sent: 0 received: 0 | Track triggers: ${g.trackEntries.length}`).join('\n');
+    const ag = huaweiVrrpAgent(getRouter());
+    return rendreDisplayVrrpStatistics(ag?.listGroups() ?? [], ag?.getGlobalStats());
+  });
+  // `reset vrrp statistics` : une commande qui promet de remettre a zero
+  // doit le faire. Elle etait absente, donc un operateur ne pouvait pas
+  // repartir d'un comptage propre avant une mesure.
+  trie.register('reset vrrp statistics', 'Clear VRRP statistics', () => {
+    huaweiVrrpAgent(getRouter())?.resetStats();
+    return '';
   });
 
   trie.register('display bfd configuration all', 'Display BFD configuration', () => {
@@ -1307,20 +1695,8 @@ export function registerDisplayCommands(
   trie.registerGreedy('display traffic behavior', 'Display traffic behaviors', () => 'Info: No traffic behaviors configured');
   trie.registerGreedy('display traffic policy', 'Display traffic policies', () => 'Info: No traffic policies configured');
 
-  trie.register('display vrrp brief', 'Display VRRP brief', () => {
-    const svc = (getRouter() as unknown as { getHuaweiVrrpService?: () => import('../../router/redundancy/HuaweiVrrpService').HuaweiVrrpService }).getHuaweiVrrpService?.();
-    const groups = svc?.list() ?? [];
-    const states = groups.map(g => huaweiVrrpLiveState(getRouter(), g.ifName, g.vrid) ?? g.state);
-    const master = states.filter(s => s === 'Master').length;
-    const backup = states.filter(s => s === 'Backup').length;
-    const total = groups.length;
-    const lines = [
-      `Total: ${total}     Master: ${master}     Backup: ${backup}     Non-active: ${total - master - backup}`,
-      'VRID  State        Interface                Type     Virtual IP',
-    ];
-    groups.forEach((g, idx) => lines.push(`${String(g.vrid).padEnd(6)}${states[idx].padEnd(13)}${g.ifName.padEnd(25)}Normal   ${g.virtualIps.join(',')}`));
-    return lines.join('\n');
-  });
+  trie.register('display vrrp brief', 'Display VRRP brief', () =>
+    rendreDisplayVrrpBrief(huaweiVrrpAgent(getRouter())?.listGroups() ?? []));
 
   trie.register('display ssh server status', 'Display SSH server status', () => {
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
@@ -1363,37 +1739,33 @@ export function registerDisplayCommands(
     ].join('\n');
   });
 
-  trie.register('display ntp-service status', 'Display NTP service status', () => {
-    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { isSynced: () => boolean; getConfig: () => { localStratum: number; sourceInterface: string; refIdentifier: string } } }).getNtpAgent?.();
-    if (!ntp) return 'Clock is unsynchronized';
-    const synced = ntp.isSynced();
-    const cfg = ntp.getConfig();
-    return [
-      `Clock status: ${synced ? 'synchronized' : 'unsynchronized'}`,
-      `Clock stratum: ${cfg.localStratum}`,
-      `Reference clock ID: ${cfg.refIdentifier || '.INIT.'}`,
-      cfg.sourceInterface ? `Source interface: ${cfg.sourceInterface}` : '',
-    ].filter(Boolean).join('\n');
-  });
-
-  trie.register('display ntp-service sessions', 'Display NTP sessions', () => {
-    const ntp = (getRouter() as unknown as { getNtpAgent?: () => { getConfig: () => { associations: Map<string, { serverIp: string; stratum: number; pollSec: number; preferred: boolean }> } } }).getNtpAgent?.();
-    const assocs = ntp?.getConfig().associations;
-    if (!assocs || assocs.size === 0) return 'No NTP associations';
-    const lines = ['  address         stratum poll reach   delay   offset    disp'];
-    for (const [, a] of assocs) {
-      lines.push(`  ${a.serverIp.padEnd(15)} ${String(a.stratum).padEnd(7)} ${String(a.pollSec).padEnd(4)} 377     0.0     0.0       0.0${a.preferred ? '  *' : ''}`);
-    }
-    return lines.join('\n');
-  });
+  // Lot N2 : ces deux vues lisaient l'agent, ce qui etait juste — mais
+  // le CLI ecrivait ailleurs, si bien que `sessions` repondait
+  // `No NTP associations` sur une machine dont la configuration listait
+  // quatre serveurs. Le rendu est partage et le magasin unique.
+  trie.register('display ntp-service status', 'Display NTP service status',
+    () => displayNtpServiceStatus(huaweiNtpAgent(getRouter())));
+  trie.register('reset ntp-service statistics packet', 'Clear NTP packet statistics',
+    () => { huaweiNtpAgent(getRouter())?.clearCounters(); return ''; });
+  trie.register('display ntp-service statistics packet', 'NTP packet statistics',
+    () => displayNtpStatisticsPacket(huaweiNtpAgent(getRouter())));
+  trie.register('display ntp-service sessions verbose', 'Detailed NTP sessions',
+    () => displayNtpServiceSessions(huaweiNtpAgent(getRouter()), true));
+  trie.register('display ntp-service sessions', 'Display NTP sessions',
+    () => displayNtpServiceSessions(huaweiNtpAgent(getRouter())));
 
   trie.register('display info-center', 'Display info-center configuration', () => {
     const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
     const ic = mgmt?.getInfoCenter();
     if (!ic) return 'Info-center: Disabled';
+    const t = ic.timestamps;
     return [
       `Info-center: ${ic.enabled ? 'Enabled' : 'Disabled'}`,
-      `Timestamp format: ${ic.timestamp}`,
+      `Log host: ${ic.loghosts.length ? ic.loghosts.map(h => h.ip).join(', ') : '(none)'}`,
+      `Log host source interface: ${ic.loghostSource ?? '(none)'}`,
+      `Log buffer size: ${ic.logbufferSize}`,
+      `Trap buffer size: ${ic.trapbufferSize}`,
+      `Timestamp: log ${t.log.format}, trap ${t.trap.format}, debug ${t.debug.format}`,
       `Configured sources: ${ic.sources.length}`,
       `Configured loghosts: ${ic.loghosts.length}`,
     ].join('\n');
@@ -1437,44 +1809,67 @@ export function registerDisplayCommands(
   });
 
   trie.registerGreedy('display bgp peer', 'Display BGP peers', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
+    // Peering/session state comes from the real BGPEngine (same engine
+    // Cisco routers use) — the facade above only supplies configured
+    // metadata (router-id, peer list) it doesn't model. Audit 02:
+    // `display bgp peer` used to fabricate "Idle"/0 regardless of the
+    // real session state.
+    const e = getRouter().getBGPEngine();
+    getRouter().convergeDynamicRouting();
+    const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+    const established = [...byId.values()].filter((n) => n.state === 'Established').length;
     const lines = [
       `BGP local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
       `Local AS number : ${bgp.asn}`,
-      `Total number of peers : ${bgp.peers.size}              Peers in established state : 0`,
+      `Total number of peers : ${bgp.peers.size}              Peers in established state : ${established}`,
       '  Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv',
     ];
-    for (const [, p] of bgp.peers) {
-      lines.push(`  ${p.ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  00:00:00          Idle       0`);
+    for (const [ip, p] of bgp.peers) {
+      const v = byId.get(ip);
+      const upDown = v && v.isUp ? `${v.uptimeSec}s` : '00:00:00';
+      const state = v ? v.state : 'Idle';
+      lines.push(`  ${ip.padEnd(15)}  4    ${String(p.asNumber ?? bgp.asn).padEnd(5)}     0        0     0  ${upDown.padEnd(8)}      ${state}       0`);
     }
     return lines.join('\n');
   });
 
   trie.registerGreedy('display bgp routing-table', 'Display BGP routing table', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp) return 'Info: BGP is not running.';
+    // Real Loc-RIB (learned + originated routes), not just the
+    // locally-configured `network` statements — audit 02: this used to
+    // list configured networks verbatim with a fabricated next-hop
+    // (0.0.0.0) regardless of whether they were ever actually learned
+    // or reachable.
+    const e = getRouter().getBGPEngine();
+    getRouter().convergeDynamicRouting();
+    const table = e.getBgpTable();
     const lines = [
       `BGP Local router ID : ${bgp.routerId ?? '0.0.0.0'}`,
-      ' Total Number of Routes: ' + bgp.networks.length,
+      ' Total Number of Routes: ' + table.length,
       ' Network            NextHop         MED        LocPrf    PrefVal Path/Ogn',
     ];
-    for (const n of bgp.networks) {
-      lines.push(` ${(n.ip + '/' + n.mask).padEnd(19)}0.0.0.0         0          100       0       i`);
+    for (const r of table) {
+      const prefix = `${r.network}/${r.mask.toCIDR()}`;
+      const nextHop = String(r.nextHop ?? '0.0.0.0');
+      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
+      lines.push(` ${prefix.padEnd(19)}${nextHop.padEnd(16)}0          ${String(r.localPref).padEnd(10)}${String(r.weight).padEnd(8)}${path}`);
     }
     return lines.join('\n');
   });
 
   trie.register('display bgp group', 'Display BGP peer groups', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp || bgp.groups.size === 0) return 'Info: No BGP peer groups configured.';
     return [...bgp.groups.values()].map(g => `Group ${g.name}: kind=${g.kind ?? 'unspecified'} AS=${bgp.asn}`).join('\n');
   });
   trie.register('display bgp network', 'Display BGP advertised networks', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const bgp = ex?.getBgp();
     if (!bgp || bgp.networks.length === 0) return 'Info: No BGP advertised networks.';
     return bgp.networks.map(n => `  ${n.ip}/${n.mask}`).join('\n');
@@ -1483,7 +1878,7 @@ export function registerDisplayCommands(
   trie.register('display bgp ipv6 peer', 'Display BGP IPv6 peers', () => 'Info: IPv6 BGP not running.');
 
   trie.register('display isis brief', 'Display IS-IS brief', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     const all = ex?.listIsis() ?? [];
     if (all.length === 0) return 'Info: IS-IS is not enabled.';
     return all.map(p => [
@@ -1494,22 +1889,22 @@ export function registerDisplayCommands(
     ].join('\n')).join('\n');
   });
   trie.register('display isis interface', 'Display IS-IS interfaces', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'Interface           Type   IPv4 State Level     Cost                MTU\n(no IS-IS-enabled interfaces)';
   });
   trie.register('display isis lsdb', 'Display IS-IS LSDB', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'LSPID                 Seq Num     Checksum    Holdtime   Length   ATT/P/OL\n(no LSPs)';
   });
   trie.register('display isis peer', 'Display IS-IS peers', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'System ID         Interface          Circuit ID         State HoldTime Type     PRI\n(no peers established)';
   });
   trie.register('display isis route', 'Display IS-IS routing table', () => {
-    const ex = (getRouter() as unknown as { getHuaweiRoutingExtras?: () => import('../../router/routing/HuaweiRoutingExtras').HuaweiRoutingExtras }).getHuaweiRoutingExtras?.();
+    const ex = getHuaweiRoutingExtras(getRouter());
     if (!ex?.listIsis().length) return 'Info: IS-IS is not enabled.';
     return 'Route information for ISIS\n  No routes installed';
   });
@@ -1562,7 +1957,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip interface', 'Display IP interface details', (args) => {
     if (args.length === 0) return displayIpIntBrief(getRouter());
     const first = args[0].toLowerCase();
-    if ('brief'.startsWith(first)) return displayIpIntBrief(getRouter());
+    if ('brief'.startsWith(first)) {
+      const reste = args.slice(1).join(' ');
+      return displayIpIntBrief(getRouter(), reste ? reste : undefined);
+    }
     return displayIpInterface(getRouter(), args.join(' '));
   });
 
@@ -1571,6 +1969,29 @@ export function registerDisplayCommands(
 
   trie.register('display ipv6 routing-table', 'Display IPv6 routing table', () =>
     displayIpv6RoutingTable(getRouter()));
+
+  trie.register('reset ipv6 neighbors', 'Clear IPv6 neighbour cache', () => {
+    getRouter()._clearNeighborCache();
+    return '';
+  });
+
+  trie.register('display ipv6 statistics', 'Display IPv6 packet statistics', () =>
+    displayIpv6Statistics(getRouter()));
+  trie.register('display icmpv6 statistics', 'Display ICMPv6 statistics', () =>
+    displayIcmpv6Statistics(getRouter()));
+  // Le nœud intermédiaire naît sans description : `display ?` proposait
+  // `icmpv6` sans rien en dire. La description doit être posée APRÈS
+  // l'enregistrement qui crée le nœud, sinon l'appel ne trouve rien.
+  trie.describeNode('display icmpv6', 'ICMPv6 information');
+  trie.register('reset ipv6 statistics', 'Clear IPv6 statistics', () => {
+    getRouter()._clearIpv6Counters();
+    return '';
+  });
+
+  trie.registerGreedy('display ipv6 neighbors', 'Display IPv6 neighbour cache', (args) => {
+    if (args.length === 0) return displayIpv6Neighbors(getRouter());
+    return displayIpv6Neighbors(getRouter(), args.join(' '));
+  });
 
   trie.register('display ipv6 interface brief', 'Display IPv6 interface summary', () =>
     displayIpv6InterfaceBrief(getRouter()));
@@ -1588,8 +2009,9 @@ export function registerDisplayCommands(
   trie.registerGreedy('display interface', 'Display interface information', (args) => {
     const sub = (args[0] || '').toLowerCase();
     if (args.length === 0) return displayInterfaceAll(getRouter());
-    if (sub === 'brief') return displayInterfaceBrief(getRouter());
-    if (sub === 'description') return displayInterfaceDescription(getRouter());
+    const reste = args.slice(1).join(' ').trim();
+    if (sub === 'brief') return displayInterfaceBrief(getRouter(), reste || undefined);
+    if (sub === 'description') return displayInterfaceDescription(getRouter(), reste || undefined);
     return displayInterface(getRouter(), args.join(' '));
   });
 
@@ -1602,20 +2024,44 @@ export function registerDisplayCommands(
     displayIpPoolAll(getRouter()));
 
   // ── Common VRP display commands (shared with the switch, DRY) ──
-  trie.register('display clock', 'Display system clock', () => commonDisplayClock());
+  trie.register('display clock', 'Display system clock', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const c = mgmt?.getClock();
+    return commonDisplayClock(new Date(),
+      c ? { timezone: c.timezone, offsetMin: c.offsetMin } : undefined);
+  });
   trie.register('display cpu-usage', 'Display CPU usage', () => commonDisplayCpuUsage());
   trie.register('display memory-usage', 'Display memory usage', () => commonDisplayMemoryUsage());
-  trie.register('display users', 'Display user sessions', () => commonDisplayUsers());
+  trie.register('display users', 'Display user sessions', () => commonDisplayUsers(getRouter()));
   trie.register('display device', 'Display device status', () =>
     commonDisplayDevice(getRouter().getHostname(), AR2220_HARDWARE_PROFILE));
   trie.register('display alarm', 'Display alarm records', () => commonDisplayAlarm());
   trie.register('display elabel', 'Display electronic label', () =>
     commonDisplayElabel(getRouter().getHostname(), AR2220_HARDWARE_PROFILE));
   trie.register('display license', 'Display license information', () => commonDisplayLicense());
-  trie.register('display logbuffer', 'Display log buffer', () =>
-    getState().renderLogbuffer?.() ?? commonDisplayLogbuffer(),
-  );
-  trie.register('display trapbuffer', 'Display trap buffer', () => commonDisplayTrapbuffer());
+  trie.registerGreedy('display logbuffer', 'Display log buffer', (args) => {
+    if (args.length === 0) {
+      return getState().renderLogbuffer?.() ?? commonDisplayLogbuffer();
+    }
+    if (args[0]?.toLowerCase() !== 'level' || args.length !== 2) {
+      return `Error: Unrecognized command found at '^' position.`;
+    }
+    const seuil = normVrpSeverity(args[1]);
+    if (seuil === null) return `Error: Wrong parameter found at '^' position.`;
+    return getState().renderLogbuffer?.(VRP_SEVERITIES.indexOf(seuil)) ?? commonDisplayLogbuffer();
+  });
+  trie.addCompletionKeywords('display logbuffer', [
+    { keyword: 'level', description: 'Lowest severity to display' },
+  ]);
+  trie.register('display trapbuffer', 'Display trap buffer', () => {
+    const mgmt = (getRouter() as unknown as { getManagementService?: () => import('../../router/management/RouterManagementService').RouterManagementService }).getManagementService?.();
+    const ic = mgmt?.getInfoCenter();
+    if (!ic) return commonDisplayTrapbuffer();
+    const canal = ic.destinationChannel.trapbuffer;
+    return commonDisplayTrapbuffer({
+      size: ic.trapbufferSize, channel: canal, channelName: ic.channelNames[canal],
+    });
+  });
   trie.register('display patch-information', 'Display patch information', () =>
     commonDisplayPatchInformation());
   trie.register('display diagnostic-information', 'Collect diagnostic information', () =>

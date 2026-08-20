@@ -11,6 +11,8 @@
  * TCP/179 migration is a separate, documented work item).
  */
 import type { Port } from '../../hardware/Port';
+import type { IEventBus } from '@/events/EventBus';
+import type { IScheduler } from '@/events/Scheduler';
 import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ETHERTYPE_IPV4, IP_PROTO_EIGRP, createIPv4Packet,
@@ -24,8 +26,8 @@ import {
   EIGRP_MULTICAST_IP, isEigrpPacket, type EigrpPacket,
 } from '../../eigrp/packets';
 import { BGPEngine, type BgpPeerLink } from '../../bgp/BGPEngine';
-import type { BgpTransport } from '../../bgp/BgpSession';
-import { BGP_PORT, isBgpMessage, type BgpMessage } from '../../bgp/messages';
+import { BGP_PORT } from '../../bgp/messages';
+import { bgpTransport } from '../../bgp/bgpTransport';
 import type { TcpStack, TcpSocket } from '../../tcp/TcpStack';
 import type { RibRoute } from '../../routing/types';
 import type {
@@ -51,6 +53,13 @@ export interface DynamicRoutingCtx {
   getOspfIntegration(): RouterOSPFIntegration;
   /** The router's TCP stack — BGP peers over real TCP/179 sessions. */
   getTcpStack(): TcpStack;
+  /**
+   * Le bus de l'équipement. `BGPEngine.setBus()` existait et n'était
+   * appelé nulle part : `publishNeighborState()` était donc du code
+   * mort, et l'abonnement de `LoggingConfig` à
+   * `bgp.neighbor.state-changed` un abonnement sans émetteur.
+   */
+  getBus(): IEventBus;
 }
 
 function networkOf(ip: IPAddress, mask: SubnetMask): IPAddress {
@@ -69,6 +78,7 @@ export class RouterDynamicRouting {
   constructor(private readonly ctx: DynamicRoutingCtx) {
     this.eigrp = new EIGRPEngine(ctx.id);
     this.bgp = new BGPEngine(ctx.id);
+    this.bgp.setBus(ctx.getBus());
     this.rip = new RipEngineAdapter(ctx.getRipEngine());
     this.ospf = new OspfEngineAdapter(() => ctx.getOspfIntegration());
     const deviceContext = {
@@ -92,6 +102,14 @@ export class RouterDynamicRouting {
     this.bgp.setWire({ connect: (ip) => this.bgpConnect(ip) });
     // An UPDATE that lands on a peer's converge must still reach our RIB.
     this.bgp.setOnRibChange(() => this.reflectRib());
+    // Same seam for EIGRP: a neighbour lost to its hold timer happens on
+    // a timer, with nobody at the CLI, and must still reprogram the RIB.
+    this.eigrp.setOnNeighborChange(() => this.reflectRib());
+  }
+
+  setScheduler(scheduler: IScheduler | null): void {
+    this.eigrp.setScheduler(scheduler);
+    this.bgp.setScheduler(scheduler);
   }
 
   // ── BGP wire transport (TCP/179) ───────────────────────────────────
@@ -184,6 +202,23 @@ export class RouterDynamicRouting {
     this.eigrp.processPacket(
       inPort, ipPkt.sourceIP.toString(), payload,
       ipPkt.destinationIP.toString() === EIGRP_MULTICAST_IP);
+    this.eigrpRibUpdate();
+  }
+
+  /**
+   * The RIB update an EIGRP packet earns: `processPacket` stored what the
+   * neighbour advertised, DUAL recomputes from it, and the result is
+   * installed. Nothing goes back on the wire from this alone.
+   *
+   * Scoped to EIGRP on purpose. BGP has the same path of its own
+   * (`setOnRibChange`, fired by every UPDATE it accepts), and an EIGRP
+   * packet does not make a router redo its BGP best-path decision.
+   * `reflectRib()` still reads BGP's contributed routes, but takes them
+   * as BGP last computed them rather than recomputing them here.
+   */
+  private eigrpRibUpdate(): void {
+    this.eigrp.refreshFromCache();
+    this.reflectRib();
   }
 
   private connected(): ConnectedNetwork[] {
@@ -206,23 +241,35 @@ export class RouterDynamicRouting {
     return this.eigrp.isEnabled() || this.bgp.isEnabled();
   }
 
-  /** Recompute both engines and reflect their routes into the RIB. */
-  converge(): void {
-    this.eigrp.converge();
-    if (this.bgp.isEnabled()) this.ensureBgpListener();
-    this.bgp.converge();
-    this.reflectRib();
+  /**
+   * An interface went down: EIGRP declares its neighbours down at once
+   * rather than waiting out their hold time, which is what IOS logs as
+   * `is down: interface down`.
+   */
+  onInterfaceDown(iface: string): void {
+    if (this.eigrp.isEnabled()) this.eigrp.onInterfaceDown(iface);
+  }
+
+  /** Release protocol timers — the router is going away. */
+  shutdownTimers(): void {
+    this.eigrp.shutdownTimers();
+    this.bgp.shutdownTimers();
   }
 
   /**
-   * Data-path variant (called before every forwarding decision):
-   * reflect routes already learned from the wire WITHOUT pumping new
-   * EIGRP frames — a real router does not hello on every packet it
-   * forwards. Real rounds happen at config/show time (triggered
-   * updates) via {@link converge}.
+   * A full convergence round: pump Hellos, open sessions, recompute,
+   * install. This is the control plane's *active* path, and it runs on
+   * the events that genuinely change routing — a configuration command,
+   * an interface going up or down. Never from the data path: a
+   * convergence emits packets, and forwarding a packet must not emit
+   * anything.
+   *
+   * Its passive counterpart is per-protocol, as on real hardware:
+   * {@link eigrpRibUpdate} when an EIGRP packet lands, and BGP's own
+   * `setOnRibChange` when an UPDATE does.
    */
-  refresh(): void {
-    this.eigrp.refreshFromCache();
+  converge(): void {
+    this.eigrp.converge();
     if (this.bgp.isEnabled()) this.ensureBgpListener();
     this.bgp.converge();
     this.reflectRib();
@@ -246,15 +293,3 @@ export class RouterDynamicRouting {
   }
 }
 
-/**
- * Adapt a TCP socket to the BGP transport seam: BGP messages ride the real
- * byte stream, and only well-formed BGP payloads are surfaced to the FSM.
- */
-function bgpTransport(socket: TcpSocket): BgpTransport {
-  return {
-    send: (msg: BgpMessage) => socket.send(msg),
-    close: () => socket.close(),
-    onMessage: (h) => { socket.onData((d) => { if (isBgpMessage(d)) h(d); }); },
-    onClose: (h) => { socket.onClose(() => h()); },
-  };
-}

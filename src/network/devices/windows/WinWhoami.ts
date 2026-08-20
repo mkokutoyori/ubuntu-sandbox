@@ -6,32 +6,40 @@
  */
 
 import type { WindowsUserManager } from './WindowsUserManager';
+import type { DomainSession } from './domain/DomainTypes';
 
 export interface WhoamiContext {
   hostname: string;
   userManager: WindowsUserManager;
+  /** Active domain logon (PRD-Windows-Server.md §5 P6) — when set (and its `sam` matches the current user), `whoami` reports `netbios\sam` and domain groups instead of the local `hostname\user` + local groups. */
+  domainSession?: DomainSession | null;
+}
+
+function activeDomain(ctx: WhoamiContext, username: string): DomainSession | null {
+  return ctx.domainSession && ctx.domainSession.sam.toLowerCase() === username.toLowerCase() ? ctx.domainSession : null;
 }
 
 export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
   const username = ctx.userManager.currentUser;
   const flag = args.length > 0 ? args[0].toLowerCase() : '';
+  const domain = activeDomain(ctx, username);
 
   if (!flag) {
-    return `${ctx.hostname.toLowerCase()}\\${username}`;
+    return domain ? `${domain.netbiosName.toLowerCase()}\\${username.toLowerCase()}` : `${ctx.hostname.toLowerCase()}\\${username}`;
   }
 
   switch (flag) {
     case '/user':
-      return formatUserInfo(ctx, username);
+      return formatUserInfo(ctx, username, domain);
     case '/groups':
-      return formatGroupInfo(ctx, username);
+      return formatGroupInfo(ctx, username, domain);
     case '/priv':
       return formatPrivilegeInfo(ctx, username);
     case '/all':
       return [
-        formatUserInfo(ctx, username),
+        formatUserInfo(ctx, username, domain),
         '',
-        formatGroupInfo(ctx, username),
+        formatGroupInfo(ctx, username, domain),
         '',
         formatPrivilegeInfo(ctx, username),
       ].join('\n');
@@ -40,8 +48,9 @@ export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
   }
 }
 
-function formatUserInfo(ctx: WhoamiContext, username: string): string {
-  const sid = ctx.userManager.getUserSID(username) ?? 'S-1-5-21-0-0-0-0';
+function formatUserInfo(ctx: WhoamiContext, username: string, domain: DomainSession | null): string {
+  const sid = domain ? domainSid(domain.netbiosName) : (ctx.userManager.getUserSID(username) ?? 'S-1-5-21-0-0-0-0');
+  const account = domain ? `${domain.netbiosName.toLowerCase()}\\${username.toLowerCase()}` : `${ctx.hostname.toLowerCase()}\\${username.toLowerCase()}`;
   const lines: string[] = [];
   lines.push('');
   lines.push('USER INFORMATION');
@@ -49,14 +58,18 @@ function formatUserInfo(ctx: WhoamiContext, username: string): string {
   lines.push('');
   lines.push('User Name' + ' '.repeat(24) + 'SID');
   lines.push('=' .repeat(33) + ' ' + '='.repeat(47));
-  lines.push(
-    `${ctx.hostname.toLowerCase()}\\${username.toLowerCase()}`.padEnd(33) + ' ' + sid
-  );
+  lines.push(account.padEnd(33) + ' ' + sid);
   return lines.join('\n');
 }
 
-function formatGroupInfo(ctx: WhoamiContext, username: string): string {
-  const groups = ctx.userManager.getGroupsForUser(username);
+/** A stable-looking (but not cryptographically real) domain SID, derived from the netbios name — good enough for display purposes, matching PRD §2.2's simplified-Kerberos scope. */
+function domainSid(netbiosName: string): string {
+  let hash = 0;
+  for (const ch of netbiosName.toLowerCase()) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `S-1-5-21-${1000000 + (hash % 8999999)}-500`;
+}
+
+function formatGroupInfo(ctx: WhoamiContext, username: string, domain: DomainSession | null): string {
   const lines: string[] = [];
   lines.push('');
   lines.push('GROUP INFORMATION');
@@ -77,6 +90,17 @@ function formatGroupInfo(ctx: WhoamiContext, username: string): string {
     'NT AUTHORITY\\Local account'.padEnd(44) + 'Well-known'.padEnd(14) + 'S-1-5-113'.padEnd(49) + 'Mandatory group, Enabled by default'
   );
 
+  if (domain) {
+    for (const group of domain.groups) {
+      const groupDisplay = `${domain.netbiosName}\\${group}`;
+      lines.push(
+        groupDisplay.padEnd(44) + 'Group'.padEnd(14) + domainSid(domain.netbiosName).padEnd(49) + 'Mandatory group, Enabled by default'
+      );
+    }
+    return lines.join('\n');
+  }
+
+  const groups = ctx.userManager.getGroupsForUser(username);
   for (const group of groups) {
     const groupDisplay = `BUILTIN\\${group.name}`;
     lines.push(

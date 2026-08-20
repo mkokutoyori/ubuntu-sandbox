@@ -48,6 +48,17 @@ export class BackupCommand implements IRmanCommand<void> {
       if (Number.isFinite(n)) opts.notBackedUpNTimes = n;
     }
 
+    // CONFIGURE BACKUP OPTIMIZATION ON — was stored/shown by SHOW ALL but
+    // never consulted by BACKUP (rapport 10, item #58). Real RMAN's
+    // optimization skips a file already covered by a qualifying backup;
+    // this simulator's existing equivalent is the explicit NOT BACKED UP
+    // n TIMES clause (see RmanJobEngine's own skip check, which already
+    // says "just like Oracle's backup optimization does"), so turning
+    // optimization on defaults that clause's threshold to 1 rather than
+    // adding a second, parallel skip path. An explicit clause always wins.
+    const optimizationOn = cmdCtx.config?.snapshot().backupOptimization === true;
+    if (optimizationOn && opts.notBackedUpNTimes === undefined) opts.notBackedUpNTimes = 1;
+
     const plusArchivelog = /\bPLUS\s+ARCHIVELOG\b/i.test(all);
 
     // Tablespaces exclus via CONFIGURE EXCLUDE FOR TABLESPACE — appliqués
@@ -81,6 +92,7 @@ export class BackupCommand implements IRmanCommand<void> {
         const cumulative = (args[1] ?? '').toUpperCase() === 'CUMULATIVE';
         const clauseOpts = parseBackupOptions(args.slice(1).join(' '));
         clauseOpts.cumulative = cumulative || clauseOpts.cumulative;
+        if (optimizationOn && clauseOpts.notBackedUpNTimes === undefined) clauseOpts.notBackedUpNTimes = 1;
         result = engine.run(JobBuilder.backupIncremental(level, clauseOpts));
         break;
       }

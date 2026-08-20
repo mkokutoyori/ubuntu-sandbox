@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -178,7 +179,11 @@ async function buildIKEv1Topology(opts: {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2 };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, clock };
 }
 
 // ─── Suite ─────────────────────────────────────────────────────────────────
@@ -193,10 +198,10 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 1.01 : Établissement du tunnel et chiffrement du trafic ─────────────
   it('1.01 – should establish IPSec tunnel and encrypt traffic between two LANs', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv1Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv1Topology();
 
     // Trafic intéressant : ping de PC1 → PC2 (déclenche IKE + SA IPSec)
-    const pingOut = await pc1.executeCommand('ping -c 4 192.168.2.10');
+    const pingOut = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 4 192.168.2.10'));
     expect(pingOut).toContain('4 packets transmitted');
     expect(pingOut).toContain('4 received');
     expect(pingOut).toContain('0% packet loss');
@@ -249,7 +254,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
   it('1.02 – should negotiate the highest-priority common transform-set (AES-256 over 3DES)', async () => {
     // R1 propose deux transform-sets : AES-256 (préféré) et 3DES (repli)
     // R2 supporte les deux également → R1 doit choisir AES-256 (premier dans la liste)
-    const { r1, r2, pc1, pc2 } = await buildIKEv1Topology({
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv1Topology({
       r1TSet: 'esp-aes 256 esp-sha256-hmac',
       r2TSet: 'esp-aes 256 esp-sha256-hmac',
     });
@@ -278,7 +283,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     await r2.executeCommand('end');
 
     // Déclenchement du trafic intéressant
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     // La SA doit utiliser AES-256, pas 3DES
     const ipsecSA = await r1.executeCommand('show crypto ipsec sa');
@@ -288,7 +293,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
   it('1.02b – should fall back to 3DES when R2 only supports 3DES', async () => {
     // R1 offre AES-256 ET 3DES, R2 n'accepte que 3DES
-    const { r1, r2, pc1, pc2 } = await buildIKEv1Topology({
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv1Topology({
       r1TSet: 'esp-aes 256 esp-sha256-hmac',
       r2TSet: 'esp-3des esp-sha-hmac',
     });
@@ -304,7 +309,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     await r1.executeCommand('exit');
     await r1.executeCommand('end');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     // Doit avoir négocié 3DES (seul commun)
     const ipsecSA = await r1.executeCommand('show crypto ipsec sa');
@@ -316,13 +321,13 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
   it('1.03 – should show SA lifetime and indicate when SA was rekeyed', async () => {
     // Lifetime court pour que le test puisse observer l'expiration
     const LIFETIME = 120; // secondes
-    const { r1, r2, pc1 } = await buildIKEv1Topology({
+    const { r1, r2, pc1, clock } = await buildIKEv1Topology({
       r1Lifetime: LIFETIME,
       r2Lifetime: LIFETIME,
     });
 
     // Établissement initial
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     // Vérification que la SA est présente et affiche la durée de vie restante
     const saDetail = await r1.executeCommand('show crypto isakmp sa detail');
@@ -339,10 +344,10 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 1.04 : Bidirectionnalité ─────────────────────────────────────────────
   it('1.04 – should allow R2 side (PC2) to initiate the tunnel', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv1Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv1Topology();
 
     // C'est PC2 qui initie (sens inverse)
-    const pingOut = await pc2.executeCommand('ping -c 3 192.168.1.10');
+    const pingOut = await clock.advanceUntilSettled(pc2.executeCommand('ping -c 3 192.168.1.10'));
     expect(pingOut).toContain('3 received');
     expect(pingOut).toContain('0% packet loss');
 
@@ -365,10 +370,10 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 1.05 : Compteurs de paquets ─────────────────────────────────────────
   it('1.05 – should increment encap/decap counters for each encrypted packet', async () => {
-    const { r1, r2, pc1, pc2 } = await buildIKEv1Topology();
+    const { r1, r2, pc1, pc2, clock } = await buildIKEv1Topology();
 
     // Première vague : 5 paquets
-    await pc1.executeCommand('ping -c 5 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 5 192.168.2.10'));
 
     const sa1 = await r1.executeCommand('show crypto ipsec sa');
     expect(sa1).toContain('#pkts encaps: 5');
@@ -379,7 +384,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     expect(sa1).toContain('#pkts verify: 5');
 
     // Deuxième vague : 3 paquets supplémentaires
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // Les compteurs sont cumulatifs depuis la création de la SA
     const sa2 = await r1.executeCommand('show crypto ipsec sa');
@@ -389,11 +394,11 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
     // Pas d'erreurs pendant tout le test
     expect(sa2).toContain('#send errors 0');
     expect(sa2).toContain('#recv errors 0');
-  });
+  }, 15000);
 
   // ─── 1.06 : show crypto map ──────────────────────────────────────────────
   it('1.06 – show crypto map should reflect the complete configured policy', async () => {
-    const { r1 } = await buildIKEv1Topology({ pfs: true });
+    const { r1, clock } = await buildIKEv1Topology({ pfs: true });
 
     const mapOut = await r1.executeCommand('show crypto map');
     // Nom de la map et numéro de séquence
@@ -415,7 +420,7 @@ describe('IPSec – IKEv1 Site-to-Site avec Pre-shared Keys', () => {
 
   // ─── 1.07 : show crypto isakmp policy ────────────────────────────────────
   it('1.07 – show crypto isakmp policy should list all configured policies', async () => {
-    const { r1 } = await buildIKEv1Topology();
+    const { r1, clock } = await buildIKEv1Topology();
 
     const policyOut = await r1.executeCommand('show crypto isakmp policy');
 

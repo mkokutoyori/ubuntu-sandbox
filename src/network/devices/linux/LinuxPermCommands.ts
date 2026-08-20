@@ -2,7 +2,7 @@
  * Permission commands: chmod, chown, chgrp, stat, umask, test, mkfifo
  */
 
-import { ShellContext, expandGlob } from './LinuxFileCommands';
+import { ShellContext, expandGlob, actorOf } from './LinuxFileCommands';
 import { INode } from './VirtualFileSystem';
 
 export function cmdChmod(ctx: ShellContext, args: string[]): string {
@@ -25,6 +25,9 @@ export function cmdChmod(ctx: ShellContext, args: string[]): string {
       const absPath = ctx.vfs.normalizePath(t, ctx.cwd);
       const inode = ctx.vfs.resolveInode(absPath);
       if (!inode) return `chmod: cannot access '${t}': No such file or directory`;
+      if (ctx.uid !== 0 && inode.uid !== ctx.uid) {
+        return `chmod: changing permissions of '${t}': Operation not permitted`;
+      }
 
       const newMode = parseChmodMode(modeStr, inode.permissions);
       if (newMode === null) return `chmod: invalid mode: '${modeStr}'`;
@@ -153,12 +156,24 @@ export function cmdChown(ctx: ShellContext, args: string[]): string {
     newUid = ctx.userMgr.resolveUid(ownerSpec);
   }
 
+  const actor = actorOf(ctx);
+
   for (const target of targets) {
     const expanded = expandGlob(ctx, target);
     for (const t of expanded) {
       const absPath = ctx.vfs.normalizePath(t, ctx.cwd);
-      if (!ctx.vfs.exists(absPath)) {
+      const inode = ctx.vfs.resolveInode(absPath, false);
+      if (!inode) {
         return `chown: cannot access '${t}': No such file or directory`;
+      }
+      if (ctx.uid !== 0) {
+        if (newUid !== undefined && newUid !== inode.uid) {
+          return `chown: changing ownership of '${t}': Operation not permitted`;
+        }
+        if (newGid !== undefined
+            && (inode.uid !== ctx.uid || !(actor.gids ?? []).includes(newGid))) {
+          return `chown: changing ownership of '${t}': Operation not permitted`;
+        }
       }
 
       if (recursive) {
@@ -188,10 +203,17 @@ export function cmdChgrp(ctx: ShellContext, args: string[]): string {
   const gid = ctx.userMgr.resolveGid(groupName);
   if (gid < 0) return `chgrp: invalid group: '${groupName}'`;
 
+  const actor = actorOf(ctx);
+
   for (const target of nonFlags.slice(1)) {
     const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
-    if (!ctx.vfs.exists(absPath)) {
+    const inode = ctx.vfs.resolveInode(absPath, false);
+    if (!inode) {
       return `chgrp: cannot access '${target}': No such file or directory`;
+    }
+    if (ctx.uid !== 0
+        && (inode.uid !== ctx.uid || !(actor.gids ?? []).includes(gid))) {
+      return `chgrp: changing group of '${target}': Operation not permitted`;
     }
     if (recursive) {
       ctx.vfs.chownRecursive(absPath, -1, gid);

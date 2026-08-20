@@ -7,23 +7,109 @@
  * Reference: DESIGN-SSH-SFTP.md section 8.
  */
 
+import type { EditorSession } from '@/network/devices/linux/editors/EditorView';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import type { SshHostKey } from '../SshHostKey';
 import type { SshUserContext } from '../SshUserContext';
 import type { ISshServerEventBus } from './SshServerEvent';
+import type { SshInteractiveShell } from './SshInteractiveShell';
 export type { SshUserContext };
 
 export interface SshServerConfig {
   readonly listenPort: number;
   readonly maxAuthTries: number;
+  readonly maxSessions?: number;
   readonly permitRootLogin: boolean;
   readonly passwordAuthentication: boolean;
   readonly pubkeyAuthentication: boolean;
+  readonly clientAliveInterval?: number;
+  readonly clientAliveCountMax?: number;
+  readonly loginGraceTime?: number;
+  readonly maxStartups?: { readonly start: number; readonly rate: number; readonly full: number };
 }
 
 export interface ILinuxShell {
-  execute(line: string): Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  execute(line: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    /**
+     * The remote asked for the screen to be wiped (`cls` on cmd, `clear`
+     * on a POSIX shell). Clearing is the client's job, so the intent has
+     * to cross the wire (docs/PRD-SSH-Unification.md §4bis B4).
+     */
+    clearScreen?: boolean;
+    /**
+     * The remote's shell is waiting on one value (a password for an ssh
+     * or su it just started). Collecting it is the client's job, so the
+     * challenge crosses the wire and the answer comes back through
+     * `provideInput` (docs/PRD-SSH-Unification.md §4bis B4).
+     */
+    pendingInput?: { kind: 'password' | 'text'; promptText: string };
+    /** The line logged the session out, using the remote's own exit word. */
+    sessionEnded?: boolean;
+  }>;
+  /** Feed back the value the client collected for a pending challenge. */
+  provideInput?(value: string): Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number;
+    clearScreen?: boolean;
+    pendingInput?: { kind: 'password' | 'text'; promptText: string };
+  }>;
+  /**
+   * Tab-completion candidates for a partial line, answered in this
+   * shell's own context (its cwd, its CLI mode). Absent means the
+   * remote offers no completion (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  getCompletions?(line: string): string[];
+  /**
+   * True when `?` is a help key on this remote rather than an ordinary
+   * character — a network CLI, not a POSIX shell where `?` is a glob.
+   * Lets a client offer inline help without breaking `ls ?.txt`.
+   */
+  readonly supportsInlineHelp?: boolean;
+  /**
+   * True when this remote is a POSIX shell. It settles the handful of
+   * behaviours a client would otherwise have to assume: Ctrl+D is EOF
+   * and logs out, and `clear` wipes the screen. cmd.exe ignores Ctrl+D
+   * and does not know `clear`; on a vendor CLI `clear` is a real command
+   * (`clear counters`) — so the client asks instead of assuming
+   * (docs/PRD-SSH-Unification.md §4bis B4). Defaults to true.
+   */
+  readonly posixShell?: boolean;
+  /**
+   * The remote's own prompt as it stands right now. Read after each line,
+   * since the command may have changed it (`cd`, `enable`,
+   * `configure terminal`). Optional: a context that omits it leaves the
+   * client rendering its own prompt exactly as before
+   * (docs/PRD-SSH-Unification.md §3.1).
+   */
+  getPrompt?(): string;
+  /**
+   * True while a sub-shell launched on this channel (SQL*Plus, RMAN,
+   * PowerShell, a future psql) owns the input. The client uses it to
+   * know that `exit` pops that interpreter rather than closing the SSH
+   * session (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  isNested?(): boolean;
+  /**
+   * Output this shell produces on its own, with no line to attach it to:
+   * a router's `debug` traces and its `terminal monitor` syslog. The
+   * handler pushes whatever arrives here down the channel as it happens.
+   * Absent means the remote never speaks unprompted (every POSIX shell).
+   */
+  subscribeAsyncOutput?(sink: (line: string) => void): () => void;
+  /**
+   * Open an editor for `commandLine` on this channel, or return null
+   * when the line opens none. The engine runs here, against the real
+   * filesystem this shell already acts on — permissions, swap files and
+   * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  openEditor?(commandLine: string): EditorSession | null;
+  /** Release any per-session resources (e.g. a real LinuxShellSession's `-bash` process table entry). */
+  dispose?(): void;
 }
 
 export interface ISshServerContext {
@@ -31,7 +117,28 @@ export interface ISshServerContext {
   readonly config: Readonly<SshServerConfig>;
   readonly auth: ISshAuthContext;
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem;
-  getShell(userCtx: SshUserContext, cwd: string): ILinuxShell;
+  /**
+   * @param opts.interactive True for a persistent `shell_open`/`shell_input`
+   * channel (a real pty — colorized output, hung-up on close); false/omitted
+   * for a one-shot `exec` (no pty — no color, exits gracefully). Only
+   * Linux's implementation currently distinguishes the two.
+   */
+  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell;
+  /**
+   * Optional per-channel real-time job runtime (streaming `ping`, Ctrl+C
+   * interrupt). SshServerHandler constructs one per `shell_open` and tries
+   * it before falling back to `getShell().execute()` for every line. Only
+   * Linux implements this; Cisco/Huawei/Windows remote shells are
+   * unaffected and always use the plain one-shot `getShell()` path.
+   */
+  createInteractiveShell?(userCtx: SshUserContext): SshInteractiveShell | null;
+  /**
+   * How long an interactive shell channel may sit idle before the server
+   * hangs it up, in milliseconds — a network CLI's `exec-timeout` on the
+   * line the session landed on. Null (or an absent implementation) means
+   * the line never times out, which is what a POSIX sshd does.
+   */
+  execIdleTimeoutMs?(): number | null;
   getMotd(): string;
   getLastLogin(user: string): string | null;
   recordLogin(user: string, fromIp: string): void;
@@ -64,12 +171,19 @@ export interface ISshServerContext {
    * Optional rate-limit gate. Returning true makes SshServerHandler refuse
    * authentication attempts from the given IP without consulting `auth`.
    */
-  isClientBlocked?(ip: string): boolean;
+  isClientBlocked?(ip: string, user?: string): boolean;
   /**
    * Optional empty-password gate. Used by the handler before delegating to
    * `auth.checkPassword`. Defaults to "rejected" when not implemented.
    */
   permitEmptyPasswords?(): boolean;
+  /**
+   * Pre-auth banner text from sshd_config's `Banner` file directive.
+   * The handler surfaces it in the protocol-hello reply so clients can
+   * display it before prompting for credentials (real OpenSSH emits
+   * SSH_MSG_USERAUTH_BANNER).
+   */
+  getBanner?(): string | null;
 }
 
 export const DEFAULT_SSH_SERVER_CONFIG: SshServerConfig = Object.freeze({

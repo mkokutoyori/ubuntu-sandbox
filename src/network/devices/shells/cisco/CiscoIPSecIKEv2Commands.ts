@@ -86,30 +86,28 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   });
 
   trie.registerGreedy('crypto ikev2 dpd', 'Global IKEv2 DPD interval / retry', (args) => {
-    const e = eng(ctx) as any;
     const interval = parseInt(args[0] ?? '', 10);
     const retry = parseInt(args[1] ?? '', 10);
-    if (Number.isFinite(interval)) e.ikev2GlobalDpdInterval = interval;
-    if (Number.isFinite(retry)) e.ikev2GlobalDpdRetry = retry;
-    if (args[2]) e.ikev2GlobalDpdMode = args[2].toLowerCase();
+    eng(ctx).setIkev2GlobalDpd(
+      Number.isFinite(interval) ? interval : undefined,
+      Number.isFinite(retry) ? retry : undefined,
+      args[2]?.toLowerCase(),
+    );
     return '';
   });
   trie.registerGreedy('crypto ikev2 nat keepalive', 'Set IKEv2 NAT keepalive', (args) => {
-    const e = eng(ctx) as any;
     const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) e.ikev2NatKeepalive = n;
+    if (Number.isFinite(n)) eng(ctx).setIkev2NatKeepalive(n);
     return '';
   });
   trie.registerGreedy('crypto ikev2 cookie-challenge', 'Set IKEv2 cookie-challenge threshold', (args) => {
-    const e = eng(ctx) as any;
     const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) e.ikev2CookieChallenge = n;
+    if (Number.isFinite(n)) eng(ctx).setIkev2CookieChallenge(n);
     return '';
   });
   trie.registerGreedy('crypto ikev2 window', 'Set IKEv2 window size', (args) => {
-    const e = eng(ctx) as any;
     const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) e.ikev2WindowSize = n;
+    if (Number.isFinite(n)) eng(ctx).setIkev2WindowSize(n);
     return '';
   });
 }
@@ -278,21 +276,21 @@ export function buildIKEv2ProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
   trie.registerGreedy('identity local', 'Set local identity', (args) => {
     const name = ctx.getSelectedIKEv2Profile();
     if (!name) return '';
-    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name);
     prof.identityLocal = args.join(' ');
     return '';
   });
   trie.registerGreedy('self-identity', 'Self-identity', (args) => {
     const name = ctx.getSelectedIKEv2Profile();
     if (!name) return '';
-    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name);
     prof.selfIdentity = args.join(' ');
     return '';
   });
   trie.registerGreedy('dpd', 'Dead Peer Detection', (args) => {
     const name = ctx.getSelectedIKEv2Profile();
     if (!name) return '';
-    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name);
     prof.dpd = {
       interval: parseInt(args[0] ?? '10', 10),
       retry: parseInt(args[1] ?? '2', 10),
@@ -303,7 +301,7 @@ export function buildIKEv2ProfileCommands(trie: CommandTrie, ctx: CiscoShellCont
   trie.registerGreedy('lifetime', 'Set lifetime', (args) => {
     const name = ctx.getSelectedIKEv2Profile();
     if (!name) return '';
-    const prof = eng(ctx).getOrCreateIKEv2Profile(name) as unknown as Record<string, unknown>;
+    const prof = eng(ctx).getOrCreateIKEv2Profile(name);
     prof.lifetime = parseInt(args[0] ?? '86400', 10);
     return '';
   });

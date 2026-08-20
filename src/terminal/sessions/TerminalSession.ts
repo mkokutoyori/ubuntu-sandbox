@@ -25,13 +25,22 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
+import { IPAddress } from '@/network/core/types';
 import { SessionInputHost as SessionInputHostCtor } from './SessionInputHost';
 import { TerminalAsyncRuntime } from '@/terminal/async';
-import type { AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
+import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/async';
+import { composeSshLoginBanner } from '@/network/protocols/ssh/loginBanner';
+import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
+import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
+import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
+import { createRemoteEditorController } from '@/terminal/editors/RemoteEditorController';
+import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -47,6 +56,29 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
  * typical usage, this gives >400 000 unique IDs before wrapping.
  */
 const LINE_ID_WRAP = 2_000_000_000;
+
+/**
+ * Durée maximale pendant laquelle un collage garde la main avant de
+ * rendre un tour au navigateur. Une trame à 60 Hz dure 16 ms : au-delà,
+ * l'onglet cesse de peindre et de répondre. Découper par le TEMPS et
+ * non par un nombre de lines est ce qui garde le coût nul sur un petit
+ * collage tout en bornant le gel sur un gros.
+ */
+const PASTE_SLICE_MS = 12;
+
+const PASTE_PROMPT_TURNS = 50;
+
+const PASTE_SETTLE_TURNS = 2;
+
+/**
+ * Rendre la main à la boucle d'événements — vraiment. `await
+ * Promise.resolve()` ne suffit pas : c'est une micro-tâche, et le
+ * navigateur les épuise toutes avant de peindre quoi que ce soit.
+ * Seule une macro-tâche laisse passer un rendu et les entrées.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
 
 // ─── Shared types ─────────────────────────────────────────────────
 
@@ -84,6 +116,18 @@ export type InputMode =
   | { type: 'booting' }
   | { type: 'reverse-search' }
   | { type: 'editor'; editorType: 'nano' | 'vi' | 'vim'; filePath: string; absolutePath: string; content: string; isNewFile: boolean }
+  /**
+   * An editor whose buffer lives on the far side of an SSH channel: the
+   * engine runs on the remote, and `controller` is the proxy the overlay
+   * drives instead of a local engine
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  | {
+      type: 'remote-editor';
+      editorType: 'nano' | 'vi' | 'vim';
+      filePath: string;
+      controller: RemoteVimController | RemoteNanoController;
+    }
   /**
    * Terminal is read-only because the underlying device is unreachable
    * (powered off, removed). Reason carries a short human label rendered by
@@ -176,6 +220,7 @@ export function withTimeout<T>(
   });
 }
 
+
 // ─── Device availability guard ───────────────────────────────────
 
 export class DeviceOfflineError extends Error {
@@ -200,7 +245,12 @@ export abstract class TerminalSession {
   lines: OutputLine[] = [];
   history: string[] = [];
   historyIndex: number = -1;
-  input: string = '';
+  private _input: string = '';
+  get input(): string { return this._children.length > 0 ? this.foreground.input : this._input; }
+  set input(v: string) {
+    if (this._children.length > 0) { this.foreground.input = v; return; }
+    this._input = v;
+  }
   inputMode: InputMode = { type: 'normal' };
   disposed: boolean = false;
 
@@ -229,6 +279,11 @@ export abstract class TerminalSession {
   private _version = 0;
   private _listeners = new Set<() => void>();
 
+  // ── Nested-session (SSH transparent transport) ──
+  private _outputHost: TerminalSession | null = null;
+  private _parent: TerminalSession | null = null;
+  private _children: TerminalSession[] = [];
+
   constructor(id: string, device: Equipment) {
     this.id = id;
     this.device = device;
@@ -244,21 +299,156 @@ export abstract class TerminalSession {
       isDisposed: () => this.disposed,
     });
     this.asyncRuntime = new TerminalAsyncRuntime({
-      addLine: (text, type) => this.addLine(text, type),
-      addLines: (texts, type) => this.addLines(texts, type),
+      addLine: (text, type) => {
+        if (this.shouldDeferAsyncOutput()) { this.deferredAsyncLines.push({ text, type }); this.notify(); return; }
+        this.addLine(text, type);
+      },
+      addLines: (texts, type) => {
+        if (this.shouldDeferAsyncOutput()) {
+          for (const text of texts) this.deferredAsyncLines.push({ text, type });
+          this.notify();
+          return;
+        }
+        this.addLines(texts, type);
+      },
       notify: () => this.notify(),
       attachStream: (opts) => this.inputHostImpl.attachStream(opts),
     });
   }
 
+  // ── Deferred async output ("logging synchronous"-style behaviour) ──
+  //
+  // Background/async job output (syslog monitors, debug streams, …) is
+  // routed through here rather than straight into `lines` so a vendor
+  // shell can defer it while the operator has an unsubmitted command in
+  // progress -- reusable by any future protocol's async output, not
+  // hardcoded to Cisco syslog. `shouldDeferAsyncOutput` is the opt-in
+  // hook (off by default); `flushDeferredAsyncQueue` must be called by
+  // the subclass at a sensible point (e.g. right before echoing a
+  // newly-submitted command) or queued lines will simply build up.
+  private deferredAsyncLines: Array<{ text: string; type?: string }> = [];
+
+  protected shouldDeferAsyncOutput(): boolean { return false; }
+
+  protected flushDeferredAsyncQueue(): void {
+    if (this.deferredAsyncLines.length === 0) return;
+    const pending = this.deferredAsyncLines;
+    this.deferredAsyncLines = [];
+    for (const { text, type } of pending) this.addLine(text, type);
+  }
+
+  // ── Idle timer (generic `exec-timeout`-style mechanism) ────────────
+  //
+  // Any session-affinity feature that needs to react to "no activity for
+  // N ms" (Cisco/Huawei `exec-timeout`, a future Linux `TMOUT`, …) can
+  // build on this instead of rolling its own setTimeout bookkeeping.
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected armIdleTimer(ms: number, onTimeout: () => void): void {
+    this.clearIdleTimer();
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    this.idleTimer = setTimeout(() => { this.idleTimer = null; onTimeout(); }, ms);
+  }
+
+  protected clearIdleTimer(): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+  }
+
+  /**
+   * Le minuteur ABSOLU, distinct du precedent — et la distinction est
+   * tout le sujet : celui-ci n'est JAMAIS reamorce par l'activite. C'est
+   * ce qui separe `absolute-timeout` d'`exec-timeout`, et sans un second
+   * minuteur il n'y a pas moyen de l'exprimer : reutiliser celui de
+   * l'inactivite ferait repousser la limite absolue a chaque frappe,
+   * c'est-a-dire ne la ferait jamais expirer pour un operateur actif —
+   * exactement le cas que la commande existe pour borner.
+   */
+  private absoluteTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected armAbsoluteTimer(ms: number, onTimeout: () => void): void {
+    this.clearAbsoluteTimer();
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    this.absoluteTimer = setTimeout(() => { this.absoluteTimer = null; onTimeout(); }, ms);
+  }
+
+  protected clearAbsoluteTimer(): void {
+    if (this.absoluteTimer) { clearTimeout(this.absoluteTimer); this.absoluteTimer = null; }
+  }
+
+  /** Vendor hook: called after every submitted command (activity). */
+  protected onCommandActivity(): void { /* no-op by default */ }
+
   getInputHost(): import('@/shell/input').InputHost { return this.inputHostImpl; }
 
   listAttachedStreams(): readonly import('@/shell/input').StreamAttachment[] {
+    if (this._children.length > 0) return this.foreground.listAttachedStreams();
     return this.inputHostImpl.listStreams();
   }
 
   startAsyncCommand(spec: AsyncJobSpec): AsyncJobHandle | null {
     return this.asyncRuntime.start(spec);
+  }
+
+  protected startScrollingMonitor(opts: {
+    commandLine: string;
+    intervalMs: number;
+    frame: () => Promise<string> | string;
+    header?: () => string;
+    trailer?: () => string;
+    maxFrames?: number;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    let trailerEmitted = false;
+    const emitTrailer = (ctx: AsyncJobContext) => {
+      if (trailerEmitted || !opts.trailer) return;
+      trailerEmitted = true;
+      const t = opts.trailer();
+      if (t) for (const line of t.split('\n')) ctx.sink.line(line);
+    };
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: opts.commandLine,
+      run: async (ctx) => {
+        if (opts.header) {
+          const h = opts.header();
+          if (h) for (const line of h.split('\n')) ctx.sink.line(line);
+        }
+        let emitted = 0;
+        while (!ctx.cancelled() && (opts.maxFrames === undefined || emitted < opts.maxFrames)) {
+          const frame = await opts.frame();
+          for (const line of frame.split('\n')) ctx.sink.line(line);
+          emitted++;
+          if (opts.maxFrames !== undefined && emitted >= opts.maxFrames) break;
+          await ctx.delay(opts.intervalMs);
+        }
+        emitTrailer(ctx);
+      },
+      onInterrupt: opts.trailer ? (ctx) => emitTrailer(ctx) : undefined,
+    });
+    return job !== null;
+  }
+
+  protected startFollowStream(opts: {
+    commandLine: string;
+    kind?: 'streaming' | 'subscription';
+    prepare?: (ctx: AsyncJobContext) => boolean;
+    subscribe: (lineSink: (line: string) => void) => () => void;
+  }): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    let unsubscribe: (() => void) | null = null;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: opts.kind ?? 'streaming',
+      command: opts.commandLine,
+      prepare: opts.prepare,
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        unsubscribe = opts.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => { unsubscribe?.(); unsubscribe = null; resolve(); });
+      }),
+    });
+    return job !== null;
   }
 
   listAsyncJobs(): AsyncJobHandle[] {
@@ -288,13 +478,303 @@ export abstract class TerminalSession {
 
   /** Bump version and notify all subscribers. */
   protected notify(): void {
+    if (this._outputHost) { this._outputHost.notify(); return; }
     this._version++;
     for (const l of this._listeners) l();
+  }
+
+  // ── Nested-session API (SSH = transparent transport) ─────────────
+
+  attachAsChildOf(parent: TerminalSession): void {
+    this._parent = parent;
+    this._outputHost = parent._outputHost ?? parent;
+    parent._children.push(this);
+    this._outputHost.notify();
+  }
+
+  detachFromHost(): void {
+    const parent = this._parent;
+    if (!parent) return;
+    const idx = parent._children.indexOf(this);
+    if (idx >= 0) parent._children.splice(idx, 1);
+    const root = this._outputHost;
+    this._parent = null;
+    this._outputHost = null;
+    root?.notify();
+  }
+
+  get foreground(): TerminalSession {
+    let s: TerminalSession = this;
+    while (s._children.length > 0) s = s._children[s._children.length - 1];
+    return s;
+  }
+
+  get hasActiveChild(): boolean { return this._children.length > 0; }
+
+  editorSave(content: string, filePath: string): void {
+    if (this._children.length > 0) { this.foreground.editorSave(content, filePath); return; }
+  }
+
+  editorExit(saved: boolean = true): void {
+    if (this._children.length > 0) { this.foreground.editorExit(saved); return; }
+  }
+
+  protected get outputRoot(): TerminalSession { return this._outputHost ?? this; }
+
+  protected firstLocalIp(): string | null {
+    const ports = (this.device as unknown as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null; getIsUp: () => boolean }> }).getPorts?.();
+    if (!ports) return null;
+    for (const port of ports) {
+      const ip = port.getIPAddress();
+      if (ip && port.getIsUp()) return ip.toString();
+    }
+    return null;
+  }
+
+  private _remoteLabel: string | null = null;
+
+  get isRemoteChild(): boolean { return this._parent !== null; }
+
+  attachToVtyLine(): void { /* vendor hook */ }
+
+  protected prepareAsRemoteUser(_user: string): void { /* vendor hook */ }
+
+  protected applyRemoteEnv(_env: Record<string, string>): void { /* vendor hook */ }
+
+  adoptRemoteChild(
+    child: TerminalSession,
+    user: string,
+    hostLabel: string,
+    env?: Record<string, string>,
+    opts?: { quiet?: boolean },
+  ): void {
+    // The remote's own spelling of the account, so the child's prompt and
+    // home match what the device actually holds — `ssh user@host` on a
+    // box whose account is `User` lands in `C:\Users\User`, the same as
+    // over the wire.
+    const account = (child.device as unknown as {
+      resolveAccountName?: (n: string) => string | undefined;
+    }).resolveAccountName?.(user) ?? user;
+    child.prepareAsRemoteUser(account);
+    if (env) child.applyRemoteEnv(env);
+    child._remoteLabel = hostLabel;
+    const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
+    const sourceHost = this.device.getHostname?.() ?? '';
+    const banner = opts?.quiet
+      ? this.composeLoginBanner(child.device, account, sourceIp, sourceHost, true)
+      : this.composeLoginBanner(child.device, account, sourceIp, sourceHost, false);
+    child.attachAsChildOf(this);
+    for (const line of banner) child.addLine(line);
+  }
+
+  /**
+   * Compose the post-auth banner (issue.net + motd + "Last login: …") and
+   * record the login for lastlog/auth-log purposes. `protected` so a
+   * subclass can call it directly for a remote session that isn't pushed
+   * as a full child (e.g. SshInteractiveSubShell — LinuxTerminalSession's
+   * real-wire interactive shell), not just from `adoptRemoteChild`.
+   * Delegates to the shared `composeSshLoginBanner()` (also used by
+   * SshInteractiveSubShell for a *nested* ssh's own banner).
+   */
+  protected composeLoginBanner(
+    device: unknown,
+    user: string,
+    sourceIp: string,
+    sourceHost: string,
+    quiet = false,
+  ): string[] {
+    return composeSshLoginBanner(device, user, sourceIp, sourceHost, quiet);
+  }
+
+  /**
+   * True when the remote this session is attached to is still reachable
+   * from the parent — the machine that opened the session. Read off the
+   * cabled topology, never by opening a connection: a real ssh client
+   * holds its channel and learns from the next write, so handshaking per
+   * command would make the server log an accept/close pair for every
+   * line the user types. A session that is not a remote child, or whose
+   * label is not an address we can place, is always reported alive
+   * (docs/PRD-Link-State.md §3.3).
+   */
+  protected isRemoteLinkAlive(): boolean {
+    const parent = this._parent;
+    const label = this._remoteLabel;
+    if (parent === null || label === null) return true;
+    const host = label.includes('@') ? label.slice(label.indexOf('@') + 1) : label;
+    if (!IPAddress.tryParse(host)) return true;
+    return peerLiveness(parent.device, host)();
+  }
+
+  /**
+   * OpenSSH's reaction when the transport dies under an open session.
+   * Returns true once the session has been torn down, so the caller
+   * abandons the command the user just typed.
+   */
+  protected breakRemoteSessionIfLinkLost(): boolean {
+    if (this._parent === null) return false;
+    if (this.isRemoteLinkAlive()) return false;
+    this.addLine('client_loop: send disconnect: Broken pipe');
+    this.detachFromHost();
+    this.dispose();
+    return true;
+  }
+
+  /**
+   * An editor typed inside a remote session opens where the file is —
+   * on the remote — and only the keystrokes and the screen cross the
+   * wire. Hosted here rather than in one vendor's session: which shell
+   * typed `vim` says nothing about where the buffer lives
+   * (docs/PRD-SSH-Unification.md §4bis B3).
+   */
+  protected tryOpenRemoteEditor(line: string): boolean {
+    const sub = this.activeShell as unknown as {
+      openRemoteEditor?: (l: string) => Promise<EditorView | null>;
+      editorTransport?: () => RemoteEditorTransport;
+    } | null;
+    if (!sub?.openRemoteEditor || !sub.editorTransport) return false;
+    if (!parseEditorLaunch(line)) return false;
+
+    void sub.openRemoteEditor(line).then((view) => {
+      if (!view) return;
+      const launch = parseEditorLaunch(line)!;
+      const controller = createRemoteEditorController(
+        sub.editorTransport!(),
+        view,
+        () => this.onRemoteEditorUpdate(),
+      );
+      this.inputMode = {
+        type: 'remote-editor',
+        editorType: launch.editor,
+        filePath: view.filePath,
+        controller,
+      };
+      this.notify();
+    });
+    return true;
+  }
+
+  /**
+   * A fresh screen arrived from the remote editor. Re-render, and hand
+   * the prompt back to the SSH session once the engine has exited.
+   */
+  protected onRemoteEditorUpdate(): void {
+    const mode = this.inputMode;
+    if (mode.type !== 'remote-editor') { this.notify(); return; }
+    if (mode.controller.exited) {
+      this.inputMode = { type: 'normal' };
+      this.addLine(this.getPrompt());
+    }
+    this.notify();
+  }
+
+  /**
+   * Reactive SSH IO for the connection phase, shared by every vendor:
+   * the SSH layer suspends on `readInput()`, the terminal resolves it
+   * from the keyboard. Password and host-key dialogs therefore look the
+   * same whichever shell typed `ssh` — there is one client, so there is
+   * one prompt flow (docs/PRD-SSH-Unification.md §4bis).
+   */
+  protected pendingSshIO: QueuedTerminalIO | null = null;
+
+  protected handleSshIOKey(e: KeyEvent): boolean {
+    if (!this.pendingSshIO?.isWaitingForInput) return false;
+
+    if (e.key === 'Enter') {
+      const isPassword = this.inputMode.type === 'password';
+      const val = isPassword ? this._passwordBuf : this._inputBuf;
+      if (isPassword) this._passwordBuf = '';
+      else this._inputBuf = '';
+      // Echo the prompt (+ the non-secret answer) into scrollback so the
+      // SSH host-key / password dialogs leave a trace in history once
+      // submitted. Without this the prompt vanishes the moment the user
+      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
+      // Passwords are intentionally not echoed.
+      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
+        const promptText = (this.inputMode as { promptText: string }).promptText;
+        if (promptText) {
+          this.addLine(isPassword ? promptText : `${promptText}${val}`);
+        }
+      }
+      // endPrompt() is called inside submitInput → resets inputMode + notify
+      this.pendingSshIO.submitInput(val);
+      return true;
+    }
+
+    // Suppress history navigation during SSH prompts
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
+
+    if (e.key === 'c' && e.ctrlKey) {
+      this._passwordBuf = '';
+      this._inputBuf = '';
+      // cancel() resolves readInput with '' → SSH layer treats it as abort
+      this.pendingSshIO.cancel();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
+   * The SSH layer calls readInput() which suspends on a Promise; the terminal
+   * resolves it via handleSshIOKey → submitInput().
+   */
+  protected createSshTerminalIO(): QueuedTerminalIO {
+    const io = new QueuedTerminalIO({
+      writeLine: (text, type) => this.addLine(text, type),
+      beginPrompt: (prompt, secret) => {
+        if (secret) {
+          this._passwordBuf = '';
+          this.inputMode = { type: 'password', promptText: prompt };
+        } else {
+          this._inputBuf = '';
+          this.inputMode = { type: 'interactive-text', promptText: prompt };
+        }
+        this.notify();
+      },
+      endPrompt: () => {
+        this.inputMode = { type: 'normal' };
+        this.notify();
+      },
+    });
+    this.pendingSshIO = io;
+    return io;
+  }
+
+  /**
+   * The single seam every Enter goes through, whatever vendor shell is
+   * driving. Link loss is a property of the transport, not of the shell
+   * behind it, so it is settled here once instead of in each vendor's
+   * `onEnter()` — a new interpreter inherits the behaviour by existing.
+   * The typed line is echoed first: the terminal is on the client side,
+   * so it shows what was typed before the write fails.
+   */
+  private dispatchEnter(): void | Promise<void> {
+    if (this._parent !== null && !this.isRemoteLinkAlive()) {
+      const typed = this.input || this._inputBuf;
+      this.addEchoLine(this.getPrompt(), typed);
+      this.input = '';
+      this._inputBuf = '';
+      this.breakRemoteSessionIfLinkLost();
+      return;
+    }
+    return this.onEnter();
+  }
+
+  endRemoteSession(): boolean {
+    if (this._parent === null) return false;
+    const label = this._remoteLabel ?? 'remote';
+    this.addLine('logout');
+    this.addLine(`Connection to ${label} closed.`);
+    this.detachFromHost();
+    this.dispose();
+    return true;
   }
 
   // ── Public API ──────────────────────────────────────────────────
 
   setInput(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInput(value); return; }
     this.input = sanitiseInput(value);
     this.notify();
   }
@@ -304,26 +784,192 @@ export abstract class TerminalSession {
   /** Current effective input mode. Override in subclasses for flow-aware modes. */
   get currentInputMode(): InputMode { return this.inputMode; }
 
-  getPasswordBuf(): string { return this._passwordBuf; }
+  /**
+   * Append a single line of text (newlines flattened to spaces) into
+   * whichever buffer the current input mode owns. Used by paste for the
+   * trailing, still-editable line and for every special-mode paste.
+   */
+  insertText(raw: string): void {
+    const flat = raw.replace(/[\r\n]+/g, ' ');
+    if (flat === '') return;
+    const mode = this.currentInputMode.type;
+    if (mode === 'password') {
+      this.setPasswordBuf(this.getPasswordBuf() + flat);
+    } else if (mode === 'interactive-text') {
+      this.setInputBuf(this.getInputBuf() + flat);
+    } else if (mode === 'reverse-search') {
+      this.updateReverseSearch(this.reverseSearchQuery + flat);
+    } else if (mode === 'normal') {
+      this.setInput(this.input + flat);
+    }
+  }
+
+  async pasteText(raw: string): Promise<void> {
+    if (this.disposed) return;
+    const normalized = raw.replace(/\r\n?/g, '\n');
+    if (!normalized.includes('\n')) { this.insertText(normalized); return; }
+    if (!this._multilinePasteEnabled) { this.pasteWithoutExecuting(normalized); return; }
+
+    const lines = normalized.split('\n');
+    const trailing = lines.pop() ?? '';
+    this._pasteAborted = false;
+    this._pasteRunning = true;
+    let tranche = Date.now();
+    try {
+      for (let i = 0; i < lines.length; i++) {
+        if (this.disposed) return;
+        if (this._pasteAborted) { this.reportPasteAborted(lines.length - i); return; }
+        if (!this.acceptsPastedLine()) {
+          this.insertText([lines[i], ...lines.slice(i + 1), trailing].join(' '));
+          return;
+        }
+        await this.submitPastedLine(lines[i]);
+        if (Date.now() - tranche >= PASTE_SLICE_MS) {
+          await yieldToEventLoop();
+          tranche = Date.now();
+        }
+      }
+      if (!this.disposed) this.insertText(trailing);
+    } finally {
+      this._pasteRunning = false;
+    }
+  }
+
+  private acceptsPastedLine(): boolean {
+    const mode = this.currentInputMode.type;
+    return mode === 'normal' || mode === 'password'
+      || mode === 'interactive-text' || mode === 'pager';
+  }
+
+  private async submitPastedLine(line: string): Promise<void> {
+    if (this.currentInputMode.type === 'normal') {
+      this.setInput(this.input + line);
+      const result = this.dispatchEnter();
+      if (result && typeof (result as { then?: unknown }).then === 'function') {
+        await result;
+      }
+      return;
+    }
+    const before = this.promptSignature();
+    this.insertText(line);
+    this.handleKey({ key: 'Enter', ctrlKey: false, altKey: false, metaKey: false, shiftKey: false });
+    await this.waitForPromptToAdvance(before);
+  }
+
+  private promptSignature(): string {
+    const mode = this.currentInputMode;
+    const text = (mode as { promptText?: string }).promptText ?? '';
+    return `${mode.type}|${text}`;
+  }
+
+  private async waitForPromptToAdvance(before: string): Promise<void> {
+    for (let i = 0; i < PASTE_PROMPT_TURNS; i++) {
+      await yieldToEventLoop();
+      const current = this.promptSignature();
+      const onCommandLine = current.startsWith('normal|');
+      if (!onCommandLine && current !== before) return;
+      if (onCommandLine && i >= PASTE_SETTLE_TURNS) return;
+    }
+  }
+
+  private pasteWithoutExecuting(normalized: string): void {
+    if (this.currentInputMode.type !== 'password') {
+      this.insertText(normalized);
+      return;
+    }
+    const [first, ...rest] = normalized.split('\n');
+    this.insertText(first);
+    const ignored = rest.filter((l) => l.trim() !== '').length;
+    if (ignored > 0) {
+      this.addLine('% Multi-line paste into a password prompt — '
+        + `${ignored} further line${ignored === 1 ? '' : 's'} ignored`);
+    }
+  }
+
+  private _pasteRunning = false;
+  private _pasteAborted = false;
+
+  /**
+   * Un collage est-il en cours ? Lu par le Ctrl-C du terminal.
+   *
+   * La question porte sur la CHAÎNE entière, pas sur une session
+   * précise. `pasteText` est appelé sur la session que la vue tient —
+   * l'hôte — et y pose son drapeau, tandis que les premières versions
+   * de ces deux accesseurs déléguaient au sous-shell le plus profond :
+   * le drapeau était donc posé à un endroit et lu à un autre, et le
+   * Ctrl-C d'interruption échouait en silence dès qu'un `ssh` était
+   * ouvert. Chercher dans toute la chaîne rend la réponse indépendante
+   * de la session sur laquelle le collage a commencé.
+   */
+  isPasteRunning(): boolean {
+    return this.pastingSession() !== null;
+  }
+
+  /**
+   * Interrompre le collage en cours. Un vrai terminal laisse toujours
+   * reprendre la main sur un bloc collé par erreur ; ici la boucle ne
+   * rendait jamais la main, donc la touche n'était même pas lue.
+   */
+  abortPaste(): boolean {
+    const cible = this.pastingSession();
+    if (!cible) return false;
+    cible._pasteAborted = true;
+    return true;
+  }
+
+  /** La session de la chaîne qui colle, la plus proche d'abord. */
+  private pastingSession(): TerminalSession | null {
+    let s: TerminalSession | undefined = this;
+    while (s) {
+      if (s._pasteRunning) return s;
+      s = s._children[s._children.length - 1];
+    }
+    return null;
+  }
+
+  private reportPasteAborted(restantes: number): void {
+    this.setInput('');
+    this.addLine(`% Paste aborted — ${restantes} line${restantes === 1 ? '' : 's'} not executed`);
+  }
+
+  getPasswordBuf(): string {
+    return this._children.length > 0 ? this.foreground.getPasswordBuf() : this._passwordBuf;
+  }
   setPasswordBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setPasswordBuf(value); return; }
     this._passwordBuf = value;
     this.notify();
   }
 
-  getInputBuf(): string { return this._inputBuf; }
+  getInputBuf(): string {
+    return this._children.length > 0 ? this.foreground.getInputBuf() : this._inputBuf;
+  }
   setInputBuf(value: string): void {
+    if (this._children.length > 0) { this.foreground.setInputBuf(value); return; }
     this._inputBuf = value;
     this.notify();
   }
 
-  addLine(text: string, type: string = 'normal'): void {
-    this.lines.push({ id: nextLineId(), text, type });
-    this.enforceScrollbackLimit();
-    // Record output events (skip prompts — those are recorded as 'input')
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
+  private pushLine(line: OutputLine, record: RecordedEventType | null, silent = false): void {
+    const host = this._outputHost;
+    if (host) {
+      if (line.segments && host.getSessionType() !== this.getSessionType()) {
+        line = { id: line.id, text: line.text, type: line.type, promptText: line.promptText };
+      }
+      host.pushLine(line, record, silent);
+      return;
     }
-    this.notify();
+    this.lines.push(line);
+    this.enforceScrollbackLimit();
+    if (record) this.recordEvent(record, line.text);
+    if (!silent) this.notify();
+  }
+
+  addLine(text: string, type: string = 'normal'): void {
+    this.pushLine(
+      { id: nextLineId(), text, type },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   /**
@@ -335,11 +981,7 @@ export abstract class TerminalSession {
    * for the transcript.
    */
   addEchoLine(promptText: string, command: string, type: string = 'prompt'): void {
-    this.lines.push({ id: nextLineId(), text: command, type, promptText });
-    this.enforceScrollbackLimit();
-    // Echo lines represent USER input; record as such (not as output).
-    this.recordEvent('input', command);
-    this.notify();
+    this.pushLine({ id: nextLineId(), text: command, type, promptText }, 'input');
   }
 
   /**
@@ -350,32 +992,30 @@ export abstract class TerminalSession {
    */
   addStyledLine(segments: TextSegment[], type: string = 'normal'): void {
     const text = segments.map((s) => s.text).join('');
-    this.lines.push({ id: nextLineId(), text, type, segments });
-    this.enforceScrollbackLimit();
-    if (type !== 'prompt') {
-      this.recordEvent(type === 'error' ? 'error' : 'output', text);
-    }
-    this.notify();
+    this.pushLine(
+      { id: nextLineId(), text, type, segments },
+      type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null,
+    );
   }
 
   addLines(texts: string[], type: string = 'normal'): void {
+    const record = type !== 'prompt' ? (type === 'error' ? 'error' : 'output') : null;
     for (const text of texts) {
-      this.lines.push({ id: nextLineId(), text, type });
-      if (type !== 'prompt') {
-        this.recordEvent(type === 'error' ? 'error' : 'output', text);
-      }
+      this.pushLine({ id: nextLineId(), text, type }, record, true);
     }
-    this.enforceScrollbackLimit();
-    this.notify();
+    this.outputRoot.notify();
   }
 
   clear(): void {
-    this.lines = [];
-    this.notify();
+    const root = this.outputRoot;
+    root.lines = [];
+    root.notify();
   }
 
   dispose(): void {
     if (this.disposed) return;
+    this.clearIdleTimer();
+    this.clearAbsoluteTimer();
     this.asyncRuntime.cancelAll();
     // Subclasses may register a teardown to release SSH sessions, sub-shells,
     // remote-forwarders, etc. Run them BEFORE flagging disposed so handlers
@@ -700,10 +1340,7 @@ export abstract class TerminalSession {
       const value = isPassword ? this._passwordBuf : this._inputBuf;
       const promptText = (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')
         ? this.inputMode.promptText : '';
-      // Echo as a prompt+value pair: the prompt lands in `promptText`
-      // (composed visually by the renderer), the value in `text` —
-      // masked for passwords, in the clear otherwise.
-      this.addEchoLine(promptText, isPassword ? '*'.repeat(value.length) : value);
+      this.addEchoLine(promptText, isPassword ? '' : value);
       this._passwordBuf = '';
       this._inputBuf = '';
       this.inputHostImpl.submitPending(value);
@@ -732,7 +1369,7 @@ export abstract class TerminalSession {
   protected handleNormalKey(e: KeyEvent): boolean {
     // Enter → execute command
     if (e.key === 'Enter') {
-      this.onEnter();
+      this.dispatchEnter();
       return true;
     }
 
@@ -768,7 +1405,7 @@ export abstract class TerminalSession {
 
     // Tab → completion
     if (e.key === 'Tab') {
-      this.onTab();
+      this.onTab(e.shiftKey ?? false);
       return true;
     }
 
@@ -795,7 +1432,7 @@ export abstract class TerminalSession {
     if (e.key === 'Enter') {
       this.acceptReverseSearch();
       // Execute the accepted command
-      this.onEnter();
+      this.dispatchEnter();
       return true;
     }
 
@@ -868,6 +1505,10 @@ export abstract class TerminalSession {
     }
   }
 
+  protected getFlowUser(): string {
+    return this.device.getCurrentUser?.() ?? 'user';
+  }
+
   // ── Interactive flow engine (shared by Linux + CLI sessions) ─────
 
   /**
@@ -887,15 +1528,61 @@ export abstract class TerminalSession {
    * Create a FlowContext, instantiate the engine, and advance.
    * Centralises the duplicated createAndAdvanceFlow / startFlow logic.
    */
+  /**
+   * Le flux en cours est-il une PORTE d'authentification ?
+   *
+   * Ctrl+C sur un pas de flux fait `flowEngine = null` et rend la main
+   * au prompt normal. Pour un flux ordinaire — un `ssh` qui demande un
+   * mot de passe, une confirmation — c'est juste : on renonce et on
+   * revient a son shell. Pour le flux de CONNEXION, « revenir au prompt
+   * normal » EST le shell authentifie : Ctrl+C au `Username:` donnait
+   * donc l'acces sans mot de passe. Un vrai IOS ne laisse pas sortir de
+   * cette invite ; elle recommence.
+   */
+  private flowIsAuthGate = false;
+
+  /**
+   * Relance la porte d'authentification qu'on vient d'interrompre.
+   * Redefinie par la session qui SAIT construire ses pas ; par defaut
+   * il n'y a pas de porte, donc rien a relancer.
+   */
+  protected restartAuthGate(): void { /* pas de porte par defaut */ }
+
+  protected lastFlowWasAuthGate = false;
+
+  /** Vrai quand la session est derriere une porte d'authentification. */
+  protected isAuthGateActive(): boolean {
+    return this.flowIsAuthGate && this.flowEngine !== null;
+  }
+
+  /**
+   * Ctrl+C pendant un flux. Rend `true` quand la touche a ete traitee.
+   * Une porte d'authentification est REDEMARREE plutot qu'abandonnee.
+   */
+  protected cancelFlowOnCtrlC(): boolean {
+    const porte = this.flowIsAuthGate;
+    this.flowEngine = null;
+    this.flowIsAuthGate = false;
+    this._passwordBuf = '';
+    this._inputBuf = '';
+    this.inputMode = { type: 'normal' };
+    this.addLine('^C');
+    if (porte) { this.restartAuthGate(); return true; }
+    this.notify();
+    return true;
+  }
+
   protected startFlowFromSteps(
     steps: InteractiveStep[],
     command: string,
     extraMetadata?: Map<string, unknown>,
+    options?: { authGate?: boolean },
   ): void {
+    this.flowIsAuthGate = options?.authGate === true;
     const ctx: FlowContext = {
       values: new Map(),
       device: this.device,
-      currentUser: this.device.getCurrentUser?.() ?? 'user',
+      currentUser: this.getFlowUser(),
       currentUid: this.device.getCurrentUid?.() ?? 0,
       metadata: new Map<string, unknown>([
         ['original_command', command],
@@ -926,6 +1613,7 @@ export abstract class TerminalSession {
   }
 
   protected async runFlowViaBroker(steps: InteractiveStep[], ctx: FlowContext): Promise<void> {
+    const porte = this.flowIsAuthGate;
     const broker = new PromiseInputBrokerCtor(this.inputHostImpl);
     const result = await runFlowOnBrokerFn(steps, broker, ctx, {
       emit: (text, lineType) => this.addLine(text, lineType ?? 'normal'),
@@ -934,9 +1622,19 @@ export abstract class TerminalSession {
     this._passwordBuf = '';
     this._inputBuf = '';
     this.inputMode = { type: 'normal' };
+    this.flowIsAuthGate = false;
     if (result.status === 'ok') {
+      this.lastFlowWasAuthGate = porte;
       this.onFlowComplete(result.ctx);
+      this.lastFlowWasAuthGate = false;
+      this.notify();
+      return;
     }
+    // Le flux a ete ANNULE (Ctrl+C, Ctrl+D). Pour un flux ordinaire on
+    // revient au prompt, ce qui est juste. Pour une porte
+    // d'authentification, ce prompt EST le shell authentifie : on la
+    // rouvre au lieu de la laisser tomber.
+    if (porte) { this.restartAuthGate(); return; }
     this.notify();
   }
 
@@ -960,11 +1658,15 @@ export abstract class TerminalSession {
 
     if (this.flowEngine.isComplete) {
       const ctx = this.flowEngine.getContext();
+      const porte = this.flowIsAuthGate;
       this.flowEngine = null;
       this._passwordBuf = '';
       this._inputBuf = '';
       this.inputMode = { type: 'normal' };
+      this.flowIsAuthGate = false;
+      this.lastFlowWasAuthGate = porte;
       this.onFlowComplete(ctx);
+      this.lastFlowWasAuthGate = false;
       this.notify();
     } else {
       // Map InputDirective to InputMode for the view
@@ -1013,14 +1715,7 @@ export abstract class TerminalSession {
       this.advanceFlow(pw);
       return true;
     }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._passwordBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
+    if (e.key === 'c' && e.ctrlKey) return this.cancelFlowOnCtrlC();
     // Let the view's hidden password <input> handle the keystroke
     return false;
   }
@@ -1042,14 +1737,7 @@ export abstract class TerminalSession {
       this.advanceFlow(val);
       return true;
     }
-    if (e.key === 'c' && e.ctrlKey) {
-      this.flowEngine = null;
-      this._inputBuf = '';
-      this.inputMode = { type: 'normal' };
-      this.addLine('^C');
-      this.notify();
-      return true;
-    }
+    if (e.key === 'c' && e.ctrlKey) return this.cancelFlowOnCtrlC();
     // Let the view's interactive text <input> handle the keystroke
     return false;
   }
@@ -1061,8 +1749,12 @@ export abstract class TerminalSession {
 
   // ── Template methods (override in subclasses) ───────────────────
 
-  /** Called on Enter in normal mode. */
-  protected abstract onEnter(): void;
+  /**
+   * Called on Enter in normal mode. May return a promise that resolves
+   * once the command has finished executing — {@link pasteText} awaits
+   * it to run pasted lines strictly one after another.
+   */
+  protected abstract onEnter(): void | Promise<void>;
 
   /** Called on Ctrl+C in normal mode. */
   protected onCtrlC(): void {
@@ -1072,8 +1764,112 @@ export abstract class TerminalSession {
     this.notify();
   }
 
-  /** Called on Tab in normal mode. */
-  protected abstract onTab(): void;
+  /** Called on Tab in normal mode. Shift+Tab passes reverse=true. */
+  protected abstract onTab(reverse?: boolean): void;
+
+  /**
+   * Ghost text opt-in. Off by default — a terminal shows the inline grey
+   * completion preview only when the user explicitly enables it for that
+   * session. Per-terminal, not global.
+   */
+  private _ghostTextEnabled = false;
+
+  isGhostTextEnabled(): boolean {
+    return this._ghostTextEnabled;
+  }
+
+  setGhostTextEnabled(enabled: boolean): void {
+    if (this._ghostTextEnabled === enabled) return;
+    this._ghostTextEnabled = enabled;
+    this.notify();
+  }
+
+  toggleGhostText(): boolean {
+    this.setGhostTextEnabled(!this._ghostTextEnabled);
+    return this._ghostTextEnabled;
+  }
+
+  private _multilinePasteEnabled = true;
+
+  isMultilinePasteEnabled(): boolean {
+    return this._multilinePasteEnabled;
+  }
+
+  setMultilinePasteEnabled(enabled: boolean): void {
+    if (this._multilinePasteEnabled === enabled) return;
+    this._multilinePasteEnabled = enabled;
+    this.notify();
+  }
+
+  toggleMultilinePaste(): boolean {
+    this.setMultilinePasteEnabled(!this._multilinePasteEnabled);
+    return this._multilinePasteEnabled;
+  }
+
+  /**
+   * Here-document hint opt-in, same shape as ghost text: off by default,
+   * per-terminal. Real bash never names the awaited delimiter — its PS2 is
+   * a bare `> ` and stays that way here. This only offers a teaching aid
+   * beside the prompt to whoever asks for it, and the prompt text itself
+   * is never touched, so a copied transcript still reproduces.
+   */
+  private _heredocHintEnabled = false;
+
+  isHeredocHintEnabled(): boolean {
+    return this._heredocHintEnabled;
+  }
+
+  setHeredocHintEnabled(enabled: boolean): void {
+    if (this._heredocHintEnabled === enabled) return;
+    this._heredocHintEnabled = enabled;
+    this.notify();
+  }
+
+  toggleHeredocHint(): boolean {
+    this.setHeredocHintEnabled(!this._heredocHintEnabled);
+    return this._heredocHintEnabled;
+  }
+
+  /**
+   * The status-line hint when one applies — null everywhere but a session
+   * that is actually collecting a here-document body with the opt-in on.
+   */
+  getHeredocHint(): string | null {
+    if (!this._heredocHintEnabled) return null;
+    const delimiter = this.pendingHeredocDelimiter();
+    return delimiter === null ? null : `waiting for: ${delimiter}`;
+  }
+
+  /** Overridden by sessions that model here-document accumulation. */
+  protected pendingHeredocDelimiter(): string | null { return null; }
+
+  /**
+   * Ghost text: the inline grey continuation shown after the caret when
+   * exactly one completion exists for the current input. Gated by the
+   * per-session opt-in; sessions with a completion source override
+   * `computeGhostSuggestion()`, never this.
+   */
+  getGhostSuggestion(): string | null {
+    if (!this._ghostTextEnabled) return null;
+    return this.computeGhostSuggestion();
+  }
+
+  /**
+   * Compute the ghost remainder for the current input, ignoring the
+   * enabled flag (the caller gates). Base has no completion source.
+   */
+  protected computeGhostSuggestion(): string | null {
+    return null;
+  }
+
+  /** Accept the current ghost suggestion into the input buffer. */
+  acceptGhost(): boolean {
+    const ghost = this.getGhostSuggestion();
+    if (ghost === null || ghost.length === 0) return false;
+    this.input += ghost;
+    this.notify();
+    return true;
+  }
 
   /** Return the current prompt string for the input line. */
   abstract getPrompt(): string;
@@ -1097,6 +1893,55 @@ export abstract class TerminalSession {
 
   /** Return the session type discriminator. */
   abstract getSessionType(): SessionType;
+
+  /**
+   * Le terminal a-t-il ete pousse dans une machine distante par `ssh` ?
+   *
+   * La banniere qui rend cette information etait appelee sous un cast
+   * `session as LinuxTerminalSession`, sur le seul critere
+   * `getSessionType() === 'linux'`. Le cast etait un MENSONGE des qu'une
+   * session non-Linux declarait ce type pour son rendu — un FortiGate le
+   * fait — et la consequence n'etait pas cosmetique : l'appel levait, la
+   * banniere n'a pas de garde-fou d'erreur, et l'arbre React s'effondrait,
+   * donc le terminal ne s'ouvrait pas du tout. La question appartient a la
+   * session ; la reponse par defaut est « non ».
+   */
+  getSshContextInfo(): {
+    active: boolean;
+    chain: readonly { host: string; user: string }[];
+    current: string | null;
+  } {
+    return { active: false, chain: [], current: null };
+  }
+
+  /**
+   * La decomposition `user@hote:chemin$` de l'invite, quand elle a un
+   * sens.
+   *
+   * `foreign: true` est la reponse « mon invite n'a pas cette forme,
+   * rends `getPrompt()` tel quel » — et c'est la reponse JUSTE pour tout
+   * ce qui n'est pas un interprete bash : un FortiGate ecrit
+   * `FGT1 (policy) # `, un ASA `ciscoasa(config)# `. Le rendu appelait
+   * cette methode sous le meme cast que la banniere SSH, avec la meme
+   * consequence : l'appel levait et le terminal ne s'ouvrait pas.
+   */
+  getPromptParts(): {
+    user: string; hostname: string; path: string; promptChar: string;
+    foreign?: boolean;
+  } {
+    return { user: '', hostname: '', path: '', promptChar: '', foreign: true };
+  }
+
+  /**
+   * Le nom de la plateforme, tel que la barre de titre le montre.
+   *
+   * Il etait DEDUIT de `SessionType`, une enumeration a quatre valeurs :
+   * un ASA et un routeur IOS partagent `'cisco'`, donc la fenetre d'un
+   * pare-feu s'intitulait « Cisco IOS » pendant que sa propre barre
+   * d'information disait « Cisco ASA 5506-X ». Deux vues du meme fait,
+   * dont une devinait. La session sait ce qu'elle est ; elle le dit.
+   */
+  platformLabel(): string | null { return null; }
 
   /** Return info bar text (used by the view). */
   abstract getInfoBarContent(): { left: string; right?: string };

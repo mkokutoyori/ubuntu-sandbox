@@ -15,6 +15,8 @@ import { VfsSftpFileSystem } from '@/network/protocols/ssh/sftp/VfsSftpFileSyste
 import { WindowsSftpFileSystem } from '@/network/protocols/ssh/sftp/WindowsSftpFileSystem';
 import { RouterSftpFileSystem } from '@/network/protocols/ssh/sftp/RouterSftpFileSystem';
 import type { ISftpFileSystem } from '@/network/protocols/ssh/sftp/ISftpFileSystem';
+import { PermissionCheckingFSDecorator } from '@/network/protocols/ssh/sftp/PermissionCheckingFSDecorator';
+import { SshUserContext } from '@/network/protocols/ssh/SshUserContext';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 
@@ -23,6 +25,8 @@ export interface WindowsSftpClientOpts {
   readonly stdin?: string;
   readonly sourceHostname: string;
   readonly sourceIp: string;
+  /** The machine running `sftp` (docs/PRD-Frame-Only-Refactor.md P6). */
+  readonly sourceDevice?: object | null;
   readonly sourceUser: string;
   readonly sourceHome: string;
   readonly localFs: WindowsFileSystem;
@@ -61,10 +65,24 @@ export async function runWindowsSftpClient(opts: WindowsSftpClientOpts): Promise
     return { output: `sftp: ${probe.output.replace(/^ssh:\s*/, '')}`, exitCode: probe.exitCode };
   }
 
-  const found = findHostByAddress(host, { readFile: () => null });
-  const remoteFs = resolveRemoteSftpFs(found?.device);
+  const found = findHostByAddress(host, { readFile: () => null }, opts.sourceDevice as never);
+  const remoteFs = resolveRemoteSftpFs(found?.device, remoteUser);
   if (!remoteFs) {
     return { output: `sftp: ${host}: no route to host`, exitCode: 1 };
+  }
+
+  // `-b <fichier>` : real sftp.exe reads its batch from that file. It was
+  // parsed and then ignored, so the option connected and ran nothing.
+  const bIdx = opts.args.indexOf('-b');
+  let batch = opts.stdin ?? '';
+  if (bIdx >= 0) {
+    const batchPath = opts.args[bIdx + 1];
+    if (!batchPath) return { output: 'sftp: missing argument to -b', exitCode: 1 };
+    const body = opts.localFs.readFile(batchPath);
+    if (!body.ok || body.content === undefined) {
+      return { output: `Couldn't open ${batchPath}: No such file or directory`, exitCode: 1 };
+    }
+    batch = body.content;
   }
 
   const session = new SftpInteractiveSession({
@@ -72,15 +90,37 @@ export async function runWindowsSftpClient(opts: WindowsSftpClientOpts): Promise
     remote: remoteFs,
     initialLocalCwd: opts.sourceHome,
   });
-  session.run(SftpCommandScript.parse(opts.stdin ?? ''));
+  session.run(SftpCommandScript.parse(batch));
   return { output: `Connected to ${host}.\n${session.transcript}\nsftp> `, exitCode: 0 };
 }
 
-function resolveRemoteSftpFs(device: unknown): ISftpFileSystem | null {
+/**
+ * The account named on the command line is the one the remote session
+ * runs as. This used to resolve the Linux VFS under `uid 0, gid 0` with
+ * no permission decorator, while the `remoteUser` just computed served
+ * only the authentication probe and was then dropped — so
+ * `sftp bob@host` from Windows browsed the remote as root.
+ */
+function remoteUserContext(device: unknown, asUser: string): SshUserContext {
+  const userMgr = (device as { executor?: { userMgr?: {
+    getUser(n: string): { uid: number; gid: number; home: string } | undefined;
+    getGroupsForUser?(n: string): readonly number[];
+  } } }).executor?.userMgr;
+  const entry = userMgr?.getUser(asUser);
+  if (!entry) return new SshUserContext(asUser, 65534, 65534, [], '/');
+  return new SshUserContext(
+    asUser, entry.uid, entry.gid, userMgr?.getGroupsForUser?.(asUser) ?? [], entry.home);
+}
+
+function resolveRemoteSftpFs(device: unknown, asUser: string): ISftpFileSystem | null {
   if (!device) return null;
   const linuxVfs = (device as { executor?: { vfs?: VirtualFileSystem } }).executor?.vfs;
   if (linuxVfs) {
-    return new VfsSftpFileSystem(linuxVfs, { uid: 0, gid: 0, umask: 0o022 });
+    const userCtx = remoteUserContext(device, asUser);
+    const raw = new VfsSftpFileSystem(linuxVfs, {
+      uid: userCtx.uid, gid: userCtx.gid, umask: 0o022,
+    });
+    return new PermissionCheckingFSDecorator(raw, userCtx);
   }
   const windowsFs = (device as { fs?: unknown }).fs;
   if (windowsFs && typeof (windowsFs as { createFile?: unknown }).createFile === 'function') {

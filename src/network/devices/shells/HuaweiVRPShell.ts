@@ -19,23 +19,42 @@
  */
 
 import type { Router } from '../Router';
+import { VrpSocle } from '@/cli/vendors/vrp/vrpSocle';
+import { vrpDhcpClientFamily, type VrpDhcpLeaseView } from '@/cli/vendors/vrp/vrpDhcpClientFamily';
+import { registerInfoCenterDisplayCommands } from './huawei/HuaweiInfoCenterCommands';
 import type { IRouterShell } from './IRouterShell';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { CommandTrie } from './CommandTrie';
+import {
+  withVrpCommonHelp, withVrpCommonCandidates,
+  type VrpViewKind,
+} from './huawei/vrpCommonCommands';
+import {
+  vrpStores, vrpSetInterfaceAttr,
+  type VrpTimeRange, type VrpNamedLines, type VrpInterfaceBucket,
+} from './huawei/vrpShellStores';
+import { EquipmentParamResolver } from './EquipmentParamResolver';
 import { runSshClient } from '../linux/network/LinuxSshClient';
-import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav } from './cli-utils';
+import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
+import { huaweiIrreversibleCipher, huaweiCipher, huaweiDecipher, looksLikeIrreversibleCipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
+import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
+import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { NetworkOsAccount, type AccountServiceType, type PasswordHashAlgorithm } from '../router/aaa/NetworkOsAccount';
 import {
   registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
 } from './huawei/HuaweiCommonSecurity';
-import { IPAddress } from '../../core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { looksLikeIPv6 } from './cisco/ciscoPing';
 
 // Extracted command modules
 import {
   type HuaweiDisplayState,
-  registerDisplayCommands, displayCurrentConfig,
+  registerDisplayCommands, displayCurrentConfig, resolveHuaweiInterfaceName,
 } from './huawei/HuaweiDisplayCommands';
+import { huaweiInteractionPlanFor } from './huawei/HuaweiInteractionPlans';
+import type { CommandInteractionPlan } from '@/shell/interaction/CommandInteraction';
 import {
   type HuaweiShellMode, type HuaweiShellContext,
   buildSystemCommands, buildInterfaceCommands,
@@ -51,6 +70,13 @@ import {
   buildOSPFv3ViewCommands, registerOSPFInterfaceCommands,
   registerOSPFDisplayCommands,
 } from './huawei/HuaweiOspfCommands';
+import {
+  registerHuaweiIgmpInterfaceCommands, registerHuaweiIgmpDisplayCommands,
+} from './huawei/HuaweiIgmpCommands';
+import {
+  registerHuaweiPimInterfaceCommands, registerHuaweiPimViewCommands,
+  registerHuaweiPimDisplayCommands,
+} from './huawei/HuaweiPimCommands';
 import {
   type HuaweiIPSecContext,
   registerHuaweiIPSecSystemCommands, registerHuaweiIPSecInterfaceCommands,
@@ -77,8 +103,13 @@ import {
   type HuaweiPolicyShellCtx,
   registerHuaweiPolicySystemCommands, registerHuaweiPolicyDisplayCommands,
   buildRoutePolicyView, buildTrafficClassifierView, buildTrafficBehaviorView,
-  buildTrafficPolicyView, buildNqaTestView,
+  buildTrafficPolicyView,
 } from './huawei/HuaweiPolicyCommands';
+import {
+  buildHuaweiNqaSystemCommands, buildHuaweiNqaTestView,
+  registerHuaweiNqaDisplayCommands, resolveVrpTrack,
+} from './huawei/HuaweiNqaCommands';
+import { describeHuaweiArguments } from './huawei/huaweiArgumentHelp';
 import {
   AR2220_HARDWARE_PROFILE,
   renderHealth, renderTemperature, renderFans, renderPower, renderEnvironment,
@@ -87,6 +118,38 @@ import {
   buildHuaweiVxlanInterfaceCommands, registerHuaweiVxlanDisplayCommands,
 } from './huawei/HuaweiVxlanCommands';
 import { collectListeningSockets } from '../router/management/SocketInventory';
+import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
+import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
+import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { parseVrpCarRule } from '../router/qos/CarPolicer';
+
+const JOURS_VRP: Record<string, string> = {
+  daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
+  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
+  fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+};
+
+function analyserHeureVrp(mot: string | undefined): { h: number; m: number } | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(mot ?? '');
+  if (!m) return null;
+  const h = Number(m[1]); const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return { h, m: min };
+}
+
+function analyserPeriodeVrp(args: string[]): import('../router/security/CiscoSecurityConfig').TimeRangePeriodic | null {
+  const debut = analyserHeureVrp(args[0]);
+  if (!debut || args[1]?.toLowerCase() !== 'to') return null;
+  const fin = analyserHeureVrp(args[2]);
+  if (!fin) return null;
+  const jours = args.slice(3).map((j) => JOURS_VRP[j.toLowerCase()]).filter(Boolean);
+  if (args.length > 3 && jours.length !== args.length - 3) return null;
+  return {
+    days: jours.length > 0 ? jours.join(' ') : 'daily',
+    startHour: debut.h, startMinute: debut.m,
+    endHour: fin.h, endMinute: fin.m,
+  };
+}
 
 function renderHuaweiTcpStatus(router: Router): string {
   const tcp = collectListeningSockets(router).filter((s) => s.protocol === 'tcp');
@@ -114,7 +177,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   attachLoggingToBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.logging.attachToBus(bus, deviceId);
   }
-  private mode: HuaweiShellMode | string = 'user';
+  getLoggingConfig(): LoggingConfig { return this.logging; }
+  private mode: HuaweiShellMode = 'user';
   private bgpAsn: number | null = null;
   private isisProcessId: number | null = null;
   private readonly bgpTrie = new CommandTrie();
@@ -141,8 +205,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private selectedPool: string | null = null;
   private dhcpEnabled: boolean = false;
   private dhcpSnoopingEnabled: boolean = false;
-  /** Track which interfaces have 'dhcp select global' */
-  private dhcpSelectGlobalSet: Set<string> = new Set();
   /** OSPF area currently being configured */
   private ospfArea: string | null = null;
 
@@ -202,6 +264,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
    */
   private screenLength: number = 24;
   private screenWidth: number = 80;
+  protected terminalDebugging: boolean = false;
+  protected terminalMonitor: boolean = false;
+
+  /**
+   * VRP splits what IOS merges: `terminal monitor` opens the line to
+   * unprompted output at all, and `terminal debugging` is the extra
+   * switch debug traces need on top of it.
+   */
+  receivesAsyncOutput(): { debug: boolean; syslog: boolean } {
+    return {
+      debug: this.terminalMonitor && this.terminalDebugging,
+      syslog: this.terminalMonitor,
+    };
+  }
 
   // Per-mode command tries
   private userTrie = new CommandTrie();
@@ -209,6 +285,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private interfaceTrie = new CommandTrie();
   private dhcpPoolTrie = new CommandTrie();
   private ospfTrie = new CommandTrie();
+  private pimTrie = new CommandTrie();
   private ospfAreaTrie = new CommandTrie();
   // IPSec sub-mode tries
   private ikeProposalTrie = new CommandTrie();
@@ -248,7 +325,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private bfdSessionTrie = new CommandTrie();
   private selectedBfdSession: string | null = null;
 
-  private huaweiDebugFlags = new Set<string>();
 
   constructor() {
     this.buildUserCommands();
@@ -269,10 +345,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildTrafficClassifierView(this.trafficClassifierTrie, this);
     buildTrafficBehaviorView(this.trafficBehaviorTrie, this);
     buildTrafficPolicyView(this.trafficPolicyTrie, this);
-    buildNqaTestView(this.nqaTestTrie, this);
+    buildHuaweiNqaTestView(this.nqaTestTrie, this);
+    buildHuaweiNqaSystemCommands(this.systemTrie, this);
+    describeHuaweiArguments({
+      system: this.systemTrie,
+      iface: this.interfaceTrie,
+      ospf: this.ospfTrie,
+      vty: this.uiTrie,
+    });
     for (const t of [
       this.userTrie, this.systemTrie, this.interfaceTrie, this.dhcpPoolTrie,
       this.ospfTrie, this.ospfAreaTrie, this.ospfv3Trie, this.ospfv3AreaTrie, this.ripTrie,
+      this.pimTrie,
       this.ikeProposalTrie, this.ikePeerTrie, this.ipsecProposalTrie, this.ipsecPolicyTrie,
       this.uiTrie, this.aclBasicTrie, this.aclAdvancedTrie,
       this.ikev2ProposalTrie, this.ikev2PolicyTrie, this.ikev2KeyringTrie,
@@ -297,6 +381,71 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return this.routerRef;
   }
 
+  /** `display current-configuration` text — source for `save` (Router.getRunningConfig). */
+  getRunningConfigText(router: Router): string {
+    return displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled);
+  }
+
+  /** Re-apply saved config text onto live router state (VRP reboot). */
+  applyConfigText(router: Router, text: string): void {
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '#') { curIface = null; continue; }
+      let g: RegExpMatchArray | null;
+      if (!/^\s/.test(raw)) {
+        curIface = null;
+        if ((g = line.match(/^sysname\s+(\S+)/))) {
+          router._setHostnameInternal(g[1]);
+        } else if ((g = line.match(/^interface\s+(\S+)/))) {
+          curIface = resolveHuaweiInterfaceName(router, g[1]) ?? g[1];
+        } else if ((g = line.match(/^ip route-static\s+(\S+)\s+(\S+)\s+(\S+)/))) {
+          try {
+            const mask = /^\d+$/.test(g[2]) ? SubnetMask.fromCIDR(parseInt(g[2], 10)) : new SubnetMask(g[2]);
+            const nextHop = new IPAddress(g[3]);
+            if (g[1] === '0.0.0.0' && mask.toString() === '0.0.0.0') router.setDefaultRoute(nextHop);
+            else router.addStaticRoute(new IPAddress(g[1]), mask, nextHop);
+          } catch { /* malformed saved line — skip like real VRP would reject it */ }
+        }
+        continue;
+      }
+      if (!curIface) continue;
+      if ((g = line.match(/^description\s+(.+)/))) {
+        router.setInterfaceDescription(curIface, g[1]);
+      } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)/))) {
+        try { router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2])); } catch { /* malformed */ }
+      } else if (line === 'shutdown') {
+        router.getPort(curIface)?.setAdminShutdown(true);
+      }
+    }
+  }
+
+  /**
+   * Capture the current configuration as the device's startup snapshot —
+   * the state `display saved-configuration` renders and
+   * `reset saved-configuration` clears.
+   */
+  private captureSavedConfiguration(): void {
+    this.r().writeMemory();
+  }
+
+  /** Command-owned interactive flows (IoC) — see HuaweiInteractionPlans. */
+  interactionPlanFor(commandLine: string): CommandInteractionPlan | null {
+    return huaweiInteractionPlanFor(commandLine);
+  }
+
+  /** Power-cycle the router and reset the shell to user view (VRP reboot). */
+  private performReboot(): string {
+    const r = this.r();
+    r.powerOff();
+    r.powerOn();
+    this.mode = 'user';
+    this.selectedInterface = null;
+    r._resetConfigurableStateForReload();
+    r._restoreStartupConfig();
+    return 'Info: The system is rebooting ...\nSystem restart completed.';
+  }
+
   setMode(mode: HuaweiShellMode): void { this.mode = mode; }
   getMode(): string { return this.mode; }
 
@@ -305,8 +454,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   getSelectedPool(): string | null { return this.selectedPool; }
   setSelectedPool(pool: string | null): void { this.selectedPool = pool; }
-
-  getDhcpSelectGlobal(): Set<string> { return this.dhcpSelectGlobalSet; }
 
   // ─── HuaweiIPSecContext Implementation ──────────────────────────────
 
@@ -321,6 +468,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return {
       mode: this.mode,
       selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      // VRP n'a pas les CLI Views d'IOS, et son shell ne porte pas
+      // d'identite de session : les deux champs du contrat sont donc
+      // renseignes pour ce qu'ils sont ici — absents — plutot que
+      // laisses indefinis.
+      activeParserView: null,
+      sessionUser: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: null,                  // VRP: not modelled here
       selectedTrack: null,
       selectedIpSla: null,
@@ -341,6 +500,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       selectedIKEv2Profile: null,
       terminalLength: this.screenLength,
       terminalWidth: this.screenWidth,
+      terminalMonitor: this.terminalMonitor,
+      terminalDebugging: this.terminalDebugging,
       privilegeLevel: this.mode === 'user' || this.mode === 'user-view' ? 1 : 15,
       historySize: this.historyMax,
       cmdHistory: [...this.cmdHistory],
@@ -359,6 +520,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.selectedIPSecPolicySeq = s.selectedCryptoMapSeq;
     this.screenLength = s.terminalLength;
     this.screenWidth = s.terminalWidth;
+    this.terminalDebugging = s.terminalDebugging;
+    this.terminalMonitor = s.terminalMonitor;
   }
 
   setSelectedIKEProposal(n: number | null): void { this.selectedIKEProposal = n; }
@@ -385,7 +548,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   isDhcpEnabled(): boolean { return this.dhcpEnabled; }
   isDhcpSnoopingEnabled(): boolean { return this.dhcpSnoopingEnabled; }
-  renderLogbuffer(): string { return this.logging.renderHuawei(); }
+  renderLogbuffer(seuil?: number | null): string {
+    const ic = this.r().getManagementService?.().getInfoCenter();
+    if (!ic) return this.logging.renderHuawei(undefined, seuil);
+    const canal = ic.destinationChannel.logbuffer;
+    return this.logging.renderHuawei({
+      size: ic.logbufferSize, channel: canal, channelName: ic.channelNames[canal],
+    }, seuil);
+  }
 
   // ─── Prompt Generation ─────────────────────────────────────────────
 
@@ -394,8 +564,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     switch (this.mode) {
       case 'user':       return `<${host}>`;
       case 'system':     return `[${host}]`;
-      case 'interface':  return `[${host}-${this.selectedInterface}]`;
+      case 'interface':  return `[${host}-${huaweiDisplayInterfaceName(this.selectedInterface ?? '')}]`;
       case 'dhcp-pool':  return `[${host}-ip-pool-${this.selectedPool}]`;
+      case 'pim':        return `[${host}-pim]`;
       case 'ospf':       return `[${host}-ospf-1]`;
       case 'ospf-area':  return `[${host}-ospf-1-area-${this.ospfArea}]`;
       case 'ospfv3':     return `[${host}-ospfv3-1]`;
@@ -436,9 +607,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Main Execute ──────────────────────────────────────────────────
 
-  execute(router: Router, rawInput: string): string {
+  execute(router: Router, rawInput: string): string | Promise<string> {
+    // `ip route-static … track nqa <admin> <test>` était analysé, rangé
+    // sur la route, et lu par personne : VRP n'appelait jamais
+    // `setRouteTrackResolver`, donc `Router.isRouteTrackUp()` répondait
+    // `true` sans condition et la route conditionnée était
+    // inconditionnelle (docs/PRD-NQA.md §0.1 item 3).
+    router.setRouteTrackResolver((track) => resolveVrpTrack(router, track));
     const trimmed = rawInput.trim();
     if (!trimmed) return '';
+
+    // VRP comment/separator lines: `#` (optionally followed by text) is a
+    // silent no-op in every view — VRP configuration files use it as the
+    // section separator, so pasting a config must not error on each `#`.
+    if (trimmed.startsWith('#')) return '';
 
     if (trimmed.endsWith('?')) {
       const helpInput = trimmed.slice(0, -1);
@@ -479,7 +661,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // Bind router reference
     this.routerRef = router;
-    (router as unknown as { _huaweiDebugFlags?: Set<string> })._huaweiDebugFlags = this.huaweiDebugFlags;
 
     // Expand `command-alias` shortcuts before any trie match — same
     // behaviour as the SSH dispatcher so the local shell honours
@@ -502,25 +683,78 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       : output;
   }
 
+  private socleInstance: VrpSocle | null = null;
+
+  private socle(): VrpSocle {
+    if (!this.socleInstance) {
+      this.socleInstance = new VrpSocle(
+        () => this.routerRef?.getHostname() ?? 'Router', this, () => vrpDhcpClientFamily());
+    }
+    return this.socleInstance;
+  }
+
+  vrpSelectedInterface(): string | null { return this.selectedInterface ?? null; }
+
+  vrpDhcpEnabledElsewhere(iface: string): boolean {
+    const agent = this.routerRef?.getDhcpClientAgent();
+    return !!agent && agent.enabledInterfaces().some(i => i !== iface);
+  }
+
+  vrpDhcpEnable(iface: string): void {
+    this.routerRef?.getDhcpClientAgent().enable(iface, 'ip address dhcp-alloc');
+  }
+
+  vrpDhcpDisable(iface: string): void {
+    this.routerRef?.getDhcpClientAgent().disable(iface);
+  }
+
+  vrpDhcpLeases(): VrpDhcpLeaseView[] {
+    return (this.routerRef?.getDhcpClientAgent().leases() ?? []).map(l => ({
+      iface: l.iface,
+      displayName: huaweiDisplayInterfaceName(l.iface),
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      defaultGateway: l.defaultGateway,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
   private executeOnTrie(cmdPart: string): string {
+    const migre = this.socle().run(cmdPart, this.mode);
+    if (migre !== null) return migre;
     const trie = this.getActiveTrie();
     const result = trie.match(cmdPart);
 
     switch (result.status) {
-      case 'ok':
+      case 'ok': {
+        const trop = tropDeParametres(result, cmdPart);
+        if (trop) return trop;
         if (result.node?.action) {
-          return result.node.action(result.args, cmdPart);
+          return normaliserErreurVrp(
+            result.node.action(result.args, cmdPart),
+            cmdPart,
+            result.matchedKeywords.length,
+          );
         }
         return '';
+      }
 
       case 'ambiguous':
-        return result.error || HUAWEI_ERRORS.AMBIGUOUS(cmdPart);
+        // Never use `result.error` here — CommandTrie's own `.error` is
+        // pre-formatted with Cisco's "%" wording (shared trie code, see
+        // its doc comment); VRP has its own "Error: ... found at '^'
+        // position." convention with a uniform caret line.
+        return HUAWEI_ERRORS.AMBIGUOUS(cmdPart, result.errorPos);
 
       case 'incomplete':
-        return result.error || HUAWEI_ERRORS.INCOMPLETE;
+        return HUAWEI_ERRORS.INCOMPLETE(cmdPart, result.errorPos);
 
       case 'invalid':
-        return result.error || HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
+        return this.socle().diagnostic(cmdPart, this.mode)
+          ?? HUAWEI_ERRORS.UNRECOGNIZED(cmdPart, result.errorPos);
 
       default:
         return HUAWEI_ERRORS.UNRECOGNIZED(cmdPart);
@@ -577,6 +811,60 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     return result.output;
   }
 
+  /**
+   * Outbound Telnet driven by the real topology — mirrors
+   * CiscoShellBase.runOutboundTelnet: resolve the target, pick a source
+   * interface, and verify L2/L3 reachability plus the remote VTY's
+   * `protocol inbound` transport before reporting success. As on Cisco,
+   * this never pushes a nested interactive session (see the Telnet note
+   * in CLAUDE.md's Terminal emulation section).
+   */
+  private runOutboundTelnet(args: string[]): string {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    if (positional.length === 0) return 'Error: Incomplete command.';
+    const display = positional[0];
+    const port = positional[1] ? parseInt(positional[1], 10) : 23;
+    const router = this.routerRef as unknown as {
+      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    };
+    if (!router) return 'Error: device not bound';
+    let host = display;
+    const resolved = router._getHostsTable?.().resolve(host);
+    if (resolved) host = resolved;
+
+    let sourceIp: string | null = null;
+    for (const [, p] of router._getPortsInternal()) {
+      const ip = p.getIPAddress();
+      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+    }
+    if (!sourceIp) return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+
+    const remote = findHostByAddress(host, undefined, this.routerRef as never);
+    if (!remote || remote.poweredOff || remote.interfaceDown) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    if (!isPathReachable(sourceIp, remote.ip, this.routerRef as never)) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    if (!this.remoteAcceptsTelnet(remote.device, port)) {
+      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    }
+    return `Trying ${display} ...\nPress CTRL+K to abort\nConnected to ${display} ...\n`;
+  }
+
+  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
+    if (port !== 23) return false;
+    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
+    const cls = d.constructor?.name ?? '';
+    const type = (d.getDeviceType?.() ?? '').toLowerCase();
+    const isNetworkCli = /Router|Switch/.test(cls) || /router|switch/.test(type);
+    if (!isNetworkCli) return false;
+    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
+    if (transport === undefined) return true;
+    return transport === 'telnet' || transport === 'all';
+  }
+
   private cmdQuit(): string {
     switch (this.mode) {
       case 'interface':
@@ -590,6 +878,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'ospf-area':
         this.mode = 'ospf';
         this.ospfArea = null;
+        return '';
+      case 'pim':
+        this.mode = 'system';
         return '';
       case 'ospf':
         this.mode = 'system';
@@ -714,19 +1005,52 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Help / Completion ─────────────────────────────────────────────
 
-  getHelp(input: string): string {
+  getHelp(input: string, router?: Router): string {
     const trie = this.getActiveTrie();
-    const completions = trie.getCompletions(input);
-    if (completions.length === 0) return 'Error: Unrecognized command';
-    const maxKw = Math.max(...completions.map(c => c.keyword.length));
-    return completions
-      .map(c => `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`)
-      .join('\n');
+    trie.setDynamicResolver(router ? new EquipmentParamResolver(router) : null);
+    try {
+      const duSocle = this.socle().suggestions(input, this.mode, 'QUESTION_MARK');
+      const completions = withVrpCommonHelp(this.vrpView(), input,
+        [...trie.getCompletions(input), ...duSocle.filter(s =>
+          !trie.getCompletions(input).some(c => c.keyword === s.keyword))]);
+      if (completions.length === 0) return 'Error: Unrecognized command';
+      const maxKw = Math.max(...completions.map(c => c.keyword.length));
+      return completions
+        // Une description vide ne se rembourre pas : `<cr>` laissait
+        // sinon la largeur de la colonne en blancs de fin de ligne.
+        .map(c => (c.description
+          ? `  ${c.keyword.padEnd(maxKw + 2)}${c.description}`
+          : `  ${c.keyword}`))
+        .join('\n');
+    } finally {
+      trie.setDynamicResolver(null);
+    }
   }
 
   tabComplete(input: string): string | null {
     const trie = this.getActiveTrie();
     return trie.tabComplete(input);
+  }
+
+  tabCandidates(input: string, router: Router): string[] {
+    const trie = this.getActiveTrie();
+    trie.setDynamicResolver(new EquipmentParamResolver(router));
+    try {
+      const duTrie = trie.tabCandidates(input);
+      const duSocle = this.socle().candidates(input, this.mode)
+        .filter(c => !duTrie.includes(c));
+      return withVrpCommonCandidates(this.vrpView(), input, [...duTrie, ...duSocle]);
+    } finally {
+      trie.setDynamicResolver(null);
+    }
+  }
+
+  /**
+   * La vue utilisateur n'a rien à remonter : `return` n'y est pas
+   * proposé, comme sur un vrai VRP.
+   */
+  private vrpView(): VrpViewKind {
+    return this.mode === 'user' ? 'user' : 'other';
   }
 
   // ─── Active Trie Selection ─────────────────────────────────────────
@@ -737,6 +1061,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       case 'system': return this.systemTrie;
       case 'interface': return this.interfaceTrie;
       case 'dhcp-pool': return this.dhcpPoolTrie;
+      case 'pim': return this.pimTrie;
       case 'ospf': return this.ospfTrie;
       case 'ospf-area': return this.ospfAreaTrie;
       case 'bgp': return this.bgpTrie;
@@ -793,22 +1118,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
    *   undo screen-width                   — restore default (80)
    */
   private registerScreenSizeCommands(t: CommandTrie): void {
-    t.registerGreedy('screen-length', 'Set terminal screen length', (args) => {
-      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+    t.registerGreedy('screen-length', 'Set terminal screen length', (args, rawLine) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(rawLine);
       const head = args[0].toLowerCase();
       if (head === 'disable') { this.screenLength = 0; return ''; }
       const n = parseInt(head, 10);
       if (!Number.isFinite(n) || n < 0 || n > 512) {
-        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+        return HUAWEI_ERRORS.UNRECOGNIZED(rawLine, rawLine.length - args.join(' ').length);
       }
       this.screenLength = n;
       return '';
     });
-    t.registerGreedy('screen-width', 'Set terminal screen width', (args) => {
-      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE;
+    t.registerGreedy('screen-width', 'Set terminal screen width', (args, rawLine) => {
+      if (args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(rawLine);
       const n = parseInt(args[0], 10);
       if (!Number.isFinite(n) || n < 80 || n > 512) {
-        return HUAWEI_ERRORS.UNRECOGNIZED(args.join(' '));
+        return HUAWEI_ERRORS.UNRECOGNIZED(rawLine, rawLine.length - args.join(' ').length);
       }
       this.screenWidth = n;
       return '';
@@ -821,71 +1146,62 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
   }
 
+  /**
+   * Un bloc de la configuration, de sa tete a la fin du bloc.
+   *
+   * Quatre copies de cette marche existaient, une par vue, et chacune
+   * s'arretait sur `#` seulement — ce qui laissait tout passer quand un
+   * separateur manquait. Elle s'arrete maintenant AUSSI sur toute ligne
+   * de premier niveau, donc elle ne peut plus deborder du bloc meme si
+   * la structure change.
+   */
+  private blocDe(lignes: readonly string[], estTete: (l: string) => boolean): string {
+    const out: string[] = ['#'];
+    let dedans = false;
+    for (const l of lignes) {
+      if (!dedans) { if (estTete(l)) { dedans = true; out.push(l); } continue; }
+      if (l === '#' || (l.length > 0 && !/^\s/.test(l))) break;
+      out.push(l);
+    }
+    out.push('#');
+    return out.join('\n');
+  }
+
   private renderDisplayThis(): string {
     const router = this.r();
-    const config = displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    const config = displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled);
     const lines = config.split('\n');
     const selIface = this.selectedInterface;
-    const renderName = (n: string) => n.startsWith('GE') ? n.replace(/^GE/, 'GigabitEthernet') : n;
     switch (this.mode) {
       case 'interface': {
         if (!selIface) return '#';
-        const target = `interface ${renderName(selIface)}`;
-        const out: string[] = ['#', target];
-        let inside = false;
-        for (const l of lines) {
-          if (l === target) { inside = true; continue; }
-          if (inside) {
-            if (l.startsWith('#')) break;
-            if (l.startsWith('interface ')) break;
-            out.push(l);
-          }
-        }
-        out.push('#');
-        return out.join('\n');
+        const tete = `interface ${huaweiDisplayInterfaceName(selIface)}`;
+        return this.blocDe(lines, (l) => l === tete);
       }
       case 'ospf':
-      case 'ospf-area': {
-        const out: string[] = ['#'];
-        let inside = false;
-        for (const l of lines) {
-          if (/^ospf \d/.test(l)) { inside = true; out.push(l); continue; }
-          if (inside) {
-            if (l.startsWith('#')) break;
-            out.push(l);
-          }
-        }
-        out.push('#');
-        return out.join('\n');
-      }
-      case 'rip': {
-        const out: string[] = ['#'];
-        let inside = false;
-        for (const l of lines) {
-          if (/^rip \d/.test(l)) { inside = true; out.push(l); continue; }
-          if (inside) {
-            if (l.startsWith('#')) break;
-            out.push(l);
-          }
-        }
-        out.push('#');
-        return out.join('\n');
-      }
+      case 'ospf-area':
+        return this.blocDe(lines, (l) => /^ospf \d/.test(l));
+      case 'rip':
+        return this.blocDe(lines, (l) => /^rip \d/.test(l));
       case 'dhcp-pool': {
         if (!this.selectedPool) return '#';
-        const target = `ip pool ${this.selectedPool}`;
-        const out: string[] = ['#', target];
-        let inside = false;
-        for (const l of lines) {
-          if (l === target) { inside = true; continue; }
-          if (inside) {
-            if (l.startsWith('#')) break;
-            out.push(l);
-          }
-        }
-        out.push('#');
-        return out.join('\n');
+        const tete = `ip pool ${this.selectedPool}`;
+        return this.blocDe(lines, (l) => l === tete);
       }
+      // `aaa` et `acl` tombaient dans le `default` et rendaient la
+      // configuration ENTIERE : la vue courante n'etait pas filtree du
+      // tout, alors que c'est la seule raison d'etre de la commande.
+      case 'aaa':
+        return this.blocDe(lines, (l) => l === 'aaa');
+      case 'acl-basic':
+      case 'acl-advanced': {
+        const tete = this.selectedACLName !== null
+          ? new RegExp(`^acl name ${this.selectedACLName}\\b`)
+          : new RegExp(`^acl number ${this.selectedACLNumber}$`);
+        return this.blocDe(lines, (l) => tete.test(l));
+      }
+      // En vue systeme, la vue courante EST la machine : rendre toute la
+      // configuration y est juste, et non un defaut.
       default:
         return config;
     }
@@ -898,7 +1214,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private registerSecurityDisplayCommands(t: CommandTrie): void {
     const aaa = () => this.r().getHuaweiAaaService();
     const fwState = () => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       return r._huaweiFirewall ?? (r._huaweiFirewall = { enabled: false, defenses: new Set<string>() });
     };
     t.register('display domain', 'Display AAA domains', () => {
@@ -909,7 +1225,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display radius-server configuration', 'Display RADIUS templates', () => {
       const s = aaa();
       if (s.radiusTemplates.size === 0) return ' No RADIUS template configured.';
-      return [...s.radiusTemplates.keys()].map(n => ` RADIUS template: ${n}`).join('\n');
+      return [...s.radiusTemplates.values()].map((t) => {
+        const lines = [` RADIUS template: ${t.name}`];
+        if (t.authentication) {
+          lines.push(`  Authentication IP           : ${t.authentication.ip}`);
+          lines.push(`  Authentication port         : ${t.authentication.port ?? 1812}`);
+        }
+        if (t.accounting) {
+          lines.push(`  Accounting IP               : ${t.accounting.ip}`);
+          lines.push(`  Accounting port             : ${t.accounting.port ?? 1813}`);
+        }
+        return lines.join('\n');
+      }).join('\n');
     });
     t.register('display hwtacacs-server template', 'Display HWTACACS templates', () => {
       const s = aaa();
@@ -919,7 +1246,16 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display ssh server session', 'Display SSH server sessions', () => {
       const ssh = this.r().getManagementService().getSsh();
       if (!ssh.enabled) return 'SSH server is not enabled.';
-      return `Conn   Ver  Idle    User       IP\n(none) ${ssh.version}    --      --         --`;
+      const header = 'Conn   Ver  Idle    User       IP';
+      const sessions = this.r().getSshSessionRegistry().list();
+      if (sessions.length === 0) return `${header}\n(none) ${ssh.version}    --      --         --`;
+      const rows = sessions.map((s, i) => {
+        const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
+        const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
+        return `${(i + 1).toString().padEnd(6)} ${ssh.version}    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+      });
+      return [header, ...rows].join('\n');
     });
     t.register('display rsa local-key-pair public', 'Display RSA public key', () => {
       const ks = this.r().getKeypairService();
@@ -934,8 +1270,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       ].join('\n');
     });
     t.register('display time-range all', 'Display time-ranges', () => {
-      const r = this.r() as any;
-      const trs = r._huaweiTimeRanges as Map<string, any> | undefined;
+      const r = vrpStores(this.r());
+      const trs = r._huaweiTimeRanges;
       if (!trs || trs.size === 0) return 'No time-range configured.';
       return [...trs.values()].map(tr => ` Name: ${tr.name}, spec: ${tr.spec}`).join('\n');
     });
@@ -950,8 +1286,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [' Interface          Direction  ACL', ...rows].join('\n');
     });
     t.registerGreedy('display cpu-defend policy', 'Display CPU-defend policies', (_args) => {
-      const r = this.r() as any;
-      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
+      const r = vrpStores(this.r());
+      const ps = r._huaweiCpuDefendPolicies;
       if (!ps || ps.size === 0) return 'No CPU-defend policy configured.';
       return [...ps.keys()].map(n => ` Policy: ${n}`).join('\n');
     });
@@ -961,21 +1297,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return [...s.defenses].map(d => ` ${d}: enabled`).join('\n');
     });
     t.register('display logbuffer summary', 'Display logbuffer summary', () => 'Log buffer: 0 messages.');
-    t.register('display channel', 'Display info-center channels', () => 'Info: No info-center channels configured.');
+    // Une phrase en dur — « No info-center channels configured » — sur
+    // une machine qui en a DIX d'usine. La vue lit maintenant la table.
+    registerInfoCenterDisplayCommands(t, {
+      config: () => this.r().getManagementService?.().getInfoCenter(),
+    });
     t.registerGreedy('reset logbuffer', 'Reset logbuffer', () => '');
     t.register('display lldp local', 'Display local LLDP info', () => {
-      const cfg = (this.r() as any)._huaweiLldp;
+      const cfg = vrpStores(this.r())._huaweiLldp;
       if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
       return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
     });
     t.registerGreedy('display lldp', 'Display LLDP', (args) => {
       if (args[0]?.toLowerCase() === 'local') {
-        const cfg = (this.r() as any)._huaweiLldp;
+        const cfg = vrpStores(this.r())._huaweiLldp;
         if (!cfg || !cfg.enabled) return 'Info: LLDP is disabled.';
         return [` LLDP enabled`, ` Management address: ${cfg.mgmtAddress ?? '-'}`].join('\n');
       }
       return ' No LLDP neighbors.';
     });
+  }
+
+  /** Le magasin unique de l'etat `debugging` de cet equipement. */
+  protected debugService(): HuaweiDebugService | null {
+    return (this.routerRef as unknown as { getHuaweiDebugService?: () => HuaweiDebugService })
+      ?.getHuaweiDebugService?.() ?? null;
   }
 
   getScreenLength(): number { return this.screenLength; }
@@ -1008,7 +1354,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         } else {
           update.rawLine = raw ?? `${kw} ${args.join(' ')}`.trim();
         }
-        lc.upsert(update as Parameters<typeof lc.upsert>[0]);
+        lc.upsert(update as unknown as Parameters<typeof lc.upsert>[0]);
         return '';
       });
     }
@@ -1031,6 +1377,41 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       }
       return '';
     });
+    /**
+     * `set authentication password [cipher|simple] <mdp>` : le mot de
+     * passe que reclame `authentication-mode password`. Il etait accepte
+     * et JETE, donc le mode s'affichait sans qu'aucun secret existe et la
+     * ligne accordait a n'importe qui. Le secret est range en clair et
+     * rendu chiffre, comme VRP le fait ; relu, il est dechiffre, sans
+     * quoi un aller-retour d'import ferait du chiffre le mot de passe.
+     */
+    t.registerGreedy('set authentication password', 'Set the line authentication password', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      const forme = (args[0] ?? '').toLowerCase();
+      const brut = (forme === 'cipher' || forme === 'simple') ? args[1] : args[0];
+      if (!brut) return 'Error: Incomplete command found at \'^\' position.';
+      const clair = looksLikeReversibleCipher(brut) ? huaweiDecipher(brut) : brut;
+      this.routerRef?._getVtyLineConfig?.().upsert({
+        first: r.first, last: r.last, linePassword: clair,
+      });
+      return '';
+    });
+    /**
+     * `user privilege level <n>` : le niveau auquel la LIGNE ouvre la
+     * session, qui l'emporte sur celui du compte. Accepte et range nulle
+     * part, donc une vty ouverte au niveau 1 rendait tout de meme le
+     * niveau 15 du compte.
+     */
+    t.registerGreedy('user privilege', 'Set the privilege level of the user interface', (args) => {
+      const r = this.selectedUiRange; if (!r) return '';
+      if ((args[0] ?? '').toLowerCase() !== 'level') return 'Error: Unrecognized command found at \'^\' position.';
+      const niveau = Number.parseInt(args[1] ?? '', 10);
+      if (!Number.isFinite(niveau) || niveau < 0 || niveau > 15) {
+        return 'Error: Wrong parameter found at \'^\' position.';
+      }
+      this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, privilege: niveau });
+      return '';
+    });
     t.registerGreedy('acl', 'Apply ACL to VTY', (args) => {
       const r = this.selectedUiRange; if (!r) return '';
       const dir = (args[1] ?? 'inbound').toLowerCase();
@@ -1046,10 +1427,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() !== 'inbound' || !args[1]) return '';
       const proto = args[1].toLowerCase() as 'ssh' | 'telnet' | 'all' | 'none';
       if (['ssh', 'telnet', 'all', 'none'].includes(proto)) {
-        const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
-        dev?._setVtyTransportInput?.(proto);
-        const r = this.selectedUiRange;
-        if (r) this.routerRef?._getVtyLineConfig?.().upsert({ first: r.first, last: r.last, transportInput: proto });
+        const dev = this.routerRef as unknown as {
+          _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+        };
+        dev?._setVtyTransportInput?.(proto, this.selectedUiRange ?? undefined);
       }
       return '';
     });
@@ -1058,11 +1439,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('undo', 'user-interface undo', (args) => {
       if (args[0]?.toLowerCase() !== 'protocol' || args[1]?.toLowerCase() !== 'inbound') return '';
       const removed = (args[2] ?? '').toLowerCase();
-      const dev = this.routerRef as unknown as { _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none') => void };
+      const dev = this.routerRef as unknown as {
+        _setVtyTransportInput?: (t: 'ssh' | 'telnet' | 'all' | 'none', range?: { first: number; last: number }) => void;
+      };
       if (!dev?._setVtyTransportInput) return '';
-      if (removed === 'ssh') dev._setVtyTransportInput('telnet');
-      else if (removed === 'telnet') dev._setVtyTransportInput('ssh');
-      else dev._setVtyTransportInput('none');
+      const plage = this.selectedUiRange ?? undefined;
+      if (removed === 'ssh') dev._setVtyTransportInput('telnet', plage);
+      else if (removed === 'telnet') dev._setVtyTransportInput('ssh', plage);
+      else dev._setVtyTransportInput('none', plage);
       return '';
     });
   }
@@ -1088,7 +1472,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
     t.registerGreedy('header', 'Configure login/shell banner', (args) => {
       const router = getRouter() as unknown as { _setSshBanner?: (b: string) => void };
       if (typeof router._setSshBanner === 'function') {
@@ -1103,6 +1487,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // OSPF display commands
     registerOSPFDisplayCommands(t, getRouter);
 
+    // IGMP display commands
+    registerHuaweiIgmpDisplayCommands(t, getRouter);
+
+    // PIM display commands
+    registerHuaweiPimDisplayCommands(t, getRouter);
+
     // IPSec display commands
     registerHuaweiIPSecDisplayCommands(t, getRouter);
 
@@ -1116,8 +1506,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerHuaweiVxlanDisplayCommands(t, { r: getRouter });
 
     // Backward-compat aliases in user view
-    t.registerGreedy('ip route-static', 'Configure static route', (args) => {
-      return cmdIpRouteStatic(getRouter(), args);
+    t.registerGreedy('ip route-static', 'Configure static route', (args, raw) => {
+      return cmdIpRouteStatic(getRouter(), args, raw);
     });
 
     t.registerGreedy('rip', 'Configure RIP routing', (args) => {
@@ -1128,13 +1518,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       getRouter().getHuaweiRoutingExtras().ensureBgp(asn);
+      getRouter().getBGPEngine().enable({ asn });
       this.bgpAsn = asn;
       this.mode = 'bgp';
       return '';
     });
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
-      if (!isNaN(asn)) getRouter().getHuaweiRoutingExtras().removeBgp();
+      if (!isNaN(asn)) {
+        getRouter().getHuaweiRoutingExtras().removeBgp();
+        getRouter().getBGPEngine().disable();
+        getRouter().convergeDynamicRouting();
+      }
       return '';
     });
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
@@ -1180,7 +1575,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('reset arp dynamic', 'Clear dynamic ARP entries', () => {
       const arpTable = getRouter()._getArpTableInternal();
       for (const [ip, entry] of [...arpTable.entries()]) {
-        if ((entry as any).type !== 'static') arpTable.delete(ip);
+        if (entry.type !== 'static') arpTable.delete(ip);
       }
       return '';
     });
@@ -1189,7 +1584,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (!args[0]) return '';
       const arp = getRouter()._getArpTableInternal();
       for (const [ip, entry] of [...arp.entries()]) {
-        if ((entry as any).iface === args[0]) arp.delete(ip);
+        if (entry.iface === args[0]) arp.delete(ip);
       }
       return '';
     });
@@ -1204,11 +1599,25 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const router = getRouter();
       if (!args[0]) { router.resetCounters(); return ''; }
       const port = router.getPort(args[0]);
-      if (port && typeof (port as any).resetCounters === 'function') (port as any).resetCounters();
+      port?.resetCounters();
       return '';
     });
 
     t.registerGreedy('reset ip routing-table statistics', 'Reset routing-table statistics', (_args) => {
+      return '';
+    });
+
+    // reset acl counter { all | name <name> | <number> } — zero ACE match counters
+    t.registerGreedy('reset acl counter', 'Reset ACL match counters', (args) => {
+      const router = getRouter();
+      if (!args[0] || args[0].toLowerCase() === 'all') {
+        router.resetAllAclCounters();
+        return '';
+      }
+      const ref = args[0].toLowerCase() === 'name' ? args[1] : args[0];
+      if (!ref) return 'Error: Incomplete command.';
+      const numRef = /^\d+$/.test(ref) ? parseInt(ref, 10) : ref;
+      router.resetAclCounters(numRef);
       return '';
     });
 
@@ -1219,22 +1628,48 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('reset rip', 'Reset RIP counters/process', (_args) => '');
     t.registerGreedy('reset isis', 'Reset IS-IS data', (_args) => '');
     t.registerGreedy('reset bgp', 'Reset BGP data', (_args) => '');
-    t.registerGreedy('debugging rip', 'Enable RIP debugging', (_args) => '');
-    t.registerGreedy('debugging isis', 'Enable IS-IS debugging', (_args) => '');
-    t.registerGreedy('debugging bgp', 'Enable BGP debugging', (_args) => '');
-    t.registerGreedy('undo debugging rip', 'Disable RIP debugging', (_args) => '');
-    t.registerGreedy('undo debugging isis', 'Disable IS-IS debugging', (_args) => '');
-    t.registerGreedy('undo debugging bgp', 'Disable BGP debugging', (_args) => '');
 
-    // save — persist configuration (Huawei equivalent of write memory)
+    t.register('terminal debugging', 'Send debug output to this terminal', () => {
+      this.terminalDebugging = true;
+      return 'Info: Current terminal debugging is on.';
+    });
+    t.register('undo terminal debugging', 'Stop sending debug output to this terminal', () => {
+      this.terminalDebugging = false;
+      return 'Info: Current terminal debugging is off.';
+    });
+    t.register('terminal monitor', 'Send log output to this terminal', () => {
+      this.terminalMonitor = true;
+      return 'Info: Current terminal monitor is on.';
+    });
+    t.register('undo terminal monitor', 'Stop sending log output to this terminal', () => {
+      this.terminalMonitor = false;
+      this.terminalDebugging = false;
+      return 'Info: Current terminal monitor is off.';
+    });
+
+    registerUserInterfaceCommands(
+      t,
+      () => getSessionRegistry(this.r()),
+      () => getVtyLineConfig(this.r()),
+    );
+
+    // save — persist configuration (Huawei equivalent of write memory).
+    // Captures a REAL snapshot so `display saved-configuration` shows what
+    // was saved, not a mirror of the running config.
     t.register('save', 'Save current configuration', () => {
+      this.captureSavedConfiguration();
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
     });
 
-    t.registerGreedy('telnet', 'Open Telnet session', (args) => {
-      if (!args[0]) return 'Error: Incomplete command.';
-      return `Trying ${args[0]} ...\nError: Failed to connect to the remote host.`;
+    // reset saved-configuration — clear the startup snapshot. The inline
+    // (vty) form assumes confirmation; the interactive Y/N dialogue is the
+    // interaction plan's job (huaweiInteractionPlanFor).
+    t.registerGreedy('reset saved-configuration', 'Clear the saved configuration', () => {
+      this.r()._eraseStartupConfig();
+      return 'Warning: The action will delete the saved configuration on the device.';
     });
+
+    t.registerGreedy('telnet', 'Open Telnet session', (args) => this.runOutboundTelnet(args));
 
     t.register('compare configuration', 'Compare running vs saved configuration', () => {
       return 'Info: The current configuration is the same as the saved configuration.';
@@ -1244,9 +1679,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return 'Info: Succeeded in setting the file for booting system.';
     });
 
-    t.registerGreedy('reboot', 'Reboot device', (_args) => {
-      return 'Info: This operation will reboot the system. Continue? [Y/N]:';
-    });
+    // reboot — REAL restart (parity with Cisco reload): power-cycle the
+    // device and drop back to user view. The interactive Y/N dialogue is
+    // the interaction plan's job; this inline (vty) form assumes yes.
+    t.registerGreedy('reboot', 'Reboot device', (_args) => this.performReboot());
 
     t.register('display health', 'Display device health', () =>
       renderHealth(this.r().getHostname(), AR2220_HARDWARE_PROFILE));
@@ -1263,14 +1699,38 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.register('display sockets', 'Display open sockets', () =>
       renderHuaweiSockets(this.r()));
     t.register('display dns server', 'Display DNS servers', () => {
-      const servers = this.r().getManagementService().nameServers;
+      const servers = this.r()._getDnsConfig().nameServers;
       if (servers.length === 0) return 'No DNS server configured.';
-      return ` DNS Server(s): ${servers.join(', ')}`;
+      return [
+        ' Type: D:Dynamic  S:Static',
+        ' Domain-name-server           Type',
+        ...servers.map((s) => ` ${s.padEnd(29)}S`),
+      ].join('\n');
+    });
+    t.register('display dns domain', 'Display DNS domain suffixes', () => {
+      const cfg = this.r()._getDnsConfig();
+      const suffixes = cfg.suffixesDeRecherche();
+      if (suffixes.length === 0) return 'No domain name configured.';
+      return [
+        ' Type: D:Dynamic  S:Static',
+        ' No.   Domain-name                             Type',
+        ...suffixes.map((s, i) => ` ${String(i + 1).padEnd(6)}${s.padEnd(40)}S`),
+      ].join('\n');
+    });
+    t.register('display dns dynamic-host', 'Display the dynamic DNS cache', () => {
+      const entrees = this.r()._getHostsTable().entries().filter((e) => !e.permanent);
+      if (entrees.length === 0) return 'No dynamic host resolved.';
+      return [
+        ' No.  Host                     TTL         IpAddress',
+        ...entrees.map((e, i) =>
+          ` ${String(i + 1).padEnd(5)}${e.name.padEnd(25)}${String(86400 - e.ageSeconds).padEnd(12)}${e.ips.join(' ')}`),
+      ].join('\n');
     });
 
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
     registerHuaweiPolicyDisplayCommands(t, getRouter);
+    registerHuaweiNqaDisplayCommands(t, getRouter);
     this.registerSecurityDisplayCommands(t);
   }
 
@@ -1285,7 +1745,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDisplayCommands(t, getRouter, getState);
 
     // VRP lifecycle/management commands (shared with the switch, DRY)
-    registerHuaweiCommonMgmt(t, this.huaweiDebugFlags);
+    registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' });
 
     const applyLldp = (fn: (a: import('@/network/lldp/LldpAgent').LldpAgent) => void): void => {
       const ag = (getRouter() as unknown as { getLldpAgent?: () => import('@/network/lldp/LldpAgent').LldpAgent }).getLldpAgent?.();
@@ -1351,8 +1811,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    // `ip host <name> <ip>` — VRP static hostname → IP table consulted
-    // before any DNS fallback by stelnet / ping / traceroute.
+    t.register('dns resolve', 'Enable dynamic DNS resolution', () => {
+      this.r()._getDnsConfig().lookupEnabled = true;
+      return '';
+    });
+    t.register('undo dns resolve', 'Disable dynamic DNS resolution', () => {
+      this.r()._getDnsConfig().lookupEnabled = false;
+      return '';
+    });
+    t.registerGreedy('dns server', 'Configure a DNS server', (args) => {
+      const err = this.r()._getDnsConfig().setNameServers(args);
+      if (!err) return '';
+      return err.kind === 'incomplete'
+        ? 'Error: Incomplete command found at \'^\' position.'
+        : 'Error: Wrong parameter found at \'^\' position.';
+    });
+    t.registerGreedy('undo dns server', 'Remove a DNS server', (args) => {
+      this.r()._getDnsConfig().removeNameServers(args);
+      return '';
+    });
+    t.registerGreedy('dns domain', 'Configure a DNS domain suffix', (args) => {
+      const err = this.r()._getDnsConfig().addDomainToList(args[0]);
+      return err ? 'Error: Incomplete command found at \'^\' position.' : '';
+    });
+    t.registerGreedy('undo dns domain', 'Remove a DNS domain suffix', (args) => {
+      this.r()._getDnsConfig().removeDomainFromList(args[0]);
+      return '';
+    });
+
     t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return 'Error: Incomplete command.';
       getRouter()._getHostsTable?.().upsert(args[0], args[1]);
@@ -1384,6 +1870,22 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // `user-interface vty <first> [last]` — enter VTY user-interface view
     // so subsequent `protocol inbound {ssh|telnet|all|none}` toggles the
     // device's accepted VTY transports.
+    t.describeArgs('user-interface', [{
+      name: 'type', type: 'ENUM', description: 'User-interface type',
+      validator: () => true,
+      values: [
+        { keyword: 'aux', description: 'Auxiliary line' },
+        { keyword: 'console', description: 'Primary terminal line' },
+        { keyword: 'maximum-vty', description: 'Maximum number of VTY lines' },
+        { keyword: 'vty', description: 'Virtual terminal line' },
+      ],
+    }, {
+      name: 'first-ui-number', type: 'INT',
+      description: 'First user-interface number', optional: true, range: [0, 20],
+    }, {
+      name: 'last-ui-number', type: 'INT',
+      description: 'Last user-interface number', optional: true, range: [0, 20],
+    }]);
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       const head = args[0]?.toLowerCase();
       if (head === 'vty') {
@@ -1413,26 +1915,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     // OSPF system-mode commands
-    registerOSPFSystemCommands(t, this as any, (area) => { this.ospfArea = area; });
+    registerOSPFSystemCommands(t, this, (area) => { this.ospfArea = area; });
 
     t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       this.r().getHuaweiRoutingExtras().ensureBgp(asn);
+      this.r().getBGPEngine().enable({ asn });
       this.bgpAsn = asn;
       this.mode = 'bgp';
       return '';
     });
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
-      if (!isNaN(asn)) this.r().getHuaweiRoutingExtras().removeBgp();
+      if (!isNaN(asn)) {
+        this.r().getHuaweiRoutingExtras().removeBgp();
+        this.r().getBGPEngine().disable();
+        this.r().convergeDynamicRouting();
+      }
       return '';
     });
     t.registerGreedy('bfd', 'BFD configuration / session', (args) => {
       const svc = this.r().getHuaweiBfdService();
       if (args.length === 0) {
         svc.enable();
-        this.setMode('bfd-global' as any);
+        this.setMode('bfd-global');
         return '';
       }
       const name = args[0];
@@ -1449,7 +1956,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         else { i++; }
       }
       this.selectedBfdSession = name;
-      this.setMode('bfd-session' as any);
+      this.setMode('bfd-session');
       return '';
     });
     t.register('undo bfd', 'Disable BFD globally', () => {
@@ -1474,6 +1981,20 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     // OSPF display commands
     registerOSPFDisplayCommands(t, () => this.r());
+
+    // IGMP display commands
+    registerHuaweiIgmpDisplayCommands(t, () => this.r());
+
+    // PIM display commands + the PIM view entry point
+    registerHuaweiPimDisplayCommands(t, () => this.r());
+    t.registerGreedy('multicast', 'Multicast configuration', (args) => {
+      const sub = (args[0] ?? '').toLowerCase();
+      return sub === 'routing-enable' ? '' : 'Error: Unrecognized command found at \'^\' position.';
+    });
+    t.registerGreedy('undo multicast', 'Disable multicast routing', () => '');
+    t.register('pim', 'Enter the PIM view', () => { this.mode = 'pim'; return ''; });
+    registerHuaweiPimViewCommands(this.pimTrie, this);
+    registerHuaweiPimDisplayCommands(this.pimTrie, () => this.r());
 
     // IPSec system-mode commands
     registerHuaweiIPSecSystemCommands(t, this);
@@ -1502,14 +2023,21 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerDhcpDebugCommands(t, () => this.r());
 
     t.register('save', 'Save current configuration', () => {
+      this.captureSavedConfiguration();
       return 'The current configuration will be written to the device.\nInfo: Please input the file name ( *.cfg, *.zip ) [vrpcfg.zip]:vrpcfg.zip\nNow saving the current configuration to the slot.\nSave the configuration successfully.';
     });
+    t.registerGreedy('reset saved-configuration', 'Clear the saved configuration', () => {
+      this.r()._eraseStartupConfig();
+      return 'Warning: The action will delete the saved configuration on the device.';
+    });
+    t.registerGreedy('reboot', 'Reboot device', (_args) => this.performReboot());
 
     registerHuaweiPolicySystemCommands(t, this);
     registerHuaweiPolicyDisplayCommands(t, () => this.r());
+    registerHuaweiNqaDisplayCommands(t, () => this.r());
 
     const aaa = () => this.r().getHuaweiAaaService();
-    t.register('aaa', 'Enter AAA view', () => { this.setMode('aaa' as any); return ''; });
+    t.register('aaa', 'Enter AAA view', () => { this.setMode('aaa'); return ''; });
     t.registerGreedy('idle-timeout', 'Set idle timeout (system-level no-op)', (_args) => '');
     t.registerGreedy('set authentication password', 'Set authentication password', (_args) => '');
     t.registerGreedy('protocol inbound', 'Set inbound protocol (system-level no-op)', (_args) => '');
@@ -1518,7 +2046,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() === 'template' && args[1]) {
         aaa().ensureRadiusTemplate(args[1]);
         this.selectedAaaScheme = args[1];
-        this.setMode('radius-template' as any);
+        this.setMode('radius-template');
       }
       return '';
     });
@@ -1526,28 +2054,53 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args[0]?.toLowerCase() === 'template' && args[1]) {
         aaa().ensureHwtacacsTemplate(args[1]);
         this.selectedAaaScheme = args[1];
-        this.setMode('hwtacacs-template' as any);
+        this.setMode('hwtacacs-template');
       }
       return '';
     });
 
     this.buildAaaSubmodes(aaa);
 
-    t.registerGreedy('time-range', 'Define a time-range', (args, raw) => {
-      const r = this.r() as any;
-      const trs = r._huaweiTimeRanges ?? (r._huaweiTimeRanges = new Map<string, any>());
-      if (args[0]) trs.set(args[0], { name: args[0], spec: raw ?? args.join(' ') });
+    t.registerGreedy('time-range', 'Define a time-range', (args) => {
+      const nom = args[0];
+      if (!nom) return HUAWEI_ERRORS.INCOMPLETE(`time-range ${args.join(' ')}`);
+      const periode = analyserPeriodeVrp(args.slice(1));
+      if (!periode) return HUAWEI_ERRORS.WRONG(`time-range ${args.join(' ')}`);
+      const tr = getSecurityConfig(this.r()).ensureTimeRange(nom);
+      tr.periodic.push(periode);
+      return '';
+    });
+    t.registerGreedy('undo time-range', 'Remove a time-range', (args) => {
+      if (args[0]) getSecurityConfig(this.r()).timeRanges.delete(args[0]);
       return '';
     });
 
     t.register('rsa local-key-pair create', 'Generate RSA key pair', () => {
       const name = `${this.r().getHostname()}_Host`;
       const pair = this.r().getKeypairService().generate(name, 'rsa', 2048);
+      // Creating the key pair is what actually brings STelnet up on VRP,
+      // so the listener has to follow it.
+      this.r()._refreshSshAvailability();
       return [
         `Info: The name of the key pair will be: ${pair.name}`,
         `The range of public key size is (512 ~ 2048).`,
         `Input the bits in the modulus[default = 2048]: ${pair.modulusBits}`,
         `Info: Keys are generated. Fingerprint: ${pair.fingerprint}`,
+      ].join('\n');
+    });
+    t.register('rsa local-key-pair destroy', 'Destroy the RSA key pair', () => {
+      const ks = this.r().getKeypairService();
+      const pairs = ks.list().filter((k) => k.algo === 'rsa');
+      if (pairs.length === 0) return 'Error: The RSA host key does not exist.';
+      for (const p of pairs) ks.destroy(p.name);
+      // Destroying them really takes STelnet down — VRP's own version of
+      // `crypto key zeroize rsa`, and the classic way to lock yourself out
+      // of a box you are reaching over ssh (docs/PRD-Pannes.md §F7.2).
+      this.r()._refreshSshAvailability();
+      return [
+        '% The name for the keys which will be destroyed is '
+          + `${this.r().getHostname()}_Host.`,
+        'Info: The key pair has been destroyed.',
       ].join('\n');
     });
     t.register('dsa local-key-pair create', 'Generate DSA key pair', () => {
@@ -1560,8 +2113,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     t.registerGreedy('cpu-defend policy', 'Enter CPU-defend policy', (args, raw) => {
-      const r = this.r() as any;
-      const ps = r._huaweiCpuDefendPolicies ?? (r._huaweiCpuDefendPolicies = new Map<string, any>());
+      const r = vrpStores(this.r());
+      const ps = r._huaweiCpuDefendPolicies ??= new Map<string, VrpNamedLines>();
       const name = args[0];
       if (!name) return 'Error: Incomplete command.';
       if (!ps.has(name)) ps.set(name, { name, lines: [] });
@@ -1569,27 +2122,27 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       r._huaweiCpuDefendLines = r._huaweiCpuDefendLines || [];
       r._huaweiCpuDefendLines.push(raw ?? `cpu-defend policy ${args.join(' ')}`);
       this.selectedCpuDefendPolicy = name;
-      this.setMode('cpu-defend-policy' as any);
+      this.setMode('cpu-defend-policy');
       return '';
     });
     this.cpuDefendPolicyTrie.registerGreedy('car', 'Configure CAR rate-limit', (args, raw) => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       const name = this.selectedCpuDefendPolicy;
-      const ps = r._huaweiCpuDefendPolicies as Map<string, any> | undefined;
+      const ps = r._huaweiCpuDefendPolicies;
       const entry = name && ps ? ps.get(name) : null;
       if (entry) entry.lines.push(raw ?? `car ${args.join(' ')}`);
       (r._huaweiCpuDefendLines ??= []).push(raw ?? `car ${args.join(' ')}`);
       return '';
     });
     t.registerGreedy('cpu-defend-policy', 'Apply CPU-defend policy globally', (args, raw) => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       r._huaweiCpuDefendGlobal = args[0];
       (r._huaweiCpuDefendLines ??= []).push(raw ?? `cpu-defend-policy ${args.join(' ')}`);
       return '';
     });
 
     const fwState = () => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       return r._huaweiFirewall ?? (r._huaweiFirewall = { enabled: false, defenses: new Set<string>() });
     };
     t.register('firewall enable', 'Enable firewall', () => { fwState().enabled = true; return ''; });
@@ -1607,7 +2160,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     this.registerSecurityDisplayCommands(t);
 
-    for (const kw of ['ftp server enable', 'snmp-agent', 'info-center enable',
+    // `info-center enable` a quitté cette boucle : il appartient à
+    // l'arbre `info-center`, et le traiter comme `telnet server enable`
+    // était ce qui faisait proposer `enable` — décrit `Toggle:
+    // info-center enable` — derrière chacun de ses sous-mots.
+    for (const kw of [
       'ntp-service enable', 'telnet server enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {
@@ -1615,6 +2172,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         return '';
       });
     }
+    t.register('ftp server enable', 'Start the FTP server', () => {
+      this.r()._setFtpServerEnabled(true);
+      return '';
+    });
     t.registerGreedy('ip routing-table limit', 'Configure IPv4 routing-table limit', (args) => {
       const r = this.routerRef as unknown as { _setRoutingTableLimit?: (max: number, thresholdPct?: number) => void } | null;
       if (!r) return '';
@@ -1628,15 +2189,24 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       r?._setRoutingTableLimit?.(null);
       return '';
     });
+
+    // Ces trois nœuds ne sont créés qu'en CHEMIN — personne ne les
+    // enregistre pour eux-mêmes — donc ils naissent sans description et
+    // `?` les listait nus. Les décrire APRÈS coup est obligatoire :
+    // avant, le nœud n'existe pas encore et l'appel est ignoré en
+    // silence, ce qui a été mesuré.
+    t.describeNode('display radius-server', 'RADIUS server information');
+    t.describeNode('display hwtacacs-server', 'HWTACACS server information');
+    t.describeNode('ip routing-table', 'Routing table configuration');
     t.registerGreedy('ftp', 'FTP server config', (args) => {
       if (args[0] === 'server' && (args[1] === 'enable' || !args[1])) {
-        this.r()._setGlobalToggle?.('ftp', true);
+        this.r()._setFtpServerEnabled(true);
       }
       return '';
     });
 
     t.registerGreedy('lldp', 'LLDP configuration', (args, raw) => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
       if (args[0]?.toLowerCase() === 'enable') cfg.enabled = true;
       else if (args[0]?.toLowerCase() === 'management-address' && args[1]) cfg.mgmtAddress = args[1];
@@ -1644,15 +2214,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('undo lldp', 'Disable LLDP', () => {
-      const r = this.r() as any;
+      const r = vrpStores(this.r());
       const cfg = r._huaweiLldp ?? (r._huaweiLldp = { enabled: false, mgmtAddress: null, lines: [] });
       cfg.enabled = false;
       return '';
     });
 
     t.registerGreedy('qos queue-profile', 'Configure queue profile', (args, raw) => {
-      const r = this.r() as any;
-      const ps = r._huaweiQueueProfiles ?? (r._huaweiQueueProfiles = new Map<string, any>());
+      const r = vrpStores(this.r());
+      const ps = r._huaweiQueueProfiles ??= new Map<string, VrpNamedLines>();
       if (args[0]) {
         if (!ps.has(args[0])) ps.set(args[0], { name: args[0], lines: [] });
         ps.get(args[0]).lines.push(raw ?? `qos queue-profile ${args.join(' ')}`);
@@ -1661,8 +2231,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('schedule', 'Schedule WFQ / queue assignment', () => '');
     t.registerGreedy('display qos queue-profile', 'Display queue profiles', () => {
-      const r = this.r() as any;
-      const ps = r._huaweiQueueProfiles as Map<string, any> | undefined;
+      const r = vrpStores(this.r());
+      const ps = r._huaweiQueueProfiles;
       if (!ps || ps.size === 0) return 'Info: No queue-profile configured.';
       return [...ps.keys()].map(n => ` Queue profile: ${n}`).join('\n');
     });
@@ -1685,7 +2255,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     buildInterfaceCommands(t, this);
 
     // OSPF interface commands
-    registerOSPFInterfaceCommands(t, this as any);
+    registerOSPFInterfaceCommands(t, this);
+
+    // IGMP interface + display commands
+    registerHuaweiIgmpInterfaceCommands(t, this);
+    registerHuaweiIgmpDisplayCommands(t, getRouter);
+
+    // PIM interface + display commands
+    registerHuaweiPimInterfaceCommands(t, this);
+    registerHuaweiPimDisplayCommands(t, getRouter);
 
     // IPSec interface commands
     registerHuaweiIPSecInterfaceCommands(t, this);
@@ -1701,41 +2279,92 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       r: () => this.r(),
     });
 
-    const ripIf = (key: string) => (args: string[]) => {
-      const r = this.r() as any;
+    t.registerGreedy('rip version', 'RIP version on interface', (args) => {
       const ifName = this.selectedInterface;
       if (!ifName) return '';
-      const ext = r._huaweiRipIfExtras ?? (r._huaweiRipIfExtras = new Map<string, any>());
-      const entry = ext.get(ifName) || {};
-      entry[key] = args.join(' ');
-      ext.set(ifName, entry);
+      const port = this.r().getPort(ifName);
+      if (!port) return '';
+      const version = args[0];
+      if (version !== '1' && version !== '2') {
+        return HUAWEI_ERRORS.WRONG(`rip version ${args.join(' ')}`);
+      }
+      const diffusion = (args[1] ?? '').toLowerCase();
+      if (diffusion && diffusion !== 'multicast' && diffusion !== 'broadcast') {
+        return HUAWEI_ERRORS.WRONG(`rip version ${args.join(' ')}`);
+      }
+      port.setRipSendVersion(version);
+      port.setRipReceiveVersion(version);
+      port.setRipV2Broadcast(diffusion === 'broadcast');
+      return '';
+    });
+    t.registerGreedy('undo rip version', 'Restore the default RIP version', () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      port?.setRipSendVersion(null);
+      port?.setRipReceiveVersion(null);
+      port?.setRipV2Broadcast(false);
+      return '';
+    });
+    t.registerGreedy('rip authentication-mode', 'RIP authentication mode', (args) => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      if (!port) return '';
+      const mode = (args[0] ?? '').toLowerCase();
+      if (mode !== 'simple' && mode !== 'md5') {
+        return HUAWEI_ERRORS.WRONG(`rip authentication-mode ${args.join(' ')}`);
+      }
+      const cipherAt = args.findIndex((a) => a.toLowerCase() === 'cipher');
+      port.setRipAuthMode(mode);
+      port.setRipAuthKeyChain(cipherAt >= 0 ? (args[cipherAt + 1] ?? null) : null);
+      return '';
+    });
+    t.registerGreedy('undo rip authentication-mode', 'Remove RIP authentication', () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      const port = this.r().getPort(ifName);
+      port?.setRipAuthMode(null);
+      port?.setRipAuthKeyChain(null);
+      return '';
+    });
+    const ripMetricRefuse = (nom: string) => (args: string[]) =>
+      `Error: This simulator's RIP engine carries no per-interface metric offset, `
+      + `so ${nom} would be stored without effect.\nrip ${nom} ${args.join(' ')}`;
+    t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripMetricRefuse('metricin'));
+    t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripMetricRefuse('metricout'));
+    // `rip split-horizon` ecrivait dans `_huaweiRipIfExtras`, que rien
+    // ne lit : la commande etait acceptee et n'avait aucun effet. Elle
+    // passe par le meme reglage que la forme Cisco, le moteur RIP etant
+    // le meme des deux cotes.
+    const splitHorizonIf = (on: boolean) => () => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      (this.r() as unknown as {
+        ripSetInterfaceSplitHorizon?: (i: string, v: boolean | null) => void;
+      }).ripSetInterfaceSplitHorizon?.(ifName, on);
       return '';
     };
-    t.registerGreedy('rip version', 'RIP version on interface', ripIf('version'));
-    t.registerGreedy('rip authentication-mode', 'RIP authentication mode', ripIf('auth'));
-    t.registerGreedy('rip metricin', 'Add incoming RIP metric', ripIf('metricIn'));
-    t.registerGreedy('rip metricout', 'Add outgoing RIP metric', ripIf('metricOut'));
-    t.register('rip split-horizon', 'Enable split horizon', () => { ripIf('splitHorizon')(['on']); return ''; });
-    t.register('rip poison-reverse', 'Enable poison reverse', () => { ripIf('poisonReverse')(['on']); return ''; });
-    t.registerGreedy('rip summary-address', 'RIP summary address', ripIf('summaryAddress'));
+    t.register('rip split-horizon', 'Enable split horizon', splitHorizonIf(true));
+    t.register('undo rip split-horizon', 'Disable split horizon', splitHorizonIf(false));
+    t.register('rip poison-reverse', 'Enable poison reverse', () =>
+      "Error: This simulator's RIP engine carries poisoned reverse device-wide, "
+      + 'not per interface, so this command would be stored without effect.\nrip poison-reverse');
+    t.registerGreedy('rip summary-address', 'RIP summary address', (args, raw) => {
+      const ifName = this.selectedInterface;
+      if (!ifName) return '';
+      if (args.length < 2) return HUAWEI_ERRORS.INCOMPLETE(`rip summary-address ${args.join(' ')}`);
+      this.r().getPort(ifName)?.addRipSummary(raw ?? `rip summary-address ${args.join(' ')}`);
+      return '';
+    });
 
-    const isisIf = (key: string) => (args: string[]) => {
-      const r = this.r() as any;
-      const ifName = this.selectedInterface;
-      if (!ifName) return '';
-      const ext = r._huaweiIsisIfExtras ?? (r._huaweiIsisIfExtras = new Map<string, any>());
-      const entry = ext.get(ifName) || {};
-      entry[key] = args.join(' ');
-      ext.set(ifName, entry);
-      return '';
-    };
-    t.registerGreedy('isis enable', 'Enable IS-IS on interface', isisIf('processId'));
-    t.registerGreedy('isis circuit-level', 'Set IS-IS circuit level', isisIf('circuitLevel'));
-    t.registerGreedy('isis cost', 'Set IS-IS cost', isisIf('cost'));
-    t.registerGreedy('isis circuit-type', 'Set IS-IS circuit type', isisIf('circuitType'));
-    t.registerGreedy('isis timer hello', 'IS-IS hello timer', isisIf('helloTimer'));
-    t.registerGreedy('isis timer holding-multiplier', 'IS-IS holding multiplier', isisIf('holdMultiplier'));
-    t.registerGreedy('isis authentication-mode', 'IS-IS authentication mode', isisIf('auth'));
+    const isisAbsent = (nom: string) => (args: string[]) =>
+      "Error: This simulator has no IS-IS engine, so `isis " + nom + '` would be '
+      + `stored without effect.\nisis ${nom} ${args.join(' ')}`.trimEnd();
+    for (const nom of ['enable', 'circuit-level', 'cost', 'circuit-type',
+      'timer hello', 'timer holding-multiplier', 'authentication-mode']) {
+      t.registerGreedy(`isis ${nom}`, `IS-IS ${nom} on interface`, isisAbsent(nom));
+    }
 
     t.registerGreedy('traffic-policy', 'Apply traffic policy on interface', (args) => {
       const name = args[0]; const dir = (args[1] || 'inbound').toLowerCase();
@@ -1752,14 +2381,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    const ifAttr = (bucket: string) => (key: string) => (args: string[], raw?: string) => {
-      const r = this.r() as any;
+    const ifAttr = (bucket: VrpInterfaceBucket) => (key: string) => (args: string[], raw?: string) => {
       const ifName = this.selectedInterface;
       if (!ifName) return '';
-      const store = r[bucket] ?? (r[bucket] = new Map<string, any>());
-      const entry = store.get(ifName) ?? {};
-      entry[key] = raw ?? args.join(' ');
-      store.set(ifName, entry);
+      vrpSetInterfaceAttr(this.r(), bucket, ifName, key, raw ?? args.join(' '));
       return '';
     };
     const lldpIf = ifAttr('_huaweiLldpIf');
@@ -1771,35 +2396,30 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('sflow flow-sampling', 'sFlow flow sampling', sflowIf('flowSampling'));
     t.registerGreedy('sflow counter-sampling', 'sFlow counter sampling', sflowIf('counterSampling'));
 
-    const qosIf = (key: string) => (args: string[], raw?: string) => {
-      const r = this.r() as any;
+    t.registerGreedy('qos car', 'CAR on interface', (args, raw) => {
       const ifName = this.selectedInterface;
       if (!ifName) return '';
-      const ext = r._huaweiQosIf ?? (r._huaweiQosIf = new Map<string, any>());
-      const entry = ext.get(ifName) ?? {};
-      entry[key] = raw ?? args.join(' ');
-      ext.set(ifName, entry);
-      return '';
-    };
-    t.registerGreedy('qos lr', 'QoS line rate', qosIf('lr'));
-    t.registerGreedy('qos gts', 'QoS generic traffic shaping', qosIf('gts'));
-    t.registerGreedy('qos queue', 'QoS queue length', qosIf('queueLength'));
-    t.register('qos wfq', 'Enable WFQ on interface', () => { qosIf('wfq')(['on']); return ''; });
-    t.registerGreedy('qos wred', 'Configure WRED on interface', qosIf('wred'));
-    t.registerGreedy('trust', 'Trust DSCP / 802.1p', qosIf('trust'));
-    t.registerGreedy('qos queue-profile', 'Bind queue profile to interface', qosIf('queueProfile'));
-    t.registerGreedy('qos car', 'CAR on interface', qosIf('car'));
-    t.register('qos pq', 'Enable priority queueing', () => { qosIf('pq')(['on']); return ''; });
-    t.register('qos cq', 'Enable custom queueing', () => { qosIf('cq')(['on']); return ''; });
-    t.register('qos wrr', 'Enable WRR queueing', () => { qosIf('wrr')(['on']); return ''; });
-    t.registerGreedy('qos priority', 'Set QoS priority', qosIf('priority'));
-    t.register('undo qos pq', 'Disable priority queueing', () => {
-      const r = this.r() as any;
-      const ifName = this.selectedInterface;
-      const ext = r._huaweiQosIf as Map<string, any> | undefined;
-      if (ifName && ext?.has(ifName)) delete ext.get(ifName).pq;
+      const ligne = raw ?? `qos car ${args.join(' ')}`;
+      const regle = parseVrpCarRule(args, ligne);
+      if (!regle) return HUAWEI_ERRORS.WRONG(ligne);
+      this.r().getCarPolicer(ifName, true)!.add(regle);
       return '';
     });
+    t.registerGreedy('undo qos car', 'Remove CAR from interface', () => {
+      const ifName = this.selectedInterface;
+      if (ifName) this.r().getCarPolicer(ifName)?.clear();
+      return '';
+    });
+    const qosSansMoteur = (nom: string) => (args: string[]) =>
+      `Error: This simulator carries no ${nom} scheduler, so this command would be `
+      + `stored without effect.\nqos ${nom} ${args.join(' ')}`.trimEnd();
+    for (const nom of ['lr', 'gts', 'queue', 'wfq', 'wred', 'queue-profile',
+      'pq', 'cq', 'wrr', 'priority']) {
+      t.registerGreedy(`qos ${nom}`, `QoS ${nom} on interface`, qosSansMoteur(nom));
+    }
+    t.registerGreedy('trust', 'Trust DSCP / 802.1p', (args) =>
+      'Error: This simulator carries no QoS trust boundary, so this command would be '
+      + `stored without effect.\ntrust ${args.join(' ')}`.trimEnd());
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────
@@ -1815,7 +2435,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const getState = () => this as HuaweiDisplayState;
     registerDisplayCommands(this.ospfTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfTrie, getRouter);
-    buildOSPFViewCommands(this.ospfTrie, this as any, (area) => { this.ospfArea = area; });
+    buildOSPFViewCommands(this.ospfTrie, this, (area) => { this.ospfArea = area; });
   }
 
   // ─── OSPFv3 View ([hostname-ospfv3-1]) ─────────────────────────
@@ -1825,7 +2445,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const getState = () => this as HuaweiDisplayState;
     registerDisplayCommands(this.ospfv3Trie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfv3Trie, getRouter);
-    buildOSPFv3ViewCommands(this.ospfv3Trie, this as any);
+    buildOSPFv3ViewCommands(this.ospfv3Trie, this);
     registerDisplayCommands(this.ospfv3AreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfv3AreaTrie, getRouter);
   }
@@ -1869,7 +2489,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const algo: PasswordHashAlgorithm = idx >= 0
         ? (args[idx] === 'irreversible-cipher' ? 'irreversible-cipher' : 'cipher')
         : 'plain';
-      next = existing.withSecret(args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret, algo);
+      const raw = args[idx >= 0 ? idx + 1 : args.length - 1] ?? existing.secret;
+      // Ce que l'on RANGE est toujours ce que la configuration rendra :
+      // l'empreinte pour `irreversible-cipher`, le chiffre pour
+      // `cipher`. L'operateur tape le clair, un rejeu de configuration
+      // repasse la valeur deja transformee — d'ou la reconnaissance de
+      // forme, faute de quoi le rejeu prend le condense pour un mot de
+      // passe et le compte n'ouvre plus.
+      const stored = algo === 'irreversible-cipher'
+        ? (looksLikeIrreversibleCipher(raw) ? raw : huaweiIrreversibleCipher(raw))
+        : algo === 'cipher'
+          ? (looksLikeReversibleCipher(raw) ? raw : huaweiCipher(raw))
+          : raw;
+      const policy = router.getHuaweiAaaService().passwordPolicy;
+      // Length only applies to a cleartext entry — a cipher/irreversible-cipher
+      // value is already hashed, exactly like Cisco's `secret 5|8|9` forms.
+      if (algo === 'plain' && policy.minLength && raw.length < policy.minLength) {
+        return `Error: The password must contain at least ${policy.minLength} characters.`;
+      }
+      if (existing.wouldReuseSecret(raw, policy.historyMaxRecords ?? 0)) {
+        return 'Error: The password has been used before. Please choose a different one.';
+      }
+      next = existing.withSecretRetainingHistory(stored, algo, policy.historyMaxRecords ?? 0);
+      if (policy.expireDays) {
+        next = next.withPasswordExpireAt(Date.now() + policy.expireDays * 86_400_000);
+      }
     } else if (kw === 'privilege' && args[2] === 'level' && args[3]) {
       next = existing.withPrivilege(Number(args[3]) || existing.privilege);
     } else if (kw === 'service-type') {
@@ -1958,28 +2602,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
         if (!args[0]) return 'Error: Incomplete command.';
         aaa().ensureAuthenticationScheme(args[0]);
         this.selectedAaaScheme = args[0];
-        this.setMode('aaa-authen' as any);
+        this.setMode('aaa-authen');
         return '';
       });
       a.registerGreedy('authorization-scheme', 'Configure authorization scheme', (args) => {
         if (!args[0]) return 'Error: Incomplete command.';
         aaa().ensureAuthorizationScheme(args[0]);
         this.selectedAaaScheme = args[0];
-        this.setMode('aaa-author' as any);
+        this.setMode('aaa-author');
         return '';
       });
       a.registerGreedy('accounting-scheme', 'Configure accounting scheme', (args) => {
         if (!args[0]) return 'Error: Incomplete command.';
         aaa().ensureAccountingScheme(args[0]);
         this.selectedAaaScheme = args[0];
-        this.setMode('aaa-accounting' as any);
+        this.setMode('aaa-accounting');
         return '';
       });
       a.registerGreedy('domain', 'Configure AAA domain', (args) => {
         if (!args[0]) return 'Error: Incomplete command.';
         aaa().ensureDomain(args[0]);
         this.selectedAaaScheme = args[0];
-        this.setMode('aaa-domain' as any);
+        this.setMode('aaa-domain');
         return '';
       });
       a.registerGreedy('undo authentication-scheme', 'Remove authentication scheme', (args) => {
@@ -2001,6 +2645,34 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       a.registerGreedy('local-user', 'Configure a local user', (args) => this.handleLocalUserCommand(args));
       a.registerGreedy('undo local-user', 'Remove a local user', (args) => {
         if (args[0]) this.r()._removeLocalUser(args[0]);
+        return '';
+      });
+      a.registerGreedy('password-policy', 'Local-user password policy', (args) => {
+        const policy = aaa().passwordPolicy;
+        const sub = args[0]?.toLowerCase();
+        if (sub === 'level' && (args[1] === 'common' || args[1] === 'high')) {
+          policy.level = args[1]; return '';
+        }
+        if (sub === 'min-length' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.minLength = n;
+          return '';
+        }
+        if (sub === 'expire' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.expireDays = n;
+          return '';
+        }
+        if (sub === 'alert-before-expire' && args[1]) {
+          const n = parseInt(args[1], 10);
+          if (!isNaN(n)) policy.alertBeforeExpireDays = n;
+          return '';
+        }
+        if (sub === 'history-record' && args[1] === 'max-record-number' && args[2]) {
+          const n = parseInt(args[2], 10);
+          if (!isNaN(n)) policy.historyMaxRecords = n;
+          return '';
+        }
         return '';
       });
     }
@@ -2176,66 +2848,44 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const getState = () => this as HuaweiDisplayState;
     registerDisplayCommands(this.ospfAreaTrie, getRouter, getState);
     registerOSPFDisplayCommands(this.ospfAreaTrie, getRouter);
-    buildOSPFAreaViewCommands(this.ospfAreaTrie, this as any, () => this.ospfArea);
+    buildOSPFAreaViewCommands(this.ospfAreaTrie, this, () => this.ospfArea);
 
-    this.interfaceTrie.registerGreedy('vrrp', 'VRRP configuration', (args) => {
+    // La grammaire et le magasin sont ceux du commutateur (lot V15) :
+    // cette vue-ci acceptait tout — `vrid 999`, `priority 300`, une
+    // adresse qui n'en est pas une — et rangeait meme un mot inconnu
+    // dans la configuration rendue, donc rejoue a l'import.
+    this.interfaceTrie.registerGreedy('vrrp', 'VRRP configuration', (args, raw) => {
       const ifName = this.selectedInterface;
       if (!ifName) return 'Error: No interface selected';
-      const vridIdx = args[0]?.toLowerCase() === 'vrid' ? 1 : -1;
-      const vrid = parseInt(args[vridIdx] ?? '', 10);
-      if (isNaN(vrid)) return 'Error: Invalid VRID';
-      const svc = this.r().getHuaweiVrrpService();
-      const g = svc.ensure(ifName, vrid);
-      const agent = (this.r() as unknown as { getVrrpAgent?: () => import('../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
-      agent?.ensureGroup(ifName, vrid);
-      let i = vridIdx + 1;
-      const sub = args[i]?.toLowerCase();
-      if (sub === 'virtual-ip' && args[i + 1]) {
-        if (!g.virtualIps.includes(args[i + 1])) g.virtualIps.push(args[i + 1]);
-        agent?.setVip(ifName, vrid, g.virtualIps[0]);
-      } else if (sub === 'priority' && args[i + 1]) {
-        g.priority = parseInt(args[i + 1], 10);
-        agent?.setPriority(ifName, vrid, g.priority);
-      } else if (sub === 'preempt-mode') {
-        if (args[i + 1] === 'timer' && args[i + 2] === 'delay' && args[i + 3]) {
-          g.preemptMode = true;
-          g.preemptDelaySec = parseInt(args[i + 3], 10);
-        } else g.preemptMode = true;
-        agent?.setPreempt(ifName, vrid, g.preemptMode);
-      } else if (sub === 'description') {
-        g.description = args.slice(i + 1).join(' ');
-      } else if (sub === 'timer' && args[i + 1] === 'advertise' && args[i + 2]) {
-        g.advertiseTimerSec = parseInt(args[i + 2], 10);
-        agent?.setAdvertiseSec(ifName, vrid, g.advertiseTimerSec);
-      } else if (sub === 'authentication-mode' && args[i + 1]) {
-        const mode = args[i + 1].toLowerCase();
-        if (mode === 'md5' || mode === 'simple' || mode === 'none') g.authMode = mode;
-        if (args[i + 2] === 'cipher' && args[i + 3]) g.authKey = args[i + 3];
-        else if (args[i + 2]) g.authKey = args[i + 2];
-      } else if (sub === 'track' && args[i + 1] === 'interface' && args[i + 2]) {
-        const reducedIdx = args.indexOf('reduced', i + 2);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'interface', target: args[i + 2], reduced });
-      } else if (sub === 'track' && args[i + 1] === 'ip' && args[i + 2] === 'route' && args[i + 3]) {
-        const reducedIdx = args.indexOf('reduced', i + 3);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'route', target: `${args[i + 3]} ${args[i + 4] ?? ''}`, reduced });
-      } else if (sub === 'track' && args[i + 1] === 'bfd-session' && args[i + 2]) {
-        const reducedIdx = args.indexOf('reduced', i + 2);
-        const reduced = reducedIdx >= 0 ? parseInt(args[reducedIdx + 1] ?? '0', 10) : 10;
-        g.trackEntries.push({ kind: 'bfd', target: args[i + 2], reduced });
-      } else {
-        g.rawLines.push(`vrrp ${args.join(' ')}`);
+      const agent = getVrrpAgent(this.r());
+      if (!agent) return 'Error: VRRP is not available on this device.';
+      const a = analyserVrrp(args);
+      if (a.statut === 'refus') return rendreErreurVrp(a.err, raw ?? `vrrp ${args.join(' ')}`);
+      appliquerVrrp(agent, ifName, a.vrid, a.action,
+        (nom) => resolveHuaweiInterfaceName(this.r(), nom) || nom);
+      return '';
+    });
+    this.interfaceTrie.registerGreedy('undo vrrp', 'Remove a VRRP group', (args) => {
+      const ifName = this.selectedInterface;
+      const agent = getVrrpAgent(this.r());
+      if (!ifName || !agent) return '';
+      const a = analyserVrrp(args);
+      if (a.statut === 'refus') return '';
+      if (a.action.quoi === 'groupe') agent.removeGroup(ifName, a.vrid);
+      else if (a.action.quoi === 'preempt-mode') agent.setPreempt(ifName, a.vrid, false);
+      else if (a.action.quoi === 'track') {
+        agent.removeTrack(ifName, a.vrid,
+          resolveHuaweiInterfaceName(this.r(), a.action.cible) || a.action.cible);
       }
       return '';
     });
-    this.interfaceTrie.registerGreedy('admin-vrrp', 'Admin VRRP', (args) => {
-      if (args[0]?.toLowerCase() === 'vrid' && args[1]) {
-        const vrid = parseInt(args[1], 10);
-        if (!isNaN(vrid)) this.r().getHuaweiVrrpService().ensureAdmin(vrid).ifName = this.selectedInterface ?? '';
-      }
-      return '';
-    });
+    // VRP a bien cette commande, ce simulateur n'a pas le mVRRP qu'elle
+    // declare : aucun groupe membre ne peut s'y lier, et la facade qui
+    // rangeait le numero n'etait lue par personne (lot V15). Un refus
+    // qui NOMME la brique absente vaut mieux qu'une acceptation sans
+    // effet, comme partout ailleurs dans ce depot.
+    this.interfaceTrie.registerGreedy('admin-vrrp', 'Admin VRRP', () =>
+      'Error: Administrative VRRP (mVRRP) is not implemented in this simulator.');
   }
 
   // ─── RIP View ([hostname-rip-1]) ────────────────────────────────
@@ -2244,13 +2894,23 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const t = this.bgpTrie;
     const ex = () => this.r().getHuaweiRoutingExtras();
     const bgp = () => this.bgpAsn !== null ? ex().ensureBgp(this.bgpAsn) : null;
+    // Real engine driven alongside the config facade (asRunningConfigLines
+    // reads the facade; peering/routes read the engine — see
+    // HuaweiDisplayCommands.ts's `display bgp peer`/`display bgp
+    // routing-table`, audit 02).
+    const bgpEng = () => this.r().getBGPEngine();
+    const converge = () => this.r().convergeDynamicRouting();
     t.registerGreedy('router-id', 'Set BGP router-id', (args) => {
       const b = bgp(); if (b && args[0]) b.routerId = args[0];
+      if (args[0]) bgpEng().getConfig().routerId = args[0];
       return '';
     });
     t.registerGreedy('network', 'Advertise a network', (args) => {
       const b = bgp(); if (!b || !args[0]) return '';
-      b.networks.push({ ip: args[0], mask: args[1] ?? '255.255.255.0' });
+      const mask = args[1] ?? '255.255.255.0';
+      b.networks.push({ ip: args[0], mask });
+      bgpEng().getConfig().networks.push({ network: args[0], mask });
+      converge();
       return '';
     });
     t.registerGreedy('aggregate', 'Aggregate routes', (args) => {
@@ -2267,9 +2927,15 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('peer', 'Configure a BGP peer', (args, raw) => {
       const b = bgp(); if (!b || !args[0]) return '';
       const peer = b.peers.get(args[0]) ?? { ip: args[0], rawLines: [] };
+      // Real engine session config — a VRP peer is active for IPv4
+      // unicast as soon as it's configured under [bgp] (no separate
+      // "activate" step like Cisco's address-family mode).
+      const ec = bgpEng().getConfig();
+      let bn = ec.neighbors.get(args[0]);
+      if (!bn) { bn = { ip: args[0], activated: true }; ec.neighbors.set(args[0], bn); }
       for (let i = 1; i < args.length; i++) {
         const a = args[i];
-        if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); i++; }
+        if (a === 'as-number' && args[i + 1]) { peer.asNumber = parseInt(args[i + 1], 10); bn.remoteAs = peer.asNumber; i++; }
         else if (a === 'description' && args[i + 1]) { peer.description = args.slice(i + 1).join(' '); i = args.length; }
         else if (a === 'group' && args[i + 1]) { peer.groupName = args[i + 1]; i++; }
         else if (a === 'connect-interface' && args[i + 1]) { peer.connectInterface = args[i + 1]; i++; }
@@ -2278,6 +2944,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const line = raw ?? `peer ${args.join(' ')}`;
       if (!peer.rawLines.includes(line)) peer.rawLines.push(line);
       b.peers.set(args[0], peer);
+      converge();
       return '';
     });
     t.registerGreedy('import-route', 'Import routes', (args) => {
@@ -2298,22 +2965,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('timer', 'BGP timers (keepalive/hold)', (args, raw) => {
       const b = bgp(); if (!b) return '';
       for (let i = 0; i < args.length; i++) {
-        if (args[i] === 'keepalive' && args[i + 1]) (b as any).keepaliveSec = parseInt(args[++i], 10);
-        else if (args[i] === 'hold' && args[i + 1]) (b as any).holdSec = parseInt(args[++i], 10);
+        if (args[i] === 'keepalive' && args[i + 1]) b.keepaliveSec = parseInt(args[++i], 10);
+        else if (args[i] === 'hold' && args[i + 1]) b.holdSec = parseInt(args[++i], 10);
       }
       b.rawLines.push(raw ?? `timer ${args.join(' ')}`);
       return '';
     });
     t.registerGreedy('maximum load-balancing', 'BGP ECMP', (args) => {
       const b = bgp(); const n = parseInt(args[0] ?? '', 10);
-      if (b && !isNaN(n)) (b as any).maximumPaths = n;
+      if (!b || isNaN(n) || n < 1) return '';
+      b.maximumPaths = n;
+      // Le plafond va au ROUTEUR : c'est la seule chose que le plan de
+      // données consulte. Sans cet appel, la commande qui ACTIVE la
+      // répartition BGP — désactivée par défaut chez les deux
+      // constructeurs — ne l'activait pas.
+      this.r().setMaximumPaths('bgp', n);
       return '';
     });
     t.registerGreedy('ipv4-family', 'Enter IPv4 address family', (_args) => {
-      const b = bgp(); if (b) (b as any).ipv4Family = true; return '';
+      const b = bgp(); if (b) b.ipv4Family = true; return '';
     });
     t.registerGreedy('ipv6-family', 'Enter IPv6 address family', (_args) => {
-      const b = bgp(); if (b) (b as any).ipv6Family = true; return '';
+      const b = bgp(); if (b) b.ipv6Family = true; return '';
     });
     t.registerGreedy('undo ipv4-family', 'Leave IPv4 family', (_args) => '');
     t.registerGreedy('undo ipv6-family', 'Leave IPv6 family', (_args) => '');
@@ -2363,28 +3036,30 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('is-name', 'Set IS-IS dynamic hostname', (args) => {
-      const i = isis(); if (i && args[0]) (i as any).hostname = args[0];
+      const i = isis(); if (i && args[0]) i.hostname = args[0];
       return '';
     });
     t.registerGreedy('timer lsp-refresh', 'Set LSP refresh interval', (args) => {
       const i = isis(); const n = parseInt(args[0] ?? '', 10);
-      if (i && !isNaN(n)) (i as any).lspRefreshSec = n;
+      if (i && !isNaN(n)) i.lspRefreshSec = n;
       return '';
     });
     t.register('set-overload', 'Set IS-IS overload bit', () => {
-      const i = isis(); if (i) (i as any).overload = true; return '';
+      const i = isis(); if (i) i.overload = true; return '';
     });
     t.register('undo set-overload', 'Clear IS-IS overload bit', () => {
-      const i = isis(); if (i) (i as any).overload = false; return '';
+      const i = isis(); if (i) i.overload = false; return '';
     });
     t.registerGreedy('maximum load-balancing', 'IS-IS ECMP paths', (args) => {
       const i = isis(); const n = parseInt(args[0] ?? '', 10);
-      if (i && !isNaN(n)) (i as any).maximumPaths = n;
+      if (!i || isNaN(n) || n < 1) return '';
+      i.maximumPaths = n;
+      this.r().setMaximumPaths('isis', n);
       return '';
     });
     t.registerGreedy('preference', 'Set IS-IS preference', (args) => {
       const i = isis(); const n = parseInt(args[0] ?? '', 10);
-      if (i && !isNaN(n)) (i as any).preference = n;
+      if (i && !isNaN(n)) i.preference = n;
       return '';
     });
   }
@@ -2400,10 +3075,21 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       if (args.length < 1) return 'Error: Incomplete command.';
       return cmdRip(getRouter(), ['network', ...args]);
     });
+    // `network <adresse>` sous RIP ne prend que l'adresse classful : un
+    // mot de plus etait lu comme un MASQUE, d'ou un `Invalid subnet
+    // mask:` maison la ou VRP compte les parametres.
+    t.allowArgs('network', 1);
 
-    t.registerGreedy('version', 'Set RIP version', (_args) => {
+    // La version etait ignoree : la commande etait acceptee, le champ
+    // que le moteur lit restait a 2, et la configuration rendait 2 quoi
+    // qu'on ait tape. Le champ existe et sert deja cote Cisco.
+    t.registerGreedy('version', 'Set RIP version', (args) => {
+      const v = Number(args[0]);
+      if (v !== 1 && v !== 2) return HUAWEI_ERRORS.UNRECOGNIZED(`version ${args.join(' ')}`.trim(), 'version '.length);
+      getRouter()._setRipVersion(v);
       return '';
     });
+    t.allowArgs('version', 1);
 
     t.registerGreedy('preference', 'Set RIP preference value', (_args) => {
       return '';
@@ -2413,10 +3099,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    const ripExtras = () => {
-      const r = this.r() as any;
-      return r._huaweiRipExtras ?? (r._huaweiRipExtras = {});
-    };
+    const ripExtras = () => huaweiRipExtras(this.r());
     t.register('summary', 'Enable RIP auto-summary', () => { ripExtras().autoSummary = true; return ''; });
     t.register('undo summary', 'Disable RIP auto-summary', () => { ripExtras().autoSummary = false; return ''; });
     t.registerGreedy('timers rip', 'Set RIP timers (update/timeout/garbage)', (args) => {
@@ -2449,7 +3132,10 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
           const m = parseInt(args[cIdx + 1], 10);
           if (!Number.isNaN(m)) metric = m;
         }
-        getRouter().ripSetRedistribution(source, metric);
+        let routePolicy: string | undefined;
+        const rpIdx = args.findIndex((tk) => tk.toLowerCase() === 'route-policy');
+        if (rpIdx >= 0 && args[rpIdx + 1] !== undefined) routePolicy = args[rpIdx + 1];
+        getRouter().ripSetRedistribution(source, metric, routePolicy);
       }
       return '';
     });
@@ -2468,7 +3154,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
     t.registerGreedy('maximum load-balancing', 'Set ECMP for RIP', (args) => {
       const n = parseInt(args[0] ?? '', 10);
-      if (!isNaN(n)) ripExtras().maximumPaths = n;
+      if (isNaN(n) || n < 1) return '';
+      ripExtras().maximumPaths = n;
+      this.r().setMaximumPaths('rip', n);
       return '';
     });
     // VRP accepts "GigabitEthernet0/0/0" and "GigabitEthernet 0/0/0";
@@ -2511,6 +3199,12 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let timeoutMs = 2000;
     let probesPerHop = 3;
 
+    let ipv6 = false;
+    if (args[0]?.toLowerCase() === 'ipv6') {
+      ipv6 = true;
+      args = args.slice(1);
+    }
+
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
       if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
@@ -2520,6 +3214,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     if (!target) return 'Error: Please specify a destination IP address.';
+
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
+      this._pendingAsync = this.r()
+        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatHuaweiTracert(target, maxHops, hops));
+      return '';
+    }
 
     const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (!ipMatch) return `Error: Unknown host ${target}.`;
@@ -2587,6 +3289,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     let count = 5;
     let timeoutMs = 2000;
     let sourceIP: string | null = null;
+    let ipv6 = false;
+
+    if (args[0].toLowerCase() === 'ipv6') {
+      ipv6 = true;
+      args = args.slice(1);
+      if (args.length === 0) return 'Error: Please specify a destination IP address.';
+    }
 
     for (let i = 0; i < args.length; i++) {
       const a = args[i].toLowerCase();
@@ -2597,6 +3306,11 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
 
     if (!target) return 'Error: Please specify a destination IP address.';
+
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
+      return this._handlePing6(target, count, timeoutMs, sourceIP);
+    }
 
     const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (!ipMatch) return `Error: Unknown host ${target}.`;
@@ -2622,6 +3336,44 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return lines.join('\n');
     });
 
+    return '';
+  }
+
+  /**
+   * VRP renders an IPv6 probe differently from an IPv4 one, and the
+   * difference carries information: a reply reports its `hop limit`,
+   * which is the field IPv6 actually has, and the statistics block
+   * counts transmitted and received on separate lines.
+   */
+  private _handlePing6(
+    target: string, count: number, timeoutMs: number, sourceIP: string | null,
+  ): string {
+    const router = this.r();
+    this._pendingAsync = router
+      .executePing6Sequence(new IPv6Address(target), count, timeoutMs, sourceIP ?? undefined)
+      .then((results) => {
+        const ok = results.filter(r => r.success);
+        const rtts = ok.map(r => Math.round(r.rttMs));
+        const loss = count === 0 ? 0 : ((count - ok.length) / count) * 100;
+        const lines = [
+          `  PING ${target} : 56  data bytes, press CTRL_C to break`,
+        ];
+        for (const r of results) {
+          if (!r.success) { lines.push('    Request time out'); continue; }
+          lines.push(`    Reply from ${r.fromIP}`);
+          lines.push(`    bytes=56 Sequence=${r.seq} hop limit=${r.ttl}  time = ${Math.round(r.rttMs)} ms`);
+        }
+        lines.push('');
+        lines.push(`  --- ${target} ping statistics ---`);
+        lines.push(`    ${count} packet(s) transmitted`);
+        lines.push(`    ${ok.length} packet(s) received`);
+        lines.push(`    ${loss.toFixed(2)}% packet loss`);
+        if (rtts.length > 0) {
+          const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
+          lines.push(`    round-trip min/avg/max = ${Math.min(...rtts)}/${avg}/${Math.max(...rtts)} ms`);
+        }
+        return lines.join('\n');
+      });
     return '';
   }
 }

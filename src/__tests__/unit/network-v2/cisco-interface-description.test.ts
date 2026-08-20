@@ -119,17 +119,17 @@ describe('Group 2: Switch Interface Descriptions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('description Server Room Port 1');
 
-    expect(sw.getInterfaceDescription('FastEthernet0/0')).toBe('Server Room Port 1');
+    expect(sw.getInterfaceDescription('FastEthernet0/1')).toBe('Server Room Port 1');
   });
 
   it('should show description in show interfaces status', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('description Trunk to R1');
     await sw.executeCommand('end');
 
@@ -141,7 +141,7 @@ describe('Group 2: Switch Interface Descriptions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('description Access Port Floor 2');
     await sw.executeCommand('end');
 
@@ -153,11 +153,11 @@ describe('Group 2: Switch Interface Descriptions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('description To be removed');
     await sw.executeCommand('no description');
 
-    const desc = sw.getInterfaceDescription('FastEthernet0/0');
+    const desc = sw.getInterfaceDescription('FastEthernet0/1');
     expect(!desc || desc === '').toBe(true);
   });
 
@@ -165,23 +165,23 @@ describe('Group 2: Switch Interface Descriptions', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface range FastEthernet0/0-1');
+    await sw.executeCommand('interface range FastEthernet0/1-2');
     await sw.executeCommand('description Workstations');
 
-    expect(sw.getInterfaceDescription('FastEthernet0/0')).toBe('Workstations');
     expect(sw.getInterfaceDescription('FastEthernet0/1')).toBe('Workstations');
+    expect(sw.getInterfaceDescription('FastEthernet0/2')).toBe('Workstations');
   });
 
   it('should truncate long descriptions in show interfaces status', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 4);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('description A very long description that exceeds seventeen characters');
     await sw.executeCommand('end');
 
     // Full description should be stored
-    expect(sw.getInterfaceDescription('FastEthernet0/0')).toBe('A very long description that exceeds seventeen characters');
+    expect(sw.getInterfaceDescription('FastEthernet0/1')).toBe('A very long description that exceeds seventeen characters');
 
     // But show interfaces status should truncate it
     const output = await sw.executeCommand('show interfaces status');

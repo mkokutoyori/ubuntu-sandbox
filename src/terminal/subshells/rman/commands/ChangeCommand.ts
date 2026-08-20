@@ -21,7 +21,7 @@ export class ChangeCommand implements IRmanCommand<string[]> {
       const tag = (args[0] ?? '').toUpperCase();
       if (!tag) return err({ code: 'RMAN_01009', message: 'CHANGE BACKUP TAG requires a tag' });
       const snap = catalog.listAll();
-      if (!snap.ok) return snap;
+      if (snap.ok === false) return snap;
       const matches = snap.value.sets.filter(s => s.tag.label.toUpperCase() === tag);
       if (matches.length === 0) {
         return err({ code: 'BACKUP_KEY_NOT_FOUND', message: `no backup set with tag ${tag}`, key: tag });

@@ -16,6 +16,8 @@
 
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
+import type { RichOutputLine, LineType } from '@/terminal/core/types';
+import { styleWindowsOutput } from '@/terminal/core/windowsOutputStyle';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
@@ -23,7 +25,8 @@ import { ShellFactory } from '../ShellFactory';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  runSshExec,
+  wireProbeFor,
+  SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -43,7 +46,6 @@ function parseSshExecCommandPs(line: string): string | null {
   return tokens.slice(i + 1).join(' ');
 }
 
-const SSH_MAX_ATTEMPTS = 3;
 
 export interface WindowsPowerShellOptions extends AbstractShellOptions {
   /** Per-terminal cmd.exe session for cwd / env / drive-cwd isolation. */
@@ -114,7 +116,9 @@ export class WindowsPowerShellShell extends AbstractShell {
       defaultUser: this.user,
       knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIpPs(this.device),
+      sourceDevice: this.device,
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+      wireProbe: wireProbeFor(this.device),
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
@@ -150,6 +154,14 @@ export class WindowsPowerShellShell extends AbstractShell {
     };
   }
 
+  protected override synthesizeStyledOutput(
+    output: readonly string[],
+    lineType: LineType = 'output',
+  ): RichOutputLine[] {
+    if (lineType !== 'output') return super.synthesizeStyledOutput(output, lineType);
+    return styleWindowsOutput(output);
+  }
+
   override getCompletions(line: string): readonly string[] {
     return this.subShell.getCompletions?.(line) ?? [];
   }
@@ -171,16 +183,22 @@ export class WindowsPowerShellShell extends AbstractShell {
     for (;;) {
       const pw = await this.input.password(promptText);
       if (pw === null) return { output: [] };
-      const finalised = finalisePendingAuth(auth, pw);
-      if (finalised) {
-        if (execCmd !== null) {
-          const lines = await runSshExec(auth, execCmd);
-          finalised.shell.dispose();
-          return { output: [...finalised.banner, ...lines] };
-        }
+      const finalised = await finalisePendingAuth(auth, pw);
+      if (finalised.kind === 'refused') {
+        return { output: finalised.message.split('\n') };
+      }
+      if (finalised.kind === 'exec') {
+        return { output: [...finalised.banner, ...finalised.lines] };
+      }
+      if (finalised.kind === 'exec') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: [...finalised.banner, ...finalised.lines] };
+    }
+    if (finalised.kind === 'success') {
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
-      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
         return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
       }
       this.input.emit('Permission denied, please try again.');
@@ -190,19 +208,20 @@ export class WindowsPowerShellShell extends AbstractShell {
   async handleInput(value: string): Promise<ShellLineResult> {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
-    const finalised = finalisePendingAuth(auth, value);
-    if (finalised) {
+    const finalised = await finalisePendingAuth(auth, value);
+    if (finalised.kind === 'refused') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: finalised.message.split('\n') };
+    }
+    if (finalised.kind === 'success') {
       const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
-      if (execCmd !== null) {
-        const lines = await runSshExec(auth, execCmd);
-        finalised.shell.dispose();
-        return { output: [...finalised.banner, ...lines] };
-      }
+
       return { output: [...finalised.banner], childShell: finalised.shell };
     }
-    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
       return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };

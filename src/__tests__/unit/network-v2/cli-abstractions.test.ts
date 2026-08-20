@@ -258,9 +258,11 @@ describe('cli-utils', () => {
       expect(result).toBe('line2 beta\nline4 gamma');
     });
 
-    it('should be case-insensitive', () => {
-      const result = applyPipeFilter(output, { type: 'include', pattern: 'ALPHA' });
-      expect(result).toBe('line1 alpha\nline3 alpha beta');
+    it('is case-sensitive like real IOS pipe regexes', () => {
+      // `| include ALPHA` does not match lowercase 'alpha' on real IOS.
+      expect(applyPipeFilter(output, { type: 'include', pattern: 'ALPHA' })).toBe('');
+      expect(applyPipeFilter(output, { type: 'include', pattern: 'alpha' }))
+        .toBe('line1 alpha\nline3 alpha beta');
     });
 
     it('should strip surrounding quotes from pattern', () => {
@@ -277,16 +279,22 @@ describe('cli-utils', () => {
     it('should format error messages correctly', () => {
       expect(CISCO_ERRORS.AMBIGUOUS('show')).toBe('% Ambiguous command: "show"');
       expect(CISCO_ERRORS.INCOMPLETE).toBe('% Incomplete command.');
-      expect(CISCO_ERRORS.INVALID_INPUT).toBe("% Invalid input detected at '^' marker.");
+      expect(CISCO_ERRORS.INVALID_INPUT).toContain("% Invalid input detected at '^' marker.");
       expect(CISCO_ERRORS.UNRECOGNIZED('foo')).toBe('% Unrecognized command "foo"');
     });
   });
 
   describe('HUAWEI_ERRORS', () => {
-    it('should format error messages correctly', () => {
-      expect(HUAWEI_ERRORS.AMBIGUOUS('display')).toBe('Error: Ambiguous command "display"');
-      expect(HUAWEI_ERRORS.INCOMPLETE).toBe('Error: Incomplete command.');
-      expect(HUAWEI_ERRORS.UNRECOGNIZED('xyz')).toBe('Error: Unrecognized command "xyz"');
+    it('never uses Cisco\'s "%" prefix — VRP uses "Error: ... found at \'^\' position." uniformly', () => {
+      expect(HUAWEI_ERRORS.AMBIGUOUS('display', 0)).toBe('Error: Ambiguous command found at \'^\' position.\ndisplay\n^');
+      expect(HUAWEI_ERRORS.INCOMPLETE('sysname')).toBe('Error: Incomplete command found at \'^\' position.\nsysname\n       ^');
+      expect(HUAWEI_ERRORS.UNRECOGNIZED('xyz', 0)).toBe('Error: Unrecognized command found at \'^\' position.\nxyz\n^');
+    });
+
+    it('defaults the caret to the end of input when no position is given', () => {
+      expect(HUAWEI_ERRORS.INCOMPLETE('screen-length')).toBe(
+        'Error: Incomplete command found at \'^\' position.\nscreen-length\n             ^',
+      );
     });
   });
 
@@ -314,7 +322,7 @@ describe('cli-utils', () => {
     });
 
     it('should return null for unknown interface', () => {
-      expect(resolveCiscoInterfaceName(ports, 'FastEthernet0/0')).toBeNull();
+      expect(resolveCiscoInterfaceName(ports, 'FastEthernet0/1')).toBeNull();
     });
   });
 
@@ -330,7 +338,7 @@ describe('cli-utils', () => {
     });
 
     it('should return null for unknown interface', () => {
-      expect(resolveHuaweiInterfaceName(ports, 'FastEthernet0/0')).toBeNull();
+      expect(resolveHuaweiInterfaceName(ports, 'FastEthernet0/1')).toBeNull();
     });
   });
 });

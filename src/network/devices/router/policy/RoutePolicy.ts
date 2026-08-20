@@ -1,4 +1,18 @@
+import type { IpPrefixListStore } from './IpPrefixList';
+
 export type RoutePolicyAction = 'permit' | 'deny';
+
+export interface RoutePolicyRouteInput {
+  network: string;
+  prefixLength: number;
+  tag?: number;
+  routeType?: string;
+}
+
+export interface RoutePolicyResult {
+  action: RoutePolicyAction;
+  apply?: RoutePolicyApply;
+}
 
 export interface RoutePolicyMatch {
   ipPrefix?: string;
@@ -39,6 +53,27 @@ export class RoutePolicyNode {
   ifMatch(patch: Partial<RoutePolicyMatch>): void { Object.assign(this.match, patch); }
   applySet(patch: Partial<RoutePolicyApply>): void { Object.assign(this.apply, patch); }
 
+  /**
+   * Only `ip-prefix`/`tag`/`route-type` are actually evaluated — the rest
+   * (acl/community/as-path/interface/ext-community) have no matching
+   * data on a redistributed route today, so a node using one of them
+   * fails closed (doesn't match) rather than risk over-permitting.
+   */
+  matches(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore): boolean {
+    const m = this.match;
+    if (m.ipPrefix !== undefined) {
+      const list = prefixLists.get(m.ipPrefix, 'ipv4');
+      if (!list || list.evaluate(route.network, route.prefixLength) !== 'permit') return false;
+    }
+    if (m.tag !== undefined && route.tag !== m.tag) return false;
+    if (m.routeType !== undefined && route.routeType !== m.routeType) return false;
+    if (m.acl !== undefined || m.community !== undefined || m.asPath !== undefined
+      || m.interface !== undefined || m.extCommunity !== undefined || m.ipv6Prefix !== undefined) {
+      return false;
+    }
+    return true;
+  }
+
   render(): string[] {
     const out: string[] = [];
     if (this.match.ipPrefix) out.push(` if-match ip-prefix ${this.match.ipPrefix}`);
@@ -78,6 +113,18 @@ export class RoutePolicy {
   getNode(nodeId: number): RoutePolicyNode | undefined { return this.nodes.get(nodeId); }
   list(): RoutePolicyNode[] {
     return [...this.nodes.values()].sort((a, b) => a.nodeId - b.nodeId);
+  }
+
+  /** First matching node wins (nodeId order), like real VRP route-policy. No match = implicit deny. */
+  evaluate(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore): RoutePolicyResult {
+    for (const node of this.list()) {
+      if (node.matches(route, prefixLists)) {
+        return node.action === 'permit'
+          ? { action: 'permit', apply: node.apply }
+          : { action: 'deny' };
+      }
+    }
+    return { action: 'deny' };
   }
 
   render(): string[] {

@@ -10,7 +10,7 @@
  */
 
 import type { Port } from '../../hardware/Port';
-import type { MACAddress } from '../../core/types';
+import type { IPAddress, MACAddress } from '../../core/types';
 
 // ─── ARP Provider (shared ARP table access) ─────────────────────────
 
@@ -28,10 +28,11 @@ export interface CiscoARPEntry {
  */
 export interface ARPProvider {
   _getArpTableInternal(): Map<string, CiscoARPEntry>;
-  _addStaticARP(ip: string, mac: MACAddress, iface: string): void;
-  _deleteARP(ip: string): boolean;
+  _addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  _deleteARP(ip: IPAddress): boolean;
   _clearARPCache(): void;
   _getPortsInternal(): Map<string, Port>;
+  _getSviVlanIds?(): number[];
 }
 
 // ─── CiscoDevice (full shell contract) ──────────────────────────────
@@ -45,6 +46,8 @@ export interface CiscoDevice extends ARPProvider {
   _getHostnameInternal(): string;
   /** Set the device hostname */
   _setHostnameInternal(name: string): void;
+  /** Get the device hostname as shown by `show inventory` and prompts */
+  getHostname(): string;
   /** Get a port by name */
   getPort(name: string): Port | undefined;
   /** Get all port names */
@@ -53,4 +56,5 @@ export interface CiscoDevice extends ARPProvider {
   powerOff(): void;
   /** Power on the device */
   powerOn(): void;
+  defaultHostname(): string;
 }

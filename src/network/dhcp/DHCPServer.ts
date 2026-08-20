@@ -46,6 +46,13 @@ const PENDING_OFFER_TIMEOUT_MS = DHCP_CONSTANTS.PENDING_OFFER_TIMEOUT_MS;
 /** Default conflict TTL: infinite (0 = never expire) */
 const DEFAULT_CONFLICT_TTL = 0;
 
+function formatChaddr(mac: string | undefined): string {
+  const hex = (mac ?? '').replace(/[^0-9a-fA-F]/g, '').toLowerCase().padStart(12, '0').slice(-12);
+  return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+}
+
+export type DhcpInterfaceMode = 'server' | 'relay' | 'none' | 'global' | 'interface';
+
 export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
@@ -65,11 +72,29 @@ export class DHCPServer implements IProtocolEngine {
   /** Pending offers: IP → pending (reserved between DISCOVER and REQUEST) */
   private pendingOffers: Map<string, DHCPPendingOffer> = new Map();
 
+  /**
+   * clientId → the address it last held, kept even after the active
+   * binding is deleted on RELEASE/expiry. Every real DHCP server
+   * (including Cisco IOS's own pool database) re-offers a client its
+   * previous address on its next DISCOVER when that address is still
+   * free — RFC 2131 doesn't mandate it, but a plain `dhclient -r &&
+   * dhclient` hopping to a different address with nothing else on the
+   * network having claimed the old one is not how real DHCP behaves.
+   */
+  private releaseHistory: Map<string, { ip: string; poolName: string }> = new Map();
+
+  /** `ip dhcp ping packets` (IOS default 2; `ip dhcp ping packets 0` disables the check) */
+  private pingPacketCount = 2;
+  /** `ip dhcp ping timeout` in milliseconds */
+  private pingTimeoutMs = 500;
+
   /** Server statistics */
   private stats: DHCPServerStats = createDefaultStats();
+  private relayStats = { forwarded: 0, repliesForwarded: 0, dropped: 0 };
 
   /** IP conflict database */
   private conflicts: DHCPConflict[] = [];
+  private databaseAgents: string[] = [];
 
   /** Conflict TTL in seconds (0 = never expire) */
   private conflictTTL: number = DEFAULT_CONFLICT_TTL;
@@ -217,10 +242,12 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
-  configurePoolRouter(name: string, router: string): boolean {
+  configurePoolRouter(name: string, router: string | string[]): boolean {
     const pool = this.pools.get(name);
     if (!pool) return false;
-    pool.defaultRouter = router;
+    const routers = Array.isArray(router) ? router : [router];
+    pool.defaultRouters = routers;
+    pool.defaultRouter = routers[0] ?? null;
     return true;
   }
 
@@ -312,16 +339,34 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
+  /** Pool name already holding `ip` as a static reservation (`host` or `static-bind`), if any other than `excludePool`. */
+  private findReservedIPConflict(ip: string, excludePool: string): string | null {
+    for (const [name, pool] of this.pools) {
+      if (name !== excludePool && pool.manual?.host === ip) return name;
+    }
+    for (const [name, bindings] of this.staticBindings) {
+      if (name === excludePool) continue;
+      if (bindings.some(b => b.ipAddress === ip)) return name;
+    }
+    return null;
+  }
+
   configurePoolManual(
     name: string, field: keyof NonNullable<DHCPPoolConfig['manual']>,
     value: string, mask?: string,
-  ): boolean {
+  ): { ok: boolean; error?: string } {
     const pool = this.pools.get(name);
-    if (!pool) return false;
+    if (!pool) return { ok: false, error: `pool ${name} does not exist` };
+    if (field === 'host') {
+      const conflictPool = this.findReservedIPConflict(value, name);
+      if (conflictPool) {
+        return { ok: false, error: `IP address ${value} is already reserved in DHCP pool ${conflictPool}` };
+      }
+    }
     pool.manual ??= {};
     pool.manual[field] = value;
     if (field === 'host' && mask) pool.manual.hostMask = mask;
-    return true;
+    return { ok: true };
   }
 
   isPoolComplete(name: string): boolean {
@@ -353,15 +398,26 @@ export class DHCPServer implements IProtocolEngine {
   // ─── Static Bindings (Manual Reservations) ─────────────────────────
 
   /** Add a static MAC → IP binding to a pool */
-  addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): void {
+  addStaticBinding(poolName: string, clientMAC: string, ipAddress: string): { ok: boolean; error?: string } {
     const existing = this.staticBindings.get(poolName) || [];
-    existing.push({
-      clientId: clientMAC,
-      ipAddress,
-      poolName,
-      type: 'manual',
-    });
-    this.staticBindings.set(poolName, existing);
+    const already = existing.find(b => b.ipAddress === ipAddress);
+    if (already && already.clientId.toLowerCase() !== clientMAC.toLowerCase()) {
+      return { ok: false, error: `IP address ${ipAddress} is already bound to ${already.clientId} in this pool` };
+    }
+    if (!already) {
+      const conflictPool = this.findReservedIPConflict(ipAddress, poolName);
+      if (conflictPool) {
+        return { ok: false, error: `IP address ${ipAddress} is already reserved in DHCP pool ${conflictPool}` };
+      }
+      existing.push({
+        clientId: clientMAC,
+        ipAddress,
+        poolName,
+        type: 'manual',
+      });
+      this.staticBindings.set(poolName, existing);
+    }
+    return { ok: true };
   }
 
   /** Get all static bindings for a pool */
@@ -386,7 +442,8 @@ export class DHCPServer implements IProtocolEngine {
   /** Find static binding for a client MAC in a specific pool */
   private findStaticBinding(clientMAC: string, poolName: string): DHCPStaticBinding | null {
     const bindings = this.staticBindings.get(poolName) || [];
-    return bindings.find(b => b.clientId === clientMAC) || null;
+    const mac = clientMAC.toLowerCase();
+    return bindings.find(b => b.clientId.toLowerCase() === mac) || null;
   }
 
   // ─── Address Allocation (DORA Server-Side) ────────────────────────
@@ -398,6 +455,20 @@ export class DHCPServer implements IProtocolEngine {
    * Accepts either the new DHCPDiscoverParams or legacy (clientMAC: string) for backward compat.
    */
   processDiscover(paramsOrMAC: DHCPDiscoverParams | string): DHCPOfferResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgGiaddr = typeof paramsOrMAC === 'string' ? undefined : paramsOrMAC.giaddr;
+    this.debugEvent(`DHCPDISCOVER from ${formatChaddr(dbgMac)} through ${dbgGiaddr ?? 'relay not used'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), giaddr: dbgGiaddr });
+    const dbgOffer = this.processDiscoverInternal(paramsOrMAC);
+    if (dbgOffer) {
+      this.debugEvent(`DHCPOFFER on interface, offering ${dbgOffer.ip} to ${formatChaddr(dbgMac)}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgOffer.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgOffer.ip, giaddr: dbgGiaddr });
+    }
+    return dbgOffer;
+  }
+
+  private processDiscoverInternal(paramsOrMAC: DHCPDiscoverParams | string): DHCPOfferResult | null {
     this.stats.discovers++;
     if (!this.enabled) return null;
 
@@ -409,14 +480,16 @@ export class DHCPServer implements IProtocolEngine {
     // Clean expired pending offers
     this.cleanExpiredPendingOffers();
 
-    // Determine pool iteration order: if giaddr is set, prioritize matching pool
-    const poolEntries = this.getPoolsForDiscover(params.giaddr);
+    // Subnet anchor for pool selection: giaddr when relayed, otherwise the
+    // local ingress interface's own IP for a directly-attached client.
+    const subnetAnchor = params.giaddr ?? params.localGatewayIP;
+    const poolEntries = this.getPoolsForDiscover(subnetAnchor);
 
     for (const pool of poolEntries) {
       if (!pool.network || !pool.mask) continue;
 
-      // If giaddr is set, only consider pools whose subnet contains the giaddr
-      if (params.giaddr && !this.isIPInPool(params.giaddr, pool)) continue;
+      // Only consider pools whose subnet actually contains the anchor.
+      if (subnetAnchor && !this.isIPInPool(subnetAnchor, pool)) continue;
 
       // Check deny patterns
       if (this.isClientDenied(params.clientMAC, pool)) continue;
@@ -469,6 +542,24 @@ export class DHCPServer implements IProtocolEngine {
         }
       }
 
+      // Prefer re-offering the address this client held before its lease
+      // was released or expired (see releaseHistory's own doc comment),
+      // as long as nothing else has claimed it since.
+      const history = this.releaseHistory.get(params.clientMAC);
+      if (history && history.poolName === pool.name
+        && !this.bindings.has(history.ip) && !this.pendingOffers.has(history.ip)
+        && !this.isExcluded(history.ip) && !this.isConflicted(history.ip)) {
+        this.stats.offers++;
+        return {
+          ip: history.ip,
+          pool,
+          serverIdentifier: this.resolveServerId(pool),
+          xid: params.xid,
+          renewalTime: pool.renewalTime,
+          rebindingTime: pool.rebindingTime,
+        };
+      }
+
       // Allocate a new IP and create a pending offer
       const ip = this.findAvailableIP(pool, params.clientMAC);
       if (!ip) {
@@ -517,6 +608,22 @@ export class DHCPServer implements IProtocolEngine {
    * Accepts either the new DHCPRequestParams or legacy (clientMAC, requestedIP) for backward compat.
    */
   processRequest(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgReq = typeof paramsOrMAC === 'string' ? legacyRequestedIP : paramsOrMAC.requestedIP;
+    this.debugEvent(`DHCPREQUEST received from client ${formatChaddr(dbgMac)} for ${dbgReq ?? '0.0.0.0'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
+    const dbgAck = this.processRequestInternal(paramsOrMAC, legacyRequestedIP);
+    if (dbgAck) {
+      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgAck.ip}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgAck.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgAck.ip });
+    } else {
+      this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
+    }
+    return dbgAck;
+  }
+
+  private processRequestInternal(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPAckResult | null {
     if (!this.enabled) return null;
 
     // Normalize params (backward compat)
@@ -612,6 +719,24 @@ export class DHCPServer implements IProtocolEngine {
    * whether the response is ACK or NAK, rather than using null for NAK.
    */
   processRequestWithNak(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
+    const dbgMac = typeof paramsOrMAC === 'string' ? paramsOrMAC : paramsOrMAC.clientMAC;
+    const dbgXid = typeof paramsOrMAC === 'string' ? 0 : paramsOrMAC.xid;
+    const dbgReq = typeof paramsOrMAC === 'string' ? legacyRequestedIP : paramsOrMAC.requestedIP;
+    this.debugEvent(`DHCPREQUEST received from client ${formatChaddr(dbgMac)} for ${dbgReq ?? '0.0.0.0'}`);
+    this.debugPacket('BOOTREQUEST', { xid: dbgXid, chaddr: formatChaddr(dbgMac), ciaddr: dbgReq });
+    const dbgRes = this.processRequestWithNakInternal(paramsOrMAC, legacyRequestedIP);
+    if (dbgRes && dbgRes.type === 'ACK') {
+      const dbgIp = dbgRes.binding?.ipAddress ?? dbgReq ?? '0.0.0.0';
+      this.debugEvent(`DHCPACK sent to client ${formatChaddr(dbgMac)} for ${dbgIp}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac), yiaddr: dbgIp });
+    } else if (dbgRes && dbgRes.type === 'NAK') {
+      this.debugEvent(`DHCPNAK sent to client ${formatChaddr(dbgMac)}`);
+      this.debugPacket('BOOTREPLY', { xid: dbgRes.xid, chaddr: formatChaddr(dbgMac) });
+    }
+    return dbgRes;
+  }
+
+  private processRequestWithNakInternal(paramsOrMAC: DHCPRequestParams | string, legacyRequestedIP?: string): DHCPRequestWithNakResult | null {
     if (!this.enabled) return null;
 
     // Normalize params
@@ -737,6 +862,7 @@ export class DHCPServer implements IProtocolEngine {
       for (const [ip, binding] of this.bindings) {
         if (binding.clientId === paramsOrMAC) {
           this.bindings.delete(ip);
+          this.releaseHistory.set(binding.clientId, { ip, poolName: binding.poolName });
           this.getBus().publish({
             topic: 'dhcp.pool.lease-released',
             payload: { ...this.deviceRef(), pool: binding.poolName, ip, reason: 'client-release' },
@@ -757,6 +883,7 @@ export class DHCPServer implements IProtocolEngine {
     if (binding.clientId !== params.clientMAC) return;
 
     this.bindings.delete(params.clientIP);
+    this.releaseHistory.set(binding.clientId, { ip: params.clientIP, poolName: binding.poolName });
     this.getBus().publish({
       topic: 'dhcp.pool.lease-released',
       payload: { ...this.deviceRef(), pool: binding.poolName, ip: params.clientIP, reason: 'client-release' },
@@ -851,6 +978,26 @@ export class DHCPServer implements IProtocolEngine {
 
   clearStats(): void {
     this.stats = createDefaultStats();
+    this.relayStats = { forwarded: 0, repliesForwarded: 0, dropped: 0 };
+  }
+
+  countRelayForward(): void { this.relayStats.forwarded++; }
+  countRelayReply(): void { this.relayStats.repliesForwarded++; }
+  countRelayDrop(): void { this.relayStats.dropped++; }
+  getRelayStats(): Readonly<{ forwarded: number; repliesForwarded: number; dropped: number }> {
+    return { ...this.relayStats };
+  }
+
+  // ─── Ping-before-offer (`ip dhcp ping packets`/`ip dhcp ping timeout`) ──
+
+  setPingPacketCount(n: number): void { this.pingPacketCount = n; }
+  getPingPacketCount(): number { return this.pingPacketCount; }
+  setPingTimeoutMs(ms: number): void { this.pingTimeoutMs = ms; }
+  getPingTimeoutMs(): number { return this.pingTimeoutMs; }
+
+  /** Release a candidate reserved by processDiscover so a retry can pick a different address. */
+  cancelPendingOffer(ip: string): void {
+    this.pendingOffers.delete(ip);
   }
 
   // ─── Conflicts ────────────────────────────────────────────────────
@@ -911,6 +1058,26 @@ export class DHCPServer implements IProtocolEngine {
     this.debug.serverEvents = on;
   }
 
+  private debugEmitFn?: (line: string) => void;
+  setDebugEmitter(fn: (line: string) => void): void { this.debugEmitFn = fn; }
+
+  private debugEvent(line: string): void {
+    if (!this.debug.serverEvents) return;
+    this.debugEmitFn?.(`DHCPD: ${line}`);
+  }
+
+  private debugPacket(kind: string, fields: { xid?: number; chaddr?: string; ciaddr?: string; yiaddr?: string; giaddr?: string }): void {
+    if (!this.debug.serverPacket) return;
+    const parts = [
+      `xid ${(fields.xid ?? 0).toString(16).toUpperCase()}`,
+      `chaddr ${fields.chaddr ?? '0000.0000.0000'}`,
+      `ciaddr ${fields.ciaddr ?? '0.0.0.0'}`,
+      `yiaddr ${fields.yiaddr ?? '0.0.0.0'}`,
+      `giaddr ${fields.giaddr ?? '0.0.0.0'}`,
+    ];
+    this.debugEmitFn?.(`DHCPD: ${kind}: ${parts.join(', ')}`);
+  }
+
   // ─── Relay ────────────────────────────────────────────────────────
 
   addHelperAddress(iface: string, address: string): void {
@@ -931,14 +1098,14 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
-  private readonly interfaceModes: Map<string, 'server' | 'relay' | 'none'> = new Map();
+  private readonly interfaceModes: Map<string, DhcpInterfaceMode> = new Map();
   private readonly snoopingEnabledIfaces: Set<string> = new Set();
   private readonly forwardProtocolPorts: Map<string, Set<number>> = new Map();
 
-  setInterfaceMode(iface: string, mode: 'server' | 'relay' | 'none'): void {
+  setInterfaceMode(iface: string, mode: DhcpInterfaceMode): void {
     this.interfaceModes.set(iface, mode);
   }
-  getInterfaceMode(iface: string): 'server' | 'relay' | 'none' { return this.interfaceModes.get(iface) ?? 'server'; }
+  getInterfaceMode(iface: string): DhcpInterfaceMode { return this.interfaceModes.get(iface) ?? 'server'; }
 
   setSnoopingEnabled(iface: string, enabled: boolean): void {
     if (enabled) this.snoopingEnabledIfaces.add(iface);
@@ -981,7 +1148,7 @@ export class DHCPServer implements IProtocolEngine {
   formatPoolShow(poolName?: string): string {
     if (poolName) {
       const pool = this.pools.get(poolName);
-      if (!pool) return `% Pool "${poolName}" not found.`;
+      if (!pool) return `% Pool ${poolName} not found.`;
       if ((!pool.network || !pool.mask) && !pool.manual?.host) {
         return `% Incomplete configuration - missing network statement for pool "${poolName}"`;
       }
@@ -996,20 +1163,65 @@ export class DHCPServer implements IProtocolEngine {
     return lines.join('\n').trimEnd();
   }
 
+  private countTotalAddresses(pool: DHCPPoolConfig): number {
+    if (!pool.network || !pool.mask) return 0;
+    const hostBits = 32 - this.maskToCIDR(pool.mask);
+    if (hostBits <= 1) return 0;
+    return Math.pow(2, hostBits) - 2;
+  }
+
+  private countExcludedForPool(pool: DHCPPoolConfig): number {
+    if (!pool.network || !pool.mask) return 0;
+    const netNum = this.ipToNumber(pool.network);
+    const maskNum = this.ipToNumber(pool.mask);
+    let n = 0;
+    for (const range of this.excludedRanges) {
+      const start = this.ipToNumber(range.start);
+      const end = this.ipToNumber(range.end ?? range.start);
+      for (let a = start; a <= end; a++) {
+        if ((a & maskNum) === (netNum & maskNum)) n++;
+      }
+    }
+    return n;
+  }
+
   private formatSinglePool(pool: DHCPPoolConfig): string {
     const cidr = pool.mask ? this.maskToCIDR(pool.mask) : '?';
     const leaseDays = Math.floor(pool.leaseDuration / 86400);
     const leaseStr = leaseDays >= 1 ? `${leaseDays} days` : this.formatLeaseTime(pool.leaseDuration);
 
+    const total = this.countTotalAddresses(pool);
+    const loues = this.countBindingsForPool(pool.name);
+    const exclus = this.countExcludedForPool(pool);
+
     const lines = [
       `Pool ${pool.name} :`,
+      ` Utilization mark (high/low)    : ${pool.highUtilizationMark ?? 100} / ${pool.lowUtilizationMark ?? 0}`,
+      ` Subnet size (first/next)       : 0 / 0`,
+      ` Total addresses                : ${total}`,
+      ` Leased addresses               : ${loues}`,
+      ` Excluded addresses             : ${exclus}`,
+      ` Pending event                  : none`,
+    ];
+    // Le tableau par sous-réseau : c'est là qu'IOS met la plage et la
+    // répartition, et c'est ce qui distinguait sa sortie de la nôtre.
+    if (pool.network && pool.mask) {
+      const debut = this.numberToIP(this.ipToNumber(pool.network) + 1);
+      const fin = this.numberToIP(this.ipToNumber(pool.network) + total);
+      lines.push(' 1 subnet is currently in the pool :');
+      lines.push(' Current index        IP address range                    Leased/Excluded/Total');
+      lines.push(` ${debut.padEnd(20)} ${debut.padEnd(16)} - ${fin.padEnd(16)} `
+        + `${String(loues).padEnd(5)}/${String(exclus).padEnd(9)}/${total}`);
+    }
+    const details = [
       `  Network          : ${pool.network || 'not configured'}/${cidr}`,
       `  Default Router   : ${pool.defaultRouter || 'not configured'}`,
       `  DNS Server(s)    : ${pool.dnsServers.length > 0 ? pool.dnsServers.join(', ') : 'not configured'}`,
       `  Domain Name      : ${pool.domainName || 'not configured'}`,
       `  Lease Time       : ${pool.leaseInfinite ? 'infinite' : leaseStr}`,
-      `  Current Bindings : ${this.countBindingsForPool(pool.name)}`,
+      `  Current Bindings : ${loues}`,
     ];
+    lines.push(...details);
     if (pool.nextServer) lines.push(`  Next Server      : ${pool.nextServer}`);
     if (pool.bootfile) lines.push(`  Bootfile         : ${pool.bootfile}`);
     if (pool.netbiosServers?.length) {
@@ -1109,20 +1321,49 @@ export class DHCPServer implements IProtocolEngine {
     return lines.join('\n');
   }
 
+  // ─── Database agents (`ip dhcp database <url>`) ───────────────────
+
+  addDatabaseAgent(url: string): void {
+    if (!this.databaseAgents.includes(url)) this.databaseAgents.push(url);
+  }
+
+  removeDatabaseAgent(url: string): void {
+    const i = this.databaseAgents.indexOf(url);
+    if (i >= 0) this.databaseAgents.splice(i, 1);
+  }
+
+  getDatabaseAgents(): string[] {
+    return [...this.databaseAgents];
+  }
+
+  formatDatabaseShow(): string {
+    if (this.databaseAgents.length === 0) return 'Database agents: 0';
+    const lines: string[] = [`Database agents: ${this.databaseAgents.length}`, ''];
+    for (const url of this.databaseAgents) {
+      lines.push(
+        `URL              : ${url}`,
+        'Read succeeded   : never',
+        'Write succeeded  : never',
+        '',
+      );
+    }
+    return lines.join('\n').trimEnd();
+  }
+
   // ─── Internal Helpers ─────────────────────────────────────────────
 
   /**
-   * Get pools for DISCOVER, prioritizing pools matching giaddr if present.
+   * Get pools for DISCOVER, prioritizing pools matching the subnet anchor
+   * (giaddr when relayed, or the local ingress interface's own IP when not).
    */
-  private getPoolsForDiscover(giaddr?: string): DHCPPoolConfig[] {
+  private getPoolsForDiscover(subnetAnchor?: string): DHCPPoolConfig[] {
     const allPools = Array.from(this.pools.values());
-    if (!giaddr) return allPools;
+    if (!subnetAnchor) return allPools;
 
-    // If giaddr is present, put matching pools first
     const matching: DHCPPoolConfig[] = [];
     const others: DHCPPoolConfig[] = [];
     for (const pool of allPools) {
-      if (pool.network && pool.mask && this.isIPInPool(giaddr, pool)) {
+      if (pool.network && pool.mask && this.isIPInPool(subnetAnchor, pool)) {
         matching.push(pool);
       } else {
         others.push(pool);

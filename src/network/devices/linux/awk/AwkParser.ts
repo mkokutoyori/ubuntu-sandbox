@@ -138,9 +138,9 @@ export class AwkParser {
     const t = this.cur();
     if (t.type === 'newline' || t.type === 'eof') return false;
     if (t.type === 'op') {
-      return ['(', '$', '!', '-', '+', '++', '--'].includes(t.value);
+      return ['(', '$', '!', '-', '+', '++', '--'].includes(t.value) || t.value === 'getline';
     }
-    return VALUE_STARTERS.has(t.type) || t.type === 'op' && t.value === 'getline';
+    return VALUE_STARTERS.has(t.type);
   }
 
   private parseIf(): Stmt {

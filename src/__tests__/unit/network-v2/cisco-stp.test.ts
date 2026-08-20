@@ -69,12 +69,12 @@ describe('Cisco STP — MST sub-mode', () => {
     const region = sw.getStpAgent().getMstRegion();
     expect(region.name).toBe('LAB');
     expect(region.revision).toBe(7);
-    expect(region.instances.get(1)).toBe('vlan 10,20');
+    expect(region.instances.get(1)).toBe('10,20');
 
     const show = await sw.executeCommand('do show spanning-tree mst configuration');
     expect(show).toContain('Name      [LAB]');
     expect(show).toContain('Revision  7');
-    expect(show).toMatch(/1\s+vlan 10,20/);
+    expect(show).toMatch(/1\s+10,20/);
   });
 
   it('no name / no instance revert the region in the engine', async () => {
@@ -92,13 +92,13 @@ describe('Cisco STP — MST sub-mode', () => {
 describe('Cisco STP — interface config', () => {
   it('per-interface spanning-tree commands recognized', async () => {
     const sw = await cfgSwitch();
-    await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('interface FastEthernet0/2');
     for (const c of ['spanning-tree portfast', 'spanning-tree bpduguard enable',
       'spanning-tree bpdufilter enable', 'spanning-tree cost 19',
       'spanning-tree port-priority 64', 'spanning-tree guard root']) {
       expect(await sw.executeCommand(c)).not.toMatch(/Invalid input|Unrecognized/);
     }
     expect(await sw.executeCommand(
-      'do show spanning-tree interface FastEthernet0/1')).not.toMatch(/Invalid input/);
+      'do show spanning-tree interface FastEthernet0/2')).not.toMatch(/Invalid input/);
   });
 });

@@ -14,9 +14,80 @@ interface GrepFlags {
   caseInsensitive: boolean; countOnly: boolean; recursive: boolean; invert: boolean;
   lineNumbers: boolean; filesOnly: boolean; filesWithout: boolean; wholeWord: boolean;
   wholeLine: boolean; onlyMatching: boolean; quiet: boolean; suppressErrors: boolean;
-  forceFilename: boolean | null; extended: boolean; fixed: boolean;
+  forceFilename: boolean | null; extended: boolean; fixed: boolean; perl: boolean;
   maxCount: number; after: number; before: number;
   includeGlobs: string[]; excludeGlobs: string[];
+  /**
+   * `--color` etait analyse puis JETE — un `continue` sans rien
+   * stocker — donc `grep --color=always` rendait exactement la meme
+   * sortie que sans, et le motif trouve ne se distinguait de rien.
+   */
+  color: boolean;
+}
+
+/**
+ * Ce que GNU grep met autour d'une correspondance : `ms=01;31` dans
+ * GREP_COLORS, c'est-a-dire gras rouge. La sequence de fin est `\e[m`
+ * (et non `\e[0m`), comme le vrai binaire l'ecrit.
+ */
+const GREP_MATCH_ON = '\u001b[01;31m';
+const GREP_MATCH_OFF = '\u001b[m';
+
+/** Entoure chaque correspondance de la ligne, sans toucher au reste. */
+function colorierCorrespondances(ligne: string, matchers: RegExp[]): string {
+  const bornes: Array<[number, number]> = [];
+  for (const re of matchers) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(ligne)) !== null) {
+      if (m[0] !== '') bornes.push([m.index, m.index + m[0].length]);
+      else re.lastIndex++;
+      if (!re.global) break;
+    }
+  }
+  if (bornes.length === 0) return ligne;
+  // Plusieurs motifs (`-e a -e b`) peuvent se recouvrir : les fusionner
+  // evite d'imbriquer deux sequences sur les memes caracteres.
+  bornes.sort((a, b) => a[0] - b[0]);
+  const fusion: Array<[number, number]> = [];
+  for (const [d, f] of bornes) {
+    const dernier = fusion[fusion.length - 1];
+    if (dernier && d <= dernier[1]) dernier[1] = Math.max(dernier[1], f);
+    else fusion.push([d, f]);
+  }
+  let out = '';
+  let pos = 0;
+  for (const [d, f] of fusion) {
+    out += ligne.slice(pos, d) + GREP_MATCH_ON + ligne.slice(d, f) + GREP_MATCH_OFF;
+    pos = f;
+  }
+  return out + ligne.slice(pos);
+}
+
+/**
+ * `-P` (Perl-compatible regex): JS's native RegExp already covers the
+ * common PCRE subset (character classes, quantifiers, groups,
+ * alternation, lookaheads/lookbehinds). The one construct it lacks that
+ * real-world one-liners actually reach for is `\K` ("keep": discard the
+ * match so far, keep matching from here) — translated into the
+ * equivalent lookbehind, which JS supports natively (including
+ * variable-length lookbehinds).
+ */
+function compilePcre(
+  pattern: string,
+  opts: { ignoreCase: boolean; wholeWord: boolean; wholeLine: boolean; global: boolean },
+): RegExp {
+  let p = pattern;
+  const kIndex = p.indexOf('\\K');
+  if (kIndex !== -1) {
+    p = `(?<=${p.slice(0, kIndex)})${p.slice(kIndex + 2)}`;
+  }
+  if (opts.wholeWord) p = `\\b(?:${p})\\b`;
+  if (opts.wholeLine) p = `^(?:${p})$`;
+  let flags = '';
+  if (opts.global) flags += 'g';
+  if (opts.ignoreCase) flags += 'i';
+  return new RegExp(p, flags);
 }
 
 export function cmdGrep(
@@ -26,8 +97,8 @@ export function cmdGrep(
     caseInsensitive: false, countOnly: false, recursive: false, invert: false,
     lineNumbers: false, filesOnly: false, filesWithout: false, wholeWord: false,
     wholeLine: false, onlyMatching: false, quiet: false, suppressErrors: false,
-    forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep',
-    maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [],
+    forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep', perl: false,
+    maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [], color: false,
   };
   const patterns: string[] = [];
   const files: string[] = [];
@@ -48,7 +119,15 @@ export function cmdGrep(
     if (a === '-C' || a === '--context') { const n = parseInt(args[++i], 10) || 0; fl.after = n; fl.before = n; continue; }
     if (a.startsWith('--include=')) { fl.includeGlobs.push(a.slice(10)); continue; }
     if (a.startsWith('--exclude=')) { fl.excludeGlobs.push(a.slice(10)); continue; }
-    if (a.startsWith('--color') || a === '--colour') continue;
+    // `never` eteint, tout le reste allume. `auto` colore parce que la
+    // sortie de ce simulateur VA a un terminal : repondre non serait
+    // faux dans le cas courant, et le cas tuyau n'est pas distinguable
+    // ici.
+    if (a.startsWith('--color') || a.startsWith('--colour')) {
+      const valeur = a.includes('=') ? a.slice(a.indexOf('=') + 1) : 'auto';
+      fl.color = valeur !== 'never' && valeur !== 'none';
+      continue;
+    }
     if (a === '--line-number') { fl.lineNumbers = true; continue; }
     if (a === '--ignore-case') { fl.caseInsensitive = true; continue; }
     if (a === '--invert-match') { fl.invert = true; continue; }
@@ -77,10 +156,12 @@ export function cmdGrep(
 
   if (!patternGiven) return { output: 'Usage: grep [OPTION]... PATTERN [FILE]...', exitCode: 2 };
 
-  const matchers = patterns.map(p => compilePosix(p, {
-    extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
-    wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
-  }));
+  const matchers = patterns.map(p => fl.perl
+    ? compilePcre(p, { ignoreCase: fl.caseInsensitive, wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true })
+    : compilePosix(p, {
+        extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
+        wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
+      }));
   const lineMatches = (line: string): boolean => {
     const hit = matchers.some(re => { re.lastIndex = 0; return re.test(line); });
     return hit !== fl.invert;
@@ -145,7 +226,7 @@ function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
       case 'r': case 'R': fl.recursive = true; break;
       case 'E': fl.extended = true; break;
       case 'G': fl.extended = false; break;
-      case 'P': fl.extended = true; break;
+      case 'P': fl.perl = true; break;
       case 'F': fl.fixed = true; break;
       case 'v': fl.invert = true; break;
       case 'n': fl.lineNumbers = true; break;
@@ -239,9 +320,16 @@ function grepLines(
         }
       }
       hits.sort((a, b) => a.index - b.index);
-      for (const h of hits) results.push(`${prefix}${lineNum}${h.text}`);
+      for (const h of hits) {
+        const texte = fl.color ? GREP_MATCH_ON + h.text + GREP_MATCH_OFF : h.text;
+        results.push(`${prefix}${lineNum}${texte}`);
+      }
     } else {
-      results.push(`${prefix}${lineNum}${line}`);
+      // Une ligne de CONTEXTE (-A/-B) ne porte aucune correspondance :
+      // la colorer serait annoncer une trouvaille qui n'y est pas.
+      const texte = fl.color && isMatch && !fl.invert
+        ? colorierCorrespondances(line, matchers) : line;
+      results.push(`${prefix}${lineNum}${texte}`);
     }
   }
   return matchIndices.length;
@@ -950,7 +1038,9 @@ export function cmdAwk(ctx: ShellContext, args: string[], stdin?: string): strin
       ctx.vfs.writeFile(abs, prior + w.content, ctx.uid, ctx.gid, 0o022);
     }
     if (result.error) return result.error;
-    return result.output.endsWith('\n') ? result.output.slice(0, -1) : result.output;
+    // POSIX awk newline-terminates every print — keep the trailing \n so
+    // `awk … > file` produces a properly terminated text file (wc -l).
+    return result.output;
   } catch {
     const legacyVars = new Map<string, string>(Object.entries(assignments));
     return executeAwk(sources.map(s => s.content).join('\n'), program, fieldSep ?? ' ', legacyVars);

@@ -25,17 +25,26 @@
  * FD and its own FD fits within `variance × FD(successor)`, capped by
  * `maximum-paths`.
  *
- * Timing model (documented simplification): the simulator has no
- * periodic timers here — a convergence round IS the hello interval.
- * Cable delivery being synchronous, every live neighbor refreshes
- * within the round that pumps the Hellos; a neighbor that missed the
- * round is declared down (hold-time analog). `refreshFromCache()`
+ * Timing (§5.3.1): real timers, on the injected scheduler. Each active
+ * interface multicasts a Hello on its own interval (5 s by default,
+ * `ip hello-interval eigrp` overrides it), and every neighbour carries a
+ * hold timer restarted by each packet heard from it, for the duration
+ * THAT neighbour advertised — its expiry is what declares a silent peer
+ * down, with nobody at the CLI. Two events cut an adjacency without
+ * waiting out the hold time: the interface going down, and a Goodbye
+ * (§5.3.6, a Hello with hold time 0) from a peer leaving the AS.
+ *
+ * A convergence round is therefore a *triggered* update — configuration
+ * or a link event — not the protocol's clock. `refreshFromCache()`
  * recomputes routes from already-received Updates without emitting
- * frames — the data path stays quiet, like a real router between
- * hello intervals.
+ * frames, which is what a protocol packet's arrival earns.
  */
 import { IPAddress, SubnetMask } from '../core/types';
 import { Logger } from '../core/Logger';
+import { TimerSet } from '@/events/TimerSet';
+import {
+  getDefaultScheduler, defaultSchedulerGeneration_, type IScheduler,
+} from '@/events/Scheduler';
 import {
   AbstractRoutingProtocolEngine,
 } from '../routing/AbstractRoutingProtocolEngine';
@@ -48,10 +57,12 @@ import {
   type EigrpKValues,
 } from './metric';
 import {
-  EIGRP_MULTICAST_IP, EIGRP_DEFAULT_HOLD_SEC,
+  EIGRP_MULTICAST_IP, EIGRP_DEFAULT_HOLD_SEC, EIGRP_DEFAULT_HELLO_SEC,
   type EigrpWire, type EigrpPacket, type EigrpHelloPacket,
-  type EigrpUpdatePacket, type EigrpRouteTlv,
+  type EigrpUpdatePacket, type EigrpRouteTlv, type EigrpAuthTlv,
+  type EigrpStubTlv,
 } from './packets';
+import { md5Hex } from '@/crypto/hash/md5';
 
 export interface EigrpNetworkStmt {
   /** Network address as configured (classful base). */
@@ -78,6 +89,7 @@ export interface EIGRPConfig {
 export interface EigrpOriginatedPrefix {
   network: IPAddress;
   mask: SubnetMask;
+  iface?: string;
   /** Effective bandwidth (kbps) of the originating interface. */
   bandwidthKbps?: number;
   /** Delay (µs) of the originating interface. */
@@ -103,11 +115,33 @@ interface WireNeighbor {
   ip: string;
   iface: string;
   routerId?: string;
+  /**
+   * Hold time THIS neighbour advertised in its last Hello (§5.3.1). It is
+   * the neighbour's value, not ours: RFC 7868 has each router tell its
+   * peers how long to wait before giving up on it, so two ends of a link
+   * may legitimately run different hold times.
+   */
   holdTimeSec: number;
   /** Convergence round of the last Hello heard (liveness). */
   lastSeenRound: number;
+  /** Hold timer token — expiry declares this neighbour down (§5.3.1). */
+  holdTimer: symbol | null;
   /** Last full Update received from this neighbor (replace semantics). */
   advertised: EigrpRouteTlv[];
+  stub?: EigrpStubTlv;
+}
+
+export interface EigrpInterfaceAuth {
+  mode: 'md5' | 'none';
+  keyChain?: string;
+}
+
+export interface EigrpStubConfig {
+  connected: boolean;
+  summary: boolean;
+  staticRoutes: boolean;
+  redistributed: boolean;
+  receiveOnly: boolean;
 }
 
 function toNum(ip: string): number {
@@ -142,9 +176,16 @@ function statementCovers(stmt: EigrpNetworkStmt, localIp: string): boolean {
 /** Topology-table entry surfaced by `show ip eigrp topology`. */
 export interface EigrpTopoEntry {
   fd: number;
+  successorRd: number;
   successorNextHop: IPAddress | null;
   successorIface: string;
   feasibleSuccessors: Array<{
+    nextHop: IPAddress | null;
+    iface: string;
+    rd: number;
+    metric: number;
+  }>;
+  rejectedPaths: Array<{
     nextHop: IPAddress | null;
     iface: string;
     rd: number;
@@ -158,8 +199,47 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
 
   private wire: EigrpWire | null = null;
   private wireNeighbors = new Map<string, WireNeighbor>();
-  /** Monotonic convergence-round counter (the hello-interval analog). */
+  /** Monotonic convergence-round counter (kept for triggered rounds). */
   private round = 0;
+
+  // ── Timers (RFC 7868 §5.3.1) ───────────────────────────────────────
+  private schedulerOverride: IScheduler | null = null;
+  /** Inject a scheduler (virtual time in tests, real time in the app). */
+  setScheduler(scheduler: IScheduler | null): void {
+    this.schedulerOverride = scheduler;
+    if (this.isEnabled()) this.armHelloTimers();
+  }
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+
+  private schedulerGeneration = defaultSchedulerGeneration_();
+
+  private checkSchedulerGeneration(): void {
+    if (this.schedulerOverride) return;
+    const g = defaultSchedulerGeneration_();
+    if (g === this.schedulerGeneration) return;
+    this.schedulerGeneration = g;
+    this.helloTimers.clear();
+    if (!this.isEnabled()) return;
+    this.armHelloTimers();
+    for (const n of this.wireNeighbors.values()) {
+      n.holdTimer = null;
+      this.rearmHoldTimer(n);
+    }
+  }
+  private readonly timers = new TimerSet(() => this.getScheduler());
+  /** One Hello timer per active interface — the interval is per-interface. */
+  private helloTimers = new Map<string, symbol>();
+  /** Per-interface `ip hello-interval` / `ip hold-time` overrides. */
+  private readonly ifaceTiming = new Map<string, { helloSec?: number; holdSec?: number }>();
+  /**
+   * Device hook: a neighbour lost to its hold timer changes the routes we
+   * contribute, and that has to reach the Router RIB — nobody is running
+   * a CLI command at that moment. BGP has the same seam (`setOnRibChange`).
+   */
+  private onNeighborChange: (() => void) | null = null;
+  setOnNeighborChange(cb: () => void): void { this.onNeighborChange = cb; }
   /** Re-entrancy guard: a multicast Hello received mid-round must not
    *  restart the round (the wire is synchronous). */
   private converging = false;
@@ -181,8 +261,83 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
 
   get asn(): number { return this.config.asn; }
 
+  effectiveRouterId(): string {
+    if (this.config.routerId) return this.config.routerId;
+    const connected = this.deviceCtx.connectedNetworks();
+    const highest = (list: ConnectedNetwork[]): string | undefined =>
+      list.map((c) => String(c.localIp))
+        .sort((a, b) => toNum(b) - toNum(a))[0];
+    return highest(connected.filter((c) => /^Loopback/i.test(c.iface)))
+      ?? highest(connected)
+      ?? '0.0.0.0';
+  }
+
   /** Inject the frame transport (device integration responsibility). */
   setWire(wire: EigrpWire): void { this.wire = wire; }
+
+  /**
+   * Compteurs de paquets, alimentés aux points d'émission et de
+   * réception réels. `show ip eigrp traffic` les lit ; ils ne sont donc
+   * pas une décoration mais une mesure.
+   *
+   * Query/Reply/SIA restent structurellement à zéro et c'est un FAIT,
+   * pas un trou : ce moteur n'a pas d'état Active et n'émet donc jamais
+   * de requête diffusée (voir l'en-tête du moteur et `CLAUDE.md`). Les
+   * afficher à zéro dit la vérité ; les omettre laisserait croire que le
+   * compteur existe ailleurs.
+   */
+  readonly traffic = {
+    helloSent: 0, helloRcvd: 0,
+    updateSent: 0, updateRcvd: 0,
+    querySent: 0, queryRcvd: 0,
+    replySent: 0, replyRcvd: 0,
+    ackSent: 0, ackRcvd: 0,
+  };
+
+  /**
+   * `clear ip eigrp neighbors` : jette les adjacences pour qu'elles se
+   * reforment. La table de topologie apprise est vidée avec elles —
+   * garder des routes d'un voisin qu'on vient de rejeter serait
+   * incohérent.
+   */
+  clearNeighbors(): void {
+    for (const n of this.wireNeighbors.values()) {
+      this.timers.clear(n.holdTimer);
+      Logger.info(this.deviceId, 'eigrp:neighbor-cleared',
+        this.nbrChangeMessage(n, 'is down: manually cleared'));
+    }
+    this.wireNeighbors.clear();
+    super.converge();
+  }
+
+  private readonly perInterfaceStats = new Map<string, {
+    helloSent: number; updateSent: number;
+    mcastSent: number; ucastSent: number;
+  }>();
+
+  getInterfaceTraffic(iface: string): {
+    helloSent: number; updateSent: number; mcastSent: number; ucastSent: number;
+  } {
+    return this.perInterfaceStats.get(iface)
+      ?? { helloSent: 0, updateSent: 0, mcastSent: 0, ucastSent: 0 };
+  }
+
+  private countOnInterface(iface: string, what: 'hello' | 'update', destIp: string): void {
+    let s = this.perInterfaceStats.get(iface);
+    if (!s) {
+      s = { helloSent: 0, updateSent: 0, mcastSent: 0, ucastSent: 0 };
+      this.perInterfaceStats.set(iface, s);
+    }
+    if (what === 'hello') s.helloSent++; else s.updateSent++;
+    if (destIp === EIGRP_MULTICAST_IP) s.mcastSent++; else s.ucastSent++;
+  }
+
+  resetTraffic(): void {
+    this.perInterfaceStats.clear();
+    for (const k of Object.keys(this.traffic) as Array<keyof typeof this.traffic>) {
+      this.traffic[k] = 0;
+    }
+  }
 
   setRedistribution(source: 'static' | 'connected' | 'rip' | 'ospf' | 'bgp'): void {
     this.config.redistributeSources.add(source);
@@ -202,11 +357,13 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       if (activated) {
         out.push({
           network: c.network, mask: c.mask,
+          iface: c.iface,
           bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
         });
       } else if (this.config.redistributeSources.has('connected')) {
         out.push({
           network: c.network, mask: c.mask,
+          iface: c.iface,
           bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
           external: true,
         });
@@ -240,14 +397,252 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       this.config.networks.some((s) => statementCovers(s, String(c.localIp))));
   }
 
-  private helloPacket(): EigrpHelloPacket {
+  private helloPacket(iface?: string): EigrpHelloPacket {
     return {
       type: 'eigrp', opcode: 'hello',
       asn: this.config.asn,
       kValues: { ...this.config.kValues },
-      holdTimeSec: EIGRP_DEFAULT_HOLD_SEC,
-      routerId: this.config.routerId,
+      // What we advertise is OUR hold time on THIS interface — the peer
+      // will use it to decide how long to wait for us (§5.3.1).
+      holdTimeSec: this.holdSecFor(iface),
+      routerId: this.effectiveRouterId(),
+      auth: this.authFor(iface),
+      stub: this.stubTlv(),
     };
+  }
+
+  // ── Hello / hold timers (RFC 7868 §5.3.1) ──────────────────────────
+
+  /**
+   * `ip hello-interval eigrp <as> <sec>` / `ip hold-time eigrp <as> <sec>`.
+   * IOS keeps the two independent: raising the Hello interval does NOT
+   * raise the hold time, which is precisely how a misconfiguration takes
+   * an adjacency down, so this stores exactly what it is told.
+   */
+  setInterfaceTiming(iface: string, timing: { helloSec?: number; holdSec?: number }): void {
+    const cur = this.ifaceTiming.get(iface) ?? {};
+    if (timing.helloSec !== undefined) cur.helloSec = timing.helloSec;
+    if (timing.holdSec !== undefined) cur.holdSec = timing.holdSec;
+    this.ifaceTiming.set(iface, cur);
+    if (this.isEnabled()) this.armHelloTimers();
+  }
+
+  getInterfaceTiming(iface: string): { helloSec: number; holdSec: number } {
+    return { helloSec: this.helloSecFor(iface), holdSec: this.holdSecFor(iface) };
+  }
+
+
+  private readonly ifaceAuth = new Map<string, EigrpInterfaceAuth>();
+  private keyResolver: ((chain: string) => { id: number; secret: string } | null) | null = null;
+
+  setKeyResolver(fn: ((chain: string) => { id: number; secret: string } | null) | null): void {
+    this.keyResolver = fn;
+  }
+
+  setInterfaceAuth(iface: string, auth: Partial<EigrpInterfaceAuth> | null): void {
+    if (auth === null) { this.ifaceAuth.delete(iface); return; }
+    const cur = this.ifaceAuth.get(iface) ?? { mode: 'none' as const };
+    this.ifaceAuth.set(iface, {
+      mode: auth.mode ?? cur.mode,
+      keyChain: auth.keyChain ?? cur.keyChain,
+    });
+  }
+
+  getInterfaceAuth(iface: string): EigrpInterfaceAuth | undefined {
+    return this.ifaceAuth.get(iface);
+  }
+
+  private authFor(iface?: string): EigrpAuthTlv | undefined {
+    if (!iface) return undefined;
+    const cfg = this.ifaceAuth.get(iface);
+    if (!cfg || cfg.mode !== 'md5' || !cfg.keyChain) return undefined;
+    const key = this.keyResolver?.(cfg.keyChain);
+    if (!key) return undefined;
+    return {
+      type: 'md5', keyId: key.id,
+      digest: md5Hex(`${this.config.asn}|${key.id}|${key.secret}`),
+    };
+  }
+
+  private authAccepts(iface: string, received: EigrpAuthTlv | undefined): boolean {
+    const expected = this.authFor(iface);
+    const protected_ = this.ifaceAuth.get(iface)?.mode === 'md5';
+    if (!protected_) return received === undefined;
+    if (!received || !expected) return false;
+    return received.keyId === expected.keyId && received.digest === expected.digest;
+  }
+
+
+  private stub: EigrpStubConfig | null = null;
+
+  setStub(cfg: EigrpStubConfig | null): void {
+    this.stub = cfg;
+    if (this.isEnabled()) this.converge();
+  }
+
+  getStub(): EigrpStubConfig | null { return this.stub; }
+
+  getNeighborStub(ip: string): EigrpStubTlv | undefined {
+    for (const n of this.wireNeighbors.values()) {
+      if (n.ip === ip) return n.stub;
+    }
+    return undefined;
+  }
+
+  getNeighborDetails(): Array<{
+    ip: string; iface: string; routerId?: string;
+    holdTimeSec: number; stub?: EigrpStubTlv;
+  }> {
+    return [...this.wireNeighbors.values()].map((n) => ({
+      ip: n.ip, iface: n.iface, routerId: n.routerId,
+      holdTimeSec: n.holdTimeSec, stub: n.stub,
+    }));
+  }
+
+  getInterfaceStates(): Array<{
+    iface: string; peers: number; helloSec: number; holdSec: number;
+    authMode: 'md5' | 'none'; keyChain?: string;
+  }> {
+    return this.activeInterfaces().map((c) => ({
+      iface: c.iface,
+      peers: [...this.wireNeighbors.values()]
+        .filter((n) => n.iface === c.iface).length,
+      helloSec: this.helloSecFor(c.iface),
+      holdSec: this.holdSecFor(c.iface),
+      authMode: this.ifaceAuth.get(c.iface)?.mode ?? 'none',
+      keyChain: this.ifaceAuth.get(c.iface)?.keyChain,
+    }));
+  }
+
+  private stubTlv(): EigrpStubTlv | undefined {
+    if (!this.stub) return undefined;
+    return {
+      connected: this.stub.connected, summary: this.stub.summary,
+      staticRoutes: this.stub.staticRoutes,
+      redistributed: this.stub.redistributed,
+      receiveOnly: this.stub.receiveOnly,
+    };
+  }
+
+  private nbrChangeMessage(n: { ip: string; iface: string }, rest: string): string {
+    return `%DUAL-5-NBRCHANGE: EIGRP-IPv4 ${this.config.asn}: `
+      + `Neighbor ${n.ip} (${n.iface}) ${rest}`;
+  }
+
+  private helloSecFor(iface?: string): number {
+    return (iface ? this.ifaceTiming.get(iface)?.helloSec : undefined)
+      ?? EIGRP_DEFAULT_HELLO_SEC;
+  }
+
+  private holdSecFor(iface?: string): number {
+    return (iface ? this.ifaceTiming.get(iface)?.holdSec : undefined)
+      ?? EIGRP_DEFAULT_HOLD_SEC;
+  }
+
+  /**
+   * One recurring Hello per active interface, at that interface's own
+   * interval. Re-armed whenever the set of active interfaces or their
+   * timings change; interfaces that dropped out lose their timer.
+   */
+  private armHelloTimers(): void {
+    const active = new Set(this.activeInterfaces().map((c) => c.iface));
+    for (const [iface, token] of [...this.helloTimers]) {
+      if (!active.has(iface)) {
+        this.timers.clear(token);
+        this.helloTimers.delete(iface);
+      }
+    }
+    for (const iface of active) {
+      // Re-arm unconditionally so an interval change takes effect; a
+      // no-op re-arm just restarts the period, as IOS does on config.
+      this.timers.clear(this.helloTimers.get(iface));
+      this.helloTimers.set(iface, this.timers.setInterval(
+        () => this.sendPeriodicHello(iface),
+        this.helloSecFor(iface) * 1000,
+      ));
+    }
+  }
+
+  private clearHelloTimers(): void {
+    for (const token of this.helloTimers.values()) this.timers.clear(token);
+    this.helloTimers.clear();
+  }
+
+  /** The periodic Hello itself — discovery and liveness, nothing else. */
+  private sendPeriodicHello(iface: string): void {
+    if (!this.isEnabled() || !this.wire) return;
+    if (!this.activeInterfaces().some((c) => c.iface === iface)) return;
+    this.wire.send(iface, EIGRP_MULTICAST_IP, this.helloPacket(iface));
+    this.traffic.helloSent++;
+    this.countOnInterface(iface, 'hello', EIGRP_MULTICAST_IP);
+  }
+
+  /**
+   * (Re)start a neighbour's hold timer on every packet heard from it,
+   * for the duration IT advertised. Expiry is the only thing that
+   * declares a silent neighbour down — no CLI command required.
+   */
+  private rearmHoldTimer(n: WireNeighbor): void {
+    this.timers.clear(n.holdTimer);
+    n.holdTimer = this.timers.setTimeout(
+      () => this.holdTimerExpired(n),
+      Math.max(1, n.holdTimeSec) * 1000,
+    );
+  }
+
+  private holdTimerExpired(n: WireNeighbor): void {
+    const key = `${n.ip}%${n.iface}`;
+    if (this.wireNeighbors.get(key) !== n) return;   // already replaced
+    n.holdTimer = null;
+    Logger.warn(this.deviceId, 'eigrp:hold-expired',
+      this.nbrChangeMessage(n, 'is down: holding time expired'));
+    this.dropNeighbor(n);
+    this.recomputeAfterNeighborChange();
+  }
+
+  /**
+   * An interface going down declares its neighbours down at once — a real
+   * router does not sit on a dead link waiting for the hold time to run
+   * out (`%DUAL-5-NBRCHANGE … is down: interface down`).
+   */
+  onInterfaceDown(iface: string): void {
+    let lost = false;
+    for (const n of [...this.wireNeighbors.values()]) {
+      if (n.iface !== iface) continue;
+      Logger.warn(this.deviceId, 'eigrp:iface-down',
+        this.nbrChangeMessage(n, 'is down: interface down'));
+      this.dropNeighbor(n);
+      lost = true;
+    }
+    this.timers.clear(this.helloTimers.get(iface));
+    this.helloTimers.delete(iface);
+    if (lost) this.recomputeAfterNeighborChange();
+  }
+
+  onInterfacePassive(iface: string): void {
+    let perdu = false;
+    for (const n of [...this.wireNeighbors.values()]) {
+      if (n.iface !== iface) continue;
+      this.timers.clear(n.holdTimer);
+      Logger.warn(this.deviceId, 'eigrp:iface-passive',
+        this.nbrChangeMessage(n, 'is down: interface passive'));
+      this.dropNeighbor(n);
+      perdu = true;
+    }
+    this.timers.clear(this.helloTimers.get(iface));
+    this.helloTimers.delete(iface);
+    if (perdu) this.recomputeAfterNeighborChange();
+  }
+
+  /**
+   * Recompute from the current neighbour set and let the device reprogram
+   * the RIB. Called whenever an adjacency comes up or goes down outside a
+   * convergence round — a hold timer firing, a Goodbye landing, an
+   * interface dropping — because none of those has anyone at the CLI.
+   */
+  private recomputeAfterNeighborChange(): void {
+    this.refreshFromCache();
+    this.onNeighborChange?.();
   }
 
   /**
@@ -258,13 +653,16 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * this very call — the round is self-sufficient.
    */
   override converge(): void {
+    this.checkSchedulerGeneration();
     if (this.converging) return;
     if (!this.isEnabled() || !this.wire) { super.converge(); return; }
     this.converging = true;
     try {
       this.round += 1;
       for (const c of this.activeInterfaces()) {
-        this.wire.send(c.iface, EIGRP_MULTICAST_IP, this.helloPacket());
+        this.wire.send(c.iface, EIGRP_MULTICAST_IP, this.helloPacket(c.iface));
+        this.traffic.helloSent++;
+        this.countOnInterface(c.iface, 'hello', EIGRP_MULTICAST_IP);
       }
       super.converge();
     } finally {
@@ -279,6 +677,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * additionally skips routes through disconnected ports (Router FIB).
    */
   refreshFromCache(): void {
+    this.checkSchedulerGeneration();
     if (this.converging) return;
     this.converging = true;
     this.cacheOnly = true;
@@ -290,10 +689,46 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     }
   }
 
+  override enable(config?: Partial<EIGRPConfig>): void {
+    super.enable(config);
+    this.armHelloTimers();
+  }
+
   override disable(): void {
+    this.sendGoodbye();
+    this.clearHelloTimers();
+    for (const n of this.wireNeighbors.values()) this.timers.clear(n.holdTimer);
     this.wireNeighbors.clear();
     this.topo = new Map();
     super.disable();
+  }
+
+  /**
+   * Goodbye message (RFC 7868 §5.3.6): a router leaving the AS announces
+   * it with a Hello carrying hold time 0, so its peers tear the adjacency
+   * down at once instead of waiting out the hold time. IOS logs the other
+   * side as `is down: Interface Goodbye received`. Without it, an
+   * operator typing `no router eigrp` would leave every peer routing
+   * through a ghost for the next fifteen seconds.
+   */
+  private sendGoodbye(): void {
+    if (!this.isEnabled() || !this.wire) return;
+    for (const c of this.activeInterfaces()) {
+      this.wire.send(c.iface, EIGRP_MULTICAST_IP,
+        { ...this.helloPacket(c.iface), holdTimeSec: 0 });
+      this.traffic.helloSent++;
+    }
+  }
+
+  /**
+   * Release every timer this engine owns. The device calls it when the
+   * router is powered off or torn down: a Hello timer outliving its
+   * router would keep multicasting from a machine that no longer exists.
+   */
+  shutdownTimers(): void {
+    this.timers.clearAll();
+    this.helloTimers.clear();
+    for (const n of this.wireNeighbors.values()) n.holdTimer = null;
   }
 
   /**
@@ -302,6 +737,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    */
   processPacket(iface: string, srcIp: string, packet: EigrpPacket,
     multicast: boolean): void {
+    this.checkSchedulerGeneration();
     if (!this.isEnabled() || !this.wire) return;
     // A different AS number is a different EIGRP process — the packet
     // is simply not for us (no adjacency, like real IOS).
@@ -309,12 +745,53 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     // IOS ignores EIGRP packets on passive / non-activated interfaces.
     const local = this.activeInterfaces().find((c) => c.iface === iface);
     if (!local) return;
-    if (packet.opcode === 'hello') this.onHello(iface, srcIp, packet, multicast);
-    else this.onUpdate(iface, srcIp, packet);
+    if (!this.authAccepts(iface, packet.auth)) {
+      const stale = this.wireNeighbors.get(`${srcIp}%${iface}`);
+      Logger.warn(this.deviceId, 'eigrp:auth-failure',
+        this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: Auth failure'));
+      if (stale) { this.dropNeighbor(stale); this.recomputeAfterNeighborChange(); }
+      return;
+    }
+    if (!this.onSameSubnet(local, srcIp)) {
+      Logger.warn(this.deviceId, 'eigrp:not-common-subnet',
+        `%DUAL-6-NBRINFO: EIGRP-IPv4 ${this.config.asn}: Neighbor ${srcIp} `
+        + `not on common subnet for ${iface}`);
+      return;
+    }
+    if (packet.opcode === 'hello') {
+      this.traffic.helloRcvd++;
+      this.onHello(iface, srcIp, packet, multicast);
+    } else {
+      this.traffic.updateRcvd++;
+      this.onUpdate(iface, srcIp, packet);
+    }
+  }
+
+  private onSameSubnet(local: ConnectedNetwork, srcIp: string): boolean {
+    const peer = toNum(srcIp);
+    const us = toNum(String(local.localIp));
+    if (peer < 0 || us < 0) return true;
+    const octets = local.mask.getOctets();
+    const mask = ((octets[0] << 24) | (octets[1] << 16)
+      | (octets[2] << 8) | octets[3]) >>> 0;
+    return ((peer & mask) >>> 0) === ((us & mask) >>> 0);
   }
 
   private onHello(iface: string, srcIp: string, hello: EigrpHelloPacket,
     multicast: boolean): void {
+    // Goodbye (§5.3.6): a Hello with hold time 0 says the sender is
+    // leaving. Tear the adjacency down now rather than holding a route
+    // through it until the hold timer runs out.
+    if (hello.holdTimeSec === 0) {
+      const leaving = this.wireNeighbors.get(`${srcIp}%${iface}`);
+      if (leaving) {
+        Logger.warn(this.deviceId, 'eigrp:goodbye',
+          this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: Interface Goodbye received'));
+        this.dropNeighbor(leaving);
+        this.recomputeAfterNeighborChange();
+      }
+      return;
+    }
     // RFC 7868 §5.4 — mismatched K values block the adjacency. Real
     // IOS logs '%DUAL-5-NBRCHANGE … K-value mismatch' on receipt
     // instead of hiding the neighbour silently — make it diagnosable.
@@ -330,14 +807,14 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
           localK: { ...this.config.kValues },
           peerK: { ...hello.kValues },
         },
-      } as never);
+      });
       Logger.warn(this.deviceId, 'eigrp:k-mismatch',
-        `EIGRP-IPv4 ${this.config.asn}: Neighbor ${srcIp} (${iface}) is down: K-value mismatch`);
+        this.nbrChangeMessage({ ip: srcIp, iface }, 'is down: K-value mismatch'));
       const stale = this.wireNeighbors.get(`${srcIp}%${iface}`);
       if (stale) this.dropNeighbor(stale);
       // A real router keeps multicasting its own Hellos regardless —
       // answer so the peer can diagnose the mismatch on ITS side too.
-      if (multicast) this.wire!.send(iface, srcIp, this.helloPacket());
+      if (multicast) { this.wire!.send(iface, srcIp, this.helloPacket(iface)); this.traffic.helloSent++; this.countOnInterface(iface, 'hello', srcIp); }
       return;
     }
 
@@ -347,14 +824,27 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       known.lastSeenRound = Math.max(known.lastSeenRound, this.round);
       known.holdTimeSec = hello.holdTimeSec;
       if (hello.routerId) known.routerId = hello.routerId;
+      known.stub = hello.stub;
+      this.rearmHoldTimer(known);
     } else {
-      this.wireNeighbors.set(key, {
+      const fresh: WireNeighbor = {
         ip: srcIp, iface,
         routerId: hello.routerId,
         holdTimeSec: hello.holdTimeSec,
         lastSeenRound: this.round,
+        holdTimer: null,
         advertised: [],
-      });
+        stub: hello.stub,
+      };
+      this.wireNeighbors.set(key, fresh);
+      this.rearmHoldTimer(fresh);
+      Logger.info(this.deviceId, 'eigrp:neighbor-up',
+        this.nbrChangeMessage(fresh, 'is up: new adjacency'));
+      // An adjacency coming up is visible at once — `show ip eigrp
+      // neighbors` on a real router lists a peer the moment its Hello
+      // arrives, not after the next recompute happens to run. Guarded:
+      // a no-op while we are already inside a convergence round.
+      this.recomputeAfterNeighborChange();
     }
 
     if (multicast) {
@@ -363,8 +853,12 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       // so the Update we answer with carries a complete topology.
       // Guarded — a no-op when we are the one pumping this round.
       this.converge();
-      this.wire!.send(iface, srcIp, this.helloPacket());
+      this.wire!.send(iface, srcIp, this.helloPacket(iface));
+      this.traffic.helloSent++;
+      this.countOnInterface(iface, 'hello', srcIp);
       this.wire!.send(iface, srcIp, this.buildUpdate(iface));
+      this.traffic.updateSent++;
+      this.countOnInterface(iface, 'update', srcIp);
     }
   }
 
@@ -373,6 +867,8 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     const known = this.wireNeighbors.get(`${srcIp}%${iface}`);
     if (!known) return;
     known.advertised = [...update.routes];
+    // Any packet from a neighbour proves it is alive, not just a Hello.
+    this.rearmHoldTimer(known);
   }
 
   /**
@@ -405,6 +901,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     }
     return {
       type: 'eigrp', opcode: 'update', asn: this.config.asn, routes,
+      auth: this.authFor(egressIface),
     };
   }
 
@@ -472,20 +969,18 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         oldState: 'Up', newState: 'Down',
         asn: this.config.asn,
       },
-    } as never);
+    });
   }
 
   // ── Template-method hooks (driven by wire state, not peer objects) ──
 
   protected computeNeighbors(_peers: RoutingPeer[]): void {
-    if (!this.cacheOnly) {
-      // Hold-time analog: a neighbor that did not refresh during this
-      // round's Hello exchange is gone (cut cable, downed port,
-      // powered-off or unconfigured peer).
-      for (const n of [...this.wireNeighbors.values()]) {
-        if (n.lastSeenRound < this.round) this.dropNeighbor(n);
-      }
-    }
+    // Liveness is not decided here any more. A neighbour goes away when
+    // its hold timer expires (§5.3.1) or when the interface carrying it
+    // goes down — never because a convergence round happened to run and
+    // it had not answered within that same synchronous call. That
+    // round-counter rule declared a perfectly live neighbour down the
+    // moment anything converged twice without it replying in between.
     const previousIds = new Set(this.neighbors.view().map((v) => v.id));
     const keep = new Set<string>();
     for (const n of this.wireNeighbors.values()) {
@@ -502,7 +997,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
             oldState: 'Down', newState: 'Up',
             asn: this.config.asn,
           },
-        } as never);
+        });
       }
     }
     this.neighbors.retainOnly(keep);
@@ -572,10 +1067,17 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         `${successor.route.network}/${successor.route.mask.toCIDR()}`;
       newTopo.set(displayKey, {
         fd: successor.fd,
+        successorRd: successor.rd,
         successorNextHop: successor.route.nextHop,
         successorIface: successor.route.iface,
         feasibleSuccessors: group.slice(1)
           .filter((p) => p.rd < successor.fd)
+          .map((p) => ({
+            nextHop: p.route.nextHop, iface: p.route.iface,
+            rd: p.rd, metric: p.fd,
+          })),
+        rejectedPaths: group.slice(1)
+          .filter((p) => p.rd >= successor.fd)
           .map((p) => ({
             nextHop: p.route.nextHop, iface: p.route.iface,
             rd: p.rd, metric: p.fd,

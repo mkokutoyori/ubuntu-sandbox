@@ -34,10 +34,13 @@ describe('Huawei VRP vty session isolation', () => {
     manager = new TerminalManager(bus);
     router = new HuaweiRouter('R1');
     router.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<HuaweiTerminalSession> {
-    const sid = manager.openTerminal(router)!;
+    const sid = manager.openTerminal(router, opened++ === 0 ? 'console' : 'vty')!;
     const session = manager.getSession(sid) as HuaweiTerminalSession;
     await waitBoot(session);
     return session;

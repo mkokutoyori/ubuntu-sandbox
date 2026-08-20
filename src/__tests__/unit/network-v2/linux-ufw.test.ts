@@ -1128,10 +1128,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw allow from 10.0.0.0/24');
       await srv.executeCommand('ufw enable');
 
-      // Different subnet, no route, should fail
+      // Different subnet, no route — real Linux fails immediately at
+      // connect() time, before ever reaching the firewall on the peer.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      // Even if the packet arrives, firewall should block it
-      expect(result).toContain('0 received');
+      expect(result).toContain('Network is unreachable');
     });
 
     it('should respect first-match wins: deny before allow', async () => {
@@ -1206,9 +1206,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw default reject incoming');
       await srv.executeCommand('ufw enable');
 
-      // Ping should fail fast with "Destination Host Unreachable" instead of timeout
+      // Ping should fail fast with an ICMP unreachable instead of timeout —
+      // ufw's default-reject policy explicitly uses icmp-port-unreachable.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('Destination Port Unreachable');
       expect(result).toContain('0 received');
     });
 
@@ -1221,8 +1222,10 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       await srv.executeCommand('ufw reject from 10.0.0.1');
       await srv.executeCommand('ufw enable');
 
+      // Bare reject (no explicit icmp type) defaults to
+      // icmp-port-unreachable, exactly like real iptables REJECT.
       const result = await pc.executeCommand('ping -c 1 10.0.0.2');
-      expect(result).toContain('Destination Host Unreachable');
+      expect(result).toContain('Destination Port Unreachable');
       expect(result).toContain('0 received');
     });
   });
@@ -1317,7 +1320,8 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
       fw.execute(['limit', '22/tcp']);
       fw.execute(['enable']);
 
@@ -1334,7 +1338,8 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
       fw.execute(['limit', '22/tcp']);
       fw.execute(['enable']);
 
@@ -1357,7 +1362,8 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
       fw.execute(['limit', '22/tcp']);
       fw.execute(['enable']);
 
@@ -1395,96 +1401,117 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(status).toContain('22/tcp (v6)');
     });
 
-    it('should apply default deny policy via iptables when ufw enabled', async () => {
+    it('should apply default deny policy on real IPv6 packets, not just v4 (PRD-Iptables-UFW.md Phase 4)', async () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
       fw.execute(['enable']);
 
-      // Default deny incoming — packet should be dropped via iptables INPUT policy DROP
-      const result = ipt.filterPacket({
-        direction: 'in',
-        protocol: 6, // TCP
-        srcIP: '10.0.0.1',
-        dstIP: '10.0.0.2',
-        srcPort: 12345,
-        dstPort: 80,
-        iface: 'eth0',
+      // Default deny incoming — an IPv6 TCP packet should be dropped via
+      // ip6tables INPUT policy DROP, exactly like the v4 one.
+      const v4Result = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
       });
-      expect(result).toBe('drop');
+      const v6Result = ip6t.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: 'fd00::2', dstIP: 'fd00::1',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
+      });
+      expect(v4Result).toBe('drop');
+      expect(v6Result).toBe('drop');
     });
 
-    it('should allow packet matching ufw allow rule via iptables', async () => {
+    it('a "ufw allow" rule is really injected into ip6tables, not just displayed with a (v6) tag', async () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
-      fw.execute(['allow', '80/tcp']); // adds v4 and v6 rule
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
+      fw.execute(['allow', '80/tcp']); // adds a v4 rule + a real v6 rule
       fw.execute(['enable']);
 
-      // TCP packet to port 80 should be allowed via iptables ufw-user-input chain
-      const result = ipt.filterPacket({
-        direction: 'in',
-        protocol: 6,
-        srcIP: '10.0.0.1',
-        dstIP: '10.0.0.2',
-        srcPort: 12345,
-        dstPort: 80,
-        iface: 'eth0',
+      // The v6 rule must actually be present in the live ip6tables engine.
+      const rendered = ip6t.execute(['-S', 'ufw-user-input']).output;
+      expect(rendered).toContain('--dport 80');
+
+      const v4Result = ipt.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
       });
-      expect(result).toBe('accept');
+      const v6Result = ip6t.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: 'fd00::2', dstIP: 'fd00::1',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
+      });
+      expect(v4Result).toBe('accept');
+      expect(v6Result).toBe('accept');
     });
 
-    it('should not match rules from other protocols', async () => {
+    it('a rule scoped to a literal IPv4 source has no v6 counterpart at all', async () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
-      // Add rule from specific IPv4 → allows TCP port 80 from 10.0.0.1
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
+      // Add rule from specific IPv4 → allows TCP port 80 from 10.0.0.1 only;
+      // no v6 duplicate is created since the source is IPv4-specific.
       fw.execute(['allow', 'from', '10.0.0.1', 'to', 'any', 'port', '80']);
       fw.execute(['enable']);
 
-      // UDP packet to port 80 from a different source → should be dropped by default policy
-      const result = ipt.filterPacket({
-        direction: 'in',
-        protocol: 17, // UDP
-        srcIP: '192.168.1.1',
-        dstIP: '10.0.0.2',
-        srcPort: 12345,
-        dstPort: 80,
-        iface: 'eth0',
+      // UDP packet to port 80 from a different v4 source → dropped by default policy
+      const v4Result = ipt.filterPacket({
+        direction: 'in', protocol: 17,
+        srcIP: '192.168.1.1', dstIP: '10.0.0.2',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
       });
-      expect(result).toBe('drop');
+      expect(v4Result).toBe('drop');
+
+      // No v6 rule was ever created for this IPv4-scoped source, so any v6
+      // TCP/80 traffic falls through to the default deny policy too.
+      const v6Result = ip6t.filterPacket({
+        direction: 'in', protocol: 6,
+        srcIP: 'fd00::2', dstIP: 'fd00::1',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
+      });
+      expect(v6Result).toBe('drop');
     });
 
-    it('should drop after rule deleted via iptables', async () => {
+    it('should drop after rule deleted via iptables, on both v4 and v6', async () => {
       const { LinuxIptablesManager } = await import('@/network/devices/linux/LinuxIptablesManager');
       const { LinuxFirewallManager } = await import('@/network/devices/linux/LinuxFirewallManager');
       const ipt = new LinuxIptablesManager();
-      const fw = new LinuxFirewallManager(undefined, ipt);
+      const ip6t = new LinuxIptablesManager(undefined, undefined, { family: 6 });
+      const fw = new LinuxFirewallManager(undefined, ipt, ip6t);
       // allow 80/tcp → creates v4 rule + v6 rule
       fw.execute(['allow', '80/tcp']);
       fw.execute(['enable']);
 
-      // Verify it's allowed first
-      const allowed = ipt.filterPacket({
-        direction: 'in', protocol: 6,
+      const v4Packet = {
+        direction: 'in' as const, protocol: 6,
         srcIP: '10.0.0.1', dstIP: '10.0.0.2',
         srcPort: 12345, dstPort: 80, iface: 'eth0',
-      });
-      expect(allowed).toBe('accept');
+      };
+      const v6Packet = {
+        direction: 'in' as const, protocol: 6,
+        srcIP: 'fd00::2', dstIP: 'fd00::1',
+        srcPort: 12345, dstPort: 80, iface: 'eth0',
+      };
 
-      // Delete the rule via UFW
+      // Verify both are allowed first
+      expect(ipt.filterPacket(v4Packet)).toBe('accept');
+      expect(ip6t.filterPacket(v6Packet)).toBe('accept');
+
+      // Delete the rule via UFW — removes the v4 rule and its v6 counterpart
       fw.execute(['delete', 'allow', '80/tcp']);
 
-      // Now it should be dropped (iptables rules rebuilt)
-      const result = ipt.filterPacket({
-        direction: 'in', protocol: 6,
-        srcIP: '10.0.0.1', dstIP: '10.0.0.2',
-        srcPort: 12345, dstPort: 80, iface: 'eth0',
-      });
-      expect(result).toBe('drop');
+      // Now both should be dropped (both engines' rules rebuilt)
+      expect(ipt.filterPacket(v4Packet)).toBe('drop');
+      expect(ip6t.filterPacket(v6Packet)).toBe('drop');
     });
   });
 

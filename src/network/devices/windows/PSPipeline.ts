@@ -15,9 +15,11 @@
  *   formatter) converts back to a display string.
  */
 
+import { formatTimeSpanValue } from '@/powershell/runtime/PSExpansion';
+
 // ─── Core types ──────────────────────────────────────────────────
 
-export type PSValue = string | number | boolean | null;
+export type PSValue = string | number | boolean | null | Date;
 
 export interface PSObject {
   [key: string]: PSValue;
@@ -577,6 +579,13 @@ export function renderPSCellValue(value: unknown): string {
     const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
     return `${m}/${d}/${y} ${h12}:${String(min).padStart(2, '0')} ${tt}`;
   }
+  // A `New-TimeSpan`/`Get-Date` subtraction result — render with real
+  // .NET `TimeSpan.ToString()` formatting (`d.hh:mm:ss`) rather than the
+  // generic `Key=Value; ...` fallback below.
+  if (typeof value === 'object' && value !== null && (value as Record<string, unknown>).__type === 'TimeSpan'
+      && typeof (value as Record<string, unknown>).TotalMilliseconds === 'number') {
+    return formatTimeSpanValue((value as Record<string, unknown>).TotalMilliseconds as number);
+  }
   // Plain objects in a cell render as `Key=Value; ...` so users see the
   // shape rather than `[object Object]`. Real PowerShell shows the type
   // name (e.g. `MSFT_NetAdapter`); without ETS metadata we fall back to
@@ -591,6 +600,10 @@ export function renderPSCellValue(value: unknown): string {
 function renderObjectShort(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (Array.isArray(value)) return `{${value.map(v => renderObjectShort(v)).join(', ')}}`;
+  if (typeof value === 'object' && (value as Record<string, unknown>).__type === 'TimeSpan'
+      && typeof (value as Record<string, unknown>).TotalMilliseconds === 'number') {
+    return formatTimeSpanValue((value as Record<string, unknown>).TotalMilliseconds as number);
+  }
   if (typeof value === 'object' && !(value instanceof Date)) {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) return '';
@@ -792,9 +805,19 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('macaddress') && lower.has('status') && lower.has('name') && lower.has('interfacedescription')) {
     return ['Name', 'InterfaceDescription', 'Status', 'MacAddress', 'LinkSpeed'];
   }
+  // NetNeighbor: ifIndex, IPAddress, LinkLayerAddress, State, PolicyStore
+  if (lower.has('linklayeraddress') && lower.has('ipaddress') && lower.has('state')) {
+    return ['ifIndex', 'InterfaceAlias', 'IPAddress', 'LinkLayerAddress', 'State', 'PolicyStore'];
+  }
   // NetIPAddress: IPAddress, InterfaceAlias, AddressFamily, PrefixLength
   if (lower.has('ipaddress') && lower.has('interfacealias') && lower.has('addressfamily')) {
     return ['IPAddress', 'InterfaceAlias', 'AddressFamily', 'PrefixLength'];
+  }
+  // EventLogEntry: Index, Time, EntryType, Source, InstanceID, Message
+  // (matches real Get-EventLog's default table view).
+  if (lower.has('index') && lower.has('entrytype') && lower.has('source')
+      && (lower.has('instanceid') || lower.has('eventid'))) {
+    return ['Index', 'Time', 'EntryType', 'Source', 'InstanceID', 'Message'];
   }
   // LocalUser: Name, Enabled, Description
   if (lower.has('enabled') && lower.has('name') && lower.has('description') && !lower.has('status')) {

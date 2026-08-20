@@ -26,7 +26,7 @@ describe('Windows per-drive cwd (driveCwd)', () => {
     bus = new EventBus();
     __setDefaultEventBus(bus);
     EquipmentRegistry.getInstance().setEventBus(bus);
-    pc = new WindowsPC('PC1', 0, 0);
+    pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.setEventBus(bus);
     // Provision a second drive on the simulated FS so `D:` is a valid
     // root. Without this `D:` would return "system cannot find the drive".

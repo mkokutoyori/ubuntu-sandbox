@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Equipment } from '@/network';
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
-import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/oracle');
 
@@ -40,7 +40,7 @@ export function createSqlPlusRunner(
     banner: () => fullBanner,
     execute(line: string): string {
       try {
-        const r = sb.processLine(line);
+        const r = sb.processLine(line) as SubShellResult;
         return (r.output ?? []).join('\n');
       } catch (e) {
         return `<JS EXCEPTION> ${e instanceof Error ? e.message : String(e)}`;

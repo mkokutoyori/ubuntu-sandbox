@@ -44,10 +44,13 @@ describe('Cisco IOS terminal length (per-vty pager)', () => {
     manager = new TerminalManager(bus);
     router = new CiscoRouter('R1');
     router.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<CiscoTerminalSession> {
-    const sid = manager.openTerminal(router)!;
+    const sid = manager.openTerminal(router, opened++ === 0 ? 'console' : 'vty')!;
     const t = manager.getSession(sid) as CiscoTerminalSession;
     await waitBoot(t);
     return t;
@@ -146,10 +149,13 @@ describe('Huawei VRP screen-length (per-vty pager)', () => {
     manager = new TerminalManager(bus);
     router = new HuaweiRouter('AR1');
     router.setEventBus(bus);
+    opened = 0;
   });
 
+  let opened = 0;
+
   async function openTerminal(): Promise<HuaweiTerminalSession> {
-    const sid = manager.openTerminal(router)!;
+    const sid = manager.openTerminal(router, opened++ === 0 ? 'console' : 'vty')!;
     const t = manager.getSession(sid) as HuaweiTerminalSession;
     await waitBoot(t);
     return t;

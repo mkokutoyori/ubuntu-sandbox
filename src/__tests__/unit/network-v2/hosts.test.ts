@@ -49,7 +49,7 @@ describe('H-01 — /etc/hosts VFS initialization', () => {
   });
 
   it('creates /etc/hosts with hostname entry on a LinuxServer', async () => {
-    const srv = new LinuxServer('SRV1');
+    const srv = new LinuxServer('linux-server', 'SRV1');
     const out = await srv.executeCommand('cat /etc/hosts');
     expect(out).toContain('127.0.0.1');
     expect(out).toContain('localhost');
@@ -83,7 +83,7 @@ describe('H-02 — /etc/hostname synchronization', () => {
   });
 
   it('server has its own hostname', async () => {
-    const srv = new LinuxServer('SRV1');
+    const srv = new LinuxServer('linux-server', 'SRV1');
     const out = await srv.executeCommand('cat /etc/hostname');
     expect(out.trim()).toBe('linux-server');
   });
@@ -129,7 +129,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
   it('/etc/hosts takes priority over DNS', async () => {
     // Build: PC1 ── R1 ── DNS-Server
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const srv = new LinuxServer('DNS1');
+    const srv = new LinuxServer('linux-server', 'DNS1');
 
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
@@ -155,7 +155,7 @@ describe('H-03 — resolveHostname via LinuxNetKernel', () => {
 
   it('falls back to DNS when hostname not in /etc/hosts', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const srv = new LinuxServer('DNS1');
+    const srv = new LinuxServer('linux-server', 'DNS1');
 
     pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
@@ -394,7 +394,7 @@ describe('H-08 — Dynamic /etc/hosts editing and re-resolution', () => {
     // Overwrite with only a custom entry (no localhost!)
     await pc.executeCommand(`sudo sh -c 'echo "10.0.1.99 onlyhost" > /etc/hosts'`);
 
-    const out1 = await pc.executeCommand('ping -c 1 onlyhost');
+    const out1 = await pc.executeCommand('getent hosts onlyhost');
     expect(out1).toContain('10.0.1.99');
 
     // localhost no longer resolves from file

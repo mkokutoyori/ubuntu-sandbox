@@ -18,7 +18,7 @@ let executor: OracleExecutor;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   executor = db.connectAsSysdba().executor;
 });
 
@@ -102,15 +102,28 @@ describe('SESSION_ROLES', () => {
     expect(roles).toContain('DBA');
   });
 
-  test('reflects a freshly granted role, transitively', () => {
+  /**
+   * Un rôle accordé pendant une session n'y est pas activé : Oracle
+   * n'ouvre l'ensemble des rôles actifs qu'au login, et il faut un
+   * `SET ROLE` (ou une reconnexion) pour l'y faire entrer. Cette suite
+   * affirmait l'inverse, ce que le moteur permettait tant qu'il n'avait
+   * aucune notion de rôle actif (`docs/PRD-Oracle-Access-Management.md`
+   * §1.3 item 2, phase P1) — la transitivité qu'elle voulait vérifier
+   * est conservée, elle est simplement observée après le SET ROLE.
+   */
+  test('a role granted mid-session enters it only on SET ROLE', () => {
     exec('CREATE ROLE r_parent');
     exec('CREATE ROLE r_child');
     exec('GRANT r_child TO r_parent');
     exec('GRANT r_parent TO SYS');
 
-    const roles = exec("SELECT ROLE FROM SESSION_ROLES").rows.map(x => x[0]);
-    expect(roles).toContain('R_PARENT');
-    expect(roles).toContain('R_CHILD');   // transitive via r_parent
+    const before = exec("SELECT ROLE FROM SESSION_ROLES").rows.map(x => x[0]);
+    expect(before).not.toContain('R_PARENT');
+
+    exec('SET ROLE ALL');
+    const after = exec("SELECT ROLE FROM SESSION_ROLES").rows.map(x => x[0]);
+    expect(after).toContain('R_PARENT');
+    expect(after).toContain('R_CHILD');   // transitive via r_parent
   });
 
   test('column is ROLE only', () => {

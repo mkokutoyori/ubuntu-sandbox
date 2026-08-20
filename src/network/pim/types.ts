@@ -4,7 +4,11 @@ export const IP_PROTO_PIM = 103;
 export const PIM_ALL_ROUTERS = '224.0.0.13';
 export const PIM_ALL_ROUTERS_MAC = '01:00:5e:00:00:0d';
 
-export type PimMessageType = 'hello' | 'join-prune';
+export type PimMessageType =
+  | 'hello'
+  | 'join-prune'
+  | 'bootstrap'
+  | 'candidate-rp-advertisement';
 
 export type PimMode = 'sparse' | 'dense' | 'sparse-dense';
 
@@ -36,6 +40,8 @@ export interface PimPacket extends NetworkPdu {
   options: PimHelloOption[];
   senderIp: string;
   joinPrune?: PimJoinPruneBody;
+  bootstrap?: PimBootstrapBody;
+  candidateRp?: PimCandidateRpBody;
 }
 
 export type PimMroutEntryType = 'star-g';
@@ -62,6 +68,49 @@ export interface PimRpEntry {
   groupRangeAddress: string;
   groupRangeMaskBits: number;
   isStatic: boolean;
+  /** Candidate-RP priority — lower wins (RFC 5059 §3.2). BSR entries only. */
+  priority?: number;
+  /** Absolute deadline after which a BSR-learned entry is dropped. */
+  expiresMs?: number;
+}
+
+/** A Bootstrap Router candidate: higher priority wins, then higher IP. */
+export interface PimBsrCandidate {
+  address: string;
+  priority: number;
+}
+
+/**
+ * RFC 5059 §3.1: higher BSR priority wins; on a tie the higher IP address
+ * wins. Same shape as `compareDrCandidate` — negative means `a` wins.
+ */
+export function compareBsrCandidate(a: PimBsrCandidate, b: PimBsrCandidate): number {
+  if (a.priority !== b.priority) return b.priority - a.priority;
+  const ai = a.address.split('.').map(Number);
+  const bi = b.address.split('.').map(Number);
+  for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
+  return 0;
+}
+
+/** Body of a Bootstrap message: the BSR's whole group-to-RP set. */
+export interface PimBootstrapBody {
+  bsrAddress: string;
+  bsrPriority: number;
+  /** Increments on each origination; a stale fragment is ignored. */
+  fragmentTag: number;
+  groups: Array<{
+    groupRangeAddress: string;
+    groupRangeMaskBits: number;
+    rps: Array<{ rpAddress: string; priority: number; holdtimeSec: number }>;
+  }>;
+}
+
+/** Body of a Candidate-RP-Advertisement, unicast to the elected BSR. */
+export interface PimCandidateRpBody {
+  rpAddress: string;
+  priority: number;
+  holdtimeSec: number;
+  groups: Array<{ groupRangeAddress: string; groupRangeMaskBits: number }>;
 }
 
 export interface PimNeighborEntry {
@@ -92,10 +141,29 @@ export interface PimConfig {
   enabled: boolean;
   interfaces: Map<string, PimInterfaceRuntime>;
   neighbors: Map<string, PimNeighborEntry>;
+  /** Operator-configured RPs (`ip pim rp-address` / `static-rp`). */
   rps: PimRpEntry[];
+  /** RPs learned from a Bootstrap message; never mixed with `rps`. */
+  learnedRps: PimRpEntry[];
   mroutes: Map<string, PimMroutEntry>;
   joinPruneIntervalSec: number;
   joinPruneHoldtimeSec: number;
+  /** This router's own C-BSR configuration, if any. */
+  bsrCandidate: PimBsrCandidate | null;
+  /** The BSR currently in force on the domain, elected or accepted. */
+  currentBsr: PimBsrCandidate | null;
+  /** When the current BSR was last heard from; null if it is us. */
+  lastBsrHeardMs: number | null;
+  /** This router's own C-RP configuration, if any. */
+  rpCandidate: { address: string; priority: number; groupRangeAddress: string; groupRangeMaskBits: number } | null;
+  /** Candidate-RPs this router has collected while acting as the BSR. */
+  candidateRps: Map<string, { rp: PimRpEntry; expiresMs: number }>;
+  bootstrapIntervalSec: number;
+  bootstrapTimeoutSec: number;
+  candidateRpIntervalSec: number;
+  bootstrapFragmentTag: number;
+  lastBootstrapSentMs: number | null;
+  lastCandidateRpSentMs: number | null;
 }
 
 export function makeNeighborKey(iface: string, neighborIp: string): string {
@@ -108,9 +176,22 @@ export function createDefaultPimConfig(): PimConfig {
     interfaces: new Map(),
     neighbors: new Map(),
     rps: [],
+    learnedRps: [],
     mroutes: new Map(),
     joinPruneIntervalSec: 60,
     joinPruneHoldtimeSec: 210,
+    bsrCandidate: null,
+    currentBsr: null,
+    lastBsrHeardMs: null,
+    rpCandidate: null,
+    candidateRps: new Map(),
+    // RFC 5059 §5: BS_Period 60 s, BS_Timeout 130 s, C-RP_Adv_Period 60 s.
+    bootstrapIntervalSec: 60,
+    bootstrapTimeoutSec: 130,
+    candidateRpIntervalSec: 60,
+    bootstrapFragmentTag: 0,
+    lastBootstrapSentMs: null,
+    lastCandidateRpSentMs: null,
   };
 }
 

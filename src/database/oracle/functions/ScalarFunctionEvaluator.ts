@@ -347,12 +347,11 @@ export class ScalarFunctionEvaluator {
       case 'SYSTIMESTAMP': return new Date().toISOString();
       case 'TO_CHAR': {
         if (args[0] == null) return null;
-        const fmt = args[1] != null ? String(args[1]).toUpperCase() : null;
-        if (fmt && (typeof args[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(args[0]))) {
-          const d = new Date(args[0]);
-          if (!isNaN(d.getTime())) {
-            return this.host.formatOracleDate(d, fmt);
-          }
+        const d = coerceDate(args[0]);
+        if (d) {
+          const session = this.host.getContext().session as { nlsDateFormat?: string } | undefined;
+          const fmt = args[1] != null ? String(args[1]).toUpperCase() : (session?.nlsDateFormat ?? 'DD-MON-RR');
+          return this.host.formatOracleDate(d, fmt);
         }
         return String(args[0]);
       }

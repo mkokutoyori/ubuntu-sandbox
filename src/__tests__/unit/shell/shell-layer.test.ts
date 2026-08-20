@@ -28,7 +28,6 @@ import {
   type AbstractShellOptions, type IShell, type ShellLineResult,
   installDefaultShells, reinstallDefaultShells,
 } from '@/shell';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 
 // ─── Fixtures ───────────────────────────────────────────────────────
@@ -197,56 +196,6 @@ describe('§B — ShellFactory creational pattern', () => {
   });
 });
 
-// ─── §C — CrossVendorRemoteShell composite ──────────────────────────
-
-describe('§C — CrossVendorRemoteShell composite', () => {
-  beforeEach(() => { reinstallDefaultShells(); });
-
-  test('exposes the primary shell prompt while the stack is non-empty', async () => {
-    const lan = await buildLan();
-    const x = new CrossVendorRemoteShell({
-      device: lan.linuxA, user: 'alice',
-      remoteHost: '10.0.0.1', primaryKind: 'bash',
-    });
-    expect(x.getPrompt()).toMatch(/alice@linuxA:~\$/);
-  });
-
-  test('exit on the primary closes the SSH session with the OpenSSH footer', async () => {
-    const lan = await buildLan();
-    const x = new CrossVendorRemoteShell({
-      device: lan.linuxA, user: 'alice',
-      remoteHost: '10.0.0.1', primaryKind: 'bash',
-    });
-    const r = await x.processLine('exit');
-    expect(r.exit).toBe(true);
-    expect(r.output.join('\n')).toMatch(/Connection to 10\.0\.0\.1 closed/);
-    expect(x.isFinished).toBe(true);
-  });
-
-  test('vendor-correct clearWords inside the remote shell propagate clearScreen=true', async () => {
-    const lan = await buildLan();
-    // cmd recognises `cls` only (real cmd treats `clear` as an unknown
-    // external command). The CVRS-cmd composite must mirror that.
-    const xCmd = new CrossVendorRemoteShell({
-      device: lan.winB, user: 'User',
-      remoteHost: '10.0.0.4', primaryKind: 'cmd',
-    });
-    expect((await xCmd.processLine('cls')).clearScreen).toBe(true);
-    expect((await xCmd.processLine('clear')).clearScreen).toBeFalsy();
-  });
-
-  test('a child shell pushed from the primary intercepts subsequent lines', async () => {
-    const lan = await buildLan();
-    const x = new CrossVendorRemoteShell({
-      device: lan.winB, user: 'User',
-      remoteHost: '10.0.0.4', primaryKind: 'cmd',
-    });
-    // `powershell` inside cmd pushes a PowerShell child shell.
-    const r = await x.processLine('powershell');
-    expect(x.getPrompt()).toMatch(/PS [A-Z]:\\/);
-    expect(r.output.join('\n')).toMatch(/Windows PowerShell|PowerShell/i);
-  });
-});
 
 // ─── §D — Bug regressions reported by the user ──────────────────────
 
@@ -308,11 +257,12 @@ describe('§D — Reported bugs that the new shell layer fixes', () => {
     const term = new WindowsTerminalSession('t5', lan.winA);
     await term.init();
     await sshLogin(term, 'ssh user@10.0.0.1', 'admin');
-    // The active sub-shell now exposes getCompletions; the helper
-    // returns the device's completion candidates (non-empty for a
-    // partial command typed against the remote bash).
-    const sub = (term as unknown as { activeSubShell: { getCompletions?: (s: string) => string[] } }).activeSubShell;
-    expect(typeof sub?.getCompletions).toBe('function');
+    // Completion runs against the remote's own session: a partial command
+    // typed at the foreground completes using the remote device.
+    term.setInput('ech');
+    term.handleKey(key('Tab'));
+    await flush();
+    expect(term.foreground.input).toMatch(/^echo/);
   });
 });
 

@@ -12,7 +12,7 @@ const tryRun = (c: typeof a, q: string): string => {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   a = db.connectAsSysdba();
   sql(a, 'CREATE TABLE hr.t (id NUMBER PRIMARY KEY, v VARCHAR2(10))');
   sql(a, "INSERT INTO hr.t VALUES (1, 'x')");
@@ -54,5 +54,15 @@ describe('SELECT … FOR UPDATE takes row-level locks across sessions', () => {
   it('the same session re-locking its own row is fine (re-entrant)', () => {
     sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
     expect(tryRun(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE NOWAIT')).toBe('OK');
+  });
+
+  it('a PLAIN FOR UPDATE (no wait clause) on an already-locked row is denied, not silently granted', () => {
+    sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
+    expect(tryRun(b, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE')).toMatch(/ORA-00054/);
+  });
+
+  it('FOR UPDATE WAIT n on an already-locked row times out immediately with ORA-30006', () => {
+    sql(a, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE');
+    expect(tryRun(b, 'SELECT * FROM hr.t WHERE id = 1 FOR UPDATE WAIT 10')).toMatch(/ORA-30006/);
   });
 });

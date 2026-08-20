@@ -26,6 +26,18 @@ import { DEFAULT_OS_CONTEXT, type OsSecurityContext } from './security/types';
 import { OracleSession, type AuthenticationMethod } from './security/OracleSession';
 
 export type ConnectTransport = 'beq' | 'tcp';
+
+/**
+ * Credentials presented for an `AS SYSDBA` / `AS SYSOPER` connection.
+ * The authentication path depends on the transport:
+ *  - `beq` (local `sqlplus / as sysdba`) → OS authentication (dba group);
+ *  - `tcp` (remote / Oracle Net) → password-file authentication.
+ */
+export interface AdminConnectAuth {
+  username?: string;
+  password?: string;
+  transport?: ConnectTransport;
+}
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type { ResultSet } from '../engine/executor/ResultSet';
 import { ORACLE_ERRORS } from './OracleConfig';
@@ -72,6 +84,13 @@ export interface ConnectionInfo {
   connectedAt: Date;
   sid: number;
   serial: number;
+  /** Administrative role of the session — drives the LOGOFF audit record. */
+  role?: 'NORMAL' | 'SYSDBA' | 'SYSOPER';
+  /** Authentication method recorded at logon (PASSWORD/EXTERNAL/SYSDBA/…). */
+  authMethod?: string;
+  /** OS identity captured at logon, replayed in the LOGOFF trace. */
+  osCtx?: OsSecurityContext;
+  executor?: OracleExecutor;
 }
 
 /** Stored PL/SQL unit (procedure, function, or package) */
@@ -153,7 +172,7 @@ export class OracleDatabase implements SqlCommandHost {
     sid: number; serial: number; username: string; schema?: string;
     osCtx: OsSecurityContext; authenticationMethod: AuthenticationMethod;
     type?: 'USER' | 'BACKGROUND'; authenticatedIdentity?: string;
-    transport?: ConnectTransport;
+    transport?: ConnectTransport; proxyUser?: string;
   }): OracleSession {
     const user = this.catalog.getUser(args.username.toUpperCase());
     const session = new OracleSession({
@@ -165,8 +184,10 @@ export class OracleDatabase implements SqlCommandHost {
       authenticationMethod: args.authenticationMethod,
       type: args.type,
       authenticatedIdentity: args.authenticatedIdentity ?? user?.externalName,
+      proxyUser: args.proxyUser,
       instance: this.buildInstanceIdentity(),
     });
+    session.setEnabledRoles(this.resolveDefaultRoles(args.username.toUpperCase()));
     this.sessions.set(args.sid, session);
     if (args.type !== 'BACKGROUND') {
       this.instance.spawnServerProcess({
@@ -175,6 +196,22 @@ export class OracleDatabase implements SqlCommandHost {
       });
     }
     return session;
+  }
+
+  /**
+   * The roles a fresh session starts with, from `ALTER USER … DEFAULT
+   * ROLE …` — a clause `isDefaultRole()` already resolved correctly, but
+   * whose only consumer was `DBA_ROLE_PRIVS`'s `DEFAULT_ROLE` column:
+   * rendered in a view, never applied to a session.
+   *
+   * A password-protected role is never enabled by default whatever the
+   * clause says: demanding a password at `SET ROLE` is the whole point
+   * of putting one on the role.
+   */
+  private resolveDefaultRoles(username: string): string[] {
+    return this.securityEngine.privileges.getGrantedRoles(username)
+      .filter(r => this.catalog.getRolePassword(r) === undefined)
+      .filter(r => this.catalog.isDefaultRole(username, r));
   }
 
   /**
@@ -230,6 +267,31 @@ export class OracleDatabase implements SqlCommandHost {
       `Dedicated server process for session sid=${sid} killed at the OS level; session terminated`);
   }
 
+  /**
+   * Dead Connection Detection (DCD, SQLNET.EXPIRE_TIME) cleanup path.
+   * The client vanished mid-transaction without a COMMIT or ROLLBACK —
+   * unlike a clean logoff, any uncommitted work MUST be rolled back, not
+   * committed, then every lock and the V$SESSION/V$TRANSACTION entries
+   * are released so no residual state survives the network outage.
+   */
+  terminateDeadSession(sid: number): { rolledBack: boolean } | null {
+    const conn = this.connections.get(sid);
+    if (!conn && !this.sessions.has(sid)) return null;
+    const rolledBack = conn?.executor?.rollbackOnDeadConnection() ?? false;
+    this.instance.lockManager.releaseSession(String(sid));
+    this.securityEngine.sessions.killBySid(sid);
+    this.connections.delete(sid);
+    this.closeSession(sid);
+    this.instance.logAlertEvent(
+      `Dead connection detected (DCD): session sid=${sid} terminated`
+      + (rolledBack ? '; uncommitted transaction automatically rolled back' : ''));
+    this.instance.getBus().publish({
+      topic: 'oracle.session.dead-connection',
+      payload: { deviceId: this.instance.getDeviceId(), sid, rolledBack },
+    });
+    return { rolledBack };
+  }
+
   /** All currently-open sessions. */
   getOpenSessions(): readonly OracleSession[] {
     return [...this.sessions.values()];
@@ -259,13 +321,34 @@ export class OracleDatabase implements SqlCommandHost {
     return this.instance.getUserActivityTracker()!;
   }
 
-  constructor(config?: Partial<OracleDatabaseConfig>) {
+  /**
+   * `shared` lets a RAC cluster member (see `database/oracle/rac/
+   * RacClusterRegistry.ts`) join an existing instance's PHYSICAL
+   * database instead of getting a fresh, empty one — genuine shared
+   * storage, exactly like real RAC: every node keeps its own
+   * `OracleInstance` (own SGA, sessions, wait events, identity) but all
+   * nodes read/write the SAME tables, rows and catalog. The handful of
+   * single-owner callbacks storage/catalog expose (alert sink, stored-
+   * unit/package-member providers, the catalog's securityEngine pointer)
+   * are only wired by the FOUNDING node when shared — a joining node
+   * would otherwise clobber them with its own (empty) callbacks. This is
+   * a deliberate, narrow simplification: those callbacks stay scoped to
+   * whichever node created the shared storage, so e.g. a PL/SQL unit
+   * compiled on a joining node won't appear via the catalog's stored-
+   * unit provider. None of this codebase's RAC tests exercise that path;
+   * a fuller fix would merge providers across members, which is out of
+   * scope here.
+   */
+  constructor(config?: Partial<OracleDatabaseConfig>, shared?: { storage: OracleStorage; catalog: OracleCatalog }) {
     this.instance = new OracleInstance(config);
-    this.storage = new OracleStorage();
-    // The instance checks datafile existence at OPEN time but does not
-    // own the storage layer — give it the canonical V$DATAFILE list.
-    this.instance.setDatafileLister(() => this.storage.listDatafiles());
-    this.catalog = new OracleCatalog(this.storage, this.instance);
+    this.storage = shared?.storage ?? new OracleStorage();
+    if (!shared) {
+      // The instance checks datafile existence at OPEN time but does not
+      // own the storage layer — give it the canonical V$DATAFILE list.
+      this.instance.setDatafileLister(() => this.storage.listDatafiles());
+      this.storage.setAlertSink((message) => this.instance.logAlertEvent(message));
+    }
+    this.catalog = shared?.catalog ?? new OracleCatalog(this.storage, this.instance);
     // UTL_FILE resolves directory objects from the catalog and reads/writes
     // through the instance's host-VFS hooks (wired by the terminal layer).
     this.utlFile = new UtlFileEngine(
@@ -276,10 +359,12 @@ export class OracleDatabase implements SqlCommandHost {
         remove: (p) => this.instance.removeDeviceFile(p),
       },
     );
-    this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
-    this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
     this.securityEngine = new SecurityEngine(this.catalog);
-    this.catalog.setSecurityEngine(this.securityEngine);
+    if (!shared) {
+      this.catalog.setStoredUnitsProvider(() => this.getStoredUnits());
+      this.catalog.setPackageMembersProvider(() => this.getPackageMembers());
+      this.catalog.setSecurityEngine(this.securityEngine);
+    }
     // Provision the predefined non-DEFAULT profiles (MONITORING_PROFILE,
     // ORA_STIG_PROFILE) so a fresh instance matches a real 19c install.
     provisionPredefinedProfiles(this.securityEngine.profiles);
@@ -299,7 +384,13 @@ export class OracleDatabase implements SqlCommandHost {
     this.instance.attachIndexUsageMonitor(this.storage);
     // Live-session provider — feeds V$SESSION_CONTEXT user-defined
     // contexts and any future view that needs the real OracleSession.
-    this.instance.setLiveSessionProvider(() => [...this.sessions.values()]);
+    this.instance.setLiveSessionProvider(() => [...this.sessions.values()].map((s) => ({
+      sid: s.sid, serial: s.serial, username: s.sessionUser,
+      listContextEntries: () => s.listContextEntries(),
+      module: s.module, action: s.action,
+      clientInfo: s.clientInfo, clientIdentifier: s.clientIdentifier,
+      containerId: s.containerId,
+    })));
     // Resource Manager — active consumer-group switcher reacting to
     // session connect + SQL execution events.
     this.consumerGroupSwitcher = new ConsumerGroupSwitcher(
@@ -359,6 +450,7 @@ export class OracleDatabase implements SqlCommandHost {
     password: string,
     osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
     transport: ConnectTransport = 'beq',
+    proxyUser?: string,
   ): { sid: number; executor: OracleExecutor } {
     if (!this.instance.isOpen) {
       throw new Error(ORACLE_ERRORS.ORA_01034);
@@ -366,6 +458,22 @@ export class OracleDatabase implements SqlCommandHost {
 
     const upperUser = username.toUpperCase();
     const user = this.catalog.getUser(upperUser);
+
+    // Proxy connect (`CONNECT proxy[client]/proxy_password`): the
+    // password belongs to the proxy, the session belongs to the client.
+    // The authorisation is checked before the password so an
+    // unauthorised proxy learns nothing about the client's account.
+    const upperProxy = proxyUser?.toUpperCase();
+    let proxyGrant: { client: string; proxy: string; role: string | null } | undefined;
+    if (upperProxy) {
+      proxyGrant = this.catalog.getProxyUsers().find(
+        r => r.client === upperUser && r.proxy === upperProxy);
+      if (!proxyGrant) {
+        this.catalog.recordLogon(upperProxy, 0, 28150, osCtx.osUser, osCtx.hostname, osCtx.terminal);
+        this.instance.logAlertEvent(`Failed proxy logon: ${upperProxy}[${upperUser}] ORA-28150`);
+        throw new Error(`ORA-28150: proxy not authorized to connect as client`);
+      }
+    }
 
     /**
      * Wrap a failed-auth throw so every rejection path also leaves a
@@ -397,8 +505,9 @@ export class OracleDatabase implements SqlCommandHost {
     } else {
       // Standard password authentication via SecurityEngine:
       // enforces lock, failed-login tracking, expiry.
-      const storedPassword = this.catalog.getStoredPassword(upperUser);
-      const authResult = this.securityEngine.authenticate(upperUser, password, this.catalog, storedPassword);
+      const authUser = upperProxy ?? upperUser;
+      const storedPassword = this.catalog.getStoredPassword(authUser);
+      const authResult = this.securityEngine.authenticate(authUser, password, this.catalog, storedPassword);
       if (!authResult.success) {
         failLogon(authResult.errorCode || 1017, authResult.message || ORACLE_ERRORS.ORA_01017);
       }
@@ -427,6 +536,8 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'NORMAL',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -451,10 +562,14 @@ export class OracleDatabase implements SqlCommandHost {
       user?.authenticationType === 'EXTERNAL' ? 'EXTERNAL'
       : user?.authenticationType === 'GLOBAL' ? 'GLOBAL'
       : 'PASSWORD';
+    connInfo.authMethod = authMethod;
     const session = this.openSession({
       sid, serial, username: upperUser, osCtx, authenticationMethod: authMethod,
-      transport,
+      transport, proxyUser: upperProxy,
     });
+    // `WITH ROLE r` narrows the proxy session to that role alone; without
+    // the clause the client keeps the roles its account would enable.
+    if (proxyGrant?.role) session.setEnabledRoles([proxyGrant.role]);
 
     const context: ExecutionContext = {
       currentUser: upperUser,
@@ -470,6 +585,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -495,13 +611,60 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   /**
-   * Connect as SYSDBA (no password check, sets user to SYS).
+   * Reject a remote `AS SYSDBA`/`AS SYSOPER` attempt that failed
+   * password-file authentication (not in the password file, or wrong
+   * password). Real Oracle returns ORA-01017 and records the failed
+   * privileged logon (SESSIONID 0).
    */
-  connectAsSysdba(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
-    // OS-group enforcement: SYSDBA requires the OS user to be in the dba group.
-    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      this.rejectOsAuthentication('SYSDBA', osCtx);
+  private rejectPasswordFileAuth(role: 'SYSDBA' | 'SYSOPER', osCtx: OsSecurityContext, user: string): never {
+    this.catalog.recordAudit({
+      sessionId: 0, username: user, actionName: 'LOGON', returncode: 1017,
+      osUsername: osCtx.osUser, userhost: osCtx.hostname, terminal: osCtx.terminal,
+      privUsed: role, statementType: 'LOGON',
+    });
+    this.instance.logAlertEvent(
+      `Failed ${role} logon: user=${user} password-file authentication failed (ORA-01017)`);
+    this.publishConnectionTrace({
+      username: user, sessionId: 0, serial: 0, osCtx,
+      authMethod: role, role, outcome: 'FAILURE', returncode: 1017,
+    });
+    throw new Error(ORACLE_ERRORS.ORA_01017);
+  }
+
+  /**
+   * Authorize an administrative connection. Local bequeath connections
+   * (`sqlplus / as sysdba`) authenticate against the OS dba group; remote
+   * Oracle Net connections (`sqlplus sys/pw@host as sysdba`) authenticate
+   * against the external password file — OS group membership on the
+   * client is irrelevant there, exactly as on a real instance.
+   */
+  private authorizeAdminConnect(
+    role: 'SYSDBA' | 'SYSOPER',
+    osCtx: OsSecurityContext,
+    auth?: AdminConnectAuth,
+  ): void {
+    if ((auth?.transport ?? 'beq') === 'tcp') {
+      const user = (auth?.username || 'SYS').toUpperCase();
+      const ok = this.catalog.isPasswordFileMember(user, role)
+        && this.catalog.authenticate(user, auth?.password ?? '');
+      if (!ok) this.rejectPasswordFileAuth(role, osCtx, user);
+      return;
     }
+    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
+      this.rejectOsAuthentication(role, osCtx);
+    }
+  }
+
+  /**
+   * Connect as SYSDBA. Local bequeath uses OS authentication; a remote
+   * connection (transport 'tcp') verifies the supplied user against the
+   * password file. The session always assumes the SYS schema.
+   */
+  connectAsSysdba(
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
+    auth?: AdminConnectAuth,
+  ): { sid: number; executor: OracleExecutor } {
+    this.authorizeAdminConnect('SYSDBA', osCtx, auth);
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -511,6 +674,9 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'SYSDBA',
+      authMethod: 'SYSDBA',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -548,6 +714,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -555,10 +722,11 @@ export class OracleDatabase implements SqlCommandHost {
    * Connect as SYSOPER — limited admin role (PUBLIC schema, no user-data access).
    * Like SYSDBA, requires OS dba group membership.
    */
-  connectAsSysoper(osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT): { sid: number; executor: OracleExecutor } {
-    if (osCtx !== DEFAULT_OS_CONTEXT && !osCtx.isDbaGroup) {
-      this.rejectOsAuthentication('SYSOPER', osCtx);
-    }
+  connectAsSysoper(
+    osCtx: OsSecurityContext = DEFAULT_OS_CONTEXT,
+    auth?: AdminConnectAuth,
+  ): { sid: number; executor: OracleExecutor } {
+    this.authorizeAdminConnect('SYSOPER', osCtx, auth);
     const sid = this.sidCounter++;
     const serial = Math.floor(Math.random() * 50000) + 1;
 
@@ -568,6 +736,9 @@ export class OracleDatabase implements SqlCommandHost {
       connectedAt: new Date(),
       sid,
       serial,
+      role: 'SYSOPER',
+      authMethod: 'SYSOPER',
+      osCtx,
     };
     this.connections.set(sid, connInfo);
 
@@ -599,6 +770,7 @@ export class OracleDatabase implements SqlCommandHost {
     executor.setSessionId(String(sid));
     executor.setCommandHost(this);
     executor.setDatabaseRef(this);
+    connInfo.executor = executor;
     return { sid, executor };
   }
 
@@ -608,11 +780,15 @@ export class OracleDatabase implements SqlCommandHost {
   disconnect(sid: number): void {
     const conn = this.connections.get(sid);
     if (conn) {
+      conn.executor?.commitOnLogoff();
       this.catalog.recordLogoff(conn.username, sid);
-      this.instance.logAlertEvent(`Logoff: user=${conn.username} sid=${sid}`);
+      const role = conn.role ?? 'NORMAL';
+      this.instance.logAlertEvent(
+        `Logoff: user=${conn.username} sid=${sid}${role === 'NORMAL' ? '' : ` as ${role}`}`);
       this.publishConnectionTrace({
         username: conn.username, sessionId: sid, serial: conn.serial,
-        osCtx: DEFAULT_OS_CONTEXT, authMethod: 'PASSWORD', role: 'NORMAL',
+        osCtx: conn.osCtx ?? DEFAULT_OS_CONTEXT,
+        authMethod: conn.authMethod ?? 'PASSWORD', role,
         outcome: 'LOGOFF', returncode: 0,
       });
     }
@@ -815,8 +991,8 @@ export class OracleDatabase implements SqlCommandHost {
     const s = stmt as { type?: string; from?: Array<{ type?: string; schema?: string; name?: string }>;
       forUpdate?: { wait?: number | 'NOWAIT' | 'SKIP_LOCKED' } };
     if (s.type !== 'SelectStatement' || !s.forUpdate || !s.from) return;
-    const ctx = (executor as unknown as { context: ExecutionContext }).context;
-    const sess = ctx.session;
+    const ctx = executor.getContext();
+    const sess = ctx.session as import('./security/OracleSession').OracleSession | undefined;
     const sid = sess?.sid ?? 0;
     const nowait = s.forUpdate.wait === 'NOWAIT';
     for (const f of s.from) {
@@ -867,6 +1043,9 @@ export class OracleDatabase implements SqlCommandHost {
         sess?.setCurrentSchema?.(stmt.value);
       } else if (stmt.param === 'CONTAINER') {
         return this.switchSessionContainer(ctx, stmt.value);
+      } else if (stmt.param === 'NLS_DATE_FORMAT') {
+        const sess = ctx.session as { nlsDateFormat?: string } | undefined;
+        if (sess) sess.nlsDateFormat = stmt.value;
       }
     }
     return emptyResult('Session altered.');
@@ -886,7 +1065,7 @@ export class OracleDatabase implements SqlCommandHost {
    * - Exception handling (EXCEPTION WHEN ... THEN)
    */
   private executePLSQL(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const output: string[] = [];
     const { host, flush } = this.buildPlsqlHost(executor, output);
 
@@ -916,7 +1095,7 @@ export class OracleDatabase implements SqlCommandHost {
    * package routing. `flush` pushes any pending DBMS_OUTPUT.PUT tail.
    */
   private buildPlsqlHost(executor: OracleExecutor, output: string[]): { host: PlsqlHost; flush: () => void } {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const buf = { pending: '' };
     const host: PlsqlHost = {
       runSql: (s: string) => {
@@ -941,6 +1120,8 @@ export class OracleDatabase implements SqlCommandHost {
       callBuiltin: (name: string, rawArgs: string) =>
         this.routeBuiltinPackageCall(executor, rawArgs ? `${name}(${rawArgs})` : `${name}`, output),
       utlFile: this.makeAuthorizingUtlFile(executor),
+      beginAutonomousScope: () => executor.beginAutonomousScope(),
+      endAutonomousScope: () => executor.endAutonomousScope(),
     };
     return { host, flush: () => { if (buf.pending) { output.push(buf.pending); buf.pending = ''; } } };
   }
@@ -952,7 +1133,7 @@ export class OracleDatabase implements SqlCommandHost {
   private makeAuthorizingUtlFile(executor: OracleExecutor): UtlFileApi {
     const engine = this.utlFile;
     const authorize = (dir: string, access: 'READ' | 'WRITE'): void => {
-      const user = (executor as { context: ExecutionContext }).context.currentUser;
+      const user = executor.getContext().currentUser;
       if (!this.canAccessDirectory(user, dir, access)) {
         throw new OracleError(29289, 'access denied');
       }
@@ -1008,7 +1189,7 @@ export class OracleDatabase implements SqlCommandHost {
       throw new Error('ORA-12154: TNS:could not resolve the connect identifier specified');
     }
     const res = this.dbLinkResolver(link.host);
-    if (!res.ok) throw new Error(res.error);
+    if (res.ok === false) throw new Error(res.error);
     return { remote: res.db, username: link.username ?? currentUser, password: link.password ?? '' };
   }
 
@@ -1025,7 +1206,10 @@ export class OracleDatabase implements SqlCommandHost {
       const result = remote.executeSql(executor, `SELECT * FROM ${qualified}`);
       return {
         rows: result.rows.map(r => [...r]),
-        columns: result.columns.map(c => ({ name: c.name, dataType: c.dataType ?? 'VARCHAR2' })),
+        columns: result.columns.map(c => ({
+          name: c.name,
+          dataType: (typeof c.dataType === 'string' ? c.dataType : c.dataType?.name) ?? 'VARCHAR2',
+        })),
       };
     } finally {
       remote.disconnect(sid);
@@ -1068,7 +1252,7 @@ export class OracleDatabase implements SqlCommandHost {
     args: import('../engine/storage/BaseStorage').CellValue[],
   ): { handled: boolean; value: import('../engine/storage/BaseStorage').CellValue } {
     const oraExecutor = executor as OracleExecutor;
-    const schema = ((oraExecutor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS').toUpperCase();
+    const schema = (oraExecutor.getContext().currentSchema ?? 'SYS').toUpperCase();
 
     // DBMS_OUTPUT produced by SQL-invoked functions is collected but not
     // surfaced — matching SQL*Plus, which only flushes the buffer after
@@ -1122,7 +1306,7 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   private lookupUnitForPlsql(executor: OracleExecutor, name: string): StoredUnitLike | undefined {
-    const schema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const schema = executor.getContext().currentSchema ?? 'SYS';
     const up = name.toUpperCase();
     // Dotted names resolve as schema-qualified standalone units; package
     // members go through PlsqlHost.resolvePackage instead.
@@ -1248,7 +1432,7 @@ export class OracleDatabase implements SqlCommandHost {
    * LOCATION list.
    */
   private createExternalTable(executor: OracleExecutor, sql: string): ResultSet {
-    const ctx = (executor as { context: ExecutionContext }).context;
+    const ctx = executor.getContext();
     const head = sql.match(/^CREATE\s+TABLE\s+(?:(\w+)\s*\.\s*)?(\w+)\b/i);
     if (!head) return emptyResult('ORA-00942: table or view does not exist');
     const owner = (head[1] ?? ctx.currentSchema).toUpperCase();
@@ -1343,7 +1527,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const paramStr = match[4] || '';
@@ -1393,7 +1577,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+(?:(\w+)\s*\.\s*)?(\w+)\s*(?:\(([\s\S]*?)\))?\s*RETURN\s+(\w+(?:\([^)]*\))?)\s*(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const paramStr = match[4] || '';
@@ -1444,7 +1628,7 @@ export class OracleDatabase implements SqlCommandHost {
 
     const nameMatch = cleaned.match(/^(\w+(?:\.\w+){0,2})\s*(?:\(|;|$)/);
     if (nameMatch) {
-      const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
       if (this.resolveStoredUnit(schema, nameMatch[1])) {
         return this.callStoredUnit(executor, cleaned);
       }
@@ -1457,7 +1641,7 @@ export class OracleDatabase implements SqlCommandHost {
   private tryExecuteProcedureCall(executor: OracleExecutor, sql: string): ResultSet | null {
     const match = sql.match(/^(\w+(?:\.\w+){0,2})\s*\(([\s\S]*)\)\s*$/);
     if (!match) return null;
-    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
     if (!this.resolveStoredUnit(schema, match[1])) return null;
     return this.callStoredUnit(executor, sql);
   }
@@ -1486,12 +1670,12 @@ export class OracleDatabase implements SqlCommandHost {
 
     const name = match[1].toUpperCase();
     const argsStr = match[2] || '';
-    const schema = ((executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (executor.getContext().currentSchema || 'SYS').toUpperCase();
 
     const unit = this.resolveStoredUnit(schema, name);
     if (!unit) return emptyResult(`${ORACLE_ERRORS.ORA_00900}\nPLS-00201: identifier '${name}' must be declared`);
 
-    const ctx = (executor as { context?: { currentUser?: string } }).context;
+    const ctx = executor.getContext();
     const currentUser = (ctx?.currentUser || schema).toUpperCase();
     if (currentUser !== 'SYS' && currentUser !== unit.schema) {
       const engine = this.catalog.getSecurityEngine?.();
@@ -1556,7 +1740,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^DROP\s+(?:PROCEDURE|FUNCTION|PACKAGE\s+BODY)\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = _executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[1] ?? ctxSchema).toUpperCase();
     const name = match[2].toUpperCase();
 
@@ -1602,7 +1786,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const name = match[3].toUpperCase();
     const source = match[4].trim();
@@ -1620,7 +1804,7 @@ export class OracleDatabase implements SqlCommandHost {
       created: new Date(), status: compilation.ok ? 'VALID' : 'INVALID',
     });
 
-    if (!compilation.ok) {
+    if (compilation.ok === false) {
       this.catalog.setCompilationErrors(schema, name, 'PACKAGE', compilation.errors);
       return emptyResult('Warning: Package created with compilation errors.');
     }
@@ -1645,7 +1829,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^CREATE\s+(OR\s+REPLACE\s+)?PACKAGE\s+BODY\s+(?:(\w+)\s*\.\s*)?(\w+)\s+(?:IS|AS)\s+([\s\S]+)$/i);
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
-    const ctxSchema = (executor as { context?: { currentSchema?: string } }).context?.currentSchema ?? 'SYS';
+    const ctxSchema = executor.getContext().currentSchema ?? 'SYS';
     const schema = (match[2] ?? ctxSchema).toUpperCase();
     const pkgName = match[3].toUpperCase();
     const source = match[4].trim();
@@ -1674,7 +1858,7 @@ export class OracleDatabase implements SqlCommandHost {
     }
 
     const compilation = compilePackageSection(source);
-    if (!compilation.ok) return fail(compilation.errors);
+    if (compilation.ok === false) return fail(compilation.errors);
 
     this.storedUnits.set(bodyUnitKey, {
       schema, name: pkgName, type: 'PACKAGE BODY', parameters: [],
@@ -1692,7 +1876,7 @@ export class OracleDatabase implements SqlCommandHost {
     const match = sql.match(/^DROP\s+PACKAGE\s+(?:(\w+)\s*\.\s*)?(\w+)/i);
     if (!match) return emptyResult(ORACLE_ERRORS.ORA_00900);
 
-    const ctxSchema = (_executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS';
+    const ctxSchema = _executor.getContext().currentSchema || 'SYS';
     const schema = (match[1] ?? ctxSchema).toUpperCase();
     const name = match[2].toUpperCase();
 
@@ -1718,7 +1902,7 @@ export class OracleDatabase implements SqlCommandHost {
    * handle bound to this session's instantiation state.
    */
   private resolvePackageHandle(executor: OracleExecutor, name: string): PackageRuntimeHandle | undefined {
-    const ctx = (executor as { context?: { currentSchema?: string; currentUser?: string } }).context;
+    const ctx = executor.getContext();
     const schema = (ctx?.currentSchema ?? 'SYS').toUpperCase();
     const parts = name.toUpperCase().split('.');
 
@@ -1815,7 +1999,7 @@ export class OracleDatabase implements SqlCommandHost {
       /^CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(?:(\w+)\.)?(\w+)\s+(BEFORE|AFTER)\s+(STARTUP|SHUTDOWN|LOGON|LOGOFF|SERVERERROR|CREATE|ALTER|DROP)\s+ON\s+(DATABASE|SCHEMA|(\w+)\.SCHEMA)\s+([\s\S]*)$/i,
     );
     if (sys) {
-      const owner = (sys[1] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+      const owner = (sys[1] || executor.getContext().currentSchema || 'SYS').toUpperCase();
       const name = sys[2].toUpperCase();
       const timing = sys[3].toUpperCase() as 'BEFORE' | 'AFTER';
       const event = sys[4].toUpperCase() as import('./triggers/SystemTrigger').TriggerEvent;
@@ -1833,7 +2017,7 @@ export class OracleDatabase implements SqlCommandHost {
     if (!match) return emptyResult('ORA-24344: success with compilation error');
 
     const orReplace = !!match[1];
-    const schema = (match[2] || (executor as { context?: { currentSchema?: string } }).context?.currentSchema || 'SYS').toUpperCase();
+    const schema = (match[2] || executor.getContext().currentSchema || 'SYS').toUpperCase();
     const name = match[3].toUpperCase();
     const timing = match[4].toUpperCase().replace(/\s+/g, ' ') as 'BEFORE' | 'AFTER' | 'INSTEAD OF';
     const events: Array<'INSERT' | 'UPDATE' | 'DELETE'> = [];
@@ -1923,7 +2107,7 @@ export class OracleDatabase implements SqlCommandHost {
     if (!routine) return;                  // unknown routine → swallow
 
     const args = this.splitTopLevelArgs(argString).map(a => this.unquoteLiteral(a));
-    const session = (executor as { context: { session?: import('./security/OracleSession').OracleSession } }).context.session;
+    const session = executor.getContext().session as import('./security/OracleSession').OracleSession | undefined;
     if (!session) return;
     const result = routine.invoke(args, { session, rawCall: call, services: this.packageServices() });
     if (result !== null) output.push(result);
@@ -1973,6 +2157,7 @@ export class OracleDatabase implements SqlCommandHost {
         statementTypes: get('STATEMENT_TYPES'),
         policyType: get('POLICY_TYPE'),
         secRelevantCols: get('SEC_RELEVANT_COLS'),
+        updateCheck: get('UPDATE_CHECK'),
       });
     } else if (upper.includes('.ADD_GROUPED_POLICY')) {
       this.catalog.addRlsPolicy({
@@ -2040,9 +2225,9 @@ export class OracleDatabase implements SqlCommandHost {
       this.catalog.createDvRealm(get('REALM_NAME'), get('DESCRIPTION'), Number(get('AUDIT_OPTIONS') || '1'));
     } else if (upper.includes('.DELETE_REALM')) {
       // Best-effort removal — there's no dedicated DV remove in the catalog.
-      const all = this.catalog.getDvRealms() as { name: string }[];
+      const all = this.catalog.getDvRealms() as { name: string; description: string; auditOptions: number; enabled: boolean }[];
       const idx = all.findIndex(r => r.name === get('REALM_NAME').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.ADD_OBJECT_TO_REALM') || upper.includes('.ADD_AUTH_TO_REALM')) {
       if (upper.includes('AUTH')) {
         this.catalog.addDvRealmAuth(get('REALM_NAME'), get('GRANTEE'), '', get('AUTH_OPTIONS') || 'PARTICIPANT');
@@ -2050,17 +2235,17 @@ export class OracleDatabase implements SqlCommandHost {
     } else if (upper.includes('.CREATE_ROLE')) {
       this.catalog.createDvRole(get('ROLE'), '');
     } else if (upper.includes('.DELETE_ROLE')) {
-      const all = this.catalog.getDvRoles() as { name: string }[];
+      const all = this.catalog.getDvRoles() as { name: string; enabled: boolean; ruleSetName: string }[];
       const idx = all.findIndex(r => r.name === get('ROLE').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.CREATE_COMMAND_RULE')) {
       this.catalog.createDvCommandRule(get('COMMAND'), get('RULE_SET_NAME'), get('OBJECT_OWNER'), get('OBJECT_NAME'));
     } else if (upper.includes('.DELETE_COMMAND_RULE')) {
-      const all = this.catalog.getDvCommandRules() as { command: string; objectOwner: string; objectName: string }[];
+      const all = this.catalog.getDvCommandRules() as { command: string; ruleSetName: string; objectOwner: string; objectName: string; enabled: boolean }[];
       const idx = all.findIndex(r => r.command === get('COMMAND').toUpperCase()
                                   && r.objectOwner === get('OBJECT_OWNER').toUpperCase()
                                   && r.objectName === get('OBJECT_NAME').toUpperCase());
-      if (idx >= 0) (all as unknown[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     } else if (upper.includes('.CREATE_FACTOR')) {
       this.catalog.createDvFactor({
         name: get('FACTOR_NAME'),
@@ -2074,9 +2259,9 @@ export class OracleDatabase implements SqlCommandHost {
         failOptions: Number(get('FAIL_OPTIONS') || '1'),
       });
     } else if (upper.includes('.DELETE_FACTOR')) {
-      const all = this.catalog.getDvFactors() as { name: string }[];
+      const all = this.catalog.getDvFactors() as { name: string; description: string; factorType: string; validateExpr: string; identifyBy: string; labeledBy: string; evalOptions: string; auditOptions: number; failOptions: number }[];
       const idx = all.findIndex(r => r.name === get('FACTOR_NAME').toUpperCase());
-      if (idx >= 0) (all as { name: string }[]).splice(idx, 1);
+      if (idx >= 0) all.splice(idx, 1);
     }
   }
 

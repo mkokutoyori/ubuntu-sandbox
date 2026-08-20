@@ -9,6 +9,7 @@ import {
 } from './types';
 import { MACAddress, type DeviceType, type EthernetFrame } from '../core/types';
 import { Logger } from '../core/Logger';
+import { C2960_SOFTWARE } from '../devices/shells/cisco/CiscoPlatform';
 
 export interface LldpHost {
   readonly id: string;
@@ -36,6 +37,24 @@ export class LldpAgent extends ReactiveAgentBase {
   }
 
   getConfig(): Readonly<LldpConfig> { return this.config; }
+
+  asRunningConfigLinesVrp(): string[] {
+    const lines: string[] = [];
+    if (this.config.enabled) lines.push('lldp enable');
+    if (this.config.timerSec !== 30) {
+      lines.push(`lldp message-transmission interval ${this.config.timerSec}`);
+    }
+    if (this.config.holdtimeMultiplier !== 4) {
+      lines.push(`lldp message-transmission hold-multiplier ${this.config.holdtimeMultiplier}`);
+    }
+    return lines;
+  }
+
+  vrpInterfaceLines(portName: string): string[] {
+    const cfg = this.config.ports.get(portName);
+    if (!cfg) return [];
+    return cfg.transmit || cfg.receive ? ['lldp enable'] : ['undo lldp enable'];
+  }
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
@@ -148,7 +167,7 @@ export class LldpAgent extends ReactiveAgentBase {
       return;
     }
     const key = neighborKey(portName, payload.chassisId, payload.portId);
-    const now = Date.now();
+    const now = this.getScheduler().now();
     const expiresAtMs = now + payload.ttlSec * 1000;
     const existing = this.neighbors.get(key);
     const entry: LldpNeighborEntry = {
@@ -251,6 +270,7 @@ export class LldpAgent extends ReactiveAgentBase {
   protected isEnabled(): boolean { return this.config.enabled; }
 
   protected armTimers(): void {
+    this.advertiseAll('periodic');
     this.scheduleInterval('advertise',
       () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
     this.scheduleInterval('expiry', () => this.expireDue(), 1000);
@@ -265,7 +285,7 @@ export class LldpAgent extends ReactiveAgentBase {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.getScheduler().now();
     for (const [key, n] of this.neighbors) {
       if (n.expiresAtMs <= now) {
         this.neighbors.delete(key);
@@ -347,7 +367,7 @@ export class LldpAgent extends ReactiveAgentBase {
     const t = this.host.getType();
     switch (t) {
       case 'router-cisco':  return 'Cisco IOS Software, c2900 Software, Version 15.4(3)M';
-      case 'switch-cisco':  return 'Cisco IOS Software, C2960 Software, Version 15.2(7)E2';
+      case 'switch-cisco':  return `Cisco IOS Software, C2960 Software, Version ${C2960_SOFTWARE.iosVersion}`;
       case 'router-huawei': return 'Huawei VRP Software, Version 5.160 (AR2200 V200R003C00)';
       case 'switch-huawei': return 'Huawei VRP Software, Version 5.170 (S5720 V200R010C00)';
       default: return t;

@@ -18,6 +18,10 @@ beforeEach(() => {
 function createShell(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN-DNS');
   pc.setCurrentUser('Administrator');
+  // example.com must resolve through the device's own DNS chain (no
+  // hard-coded answers in the cmdlet), so seed it via the hosts file —
+  // the same source `nslookup` and `Resolve-DnsName` both read.
+  pc.addHostsEntry('93.184.216.34', 'example.com');
   return PowerShellSubShell.create(pc).subShell;
 }
 async function run(sh: PowerShellSubShell, line: string): Promise<string> {

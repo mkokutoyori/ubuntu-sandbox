@@ -4,6 +4,9 @@
  * sub-mode + their show family. Router-only.
  */
 import type { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { formatInvalidInput } from '../CommandTrie';
 import type { PolicyRepository, PrefixListEntry }
   from '../../inspection/config/PolicyRepository';
 
@@ -80,25 +83,29 @@ export function buildPolicyConfig(
     const sel = ctx.getSelectedRouteMap();
     return sel ? repo.ensureRouteMap(sel.name, 'permit', sel.seq) : null;
   };
-  routeMapTrie.registerGreedy('match', 'Match clause', (args, raw) => {
+  const addClause = (list: string[], args: string[]) => {
+    const value = args.join(' ');
+    if (!list.includes(value)) list.push(value);
+  };
+  routeMapTrie.registerGreedy('match', 'Match clause', (args) => {
     const c = clause();
-    if (c) c.match.push(raw ?? `match ${args.join(' ')}`);
+    if (c) addClause(c.match, args);
     return '';
   });
-  routeMapTrie.registerGreedy('set', 'Set clause', (args, raw) => {
+  routeMapTrie.registerGreedy('set', 'Set clause', (args) => {
     const c = clause();
-    if (c) c.set.push(raw ?? `set ${args.join(' ')}`);
+    if (c) addClause(c.set, args);
     return '';
   });
   routeMapTrie.registerGreedy('no match', 'Remove match clause', (args) => {
     const c = clause(); if (!c) return '';
-    const pattern = 'match ' + args.join(' ').toLowerCase();
+    const pattern = args.join(' ').toLowerCase();
     c.match = c.match.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });
   routeMapTrie.registerGreedy('no set', 'Remove set clause', (args) => {
     const c = clause(); if (!c) return '';
-    const pattern = 'set ' + args.join(' ').toLowerCase();
+    const pattern = args.join(' ').toLowerCase();
     c.set = c.set.filter(l => !l.toLowerCase().startsWith(pattern));
     return '';
   });
@@ -115,6 +122,26 @@ export function registerPolicyShow(
     repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), false));
   trie.registerGreedy('show ipv6 prefix-list', 'Display IPv6 prefix-lists', (a) =>
     repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), true));
-  trie.registerGreedy('show route-map', 'Display route-maps', (a) =>
-    repo.renderRouteMaps(a[0]));
+  trie.registerGreedy('show route-map', 'Display route-maps', (a) => {
+    if (a.length > 1) return formatInvalidInput('show route-map '.length + a[0].length + 1);
+    return repo.renderRouteMaps(a[0]);
+  });
+}
+
+const POLICY_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip prefix-list': ['WORD', 'Name of a prefix list'],
+  'show ipv6 prefix-list': ['WORD', 'Name of a prefix list'],
+  'show route-map': ['WORD', 'Route map name'],
+};
+
+export function policyShowSpecs(repo: PolicyRepository): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerPolicyShow(collector as unknown as CommandTrie, repo),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[0],
+    },
+  );
 }

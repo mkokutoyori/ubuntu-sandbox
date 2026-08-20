@@ -10,20 +10,24 @@
 import { col } from './_columns';
 import { queryResult } from '../../engine/executor/ResultSet';
 import { registerView } from './registry';
+import { getClusterForDevice } from '../rac/RacClusterRegistry';
 
 registerView({
   name: 'V$ACTIVE_INSTANCES',
   comment: 'Active cluster instances',
   query({ instance }) {
-    if (instance.state !== 'OPEN') {
-      return queryResult(
-        [col.num('INST_NUMBER'), col.str('INST_NAME', 60)],
-        []
-      );
+    const cols = [col.num('INST_NUMBER'), col.str('INST_NAME', 60)];
+    if (instance.state !== 'OPEN') return queryResult(cols, []);
+
+    const cluster = getClusterForDevice(instance.getDeviceId());
+    if (!cluster) return queryResult(cols, [[1, `localhost:${instance.config.sid}`]]);
+
+    const rows: [number, string][] = [];
+    let n = 1;
+    for (const member of cluster.members.values()) {
+      if (member.status !== 'ACTIVE') continue;
+      rows.push([n++, `${member.hostname}:${cluster.dbName}`]);
     }
-    return queryResult(
-      [col.num('INST_NUMBER'), col.str('INST_NAME', 60)],
-      [[1, `localhost:${instance.config.sid}`]]
-    );
+    return queryResult(cols, rows);
   },
 });

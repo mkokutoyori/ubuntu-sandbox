@@ -54,8 +54,8 @@ describe('RADIUS — server-side handling', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -73,8 +73,8 @@ describe('RADIUS — server-side handling', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -95,8 +95,8 @@ describe('RADIUS — server-side handling', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -113,8 +113,8 @@ describe('RADIUS — server-side handling', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -158,8 +158,8 @@ describe('RADIUS — wire format', () => {
         }
       }
     });
-    cable.connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cable.connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -184,8 +184,8 @@ describe('RADIUS — reactive bus', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     server.getRadiusServer().addUser('alice', 'wonderland');
@@ -204,8 +204,8 @@ describe('RADIUS — Cisco↔Huawei interop', () => {
     const server = new CiscoRouter('AAA');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     client.setEventBus(bus); server.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(client.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(client.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     client.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     server.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

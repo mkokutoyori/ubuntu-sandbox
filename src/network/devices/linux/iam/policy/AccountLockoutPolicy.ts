@@ -66,7 +66,7 @@ export class AccountLockoutPolicy {
     const changed: string[] = [];
     const set = <K extends keyof AccountLockoutPolicy>(key: K, value: AccountLockoutPolicy[K] | undefined) => {
       if (value !== undefined && this[key] !== value) {
-        this[key] = value;
+        this[key] = value as this[K];
         changed.push(String(key));
       }
     };
@@ -89,11 +89,19 @@ export class AccountLockoutPolicy {
   /**
    * Whether an account with `failedAttempts` consecutive failures should now
    * be denied. `isRoot` callers are exempt unless `even_deny_root` is set.
+   *
+   * `lastFailureAt` (ms epoch) + `unlock_time`/`root_unlock_time` (seconds)
+   * auto-clear the lock once enough wall-clock time has passed, matching
+   * real `pam_faillock` — a value of 0 means the lock never auto-clears
+   * (only `faillock --reset` does), same as real faillock.conf semantics.
    */
-  shouldLockOut(failedAttempts: number, isRoot = false): boolean {
+  shouldLockOut(failedAttempts: number, isRoot = false, lastFailureAt?: number | null, now: number = Date.now()): boolean {
     if (!this.enabled) return false;
     if (isRoot && !this.evenDenyRoot) return false;
-    return failedAttempts >= this.deny;
+    if (failedAttempts < this.deny) return false;
+    const unlockAfter = isRoot ? this.rootUnlockTime : this.unlockTime;
+    if (unlockAfter > 0 && lastFailureAt != null && now - lastFailureAt >= unlockAfter * 1000) return false;
+    return true;
   }
 
   /** Failures remaining before the next one trips the lock (never negative). */

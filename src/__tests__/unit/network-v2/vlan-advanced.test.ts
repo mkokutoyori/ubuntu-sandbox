@@ -31,11 +31,11 @@ beforeEach(() => {
 describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
 
   it('add: appends VLANs to the existing allowed list', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     // Start with a restricted list
     await sw.executeCommand('switchport trunk allowed vlan 10,20');
@@ -43,7 +43,7 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
     await sw.executeCommand('switchport trunk allowed vlan add 30');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     expect(cfg?.trunkAllowedVlans.has(10)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(20)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(30)).toBe(true);
@@ -51,17 +51,17 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
   });
 
   it('remove: removes VLANs from the allowed list', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk allowed vlan 10,20,30,40');
     await sw.executeCommand('switchport trunk allowed vlan remove 20,40');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     expect(cfg?.trunkAllowedVlans.has(10)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(20)).toBe(false);
     expect(cfg?.trunkAllowedVlans.has(30)).toBe(true);
@@ -69,16 +69,16 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
   });
 
   it('except: allows all VLANs except the specified ones', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk allowed vlan except 100,200');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     expect(cfg?.trunkAllowedVlans.has(1)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(10)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(100)).toBe(false);
@@ -87,25 +87,25 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
   });
 
   it('none: removes all VLANs from the allowed list', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk allowed vlan none');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     expect(cfg?.trunkAllowedVlans.size).toBe(0);
   });
 
   it('all: restores all VLANs 1-4094 to the allowed list', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     // First restrict
     await sw.executeCommand('switchport trunk allowed vlan 10');
@@ -113,24 +113,24 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
     await sw.executeCommand('switchport trunk allowed vlan all');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     expect(cfg?.trunkAllowedVlans.size).toBe(4094);
     expect(cfg?.trunkAllowedVlans.has(1)).toBe(true);
     expect(cfg?.trunkAllowedVlans.has(4094)).toBe(true);
   });
 
   it('add range: adds a range of VLANs', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk allowed vlan none');
     await sw.executeCommand('switchport trunk allowed vlan add 10-15');
     await sw.executeCommand('end');
 
-    const cfg = sw.getSwitchportConfig('FastEthernet0/0');
+    const cfg = sw.getSwitchportConfig('FastEthernet0/1');
     for (let v = 10; v <= 15; v++) {
       expect(cfg?.trunkAllowedVlans.has(v)).toBe(true);
     }
@@ -139,11 +139,11 @@ describe('V-C-01: Cisco switchport trunk allowed vlan subcommands', () => {
   });
 
   it('shows allowed VLANs in running-config', async () => {
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
+    await sw.executeCommand('interface FastEthernet0/1');
     await sw.executeCommand('switchport mode trunk');
     await sw.executeCommand('switchport trunk allowed vlan 10,20,30');
     await sw.executeCommand('end');
@@ -162,16 +162,16 @@ describe('V-C-02: Cisco trunk VLAN filtering — frame level', () => {
   it('frames with allowed VLAN pass through trunk', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw = new CiscoSwitch('sw1', 'SW1', 8);
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 8);
 
-    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c1').connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
-    await sw.executeCommand('interface FastEthernet0/0');
-    await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('interface FastEthernet0/1');
+    await sw.executeCommand('switchport access vlan 10');
+    await sw.executeCommand('interface FastEthernet0/2');
     await sw.executeCommand('switchport access vlan 10');
     await sw.executeCommand('end');
 
@@ -187,19 +187,19 @@ describe('V-C-02: Cisco trunk VLAN filtering — frame level', () => {
     // SW1↔SW2 trunk only allows VLAN 20 — VLAN 10 is blocked
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new CiscoSwitch('sw1', 'SW1', 8);
-    const sw2 = new CiscoSwitch('sw2', 'SW2', 8);
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
 
-    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
-    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/7')!, sw2.getPort('FastEthernet0/7')!);
-    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/0')!, pc2.getPort('eth0')!);
+    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
+    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/8')!, sw2.getPort('FastEthernet0/8')!);
+    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/1')!, pc2.getPort('eth0')!);
 
     // Configure SW1
     await sw1.executeCommand('enable');
     await sw1.executeCommand('configure terminal');
-    await sw1.executeCommand('interface FastEthernet0/0');
+    await sw1.executeCommand('interface FastEthernet0/1');
     await sw1.executeCommand('switchport access vlan 10');
-    await sw1.executeCommand('interface FastEthernet0/7');
+    await sw1.executeCommand('interface FastEthernet0/8');
     await sw1.executeCommand('switchport mode trunk');
     // Allow only VLAN 20 on the trunk — blocks VLAN 10
     await sw1.executeCommand('switchport trunk allowed vlan 20');
@@ -208,10 +208,10 @@ describe('V-C-02: Cisco trunk VLAN filtering — frame level', () => {
     // Configure SW2
     await sw2.executeCommand('enable');
     await sw2.executeCommand('configure terminal');
-    await sw2.executeCommand('interface FastEthernet0/7');
+    await sw2.executeCommand('interface FastEthernet0/8');
     await sw2.executeCommand('switchport mode trunk');
     await sw2.executeCommand('switchport trunk allowed vlan 20');
-    await sw2.executeCommand('interface FastEthernet0/0');
+    await sw2.executeCommand('interface FastEthernet0/1');
     await sw2.executeCommand('switchport access vlan 10');
     await sw2.executeCommand('end');
 
@@ -226,20 +226,20 @@ describe('V-C-02: Cisco trunk VLAN filtering — frame level', () => {
   it('trunk allows VLAN after adding it with add subcommand', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new CiscoSwitch('sw1', 'SW1', 8);
-    const sw2 = new CiscoSwitch('sw2', 'SW2', 8);
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
 
-    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
-    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/7')!, sw2.getPort('FastEthernet0/7')!);
-    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/0')!, pc2.getPort('eth0')!);
+    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
+    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/8')!, sw2.getPort('FastEthernet0/8')!);
+    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/1')!, pc2.getPort('eth0')!);
 
     // Configure both switches: trunk only allows VLAN 20 initially
     for (const [sw, pc, vlan] of [[sw1, pc1, '192.168.10.1'], [sw2, pc2, '192.168.10.2']] as const) {
       await (sw as CiscoSwitch).executeCommand('enable');
       await (sw as CiscoSwitch).executeCommand('configure terminal');
-      await (sw as CiscoSwitch).executeCommand('interface FastEthernet0/0');
+      await (sw as CiscoSwitch).executeCommand('interface FastEthernet0/1');
       await (sw as CiscoSwitch).executeCommand('switchport access vlan 10');
-      await (sw as CiscoSwitch).executeCommand('interface FastEthernet0/7');
+      await (sw as CiscoSwitch).executeCommand('interface FastEthernet0/8');
       await (sw as CiscoSwitch).executeCommand('switchport mode trunk');
       await (sw as CiscoSwitch).executeCommand('switchport trunk allowed vlan 20');
       await (sw as CiscoSwitch).executeCommand('end');
@@ -255,13 +255,13 @@ describe('V-C-02: Cisco trunk VLAN filtering — frame level', () => {
     // Add VLAN 10 to trunk allowed list on both switches
     await sw1.executeCommand('enable');
     await sw1.executeCommand('configure terminal');
-    await sw1.executeCommand('interface FastEthernet0/7');
+    await sw1.executeCommand('interface FastEthernet0/8');
     await sw1.executeCommand('switchport trunk allowed vlan add 10');
     await sw1.executeCommand('end');
 
     await sw2.executeCommand('enable');
     await sw2.executeCommand('configure terminal');
-    await sw2.executeCommand('interface FastEthernet0/7');
+    await sw2.executeCommand('interface FastEthernet0/8');
     await sw2.executeCommand('switchport trunk allowed vlan add 10');
     await sw2.executeCommand('end');
 
@@ -286,23 +286,23 @@ describe('V-C-03: Cisco multi-switch VLAN isolation via trunk filtering', () => 
     const pcB = new LinuxPC('PC-B');
     const pcC = new LinuxPC('PC-C');
     const pcD = new LinuxPC('PC-D');
-    const sw1 = new CiscoSwitch('sw1', 'SW1', 8);
-    const sw2 = new CiscoSwitch('sw2', 'SW2', 8);
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
 
-    new Cable('pca-sw1').connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
-    new Cable('pcb-sw1').connect(pcB.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
-    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/7')!, sw2.getPort('FastEthernet0/7')!);
-    new Cable('sw2-pcc').connect(sw2.getPort('FastEthernet0/0')!, pcC.getPort('eth0')!);
-    new Cable('sw2-pcd').connect(sw2.getPort('FastEthernet0/1')!, pcD.getPort('eth0')!);
+    new Cable('pca-sw1').connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
+    new Cable('pcb-sw1').connect(pcB.getPort('eth0')!, sw1.getPort('FastEthernet0/2')!);
+    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/8')!, sw2.getPort('FastEthernet0/8')!);
+    new Cable('sw2-pcc').connect(sw2.getPort('FastEthernet0/1')!, pcC.getPort('eth0')!);
+    new Cable('sw2-pcd').connect(sw2.getPort('FastEthernet0/2')!, pcD.getPort('eth0')!);
 
     for (const sw of [sw1, sw2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/0');
-      await sw.executeCommand('switchport access vlan 10');
       await sw.executeCommand('interface FastEthernet0/1');
+      await sw.executeCommand('switchport access vlan 10');
+      await sw.executeCommand('interface FastEthernet0/2');
       await sw.executeCommand('switchport access vlan 20');
-      await sw.executeCommand('interface FastEthernet0/7');
+      await sw.executeCommand('interface FastEthernet0/8');
       await sw.executeCommand('switchport mode trunk');
       await sw.executeCommand('end');
     }
@@ -328,19 +328,19 @@ describe('V-C-03: Cisco multi-switch VLAN isolation via trunk filtering', () => 
   it('trunk with remove subcommand stops traffic for removed VLAN', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new CiscoSwitch('sw1', 'SW1', 8);
-    const sw2 = new CiscoSwitch('sw2', 'SW2', 8);
+    const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
+    const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
 
-    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
-    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/7')!, sw2.getPort('FastEthernet0/7')!);
-    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/0')!, pc2.getPort('eth0')!);
+    new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
+    new Cable('sw1-sw2').connect(sw1.getPort('FastEthernet0/8')!, sw2.getPort('FastEthernet0/8')!);
+    new Cable('sw2-pc2').connect(sw2.getPort('FastEthernet0/1')!, pc2.getPort('eth0')!);
 
     for (const sw of [sw1, sw2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/0');
+      await sw.executeCommand('interface FastEthernet0/1');
       await sw.executeCommand('switchport access vlan 10');
-      await sw.executeCommand('interface FastEthernet0/7');
+      await sw.executeCommand('interface FastEthernet0/8');
       await sw.executeCommand('switchport mode trunk');
       await sw.executeCommand('end');
     }
@@ -356,7 +356,7 @@ describe('V-C-03: Cisco multi-switch VLAN isolation via trunk filtering', () => 
     for (const sw of [sw1, sw2]) {
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
-      await sw.executeCommand('interface FastEthernet0/7');
+      await sw.executeCommand('interface FastEthernet0/8');
       await sw.executeCommand('switchport trunk allowed vlan remove 10');
       await sw.executeCommand('end');
     }
@@ -374,7 +374,7 @@ describe('V-C-03: Cisco multi-switch VLAN isolation via trunk filtering', () => 
 describe('V-H-01: Huawei port trunk allow-pass vlan — additive semantics', () => {
 
   it('multiple allow-pass commands accumulate VLANs', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('vlan batch 10 20 30');
@@ -394,7 +394,7 @@ describe('V-H-01: Huawei port trunk allow-pass vlan — additive semantics', () 
   });
 
   it('allow-pass vlan with multiple IDs in one command', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -419,7 +419,7 @@ describe('V-H-01: Huawei port trunk allow-pass vlan — additive semantics', () 
 describe('V-H-02: Huawei undo port trunk allow-pass vlan', () => {
 
   it('removes specific VLANs from the allowed list', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -438,7 +438,7 @@ describe('V-H-02: Huawei undo port trunk allow-pass vlan', () => {
   });
 
   it('undo all: removes all VLANs from the allowed list', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -459,7 +459,7 @@ describe('V-H-02: Huawei undo port trunk allow-pass vlan', () => {
 describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
 
   it('allow-pass vlan all: allows all VLANs', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -476,7 +476,7 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
   });
 
   it('allow-pass vlan none: removes all VLANs', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -489,8 +489,14 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
     expect(cfg?.trunkAllowedVlans.size).toBe(0);
   });
 
-  it('display current-configuration shows all for default trunk', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+  it('display current-configuration shows vlan 1 for default trunk (VRP default, unlike Cisco)', async () => {
+    // Real VRP differs from Cisco IOS here: a freshly-trunked interface's
+    // `port trunk allow-pass vlan` starts at VLAN 1 only, not "all" —
+    // `port trunk allow-pass vlan <n>` then ADDS to that list. Corroborated
+    // by scenario-vrp-vlan-trunk-hybrid.test.ts, which already asserts
+    // `port trunk allow-pass vlan 1 10 20 30` after allowing 10/20/30 on a
+    // freshly-trunked port (VLAN 1 is still there from the default).
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -500,11 +506,11 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
 
     const config = await sw.executeCommand('display current-configuration interface GigabitEthernet0/0/0');
     expect(config).toContain('port link-type trunk');
-    expect(config).toContain('port trunk allow-pass vlan all');
+    expect(config).toContain('port trunk allow-pass vlan 1');
   });
 
   it('display current-configuration shows none when no VLANs allowed', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -518,7 +524,7 @@ describe('V-H-03: Huawei port trunk allow-pass vlan all / none', () => {
   });
 
   it('display current-configuration shows specific VLANs', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');
@@ -545,8 +551,8 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
   it('frames pass through trunk when VLAN is allowed', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new HuaweiSwitch('sw1', 'SW1');
-    const sw2 = new HuaweiSwitch('sw2', 'SW2');
+    const sw1 = new HuaweiSwitch('switch-huawei', 'SW1');
+    const sw2 = new HuaweiSwitch('switch-huawei', 'SW2');
 
     new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('GigabitEthernet0/0/0')!);
     new Cable('sw1-sw2').connect(sw1.getPort('GigabitEthernet0/0/23')!, sw2.getPort('GigabitEthernet0/0/23')!);
@@ -562,6 +568,11 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
       await sw.executeCommand('quit');
       await sw.executeCommand('interface GigabitEthernet0/0/23');
       await sw.executeCommand('port link-type trunk');
+      // VRP's default trunk allow-pass list is VLAN 1 only — VLAN 10 must
+      // be explicitly allowed for this "VLAN is allowed" scenario to be
+      // meaningful (see the sibling "blocked"/"resumes" tests below, which
+      // already do this deliberately).
+      await sw.executeCommand('port trunk allow-pass vlan 10');
       await sw.executeCommand('return');
       // Huawei ports start in STP listening state; advance to forwarding for VLAN tests
       sw.setAllPortsSTPState('forwarding');
@@ -577,8 +588,8 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
   it('frames are blocked on trunk when VLAN is not in allow-pass list', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new HuaweiSwitch('sw1', 'SW1');
-    const sw2 = new HuaweiSwitch('sw2', 'SW2');
+    const sw1 = new HuaweiSwitch('switch-huawei', 'SW1');
+    const sw2 = new HuaweiSwitch('switch-huawei', 'SW2');
 
     new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('GigabitEthernet0/0/0')!);
     new Cable('sw1-sw2').connect(sw1.getPort('GigabitEthernet0/0/23')!, sw2.getPort('GigabitEthernet0/0/23')!);
@@ -611,8 +622,8 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
   it('traffic resumes after adding VLAN to allow-pass list', async () => {
     const pc1 = new LinuxPC('PC1');
     const pc2 = new LinuxPC('PC2');
-    const sw1 = new HuaweiSwitch('sw1', 'SW1');
-    const sw2 = new HuaweiSwitch('sw2', 'SW2');
+    const sw1 = new HuaweiSwitch('switch-huawei', 'SW1');
+    const sw2 = new HuaweiSwitch('switch-huawei', 'SW2');
 
     new Cable('pc1-sw1').connect(pc1.getPort('eth0')!, sw1.getPort('GigabitEthernet0/0/0')!);
     new Cable('sw1-sw2').connect(sw1.getPort('GigabitEthernet0/0/23')!, sw2.getPort('GigabitEthernet0/0/23')!);
@@ -660,7 +671,7 @@ describe('V-H-04: Huawei trunk VLAN filtering — frame level', () => {
 describe('V-H-05: Huawei undo port default/pvid vlan commands', () => {
 
   it('undo port default vlan resets access VLAN to 1', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('vlan 10');
@@ -681,7 +692,7 @@ describe('V-H-05: Huawei undo port default/pvid vlan commands', () => {
   });
 
   it('undo port trunk pvid vlan resets PVID to 1', async () => {
-    const sw = new HuaweiSwitch('sw1', 'SW1');
+    const sw = new HuaweiSwitch('switch-huawei', 'SW1');
 
     await sw.executeCommand('system-view');
     await sw.executeCommand('interface GigabitEthernet0/0/0');

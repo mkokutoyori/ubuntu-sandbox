@@ -17,6 +17,18 @@ export interface TacacsClientHost {
   getHostname(): string;
 }
 
+/** `priv-lvl=<n>` parmi les attributs d'une reponse d'autorisation. */
+function lirePrivLvl(args: readonly string[]): number | null {
+  for (const a of args) {
+    const m = /^priv-lvl=(\d+)$/i.exec(a);
+    if (m) {
+      const n = Number.parseInt(m[1], 10);
+      if (Number.isInteger(n) && n >= 0 && n <= 15) return n;
+    }
+  }
+  return null;
+}
+
 export class TacacsClientAgent {
   private config: TacacsClientConfig = createDefaultClientConfig();
   private nextSessionId = 1;
@@ -86,6 +98,48 @@ export class TacacsClientAgent {
         }
         this.publishTimeout(server.ip, username, 'authen');
         return { status: 'timeout', privLvl: null };
+      },
+    );
+  }
+
+  /**
+   * L'autorisation d'EXEC : `service=shell` SANS `cmd`, ce qui distingue
+   * « ai-je droit a un shell, et a quel niveau ? » de « ai-je droit a
+   * cette commande ? ».
+   *
+   * Le niveau vient de l'attribut `priv-lvl` de la reponse, la ou un
+   * vrai serveur TACACS+ le met. C'est ce qui fait qu'`aaa authorization
+   * exec` ouvre une session au niveau decide par le SERVEUR, et non par
+   * le compte local.
+   */
+  authorizeShell(
+    username: string, serverIp?: string,
+  ): Promise<{ status: TacacsAuthorStatus | 'timeout'; privLvl: number | null }> {
+    const server = this.selectServer(serverIp);
+    if (!server) return Promise.resolve({ status: 'timeout' as const, privLvl: null });
+    const sessionId = this.nextSession();
+    const body: TacacsBody = {
+      type: 'tacacs-author-request',
+      authenMethod: 6, privLvl: 1, authenType: 'ascii', service: 'login',
+      user: username, port: 'tty0', remoteAddress: '0.0.0.0',
+      args: ['service=shell'],
+    };
+    return this.exchange<{ status: TacacsAuthorStatus | 'timeout'; privLvl: number | null }>(
+      server, sessionId, 2, body,
+      (reply) => {
+        if (reply && reply.body.type === 'tacacs-author-reply') {
+          const status = reply.body.status;
+          this.getBus().publish({
+            topic: 'tacacs.author.completed',
+            payload: {
+              deviceId: this.host.id, hostname: this.host.getHostname(),
+              serverIp: server.ip, username, status, command: '',
+            },
+          });
+          return { status, privLvl: lirePrivLvl(reply.body.args) };
+        }
+        this.publishTimeout(server.ip, username, 'author');
+        return { status: 'timeout' as const, privLvl: null };
       },
     );
   }

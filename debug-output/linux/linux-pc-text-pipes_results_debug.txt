@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-06-12T11:47:49.875Z
+Generated: 2026-08-13T16:28:15.189Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -206,7 +206,12 @@ $ [37/303]> cat fruits.txt - < /dev/null
   banane
 
 $ [38/303]> tac fruits.txt
-  tac: command not found
+  banane
+  fraise
+  pomme
+  cerise
+  pomme
+  banane
 
 $ [39/303]> cat fichier_inexistant_xyz
   cat: fichier_inexistant_xyz: No such file or directory
@@ -252,7 +257,7 @@ $ [49/303]> grep -r root /etc/hostname
 <empty>
 
 $ [50/303]> grep --color=auto root /etc/passwd
-  root:x:0:0:root:/root:/bin/bash
+  [01;31mroot[m:x:0:0:[01;31mroot[m:/[01;31mroot[m:/bin/bash
 
 $ [51/303]> grep -A1 bob gens.csv
   bob:25:lyon
@@ -500,7 +505,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  9
+  60
 
 
 --- [92] § sort — tri ---
@@ -948,13 +953,23 @@ $ [165/303]> cat /etc/passwd | awk -F: '{print $1}' | head
 
 --- [166] § paste / join / rev / nl ---
 $ [166/303]> paste fruits.txt nombres.txt
-  paste: command not found
+  banane	3
+  pomme	1
+  CERISE	10
+  pomme	2
+  fraise	20
+  banane	1
 
 $ [167/303]> paste -d, fruits.txt nombres.txt
-  paste: command not found
+  banane,3
+  pomme,1
+  CERISE,10
+  pomme,2
+  fraise,20
+  banane,1
 
 $ [168/303]> paste -s fruits.txt
-  paste: command not found
+  banane	pomme	CERISE	pomme	fraise	banane
 
 $ [169/303]> rev fruits.txt
 <empty>
@@ -963,19 +978,44 @@ $ [170/303]> echo 'abcdef' | rev
   fedcba
 
 $ [171/303]> nl fruits.txt
-  nl: command not found
+       1	banane
+       2	pomme
+       3	CERISE
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [172/303]> nl -ba fruits.txt
-  nl: command not found
+       1	banane
+       2	pomme
+       3	CERISE
+       4	pomme
+       5	fraise
+       6	banane
 
 $ [173/303]> fold -w 5 fruits.txt
-  fold: command not found
+  banan
+  e
+  pomme
+  CERIS
+  E
+  pomme
+  frais
+  e
+  banan
+  e
 
 $ [174/303]> column -t gens.csv
-  column: command not found
+  alice:30:paris
+  bob:25:lyon
+  carol:35:paris
+  dan:28:nice
 
 $ [175/303]> column -s: -t gens.csv
-  column: command not found
+  alice  30  paris
+  bob    25  lyon
+  carol  35  paris
+  dan    28  nice
 
 
 --- [176] § pipelines composés ---
@@ -993,9 +1033,11 @@ $ [177/303]> cat /etc/passwd | wc -l
   8
 
 $ [178/303]> ls /etc | grep conf | sort | head
-  adduser.conf   gshadow-       networks       security       sudoers
-  cron.daily     hostname       nsswitch.conf  services       sudoers.d
-  group-         machine-id     resolv.conf    subgid
+  adduser.conf
+  logrotate.conf
+  nsswitch.conf
+  resolv.conf
+  rsyslog.conf
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
         1 CERISE
@@ -1024,7 +1066,7 @@ $ [185/303]> seq 1 100 | awk '{s+=$1} END{print s}'
   5050
 
 $ [186/303]> seq 1 10 | paste -sd+ | bc
-  bc: command not found
+  55
 
 $ [187/303]> echo "1 2 3 4 5" | tr " " "\n" | sort -rn
   1
@@ -1092,19 +1134,31 @@ $ [204/303]> sed -i 's/fraise/mangue/' fruits2.txt
 <empty>
 
 $ [205/303]> diff fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [206/303]> diff -u fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [207/303]> diff -y fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [208/303]> diff -q fruits.txt fruits2.txt
-  diff: command not found
+  5c5
+  < fraise
+  ---
+  > mangue
 
 $ [209/303]> diff fruits.txt fruits.txt
-  diff: command not found
+<empty>
 
 $ [210/303]> sort fruits.txt > a.sorted
 <empty>
@@ -1113,74 +1167,146 @@ $ [211/303]> sort fruits2.txt > b.sorted
 <empty>
 
 $ [212/303]> comm a.sorted b.sorted
-  comm: command not found
+  		CERISE
+  		banane
+  		banane
+  fraise
+  	mangue
+  		pomme
+  		pomme
 
 $ [213/303]> comm -12 a.sorted b.sorted
-  comm: command not found
+  CERISE
+  banane
+  banane
+  pomme
+  pomme
 
 $ [214/303]> comm -3 a.sorted b.sorted
-  comm: command not found
+  fraise
+  	mangue
 
 $ [215/303]> cmp fruits.txt fruits2.txt
-  cmp: command not found
+  fruits.txt fruits2.txt differ: char 27, line 5
 
 $ [216/303]> cmp fruits.txt fruits.txt
-  cmp: command not found
+<empty>
 
 $ [217/303]> diff fichier_inexistant_xyz fruits.txt
-  diff: command not found
+  diff: fichier_inexistant_xyz: No such file or directory
 
 
 --- [218] § découpe & assemblage — split/csplit ---
 $ [218/303]> split -l 2 seq.txt morceau_
-  split: command not found
+<empty>
 
 $ [219/303]> ls morceau_*
-  ls: cannot access 'morceau_*': No such file or directory
+  morceau_aa
+  morceau_ab
+  morceau_ac
+  morceau_ad
+  morceau_ae
+  morceau_af
+  morceau_ag
+  morceau_ah
+  morceau_ai
+  morceau_aj
 
 $ [220/303]> cat morceau_aa
-  cat: morceau_aa: No such file or directory
+  1
+  2
 
 $ [221/303]> split -n 3 seq.txt part_
-  split: command not found
+<empty>
 
 $ [222/303]> ls part_*
-  ls: cannot access 'part_*': No such file or directory
+  part_aa
+  part_ab
+  part_ac
 
 $ [223/303]> cat part_* | wc -l
-  1
+  20
 
 $ [224/303]> split -b 10 fruits.txt octets_
-  split: command not found
+<empty>
 
 $ [225/303]> ls octets_*
-  ls: cannot access 'octets_*': No such file or directory
+  octets_aa
+  octets_ab
+  octets_ac
+  octets_ad
 
 
 --- [226] § expansion & espaces — expand/fmt/pr ---
 $ [226/303]> expand -t 4 divers.txt
-  expand: command not found
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
 
 $ [227/303]> unexpand divers.txt
-  unexpand: command not found
+    espaces  avant et apres  
+  MAJUSCULE minuscule
+  UNE LIGNE
 
 $ [228/303]> fmt -w 20 fruits.txt
-  fmt: command not found
+  banane pomme CERISE
+  pomme fraise banane
 
 $ [229/303]> fmt -s fruits.txt
-  fmt: command not found
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
 
 $ [230/303]> pr -t fruits.txt
-  pr: command not found
+  banane
+  pomme
+  CERISE
+  pomme
+  fraise
+  banane
 
 $ [231/303]> pr -n fruits.txt
-  pr: command not found
+  
+  
+  Thu Aug 13 2026  fruits.txt  Page 1
+  
+  
+      1	banane
+      2	pomme
+      3	CERISE
+      4	pomme
+      5	fraise
+      6	banane
+  
+  
+  
+  
+  
 
 $ [232/303]> fold -w 3 fruits.txt
-  fold: command not found
+  ban
+  ane
+  pom
+  me
+  CER
+  ISE
+  pom
+  me
+  fra
+  ise
+  ban
+  ane
 
 $ [233/303]> fold -s -w 10 divers.txt
-  fold: command not found
+    espaces 
+   avant et 
+  apres  
+  MAJUSCULE 
+  minuscule
+  UNE LIGNE
 
 
 --- [234] § xargs & boucles ---
@@ -1193,7 +1319,9 @@ $ [235/303]> echo "fichier1 fichier2 fichier3" | xargs -n1
 $ [236/303]> ls /etc/*.conf | xargs -n1 basename
   -n1 /etc/resolv.conf
   -n1 /etc/adduser.conf
+  -n1 /etc/logrotate.conf
   -n1 /etc/nsswitch.conf
+  -n1 /etc/rsyslog.conf
 
 $ [237/303]> echo "1 2 3" | xargs -I{} echo "valeur={}"
   -I{} 1 2 3
@@ -1208,7 +1336,9 @@ $ [238/303]> seq 1 5 | xargs echo
 $ [239/303]> find /etc -maxdepth 1 -name "*.conf" | xargs wc -l
   wc /etc/resolv.conf
   wc /etc/adduser.conf
+  wc /etc/logrotate.conf
   wc /etc/nsswitch.conf
+  wc /etc/rsyslog.conf
 
 $ [240/303]> echo "pomme banane" | xargs -d" " -n1 echo
   -d  pomme banane
@@ -1231,16 +1361,16 @@ $ [243/303]> i=0; while [ $i -lt 3 ]; do echo "while $i"; i=$((i+1)); done
 
 --- [244] § calcul — bc/expr/let/$(()) ---
 $ [244/303]> echo "2 + 3" | bc
-  bc: command not found
+  5
 
 $ [245/303]> echo "10 / 3" | bc
-  bc: command not found
+  3
 
 $ [246/303]> echo "scale=2; 10/3" | bc
-  bc: command not found
+  3.33
 
 $ [247/303]> echo "2^10" | bc
-  bc: command not found
+  1024
 
 $ [248/303]> expr 5 + 3
   8
@@ -1261,13 +1391,13 @@ $ [253/303]> echo $((100 % 7))
   2
 
 $ [254/303]> echo $((2 ** 8))
-  0
+  256
 
 $ [255/303]> let x=5+5; echo $x
   10
 
 $ [256/303]> seq 1 10 | paste -sd+ - | bc
-  bc: command not found
+  55
 
 
 --- [257] § hachage & encodage — sums/base64/md5 ---
@@ -1285,16 +1415,16 @@ $ [260/303]> md5sum fruits.txt nombres.txt
   d477c7d63c0d6d3e48d6b8dd56d7d343  nombres.txt
 
 $ [261/303]> echo -n 'hello' | md5sum
-  md5sum: hello: No such file or directory
+  md5sum: missing file operand
 
 $ [262/303]> echo 'données' | base64
-  base64: command not found
+  ZG9ubsOpZXMK
 
 $ [263/303]> echo 'ZG9ubsOpZXMK' | base64 -d
-  base64: command not found
+  données
 
 $ [264/303]> cksum fruits.txt
-  cksum: command not found
+  3551067984 40 fruits.txt
 
 
 --- [265] § tee multi-cibles & /dev ---
@@ -1370,15 +1500,15 @@ $ [278/303]> cut -d: -f1 /etc/group | sort | head
   carl
   daemon
   dave
+  nobody
   nogroup
   plugdev
   root
-  sudo
 
 $ [279/303]> wc -l /etc/passwd /etc/group
         8 /etc/passwd
-       13 /etc/group
-       21 total
+       14 /etc/group
+       22 total
 
 $ [280/303]> grep -v "^#" /etc/hostname
   linux-pc

@@ -51,7 +51,7 @@ async function cfg(router: CiscoRouter | HuaweiRouter, cmds: string[]): Promise<
 }
 
 function makeUDPPacket(srcIP: string, dstIP: string, srcPort: number, dstPort: number): IPv4Packet {
-  const udp: UDPPacket = { type: 'udp', sourcePort: srcPort, destinationPort: dstPort, payload: null };
+  const udp: UDPPacket = { type: 'udp', sourcePort: srcPort, destinationPort: dstPort, length: 8, checksum: 0, payload: null };
   return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_UDP, 64, udp, 28);
 }
 
@@ -196,6 +196,7 @@ describe('Group 3: Cisco IOS — PAT / dynamic NAT CLI', () => {
 
   it('3.1 ip nat inside source list … overload adds PAT rule', async () => {
     await cfg(r, ['enable', 'configure terminal',
+      'access-list 1 permit 10.0.0.0 0.0.0.255',
       'ip nat inside source list 1 interface GigabitEthernet0/1 overload']);
     const rules = r._getNATEngine().getDynamicRules();
     expect(rules).toHaveLength(1);
@@ -205,6 +206,7 @@ describe('Group 3: Cisco IOS — PAT / dynamic NAT CLI', () => {
 
   it('3.2 ip nat inside source list … pool adds pool rule', async () => {
     await cfg(r, ['enable', 'configure terminal',
+      'access-list 1 permit 10.0.0.0 0.0.0.255',
       'ip nat pool MYPOOL 203.0.113.10 203.0.113.20 netmask 255.255.255.0',
       'ip nat inside source list 1 pool MYPOOL']);
     const rules = r._getNATEngine().getDynamicRules();
@@ -283,6 +285,13 @@ describe('Group 4: Cisco IOS — show ip nat translations', () => {
     const out = await r.executeCommand('show ip nat statistics');
     expect(out).toContain('GigabitEthernet0/0');
     expect(out).toContain('GigabitEthernet0/1');
+  });
+
+  it('4.3b show ip nat statistics ne commente pas ses propres limites', async () => {
+    const out = await r.executeCommand('show ip nat statistics');
+    expect(out).not.toContain('not supported in this simulator');
+    expect(out).not.toContain('simulator');
+    expect(out).toMatch(/Appl doors:\s+\d+/);
   });
 
   it('4.4 show running-config includes ip nat inside/outside on interface', async () => {
@@ -907,19 +916,19 @@ describe('Group 12: hit/miss counters', () => {
     engine.resetCounters();
   });
 
-  it('12.1 first outbound packet → missCount += 1', () => {
+  it('12.1 first outbound packet → hitCount += 1 (a new translation is a successful outcome, not a Miss)', () => {
     const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
     engine.translateOutbound(pkt, 'outside', 'inside');
-    expect(engine.getCounters().misses).toBe(1);
-    expect(engine.getCounters().hits).toBe(0);
+    expect(engine.getCounters().misses).toBe(0);
+    expect(engine.getCounters().hits).toBe(1);
   });
 
-  it('12.2 second outbound same 5-tuple → hitCount += 1', () => {
+  it('12.2 second outbound same 5-tuple → hitCount += 1 again', () => {
     const pkt = makeUDPPacket('192.168.1.10', '8.8.8.8', 5000, 53);
     engine.translateOutbound(pkt, 'outside', 'inside');
     engine.translateOutbound(pkt, 'outside', 'inside');
-    expect(engine.getCounters().misses).toBe(1);
-    expect(engine.getCounters().hits).toBe(1);
+    expect(engine.getCounters().misses).toBe(0);
+    expect(engine.getCounters().hits).toBe(2);
   });
 
   it('12.3 inbound reply to existing session → hitCount += 1', () => {

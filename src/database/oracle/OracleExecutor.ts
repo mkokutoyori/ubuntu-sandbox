@@ -22,11 +22,14 @@ import type { OracleStorage } from './OracleStorage';
 import type { OracleCatalog } from './OracleCatalog';
 import type { OracleInstance } from './OracleInstance';
 import { type CellValue, type StorageRow, type ColumnMeta as StorageColMeta, type ConstraintMeta, type TableMeta } from '../engine/storage/BaseStorage';
+import type { ColumnDataType } from '../engine/catalog/DataType';
 import { parseOracleType } from '../engine/catalog/DataType';
 import { OracleError } from '../engine/types/DatabaseError';
 import { makeSqlId } from './views/sqlId';
 import { TransactionManager } from './transaction/TransactionManager';
 import { PrivilegeEnforcer } from './security/PrivilegeEnforcer';
+import { collectSelectColumnUsage, BARE_STAR, type SelectColumnUsage } from './security/SelectColumnUsage';
+import { resolveRlsPredicate, type RlsHost, type RlsOperation, type RlsPolicyRecord, type ReferencedColumns } from './security/RlsPredicateApplier';
 import { compareValues as compareOracleValues } from './functions/valueUtils';
 import { resolveWindowFunction, type WindowPartition } from './functions/windowFunctions';
 import { formatDateWithPattern, parseDateWithPattern, coerceDateValue } from './functions/dateSupport';
@@ -34,6 +37,7 @@ import { ConstraintValidator } from './constraints/ConstraintValidator';
 import { UserAdminExecutor } from './executor/UserAdminExecutor';
 import { SecurityDclExecutor } from './executor/SecurityDclExecutor';
 import { InstanceAdminExecutor } from './executor/InstanceAdminExecutor';
+import { ROW_FOOTPRINT_BYTES } from './views/_fileSize';
 
 /**
  * Statement types Oracle classifies as DDL (SQL Language Reference,
@@ -88,6 +92,8 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
 ]);
 
 export class OracleExecutor extends BaseExecutor {
+  declare protected catalog: OracleCatalog;
+  declare protected storage: OracleStorage;
   private instance: OracleInstance;
   /** Scalar SQL function evaluation, extracted to its own module (SRP).
    *  The host closures keep the executor's helpers private. */
@@ -116,6 +122,9 @@ export class OracleExecutor extends BaseExecutor {
 
   /** SQL*Plus / database session id (set by SQLPlusSession). */
   private _sessionId: string = '0';
+  private readOnlyTransaction = false;
+  private constraintMode: 'DEFAULT' | 'IMMEDIATE' | 'DEFERRED' = 'DEFAULT';
+  private autonomousReadOnlyStack: boolean[] = [];
   /** Delegate for SQL commands whose effect lives in OracleDatabase
    *  (manager-backed DDL: LOCK TABLE, flashback archive, in-memory, …). */
   private commandHost: import('./SqlCommandHost').SqlCommandHost | null = null;
@@ -147,7 +156,7 @@ export class OracleExecutor extends BaseExecutor {
         this.emitTxnCommitted(txId, durationMs);
       },
       onRollback: txId => this.emitTxnRolledBack(txId),
-    });
+    }, storage.getTransactionCoordinator());
     this.userAdmin = new UserAdminExecutor({
       storage, catalog, instance, context,
       privileges: this.privileges,
@@ -256,7 +265,16 @@ export class OracleExecutor extends BaseExecutor {
   execute(statement: Statement): ResultSet {
     const parseStart = performance.now();
     this.emitSqlParsed(statement);
-    const result = this.executeStatement(statement);
+    let result: ResultSet;
+    try {
+      result = this.executeStatement(statement);
+    } catch (e: unknown) {
+      const code = e instanceof OracleError ? parseInt(e.code.replace('ORA-', ''), 10) : 600;
+      const message = e instanceof Error ? e.message : String(e);
+      this.recordAuditForStatement(statement, code);
+      this.emitError(code, message);
+      throw e;
+    }
     const elapsed = performance.now() - parseStart;
     this.emitSqlExecuted(statement, result, elapsed);
     this.recordAuditForStatement(statement, 0);
@@ -328,22 +346,6 @@ export class OracleExecutor extends BaseExecutor {
     return s.sourceText ?? stmt.type;
   }
 
-  /** Try to execute, recording errors in audit trail */
-  executeWithAudit(statement: Statement): ResultSet {
-    try {
-      const result = this.executeStatement(statement);
-      this.recordAuditForStatement(statement, 0);
-      this.emitForStatement(statement, result);
-      return result;
-    } catch (e: unknown) {
-      const code = e instanceof OracleError ? e.code : 600;
-      const message = e instanceof Error ? e.message : String(e);
-      this.recordAuditForStatement(statement, code);
-      this.emitError(code, message);
-      throw e;
-    }
-  }
-
   /** Post-dispatch reactive emissions (DML rows, DDL kind/name). */
   private emitForStatement(statement: Statement, result: ResultSet): void {
     const t = statement.type;
@@ -357,6 +359,45 @@ export class OracleExecutor extends BaseExecutor {
       const obj = this.getObjInfo(statement);
       this.emitDdl(ddlKind, obj.name ?? '');
     }
+  }
+
+  /**
+   * Writes a UNIFIED_AUDIT_TRAIL row when a unified audit policy covers
+   * this statement. Independent of the classic AUDIT options: the two
+   * mechanisms are enabled separately in Oracle, and a statement can be
+   * caught by one, the other, both or neither.
+   */
+  private recordUnifiedAuditForStatement(
+    action: string | undefined,
+    objInfo: { owner?: string; name?: string },
+    returncode: number,
+  ): void {
+    if (!action) return;
+    const catalog = this.catalog as OracleCatalog;
+    const username = this.context.currentSchema;
+    const policies = catalog.matchingUnifiedAuditPolicies(
+      username, action, objInfo.owner, objInfo.name);
+    if (policies.length === 0) return;
+
+    const fullSqlText = this._lastSqlText || '';
+    const session = this.context.session as
+      { osUser?: string; machine?: string; terminal?: string } | undefined;
+    catalog.recordUnifiedAudit({
+      sessionId: parseInt(this._sessionId, 10) || 0,
+      username,
+      actionName: action,
+      objName: objInfo.name ?? null,
+      objOwner: objInfo.owner ?? null,
+      returncode,
+      privUsed: null,
+      sqlText: fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText,
+      statementType: action,
+      osUsername: session?.osUser ?? 'oracle',
+      userhost: session?.machine ?? 'localhost',
+      terminal: session?.terminal ?? 'pts/0',
+      timestamp: new Date(),
+      policies: policies.join(', '),
+    });
   }
 
   private recordAuditForStatement(statement: Statement, returncode: number): void {
@@ -374,9 +415,22 @@ export class OracleExecutor extends BaseExecutor {
       DeleteStatement: 'DELETE',
     };
     const dmlAction = dmlMap[stmtType];
+    const objInfo = this.getObjInfo(statement);
+    // AUDIT SELECT ON schema.table BY ACCESS — object-level audit options,
+    // consulted per DML action against the accessed object.
+    const objectAuditMode = dmlAction && objInfo.owner && objInfo.name
+      ? catalog.getObjectAuditOption(objInfo.owner, objInfo.name, dmlAction)
+      : undefined;
     const audited = dmlAction
-      ? catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
+      ? (objectAuditMode !== undefined && objectAuditMode.success !== '-')
+        || catalog.getStmtAuditOpts().some(o => o.auditOption === dmlAction && (o.userName === null || o.userName === this.context.currentSchema))
       : !!actionName;
+
+    // Unified auditing has its own enablement and does not go through the
+    // classic options above, so it is decided before their early return.
+    this.recordUnifiedAuditForStatement(
+      actionName ?? dmlAction, objInfo, returncode);
+
     if (!audited) {
       // Even when not audited at the statement level, fine-grained
       // audit may still apply to this object.
@@ -384,11 +438,15 @@ export class OracleExecutor extends BaseExecutor {
       return;
     }
 
-    const objInfo = this.getObjInfo(statement);
     const effectiveAction = actionName ?? dmlAction!;
     const fullSqlText = this._lastSqlText || this.statementText(statement);
     const sqlText = fullSqlText.length > 2000 ? fullSqlText.slice(0, 2000) : fullSqlText;
     const sessionIdNum = parseInt(this._sessionId, 10) || 0;
+    const session = this.context.session as { osUser?: string; machine?: string; terminal?: string } | undefined;
+    const osUsername = session?.osUser ?? 'oracle';
+    const userhost = session?.machine ?? 'localhost';
+    const terminal = session?.terminal ?? 'pts/0';
+    const timestamp = new Date();
     catalog.recordAudit({
       sessionId: sessionIdNum,
       username: this.context.currentSchema,
@@ -399,6 +457,10 @@ export class OracleExecutor extends BaseExecutor {
       privUsed: null,
       sqlText,
       statementType: effectiveAction,
+      osUsername,
+      userhost,
+      terminal,
+      timestamp,
     });
     this.bus.publish({
       topic: 'oracle.audit.recorded',
@@ -412,10 +474,10 @@ export class OracleExecutor extends BaseExecutor {
         objOwner: objInfo.owner ?? null,
         returncode,
         sqlText,
-        timestamp: new Date(),
-        osUsername: 'oracle',
-        userhost: 'localhost',
-        terminal: 'pts/0',
+        timestamp,
+        osUsername,
+        userhost,
+        terminal,
       },
     });
     if (dmlAction) {
@@ -485,7 +547,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private getObjInfo(stmt: Statement): { name: string | null; owner: string | null } {
-    const s = stmt as Record<string, unknown>;
+    const s = stmt as unknown as Record<string, unknown>;
     let name = (s['tableName'] ?? s['indexName'] ?? s['viewName'] ?? s['sequenceName']
       ?? s['username'] ?? s['roleName'] ?? s['triggerName'] ?? s['synonymName']
       ?? s['objectName'] ?? s['profileName'] ?? s['name'] ?? null) as string | null;
@@ -523,7 +585,16 @@ export class OracleExecutor extends BaseExecutor {
     }
     const isDdl = DDL_STATEMENT_TYPES.has(statement.type);
     if (isDdl && this.txn.isActive) this.commitActiveTransaction();
-    const out = this.dispatchStatement(statement);
+    // Attribute every row mutation of this statement to this session's
+    // transaction (row-level undo). Scoped save/restore keeps nested
+    // executions (PL/SQL calling back into SQL) on the right session.
+    const prevSink = this.storage.setUndoSink(this.txn);
+    let out: ResultSet;
+    try {
+      out = this.dispatchStatement(statement);
+    } finally {
+      this.storage.setUndoSink(prevSink);
+    }
     if (isDdl && this.txn.isActive) this.commitActiveTransaction();
     // SQL*Plus SET AUTOCOMMIT ON: every successful DML commits at once.
     const isDml = statement.type === 'InsertStatement' || statement.type === 'UpdateStatement'
@@ -562,6 +633,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'UpdateStatement':
       case 'DeleteStatement': {
         if (statement.table.dbLink) return this.executeRemoteDml(statement);
+        this.acquireDmlTableLock(statement.table);
         if (statement.type === 'InsertStatement') return this.executeInsert(statement);
         if (statement.type === 'UpdateStatement') return this.executeUpdate(statement);
         return this.executeDelete(statement);
@@ -587,9 +659,11 @@ export class OracleExecutor extends BaseExecutor {
       case 'RollbackStatement': return this.executeRollback(statement.savepoint);
       case 'SavepointStatement': return this.executeSavepoint(statement.name);
       case 'SetTransactionStatement':
-        // The simulator does not differentiate transaction isolation
-        // levels — accept silently like a real ROLE / CONSTRAINTS toggle.
-        return emptyResult('Transaction set.');
+        return this.executeSetTransaction(statement);
+      case 'SetConstraintsStatement':
+        return this.executeSetConstraints(statement);
+      case 'SetRoleStatement':
+        return this.executeSetRole(statement);
       case 'StartupStatement': return this.instanceAdmin.executeStartup(statement);
       case 'ShutdownStatement': return this.instanceAdmin.executeShutdown(statement);
       case 'AlterSystemStatement': return this.instanceAdmin.executeAlterSystem(statement);
@@ -632,7 +706,7 @@ export class OracleExecutor extends BaseExecutor {
             this.storage.deleteRows(owner, name, () => true);
             for (const row of past) this.storage.insertRow(owner, name, row);
           }
-          this.instance.logAlert(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
+          this.instance.logAlertEvent(`FLASHBACK TABLE ${owner}.${name} ${s.to}`);
           return emptyResult('Flashback complete.');
         }
         if (s.target === 'TABLE' && (s.toKind === 'BEFORE_DROP' || /BEFORE\s+DROP/i.test(s.to))) {
@@ -651,7 +725,7 @@ export class OracleExecutor extends BaseExecutor {
           this.storage.insertRows(owner, name, payload.rows);
           catalog.recyclebinRemove(entry.objectName);
         }
-        this.instance.logAlert(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
+        this.instance.logAlertEvent(`FLASHBACK ${s.target}${s.name ? ' ' + (s.schema ? s.schema + '.' : '') + s.name : ''} ${s.to}`);
         return emptyResult(`Flashback complete.`);
       }
       case 'PurgeStatement': {
@@ -723,6 +797,133 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Commit complete.');
   }
 
+  private executeSetTransaction(
+    stmt: import('../engine/parser/ASTNode').SetTransactionStatement,
+  ): ResultSet {
+    if (this.txn.isActive) {
+      throw new OracleError(1453, 'SET TRANSACTION must be first statement of transaction');
+    }
+    if (stmt.readOnly === true) {
+      this.readOnlyTransaction = true;
+      this.txn.begin();
+    } else {
+      this.readOnlyTransaction = false;
+    }
+    return emptyResult('Transaction set.');
+  }
+
+  /**
+   * `SET ROLE` — replaces the session's enabled-role set wholesale.
+   *
+   * Only roles actually granted to the session user may be enabled;
+   * anything else is ORA-01924, and the statement is refused as a whole
+   * so a session never ends up half-switched. A role created
+   * `IDENTIFIED BY` demands its password (ORA-01979).
+   */
+  private executeSetRole(
+    stmt: import('../engine/parser/ASTNode').SetRoleStatement,
+  ): ResultSet {
+    const session = this.context.session as
+      { setEnabledRoles?: (roles: Iterable<string> | null) => void } | undefined;
+    const catalog = this.catalog as OracleCatalog;
+    const engine = catalog.getSecurityEngine();
+    const user = this.context.currentUser;
+    const granted = new Set(engine ? engine.privileges.getGrantedRoles(user) : []);
+
+    for (const { name, password } of stmt.roles) {
+      if (!granted.has(name)) {
+        throw new OracleError(1924, `role '${name}' not granted or does not exist`);
+      }
+      const required = catalog.getRolePassword(name);
+      if (required !== undefined && required !== password) {
+        throw new OracleError(1979, `missing or invalid password for role '${name}'`);
+      }
+    }
+
+    if (stmt.mode === 'NONE') {
+      session?.setEnabledRoles?.([]);
+    } else if (stmt.mode === 'ALL') {
+      // `ALL` never reaches into a password-protected role: it would hand
+      // over exactly what the password was put there to withhold.
+      const excluded = new Set(stmt.roles.map(r => r.name));
+      session?.setEnabledRoles?.([...granted].filter(
+        r => !excluded.has(r) && catalog.getRolePassword(r) === undefined));
+    } else {
+      session?.setEnabledRoles?.(stmt.roles.map(r => r.name));
+    }
+    return emptyResult('Role set.');
+  }
+
+  private requireWritableTransaction(): void {
+    if (this.readOnlyTransaction) {
+      throw new OracleError(1456, 'may not perform insert/delete/update operation inside a READ ONLY transaction');
+    }
+  }
+
+  beginAutonomousScope(): void {
+    this.autonomousReadOnlyStack.push(this.readOnlyTransaction);
+    this.readOnlyTransaction = false;
+    this.txn.enterAutonomous();
+  }
+
+  endAutonomousScope(): void {
+    this.txn.exitAutonomous();
+    this.readOnlyTransaction = this.autonomousReadOnlyStack.pop() ?? false;
+  }
+
+  commitOnLogoff(): void {
+    if (!this.txn.isActive) return;
+    try {
+      this.commitActiveTransaction();
+    } catch {
+      this.txn.rollback();
+    }
+  }
+
+  get hasActiveTransaction(): boolean { return this.txn.isActive; }
+
+  /**
+   * Abrupt termination path: unlike `commitOnLogoff` (a clean client
+   * exit, which commits), a session whose underlying connection has
+   * simply vanished — network cut, dead-connection detection — must
+   * never commit work the client never asked to keep. Mirrors real
+   * Oracle PMON cleanup of an aborted session.
+   */
+  rollbackOnDeadConnection(): boolean {
+    if (!this.txn.isActive) return false;
+    this.txn.rollback();
+    return true;
+  }
+
+  private isConstraintDeferred(c: import('../engine/storage/BaseStorage').ConstraintMeta): boolean {
+    if (!c.deferrable) return false;
+    if (this.constraintMode === 'IMMEDIATE') return false;
+    if (this.constraintMode === 'DEFERRED') return true;
+    return c.initiallyDeferred === true;
+  }
+
+  private readonly deferredConstraintPredicate = (
+    c: import('../engine/storage/BaseStorage').ConstraintMeta,
+  ): boolean => this.isConstraintDeferred(c);
+
+  private executeSetConstraints(
+    stmt: import('../engine/parser/ASTNode').SetConstraintsStatement,
+  ): ResultSet {
+    if (stmt.mode === 'IMMEDIATE') {
+      const violated = this.constraints.findDeferredForeignKeyViolation(
+        this.context.currentSchema,
+        c => (stmt.all || (c.name && stmt.names?.includes(c.name))) === true,
+      );
+      if (violated) {
+        throw new OracleError(2291, `integrity constraint (${violated}) violated - parent key not found`);
+      }
+      this.constraintMode = 'IMMEDIATE';
+    } else {
+      this.constraintMode = 'DEFERRED';
+    }
+    return emptyResult('Constraint set.');
+  }
+
   private executeRemoteDml(
     stmt: import('../engine/parser/ASTNode').InsertStatement
       | import('../engine/parser/ASTNode').UpdateStatement
@@ -758,7 +959,19 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private commitActiveTransaction(): void {
+    const violated = this.constraints.findDeferredForeignKeyViolation(
+      this.context.currentSchema, c => c.deferrable === true);
+    if (violated) {
+      this.flashbackCaptured.clear();
+      this.readOnlyTransaction = false;
+      this.constraintMode = 'DEFAULT';
+      this.txn.rollback();
+      throw new OracleError(2091,
+        `transaction rolled back\nORA-02291: integrity constraint (${violated}) violated - parent key not found`);
+    }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('COMMIT');
     this.txn.commit();
     for (const mv of this.catalog.getMaterializedViews()) {
@@ -774,6 +987,8 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Rollback complete.');
     }
     this.flashbackCaptured.clear();
+    this.readOnlyTransaction = false;
+    this.constraintMode = 'DEFAULT';
     this.commandHost?.settleDbLinkTransactions('ROLLBACK');
     this.txn.rollback();
     return emptyResult('Rollback complete.');
@@ -953,7 +1168,7 @@ export class OracleExecutor extends BaseExecutor {
 
         // Patch CTE inner query to reference already-materialized CTEs
         const patchedQuery = cteNames.length > 0
-          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as SelectStatement, cteNames, cteSchema)
+          ? this.patchCTERefs({ ...cte.query, type: 'Select' } as unknown as SelectStatement, cteNames, cteSchema)
           : cte.query;
 
         // Execute the CTE query
@@ -1023,7 +1238,14 @@ export class OracleExecutor extends BaseExecutor {
     for (const item of stmt.columns) {
       const colName = item.alias || this.exprToString(item.expr);
       const value = this.evaluateExpression(item.expr, [], []);
-      columns.push({ name: colName, dataType: parseOracleType('VARCHAR2', 4000) });
+      // SYSDATE/CURRENT_DATE bare (no TO_CHAR) must render via
+      // NLS_DATE_FORMAT, not the internal storage string — same pseudo-
+      // column type tagging as expandSelectItems() for table-based SELECTs.
+      const pseudoName = item.expr.type === 'Identifier' ? item.expr.name.toUpperCase() : null;
+      const dataType = (pseudoName === 'SYSDATE' || pseudoName === 'CURRENT_DATE') ? parseOracleType('DATE')
+        : (pseudoName === 'SYSTIMESTAMP' || pseudoName === 'CURRENT_TIMESTAMP') ? parseOracleType('TIMESTAMP')
+        : parseOracleType('VARCHAR2', 4000);
+      columns.push({ name: colName, dataType });
       row.push(value);
     }
 
@@ -1034,6 +1256,8 @@ export class OracleExecutor extends BaseExecutor {
     if (!stmt.from || stmt.from.length === 0) {
       return this.executeSelectFromDual(stmt);
     }
+
+    this.prepareSelectColumnScope(stmt);
 
     // ── Step 1: Build combined row set (FROM + JOINs) ──────────────
     const fromResult = this.resolveFromClause(stmt);
@@ -1094,7 +1318,7 @@ export class OracleExecutor extends BaseExecutor {
     // Check for window functions
     const windowColIndices: number[] = [];
     for (let i = 0; i < stmt.columns.length; i++) {
-      if (stmt.columns[i].expr.type === 'FunctionCall' && stmt.columns[i].expr.over) {
+      if (stmt.columns[i].expr.type === 'FunctionCall' && (stmt.columns[i].expr as Expression & { over?: unknown }).over) {
         windowColIndices.push(i);
       }
     }
@@ -1172,11 +1396,11 @@ export class OracleExecutor extends BaseExecutor {
     // Handle additional FROM references (comma-separated → implicit CROSS JOIN)
     for (let i = 1; i < stmt.from!.length; i++) {
       const right = this.loadTableReference(stmt.from![i]);
-      const crossJoin: import('../engine/parser/ASTNode').JoinClause = {
+      const crossJoin = {
         joinType: 'CROSS',
         table: stmt.from![i],
       };
-      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin);
+      const result = this.performJoin(rows, columns, right.rows, right.columns, crossJoin as unknown as import('../engine/parser/ASTNode').JoinClause);
       rows = result.rows;
       columns = result.columns;
     }
@@ -1249,11 +1473,31 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   /**
+   * TM lock for ordinary DML, taken before the statement touches storage
+   * (previously only acquired after the fact, reactively, off the
+   * oracle.dml.executed event — see LockActor). A real conflicting table
+   * lock now denies the statement outright instead of writing through
+   * regardless; see LockManager.acquireDmlLock.
+   */
+  private acquireDmlTableLock(ref: import('../engine/parser/ASTNode').TableRef): void {
+    const schema = this.resolveSchema(ref.schema);
+    const table = ref.name.toUpperCase();
+    if (!this.storage.getTableMeta(schema, table)) return;
+    const sessionId = this._sessionId || '0';
+    const sid = parseInt(sessionId, 10) || 0;
+    this.instance.lockManager.acquireDmlLock({ sessionId, sid, schema, table, txId: sid });
+  }
+
+  /**
    * Acquire row-level TX locks for a `… FOR UPDATE` over a single table.
-   * NOWAIT on a row another session holds raises ORA-00054; SKIP LOCKED
-   * drops those rows from the result; a plain FOR UPDATE returns the row
-   * (the synchronous simulator cannot block-and-wait). Rows are keyed by
-   * primary key when present, else by full content. Self re-locks are fine.
+   * SKIP LOCKED drops a conflicting row from the result; NOWAIT, WAIT n,
+   * and a plain FOR UPDATE all deny immediately instead of blocking real
+   * Oracle would wait indefinitely (plain) or up to n seconds (WAIT n)
+   * for the holder to commit/rollback, but this simulator's execution
+   * engine is synchronous and cannot suspend a statement mid-flight, so
+   * denying is the honest simplification over silently granting a lock
+   * two sessions would both believe they hold. Rows are keyed by primary
+   * key when present, else by full content. Self re-locks are fine.
    */
   private lockForUpdateRows(
     ref: import('../engine/parser/ASTNode').TableRef,
@@ -1277,11 +1521,10 @@ export class OracleExecutor extends BaseExecutor {
       const holder = lm.rowLockHolder(schema, table, key);
       if (holder !== undefined && holder !== sessionId) {
         if (forUpdate.wait === 'SKIP_LOCKED') continue;
-        if (forUpdate.wait === 'NOWAIT') {
-          throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
+        if (typeof forUpdate.wait === 'number') {
+          throw new OracleError(30006, 'resource busy; acquire with WAIT timeout expired');
         }
-        out.push(row); // plain FOR UPDATE: cannot block — return without stealing the lock
-        continue;
+        throw new OracleError(54, 'resource busy and acquire with NOWAIT specified or timeout expired');
       }
       // FOR UPDATE opens a transaction; COMMIT/ROLLBACK is what releases
       // the row locks (via the transaction.* events the lock actor hears).
@@ -1290,6 +1533,124 @@ export class OracleExecutor extends BaseExecutor {
       out.push(row);
     }
     return out;
+  }
+
+  /**
+   * Narrows a row source to what the object's VPD policies allow.
+   *
+   * Applied where the base table's rows are read, so a policy reaches
+   * joins, subqueries and view bodies alike, and — as in real Oracle —
+   * filters the base rows before any join rather than the join product.
+   */
+  private applyRlsPredicate(
+    schema: string, tableName: string, operation: RlsOperation,
+    rows: StorageRow[], columns: StorageColMeta[], referenced?: ReferencedColumns,
+  ): StorageRow[] {
+    const predicate = resolveRlsPredicate(
+      this.rlsHost, schema, tableName, operation, referenced);
+    if (!predicate) return rows;
+    return rows.filter(row => this.evaluateCondition(predicate, row, columns));
+  }
+
+  /**
+   * A row test for the policies guarding a write, or `null` when none
+   * apply. `UPDATE`/`DELETE` use it on the rows they would touch; with
+   * `withCheckOption` it instead tests the row about to be written.
+   */
+  private rlsRowGuard(
+    schema: string, tableName: string, operation: RlsOperation,
+    columns: StorageColMeta[], withCheckOption = false,
+  ): ((row: StorageRow) => boolean) | null {
+    const predicate = resolveRlsPredicate(
+      this.rlsHost, schema, tableName, operation, undefined, withCheckOption);
+    if (!predicate) return null;
+    return (row: StorageRow) => this.evaluateCondition(predicate, row, columns);
+  }
+
+  private readonly rlsHost: RlsHost = {
+    policies: () => (this.catalog as OracleCatalog).getRlsPolicies() as readonly RlsPolicyRecord[],
+    currentUser: () => this.context.currentUser,
+    isExempt: (user) => {
+      const engine = (this.catalog as OracleCatalog).getSecurityEngine();
+      if (!engine) return false;
+      const session = this.context.session as
+        { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+      return engine.privileges.hasSystemPrivilege(
+        user, 'EXEMPT ACCESS POLICY', session?.getEnabledRoles?.() ?? null);
+    },
+    callFunction: (name, args) =>
+      this.commandHost
+        ? this.commandHost.execScalarFunctionCall(this, name, args)
+        : { handled: false, value: null },
+  };
+
+  /**
+   * Which columns of each FROM table the statement reads, keyed by the
+   * table reference that named them. Two questions need this answer —
+   * column privileges and a policy's `sec_relevant_cols` — and computing
+   * it twice would let them drift apart. Keyed by AST node identity, so
+   * nested statements never collide and nothing needs clearing.
+   */
+  private readonly selectColumnScope =
+    new WeakMap<import('../engine/parser/ASTNode').TableRef, ReadonlySet<string>>();
+
+  /**
+   * Records the read scope of each FROM table, and refuses a SELECT that
+   * reads a column the session was never granted.
+   *
+   * The usage walk runs only for a table where the answer changes
+   * something — a column restriction to enforce, or a policy scoped to
+   * particular columns. Every ordinary case costs two lookups.
+   *
+   * A bare column name is attributed to any FROM table that carries it.
+   * A name carried by two of them would be ORA-00918 in real Oracle, so
+   * the attribution is unambiguous wherever the query is legal at all.
+   * Views and dictionary sources have no storage metadata to enumerate
+   * and are left to the object-level check.
+   */
+  private prepareSelectColumnScope(stmt: SelectStatement): void {
+    const refs: import('../engine/parser/ASTNode').TableRef[] = [];
+    for (const ref of stmt.from ?? []) if (ref.type === 'TableRef') refs.push(ref);
+    for (const join of stmt.joins ?? []) if (join.table.type === 'TableRef') refs.push(join.table);
+
+    let usage: SelectColumnUsage | null = null;
+    for (const ref of refs) {
+      const schema = this.resolveSchema(ref.schema);
+      const tableName = ref.name.toUpperCase();
+      const granted = this.privileges.columnRestriction(schema, tableName, 'SELECT');
+      if (granted === null && !this.hasColumnScopedPolicy(schema, tableName)) continue;
+      const meta = this.storage.getTableMeta(schema, tableName);
+      if (!meta) continue;
+
+      usage ??= collectSelectColumnUsage(stmt);
+      const tableColumns = meta.columns.map(c => c.name.toUpperCase());
+      const qualifiers = new Set<string>([tableName]);
+      if (ref.alias) qualifiers.add(ref.alias.toUpperCase());
+
+      const touched = new Set<string>();
+      for (const [qualifier, cols] of usage.qualified) {
+        if (qualifiers.has(qualifier)) for (const col of cols) touched.add(col);
+      }
+      for (const col of usage.unqualified) {
+        if (tableColumns.includes(col)) touched.add(col);
+      }
+      for (const star of usage.stars) {
+        if (star === BARE_STAR || qualifiers.has(star)) {
+          for (const col of tableColumns) touched.add(col);
+        }
+      }
+      this.selectColumnScope.set(ref, touched);
+      if (granted !== null) {
+        this.privileges.requireColumnAccess(schema, tableName, 'SELECT', touched);
+      }
+    }
+  }
+
+  /** True when some policy on the object only arms for certain columns. */
+  private hasColumnScopedPolicy(schema: string, tableName: string): boolean {
+    return (this.catalog as OracleCatalog).getRlsPolicies().some(p =>
+      p.enabled && p.secRelevantCols.length > 0
+      && p.objectOwner === schema && p.objectName === tableName);
   }
 
   private loadTableReference(ref: import('../engine/parser/ASTNode').TableReference): { rows: StorageRow[]; columns: StorageColMeta[] } {
@@ -1304,7 +1665,7 @@ export class OracleExecutor extends BaseExecutor {
       dataType: c.dataType || 'VARCHAR2',
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${alias}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
     const rows: StorageRow[] = result.rows.map((r: Row) => [...r]);
     return { rows, columns };
   }
@@ -1325,7 +1686,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       return { rows: remote.rows.map(r => [...r] as StorageRow), columns };
     }
 
@@ -1346,7 +1707,10 @@ export class OracleExecutor extends BaseExecutor {
     // (JOIN, GROUP BY, aggregates, HAVING, ORDER BY) can operate on
     // them exactly like a real table.
     const catalogName = ref.schema?.toUpperCase() === 'SYS' ? `SYS.${tableName}` : tableName;
-    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(catalogName, this.context.currentUser);
+    const session = this.context.session as
+      { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+    const catalogResult = (this.catalog as OracleCatalog).queryCatalogView(
+      catalogName, this.context.currentUser, session?.getEnabledRoles?.() ?? null, this.instance);
     if (catalogResult && catalogResult.isQuery) {
       const prefix = alias || tableName;
       const columns: StorageColMeta[] = catalogResult.columns.map((c, i) => ({
@@ -1354,7 +1718,7 @@ export class OracleExecutor extends BaseExecutor {
         dataType: c.dataType,
         ordinalPosition: i,
         _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-      } as StorageColMeta & { _qualifiedNames: string[] }));
+      } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
       const rows: StorageRow[] = catalogResult.rows.map(r => [...r] as StorageRow);
       return { rows, columns };
     }
@@ -1362,10 +1726,12 @@ export class OracleExecutor extends BaseExecutor {
     const meta = this.requireTableMeta(schema, tableName);
     // Cross-schema read requires SELECT privilege (or SELECT ANY TABLE)
     this.privileges.requireObjectAccess(schema, tableName, 'SELECT');
-    let storageRows = this.storage.getRows(schema, tableName);
+    let storageRows = this.txn.visibleRows(schema, tableName) ?? this.storage.getRows(schema, tableName);
     if (ref.asOf) {
       storageRows = this.flashbackRowsAt(schema, tableName, ref.asOf) ?? storageRows;
     }
+    storageRows = this.applyRlsPredicate(
+      schema, tableName, 'SELECT', storageRows, meta.columns, this.selectColumnScope.get(ref));
     const rows = this.maybeRedactRows(schema, tableName, meta.columns, storageRows);
 
     // Prefix column names with alias or table name for disambiguation
@@ -1375,7 +1741,7 @@ export class OracleExecutor extends BaseExecutor {
       name: c.name,
       ordinalPosition: i,
       _qualifiedNames: [c.name, `${prefix}.${c.name}`],
-    } as StorageColMeta & { _qualifiedNames: string[] }));
+    } as unknown as StorageColMeta & { _qualifiedNames: string[] }));
 
     return { rows, columns };
   }
@@ -2130,6 +2496,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── MERGE ──────────────────────────────────────────────────────────
 
   private executeMerge(stmt: MergeStatement): ResultSet {
+    this.requireWritableTransaction();
     const targetSchema = this.resolveSchema(stmt.target.schema);
     const targetName = stmt.target.name.toUpperCase();
 
@@ -2206,7 +2573,7 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(stmt.whenNotMatched.values[i], combinedRow, combinedCols);
           }
         }
-        this.storage.insertRow(targetSchema, targetName, newRow);
+        this.insertRowChecked(targetSchema, targetName, targetMeta, newRow);
         insertedCount++;
       }
     }
@@ -2266,13 +2633,13 @@ export class OracleExecutor extends BaseExecutor {
               throw new OracleError(904, `"${colName}": invalid identifier`);
             }
             colIndices.push(-1);
-            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } });
+            projectedCols.push({ name: selCol.alias?.toUpperCase() || colName, dataType: { type: 'VARCHAR2', length: 30 } as unknown as ColumnDataType });
           }
         } else {
           // Expression (function call, etc.) — evaluate at runtime
           colIndices.push(-2);
-          const alias = selCol.alias?.toUpperCase() || (selCol.expr.type === 'Identifier' ? (selCol.expr as IdentifierExpr).name.toUpperCase() : 'EXPR');
-          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } });
+          const alias = selCol.alias?.toUpperCase() || ((selCol.expr.type as string) === 'Identifier' ? (selCol.expr as unknown as IdentifierExpr).name.toUpperCase() : 'EXPR');
+          projectedCols.push({ name: alias, dataType: { type: 'VARCHAR2', length: 4000 } as unknown as ColumnDataType });
         }
       }
       rows = rows.map(row => colIndices.map((idx, i) => {
@@ -2325,6 +2692,16 @@ export class OracleExecutor extends BaseExecutor {
     return meta;
   }
 
+  private insertRowChecked(schema: string, tableName: string, tableMeta: TableMeta, row: StorageRow): void {
+    const tsName = tableMeta.tablespace ?? 'USERS';
+    const capacity = this.storage.reserveTablespaceSpace(tsName, ROW_FOOTPRINT_BYTES);
+    if (!capacity.ok) {
+      throw new OracleError(1653,
+        `unable to extend table ${schema}.${tableName} by ${Math.ceil(capacity.shortfallBytes / 8192)} in tablespace ${tsName}`);
+    }
+    this.storage.insertRow(schema, tableName, row);
+  }
+
   /** Resolve a column name to its ordinal or raise ORA-00904. */
   private requireColumnIndex(tableMeta: TableMeta, colName: string): number {
     const idx = this.findColumnIndex(tableMeta, colName);
@@ -2341,20 +2718,30 @@ export class OracleExecutor extends BaseExecutor {
   // ── INSERT ────────────────────────────────────────────────────────
 
   private executeInsert(stmt: InsertStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
+    this.privileges.requireColumnAccess(schema, tableName, 'INSERT',
+      stmt.columns ?? tableMeta.columns.map(c => c.name));
+    const checkOption = this.rlsRowGuard(schema, tableName, 'INSERT', tableMeta.columns, true);
+    const requireWritable = (row: StorageRow): void => {
+      if (checkOption && !checkOption(row)) {
+        throw new OracleError(28115, 'policy with check option violation');
+      }
+    };
     let insertedCount = 0;
 
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        requireWritable(row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     } else if (stmt.query) {
@@ -2383,9 +2770,10 @@ export class OracleExecutor extends BaseExecutor {
         }
         // Columns the SELECT did not supply fall back to their DEFAULT.
         this.applyColumnDefaults(tableMeta, row, provided);
-        this.constraints.validateConstraints(schema, tableName, tableMeta, row);
+        requireWritable(row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
-        this.storage.insertRow(schema, tableName, row);
+        this.insertRowChecked(schema, tableName, tableMeta, row);
         insertedCount++;
       }
     }
@@ -2431,8 +2819,22 @@ export class OracleExecutor extends BaseExecutor {
     provided: Set<number>,
   ): void {
     for (let i = 0; i < tableMeta.columns.length; i++) {
-      if (provided.has(i)) continue;
       const col = tableMeta.columns[i];
+      if (col.identity) {
+        // `GENERATED ALWAYS` refuse une valeur fournie ; `BY DEFAULT` la
+        // laisse gagner et ne tire de la séquence que si la colonne est
+        // absente — ou explicitement NULL, ce qui revient au même ici.
+        const fournie = provided.has(i) && row[i] !== null && row[i] !== undefined;
+        if (fournie) {
+          if (col.identity.always) {
+            throw new OracleError(32795, 'cannot insert into a generated always identity column');
+          }
+          continue;
+        }
+        row[i] = this.sequenceNextVal(tableMeta.schema, col.identity.sequence);
+        continue;
+      }
+      if (provided.has(i)) continue;
       if (col.defaultExpr) {
         row[i] = this.evaluateExpression(col.defaultExpr as Expression, [], []);
       } else if (col.defaultValue !== undefined) {
@@ -2444,18 +2846,25 @@ export class OracleExecutor extends BaseExecutor {
   // ── UPDATE ────────────────────────────────────────────────────────
 
   private executeUpdate(stmt: UpdateStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
+    this.privileges.requireColumnAccess(schema, tableName, 'UPDATE',
+      stmt.assignments.map(a => a.column));
 
     for (const assign of stmt.assignments) this.requireColumnIndex(tableMeta, assign.column);
 
+    const visible = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns);
+    const checkOption = this.rlsRowGuard(schema, tableName, 'UPDATE', tableMeta.columns, true);
+
     const count = this.storage.updateRows(
       schema, tableName,
-      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
+      (row) => (!visible || visible(row))
+        && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns)),
       (row) => {
         const newRow = [...row];
         for (const assign of stmt.assignments) {
@@ -2464,11 +2873,14 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(assign.value, row, tableMeta.columns);
           }
         }
+        if (checkOption && !checkOption(newRow)) {
+          throw new OracleError(28115, 'policy with check option violation');
+        }
         // Validate constraints on updated row (UNIQUE, PK, NOT NULL, FK, CHECK).
         // Pass the pre-update row so uniqueness checks can exclude it
         // from the existing-row set (otherwise an UPDATE that leaves
         // the PK column unchanged would self-conflict).
-        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row);
+        this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
         return newRow;
       }
@@ -2480,6 +2892,7 @@ export class OracleExecutor extends BaseExecutor {
   // ── DELETE ────────────────────────────────────────────────────────
 
   private executeDelete(stmt: DeleteStatement): ResultSet {
+    this.requireWritableTransaction();
     this.txn.begin();
     const schema = this.resolveSchema(stmt.table.schema);
     const tableName = stmt.table.name.toUpperCase();
@@ -2487,17 +2900,18 @@ export class OracleExecutor extends BaseExecutor {
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
 
+    const visible = this.rlsRowGuard(schema, tableName, 'DELETE', tableMeta.columns);
+    const deletable = (row: StorageRow): boolean =>
+      (!visible || visible(row))
+      && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+
     // Validate FK constraints on rows to be deleted
-    const rowsToDelete = this.storage.getRows(schema, tableName)
-      .filter(row => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
+    const rowsToDelete = this.storage.getRows(schema, tableName).filter(deletable);
     for (const row of rowsToDelete) {
       this.constraints.validateDeleteForeignKeys(schema, tableName, row);
     }
 
-    const count = this.storage.deleteRows(
-      schema, tableName,
-      (row) => !stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns),
-    );
+    const count = this.storage.deleteRows(schema, tableName, deletable);
 
     return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
   }
@@ -2769,12 +3183,33 @@ export class OracleExecutor extends BaseExecutor {
       return emptyResult('Table created.');
     }
 
-    const columns: StorageColMeta[] = stmt.columns.map((col, i) => ({
-      name: col.name.toUpperCase(),
-      dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
-      ordinalPosition: i,
-      defaultExpr: col.defaultValue,
-    }));
+    // Une colonne d'identité est servie par une séquence qu'Oracle crée
+    // à côté de la table, nommée `ISEQ$$_<objet>`. On fait pareil plutôt
+    // que d'ajouter un second compteur : `NEXTVAL`, le cache, le cycle
+    // et la vue `USER_SEQUENCES` marchent alors sans rien de nouveau.
+    const columns: StorageColMeta[] = stmt.columns.map((col, i) => {
+      const meta: StorageColMeta = {
+        name: col.name.toUpperCase(),
+        dataType: parseOracleType(col.dataType.name, col.dataType.precision, col.dataType.scale),
+        ordinalPosition: i,
+        defaultExpr: col.defaultValue,
+      };
+      if (col.identity) {
+        const seq = `ISEQ$$_${tableName}_${col.name.toUpperCase()}`;
+        const inc = col.identity.incrementBy ?? 1;
+        this.storage.createSequence(schema, {
+          name: seq,
+          currentValue: (col.identity.startWith ?? 1) - inc,
+          incrementBy: inc,
+          minValue: 1,
+          maxValue: Number.MAX_SAFE_INTEGER,
+          cache: 20,
+          cycle: false,
+        });
+        meta.identity = { always: col.identity.always, sequence: seq };
+      }
+      return meta;
+    });
 
     const constraints: ConstraintMeta[] = [];
     const nextSysC = () => `SYS_C${String(10000 + this.instance.nextSysConstraintId()).padStart(6, '0')}`;
@@ -2800,7 +3235,7 @@ export class OracleExecutor extends BaseExecutor {
         } else if (cc.constraintType === 'UNIQUE') {
           constraints.push({ name, type: 'UNIQUE', columns: [col.name.toUpperCase()] });
         } else if (cc.constraintType === 'REFERENCES') {
-          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete });
+          constraints.push({ name, type: 'FOREIGN_KEY', columns: [col.name.toUpperCase()], refTable: cc.refTable?.toUpperCase().split('.').pop(), refColumns: cc.refColumn ? [cc.refColumn.toUpperCase()] : undefined, onDelete: cc.onDelete, deferrable: cc.deferrable, initiallyDeferred: cc.initiallyDeferred });
         }
       }
     }
@@ -2816,6 +3251,8 @@ export class OracleExecutor extends BaseExecutor {
         refColumns: tc.refColumns?.map(c => c.toUpperCase()),
         onDelete: tc.onDelete,
         checkExpression: tc.checkExpr ? this.serializeExpr(tc.checkExpr) : undefined,
+        deferrable: tc.deferrable,
+        initiallyDeferred: tc.initiallyDeferred,
       });
     }
 
@@ -2973,8 +3410,7 @@ export class OracleExecutor extends BaseExecutor {
         }
       } else if (action.action === 'MODIFY_COLUMN') {
         const col = action.column;
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const existing = meta.columns.find(c => c.name === col.name.toUpperCase());
         if (!existing) throw new OracleError(904, `"${col.name.toUpperCase()}": invalid identifier`);
         // Update data type (a typeless MODIFY — `(col NOT NULL)` — leaves it).
@@ -3005,9 +3441,9 @@ export class OracleExecutor extends BaseExecutor {
           }
         }
       } else if (action.action === 'ENCRYPT_COLUMN') {
-        // Validate that the column exists, then record TDE metadata.
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const wallet = (this.catalog as OracleCatalog).getTdeWallet();
+        if (!wallet || wallet.status !== 'OPEN') throw new OracleError(28365, 'wallet is not open');
+        const meta = this.requireTableMeta(schema, tableName);
         const col = meta.columns.find(c => c.name === action.columnName.toUpperCase());
         if (!col) throw new OracleError(904, `"${action.columnName.toUpperCase()}": invalid identifier`);
         (this.catalog as OracleCatalog).setColumnEncryption(
@@ -3021,8 +3457,7 @@ export class OracleExecutor extends BaseExecutor {
       } else if (action.action === 'DROP_COLUMN') {
         this.storage.dropColumn(schema, tableName, action.columnName.toUpperCase());
       } else if (action.action === 'RENAME_COLUMN') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const oldUpper = action.oldName.toUpperCase();
         const newUpper = action.newName.toUpperCase();
         const target = meta.columns.find(c => c.name === oldUpper);
@@ -3034,37 +3469,33 @@ export class OracleExecutor extends BaseExecutor {
         // Migrate stored row keys when rows are dict-keyed.
         const rows = this.storage.getRows?.(schema, tableName) ?? [];
         for (const row of rows) {
-          if (row && Object.prototype.hasOwnProperty.call(row, oldUpper)) {
-            (row as Record<string, unknown>)[newUpper] = (row as Record<string, unknown>)[oldUpper];
-            delete (row as Record<string, unknown>)[oldUpper];
+          if (row && Object.prototype.hasOwnProperty.call(row as unknown as Record<string, unknown>, oldUpper)) {
+            (row as unknown as Record<string, unknown>)[newUpper] = (row as unknown as Record<string, unknown>)[oldUpper];
+            delete (row as unknown as Record<string, unknown>)[oldUpper];
           }
         }
       } else if (action.action === 'RENAME_TABLE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const newUpper = action.newName.toUpperCase();
         if (this.storage.getTableMeta(schema, newUpper)) {
           throw new OracleError(955, 'name is already used by an existing object');
         }
         meta.name = newUpper;
       } else if (action.action === 'MOVE_TABLESPACE') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (!meta) throw new OracleError(942, `table or view does not exist`);
+        const meta = this.requireTableMeta(schema, tableName);
         const target = action.tablespace.toUpperCase();
         if (target && !(this.storage as OracleStorage).tablespaceExists(target)) {
           throw new OracleError(959, `tablespace '${target}' does not exist`);
         }
         if (target) meta.tablespace = target;
       } else if (action.action === 'MOVE_COMPRESS') {
-        const meta = this.storage.getTableMeta(schema, tableName);
-        if (meta) {
-          const level = action.compressionLevel?.trim().toUpperCase();
-          // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
-          const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
-          meta.compression = off
-            ? { enabled: false }
-            : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
-        }
+        const meta = this.requireTableMeta(schema, tableName);
+        const level = action.compressionLevel?.trim().toUpperCase();
+        // `NOCOMPRESS` / empty / OFF → disabled. Anything else → enabled.
+        const off = !level || level === 'OFF' || level.startsWith('NOCOMPRESS');
+        meta.compression = off
+          ? { enabled: false }
+          : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
@@ -3288,9 +3719,10 @@ export class OracleExecutor extends BaseExecutor {
 
   private serializeExpr(expr: Expression): string {
     switch (expr.type) {
-      case 'Identifier': return (expr as IdentifierExpr).qualifier
-        ? `${(expr as IdentifierExpr).qualifier}.${(expr as IdentifierExpr).name}`
-        : (expr as IdentifierExpr).name;
+      case 'Identifier': {
+        const ident = expr as IdentifierExpr & { qualifier?: string };
+        return ident.qualifier ? `${ident.qualifier}.${ident.name}` : ident.name;
+      }
       case 'Literal': {
         const lit = expr as LiteralExpr;
         return typeof lit.value === 'string' ? `'${lit.value}'` : String(lit.value ?? 'NULL');
@@ -3331,14 +3763,14 @@ export class OracleExecutor extends BaseExecutor {
 
   private executeExplainPlan(stmt: ExplainPlanStatement): ResultSet {
     const innerStmt = stmt.statement;
-    const columns: ColumnMeta[] = [
+    const columns = [
       { name: 'ID', dataType: 'NUMBER' },
       { name: 'OPERATION', dataType: 'VARCHAR2' },
       { name: 'NAME', dataType: 'VARCHAR2' },
       { name: 'ROWS', dataType: 'NUMBER' },
       { name: 'BYTES', dataType: 'NUMBER' },
       { name: 'COST', dataType: 'NUMBER' },
-    ];
+    ] as unknown as ColumnMeta[];
 
     const db = (this as { _db?: { planGenerator: import('./plan/PlanGenerator').PlanGenerator } })._db;
     if (db) {
@@ -3351,7 +3783,7 @@ export class OracleExecutor extends BaseExecutor {
         n.bytes,
         n.cost,
       ]);
-      return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+      return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
     }
 
     const plan: Array<{ id: number; operation: string; name: string; rows: number; bytes: number; cost: number }> = [];
@@ -3397,7 +3829,7 @@ export class OracleExecutor extends BaseExecutor {
     }
 
     const rows: Row[] = plan.map(p => [p.id, p.operation, p.name, p.rows, p.bytes, p.cost]);
-    return { columns, rows, rowCount: rows.length, message: 'Explained.' };
+    return { columns, rows, rowCount: rows.length, message: 'Explained.' } as ResultSet;
   }
 
   // ── Triggers ─────────────────────────────────────────────────────
@@ -4132,7 +4564,13 @@ export class OracleExecutor extends BaseExecutor {
             const displayName = table ? `${table}.${name}` : name;
             throw new OracleError(904, `"${displayName}": invalid identifier`);
           }
-          result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType('VARCHAR2'), expr: item.expr });
+          // SYSDATE/CURRENT_DATE are DATE-typed pseudo-columns — tag them
+          // as such so the renderer applies NLS_DATE_FORMAT instead of
+          // printing the internal YYYY-MM-DD HH:MM:SS storage string.
+          const pseudoType = (name === 'SYSDATE' || name === 'CURRENT_DATE') ? 'DATE'
+            : (name === 'SYSTIMESTAMP' || name === 'CURRENT_TIMESTAMP') ? 'TIMESTAMP'
+            : 'VARCHAR2';
+          result.push({ name: item.alias || name, colIndex: -1, dataType: parseOracleType(pseudoType), expr: item.expr });
         }
       } else {
         const alias = item.alias || this.exprToString(item.expr);

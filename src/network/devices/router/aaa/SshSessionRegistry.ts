@@ -1,12 +1,53 @@
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { NetworkOsAccountEventEnvelope, SshAuthMethod } from './NetworkOsAccount';
+import { renderTable } from '../../shells/cli/TextTable';
+import {
+  SHOW_USERS_HEADER, SHOW_USERS_COLUMNS, SHOW_USERS_STYLE,
+} from '../../shells/cisco/ciscoTableLayouts';
+import { rendreDisplayUsers } from '../../shells/huawei/huaweiTableLayouts';
 
 export type VtySessionState = 'active' | 'idle' | 'closed';
+
+export type SessionTransport = 'console' | 'ssh' | 'telnet' | 'aux';
+
+export type LineKind = 'con' | 'vty' | 'aux';
+
+const LIGNE_DE: Record<SessionTransport, LineKind> = {
+  console: 'con', aux: 'aux', ssh: 'vty', telnet: 'vty',
+};
+
+const LIGNES_PHYSIQUES: Record<LineKind, number | null> = { con: 1, aux: 1, vty: null };
+
+export function absoluteLineNumber(kind: LineKind, index: number): number {
+  if (kind === 'con') return index;
+  if (kind === 'aux') return 1 + index;
+  return 2 + index;
+}
+
+export const VRP_VTY_FIRST_INDEX = 129;
+
+export function vrpUserInterfaceIndex(kind: LineKind, index: number): number {
+  if (kind === 'con') return index;
+  if (kind === 'aux') return 1 + index;
+  return VRP_VTY_FIRST_INDEX + index;
+}
+
+const PORT_DE: Record<SessionTransport, number> = { console: 0, aux: 0, ssh: 22, telnet: 23 };
+
+function transportDepuisSource(from: string, localPort?: number): SessionTransport {
+  const s = (from ?? '').trim().toLowerCase();
+  if (s === 'console' || s === 'con' || s === 'local' || s === '') return 'console';
+  if (s === 'aux') return 'aux';
+  if (localPort === 23) return 'telnet';
+  return 'ssh';
+}
 
 export interface SshSessionRecord {
   readonly id: string;
   readonly line: string;
   readonly lineIndex: number;
+  readonly lineKind: LineKind;
+  readonly transport: SessionTransport;
   readonly user: string;
   readonly privilege: number;
   readonly fromIp: string;
@@ -23,20 +64,26 @@ export interface SshSessionRecord {
   readonly terminalType: string | null;
   readonly localPort: number;
   readonly peerPort: number;
+  readonly cipher: string;
+  readonly hmac: string;
 }
 
 export interface SshSessionRegistryOptions {
   deviceId: string;
   bus: IEventBus;
   maxLines?: number;
+  capacity?: () => number;
   historyLimit?: number;
   now?: () => number;
+  algorithms?: () => { chiffrement: string; hmac: string };
 }
 
 interface MutableSession {
   id: string;
   line: string;
   lineIndex: number;
+  lineKind: LineKind;
+  transport: SessionTransport;
   user: string;
   privilege: number;
   fromIp: string;
@@ -51,26 +98,33 @@ interface MutableSession {
   terminalType: string | null;
   localPort: number;
   peerPort: number;
+  cipher: string;
+  hmac: string;
 }
 
 export class SshSessionRegistry {
   private readonly deviceId: string;
   private readonly bus: IEventBus;
   private readonly maxLines: number;
+  private readonly capacity: (() => number) | null;
   private readonly historyLimit: number;
   private readonly now: () => number;
+  private readonly algorithms: (() => { chiffrement: string; hmac: string }) | null;
   private readonly subs: Unsubscribe[] = [];
 
   private readonly active: Map<string, MutableSession> = new Map();
   private readonly closed: MutableSession[] = [];
   private nextSessionSeq = 1;
+  private courante: string | null = null;
 
   constructor(opts: SshSessionRegistryOptions) {
     this.deviceId = opts.deviceId;
     this.bus = opts.bus;
     this.maxLines = opts.maxLines ?? 16;
+    this.capacity = opts.capacity ?? null;
     this.historyLimit = opts.historyLimit ?? 256;
     this.now = opts.now ?? Date.now;
+    this.algorithms = opts.algorithms ?? null;
     this.subs.push(this.bus.subscribe('router.aaa.account.login.success', this.onLoginSuccess));
     this.subs.push(this.bus.subscribe('router.ssh.session.closed', this.onSessionClosed));
   }
@@ -79,7 +133,8 @@ export class SshSessionRegistry {
 
   private snapshot(s: MutableSession, now: number): SshSessionRecord {
     return {
-      id: s.id, line: s.line, lineIndex: s.lineIndex, user: s.user,
+      id: s.id, line: s.line, lineIndex: s.lineIndex,
+      lineKind: s.lineKind, transport: s.transport, user: s.user,
       privilege: s.privilege, fromIp: s.fromIp, fromHost: s.fromHost,
       authMethod: s.authMethod, loginAt: s.loginAt,
       lastActivityAt: s.lastActivityAt, closedAt: s.closedAt,
@@ -88,12 +143,14 @@ export class SshSessionRegistry {
       idleSeconds: Math.max(0, Math.floor(((s.closedAt ?? now) - s.lastActivityAt) / 1000)),
       bytesIn: s.bytesIn, bytesOut: s.bytesOut, terminalType: s.terminalType,
       localPort: s.localPort, peerPort: s.peerPort,
+      cipher: s.cipher, hmac: s.hmac,
     };
   }
 
   list(now: number = this.now()): readonly SshSessionRecord[] {
+    const rang = (s: MutableSession) => (s.lineKind === 'con' ? 0 : 1) * 1000 + s.lineIndex;
     return Array.from(this.active.values())
-      .sort((a, b) => a.lineIndex - b.lineIndex)
+      .sort((a, b) => rang(a) - rang(b))
       .map(s => this.snapshot(s, now));
   }
 
@@ -107,13 +164,33 @@ export class SshSessionRegistry {
     return s ? this.snapshot(s, this.now()) : null;
   }
 
-  private allocateLine(): { line: string; index: number } | null {
-    const taken = new Set(Array.from(this.active.values()).map(s => s.lineIndex));
-    for (let i = 0; i < this.maxLines; i++) {
-      if (!taken.has(i)) return { line: `vty ${i}`, index: i };
+  private allocateLine(kind: LineKind): { line: string; index: number } | null {
+    const taken = new Set(Array.from(this.active.values())
+      .filter(s => s.lineKind === kind)
+      .map(s => s.lineIndex));
+    const limit = LIGNES_PHYSIQUES[kind] ?? (this.capacity ? this.capacity() : this.maxLines);
+    for (let i = 0; i < limit; i++) {
+      if (!taken.has(i)) return { line: `${kind} ${i}`, index: i };
     }
     return null;
   }
+
+  hasFreeLine(kind: LineKind = 'vty'): boolean {
+    return this.allocateLine(kind) !== null;
+  }
+
+  /**
+   * L'indice que prendrait la PROCHAINE session, ou `null` si la reserve
+   * est pleine — la ligne dont les directives (`transport input`,
+   * `access-class`, `login`) gouverneront cette session-la.
+   */
+  prochaineLigne(kind: LineKind = 'vty'): number | null {
+    return this.allocateLine(kind)?.index ?? null;
+  }
+
+  setCurrentSession(id: string | null): void { this.courante = id; }
+
+  currentSession(): string | null { return this.courante; }
 
   open(input: {
     user: string;
@@ -125,17 +202,23 @@ export class SshSessionRegistry {
     terminalType?: string;
     localPort?: number;
     peerPort?: number;
+    transport?: SessionTransport;
   }): SshSessionRecord | null {
-    const slot = this.allocateLine();
+    const transport = input.transport ?? transportDepuisSource(input.fromIp, input.localPort);
+    const kind = LIGNE_DE[transport];
+    const algos = this.algorithms?.() ?? { chiffrement: 'aes256-ctr', hmac: 'hmac-sha2-256' };
+    const slot = this.allocateLine(kind);
     if (!slot) return null;
     const at = input.at ?? this.now();
     const session: MutableSession = {
-      id: `ssh-${this.nextSessionSeq++}`,
+      id: `${kind}-${this.nextSessionSeq++}`,
       line: slot.line,
       lineIndex: slot.index,
+      lineKind: kind,
+      transport,
       user: input.user,
       privilege: input.privilege ?? 1,
-      fromIp: input.fromIp,
+      fromIp: transport === 'console' || transport === 'aux' ? '' : input.fromIp,
       fromHost: input.fromHost ?? null,
       authMethod: input.authMethod ?? 'password',
       loginAt: at,
@@ -145,15 +228,48 @@ export class SshSessionRegistry {
       bytesIn: 0,
       bytesOut: 0,
       terminalType: input.terminalType ?? null,
-      localPort: input.localPort ?? 22,
+      localPort: input.localPort ?? PORT_DE[transport],
       peerPort: input.peerPort ?? 0,
+      cipher: algos.chiffrement,
+      hmac: algos.hmac,
     };
     this.active.set(session.id, session);
+    this.noteLineUse(kind, slot.index);
+    this.courante = session.id;
     this.bus.publish({
       topic: 'router.ssh.session.opened',
       payload: { deviceId: this.deviceId, session: this.snapshot(session, at) },
     });
     return this.snapshot(session, at);
+  }
+
+  /**
+   * La ligne portait deja la session — c'est l'UTILISATEUR qui vient
+   * d'etre etabli. Une console en `login local` s'ouvre anonyme et se
+   * nomme apres l'authentification ; `show users` doit alors ecrire le
+   * nom dans sa colonne `User`, sans quoi la ligne la plus utilisee de
+   * la machine est la seule qui ne dise jamais qui est dessus.
+   */
+  noterAuthentification(id: string, user: string, privilege?: number): void {
+    const s = this.active.get(id);
+    if (!s) return;
+    s.user = user;
+    if (privilege !== undefined) s.privilege = privilege;
+    s.lastActivityAt = this.now();
+  }
+
+  /** La session ouverte sur une ligne d'un genre donne, s'il y en a une. */
+  sessionSurLigne(kind: LineKind): SshSessionRecord | null {
+    const now = this.now();
+    for (const s of this.active.values()) {
+      if (s.lineKind === kind) return this.snapshot(s, now);
+    }
+    return null;
+  }
+
+  setTerminalType(id: string, terminalType: string): void {
+    const s = this.active.get(id);
+    if (s) s.terminalType = terminalType;
   }
 
   touch(id: string, at: number = this.now(), bytesIn = 0, bytesOut = 0): void {
@@ -170,9 +286,15 @@ export class SshSessionRegistry {
     s.closedAt = at;
     s.closeReason = reason;
     this.active.delete(id);
+    if (this.courante === id) this.courante = null;
     this.closed.push(s);
     while (this.closed.length > this.historyLimit) this.closed.shift();
     const snap = this.snapshot(s, at);
+    const watcher = this.closeWatchers.get(id);
+    if (watcher) {
+      this.closeWatchers.delete(id);
+      watcher(reason);
+    }
     this.bus.publish({
       topic: 'router.ssh.session.closed',
       payload: { deviceId: this.deviceId, session: snap, reason },
@@ -205,29 +327,100 @@ export class SshSessionRegistry {
 
   private onSessionClosed = () => { /* placeholder for external close hook */ };
 
-  formatShowUsers(now: number = this.now()): string {
-    const header = '    Line       User       Host(s)              Idle       Location';
-    if (this.active.size === 0) return `${header}\n*  0 con 0                idle                 00:00:00`;
-    const rows: string[] = [header];
-    let starred = false;
-    for (const s of this.list(now)) {
-      const idle = secondsToHms(s.idleSeconds);
-      const marker = !starred ? '*' : ' ';
-      starred = true;
-      rows.push(`${marker} ${(s.lineIndex + 1).toString().padStart(3, ' ')} ${s.line.padEnd(7, ' ')}   ${s.user.padEnd(10, ' ')} idle                 ${idle} ${s.fromIp}`);
-    }
-    return rows.join('\n');
+  private readonly closeWatchers: Map<string, (reason: string) => void> = new Map();
+
+  subscribeClose(id: string, cb: (reason: string) => void): () => void {
+    this.closeWatchers.set(id, cb);
+    return () => { this.closeWatchers.delete(id); };
   }
 
-  formatDisplayUsers(now: number = this.now()): string {
-    const header = '  UI    Delay    Type     Network Address     AuthenStatus    AuthorcmdFlag   User';
-    if (this.active.size === 0) return `${header}\n+ 0     00:00:00 CON 0                        pass            N`;
-    const rows: string[] = [header];
-    for (const s of this.list(now)) {
-      const delay = secondsToHms(s.idleSeconds);
-      rows.push(`+ ${(129 + s.lineIndex).toString().padEnd(5, ' ')} ${delay} SSH      ${s.fromIp.padEnd(20, ' ')} pass            N               ${s.user}`);
+  private readonly canaux: Map<number, Set<(texte: string) => void>> = new Map();
+
+  private readonly uses: Map<string, number> = new Map();
+
+  noteLineUse(kind: 'con' | 'vty' | 'aux', index: number): void {
+    const k = `${kind}:${index}`;
+    this.uses.set(k, (this.uses.get(k) ?? 0) + 1);
+  }
+
+  usesFor(kind: 'con' | 'vty' | 'aux', index: number): number {
+    return this.uses.get(`${kind}:${index}`) ?? 0;
+  }
+
+  subscribeMessages(lineIndex: number, cb: (texte: string) => void): () => void {
+    let set = this.canaux.get(lineIndex);
+    if (!set) { set = new Set(); this.canaux.set(lineIndex, set); }
+    set.add(cb);
+    return () => {
+      const s = this.canaux.get(lineIndex);
+      if (!s) return;
+      s.delete(cb);
+      if (s.size === 0) this.canaux.delete(lineIndex);
+    };
+  }
+
+  deliverMessage(cible: 'all' | number, texte: string): number {
+    let n = 0;
+    for (const [ligne, abonnes] of this.canaux) {
+      if (cible !== 'all' && cible !== ligne) continue;
+      for (const cb of abonnes) { cb(texte); n += 1; }
     }
-    return rows.join('\n');
+    return n;
+  }
+
+  private rangAbsolu(s: SshSessionRecord): number {
+    return absoluteLineNumber(s.lineKind, s.lineIndex);
+  }
+
+  sessionOnAbsoluteLine(absolute: number): SshSessionRecord | null {
+    const now = this.now();
+    for (const s of this.active.values()) {
+      if (absoluteLineNumber(s.lineKind, s.lineIndex) === absolute) return this.snapshot(s, now);
+    }
+    return null;
+  }
+
+  formatShowUsers(now: number = this.now()): string {
+    if (this.active.size === 0) return SHOW_USERS_HEADER;
+    const lignes = renderTable(
+      this.list(now).map((s) => ({
+        marker: s.id === this.courante ? '*' : ' ',
+        line: String(this.rangAbsolu(s)),
+        lineName: s.line,
+        user: s.user,
+        idle: secondsToHms(s.idleSeconds),
+        location: s.fromIp,
+      })),
+      SHOW_USERS_COLUMNS,
+      SHOW_USERS_STYLE,
+    ).slice(1);
+    return [SHOW_USERS_HEADER, ...lignes].join('\n');
+  }
+
+  private interfaceUtilisateur(s: SshSessionRecord): number {
+    return vrpUserInterfaceIndex(s.lineKind, s.lineIndex);
+  }
+
+  private static readonly TYPE_VRP: Record<SessionTransport, string> = {
+    console: 'CON', aux: 'AUX', telnet: 'TEL', ssh: 'SSH',
+  };
+
+  formatDisplayUsers(now: number = this.now()): string {
+    const sessions = this.list(now);
+    if (sessions.length === 0) return rendreDisplayUsers([], []);
+    return rendreDisplayUsers(
+      sessions.map((s) => ({
+        courante: s.id === this.courante,
+        interfaceUtilisateur: String(this.interfaceUtilisateur(s)),
+        nomLigne: `${s.lineKind === 'con' ? 'CON' : s.lineKind === 'aux' ? 'AUX' : 'VTY'} ${s.lineIndex}`,
+        delai: secondsToHms(s.idleSeconds),
+        type: s.lineKind === 'con' ? '' : SshSessionRegistry.TYPE_VRP[s.transport],
+        adresse: s.fromIp,
+        authentification: 'pass',
+        autorisation: 'no',
+      })),
+      sessions.map((s) => s.user),
+    );
   }
 }
 

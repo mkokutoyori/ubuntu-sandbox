@@ -10,7 +10,9 @@
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, Minus, Maximize2, Copy, Circle, Download, Settings2 } from 'lucide-react';
+import {
+  X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb, ClipboardPaste,
+} from 'lucide-react';
 import { Equipment, isFullyImplemented } from '@/network';
 import { TerminalView, useTerminalSession } from '@/components/terminal/TerminalView';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
@@ -43,6 +45,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   const deviceType = device.getDeviceType();
   const isPoweredOn = device.getIsPoweredOn();
   const sessionType = session.getSessionType();
+  const platformLabel = session.platformLabel?.() ?? null;
 
   const isDatabaseDevice = deviceType.startsWith('db-');
   const [showScrollbackConfig, setShowScrollbackConfig] = useState(false);
@@ -59,6 +62,28 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   const [isResizing, setIsResizing] = useState(false);
   const resizeRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number; direction: string } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Rendre le focus à l'élément qui a ouvert le terminal.
+   *
+   * Sans cela, fermer une fenêtre renvoyait le focus au `<body>` : un
+   * utilisateur au clavier repartait du début de la page à chaque
+   * fermeture, et perdait l'équipement qu'il venait de configurer.
+   *
+   * Ce qui n'est délibérément PAS fait ici : fermer sur Escape. Le
+   * rapport le réclame pour tout modal, mais Escape appartient au
+   * SHELL — c'est la touche qui sort du mode insertion de vim. La
+   * détourner casserait l'éditeur que ce terminal héberge. Un terminal
+   * se ferme par son bouton, par `exit`, ou par le raccourci de
+   * tuilage ; pas par une touche dont le programme invité a besoin.
+   */
+  useEffect(() => {
+    if (embedded) return;
+    const ouvrant = document.activeElement as HTMLElement | null;
+    return () => {
+      if (ouvrant && document.contains(ouvrant)) ouvrant.focus({ preventScroll: true });
+    };
+  }, [embedded]);
 
   // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent, direction: string) => {
@@ -139,15 +164,16 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
               {sshContext.chain.map((f) => `${f.user}@${f.host}`).join(' › ')}
             </span>
           )}
-          {sessionType === 'linux' && !isDatabaseDevice && ' — Ubuntu Linux'}
-          {sessionType === 'windows' && (winShellMode === 'powershell' ? ' — Windows PowerShell' : ' — Command Prompt')}
-          {sessionType === 'cisco' && ' — Cisco IOS'}
-          {sessionType === 'huawei' && ' — Huawei VRP'}
+          {platformLabel !== null && ` — ${platformLabel}`}
+          {platformLabel === null && sessionType === 'linux' && !isDatabaseDevice && ' — Ubuntu Linux'}
+          {platformLabel === null && sessionType === 'windows' && (winShellMode === 'powershell' ? ' — Windows PowerShell' : ' — Command Prompt')}
+          {platformLabel === null && sessionType === 'cisco' && ' — Cisco IOS'}
+          {platformLabel === null && sessionType === 'huawei' && ' — Huawei VRP'}
           {isDatabaseDevice && ` — ${
-            deviceType === 'db-oracle' ? 'Oracle' :
-            deviceType === 'db-mysql' ? 'MySQL' :
-            deviceType === 'db-postgres' ? 'PostgreSQL' :
-            deviceType === 'db-sqlserver' ? 'SQL Server' : 'Database'
+            (deviceType as string) === 'db-oracle' ? 'Oracle' :
+            (deviceType as string) === 'db-mysql' ? 'MySQL' :
+            (deviceType as string) === 'db-postgres' ? 'PostgreSQL' :
+            (deviceType as string) === 'db-sqlserver' ? 'SQL Server' : 'Database'
           }`}
         </span>
         {!isPoweredOn && (
@@ -166,6 +192,38 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           title="Scrollback settings"
         >
           <Settings2 className="w-3 h-3 text-white/40 hover:text-white/70" />
+        </button>
+        <button
+          data-testid="ghost-text-toggle"
+          onClick={() => session.toggleGhostText()}
+          className={cn(
+            "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
+            session.isGhostTextEnabled() && "bg-amber-400/10"
+          )}
+          title={session.isGhostTextEnabled()
+            ? 'Ghost text ON — inline completion preview (click to disable)'
+            : 'Ghost text OFF — click to enable inline completion preview'}
+        >
+          <Lightbulb className={cn(
+            "w-3 h-3",
+            session.isGhostTextEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
+          )} />
+        </button>
+        <button
+          data-testid="multiline-paste-toggle"
+          onClick={() => session.toggleMultilinePaste()}
+          className={cn(
+            "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
+            session.isMultilinePasteEnabled() && "bg-amber-400/10"
+          )}
+          title={session.isMultilinePasteEnabled()
+            ? 'Multi-line paste ON — a pasted block runs line by line, like a real console (click to hold it back)'
+            : 'Multi-line paste OFF — a pasted block stays editable on the command line and runs nothing'}
+        >
+          <ClipboardPaste className={cn(
+            "w-3 h-3",
+            session.isMultilinePasteEnabled() ? "text-amber-400" : "text-white/40 hover:text-white/70"
+          )} />
         </button>
         <button
           onClick={toggleRecording}
@@ -204,10 +262,13 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           className="absolute top-1 right-1 z-20 p-3 rounded-lg border shadow-xl"
           style={{ backgroundColor: '#1e1e1e', borderColor: '#3f3f3f' }}
         >
-          <div className="text-[11px] text-white/60 mb-2">Scrollback limit</div>
+          <label htmlFor="scrollback-limit" className="block text-[11px] text-white/60 mb-2">Scrollback limit</label>
           <div className="flex items-center gap-2">
             <input
+              id="scrollback-limit"
+              name="scrollbackLimit"
               type="number"
+              autoComplete="off"
               value={scrollbackValue}
               onChange={(e) => setScrollbackValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') applyScrollback(); }}
@@ -232,7 +293,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
   // ── Embedded mode ──
   if (embedded) {
     return (
-      <div data-testid="terminal-modal" className={cn("w-full h-full flex flex-col", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f]")}>
+      <div data-testid="terminal-modal" data-device-id={device.getId()} className={cn("w-full h-full flex flex-col", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f]")}>
         {titleBar}
         {terminalContent}
       </div>
@@ -245,6 +306,17 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
       <div
         ref={modalRef}
         data-testid="terminal-modal"
+        data-device-id={device.getId()}
+        /*
+          Sémantique de dialogue. L'overlay se comportait comme un modal
+          — il couvre l'écran et capte l'attention — sans le dire : ni
+          `role`, ni `aria-modal`, ni nom accessible. Un lecteur d'écran
+          annonçait un groupe anonyme, et rien n'indiquait que le reste
+          de la page était hors d'atteinte.
+        */
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Terminal — ${deviceName}`}
         className={cn("flex flex-col relative", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f] shadow-2xl shadow-black/70", "animate-in zoom-in-95 fade-in duration-200", isResizing && "select-none")}
         style={isFullscreen ? { width: '100vw', height: '100vh', borderRadius: 0 } : { width: `${dimensions.width}px`, height: `${dimensions.height}px` }}
       >

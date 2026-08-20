@@ -9,8 +9,17 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { parseCredentialArg } from './RemotingCmdlets';
 
 // ─── New-Object ───────────────────────────────────────────────────────────
+
+function newObjectCtorArgs(ctx: CmdletContext): PSValue[] {
+  const named = ctx.named['argumentlist'];
+  if (named !== undefined) return Array.isArray(named) ? named : [named];
+  const positional = ctx.positional.slice(1);
+  if (positional.length === 1 && Array.isArray(positional[0])) return positional[0];
+  return positional;
+}
 
 export class NewObjectCmdlet implements ICmdlet {
   readonly name = 'new-object';
@@ -24,7 +33,7 @@ export class NewObjectCmdlet implements ICmdlet {
     if (tname.includes('arraylist') || tname.includes('list`1') || tname.includes('list<')) {
       // Real JS array with __list__ sentinel for getMember dispatch + Count getter for direct JS access
       const arr: PSValue[] = [];
-      (arr as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
+      (arr as unknown as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
       Object.defineProperty(arr, 'Count', { get: () => arr.length, enumerable: false, configurable: true });
       return arr as unknown as PSValue;
     }
@@ -41,9 +50,69 @@ export class NewObjectCmdlet implements ICmdlet {
       return s as unknown as PSValue;
     }
     if (tname.includes('pscredential')) {
-      const args = (ctx.named['argumentlist'] ?? ctx.positional.slice(1)) as PSValue[];
-      const user = psValueToString(Array.isArray(args) ? args[0] : args ?? '');
+      const args = newObjectCtorArgs(ctx);
+      const user = psValueToString(args[0] ?? '');
       return { UserName: user, Password: null } as Record<string, PSValue>;
+    }
+    if (tname.includes('activedirectoryschedule')) {
+      // `Set-ADReplicationSiteLink -ReplicationSchedule` accepts one of these — no
+      // schedule-window enforcement is modeled (PRD-Repadmin.md §0.2, same "no
+      // KCC" boundary as `/kcc`), so `SetSchedule(...)` (dispatched in PSRuntime's
+      // getMember for `__type__ === 'ActiveDirectorySchedule'`) is a real callable
+      // no-op rather than a silently-absent method that would misparse the call.
+      return { __type__: 'ActiveDirectorySchedule' } as unknown as PSValue;
+    }
+    if (tname.includes('activedirectoryaccessrule')) {
+      const args = newObjectCtorArgs(ctx);
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        ActiveDirectoryRights: psValueToString(args[1] ?? ''),
+        AccessControlType: psValueToString(args[2] ?? 'Allow'),
+        ObjectType: psValueToString(args[3] ?? '00000000-0000-0000-0000-000000000000'),
+        InheritanceType: psValueToString(args[4] ?? 'None'),
+        InheritedObjectType: psValueToString(args[5] ?? '00000000-0000-0000-0000-000000000000'),
+      } as Record<string, PSValue>;
+    }
+    // `FileSystemAuditRule` — la règle de SACL. Même forme que la règle
+    // d'accès, mais le dernier argument est un `AuditFlags`
+    // (`Success`/`Failure`/les deux) et non un `AccessControlType` : la
+    // SACL dit ce qu'on journalise, pas qui a le droit. Le test doit
+    // précéder celui de `filesystemaccessrule`, qui autrement le
+    // capturerait par sous-chaîne.
+    if (tname.includes('filesystemauditrule')) {
+      const args = newObjectCtorArgs(ctx);
+      const flags = args.length <= 3 ? args[2] : args[4];
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        FileSystemRights: psValueToString(args[1] ?? ''),
+        InheritanceFlags: args.length <= 3 ? 'None' : psValueToString(args[2] ?? 'None'),
+        PropagationFlags: args.length <= 3 ? 'None' : psValueToString(args[3] ?? 'None'),
+        AuditFlags: psValueToString(flags ?? 'Success'),
+      } as Record<string, PSValue>;
+    }
+    // Real .NET FileSystemAccessRule has two commonly-used overloads: the
+    // short (identity, fileSystemRights, accessControlType) and the long
+    // (identity, fileSystemRights, inheritanceFlags, propagationFlags,
+    // accessControlType) — disambiguate on arg count like the real ctor
+    // overload resolution would.
+    if (tname.includes('filesystemaccessrule')) {
+      const args = newObjectCtorArgs(ctx);
+      if (args.length <= 3) {
+        return {
+          IdentityReference: psValueToString(args[0] ?? ''),
+          FileSystemRights: psValueToString(args[1] ?? ''),
+          InheritanceFlags: 'None',
+          PropagationFlags: 'None',
+          AccessControlType: psValueToString(args[2] ?? 'Allow'),
+        } as Record<string, PSValue>;
+      }
+      return {
+        IdentityReference: psValueToString(args[0] ?? ''),
+        FileSystemRights: psValueToString(args[1] ?? ''),
+        InheritanceFlags: psValueToString(args[2] ?? 'None'),
+        PropagationFlags: psValueToString(args[3] ?? 'None'),
+        AccessControlType: psValueToString(args[4] ?? 'Allow'),
+      } as Record<string, PSValue>;
     }
     // psobject / pscustomobject (and the generic fallback) honour -Property,
     // which seeds the new object's NoteProperties from a hashtable.
@@ -172,13 +241,31 @@ export class GetHelpCmdlet implements ICmdlet {
   }
 }
 
-function extractCommentHelp(source: string): Record<string, string> {
+/**
+ * Un chemin que le fournisseur de fichiers peut juger.
+ *
+ * `C:` est un lecteur de fichiers ; `TestDrive:`, `HKLM:`, `Env:` sont
+ * des lecteurs PowerShell d'un AUTRE fournisseur, dont le systeme de
+ * fichiers ne sait rien — lui demander si le chemin existe reviendrait a
+ * refuser un `Set-Location HKLM:` parfaitement valide. Une lettre unique
+ * suivie de `:` est un lecteur de fichiers ; un nom plus long ne l'est
+ * pas.
+ */
+function isFileSystemPath(path: string): boolean {
+  const qualifier = /^([A-Za-z]+):/.exec(path);
+  return qualifier === null || qualifier[1].length === 1;
+}
+
+export function extractCommentHelp(source: string): Record<string, string> {
   const blockRe = /<#([\s\S]*?)#>/;
   const block = blockRe.exec(source);
   if (!block) return {};
   const body = block[1];
   const result: Record<string, string> = {};
-  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|\Z)/gm;
+  // `\Z` n'est pas une ancre en JavaScript — c'est un `Z` litteral. La
+  // derniere section d'un bloc d'aide n'etait donc capturee que si elle
+  // contenait la lettre Z ; la fin d'entree s'ecrit `(?![\s\S])`.
+  const sectionRe = /^\s*\.([A-Z][A-Z]+)\s*$([\s\S]*?)(?=^\s*\.[A-Z][A-Z]+\s*$|(?![\s\S]))/gm;
   let m: RegExpExecArray | null;
   while ((m = sectionRe.exec(body)) !== null) {
     result[m[1].toLowerCase()] = m[2].trim();
@@ -334,32 +421,118 @@ export class ImportModuleCmdlet implements ICmdlet {
 
 export class InvokeCommandCmdlet implements ICmdlet {
   readonly name = 'invoke-command';
+  readonly parameters = ['ComputerName', 'ScriptBlock', 'ArgumentList', 'Credential', 'Session', 'AsJob', 'JobName'] as const;
   readonly aliases = ['icm'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const block = (ctx.named['scriptblock'] ?? ctx.positional[0]) as PSValue;
     if (!block) return null;
-    return ctx.invokeBlock(block as never, null);
+
+    const computerRaw = ctx.named['computername'];
+    if (computerRaw === undefined || computerRaw === null) {
+      return ctx.invokeBlock(block as never, null);
+    }
+
+    const computers = (Array.isArray(computerRaw) ? computerRaw : [computerRaw]).map(psValueToString);
+    const argListRaw = ctx.named['argumentlist'];
+    const argumentList = argListRaw === undefined || argListRaw === null
+      ? []
+      : (Array.isArray(argListRaw) ? argListRaw : [argListRaw]);
+    const credentialRaw = ctx.named['credential'];
+    const credential = credentialRaw !== undefined && credentialRaw !== null
+      ? parseCredentialArg(psValueToString(credentialRaw)) : undefined;
+
+    const remoting = ctx.providers.remoting;
+    if (!remoting) {
+      ctx.emitError('Invoke-Command : WinRM cannot complete the operation in this context.');
+      return null;
+    }
+
+    const results: PSValue[] = [];
+    for (const name of computers) {
+      const remote = remoting.resolveComputer(name, credential);
+      if (!remote || !remote.isRemotingEnabled()) {
+        ctx.emitError(
+          `Invoke-Command : Connecting to remote server ${name} failed with the following error message: ` +
+          `WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer ` +
+          `is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows ` +
+          `access from this computer.`,
+        );
+        continue;
+      }
+      const value = remote.invoke(block as never, argumentList);
+      const items = Array.isArray(value) ? value : (value !== null && value !== undefined ? [value] : []);
+      for (const item of items) {
+        if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+          (item as Record<string, PSValue>)['PSComputerName'] = remote.hostname;
+        }
+        results.push(item);
+      }
+    }
+
+    if (ctx.named['asjob'] === true) {
+      const jobs = ctx.providers.jobs;
+      if (!jobs) return null;
+      const jobName = ctx.named['jobname'] ? psValueToString(ctx.named['jobname']) : undefined;
+      return jobInfoToPS(jobs.startJob(jobName, results, 0));
+    }
+
+    return results.length === 1 ? results[0] : results;
   }
 }
 
 // ─── Start-Job / Receive-Job / Wait-Job ───────────────────────────────────
 
-let _jobCounter = 0;
+function jobInfoToPS(info: { id: number; name: string; state: string; hasMoreData: boolean; output: unknown[] }): Record<string, PSValue> {
+  return {
+    Id: info.id, Name: info.name, State: info.state,
+    HasMoreData: info.hasMoreData, Output: info.output as PSValue[],
+  };
+}
+
+function jobKey(ctx: CmdletContext): string | number | null {
+  const id = ctx.named['id'];
+  if (id != null) return Number(id);
+  const arg = ctx.named['job'] ?? ctx.named['name'] ?? ctx.positional[0];
+  if (arg != null && typeof arg === 'object') {
+    const oid = (arg as Record<string, PSValue>)['Id'];
+    if (oid != null) return Number(oid);
+  }
+  return (arg as string | number | null) ?? null;
+}
 
 export class StartJobCmdlet implements ICmdlet {
   readonly name = 'start-job';
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
     const block = (ctx.named['scriptblock'] ?? ctx.positional[0]) as PSValue;
+    const name = (ctx.named['name'] as string | undefined) || undefined;
+    jobs.beginRecording();
     const output = block ? ctx.invokeBlock(block as never, null) : null;
-    const id = ++_jobCounter;
-    return {
-      Id: id, Name: `Job${id}`, State: 'Completed',
-      Output: output === null ? [] : Array.isArray(output) ? output : [output],
-      HasMoreData: true,
-    } as Record<string, PSValue>;
+    const durationMs = jobs.endRecording();
+    const arr = output == null ? [] : Array.isArray(output) ? output.filter(x => x != null) : [output];
+    return jobInfoToPS(jobs.startJob(name, arr, durationMs));
+  }
+}
+
+export class GetJobCmdlet implements ICmdlet {
+  readonly name = 'get-job';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
+    const id = ctx.named['id'];
+    const name = ctx.named['name'];
+    if (id != null || name != null) {
+      const info = jobs.getJob(id != null ? Number(id) : String(name));
+      return info ? jobInfoToPS(info) : null;
+    }
+    for (const info of jobs.listJobs()) ctx.emit(jobInfoToPS(info));
+    return null;
   }
 }
 
@@ -368,10 +541,12 @@ export class ReceiveJobCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-    if (!job) return null;
-    const out = job['Output'] as PSValue[];
-    if (!out || out.length === 0) return null;
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
+    const key = jobKey(ctx);
+    if (key == null) return null;
+    const out = jobs.receiveJob(key) as PSValue[];
+    if (out.length === 0) return null;
     return out.length === 1 ? out[0] : out;
   }
 }
@@ -381,9 +556,18 @@ export class WaitJobCmdlet implements ICmdlet {
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const job = (ctx.named['job'] ?? ctx.positional[0]) as Record<string, PSValue> | null;
-    if (job) (job as Record<string, PSValue>)['State'] = 'Completed';
-    return job;
+    const jobs = ctx.providers.jobs;
+    if (!jobs) return null;
+    const key = jobKey(ctx);
+    if (key == null) return null;
+    const info = jobs.waitJob(key);
+    if (!info) return null;
+    const arg = ctx.named['job'] ?? ctx.positional[0];
+    if (arg != null && typeof arg === 'object') {
+      (arg as Record<string, PSValue>)['State'] = info.state;
+      (arg as Record<string, PSValue>)['HasMoreData'] = info.hasMoreData;
+    }
+    return jobInfoToPS(info);
   }
 }
 
@@ -397,6 +581,14 @@ export class SetLocationCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
     const fs = ctx.providers.filesystem;
+    // Se placer dans un répertoire qui n'existe pas est refusé, comme
+    // par PowerShell : le curseur suivait n'importe quel chemin, si bien
+    // que `$PWD` désignait un dossier absent et que tout ce qui suivait
+    // travaillait dans le vide.
+    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
     if (fs && path) fs.setCwd(path);
     if (path) {
       ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);
@@ -416,6 +608,10 @@ export class PushLocationCmdlet implements ICmdlet {
     stack.push((fs ? fs.getCwd() : 'C:\\') as PSValue);
     ctx.runtime.setVariable('__locationStack__', stack as unknown as PSValue);
     const path = psValueToString(ctx.named['path'] ?? ctx.positional[0] ?? '');
+    if (fs && path && isFileSystemPath(path) && !fs.exists(path)) {
+      ctx.emitError(`Cannot find path '${path}' because it does not exist.`);
+      return null;
+    }
     if (fs && path) fs.setCwd(path);
     if (path) {
       ctx.runtime.setVariable('PWD', { Path: path, ProviderPath: path, Provider: 'FileSystem' } as Record<string, PSValue>);

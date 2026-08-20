@@ -22,6 +22,7 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import { Equipment } from '@/network';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -38,7 +39,7 @@ describe('SSH LAN — subshell-style header semantics', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
     term = new LinuxTerminalSession('term-1', lan.pc1);

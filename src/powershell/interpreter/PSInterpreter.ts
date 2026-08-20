@@ -21,15 +21,19 @@ import { NULL_PROVIDERS }            from '@/powershell/providers/NullProviders'
 import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
+import type { PSScriptBlock }        from '@/powershell/parser/PSASTNode';
 
 // Re-export PSRuntimeError so existing imports like
 // `import { PSRuntimeError } from '@/powershell/interpreter/PSInterpreter'`
 // continue to work without change.
 export { PSRuntimeError };
 
-// Lazy singleton: a single registry is shared across all PSInterpreter instances.
-// Built once on first use (avoids re-registering on every `new PSInterpreter()`).
+// Lazy singletons: one registry per Windows edition, shared across all
+// PSInterpreter instances of that edition (avoids re-registering on every
+// `new PSInterpreter()`). Standalone interpreters (no device) get the full
+// set so language-level tests keep every cmdlet available.
 let _sharedRegistry: CmdletRegistry | null = null;
+let _clientRegistry: CmdletRegistry | null = null;
 function getSharedRegistry(): CmdletRegistry {
   if (!_sharedRegistry) {
     _sharedRegistry = new CmdletRegistry();
@@ -37,12 +41,25 @@ function getSharedRegistry(): CmdletRegistry {
   }
   return _sharedRegistry;
 }
+function getClientRegistry(): CmdletRegistry {
+  if (!_clientRegistry) {
+    _clientRegistry = new CmdletRegistry();
+    registerCoreCmdlets(_clientRegistry, { includeServerCmdlets: false });
+  }
+  return _clientRegistry;
+}
+
+export interface PSInterpreterOptions {
+  /** Windows edition of the hosting device — 'client' hides Server-only cmdlets. */
+  edition?: 'client' | 'server';
+}
 
 export class PSInterpreter {
   private readonly runtime: PSRuntime;
 
-  constructor(providers: PSProviders = NULL_PROVIDERS) {
-    this.runtime = new PSRuntime(getSharedRegistry(), providers);
+  constructor(providers: PSProviders = NULL_PROVIDERS, opts: PSInterpreterOptions = {}) {
+    const registry = opts.edition === 'client' ? getClientRegistry() : getSharedRegistry();
+    this.runtime = new PSRuntime(registry, providers);
     // Register a stub script for dot-sourcing tests
     this.runtime.registerScript('script.ps1', '$someVarFromScript = "dotSourced"');
   }
@@ -68,6 +85,10 @@ export class PSInterpreter {
 
   setVariable(name: string, value: PSValue): void {
     this.runtime.setVariable(name, value);
+  }
+
+  invokeRemote(block: PSScriptBlock, positionalArgs: PSValue[] = []): PSValue {
+    return this.runtime.invokeScriptBlock(block, {}, positionalArgs, this.runtime.global);
   }
 
   /** All completable command names + aliases (for Tab completion). */

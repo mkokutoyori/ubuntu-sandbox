@@ -24,25 +24,27 @@ import {
 } from './CollectionCmdlets';
 import {
   ConvertToJsonCmdlet, ConvertFromJsonCmdlet,
-  ConvertToCsvCmdlet, ConvertFromCsvCmdlet,
+  ConvertToCsvCmdlet, ConvertFromCsvCmdlet, ExportCsvCmdlet,
 } from './ConversionCmdlets';
 import {
   GetDateCmdlet, SetDateCmdlet, NewTimespanCmdlet, StartSleepCmdlet,
+  GetTimeZoneCmdlet, SetTimeZoneCmdlet,
+  MeasureCommandCmdlet,
 } from './DateTimeCmdlets';
 import {
   SplitPathCmdlet, JoinPathCmdlet, TestPathCmdlet, ResolvePathCmdlet,
   GetChildItemCmdlet, GetContentCmdlet, SetContentCmdlet, AddContentCmdlet,
   NewItemCmdlet, RemoveItemCmdlet, CopyItemCmdlet, MoveItemCmdlet,
   OutFileCmdlet as OutFilePathCmdlet,
-  GetItemPropertyCmdlet, SetItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
+  GetItemPropertyCmdlet, SetItemPropertyCmdlet, NewItemPropertyCmdlet, RemoveItemPropertyCmdlet, ClearItemPropertyCmdlet,
   GetItemCmdlet, SetItemCmdlet, GetAclCmdlet, SetAclCmdlet,
-  RenameItemCmdlet, MkdirCmdlet,
+  RenameItemCmdlet, MkdirCmdlet, GetFileHashCmdlet, GetAuthenticodeSignatureCmdlet,
 } from './PathCmdlets';
 import {
   NewObjectCmdlet, GetRandomCmdlet, InvokeExpressionCmdlet,
   ConvertToSecureStringCmdlet, GetHelpCmdlet, GetCommandCmdlet,
   GetModuleCmdlet, ImportModuleCmdlet, ClearHostCmdlet,
-  InvokeCommandCmdlet, StartJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
+  InvokeCommandCmdlet, StartJobCmdlet, GetJobCmdlet, ReceiveJobCmdlet, WaitJobCmdlet,
   SetLocationCmdlet, GetLocationCmdlet, PushLocationCmdlet, PopLocationCmdlet,
   NewPSDriveCmdlet, GetPSDriveCmdlet,
   GetAliasCmdlet, GetPSProviderCmdlet,
@@ -52,6 +54,7 @@ import {
   GetServiceCmdlet, StartServiceCmdlet, StopServiceCmdlet,
   RestartServiceCmdlet, SuspendServiceCmdlet, ResumeServiceCmdlet,
   SetServiceCmdlet, NewServiceCmdlet, RemoveServiceCmdlet,
+  RegisterWmiEventCmdlet,
 } from './ServiceCmdlets';
 import {
   GetProcessCmdlet, StopProcessCmdlet, StartProcessCmdlet,
@@ -65,25 +68,29 @@ import {
   GetLocalGroupMemberCmdlet, RenameLocalGroupCmdlet,
 } from './UserCmdlets';
 import {
-  GetNetAdapterCmdlet, GetNetIPAddressCmdlet,
-  TestConnectionCmdlet, ResolveDnsNameCmdlet,
+  GetNetAdapterCmdlet, GetNetIPAddressCmdlet, GetNetIPInterfaceCmdlet, GetNetNeighborCmdlet,
+  NewNetNeighborCmdlet, RemoveNetNeighborCmdlet, SetNetNeighborCmdlet,
+  TestConnectionCmdlet, ResolveDnsNameCmdlet, InvokeWebRequestCmdlet,
   GetNetIPConfigurationCmdlet, GetNetRouteCmdlet,
-  GetNetTCPConnectionCmdlet, HostnameCmdlet, WhoamiCmdlet,
+  GetNetTCPConnectionCmdlet, GetNetUDPEndpointCmdlet, HostnameCmdlet, WhoamiCmdlet,
   NewNetIPAddressCmdlet, RemoveNetIPAddressCmdlet,
   NewNetRouteCmdlet, RemoveNetRouteCmdlet,
   EnableNetAdapterCmdlet, DisableNetAdapterCmdlet, RenameNetAdapterCmdlet,
   GetDnsClientServerAddressCmdlet, SetDnsClientServerAddressCmdlet,
-  ClearDnsClientCacheCmdlet,
+  GetDnsClientCacheCmdlet, ClearDnsClientCacheCmdlet,
   GetNetFirewallRuleCmdlet, NewNetFirewallRuleCmdlet,
   SetNetFirewallRuleCmdlet, RemoveNetFirewallRuleCmdlet,
   EnableNetFirewallRuleCmdlet, DisableNetFirewallRuleCmdlet,
   GetNetConnectionProfileCmdlet, SetNetConnectionProfileCmdlet,
   SetNetIPAddressCmdlet, SetNetRouteCmdlet,
   RestartNetAdapterCmdlet, TestNetConnectionCmdlet,
+  ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
+import { SendMailMessageCmdlet } from './MailMessageCmdlets';
 import {
   AddVpnConnectionCmdlet, GetVpnConnectionCmdlet,
   SetVpnConnectionCmdlet, RemoveVpnConnectionCmdlet,
+  AddVpnConnectionRouteCmdlet, ConnectVpnConnectionCmdlet, DisconnectVpnConnectionCmdlet,
 } from './VpnCmdlets';
 import {
   GetEventLogCmdlet, WriteEventLogCmdlet, ClearEventLogCmdlet,
@@ -97,15 +104,115 @@ import {
 import {
   GetScheduledTaskCmdlet, RegisterScheduledTaskCmdlet,
   UnregisterScheduledTaskCmdlet, NewScheduledTaskTriggerCmdlet,
-  NewScheduledTaskActionCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
-  GetCimInstanceCmdlet,
+  GetScheduledTaskInfoCmdlet, StartScheduledTaskCmdlet, StopScheduledTaskCmdlet,
+  EnableScheduledTaskCmdlet, DisableScheduledTaskCmdlet, SetScheduledTaskCmdlet,
+  NewScheduledTaskActionCmdlet, NewScheduledTaskPrincipalCmdlet, GetDiskCmdlet, GetVolumeCmdlet,
+  GetCimInstanceCmdlet, GetCounterCmdlet,
 } from './SystemMgmtCmdlets';
+import {
+  EnablePSRemotingCmdlet, TestWSManCmdlet, GetWSManCredSSPCmdlet,
+} from './RemotingCmdlets';
+import {
+  GetWindowsFeatureCmdlet, InstallWindowsFeatureCmdlet, UninstallWindowsFeatureCmdlet,
+} from './ServerManagerCmdlets';
+import {
+  GetSmbShareCmdlet, NewSmbShareCmdlet, RemoveSmbShareCmdlet, GetSmbSessionCmdlet,
+} from './SmbCmdlets';
+import {
+  InstallADDSForestCmdlet, InstallADDSDomainControllerCmdlet, GetADDomainControllerCmdlet, RemoveADDomainControllerCmdlet,
+  NewADUserCmdlet, GetADUserCmdlet, SetADUserCmdlet, RemoveADUserCmdlet, SetADAccountPasswordCmdlet,
+  DisableADAccountCmdlet, EnableADAccountCmdlet,
+  NewADGroupCmdlet, GetADGroupCmdlet, RemoveADGroupCmdlet, AddADGroupMemberCmdlet, RemoveADGroupMemberCmdlet, GetADGroupMemberCmdlet,
+  GetADComputerCmdlet, SetADComputerCmdlet, GetADObjectCmdlet, SetADObjectCmdlet, RestoreADObjectCmdlet,
+  GetADOptionalFeatureCmdlet, EnableADOptionalFeatureCmdlet, GetADRootDSECmdlet, SearchADAccountCmdlet,
+  AddKdsRootKeyCmdlet, GetKdsRootKeyCmdlet, NewADServiceAccountCmdlet, GetADServiceAccountCmdlet,
+  SetADServiceAccountCmdlet, AddADComputerServiceAccountCmdlet,
+  NewADOrganizationalUnitCmdlet, GetADOrganizationalUnitCmdlet,
+  NewADReplicationSiteCmdlet, SetADReplicationSiteCmdlet, GetADReplicationSiteCmdlet,
+  NewADReplicationSubnetCmdlet, GetADReplicationSubnetCmdlet,
+  NewADReplicationSiteLinkCmdlet, GetADReplicationSiteLinkCmdlet, SetADReplicationSiteLinkCmdlet,
+  MoveADDirectoryServerCmdlet, GetADReplicationUpToDatenessVectorTableCmdlet,
+  GetADReplicationConnectionCmdlet, GetADReplicationFailureCmdlet,
+  GetADDefaultDomainPasswordPolicyCmdlet, SetADDefaultDomainPasswordPolicyCmdlet,
+  NewADFineGrainedPasswordPolicyCmdlet, AddADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADFineGrainedPasswordPolicyCmdlet, GetADFineGrainedPasswordPolicySubjectCmdlet,
+  GetADUserResultantPasswordPolicyCmdlet,
+  NewADAttributeCmdlet, NewADObjectClassCmdlet,
+  NewADDomainCmdlet, GetADForestCmdlet, GetADDomainCmdlet, MoveADDirectoryServerOperationMasterRoleCmdlet,
+  NewADTrustCmdlet, GetADTrustCmdlet,
+} from './ActiveDirectoryCmdlets';
+import {
+  InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, AddCATemplateCmdlet, GetCertificateCmdlet,
+} from './AdcsCmdlets';
+import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
+import {
+  AddDnsServerPrimaryZoneCmdlet, GetDnsServerZoneCmdlet,
+  AddDnsServerResourceRecordACmdlet, AddDnsServerResourceRecordAAAACmdlet,
+  AddDnsServerResourceRecordCNameCmdlet, AddDnsServerResourceRecordMXCmdlet,
+  AddDnsServerResourceRecordPtrCmdlet, AddDnsServerResourceRecordCmdlet,
+  RemoveDnsServerResourceRecordCmdlet, GetDnsServerResourceRecordCmdlet,
+  SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet,
+} from './DnsServerCmdlets';
+import {
+  AddDhcpServerv4ScopeCmdlet, GetDhcpServerv4ScopeCmdlet,
+  AddDhcpServerv4ExclusionRangeCmdlet, AddDhcpServerv4ReservationCmdlet,
+  SetDhcpServerv4OptionValueCmdlet, GetDhcpServerv4LeaseCmdlet,
+  AddDhcpServerInDCCmdlet,
+} from './DhcpServerCmdlets';
+import {
+  NewNpsRadiusClientCmdlet, GetNpsRadiusClientCmdlet, RemoveNpsRadiusClientCmdlet,
+  NewNpsNetworkPolicyCmdlet, GetNpsNetworkPolicyCmdlet, RemoveNpsNetworkPolicyCmdlet,
+  NewNpsConnectionRequestPolicyCmdlet, GetNpsConnectionRequestPolicyCmdlet, RemoveNpsConnectionRequestPolicyCmdlet,
+  SetNpsAccountingConfigurationCmdlet,
+} from './NpsCmdlets';
+import { NewGPOCmdlet, GetGPOCmdlet, NewGPLinkCmdlet, SetGPLinkCmdlet, SetGPRegistryValueCmdlet, SetGPInheritanceCmdlet, GetGPInheritanceCmdlet } from './GroupPolicyCmdlets';
+import {
+  NewWebsiteCmdlet, GetWebsiteCmdlet, StartWebsiteCmdlet, StopWebsiteCmdlet, RemoveWebsiteCmdlet,
+  NewWebBindingCmdlet,
+  NewWebAppPoolCmdlet, GetIISAppPoolCmdlet, RemoveWebAppPoolCmdlet, StartWebAppPoolCmdlet, StopWebAppPoolCmdlet,
+  RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
+} from './WebAdminCmdlets';
+import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
+import {
+  InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
+  EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
+  GetMailboxStatisticsCmdlet, DisableMailboxCmdlet, RemoveMailboxCmdlet,
+  NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
+  AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
+  GetGlobalAddressListCmdlet,
+  NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
+  NewTransportRuleCmdlet, GetTransportRuleCmdlet,
+  GetQueueCmdlet, RetryQueueCmdlet, SuspendQueueCmdlet, ResumeQueueCmdlet,
+  AddMailboxPermissionCmdlet, GetMailboxPermissionCmdlet, AddRecipientPermissionCmdlet, GetRecipientPermissionCmdlet,
+  NewJournalRuleCmdlet, GetJournalRuleCmdlet,
+  NewDatabaseAvailabilityGroupCmdlet, AddDatabaseAvailabilityGroupServerCmdlet,
+  AddMailboxDatabaseCopyCmdlet, UpdateMailboxDatabaseCopyCmdlet, GetMailboxDatabaseCopyStatusCmdlet,
+  TestServiceHealthCmdlet, TestMailflowCmdlet,
+} from './ExchangeCmdlets';
+import {
+  NewDfsnRootCmdlet, GetDfsnRootCmdlet, NewDfsnFolderCmdlet, NewDfsnFolderTargetCmdlet,
+  GetDfsnFolderCmdlet, GetDfsnFolderTargetCmdlet, SetDfsnFolderTargetCmdlet,
+  NewDfsReplicationGroupCmdlet, GetDfsReplicationGroupCmdlet, SyncDfsReplicationGroupCmdlet,
+  AddDfsrMemberCmdlet, GetDfsrMemberCmdlet, NewDfsReplicatedFolderCmdlet, AddDfsrConnectionCmdlet,
+  SetDfsrMembershipCmdlet, GetDfsrMembershipCmdlet, GetDfsrStateCmdlet,
+} from './DfsCmdlets';
+import {
+  EnableRemoteDesktopCmdlet, DisableRemoteDesktopCmdlet, GetRDUserSessionCmdlet, LogoffRdSessionCmdlet,
+} from './RdpCmdlets';
+import {
+  NewClusterCmdlet, GetClusterNodeCmdlet, GetClusterCmdlet,
+  AddClusterFileServerRoleCmdlet, GetClusterGroupCmdlet, MoveClusterGroupCmdlet,
+} from './ClusterCmdlets';
+import {
+  GetWsusUpdateCmdlet, ApproveWsusUpdateCmdlet, SetWUSettingsCmdlet, GetWindowsUpdateCmdlet,
+} from './WsusCmdlets';
+import { AddPrinterCmdlet, GetPrintJobCmdlet, RemovePrintJobCmdlet } from './PrintCmdlets';
 
 /**
  * Register all core (provider-independent) cmdlets into the given registry.
  * Safe to call multiple times on the same registry (idempotent due to overwrite).
  */
-export function registerCoreCmdlets(registry: CmdletRegistry): void {
+export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeServerCmdlets?: boolean } = {}): void {
   // ── Output ────────────────────────────────────────────────────────────────
   registry.register(new WriteOutputCmdlet());
   registry.register(new WriteHostCmdlet());
@@ -150,12 +257,16 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ConvertFromJsonCmdlet());
   registry.register(new ConvertToCsvCmdlet());
   registry.register(new ConvertFromCsvCmdlet());
+  registry.register(new ExportCsvCmdlet());
 
   // ── Date/Time ─────────────────────────────────────────────────────────────
   registry.register(new GetDateCmdlet());
+  registry.register(new GetTimeZoneCmdlet());
+  registry.register(new SetTimeZoneCmdlet());
   registry.register(new SetDateCmdlet());
   registry.register(new NewTimespanCmdlet());
   registry.register(new StartSleepCmdlet());
+  registry.register(new MeasureCommandCmdlet());
 
   // ── Path & IO ─────────────────────────────────────────────────────────────
   registry.register(new SplitPathCmdlet());
@@ -172,6 +283,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new MoveItemCmdlet());
   registry.register(new GetItemPropertyCmdlet());
   registry.register(new SetItemPropertyCmdlet());
+  registry.register(new NewItemPropertyCmdlet());
   registry.register(new RemoveItemPropertyCmdlet());
   registry.register(new ClearItemPropertyCmdlet());
   registry.register(new GetItemCmdlet());
@@ -180,6 +292,8 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetAclCmdlet());
   registry.register(new RenameItemCmdlet());
   registry.register(new MkdirCmdlet());
+  registry.register(new GetFileHashCmdlet());
+  registry.register(new GetAuthenticodeSignatureCmdlet());
 
   // ── Misc ──────────────────────────────────────────────────────────────────
   registry.register(new NewObjectCmdlet());
@@ -193,6 +307,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new ImportModuleCmdlet());
   registry.register(new InvokeCommandCmdlet());
   registry.register(new StartJobCmdlet());
+  registry.register(new GetJobCmdlet());
   registry.register(new ReceiveJobCmdlet());
   registry.register(new WaitJobCmdlet());
   registry.register(new SetLocationCmdlet());
@@ -215,6 +330,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetServiceCmdlet());
   registry.register(new NewServiceCmdlet());
   registry.register(new RemoveServiceCmdlet());
+  registry.register(new RegisterWmiEventCmdlet());
 
   // ── Processes (provider-backed) ───────────────────────────────────────────
   registry.register(new GetProcessCmdlet());
@@ -240,11 +356,20 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   // ── Network (provider-backed, partial — see INetworkProvider) ─────────────
   registry.register(new GetNetAdapterCmdlet());
   registry.register(new GetNetIPAddressCmdlet());
+  registry.register(new GetNetIPInterfaceCmdlet());
   registry.register(new TestConnectionCmdlet());
   registry.register(new ResolveDnsNameCmdlet());
+  registry.register(new InvokeWebRequestCmdlet());
   registry.register(new GetNetIPConfigurationCmdlet());
   registry.register(new GetNetRouteCmdlet());
   registry.register(new GetNetTCPConnectionCmdlet());
+  registry.register(new GetNetUDPEndpointCmdlet());
+  registry.register(new GetNetNeighborCmdlet());
+  registry.register(new NewNetNeighborCmdlet());
+  registry.register(new RemoveNetNeighborCmdlet());
+  registry.register(new ClearNetNeighborCacheCmdlet());
+  registry.register(new GetNetAdapterStatisticsCmdlet());
+  registry.register(new SetNetNeighborCmdlet());
   registry.register(new HostnameCmdlet());
   registry.register(new WhoamiCmdlet());
 
@@ -258,6 +383,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new RenameNetAdapterCmdlet());
   registry.register(new GetDnsClientServerAddressCmdlet());
   registry.register(new SetDnsClientServerAddressCmdlet());
+  registry.register(new GetDnsClientCacheCmdlet());
   registry.register(new ClearDnsClientCacheCmdlet());
   registry.register(new GetNetFirewallRuleCmdlet());
   registry.register(new NewNetFirewallRuleCmdlet());
@@ -271,12 +397,16 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new SetNetRouteCmdlet());
   registry.register(new RestartNetAdapterCmdlet());
   registry.register(new TestNetConnectionCmdlet());
+  registry.register(new SendMailMessageCmdlet());
 
   // ── VPN (provider-backed) ─────────────────────────────────────────────────
   registry.register(new AddVpnConnectionCmdlet());
   registry.register(new GetVpnConnectionCmdlet());
   registry.register(new SetVpnConnectionCmdlet());
   registry.register(new RemoveVpnConnectionCmdlet());
+  registry.register(new AddVpnConnectionRouteCmdlet());
+  registry.register(new ConnectVpnConnectionCmdlet());
+  registry.register(new DisconnectVpnConnectionCmdlet());
 
   // ── Event log (provider-backed) ───────────────────────────────────────────
   registry.register(new GetEventLogCmdlet());
@@ -290,11 +420,60 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetScheduledTaskCmdlet());
   registry.register(new RegisterScheduledTaskCmdlet());
   registry.register(new UnregisterScheduledTaskCmdlet());
+  registry.register(new GetScheduledTaskInfoCmdlet());
+  registry.register(new StartScheduledTaskCmdlet());
+  registry.register(new StopScheduledTaskCmdlet());
+  registry.register(new EnableScheduledTaskCmdlet());
+  registry.register(new DisableScheduledTaskCmdlet());
+  registry.register(new SetScheduledTaskCmdlet());
   registry.register(new NewScheduledTaskTriggerCmdlet());
   registry.register(new NewScheduledTaskActionCmdlet());
+  registry.register(new NewScheduledTaskPrincipalCmdlet());
   registry.register(new GetDiskCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetCimInstanceCmdlet());
+  registry.register(new GetCounterCmdlet());
+
+  // ── PowerShell Remoting (provider-backed) ─────────────────────────────────
+  registry.register(new EnablePSRemotingCmdlet());
+  registry.register(new TestWSManCmdlet());
+  registry.register(new GetWSManCredSSPCmdlet());
+
+  // ── SMB file sharing (available on client and server editions) ───────────
+  registry.register(new GetSmbShareCmdlet());
+  registry.register(new NewSmbShareCmdlet());
+  registry.register(new RemoveSmbShareCmdlet());
+  registry.register(new GetSmbSessionCmdlet());
+
+  // ── Client-side PKI (Get-Certificate enrollment, self-signed certs) ──────
+  registry.register(new GetCertificateCmdlet());
+  registry.register(new NewSelfSignedCertificateCmdlet());
+
+  // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
+  registry.register(new AddComputerCmdlet());
+  registry.register(new RemoveComputerCmdlet());
+  registry.register(new RenameComputerCmdlet());
+  registry.register(new TestComputerSecureChannelCmdlet());
+  registry.register(new InstallADServiceAccountCmdlet());
+  registry.register(new TestADServiceAccountCmdlet());
+  // Real Get-ADDomainController: `-Discover` is a client-side DC-locator
+  // dial (works from any domain-joined machine, RSAT-only in real Windows,
+  // simplified here to "any domain-joined machine"), while the plain
+  // `-Filter`/no-argument form still requires this machine to itself be a
+  // DC (gated inside the cmdlet via `requireAd`) — so it's safe to register
+  // for every Windows device, not just servers.
+  registry.register(new GetADDomainControllerCmdlet());
+
+  // ── Remote Desktop toggle + Windows Update client settings ───────────────
+  registry.register(new EnableRemoteDesktopCmdlet());
+  registry.register(new DisableRemoteDesktopCmdlet());
+  registry.register(new SetWUSettingsCmdlet());
+  registry.register(new GetWindowsUpdateCmdlet());
+
+  // ── Printing (client-available) ──────────────────────────────────────────
+  registry.register(new AddPrinterCmdlet());
+  registry.register(new GetPrintJobCmdlet());
+  registry.register(new RemovePrintJobCmdlet());
 
   // ── Native CLI shims (sync subset) ────────────────────────────────────────
   // ping / tracert stay in the legacy executor — they're async and the
@@ -312,4 +491,220 @@ export function registerCoreCmdlets(registry: CmdletRegistry): void {
   registry.register(ChcpCmdlet);
   registry.register(ScCmdlet);
   registry.register(ScExeCmdlet);
+
+  if (opts.includeServerCmdlets ?? true) registerServerCmdlets(registry);
+}
+
+/**
+ * Windows Server-only roles and RSAT tooling. Registered on top of the core
+ * set for Server editions; a workstation's Get-Command must not list these.
+ */
+export function registerServerCmdlets(registry: CmdletRegistry): void {
+  // ── Server Manager roles/features ─────────────────────────────────────────
+  registry.register(new GetWindowsFeatureCmdlet());
+  registry.register(new InstallWindowsFeatureCmdlet());
+  registry.register(new UninstallWindowsFeatureCmdlet());
+
+  // ── AD DS (PRD-Windows-Server.md §5 P5) ─────────────────────────────────────
+  registry.register(new InstallADDSForestCmdlet());
+  registry.register(new InstallADDSDomainControllerCmdlet());
+  // Get-ADDomainController is registered in the common section above (its
+  // -Discover form must work from a plain domain-joined client).
+  registry.register(new RemoveADDomainControllerCmdlet());
+  registry.register(new NewADReplicationSiteCmdlet());
+  registry.register(new SetADReplicationSiteCmdlet());
+  registry.register(new GetADReplicationSiteCmdlet());
+  registry.register(new NewADReplicationSubnetCmdlet());
+  registry.register(new GetADReplicationSubnetCmdlet());
+  registry.register(new NewADReplicationSiteLinkCmdlet());
+  registry.register(new GetADReplicationSiteLinkCmdlet());
+  registry.register(new SetADReplicationSiteLinkCmdlet());
+  registry.register(new MoveADDirectoryServerCmdlet());
+  registry.register(new GetADReplicationUpToDatenessVectorTableCmdlet());
+  registry.register(new GetADReplicationConnectionCmdlet());
+  registry.register(new GetADReplicationFailureCmdlet());
+  registry.register(new GetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new SetADDefaultDomainPasswordPolicyCmdlet());
+  registry.register(new NewADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new AddADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicyCmdlet());
+  registry.register(new GetADFineGrainedPasswordPolicySubjectCmdlet());
+  registry.register(new GetADUserResultantPasswordPolicyCmdlet());
+  registry.register(new NewADAttributeCmdlet());
+  registry.register(new NewADObjectClassCmdlet());
+  registry.register(new NewADUserCmdlet());
+  registry.register(new GetADUserCmdlet());
+  registry.register(new SetADUserCmdlet());
+  registry.register(new SetADAccountPasswordCmdlet());
+  registry.register(new RemoveADUserCmdlet());
+  registry.register(new DisableADAccountCmdlet());
+  registry.register(new EnableADAccountCmdlet());
+  registry.register(new NewADGroupCmdlet());
+  registry.register(new GetADGroupCmdlet());
+  registry.register(new RemoveADGroupCmdlet());
+  registry.register(new AddADGroupMemberCmdlet());
+  registry.register(new RemoveADGroupMemberCmdlet());
+  registry.register(new GetADGroupMemberCmdlet());
+  registry.register(new GetADComputerCmdlet());
+  registry.register(new SetADComputerCmdlet());
+  registry.register(new GetADObjectCmdlet());
+  registry.register(new SetADObjectCmdlet());
+  registry.register(new RestoreADObjectCmdlet());
+  registry.register(new GetADOptionalFeatureCmdlet());
+  registry.register(new EnableADOptionalFeatureCmdlet());
+  registry.register(new GetADRootDSECmdlet());
+  registry.register(new AddKdsRootKeyCmdlet());
+  registry.register(new GetKdsRootKeyCmdlet());
+  registry.register(new NewADServiceAccountCmdlet());
+  registry.register(new GetADServiceAccountCmdlet());
+  registry.register(new SetADServiceAccountCmdlet());
+  registry.register(new AddADComputerServiceAccountCmdlet());
+  registry.register(new SearchADAccountCmdlet());
+  registry.register(new NewADOrganizationalUnitCmdlet());
+  registry.register(new GetADOrganizationalUnitCmdlet());
+  registry.register(new NewADDomainCmdlet());
+  registry.register(new GetADForestCmdlet());
+  registry.register(new GetADDomainCmdlet());
+  registry.register(new MoveADDirectoryServerOperationMasterRoleCmdlet());
+  registry.register(new NewADTrustCmdlet());
+  registry.register(new GetADTrustCmdlet());
+
+  // ── Exchange Server (docs/PRD-Exchange.md §2.1 P1/P2) ───────────────────────
+  registry.register(new InstallExchangeServerCmdlet());
+  registry.register(new GetExchangeServerCmdlet());
+  registry.register(new EnableMailboxCmdlet());
+  registry.register(new NewMailboxCmdlet());
+  registry.register(new GetMailboxCmdlet());
+  registry.register(new SetMailboxCmdlet());
+  registry.register(new GetMailboxStatisticsCmdlet());
+  registry.register(new DisableMailboxCmdlet());
+  registry.register(new RemoveMailboxCmdlet());
+  registry.register(new NewDistributionGroupCmdlet());
+  registry.register(new SetDistributionGroupCmdlet());
+  registry.register(new GetDistributionGroupCmdlet());
+  registry.register(new AddDistributionGroupMemberCmdlet());
+  registry.register(new GetDistributionGroupMemberCmdlet());
+  registry.register(new GetGlobalAddressListCmdlet());
+  registry.register(new NewReceiveConnectorCmdlet());
+  registry.register(new GetReceiveConnectorCmdlet());
+  registry.register(new NewSendConnectorCmdlet());
+  registry.register(new GetSendConnectorCmdlet());
+  registry.register(new NewTransportRuleCmdlet());
+  registry.register(new GetTransportRuleCmdlet());
+  registry.register(new GetQueueCmdlet());
+  registry.register(new RetryQueueCmdlet());
+  registry.register(new SuspendQueueCmdlet());
+  registry.register(new ResumeQueueCmdlet());
+  registry.register(new AddMailboxPermissionCmdlet());
+  registry.register(new GetMailboxPermissionCmdlet());
+  registry.register(new AddRecipientPermissionCmdlet());
+  registry.register(new GetRecipientPermissionCmdlet());
+  registry.register(new NewJournalRuleCmdlet());
+  registry.register(new GetJournalRuleCmdlet());
+  registry.register(new NewDatabaseAvailabilityGroupCmdlet());
+  registry.register(new AddDatabaseAvailabilityGroupServerCmdlet());
+  registry.register(new AddMailboxDatabaseCopyCmdlet());
+  registry.register(new UpdateMailboxDatabaseCopyCmdlet());
+  registry.register(new GetMailboxDatabaseCopyStatusCmdlet());
+  registry.register(new TestServiceHealthCmdlet());
+  registry.register(new TestMailflowCmdlet());
+
+  // ── AD CS (PRD-Windows-Server-Advanced.md §5 P13) ───────────────────────────
+  registry.register(new InstallAdcsCertificationAuthorityCmdlet());
+  registry.register(new GetCATemplateCmdlet());
+  registry.register(new AddCATemplateCmdlet());
+
+  // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
+  registry.register(new AddDnsServerPrimaryZoneCmdlet());
+  registry.register(new GetDnsServerZoneCmdlet());
+  registry.register(new AddDnsServerResourceRecordACmdlet());
+  registry.register(new AddDnsServerResourceRecordAAAACmdlet());
+  registry.register(new AddDnsServerResourceRecordCNameCmdlet());
+  registry.register(new AddDnsServerResourceRecordMXCmdlet());
+  registry.register(new AddDnsServerResourceRecordPtrCmdlet());
+  registry.register(new AddDnsServerResourceRecordCmdlet());
+  registry.register(new RemoveDnsServerResourceRecordCmdlet());
+  registry.register(new GetDnsServerResourceRecordCmdlet());
+  registry.register(new SetDnsServerForwarderCmdlet());
+  registry.register(new GetDnsServerForwarderCmdlet());
+
+  // ── DHCP Server role (PRD-Windows-Server.md §5 P8) ──────────────────────────
+  registry.register(new AddDhcpServerv4ScopeCmdlet());
+  registry.register(new GetDhcpServerv4ScopeCmdlet());
+  registry.register(new AddDhcpServerv4ExclusionRangeCmdlet());
+  registry.register(new AddDhcpServerv4ReservationCmdlet());
+  registry.register(new SetDhcpServerv4OptionValueCmdlet());
+  registry.register(new GetDhcpServerv4LeaseCmdlet());
+  registry.register(new AddDhcpServerInDCCmdlet());
+
+  // ── NPS (RADIUS) role (PRD-Windows-Server.md §5 P9 + Advanced P22) ──────────
+  registry.register(new NewNpsRadiusClientCmdlet());
+  registry.register(new GetNpsRadiusClientCmdlet());
+  registry.register(new RemoveNpsRadiusClientCmdlet());
+  registry.register(new NewNpsNetworkPolicyCmdlet());
+  registry.register(new GetNpsNetworkPolicyCmdlet());
+  registry.register(new RemoveNpsNetworkPolicyCmdlet());
+  registry.register(new NewNpsConnectionRequestPolicyCmdlet());
+  registry.register(new GetNpsConnectionRequestPolicyCmdlet());
+  registry.register(new RemoveNpsConnectionRequestPolicyCmdlet());
+  registry.register(new SetNpsAccountingConfigurationCmdlet());
+
+  // ── Group Policy (PRD-Windows-Server.md §5 P10) ─────────────────────────────
+  registry.register(new NewGPOCmdlet());
+  registry.register(new GetGPOCmdlet());
+  registry.register(new NewGPLinkCmdlet());
+  registry.register(new SetGPLinkCmdlet());
+  registry.register(new SetGPRegistryValueCmdlet());
+  registry.register(new SetGPInheritanceCmdlet());
+  registry.register(new GetGPInheritanceCmdlet());
+
+  // ── Web Server / IIS role (PRD-Windows-Server.md §5 P11) ────────────────────
+  registry.register(new NewWebsiteCmdlet());
+  registry.register(new GetWebsiteCmdlet());
+  registry.register(new StartWebsiteCmdlet());
+  registry.register(new StopWebsiteCmdlet());
+  registry.register(new RemoveWebsiteCmdlet());
+  registry.register(new NewWebBindingCmdlet());
+  registry.register(new NewWebAppPoolCmdlet());
+  registry.register(new GetIISAppPoolCmdlet());
+  registry.register(new RemoveWebAppPoolCmdlet());
+  registry.register(new StartWebAppPoolCmdlet());
+  registry.register(new StopWebAppPoolCmdlet());
+  registry.register(new RestartWebAppPoolCmdlet());
+  registry.register(new GetWebGlobalModuleCmdlet());
+
+  // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────
+  registry.register(new NewDfsnRootCmdlet());
+  registry.register(new GetDfsnRootCmdlet());
+  registry.register(new NewDfsnFolderCmdlet());
+  registry.register(new NewDfsnFolderTargetCmdlet());
+  registry.register(new GetDfsnFolderCmdlet());
+  registry.register(new GetDfsnFolderTargetCmdlet());
+  registry.register(new SetDfsnFolderTargetCmdlet());
+  registry.register(new NewDfsReplicationGroupCmdlet());
+  registry.register(new GetDfsReplicationGroupCmdlet());
+  registry.register(new SyncDfsReplicationGroupCmdlet());
+  registry.register(new AddDfsrMemberCmdlet());
+  registry.register(new GetDfsrMemberCmdlet());
+  registry.register(new NewDfsReplicatedFolderCmdlet());
+  registry.register(new AddDfsrConnectionCmdlet());
+  registry.register(new SetDfsrMembershipCmdlet());
+  registry.register(new GetDfsrMembershipCmdlet());
+  registry.register(new GetDfsrStateCmdlet());
+
+  // ── RDS session management (PRD-Windows-Server-Advanced.md §5 P17) ─────────
+  registry.register(new GetRDUserSessionCmdlet());
+  registry.register(new LogoffRdSessionCmdlet());
+
+  // ── Failover Clustering / WSFC (PRD-Windows-Server-Advanced.md §5 P18) ─────
+  registry.register(new NewClusterCmdlet());
+  registry.register(new GetClusterNodeCmdlet());
+  registry.register(new GetClusterCmdlet());
+  registry.register(new AddClusterFileServerRoleCmdlet());
+  registry.register(new GetClusterGroupCmdlet());
+  registry.register(new MoveClusterGroupCmdlet());
+
+  // ── WSUS (PRD-Windows-Server-Advanced.md §5 P19) ────────────────────────────
+  registry.register(new GetWsusUpdateCmdlet());
+  registry.register(new ApproveWsusUpdateCmdlet());
 }

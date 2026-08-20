@@ -1,0 +1,151 @@
+ROUTEUR apres "show ver" + Tab:
+Clear All
+Undo
+Redo
+Save
+Open
+Export
+Import
+Reset
+Logs
+Help
+Equipment
+
+Drag to canvas
+
+Computers
+L
+
+Linux PC
+
+Ubuntu/Debian workstation
+
+W
+
+Windows PC
+
+Windows 10/11 workstation
+
+M
+
+Mac
+
+macOS workstation
+
+LIMITED
+Servers
+L
+
+Linux Server
+
+Ubuntu/CentOS server
+
+W
+
+Windows Server
+
+Windows Server 2019/2022
+
+Switches
+C
+
+Cisco Switch
+
+Layer 2 switching device
+
+H
+
+Huawei Switch
+
+Layer 2 switching device
+
+Hub
+
+Layer 1 repeater
+
+Routers
+C
+
+Cisco Router
+
+Layer 3 routing device
+
+H
+
+Huawei Router
+
+Layer 3 routing device
+
+Firewalls
+ASA
+
+Cisco ASA
+
+Cisco Adaptive Security Appliance
+
+LIMITED
+FG
+
+FortiGate
+
+Fortinet firewall
+
+LIMITED
+PA
+
+Palo Alto
+
+Palo Alto firewall
+
+LIMITED
+Router1 added to canvas
+C
+Router1
+100%
+C
+Router1
+GENERAL
+Name
+Hostname
+Power
+On
+INTERFACES (3)
+GigabitEthernet0/0
+02:00:00:00:00:01
+GigabitEthernet0/1
+02:00:00:00:00:02
+GigabitEthernet0/2
+02:00:00:00:00:03
+LIVE STATE
+Router1 — Cisco IOS
+Router1 — C2911 Router
+? = help | Tab = complete
+System Bootstrap, Version 15.0(1r)M15, RELEASE SOFTWARE (fc1)
+Copyright (c) 2003-2025 by cisco Systems, Inc.
+Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.7(3)M5, RELEASE SOFTWARE (fc1)
+Technical Support: http://www.cisco.com/techsupport
+Copyright (c) 1986-2025 by Cisco Systems, Inc.
+Router1 uptime is 0 minutes
+System returned to ROM by power-on
+Last reload reason: power-on
+This product contains cryptographic features and is subject to United
+States and local country laws governing import, export, transfer and
+use. Delivery of Cisco cryptographic products does not imply
+third-party authority to import, export, distribute or use encryption.
+Technology Package License Information for Module:'c2900'
+-----------------------------------------------------------------
+Technology    Technology-package           Technology-package
+              Current       Type           Next reboot
+-----------------------------------------------------------------
+ipbase        ipbasek9      Permanent      ipbasek9
+security      securityk9    Permanent      securityk9
+uc            None          None           None
+data          None          None           None
+Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
+Processor board ID FTX314852LZ
+3 Gigabit Ethernet interfaces
+DRAM configuration is 64 bits wide with parity enabled.
+255K bytes of non-volatile configuration memory.
+250016K bytes of ATA System CompactFlash 0 (Read/Write)
+Base ethernet MAC address: 0200.0000.0001
+Configuration register is 0x2

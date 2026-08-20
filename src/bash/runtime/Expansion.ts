@@ -133,7 +133,7 @@ export function expandWords(
         continue;
       }
     }
-    if (shouldWordSplit(w) && expanded.includes(' ')) {
+    if (shouldWordSplit(w) && /[ \t\n]/.test(expanded)) {
       // Word splitting: unquoted variable/command expansions are split on IFS (whitespace)
       const parts = expanded.split(/\s+/).filter(Boolean);
       for (const part of parts) result.push(...maybeGlob(part, w, glob));
@@ -307,6 +307,19 @@ function literalHasUnescapedMeta(raw: string): boolean {
   return false;
 }
 
+function transformVariable(name: string, op: string, env: Environment): string {
+  const value = env.get(name) ?? '';
+  switch (op) {
+    case 'Q': return `'${value.replace(/'/g, `'\\''`)}'`;
+    case 'U': return value.toUpperCase();
+    case 'L': return value.toLowerCase();
+    case 'u': return value.charAt(0).toUpperCase() + value.slice(1);
+    case 'E': return value;
+    default:
+      throw new BashRuntimeError(`\${${name}@${op}}: bad substitution`);
+  }
+}
+
 /** Determine if a word should undergo IFS word splitting (unquoted expansions). */
 function shouldWordSplit(w: Word): boolean {
   if (w.type === 'VariableRef' || w.type === 'CommandSubstitution') return true;
@@ -323,12 +336,27 @@ function shouldWordSplit(w: Word): boolean {
  * operators) into a JS regex source. Supports `*` `?` `[…]` and
  * literal-escapes everything else. Anchored by the caller via `^`/`$`.
  */
+const EXTGLOB_OPS = new Set(['?', '*', '+', '@', '!']);
+
 function globToRegexSource(pattern: string): string {
+  const [src] = convertGlob(pattern, 0);
+  return src;
+}
+
+function convertGlob(pattern: string, start: number, stopAtParen = false): [string, number] {
   let out = '';
-  for (let i = 0; i < pattern.length; i++) {
+  let i = start;
+  while (i < pattern.length) {
     const c = pattern[i];
-    if (c === '*') { out += '.*'; continue; }
-    if (c === '?') { out += '.';  continue; }
+    if (stopAtParen && (c === ')' || c === '|')) break;
+    if (EXTGLOB_OPS.has(c) && pattern[i + 1] === '(') {
+      const [alts, next] = convertGlobAlternatives(pattern, i + 2);
+      out += extglobToRegex(c, alts);
+      i = next;
+      continue;
+    }
+    if (c === '*') { out += '.*'; i++; continue; }
+    if (c === '?') { out += '.';  i++; continue; }
     if (c === '[') {
       let cls = '[';
       i++;
@@ -336,12 +364,40 @@ function globToRegexSource(pattern: string): string {
       while (i < pattern.length && pattern[i] !== ']') { cls += pattern[i]; i++; }
       cls += ']';
       out += cls;
+      i++;
       continue;
     }
     if (/[.+(){}^$|\\]/.test(c)) out += '\\' + c;
     else out += c;
+    i++;
   }
-  return out;
+  return [out, i];
+}
+
+function convertGlobAlternatives(pattern: string, start: number): [string[], number] {
+  const alts: string[] = [];
+  let i = start;
+  for (;;) {
+    const [branch, next] = convertGlob(pattern, i, true);
+    alts.push(branch);
+    i = next;
+    if (pattern[i] === '|') { i++; continue; }
+    if (pattern[i] === ')') { i++; break; }
+    break;
+  }
+  return [alts, i];
+}
+
+function extglobToRegex(op: string, alts: string[]): string {
+  const body = alts.join('|');
+  switch (op) {
+    case '?': return `(?:${body})?`;
+    case '*': return `(?:${body})*`;
+    case '+': return `(?:${body})+`;
+    case '@': return `(?:${body})`;
+    case '!': return `(?:(?!(?:${body})).)*`;
+    default:  return '';
+  }
 }
 
 /**
@@ -366,6 +422,15 @@ function expandVariable(
   modifier: string | undefined,
   env: Environment,
 ): string {
+  // ── Name enumeration by prefix: `${!prefix*}` / `${!prefix@}` ──────
+  if (braced && !modifier && name.startsWith('!') && (name.endsWith('*') || name.endsWith('@'))) {
+    const prefix = name.slice(1, -1);
+    if (/^[A-Za-z_][A-Za-z_0-9]*$/.test(prefix) || prefix === '') {
+      const names = env.namesWithPrefix(prefix);
+      return name.endsWith('@') ? names.join(ARRAY_SEP) : names.join(' ');
+    }
+  }
+
   // ── Indexed-array access: `${arr[expr]}` ──────────────────────────
   // The name carries the subscript through the parser as part of the
   // modifier (e.g. `[0]`), with optional further modifiers chained
@@ -392,8 +457,20 @@ function expandVariable(
     return v ?? '';
   }
 
-  // ${#name} — length
-  if (modifier === '#') return String((env.get(name) ?? '').length);
+  if (modifier.startsWith('@')) {
+    return transformVariable(name, modifier.slice(1), env);
+  }
+
+  // ${#name} — length; ${#name[@]} / ${#name[*]} — array element count
+  if (modifier === '#') {
+    const arrayLen = name.match(/^(\w+)\[[@*]\]$/);
+    if (arrayLen) {
+      const arr = env.getArray(arrayLen[1]);
+      if (arr !== undefined) return String(arr.length);
+      return env.get(arrayLen[1]) !== undefined ? '1' : '0';
+    }
+    return String((env.get(name) ?? '').length);
+  }
 
   const val = env.get(name);
   const raw = val ?? '';
@@ -541,8 +618,33 @@ function expandArrayAccess(
     // IFS's first char (defaulting to space). For `[@]` we use the
     // ARRAY_SEP sentinel so expandWords can split element-wise without
     // re-triggering IFS splitting on whitespace inside an element.
-    const joined = subscript === '@' ? arr.join(ARRAY_SEP) : arr.join(' ');
-    return trailing ? applyTrailingModifier(joined, trailing, env, name) : joined;
+    const sep = subscript === '@' ? ARRAY_SEP : ' ';
+    if (trailing) {
+      // `${arr[@]:off[:len]}` slices the element list, not the joined
+      // string. `:-`/`:=`/`:+`/`:?` are default-value modifiers, not
+      // slices, hence the lookahead.
+      const slice = parseSliceModifier(trailing);
+      if (slice) {
+        const off = evalSubscript(slice.offset, env);
+        if (!Number.isFinite(off)) return '';
+        const start = off < 0 ? Math.max(arr.length + off, 0) : Math.min(off, arr.length);
+        let sliced = arr.slice(start);
+        if (slice.length !== undefined) {
+          const len = evalSubscript(slice.length, env);
+          if (!Number.isFinite(len)) return '';
+          sliced = len < 0 ? sliced.slice(0, Math.max(sliced.length + len, 0)) : sliced.slice(0, len);
+        }
+        return sliced.join(sep);
+      }
+      // Default-value family judges the array as a whole (`${arr[@]:-x}`
+      // expands to x only when the array is unset or empty).
+      if (/^(:?[-=+?])/.test(trailing)) {
+        return applyTrailingModifier(arr.join(sep), trailing, env, name, arr.length === 0);
+      }
+      // Pattern/case/replace operators apply per element, as bash does.
+      return arr.map(el => applyTrailingModifier(el, trailing, env, name)).join(sep);
+    }
+    return arr.join(sep);
   }
   if (assoc) {
     // Substitute simple `$name` references in the key before lookup.
@@ -554,16 +656,53 @@ function expandArrayAccess(
     if (trailing) return applyTrailingModifier(value, trailing, env, name, elem === undefined);
     return value;
   }
-  const idx = Number.parseInt(subscript, 10);
+  const idx = evalSubscript(subscript, env);
   if (!Number.isFinite(idx)) return '';
   const elem = env.getArrayElement(name, idx);
+  // A trailing modifier still applies when the element is missing, so
+  // `${arr[9]:-default}` falls back exactly like the assoc path above.
+  if (trailing) return applyTrailingModifier(elem ?? '', trailing, env, name, elem === undefined);
   if (elem === undefined) {
     if (arr === undefined && env.get(name) === undefined && isNounsetActive(env)) {
       throw new BashRuntimeError(`${name}[${subscript}]: unbound variable`);
     }
     return '';
   }
-  return trailing ? applyTrailingModifier(elem, trailing, env, name) : elem;
+  return elem;
+}
+
+/**
+ * Indexed-array subscripts are arithmetic contexts in bash: `$i`, `i`,
+ * `i+1` and `-1` are all legal. Falls back to a plain integer parse when
+ * the expression engine rejects the text.
+ */
+function evalSubscript(subscript: string, env: Environment): number {
+  try {
+    return Number(evaluateArithmetic(subscript, env));
+  } catch {
+    return Number.parseInt(subscript, 10);
+  }
+}
+
+/**
+ * Split a `:offset[:length]` slice modifier. Returns null for the
+ * default-value family (`:-` `:=` `:+` `:?`) and non-slice modifiers.
+ * The second `:` is found at paren depth 0 so arithmetic offsets like
+ * `:(x-1):2` survive.
+ */
+function parseSliceModifier(mod: string): { offset: string; length?: string } | null {
+  if (!/^:(?![-=+?])/.test(mod)) return null;
+  const body = mod.slice(1);
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (ch === ':' && depth === 0) {
+      return { offset: body.slice(0, i), length: body.slice(i + 1) };
+    }
+  }
+  return { offset: body };
 }
 
 /**
@@ -688,15 +827,30 @@ function expandInlineVars(
         continue;
       }
 
-      // $(cmd) — command substitution
+      // $(cmd) — command substitution. Quoted spans inside `cmd` are
+      // skipped verbatim so a `)` or `"` they contain can't be mistaken
+      // for the substitution's own terminator.
       if (next === '(') {
         i += 2;
         let depth = 1;
         let cmd = '';
         while (i < text.length && depth > 0) {
-          if (text[i] === '(') depth++;
-          else if (text[i] === ')') { depth--; if (depth === 0) break; }
-          cmd += text[i]; i++;
+          const ch = text[i];
+          if (ch === '"' || ch === "'") {
+            const quote = ch;
+            cmd += ch; i++;
+            while (i < text.length && text[i] !== quote) {
+              if (quote === '"' && text[i] === '\\' && i + 1 < text.length) {
+                cmd += text[i] + text[i + 1]; i += 2; continue;
+              }
+              cmd += text[i]; i++;
+            }
+            if (i < text.length) { cmd += text[i]; i++; }
+            continue;
+          }
+          if (ch === '(') depth++;
+          else if (ch === ')') { depth--; if (depth === 0) break; }
+          cmd += ch; i++;
         }
         if (i < text.length) i++; // skip closing )
         result += execCmd ? execCmd(cmd).trimEnd() : '';
@@ -746,6 +900,12 @@ function expandInlineVars(
         }
         // ${!NAME[@]} — list of keys / indices.
         if (content.startsWith('!')) {
+          const prefixMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)([@*])$/);
+          if (prefixMatch) {
+            const names = env.namesWithPrefix(prefixMatch[1]);
+            result += prefixMatch[2] === '@' ? names.join(ARRAY_SEP) : names.join(' ');
+            continue;
+          }
           const keyMatch = content.slice(1).match(/^([A-Za-z_][A-Za-z_0-9]*)\[([@*])\]$/);
           if (keyMatch) {
             const lname = keyMatch[1];
@@ -885,21 +1045,45 @@ function tokenizeArith(expr: string, env: Environment): ArithToken[] {
       tokens.push({ type: 'op', value: '++' }); i += 2;
     } else if (ch === '-' && i + 1 < expr.length && expr[i + 1] === '-') {
       tokens.push({ type: 'op', value: '--' }); i += 2;
+    } else if (ch === '*' && expr[i + 1] === '*') {
+      // Doit être reconnu avant `*=` et avant le repli sur `*` seul, qui
+      // rendait `$((2 ** 8))` égal à zéro en lisant deux multiplications.
+      tokens.push({ type: 'op', value: '**' }); i += 2;
     } else if ((ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%')
                && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: ch + '=' }); i += 2;
+    } else if (ch === '<' && expr[i + 1] === '<' && expr[i + 2] === '=') {
+      tokens.push({ type: 'op', value: '<<=' }); i += 3;
+    } else if (ch === '<' && expr[i + 1] === '<') {
+      tokens.push({ type: 'op', value: '<<' }); i += 2;
     } else if (ch === '<' && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: '<=' }); i += 2;
     } else if (ch === '<') {
       tokens.push({ type: 'op', value: '<' }); i++;
+    } else if (ch === '>' && expr[i + 1] === '>' && expr[i + 2] === '=') {
+      tokens.push({ type: 'op', value: '>>=' }); i += 3;
+    } else if (ch === '>' && expr[i + 1] === '>') {
+      tokens.push({ type: 'op', value: '>>' }); i += 2;
     } else if (ch === '>' && i + 1 < expr.length && expr[i + 1] === '=') {
       tokens.push({ type: 'op', value: '>=' }); i += 2;
     } else if (ch === '>') {
       tokens.push({ type: 'op', value: '>' }); i++;
     } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '&') {
       tokens.push({ type: 'op', value: '&&' }); i += 2;
+    } else if (ch === '&' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '&=' }); i += 2;
+    } else if (ch === '&') {
+      tokens.push({ type: 'op', value: '&' }); i++;
     } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '|') {
       tokens.push({ type: 'op', value: '||' }); i += 2;
+    } else if (ch === '|' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '|=' }); i += 2;
+    } else if (ch === '|') {
+      tokens.push({ type: 'op', value: '|' }); i++;
+    } else if (ch === '^' && i + 1 < expr.length && expr[i + 1] === '=') {
+      tokens.push({ type: 'op', value: '^=' }); i += 2;
+    } else if (ch === '^') {
+      tokens.push({ type: 'op', value: '^' }); i++;
     } else if ('+-*/%'.includes(ch)) {
       // Handle unary minus
       if (ch === '-' && (tokens.length === 0 || tokens[tokens.length - 1].type === 'op' || tokens[tokens.length - 1].type === 'lparen')) {
@@ -953,7 +1137,9 @@ class ArithParser {
       const next = this.tokens[nameIdx + 1];
       if (next && next.type === 'op'
           && (next.value === '=' || next.value === '+=' || next.value === '-='
-              || next.value === '*=' || next.value === '/=' || next.value === '%=')) {
+              || next.value === '*=' || next.value === '/=' || next.value === '%='
+              || next.value === '<<=' || next.value === '>>=' || next.value === '&='
+              || next.value === '|=' || next.value === '^=')) {
         const op = next.value;
         this.pos = nameIdx + 2;
         const rhs = this.parseAssignment();
@@ -966,6 +1152,11 @@ class ArithParser {
           case '*=': next$ = current * rhs;   break;
           case '/=': next$ = rhs === 0 ? 0 : Math.trunc(current / rhs); break;
           case '%=': next$ = rhs === 0 ? 0 : current - Math.trunc(current / rhs) * rhs; break;
+          case '<<=': next$ = current << rhs; break;
+          case '>>=': next$ = current >> rhs; break;
+          case '&=': next$ = current & rhs;   break;
+          case '|=': next$ = current | rhs;   break;
+          case '^=': next$ = current ^ rhs;   break;
           default:   next$ = rhs;
         }
         this.env.set(name, String(next$));
@@ -1000,12 +1191,39 @@ class ArithParser {
     return val;
   }
 
-  // logicalAnd: equality (&& equality)*
+  // logicalAnd: bitOr (&& bitOr)*
   private parseLogicalAnd(): number {
-    let val = this.parseEquality();
+    let val = this.parseBitOr();
     while (this.matchOp('&&')) {
-      const right = this.parseEquality();
+      const right = this.parseBitOr();
       val = (val !== 0 && right !== 0) ? 1 : 0;
+    }
+    return val;
+  }
+
+  // bitOr: bitXor (| bitXor)* — bash precedence: | above &&, below ^
+  private parseBitOr(): number {
+    let val = this.parseBitXor();
+    while (this.matchOp('|')) {
+      val = val | this.parseBitXor();
+    }
+    return val;
+  }
+
+  // bitXor: bitAnd (^ bitAnd)*
+  private parseBitXor(): number {
+    let val = this.parseBitAnd();
+    while (this.matchOp('^')) {
+      val = val ^ this.parseBitAnd();
+    }
+    return val;
+  }
+
+  // bitAnd: equality (& equality)*
+  private parseBitAnd(): number {
+    let val = this.parseEquality();
+    while (this.matchOp('&')) {
+      val = val & this.parseEquality();
     }
     return val;
   }
@@ -1023,20 +1241,33 @@ class ArithParser {
     return val;
   }
 
-  // relational: additive ((< | > | <= | >=) additive)*
+  // relational: shift ((< | > | <= | >=) shift)*
   private parseRelational(): number {
-    let val = this.parseAdditive();
+    let val = this.parseShift();
     while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
            ['<', '>', '<=', '>='].includes(this.tokens[this.pos].value)) {
       const op = this.tokens[this.pos].value;
       this.pos++;
-      const right = this.parseAdditive();
+      const right = this.parseShift();
       switch (op) {
         case '<': val = val < right ? 1 : 0; break;
         case '>': val = val > right ? 1 : 0; break;
         case '<=': val = val <= right ? 1 : 0; break;
         case '>=': val = val >= right ? 1 : 0; break;
       }
+    }
+    return val;
+  }
+
+  // shift: additive ((<< | >>) additive)*
+  private parseShift(): number {
+    let val = this.parseAdditive();
+    while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
+           (this.tokens[this.pos].value === '<<' || this.tokens[this.pos].value === '>>')) {
+      const op = this.tokens[this.pos].value;
+      this.pos++;
+      const right = this.parseAdditive();
+      val = op === '<<' ? val << right : val >> right;
     }
     return val;
   }
@@ -1058,7 +1289,7 @@ class ArithParser {
   private parseMultiplicative(): number {
     let val = this.parseUnary();
     while (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op' &&
-           '*/%'.includes(this.tokens[this.pos].value)) {
+           ['*', '/', '%'].includes(this.tokens[this.pos].value)) {
       const op = this.tokens[this.pos].value;
       this.pos++;
       const right = this.parseUnary();
@@ -1066,6 +1297,21 @@ class ArithParser {
       val = op === '*' ? val * right : op === '/' ? Math.trunc(val / right) : val % right;
     }
     return val;
+  }
+
+  // power: postfix (** power)? — plus prioritaire que `*`, et associatif
+  // à droite, comme dans bash : 2**3**2 vaut 512, pas 64.
+  private parsePower(): number {
+    const base = this.parsePostfix();
+    if (this.pos < this.tokens.length && this.tokens[this.pos].type === 'op'
+        && this.tokens[this.pos].value === '**') {
+      this.pos++;
+      const e = this.parseUnary();
+      // bash refuse un exposant négatif ; il ne le tronque pas à zéro.
+      if (e < 0) throw new ArithmeticError('exponent less than 0');
+      return Math.trunc(base ** e);
+    }
+    return base;
   }
 
   // unary: ! unary | - unary | ++name | --name | postfix
@@ -1088,7 +1334,7 @@ class ArithParser {
       }
       return 0;
     }
-    return this.parsePostfix();
+    return this.parsePower();
   }
 
   // postfix: primary (++ | --)?

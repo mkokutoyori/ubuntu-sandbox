@@ -38,6 +38,7 @@ export interface AndOrList extends ASTBase {
   type: 'AndOrList';
   first: Pipeline;
   rest: AndOrPart[];
+  background?: boolean;
 }
 
 export interface AndOrPart {
@@ -159,9 +160,12 @@ export interface CaseClause extends ASTBase {
   redirections: Redirection[];
 }
 
+export type CaseTerminator = ';;' | ';&' | ';;&';
+
 export interface CaseItem {
   patterns: Word[];
   body: CommandList | null;
+  terminator?: CaseTerminator;
 }
 
 export interface FunctionDef extends ASTBase {
@@ -192,7 +196,14 @@ export type Word =
   | VariableRef
   | CommandSubstitution
   | ArithmeticSubstitution
+  | ProcessSubstitution
   | CompoundWord;
+
+export interface ProcessSubstitution extends ASTBase {
+  type: 'ProcessSubstitution';
+  direction: 'in' | 'out';
+  command: string;
+}
 
 export interface LiteralWord extends ASTBase {
   type: 'LiteralWord';

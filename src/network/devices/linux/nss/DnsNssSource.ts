@@ -1,27 +1,35 @@
-/**
- * DnsNssSource — the `dns` NSS source for hosts/ahosts lookups.
- *
- * With a wire resolver injected (the host's UDP/53 stub) and nameservers
- * configured in /etc/resolv.conf, lookups travel the cable plant like a
- * real stub resolver: NXDOMAIN is authoritative, all-servers-timeout
- * yields TRYAGAIN (EAI_AGAIN).
- *
- * Without nameservers (or without the injected resolver), falls back to
- * the legacy topology scan — the historic "the LAN graph is the DNS"
- * convenience kept for unconfigured boxes.
- */
-
-import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import type { DnsWireResponse } from '../../../dns/DnsWire';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { RRType } from '@/network/dns/wire/RRType';
+import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { INssSource } from './INssSource';
+import { nssNotFound as NOTFOUND } from './nssResult';
+import { searchCandidates } from './ResolvConf';
 import type { NssEnumResult, NssHostEntry, NssResult } from './types';
 
-const NOTFOUND = <T>(): NssResult<T> => ({ status: 'NOTFOUND' });
-
 export interface DnsWireStubResolver {
-  /** Usable `nameserver` entries from /etc/resolv.conf (loopback stubs excluded). */
   nameservers(): string[];
-  query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsWireResponse | null;
+  query(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): DnsMessage | null;
+  /**
+   * Interrogation qui a le droit d'attendre. C'est elle qui rend le
+   * chemin NSS praticable quand le résolveur doit valider (DNSSEC) ou
+   * chiffrer (DoT) : ni l'un ni l'autre ne peut tenir dans la pile
+   * d'appel de `query`.
+   */
+  queryAsync?(serverIp: string, name: string, qtype: 'A' | 'AAAA' | 'PTR'): Promise<DnsMessage | null>;
+  searchDomains?(): string[];
+  ndots?(): number;
+}
+
+/** Les interrogations à faire selon la famille demandée. */
+function familyLookups(
+  family?: 2 | 10,
+): Array<{ qtype: 'A' | 'AAAA'; rrType: number; af: 2 | 10 }> {
+  if (family === 10) return [{ qtype: 'AAAA', rrType: RRType.AAAA, af: 10 }];
+  if (family === 2) return [{ qtype: 'A', rrType: RRType.A, af: 2 }];
+  return [
+    { qtype: 'A', rrType: RRType.A, af: 2 },
+    { qtype: 'AAAA', rrType: RRType.AAAA, af: 10 },
+  ];
 }
 
 export class DnsNssSource implements INssSource {
@@ -33,12 +41,29 @@ export class DnsNssSource implements INssSource {
     this.wire = resolver;
   }
 
+  /**
+   * Kept so existing callers still compile; the answer no longer changes
+   * anything, since names are resolved by asking a resolver or not at all.
+   */
+  setCabledProbe(_probe: (() => boolean) | null): void {}
+
   gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
     const servers = this.wire?.nameservers() ?? [];
     if (this.wire && servers.length > 0) {
-      return this.wireLookup(servers, name, family);
+      const search = this.wire.searchDomains?.() ?? [];
+      const ndots = this.wire.ndots?.() ?? 1;
+      const candidates = searchCandidates(name, search, ndots);
+      let last: NssResult<NssHostEntry[]> = NOTFOUND();
+      for (const candidate of candidates) {
+        last = this.wireLookup(servers, candidate, family);
+        if (last.status === 'SUCCESS') return last;
+      }
+      return last;
     }
-    return this.legacyScanByName(name, family);
+    // With no nameserver configured there is no answer. Reading every
+    // device in the simulation to match a hostname was the old fallback
+    // (docs/PRD-Frame-Only-Refactor.md P6).
+    return NOTFOUND();
   }
 
   gethostbyaddr(addr: string): NssResult<NssHostEntry> {
@@ -46,23 +71,35 @@ export class DnsNssSource implements INssSource {
     if (this.wire && servers.length > 0) {
       return this.wirePtrLookup(servers, addr);
     }
-    return this.legacyScanByAddr(addr);
+    return NOTFOUND();
   }
 
-  /**
-   * `dns` has no enumeration semantics on real Linux (you cannot dump
-   * the entire DNS world). Returning UNAVAIL lets the resolver fall
-   * through to the next source for `getent hosts` with no key.
-   */
+  async gethostbynameAsync(name: string, family?: 2 | 10): Promise<NssResult<NssHostEntry[]>> {
+    const servers = this.wire?.nameservers() ?? [];
+    if (!this.wire || servers.length === 0) return NOTFOUND();
+    const search = this.wire.searchDomains?.() ?? [];
+    const ndots = this.wire.ndots?.() ?? 1;
+    let last: NssResult<NssHostEntry[]> = NOTFOUND();
+    for (const candidate of searchCandidates(name, search, ndots)) {
+      last = await this.wireLookupAsync(servers, candidate, family);
+      if (last.status === 'SUCCESS') return last;
+    }
+    return last;
+  }
+
+  async gethostbyaddrAsync(addr: string): Promise<NssResult<NssHostEntry>> {
+    const servers = this.wire?.nameservers() ?? [];
+    if (!this.wire || servers.length === 0) return NOTFOUND();
+    return this.readPtr(addr, await this.queryAnyAsync(servers, addr, 'PTR'));
+  }
+
   enumHosts(): NssEnumResult<NssHostEntry> {
     return { status: 'UNAVAIL', entries: [] };
   }
 
-  // ─── Wire path ────────────────────────────────────────────────────
-
   private queryAny(
     servers: string[], name: string, qtype: 'A' | 'AAAA' | 'PTR',
-  ): DnsWireResponse | null {
+  ): DnsMessage | null {
     for (const server of servers) {
       const resp = this.wire!.query(server, name, qtype);
       if (resp) return resp;
@@ -73,43 +110,30 @@ export class DnsNssSource implements INssSource {
   private wireLookup(
     servers: string[], name: string, family?: 2 | 10,
   ): NssResult<NssHostEntry[]> {
-    const qtypes: Array<'A' | 'AAAA'> =
-      family === 10 ? ['AAAA'] : family === 2 ? ['A'] : ['A', 'AAAA'];
     const matches: NssHostEntry[] = [];
     let answered = false;
-
-    for (const qtype of qtypes) {
+    for (const { qtype, rrType, af } of familyLookups(family)) {
       const resp = this.queryAny(servers, name, qtype);
-      if (!resp) continue;
-      answered = true;
-      if (resp.rcode === 'NXDOMAIN') return NOTFOUND();
-      if (resp.rcode !== 'NOERROR') return { status: 'TRYAGAIN' };
-      for (const answer of resp.answers) {
-        if (answer.type !== qtype) continue;
-        matches.push({
-          canonicalName: resp.name.toLowerCase(),
-          addressFamily: qtype === 'AAAA' ? 10 : 2,
-          address: answer.value,
-          aliases: [],
-        });
-      }
+      const verdict = this.collect(resp, name, rrType, af, matches);
+      if (verdict) return verdict;
+      if (resp) answered = true;
     }
-
-    if (!answered) return { status: 'TRYAGAIN' };
-    if (matches.length) return { status: 'SUCCESS', entry: matches };
-    return NOTFOUND();
+    return this.settle(answered, matches);
   }
 
   private wirePtrLookup(servers: string[], addr: string): NssResult<NssHostEntry> {
-    const resp = this.queryAny(servers, addr, 'PTR');
+    return this.readPtr(addr, this.queryAny(servers, addr, 'PTR'));
+  }
+
+  private readPtr(addr: string, resp: DnsMessage | null): NssResult<NssHostEntry> {
     if (!resp) return { status: 'TRYAGAIN' };
-    if (resp.rcode !== 'NOERROR' || resp.answers.length === 0) return NOTFOUND();
-    const ptr = resp.answers.find(a => a.type === 'PTR');
+    if (resp.flags.rcode !== DnsRcode.NOERROR || resp.answers.length === 0) return NOTFOUND();
+    const ptr = resp.answers.find(a => a.data.type === RRType.PTR);
     if (!ptr) return NOTFOUND();
     return {
       status: 'SUCCESS',
       entry: {
-        canonicalName: ptr.value,
+        canonicalName: (ptr.data as { ptrdname: string }).ptrdname,
         addressFamily: addr.includes(':') ? 10 : 2,
         address: addr,
         aliases: [],
@@ -117,59 +141,64 @@ export class DnsNssSource implements INssSource {
     };
   }
 
-  // ─── Legacy topology scan (no nameserver configured) ─────────────
-
-  private legacyScanByName(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
-    const needle = name.toLowerCase();
-    const short = needle.split('.')[0];
-    const matches: NssHostEntry[] = [];
-
-    for (const dev of EquipmentRegistry.getInstance().getAll()) {
-      if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.()?.toLowerCase();
-      if (!hostname) continue;
-      if (hostname !== needle && hostname !== short) continue;
-
-      for (const port of dev.getPorts()) {
-        const ip = port.getIPAddress();
-        if (!ip) continue;
-        const ipStr = ip.toString();
-        const af: 2 | 10 = ipStr.includes(':') ? 10 : 2;
-        if (family && af !== family) continue;
-        matches.push({
-          canonicalName: hostname,
-          addressFamily: af,
-          address: ipStr,
-          aliases: hostname === needle ? [] : [needle],
-        });
-      }
+  private async queryAnyAsync(
+    servers: string[], name: string, qtype: 'A' | 'AAAA' | 'PTR',
+  ): Promise<DnsMessage | null> {
+    for (const server of servers) {
+      const resp = this.wire!.queryAsync
+        ? await this.wire!.queryAsync(server, name, qtype)
+        : this.wire!.query(server, name, qtype);
+      if (resp) return resp;
     }
+    return null;
+  }
 
+  private async wireLookupAsync(
+    servers: string[], name: string, family?: 2 | 10,
+  ): Promise<NssResult<NssHostEntry[]>> {
+    const matches: NssHostEntry[] = [];
+    let answered = false;
+    for (const { qtype, rrType, af } of familyLookups(family)) {
+      const resp = await this.queryAnyAsync(servers, name, qtype);
+      const verdict = this.collect(resp, name, rrType, af, matches);
+      if (verdict) return verdict;
+      if (resp) answered = true;
+    }
+    return this.settle(answered, matches);
+  }
+
+  /**
+   * Range les réponses d'un type dans `matches`. Rend un verdict
+   * seulement quand la réponse tranche à elle seule — et jamais si un
+   * autre type a déjà répondu : une recherche A+AAAA dont seule la
+   * moitié aboutit doit rendre ce qu'elle a, comme glibc.
+   */
+  private collect(
+    resp: DnsMessage | null, name: string, rrType: number, af: 2 | 10,
+    matches: NssHostEntry[],
+  ): NssResult<NssHostEntry[]> | null {
+    if (!resp) return null;
+    if (resp.flags.rcode === DnsRcode.NXDOMAIN) return matches.length ? null : NOTFOUND();
+    if (resp.flags.rcode !== DnsRcode.NOERROR) {
+      return matches.length ? null : { status: 'TRYAGAIN' };
+    }
+    const canonicalName = (resp.questions[0]?.qname ?? name).toLowerCase();
+    for (const answer of resp.answers) {
+      if (answer.data.type !== rrType) continue;
+      matches.push({
+        canonicalName,
+        addressFamily: af,
+        address: (answer.data as { address: { toString(): string } }).address.toString(),
+        aliases: [],
+      });
+    }
+    return null;
+  }
+
+  private settle(answered: boolean, matches: NssHostEntry[]): NssResult<NssHostEntry[]> {
+    if (!answered) return { status: 'TRYAGAIN' };
     if (matches.length) return { status: 'SUCCESS', entry: matches };
     return NOTFOUND();
   }
 
-  private legacyScanByAddr(addr: string): NssResult<NssHostEntry> {
-    for (const dev of EquipmentRegistry.getInstance().getAll()) {
-      if (!dev.getIsPoweredOn()) continue;
-      const hostname = dev.getHostname?.();
-      if (!hostname) continue;
-      for (const port of dev.getPorts()) {
-        const ip = port.getIPAddress();
-        if (!ip) continue;
-        if (ip.toString() === addr) {
-          return {
-            status: 'SUCCESS',
-            entry: {
-              canonicalName: hostname,
-              addressFamily: addr.includes(':') ? 10 : 2,
-              address: addr,
-              aliases: [],
-            },
-          };
-        }
-      }
-    }
-    return NOTFOUND();
-  }
 }

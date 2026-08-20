@@ -13,11 +13,17 @@ import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { OracleFilesystemSync } from '@/adapters/OracleFilesystemSync';
 import { OracleSystemdSync } from '@/adapters/OracleSystemdSync';
 import { OracleAuditSyslogSync } from '@/adapters/OracleAuditSyslogSync';
+import { OracleListenerTcpSync } from '@/adapters/OracleListenerTcpSync';
 import { getDefaultEventBus } from '@/events/EventBus';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { DeviceCatalogRegistry } from '@/terminal/subshells/rman/catalog/DeviceCatalogRegistry';
-import { resolveOracleConnectTarget, parseConnectIdentifier } from './oracleNet';
+import { resolveOracleConnectTarget, parseConnectIdentifier, primaryIpv4 } from './oracleNet';
+import { DataPumpEngine } from '@/database/oracle/datapump/DataPumpEngine';
+import type { CatalogUser } from '@/database/engine/catalog/BaseCatalog';
 import { DeviceConfigRegistry } from '@/terminal/subshells/rman/session/DeviceConfigRegistry';
+import { resolveRacMembership, joinOrCreateCluster, resetRacClusterRegistry } from '@/database/oracle/rac/RacClusterRegistry';
+import { attachRacCssAgent, _resetRacCssAgentAttachments } from '@/database/oracle/rac/RacCssAgent';
+import { attachRacCacheFusionAgent, _resetRacCacheFusionAgentAttachments } from '@/database/oracle/rac/RacCacheFusionAgent';
 
 /** Per-device Oracle database instances. */
 const oracleInstances: Map<string, OracleDatabase> = new Map();
@@ -27,6 +33,8 @@ const oracleFsSyncs: Map<string, OracleFilesystemSync> = new Map();
 const oracleSystemdSyncs: Map<string, OracleSystemdSync> = new Map();
 /** Per-device audit→syslog adapter — routes audit records to /var/log when AUDIT_SYSLOG_LEVEL is set. */
 const oracleAuditSyslogSyncs: Map<string, OracleAuditSyslogSync> = new Map();
+/** Per-device listener↔TcpStack binder — keeps TCP 1521 a genuinely connectable socket. */
+const oracleListenerTcpSyncs: Map<string, OracleListenerTcpSync> = new Map();
 
 /**
  * Get or create an Oracle database for a device.
@@ -42,31 +50,55 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     const dev = EquipmentRegistry.getInstance().getById(deviceId);
     if (dev) initOracleFilesystem(dev as import('@/network').HostCapableDevice);
 
-    db = new OracleDatabase();
+    // RAC detection (see RacClusterRegistry's doc comment for the
+    // two-part rule): a peer means this device is JOINING that peer's
+    // already-booted database — genuine shared storage, not a fresh one.
+    const racInfo = resolveRacMembership(deviceId, (id) => oracleInstances.has(id));
+    const racPrimaryDb = racInfo?.peerDeviceId ? oracleInstances.get(racInfo.peerDeviceId) : undefined;
+
+    db = racPrimaryDb
+      ? new OracleDatabase(undefined, { storage: racPrimaryDb.storage, catalog: racPrimaryDb.catalog })
+      : new OracleDatabase();
     // Phase 7c: wire bus + deviceId BEFORE startup so the boot sequence
     // (state-changed, background-process-started, alert log) is materialised
     // by the FS sync adapter without manual *ToDevice helper calls.
     db.instance.setEventBus(getDefaultEventBus());
     db.instance.setDeviceId(deviceId);
-    // Device VFS reader for CREATE PFILE/SPFILE FROM … — injected here so
-    // the database layer never imports network/Equipment directly.
+    // Device VFS reader for server-side reads (UTL_FILE, external tables,
+    // BFILE, CREATE PFILE/SPFILE FROM …) — runs as the `oracle` OS user
+    // under host DAC, falling back to the editor path on devices that do
+    // not model the oracle identity. Injected here so the database layer
+    // never imports network/Equipment directly.
     db.instance.setDeviceFileReader((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const read = (dev as unknown as { readFileForEditor?: (p: string) => string | null } | null)?.readFileForEditor;
-      return typeof read === 'function' ? read.call(dev, path) ?? null : null;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        readFileAsOracle?: (p: string) => string | null;
+        readFileForEditor?: (p: string) => string | null;
+      } | null;
+      if (typeof dev?.readFileAsOracle === 'function') return dev.readFileAsOracle(path) ?? null;
+      return typeof dev?.readFileForEditor === 'function' ? dev.readFileForEditor(path) ?? null : null;
     });
-    // Writer / remover for UTL_FILE: server-side PL/SQL file I/O lands on
-    // the same host VFS the OS shell reads, so a file written by
-    // UTL_FILE.PUT_LINE is immediately visible to `cat` and vice versa.
+    // Writer / remover for UTL_FILE, external tables, BFILE, Data Pump:
+    // server-side file I/O runs as the `oracle` OS user and is subject to
+    // host DAC (`*AsOracle`), so a file written by UTL_FILE.PUT_LINE lands
+    // on the same VFS the OS shell reads — owned oracle:oinstall — and a
+    // read the oracle user is not permitted to perform is denied exactly
+    // as on a real server. Falls back to the editor path on devices that
+    // do not model the oracle OS identity.
     db.instance.setDeviceFileWriter((path, content) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const write = (dev as unknown as { writeFileFromEditor?: (p: string, c: string) => boolean } | null)?.writeFileFromEditor;
-      return typeof write === 'function' ? !!write.call(dev, path, content) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        writeFileAsOracle?: (p: string, c: string) => boolean;
+        writeFileFromEditor?: (p: string, c: string) => boolean;
+      } | null;
+      if (typeof dev?.writeFileAsOracle === 'function') return !!dev.writeFileAsOracle(path, content);
+      return typeof dev?.writeFileFromEditor === 'function' ? !!dev.writeFileFromEditor(path, content) : false;
     });
     db.instance.setDeviceFileRemover((path) => {
-      const dev = EquipmentRegistry.getInstance().getById(deviceId);
-      const rm = (dev as unknown as { deleteFileFromEditor?: (p: string) => boolean } | null)?.deleteFileFromEditor;
-      return typeof rm === 'function' ? !!rm.call(dev, path) : false;
+      const dev = EquipmentRegistry.getInstance().getById(deviceId) as unknown as {
+        removeFileAsOracle?: (p: string) => boolean;
+        deleteFileFromEditor?: (p: string) => boolean;
+      } | null;
+      if (typeof dev?.removeFileAsOracle === 'function') return !!dev.removeFileAsOracle(path);
+      return typeof dev?.deleteFileFromEditor === 'function' ? !!dev.deleteFileFromEditor(path) : false;
     });
     db.instance.setOsCommandRunner((cmd) => {
       const dev = EquipmentRegistry.getInstance().getById(deviceId);
@@ -117,18 +149,49 @@ export function getOracleDatabase(deviceId: string): OracleDatabase {
     auditSyslog.start();
     oracleAuditSyslogSyncs.set(deviceId, auditSyslog);
 
-    db.instance.startup('OPEN');
+    const listenerTcp = new OracleListenerTcpSync(getDefaultEventBus(), {
+      resolveDevice: (id) => EquipmentRegistry.getInstance().getById(id) ?? null,
+      resolveDatabase: (id) => oracleInstances.get(id) ?? null,
+    });
+    listenerTcp.start();
+    oracleListenerTcpSyncs.set(deviceId, listenerTcp);
+
+    db.instance.startup();
     // A freshly provisioned server boots with the listener running
     // (dbstart/systemd would have started it); `lsnrctl stop` still
     // takes it down realistically (ORA-12541 on @connects).
     db.instance.startListener();
-    installAllDemoSchemas(db);
+    // A RAC joiner shares the founding node's storage/catalog — installing
+    // the demo schemas again would try to re-CREATE the same USERS/tables
+    // against data that already has them.
+    if (!racPrimaryDb) installAllDemoSchemas(db);
     oracleInstances.set(deviceId, db);
     // The boot provisioning (initOracleFilesystem) wrote the seed
     // datafiles before the database existed — tell the FS sync they are
     // materialised so it never recreates a file the user later deletes.
     sync.primeDatafiles(deviceId);
     sync.primeSgaMemory(deviceId);
+    listenerTcp.primeListener(deviceId);
+
+    if (racInfo) {
+      // instance_name defaults to the SID (initParameters()); a RAC
+      // member's real identity is its own hostname, exactly like real
+      // V$INSTANCE on a lab built with Oracle's own racnode1/racnode2
+      // convention.
+      db.instance.setParameter('instance_name', racInfo.hostname);
+      db.instance.setParameter('cluster_database', 'TRUE');
+      const dbName = db.instance.getParameter('db_name') ?? ORACLE_CONFIG.SID;
+      // `primaryDeviceId` only takes effect the first time a cluster is
+      // created for this dbName (i.e. for the founding node) — a later
+      // joiner's call just adds a member to the existing entry.
+      joinOrCreateCluster(dbName, deviceId, {
+        deviceId, hostname: racInfo.hostname,
+        interconnectIp: racInfo.interconnectIp, interconnectIface: racInfo.interconnectIface,
+        db,
+      });
+      attachRacCssAgent(dbName);
+      attachRacCacheFusionAgent(dbName);
+    }
   }
   return db;
 }
@@ -169,18 +232,27 @@ export function createSQLPlusSession(
   let viaOracleNet = false;
   if (connectIdentifier && localDevice) {
     const res = resolveOracleConnectTarget(localDevice, connectIdentifier, getOracleDatabase);
-    if (res.ok) { db = res.db; viaOracleNet = true; }
-    else netError = res.error;
+    if (res.ok === false) { netError = res.error; }
+    else { db = res.db; viaOracleNet = true; }
   }
 
   const session = new SQLPlusSession(db);
   // A connect identifier means the session came in through the listener:
   // its dedicated server process is forked LOCAL=NO, not bequeath.
-  if (viaOracleNet) session.setTransport('tcp');
+  if (viaOracleNet) {
+    session.setTransport('tcp');
+    session.setConnectIdentifier(connectIdentifier);
+  }
   // Bind the launching shell's OS identity so bequeath connections
   // (`/ as sysdba`) are gated by real dba-group membership and the audit
   // trail records the real OSUSER/MACHINE instead of a hardcoded default.
-  if (osCtx) session.setOsContext(osCtx);
+  // TCP sessions also carry the client's real IPv4 — needed by the
+  // server-side Dead Connection Detection (DCD) sweep to probe whether
+  // the peer is still reachable.
+  if (osCtx) {
+    const clientIp = viaOracleNet && localDevice ? primaryIpv4(localDevice) : undefined;
+    session.setOsContext(clientIp ? { ...osCtx, clientIp } : osCtx);
+  }
   // In-session CONNECT user/pass@X resolves through the same client.
   if (localDevice) {
     session.setTnsResolver((id) =>
@@ -218,7 +290,10 @@ export function createSQLPlusSession(
     // exactly what a real client prints (ERROR: ORA-12541: …).
     loginOutput = ['ERROR:', netError];
   } else if (asSysdba || (connArg === '/' && asSysdba)) {
-    loginOutput = session.login('SYS', '', true);
+    // For `sqlplus sys/pw@host as sysdba` the credentials drive
+    // password-file authentication; `sqlplus / as sysdba` is a local
+    // bequeath connection (username/password empty → OS authentication).
+    loginOutput = session.login(username || 'SYS', password, true);
   } else if (username) {
     loginOutput = session.login(username, password);
   } else {
@@ -246,6 +321,58 @@ export function createSQLPlusSession(
  */
 export function getRegisteredOracleDatabase(deviceId: string): OracleDatabase | undefined {
   return oracleInstances.get(deviceId);
+}
+
+/**
+ * A device's Oracle database, as a topology file can carry it.
+ *
+ * Two mechanisms, both the real ones. The DATA travels as a Data Pump
+ * dump — `expdp`/`impdp` is how a DBA actually moves a database, and
+ * `DataPumpEngine` is a faithful transport rather than a cosmetic
+ * artifact. The ACCOUNTS travel beside it because Data Pump deliberately
+ * does not carry them: real `impdp` outside FULL mode raises ORA-01918
+ * when the target user is missing, and this engine reproduces that. A
+ * dump restored into a database with no accounts would import nothing
+ * and say so table by table.
+ */
+export interface OracleTopologyState {
+  users: Array<{ record: CatalogUser; password?: string }>;
+  dump: unknown;
+}
+
+/**
+ * Capture, WITHOUT booting an instance on a device that never had one.
+ * `getOracleDatabase` provisions and starts a database on first access,
+ * so using it here would give every Linux host in a topology an Oracle
+ * installation it never had.
+ */
+export function captureOracleState(deviceId: string): OracleTopologyState | null {
+  const db = getRegisteredOracleDatabase(deviceId);
+  if (!db) return null;
+  const users = db.catalog.getAllUsers().map((record) => ({
+    record,
+    password: db.catalog.getStoredPassword(record.username),
+  }));
+  const { dump } = new DataPumpEngine(db).export({ full: true });
+  return { users, dump };
+}
+
+/** Rebuild the database a topology file describes, accounts first. */
+export function restoreOracleState(deviceId: string, state: OracleTopologyState): void {
+  const db = getOracleDatabase(deviceId);
+  for (const u of state.users) {
+    if (!db.catalog.userExists(u.record.username)) db.catalog.createUser(u.record);
+    // The secret travels too: recreating an account under a different
+    // password would leave a lab whose `connect scott/tiger` no longer
+    // works, which is worse than not restoring the account at all.
+    if (u.password !== undefined) db.catalog.setPassword(u.record.username, u.password);
+  }
+  const parsed = DataPumpEngine.parse(JSON.stringify(state.dump));
+  // REPLACE, not SKIP: the freshly-booted instance already carries the
+  // demo schemas, so a saved table of the same name must overwrite the
+  // stock one rather than be quietly skipped — otherwise the lab's data
+  // is the one thing the reload throws away.
+  if (parsed) new DataPumpEngine(db).import(parsed, { tableExistsAction: 'REPLACE' });
 }
 
 export function removeOracleDatabase(deviceId: string): void {
@@ -278,6 +405,8 @@ export function resetAllOracleInstances(): void {
   oracleSystemdSyncs.clear();
   for (const sync of oracleAuditSyslogSyncs.values()) sync.stop();
   oracleAuditSyslogSyncs.clear();
+  for (const sync of oracleListenerTcpSyncs.values()) sync.stop();
+  oracleListenerTcpSyncs.clear();
   for (const db of oracleInstances.values()) {
     try { db.instance.shutdown('IMMEDIATE'); } catch { /* ignore */ }
   }
@@ -285,6 +414,9 @@ export function resetAllOracleInstances(): void {
   oracleFilesystemInitialized.clear();
   DeviceCatalogRegistry._reset();
   DeviceConfigRegistry._reset();
+  resetRacClusterRegistry();
+  _resetRacCssAgentAttachments();
+  _resetRacCacheFusionAgentAttachments();
 }
 
 /**

@@ -11,7 +11,7 @@
  */
 
 import {
-  IPAddress, SubnetMask, RIPPacket, EthernetFrame, MACAddress,
+  IPAddress, SubnetMask, RIPPacket, EthernetFrame, MACAddress, IPv4Packet,
 } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { IEventBus } from '@/events/EventBus';
@@ -30,10 +30,14 @@ export interface RIPRouterContext {
   readonly name: string;
   getPorts(): Map<string, Port>;
   getRoutingTable(): RouteEntry[];
+  isInterfaceUsable?(iface: string): boolean;
+  sendIpv4ArpAware?(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
+  evaluateRoutePolicy?(name: string, network: IPAddress, mask: SubnetMask): 'permit' | 'deny' | null;
   setRoutingTable(table: RouteEntry[]): void;
   pushRoute(route: RouteEntry): void;
   sendFrame(iface: string, frame: EthernetFrame): void;
   getRipVersion?(): 1 | 2;
+  getInterfaceRipAuth?(iface: string): { mode: 'md5' | 'text'; keyId: number; key: string } | null;
   /** Optional reactive overrides (multi-topology tests). */
   getBus?(): IEventBus;
   getScheduler?(): IScheduler;
@@ -56,6 +60,18 @@ export class RouterRIPEngine {
       updateRoute: (network, mask, route) =>
         this.updateInRib(network, mask, route),
       getRipVersion: () => ctx.getRipVersion?.() ?? 2,
+      sendIpv4ArpAware: ctx.sendIpv4ArpAware
+        ? (iface, packet, nextHop) => ctx.sendIpv4ArpAware!(iface, packet, nextHop)
+        : undefined,
+      isInterfaceUsable: ctx.isInterfaceUsable
+        ? (iface) => ctx.isInterfaceUsable!(iface)
+        : undefined,
+      getInterfaceAuth: ctx.getInterfaceRipAuth
+        ? (iface) => ctx.getInterfaceRipAuth!(iface)
+        : undefined,
+      evaluateRoutePolicy: ctx.evaluateRoutePolicy
+        ? (name, network, mask) => ctx.evaluateRoutePolicy!(name, network, mask)
+        : undefined,
     });
     if (ctx.getBus) this.engine.setEventBus(ctx.getBus());
     if (ctx.getScheduler) this.engine.setScheduler(ctx.getScheduler());
@@ -75,26 +91,64 @@ export class RouterRIPEngine {
 
   isEnabled(): boolean { return this.engine.isRunning(); }
 
+  setScheduler(scheduler: import('@/events/Scheduler').IScheduler | null): void {
+    this.engine.setScheduler(scheduler);
+  }
+
   getConfig(): RIPConfig { return this.engine.getConfig(); }
 
   getRoutes(): ReturnType<RIPEngine['getRoutes']> {
     return this.engine.getRoutes();
   }
 
+  onInterfaceDown(iface: string, port?: Port): void {
+    const ip = port?.getIPAddress();
+    const mask = port?.getSubnetMask();
+    this.engine.onInterfaceDown(
+      iface,
+      ip && mask ? ip.networkAddress(mask) : undefined,
+      mask ?? undefined,
+    );
+  }
+
+  getUpdateSources(): Map<string, number> {
+    return this.engine.getUpdateSources();
+  }
+
+  advanceTime(ms: number): void {
+    this.engine.advanceTime(ms);
+  }
+
   advertiseNetwork(network: IPAddress, mask: SubnetMask): void {
     this.engine.advertiseNetwork(network, mask);
+  }
+
+  withdrawNetwork(network: IPAddress): void {
+    this.engine.withdrawNetwork(network);
+  }
+
+  configure(config: Partial<RIPConfig>): void {
+    this.engine.configure(config);
   }
 
   setPassiveInterface(iface: string): void {
     this.engine.setPassiveInterface(iface);
   }
 
+  setInterfaceSplitHorizon(iface: string, on: boolean | null): void {
+    this.engine.setInterfaceSplitHorizon(iface, on);
+  }
+
+  splitHorizonOn(iface: string): boolean {
+    return this.engine.splitHorizonOn(iface);
+  }
+
   removePassiveInterface(iface: string): void {
     this.engine.removePassiveInterface(iface);
   }
 
-  setRedistribution(source: RIPRedistSource, metric?: number): void {
-    this.engine.setRedistribution(source, metric);
+  setRedistribution(source: RIPRedistSource, metric?: number, routePolicy?: string): void {
+    this.engine.setRedistribution(source, metric, routePolicy);
   }
 
   removeRedistribution(source: RIPRedistSource): void {

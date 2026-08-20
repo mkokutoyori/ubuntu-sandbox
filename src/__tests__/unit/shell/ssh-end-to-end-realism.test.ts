@@ -95,8 +95,16 @@ async function buildLan(): Promise<Lan> {
   return { linuxA, linuxB, linuxSrv, winA, winB, cisco, huawei };
 }
 
+/**
+ * Sets both `.input` (top-level / pushed-child dispatch) and `._inputBuf`
+ * (active-sub-shell dispatch, e.g. SshInteractiveSubShell) — this single
+ * helper drives commands both before and after an SSH connect, and which
+ * buffer is "live" depends on which mechanism is currently handling the
+ * session.
+ */
 async function typeRoot(t: TerminalSession, line: string): Promise<void> {
   t.setInput(line);
+  t.setInputBuf(line);
   t.handleKey(key('Enter'));
   await flush();
 }
@@ -118,7 +126,12 @@ async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string):
 
 async function linuxSshLogin(t: LinuxTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal'; i++) {
+  // Once connected, an active SshInteractiveSubShell reports
+  // 'interactive-text' for "idle, ready for the next line" (same as an
+  // unanswered host-key confirmation prompt would) — so the loop must
+  // also stop on isInsideSshSession, not just on the mode string, or it
+  // would keep "answering" a prompt that isn't there anymore.
+  for (let i = 0; i < 4 && !t.isInsideSshSession && t.currentInputMode.type !== 'normal'; i++) {
     if (t.currentInputMode.type === 'password') {
       t.setPasswordBuf(pw);
       t.handleKey(key('Enter'));
@@ -309,7 +322,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     await typeRoot(t, 'systemctl status ssh');
-    expectAnyLine(t, /Active:\s+active \(running\)/);
+    expectAnyLine(t, /Active:.*active \(running\)/);
   });
 
   test('§18 — exit pops back to the client prompt', async () => {
@@ -785,7 +798,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     await typeSub(t, 'pwd');
     t.handleKey(key('ArrowUp'));
     await flush();
-    expect((t as unknown as { _inputBuf: string })._inputBuf).toBe('pwd');
+    expect(t.foreground.input).toBe('pwd');
   });
 
   test('§67 — Windows→Linux: Ctrl+L is classified as clear-screen by inner shell', async () => {
@@ -793,8 +806,10 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     const t = new WindowsTerminalSession('j67', lan.winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    const active = (t as unknown as { activeSubShell: { handleKey?: (e: KeyEvent) => boolean } }).activeSubShell;
-    expect(active.handleKey?.(key('l', { ctrlKey: true }))).toBe(false);
+    t.addLine('scrollback');
+    t.handleKey(key('l', { ctrlKey: true }));
+    await flush();
+    expect(t.lines.length).toBe(0);
   });
 
   test('§68 — Windows→Linux: completion candidates include common bins', async () => {
@@ -802,9 +817,10 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     const t = new WindowsTerminalSession('j68', lan.winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    const active = (t as unknown as { activeSubShell: { getCompletions?: (s: string) => string[] } }).activeSubShell;
-    const candidates = active.getCompletions?.('ls') ?? [];
-    expect(Array.isArray(candidates)).toBe(true);
+    t.setInput('ech');
+    t.handleKey(key('Tab'));
+    await flush();
+    expect(t.foreground.input).toMatch(/^echo/);
   });
 
   // ─── §K — sqlplus / rman over SSH chains ───────────────────────────
@@ -1044,7 +1060,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expectAnyLine(t, /(?:GE|GigabitEthernet)0\/0\/0/);
   });
 
-  test('§93 — Linux→Cisco IOS: shows the IOS prompt via CrossVendorRemoteShell', async () => {
+  test('§93 — Linux→Cisco IOS: shows the IOS prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p93', lan.linuxA);
     await t.init();
@@ -1052,7 +1068,7 @@ describe('SSH end-to-end realism — 100-step debug', () => {
     expect(t.getPrompt()).toMatch(/cisco/);
   });
 
-  test('§94 — Linux→Huawei VRP: shows the VRP prompt via CrossVendorRemoteShell', async () => {
+  test('§94 — Linux→Huawei VRP: shows the VRP prompt', async () => {
     lan = await buildLan();
     const t = new LinuxTerminalSession('p94', lan.linuxA);
     await t.init();

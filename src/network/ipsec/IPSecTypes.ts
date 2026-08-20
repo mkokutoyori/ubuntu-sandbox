@@ -70,6 +70,8 @@ export interface TransformSet {
   mode: 'tunnel' | 'transport';
 }
 
+export type NatTraversalPolicy = 'enable' | 'disable' | 'forced';
+
 export interface CryptoMapEntry {
   seq: number;
   type: 'ipsec-isakmp';
@@ -79,6 +81,30 @@ export interface CryptoMapEntry {
   pfsGroup?: string;                 // e.g. 'group14'
   saLifetimeSeconds?: number;
   ikev2ProfileName?: string;
+  isakmpProfileName?: string;
+  /** `set peer <hostname> dynamic` — DDNS-tracked peer name (RFC 2136-style). */
+  peerHostname?: string;
+  /** Huawei `ike-peer NAME` — named peer whose remote-address feeds `peers`. */
+  ikePeerName?: string;
+}
+
+// ─── IKEv1 keyring + ISAKMP profile (crypto keyring / crypto isakmp profile) ──
+
+/** `crypto keyring NAME` — peer address (or '0.0.0.0' wildcard) → pre-shared key. */
+export interface ISAKMPKeyring {
+  name: string;
+  peers: Map<string, string>;
+}
+
+/** `crypto isakmp profile NAME` — binds a keyring + peer-identity match criteria. */
+export interface ISAKMPProfile {
+  name: string;
+  keyring?: string;
+  matchAddress?: string;
+  matchAddressMask?: string;
+  matchHostname?: string;
+  selfIdentity?: string;
+  vrf?: string;
 }
 
 export interface DynamicCryptoMapEntry {
@@ -135,6 +161,10 @@ export interface IKEv2Profile {
   authRemote: string;  // 'pre-share'
   keyringName?: string;
   keyringLocalName?: string;
+  identityLocal?: string;
+  selfIdentity?: string;
+  dpd?: { interval: number; retry: number; mode: string };
+  lifetime?: number;
 }
 
 // ─── IPSec Profile (for GRE over IPSec) ─────────────────────────────
@@ -179,6 +209,8 @@ export interface IKE_SA {
   dpdAwaitingAck?: boolean;
   /** IKE exchange mode: main (default) or aggressive */
   exchangeMode?: 'main' | 'aggressive';
+  failureReason?: string;
+  failedPhase?: 1 | 2;
 }
 
 /** DPD notify carried over UDP 500 — the ACK must echo the probe's seq (RFC 3706). */
@@ -217,6 +249,11 @@ export interface IkeV2Chosen {
   propName: string;
 }
 
+export interface X509CertPayload {
+  readonly cert: unknown;
+  readonly authSignature: string;
+}
+
 export interface IkeOfferMessage {
   type: 'ike';
   step: 'offer';
@@ -229,11 +266,26 @@ export interface IkeOfferMessage {
   policies: IkePolicyProposal[];
   ikev2Proposals?: IkeV2ProposalWire[];
   transforms: IkeTransformProposal[];
-  pfsGroup?: number;
+  pfsGroup?: string;
   lifetimeSec: number;
   lifetimeKB: number;
   ipsecSpiIn: number;
   natTHint: boolean;
+  authMode?: 'psk' | 'x509';
+  certPayload?: X509CertPayload;
+  keyExchange?: IkeKeyExchangePayload;
+}
+
+/**
+ * RFC 7296 section 1.2 KEi/KEr — the initiator's and responder's public
+ * Diffie-Hellman shares. `group` is the IKE group number; `share` is the
+ * `groupe:hexadecimal` encoding `tls/keyExchange.ts` already uses, so both
+ * ends run the SAME key agreement this repository verified against
+ * published vectors.
+ */
+export interface IkeKeyExchangePayload {
+  group: number;
+  share: string;
 }
 
 export interface IkeAcceptMessage {
@@ -241,6 +293,7 @@ export interface IkeAcceptMessage {
   step: 'accept';
   responderSpi: string;
   pskProof: string;
+  certPayload?: X509CertPayload;
   chosenPolicy?: IkePolicyProposal;
   chosenIkev2?: IkeV2Chosen;
   chosenTransform: IkeTransformProposal;
@@ -249,6 +302,7 @@ export interface IkeAcceptMessage {
   lifetimeSec: number;
   lifetimeKB: number;
   natT: boolean;
+  keyExchange?: IkeKeyExchangePayload;
 }
 
 export interface IkeRejectMessage {
@@ -278,12 +332,37 @@ export interface GdoiGroupSaRemove {
   groupAddress: string;
 }
 
-export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove;
+export interface GdoiGroupRegister {
+  type: 'gdoi';
+  op: 'register';
+  groupName: string;
+}
+
+export type GdoiMessage = GdoiGroupSaInstall | GdoiGroupSaRemove | GdoiGroupRegister;
 
 export function isGdoiMessage(p: unknown): p is GdoiMessage {
   if (!p || typeof p !== 'object') return false;
   const c = p as { type?: unknown; op?: unknown };
-  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove');
+  return c.type === 'gdoi' && (c.op === 'install' || c.op === 'remove' || c.op === 'register');
+}
+
+/**
+ * Local CLI configuration for a `crypto gdoi group` — either a key-server
+ * role (owns the group SA, pushes it to registering members) or a group
+ * member role (registers with a remote key server to receive the SA).
+ */
+export interface GdoiGroupConfig {
+  name: string;
+  identityNumber?: number;
+  /** Protected multicast group address (`match address ipv4`). */
+  groupAddress?: string;
+  transformSetName?: string;
+  saLifetimeSeconds?: number;
+  /** Key server's own address override (`address ipv4`). */
+  localAddress?: string;
+  /** Group member's configured key server (`server address ipv4`). */
+  keyServerAddress?: string;
+  isKeyServer: boolean;
 }
 
 export type IkeWirePayload = IsakmpDpdMessage | IkeMessage | GdoiMessage;
@@ -308,6 +387,20 @@ export interface IKEv2_SA {
   dhGroupUsed: number;
   created: number;
   natT: boolean;
+  /** SA lifetime in seconds (RFC 7296 §2.8) — from the bound profile or the global default. */
+  lifetime: number;
+  dpdEnabled: boolean;
+  dpdIntervalSec?: number;
+  dpdRetries?: number;
+  dpdMode?: string;
+  /** Timestamp of last DPD activity (sent or received) */
+  lastDPDActivity?: number;
+  /** Number of consecutive DPD timeouts */
+  dpdTimeouts?: number;
+  /** Monotonic liveness-check sequence number */
+  dpdSeq?: number;
+  /** True between sending a liveness probe and receiving its ACK */
+  dpdAwaitingAck?: boolean;
 }
 
 // ─── SA Traffic Selectors (RFC 4301 §4.4.2.1) ────────────────────────
@@ -358,6 +451,8 @@ export interface SACryptoKeys {
   espAuthKey: string;
   /** ESP authentication key length in bits */
   espAuthKeyLength: number;
+  /** GCM salt (RFC 4106 §5) — 4-byte hex string, combined with the per-packet explicit IV to form the 12-byte nonce. Only set for AEAD (aes-gcm-*) transforms. */
+  espEncSalt?: string;
 
   // ── AH keys (RFC 4302) ──
   /** AH authentication algorithm (e.g. 'hmac-sha-256', 'hmac-md5') */
@@ -385,7 +480,7 @@ export interface SADscpEcnConfig {
   /** Fixed DSCP value when mode='set' (0-63) */
   dscpValue: number;
   /** DSCP mapping table inner→outer when mode='map' */
-  dscpMap: Map<number, number>;
+  dscpMap: ReadonlyMap<number, number>;
   /**
    * ECN handling per RFC 6040:
    *   - true  : copy ECN bits from inner to outer on encap;

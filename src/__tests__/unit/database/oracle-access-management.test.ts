@@ -25,7 +25,7 @@ let executor: OracleExecutor;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   const conn = db.connectAsSysdba();
   executor = conn.executor;
 });

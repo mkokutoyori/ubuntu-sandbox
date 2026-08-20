@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-03-trunk-dtp-vtp
-Generated: 2026-06-16T17:12:44.141Z
+Generated: 2026-08-18T19:50:53.490Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=trunk encapsulation/allowed-vlan/native, DTP modes, VTP server/client/transparent, propagation
 Total steps: 357
@@ -30,9 +30,9 @@ Total steps: 357
   VTP Domain Name                 : <empty>
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:01
-  Configuration last modified by  : 02:00:00:00:00:01
-  Local updater ID is 02:00:00:00:00:01
+  Device ID                       : 0200.0000.0001
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -59,7 +59,6 @@ Total steps: 357
   
   Interface       Mode             Status         Negotiation
   --------------- ---------------- -------------- -----------
-  Fa0/0           ACCESS           access         off
   Fa0/1           ACCESS           access         off
   Fa0/2           ACCESS           access         off
   Fa0/3           ACCESS           access         off
@@ -83,8 +82,9 @@ Total steps: 357
   Fa0/21          ACCESS           access         off
   Fa0/22          ACCESS           access         off
   Fa0/23          ACCESS           access         off
-  Gi0/0           ACCESS           access         off
+  Fa0/24          ACCESS           access         off
   Gi0/1           TRUNK            trunk          on
+  Gi0/2           ACCESS           access         off
 
 [6/357] sw1 SW1# show interfaces GigabitEthernet0/1 switchport
   Name: Gi0/1
@@ -126,9 +126,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Enabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:35
-  Configuration last modified by  : 02:00:00:00:00:35
-  Local updater ID is 02:00:00:00:00:35
+  Device ID                       : 0200.0000.0035
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -160,9 +160,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:01
-  Configuration last modified by  : 02:00:00:00:00:01
-  Local updater ID is 02:00:00:00:00:01
+  Device ID                       : 0200.0000.0001
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -192,9 +192,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:1b
-  Configuration last modified by  : 02:00:00:00:00:1b
-  Local updater ID is 02:00:00:00:00:1b
+  Device ID                       : 0200.0000.001b
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -228,20 +228,20 @@ Total steps: 357
 
 [34/357] core CORE# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
-  Gi0/0       on               802.1q         trunking      1
   Gi0/1       on               802.1q         trunking      1
+  Gi0/2       on               802.1q         trunking      1
   
   Port        Vlans allowed on trunk
-  Gi0/0       1-4094
   Gi0/1       1-4094
+  Gi0/2       1-4094
   
   Port        Vlans allowed and active in management domain
-  Gi0/0       1
   Gi0/1       1
+  Gi0/2       1
   
   Port        Vlans in spanning tree forwarding state and not pruned
-  Gi0/0       1
   Gi0/1       1
+  Gi0/2       1
 
 [35/357] sw1 SW1# configure terminal
   Enter configuration commands, one per line.  End with CNTL/Z.
@@ -361,7 +361,7 @@ Total steps: 357
 [66/357] core CORE# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24
   10   PROP_10                          active    
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -372,7 +372,7 @@ Total steps: 357
 [67/357] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
   10   PROP_10                          active    
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -383,7 +383,7 @@ Total steps: 357
 [68/357] sw2 SW2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
 
 
 --- [69] § DTP negotiation modes loop (SW1 Fa0/4..0/12) ---
@@ -887,12 +887,11 @@ Total steps: 357
 <empty>
 
 [146/357] sw1 SW1(config-if)# switchport mode bogus
-  % Invalid input detected at '^' marker.
-  switchport mode bogus
                   ^
+  % Invalid input detected at '^' marker.
 
 [147/357] sw1 SW1(config-if)# switchport trunk encapsulation isl
-<empty>
+  % isl encapsulation is not supported on this platform
 
 [148/357] sw1 SW1(config-if)# end
 <empty>
@@ -1234,13 +1233,13 @@ Total steps: 357
 
 [185/357] l1 l1$ ping -c 3 192.168.1.21
   PING 192.168.1.21 (192.168.1.21) 56(84) bytes of data.
-  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=2.722 ms
-  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.633 ms
-  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=0.602 ms
+  64 bytes from 192.168.1.21: icmp_seq=1 ttl=64 time=3.074 ms
+  64 bytes from 192.168.1.21: icmp_seq=2 ttl=64 time=0.780 ms
+  64 bytes from 192.168.1.21: icmp_seq=3 ttl=64 time=1.970 ms
   
   --- 192.168.1.21 ping statistics ---
   3 packets transmitted, 3 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.602/1.319/2.722/0.992 ms
+  rtt min/avg/max/mdev = 0.780/1.941/3.074/0.937 ms
 
 [186/357] l2 l2$ arp -a
   ? (192.168.1.11) at 02:00:00:00:00:4f [ether] on eth0
@@ -1257,9 +1256,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Enabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:35
-  Configuration last modified by  : 02:00:00:00:00:35
-  Local updater ID is 02:00:00:00:00:35
+  Device ID                       : 0200.0000.0035
+  Configuration last modified by 0.0.0.0 at 8-18-26 19:50:53
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1281,25 +1280,25 @@ Total steps: 357
 
 [190/357] core CORE# show interfaces trunk
   Port        Mode             Encapsulation  Status        Native vlan
-  Gi0/0       on               802.1q         trunking      1
   Gi0/1       on               802.1q         trunking      1
+  Gi0/2       on               802.1q         trunking      1
   
   Port        Vlans allowed on trunk
-  Gi0/0       1-4094
   Gi0/1       1-4094
+  Gi0/2       1-4094
   
   Port        Vlans allowed and active in management domain
-  Gi0/0       1,10,20,30,40,50,60
   Gi0/1       1,10,20,30,40,50,60
+  Gi0/2       1,10,20,30,40,50,60
   
   Port        Vlans in spanning tree forwarding state and not pruned
-  Gi0/0       1,10,20,30,40,50,60
   Gi0/1       1,10,20,30,40,50,60
+  Gi0/2       1,10,20,30,40,50,60
 
 [191/357] core CORE# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24
   10   PROP_10                          active    
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -1316,11 +1315,11 @@ Total steps: 357
   1       02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:53 DYNAMIC     GigabitEthernet0/1
   1       02:00:00:00:00:57 DYNAMIC     GigabitEthernet0/1
-  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
-  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/0
-  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/0
+  1       02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
+  1       02:00:00:00:00:5f DYNAMIC     GigabitEthernet0/2
+  1       02:00:00:00:00:63 DYNAMIC     GigabitEthernet0/2
   10      02:00:00:00:00:4f DYNAMIC     GigabitEthernet0/1
-  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/0
+  10      02:00:00:00:00:5b DYNAMIC     GigabitEthernet0/2
   
   Total Mac Addresses for this criterion: 8
 
@@ -1330,9 +1329,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:35
-  Configuration last modified by  : 02:00:00:00:00:35
-  Local updater ID is 02:00:00:00:00:35
+  Device ID                       : 0200.0000.0001
+  Configuration last modified by 0.0.0.0 at 8-18-26 19:50:53
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1404,7 +1403,7 @@ Total steps: 357
 [196/357] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/2, Fa0/3, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  1    default                          active    Fa0/2, Fa0/3, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
   10   PROP_10                          active    Fa0/1
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -1434,9 +1433,9 @@ Total steps: 357
   VTP Domain Name                 : LAB
   VTP Pruning Mode                : Disabled
   VTP Traps Generation            : Disabled
-  Device ID                       : 02:00:00:00:00:1b
-  Configuration last modified by  : 02:00:00:00:00:1b
-  Local updater ID is 02:00:00:00:00:1b
+  Device ID                       : 0200.0000.001b
+  Configuration last modified by 0.0.0.0 at 0-0-00 00:00:00
+  Local updater ID is 0.0.0.0 on interface Vl1 (lowest numbered VLAN interface found)
   
   Feature VLAN:
   --------------
@@ -1472,7 +1471,7 @@ Total steps: 357
 [201/357] sw2 SW2# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  1    default                          active    Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
   10   VLAN0010                         active    Fa0/1
 
 [202/357] sw2 SW2# show mac address-table
@@ -2020,7 +2019,7 @@ Total steps: 357
 [271/357] core CORE# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23
+  1    default                          active    Fa0/1, Fa0/2, Fa0/3, Fa0/4, Fa0/5, Fa0/6, Fa0/7, Fa0/8, Fa0/9, Fa0/10, Fa0/11, Fa0/12, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24
   10   PROP_10                          active    
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -2037,7 +2036,7 @@ Total steps: 357
 [272/357] sw1 SW1# show vlan brief
   VLAN Name                             Status    Ports
   ---- -------------------------------- --------- -------------------------------
-  1    default                          active    Fa0/0, Fa0/2, Fa0/3, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Gi0/0
+  1    default                          active    Fa0/2, Fa0/3, Fa0/13, Fa0/14, Fa0/15, Fa0/16, Fa0/17, Fa0/18, Fa0/19, Fa0/20, Fa0/21, Fa0/22, Fa0/23, Fa0/24, Gi0/2
   10   PROP_10                          active    Fa0/1
   20   PROP_20                          active    
   30   PROP_30                          active    
@@ -2054,6 +2053,7 @@ Total steps: 357
 
 --- [273] § host verification ---
 [274/357] l1 l1$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -2067,6 +2067,7 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [276/357] l2 l2$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -2080,6 +2081,7 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [278/357] srv1 srv1$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -2093,6 +2095,7 @@ Total steps: 357
   192.168.1.22 dev eth0 lladdr 02:00:00:00:00:5f REACHABLE
 
 [280/357] srv2 srv2$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -2132,7 +2135,7 @@ Total steps: 357
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-54
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 2:
@@ -2141,7 +2144,7 @@ Total steps: 357
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-55
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
   Ethernet adapter Ethernet 3:
@@ -2150,7 +2153,7 @@ Total steps: 357
      Connection-specific DNS Suffix  . :
      Description . . . . . . . . . . . : Intel(R) Ethernet Connection
      Physical Address. . . . . . . . . : 02-00-00-00-00-56
-     DHCP Enabled. . . . . . . . . . . : No
+     DHCP Enabled. . . . . . . . . . . : Yes
      Autoconfiguration Enabled . . . . : Yes
   
 
@@ -2167,9 +2170,82 @@ Total steps: 357
 [284/357] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 1607 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
+  !
+  interface FastEthernet0/1
+   switchport access vlan 10
+  !
+  interface FastEthernet0/2
+  !
+  interface FastEthernet0/3
+  !
+  interface FastEthernet0/4
+   switchport nonegotiate
+  !
+  interface FastEthernet0/5
+   switchport nonegotiate
+  !
+  interface FastEthernet0/6
+   switchport nonegotiate
+  !
+  interface FastEthernet0/7
+   switchport nonegotiate
+  !
+  interface FastEthernet0/8
+   switchport nonegotiate
+  !
+  interface FastEthernet0/9
+   switchport nonegotiate
+  !
+  interface FastEthernet0/10
+   switchport nonegotiate
+  !
+  interface FastEthernet0/11
+   switchport nonegotiate
+  !
+  interface FastEthernet0/12
+   switchport nonegotiate
+  !
+  interface FastEthernet0/13
+  !
+  interface FastEthernet0/14
+  !
+  interface FastEthernet0/15
+  !
+  interface FastEthernet0/16
+  !
+  interface FastEthernet0/17
+  !
+  interface FastEthernet0/18
+  !
+  interface FastEthernet0/19
+  !
+  interface FastEthernet0/20
+  !
+  interface FastEthernet0/21
+  !
+  interface FastEthernet0/22
+  !
+  interface FastEthernet0/23
+  !
+  interface FastEthernet0/24
+  !
+  interface GigabitEthernet0/1
+   switchport mode trunk
+   switchport trunk native vlan 99
+   switchport trunk encapsulation dot1q
+   switchport trunk pruning vlan 10,20
+  !
+  interface GigabitEthernet0/2
+  !
+  interface Vlan1
+   no ip address
+   shutdown
   !
   vlan 10
    name PROP_10
@@ -2210,117 +2286,18 @@ Total steps: 357
   vtp domain LAB
   vtp mode client
   vtp password secret123
-  interface FastEthernet0/0
-   switchport mode access
-  !
-  interface FastEthernet0/1
-   switchport mode access
-   switchport access vlan 10
-   switchport trunk encapsulation isl
-  !
-  interface FastEthernet0/2
-   switchport mode access
-  !
-  interface FastEthernet0/3
-   switchport mode access
-  !
-  interface FastEthernet0/4
-   switchport nonegotiate
-  !
-  interface FastEthernet0/5
-   switchport nonegotiate
-  !
-  interface FastEthernet0/6
-   switchport nonegotiate
-  !
-  interface FastEthernet0/7
-   switchport nonegotiate
-  !
-  interface FastEthernet0/8
-   switchport nonegotiate
-  !
-  interface FastEthernet0/9
-   switchport nonegotiate
-  !
-  interface FastEthernet0/10
-   switchport nonegotiate
-  !
-  interface FastEthernet0/11
-   switchport nonegotiate
-  !
-  interface FastEthernet0/12
-   switchport nonegotiate
-  !
-  interface FastEthernet0/13
-   switchport mode access
-  !
-  interface FastEthernet0/14
-   switchport mode access
-  !
-  interface FastEthernet0/15
-   switchport mode access
-  !
-  interface FastEthernet0/16
-   switchport mode access
-  !
-  interface FastEthernet0/17
-   switchport mode access
-  !
-  interface FastEthernet0/18
-   switchport mode access
-  !
-  interface FastEthernet0/19
-   switchport mode access
-  !
-  interface FastEthernet0/20
-   switchport mode access
-  !
-  interface FastEthernet0/21
-   switchport mode access
-  !
-  interface FastEthernet0/22
-   switchport mode access
-  !
-  interface FastEthernet0/23
-   switchport mode access
-  !
-  interface GigabitEthernet0/0
-   switchport mode access
-  !
-  interface GigabitEthernet0/1
-   switchport mode trunk
-   switchport trunk native vlan 99
-   switchport trunk encapsulation dot1q
-   switchport trunk pruning vlan 10,20
   !
   end
 
 
 --- [285] § extended cross-switch interface inspection appendix ---
 [286/357] sw1 SW1# show interfaces FastEthernet0/0
-  FastEthernet0/0 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+                  ^
+  % Invalid input detected at '^' marker.
 
 [287/357] sw1 SW1# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is Fast Ethernet, address is 0200.0000.0001 (bia 0200.0000.0001)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2331,17 +2308,17 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 370 bytes, 0 no buffer
+       6 packets input, 530 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       14 packets output, 1010 bytes, 0 underruns
+       18 packets output, 1346 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [288/357] sw1 SW1# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is Fast Ethernet, address is 0200.0000.0002 (bia 0200.0000.0002)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2356,13 +2333,13 @@ Total steps: 357
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 640 bytes, 0 underruns
+       15 packets output, 1062 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [289/357] sw1 SW1# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is Fast Ethernet, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2373,17 +2350,17 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       3 packets input, 226 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 576 bytes, 0 underruns
+       12 packets output, 836 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [290/357] sw1 SW1# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:05 (bia 02:00:00:00:00:05)
+  FastEthernet0/4 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2403,8 +2380,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [291/357] sw1 SW1# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:06 (bia 02:00:00:00:00:06)
+  FastEthernet0/5 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0005 (bia 0200.0000.0005)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2424,8 +2401,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [292/357] sw1 SW1# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:07 (bia 02:00:00:00:00:07)
+  FastEthernet0/6 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0006 (bia 0200.0000.0006)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2445,8 +2422,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [293/357] sw1 SW1# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:08 (bia 02:00:00:00:00:08)
+  FastEthernet0/7 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0007 (bia 0200.0000.0007)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2466,8 +2443,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [294/357] sw1 SW1# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:09 (bia 02:00:00:00:00:09)
+  FastEthernet0/8 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0008 (bia 0200.0000.0008)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2487,8 +2464,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [295/357] sw1 SW1# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0a (bia 02:00:00:00:00:0a)
+  FastEthernet0/9 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0009 (bia 0200.0000.0009)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2508,8 +2485,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [296/357] sw1 SW1# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0b (bia 02:00:00:00:00:0b)
+  FastEthernet0/10 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000a (bia 0200.0000.000a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2529,8 +2506,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [297/357] sw1 SW1# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0c (bia 02:00:00:00:00:0c)
+  FastEthernet0/11 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000b (bia 0200.0000.000b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2550,8 +2527,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [298/357] sw1 SW1# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0d (bia 02:00:00:00:00:0d)
+  FastEthernet0/12 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000c (bia 0200.0000.000c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2571,8 +2548,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [299/357] sw1 SW1# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0e (bia 02:00:00:00:00:0e)
+  FastEthernet0/13 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000d (bia 0200.0000.000d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2592,8 +2569,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [300/357] sw1 SW1# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:0f (bia 02:00:00:00:00:0f)
+  FastEthernet0/14 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000e (bia 0200.0000.000e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2613,8 +2590,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [301/357] sw1 SW1# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:10 (bia 02:00:00:00:00:10)
+  FastEthernet0/15 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.000f (bia 0200.0000.000f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2634,8 +2611,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [302/357] sw1 SW1# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:11 (bia 02:00:00:00:00:11)
+  FastEthernet0/16 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0010 (bia 0200.0000.0010)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2655,8 +2632,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [303/357] sw1 SW1# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:12 (bia 02:00:00:00:00:12)
+  FastEthernet0/17 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0011 (bia 0200.0000.0011)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2676,8 +2653,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [304/357] sw1 SW1# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:13 (bia 02:00:00:00:00:13)
+  FastEthernet0/18 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0012 (bia 0200.0000.0012)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2697,8 +2674,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [305/357] sw1 SW1# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
+  FastEthernet0/19 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0013 (bia 0200.0000.0013)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2718,8 +2695,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [306/357] sw1 SW1# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:15 (bia 02:00:00:00:00:15)
+  FastEthernet0/20 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0014 (bia 0200.0000.0014)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2739,8 +2716,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [307/357] sw1 SW1# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:16 (bia 02:00:00:00:00:16)
+  FastEthernet0/21 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0015 (bia 0200.0000.0015)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2760,8 +2737,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [308/357] sw1 SW1# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:17 (bia 02:00:00:00:00:17)
+  FastEthernet0/22 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0016 (bia 0200.0000.0016)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2781,8 +2758,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [309/357] sw1 SW1# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:18 (bia 02:00:00:00:00:18)
+  FastEthernet0/23 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0017 (bia 0200.0000.0017)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2802,29 +2779,12 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [310/357] sw2 SW2# show interfaces FastEthernet0/0
-  FastEthernet0/0 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:1b (bia 02:00:00:00:00:1b)
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+                  ^
+  % Invalid input detected at '^' marker.
 
 [311/357] sw2 SW2# show interfaces FastEthernet0/1
   FastEthernet0/1 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:1c (bia 02:00:00:00:00:1c)
+    Hardware is Fast Ethernet, address is 0200.0000.001b (bia 0200.0000.001b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2835,17 +2795,17 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       4 packets input, 370 bytes, 0 no buffer
+       6 packets input, 530 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       14 packets output, 1010 bytes, 0 underruns
+       18 packets output, 1346 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [312/357] sw2 SW2# show interfaces FastEthernet0/2
   FastEthernet0/2 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:1d (bia 02:00:00:00:00:1d)
+    Hardware is Fast Ethernet, address is 0200.0000.001c (bia 0200.0000.001c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2860,13 +2820,13 @@ Total steps: 357
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       10 packets output, 640 bytes, 0 underruns
+       15 packets output, 1062 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [313/357] sw2 SW2# show interfaces FastEthernet0/3
   FastEthernet0/3 is up, line protocol is up
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:1e (bia 02:00:00:00:00:1e)
+    Hardware is Fast Ethernet, address is 0200.0000.001d (bia 0200.0000.001d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2877,17 +2837,17 @@ Total steps: 357
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       1 packets input, 64 bytes, 0 no buffer
+       3 packets input, 226 bytes, 0 no buffer
        Received 0 broadcasts (0 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       9 packets output, 576 bytes, 0 underruns
+       12 packets output, 836 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
 [314/357] sw2 SW2# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:1f (bia 02:00:00:00:00:1f)
+  FastEthernet0/4 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.001e (bia 0200.0000.001e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2907,8 +2867,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [315/357] sw2 SW2# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:20 (bia 02:00:00:00:00:20)
+  FastEthernet0/5 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.001f (bia 0200.0000.001f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2928,8 +2888,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [316/357] sw2 SW2# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:21 (bia 02:00:00:00:00:21)
+  FastEthernet0/6 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0020 (bia 0200.0000.0020)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2949,8 +2909,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [317/357] sw2 SW2# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:22 (bia 02:00:00:00:00:22)
+  FastEthernet0/7 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0021 (bia 0200.0000.0021)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2970,8 +2930,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [318/357] sw2 SW2# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:23 (bia 02:00:00:00:00:23)
+  FastEthernet0/8 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0022 (bia 0200.0000.0022)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -2991,8 +2951,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [319/357] sw2 SW2# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:24 (bia 02:00:00:00:00:24)
+  FastEthernet0/9 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0023 (bia 0200.0000.0023)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3012,8 +2972,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [320/357] sw2 SW2# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:25 (bia 02:00:00:00:00:25)
+  FastEthernet0/10 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0024 (bia 0200.0000.0024)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3033,8 +2993,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [321/357] sw2 SW2# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:26 (bia 02:00:00:00:00:26)
+  FastEthernet0/11 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0025 (bia 0200.0000.0025)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3054,8 +3014,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [322/357] sw2 SW2# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:27 (bia 02:00:00:00:00:27)
+  FastEthernet0/12 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0026 (bia 0200.0000.0026)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3075,8 +3035,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [323/357] sw2 SW2# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:28 (bia 02:00:00:00:00:28)
+  FastEthernet0/13 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0027 (bia 0200.0000.0027)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3096,8 +3056,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [324/357] sw2 SW2# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:29 (bia 02:00:00:00:00:29)
+  FastEthernet0/14 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0028 (bia 0200.0000.0028)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3117,8 +3077,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [325/357] sw2 SW2# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2a (bia 02:00:00:00:00:2a)
+  FastEthernet0/15 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0029 (bia 0200.0000.0029)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3138,8 +3098,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [326/357] sw2 SW2# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2b (bia 02:00:00:00:00:2b)
+  FastEthernet0/16 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002a (bia 0200.0000.002a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3159,8 +3119,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [327/357] sw2 SW2# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2c (bia 02:00:00:00:00:2c)
+  FastEthernet0/17 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002b (bia 0200.0000.002b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3180,8 +3140,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [328/357] sw2 SW2# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2d (bia 02:00:00:00:00:2d)
+  FastEthernet0/18 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002c (bia 0200.0000.002c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3201,8 +3161,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [329/357] sw2 SW2# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2e (bia 02:00:00:00:00:2e)
+  FastEthernet0/19 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002d (bia 0200.0000.002d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3222,8 +3182,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [330/357] sw2 SW2# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:2f (bia 02:00:00:00:00:2f)
+  FastEthernet0/20 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002e (bia 0200.0000.002e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3243,8 +3203,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [331/357] sw2 SW2# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:30 (bia 02:00:00:00:00:30)
+  FastEthernet0/21 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.002f (bia 0200.0000.002f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3264,8 +3224,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [332/357] sw2 SW2# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:31 (bia 02:00:00:00:00:31)
+  FastEthernet0/22 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0030 (bia 0200.0000.0030)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3285,8 +3245,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [333/357] sw2 SW2# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:32 (bia 02:00:00:00:00:32)
+  FastEthernet0/23 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0031 (bia 0200.0000.0031)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3306,29 +3266,12 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [334/357] core CORE# show interfaces FastEthernet0/0
-  FastEthernet0/0 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:35 (bia 02:00:00:00:00:35)
-    MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 100Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
-    Last input never, output never, output hang never
-    Queueing strategy: fifo
-    5 minute input rate 0 bits/sec, 0 packets/sec
-    5 minute output rate 0 bits/sec, 0 packets/sec
-       0 packets input, 0 bytes, 0 no buffer
-       Received 0 broadcasts (0 multicasts)
-       0 runts, 0 giants, 0 throttles
-       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       0 packets output, 0 bytes, 0 underruns
-       0 output errors, 0 collisions, 0 interface resets
-       0 input drops, 0 output drops
+                  ^
+  % Invalid input detected at '^' marker.
 
 [335/357] core CORE# show interfaces FastEthernet0/1
-  FastEthernet0/1 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:36 (bia 02:00:00:00:00:36)
+  FastEthernet0/1 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0035 (bia 0200.0000.0035)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3348,8 +3291,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [336/357] core CORE# show interfaces FastEthernet0/2
-  FastEthernet0/2 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:37 (bia 02:00:00:00:00:37)
+  FastEthernet0/2 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0036 (bia 0200.0000.0036)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3369,8 +3312,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [337/357] core CORE# show interfaces FastEthernet0/3
-  FastEthernet0/3 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:38 (bia 02:00:00:00:00:38)
+  FastEthernet0/3 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0037 (bia 0200.0000.0037)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3390,8 +3333,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [338/357] core CORE# show interfaces FastEthernet0/4
-  FastEthernet0/4 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:39 (bia 02:00:00:00:00:39)
+  FastEthernet0/4 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0038 (bia 0200.0000.0038)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3411,8 +3354,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [339/357] core CORE# show interfaces FastEthernet0/5
-  FastEthernet0/5 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3a (bia 02:00:00:00:00:3a)
+  FastEthernet0/5 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0039 (bia 0200.0000.0039)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3432,8 +3375,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [340/357] core CORE# show interfaces FastEthernet0/6
-  FastEthernet0/6 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3b (bia 02:00:00:00:00:3b)
+  FastEthernet0/6 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003a (bia 0200.0000.003a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3453,8 +3396,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [341/357] core CORE# show interfaces FastEthernet0/7
-  FastEthernet0/7 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3c (bia 02:00:00:00:00:3c)
+  FastEthernet0/7 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003b (bia 0200.0000.003b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3474,8 +3417,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [342/357] core CORE# show interfaces FastEthernet0/8
-  FastEthernet0/8 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3d (bia 02:00:00:00:00:3d)
+  FastEthernet0/8 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003c (bia 0200.0000.003c)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3495,8 +3438,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [343/357] core CORE# show interfaces FastEthernet0/9
-  FastEthernet0/9 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3e (bia 02:00:00:00:00:3e)
+  FastEthernet0/9 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003d (bia 0200.0000.003d)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3516,8 +3459,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [344/357] core CORE# show interfaces FastEthernet0/10
-  FastEthernet0/10 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:3f (bia 02:00:00:00:00:3f)
+  FastEthernet0/10 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003e (bia 0200.0000.003e)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3537,8 +3480,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [345/357] core CORE# show interfaces FastEthernet0/11
-  FastEthernet0/11 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:40 (bia 02:00:00:00:00:40)
+  FastEthernet0/11 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.003f (bia 0200.0000.003f)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3558,8 +3501,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [346/357] core CORE# show interfaces FastEthernet0/12
-  FastEthernet0/12 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:41 (bia 02:00:00:00:00:41)
+  FastEthernet0/12 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0040 (bia 0200.0000.0040)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3579,8 +3522,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [347/357] core CORE# show interfaces FastEthernet0/13
-  FastEthernet0/13 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:42 (bia 02:00:00:00:00:42)
+  FastEthernet0/13 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0041 (bia 0200.0000.0041)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3600,8 +3543,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [348/357] core CORE# show interfaces FastEthernet0/14
-  FastEthernet0/14 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:43 (bia 02:00:00:00:00:43)
+  FastEthernet0/14 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0042 (bia 0200.0000.0042)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3621,8 +3564,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [349/357] core CORE# show interfaces FastEthernet0/15
-  FastEthernet0/15 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:44 (bia 02:00:00:00:00:44)
+  FastEthernet0/15 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0043 (bia 0200.0000.0043)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3642,8 +3585,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [350/357] core CORE# show interfaces FastEthernet0/16
-  FastEthernet0/16 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:45 (bia 02:00:00:00:00:45)
+  FastEthernet0/16 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0044 (bia 0200.0000.0044)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3663,8 +3606,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [351/357] core CORE# show interfaces FastEthernet0/17
-  FastEthernet0/17 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:46 (bia 02:00:00:00:00:46)
+  FastEthernet0/17 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0045 (bia 0200.0000.0045)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3684,8 +3627,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [352/357] core CORE# show interfaces FastEthernet0/18
-  FastEthernet0/18 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:47 (bia 02:00:00:00:00:47)
+  FastEthernet0/18 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0046 (bia 0200.0000.0046)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3705,8 +3648,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [353/357] core CORE# show interfaces FastEthernet0/19
-  FastEthernet0/19 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:48 (bia 02:00:00:00:00:48)
+  FastEthernet0/19 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0047 (bia 0200.0000.0047)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3726,8 +3669,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [354/357] core CORE# show interfaces FastEthernet0/20
-  FastEthernet0/20 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:49 (bia 02:00:00:00:00:49)
+  FastEthernet0/20 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0048 (bia 0200.0000.0048)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3747,8 +3690,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [355/357] core CORE# show interfaces FastEthernet0/21
-  FastEthernet0/21 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:4a (bia 02:00:00:00:00:4a)
+  FastEthernet0/21 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.0049 (bia 0200.0000.0049)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3768,8 +3711,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [356/357] core CORE# show interfaces FastEthernet0/22
-  FastEthernet0/22 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:4b (bia 02:00:00:00:00:4b)
+  FastEthernet0/22 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.004a (bia 0200.0000.004a)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
@@ -3789,8 +3732,8 @@ Total steps: 357
        0 input drops, 0 output drops
 
 [357/357] core CORE# show interfaces FastEthernet0/23
-  FastEthernet0/23 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:4c (bia 02:00:00:00:00:4c)
+  FastEthernet0/23 is down, line protocol is down (notconnect)
+    Hardware is Fast Ethernet, address is 0200.0000.004b (bia 0200.0000.004b)
     MTU 1500 bytes, BW 100000 Kbit/sec, DLY 100 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set

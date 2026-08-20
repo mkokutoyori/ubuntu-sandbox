@@ -1,32 +1,40 @@
-/**
- * LinuxServiceSupervisor — reactive consumer of process events.
- *
- * systemd does not poll; it *reacts* to its children dying. This
- * supervisor subscribes to `linux.process.exited` and, when the dead
- * process was the main pid of a still-active unit, applies the unit's
- * Restart= policy:
- *
- *   always | on-failure | on-abnormal  → restart the unit
- *   no | on-success                    → mark the unit failed
- *
- * Intentional `systemctl stop` / `restart` move the unit out of the
- * `active` state *before* the kill, so the supervisor ignores those
- * exits and never fights the operator (no restart loop).
- *
- * It is a pure consumer: it never touches the process table directly,
- * only the service API, and it is fully decoupled from whoever emits
- * the events (Dependency Inversion + Observer).
- */
-
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { LinuxServiceManager, RestartPolicy } from '../LinuxServiceManager';
+import type { LinuxServiceManager } from '../LinuxServiceManager';
+import type { LinuxService } from '../service/LinuxService';
 
-const RESTART_POLICIES: ReadonlySet<RestartPolicy> = new Set<RestartPolicy>([
-  'always', 'on-failure', 'on-abnormal',
-]);
+const DEFAULT_RESTART_SEC = 0.1;
+const DEFAULT_START_LIMIT_BURST = 5;
+const DEFAULT_START_LIMIT_INTERVAL_SEC = 10;
+
+interface MainExit {
+  readonly code?: number;
+  readonly signal?: string;
+}
+
+function isCleanExit(exit: MainExit): boolean {
+  return exit.signal === undefined && (exit.code ?? 0) === 0;
+}
+
+function shouldRestart(policy: string, exit: MainExit): boolean {
+  switch (policy) {
+    case 'always': return true;
+    case 'on-failure': return !isCleanExit(exit);
+    case 'on-abnormal': return exit.signal !== undefined;
+    case 'on-success': return isCleanExit(exit);
+    default: return false;
+  }
+}
+
+function exitDescription(exit: MainExit): string {
+  if (exit.signal !== undefined) {
+    return `killed by ${exit.signal}`;
+  }
+  return `exited with status ${exit.code ?? 0}`;
+}
 
 export class LinuxServiceSupervisor {
   private readonly off: Unsubscribe;
+  private readonly pendingTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(
     bus: IEventBus,
@@ -34,30 +42,62 @@ export class LinuxServiceSupervisor {
     private readonly deviceId: string,
   ) {
     this.off = bus.subscribe('linux.process.exited', (event) => {
-      const { deviceId, pid, signal } = event.payload;
+      const { deviceId, pid, signal, exitCode } = event.payload;
       if (deviceId !== this.deviceId) return;
-      this.onMainProcessExit(pid, signal);
+      this.onMainProcessExit(pid, { code: exitCode, signal });
     });
   }
 
-  /** Detach from the bus (called on device reset / teardown). */
   dispose(): void {
     this.off();
+    for (const timer of this.pendingTimers) clearTimeout(timer);
+    this.pendingTimers.clear();
   }
 
-  private onMainProcessExit(pid: number, signal?: string): void {
+  private onMainProcessExit(pid: number, exit: MainExit): void {
     const unit = this.services.findByMainPid(pid);
-    // Not a daemon's main pid, or the operator already moved the unit
-    // out of `active` (stop/restart in flight) → nothing to supervise.
     if (!unit || unit.state !== 'active') return;
 
-    if (RESTART_POLICIES.has(unit.restart)) {
-      this.services.restart(unit.name);
-    } else {
-      this.services.markFailed(
-        unit.name,
-        `main process exited${signal ? `, killed by ${signal}` : ''}`,
-      );
+    this.services.noteMainExited(unit.name, { code: exit.code, signal: exit.signal });
+
+    if (!shouldRestart(unit.restart, exit)) {
+      if (isCleanExit(exit)) {
+        this.services.deactivateAfterExit(unit.name);
+      } else {
+        this.services.markFailed(unit.name, `main process ${exitDescription(exit)}`);
+      }
+      return;
     }
+
+    if (this.startLimitReached(unit)) {
+      this.services.hitStartLimit(unit.name);
+      return;
+    }
+
+    const counter = (unit.restartEpochs ?? []).length;
+    const delayMs = (unit.restartSec ?? DEFAULT_RESTART_SEC) * 1000;
+    this.services.scheduleAutoRestart(unit.name, counter, delayMs);
+    const timer = setTimeout(() => {
+      this.pendingTimers.delete(timer);
+      this.services.completeAutoRestart(unit.name);
+    }, delayMs);
+    if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+      (timer as unknown as { unref: () => void }).unref();
+    }
+    this.pendingTimers.add(timer);
+  }
+
+  private startLimitReached(unit: LinuxService): boolean {
+    const burst = unit.startLimitBurst ?? DEFAULT_START_LIMIT_BURST;
+    const intervalMs = (unit.startLimitIntervalSec ?? DEFAULT_START_LIMIT_INTERVAL_SEC) * 1000;
+    const now = Date.now();
+    const epochs = (unit.restartEpochs ?? []).filter((t) => now - t <= intervalMs);
+    if (epochs.length >= burst) {
+      unit.restartEpochs = epochs;
+      return true;
+    }
+    epochs.push(now);
+    unit.restartEpochs = epochs;
+    return false;
   }
 }

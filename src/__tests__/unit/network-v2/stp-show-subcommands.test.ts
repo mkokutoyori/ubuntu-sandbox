@@ -13,8 +13,8 @@ describe('show spanning-tree subcommands', () => {
   it('root/bridge/vlan/blockedports/detail reflect real STP state', async () => {
     const s1 = new CiscoSwitch('switch-cisco', 'SW1', 8);
     const s2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    new Cable('a').connect(s1.getPort('FastEthernet0/0')!, s2.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(s1.getPort('FastEthernet0/1')!, s2.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(s1.getPort('FastEthernet0/2')!, s2.getPort('FastEthernet0/2')!);
     await s1.executeCommand('enable');
     await s1.executeCommand('configure terminal');
     await s1.executeCommand('spanning-tree vlan 1 priority 4096');
@@ -36,18 +36,18 @@ describe('show spanning-tree subcommands', () => {
 
     const blocked = await s2.executeCommand('show spanning-tree blockedports');
     expect(blocked).toContain('Number of blocked ports');
-    expect(blocked).toMatch(/Fa0\/[01]/);
+    expect(blocked).toMatch(/Fa0\/[12]/);
 
     const detail = await s2.executeCommand('show spanning-tree detail');
     expect(detail).toContain('executing the');
     expect(detail).not.toContain('% Invalid');
 
-    expect(await s2.executeCommand('show debugging')).toBe('No debugging is enabled');
+    expect(await s2.executeCommand('show debugging')).toBe('No debug flags are enabled');
     expect(await s2.executeCommand('debug spanning-tree events')).toContain('debugging is on');
     const dbg = await s2.executeCommand('show debugging');
     expect(dbg).toContain('Spanning Tree');
     expect(dbg).toContain('is on');
     await s2.executeCommand('no debug all');
-    expect(await s2.executeCommand('show debugging')).toBe('No debugging is enabled');
+    expect(await s2.executeCommand('show debugging')).toBe('No debug flags are enabled');
   });
 });

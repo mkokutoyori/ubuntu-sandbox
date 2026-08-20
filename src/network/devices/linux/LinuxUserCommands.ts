@@ -38,7 +38,7 @@ function parseExpireDays(value: string | undefined): number | undefined {
 
 export function cmdUsermod(ctx: ShellContext, args: string[]): string {
   let s: string | undefined, d: string | undefined, m = false;
-  let aG: string | undefined, L = false, U = false;
+  let groupsList: string | undefined, appendGroups = false, L = false, U = false;
   let username = '';
 
   for (let i = 0; i < args.length; i++) {
@@ -46,8 +46,12 @@ export function cmdUsermod(ctx: ShellContext, args: string[]): string {
       case '-s': case '--shell':   s = args[++i]; break;
       case '-d': case '--home':    d = args[++i]; break;
       case '-m': case '--move-home': m = true; break;
-      case '-aG': aG = args[++i]; break;
-      case '-G': case '--groups':  aG = args[++i]; break;
+      // `-a` only ever modifies `-G`: append to the supplementary groups
+      // instead of replacing the whole list. `-aG` is the common combined
+      // short-flag form of `-a -G`.
+      case '-a': case '--append':  appendGroups = true; break;
+      case '-aG': groupsList = args[++i]; appendGroups = true; break;
+      case '-G': case '--groups':  groupsList = args[++i]; break;
       case '-L': case '--lock':    L = true; break;
       case '-U': case '--unlock':  U = true; break;
       default:
@@ -57,7 +61,11 @@ export function cmdUsermod(ctx: ShellContext, args: string[]): string {
   }
 
   if (!username) return 'usermod: missing username';
-  return ctx.userMgr.usermod(username, { s, d, m, aG, L, U });
+  return ctx.userMgr.usermod(username, {
+    s, d, m, L, U,
+    aG: appendGroups ? groupsList : undefined,
+    G: appendGroups ? undefined : groupsList,
+  });
 }
 
 export function cmdUserdel(ctx: ShellContext, args: string[]): string {
@@ -137,37 +145,6 @@ export function cmdChpasswd(ctx: ShellContext, stdin: string): string {
 }
 
 /**
- * `chage` — change or display a user's password-aging information.
- *
- * Supports the full real option surface: `-d`/`-E` accept either a calendar
- * date (`YYYY-MM-DD`) or a plain day count; `-E -1` and `-I -1` disable
- * account expiry / inactivity respectively. Long options are accepted too.
- */
-export function cmdChage(ctx: ShellContext, args: string[]): string {
-  const opts: { M?: number; m?: number; W?: number; d?: number; E?: number; I?: number; l?: boolean } = {};
-  let username = '';
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = CHAGE_LONG_OPTIONS[args[i]] ?? args[i];
-    switch (arg) {
-      case '-M': opts.M = parseInt(args[++i], 10); break;
-      case '-m': opts.m = parseInt(args[++i], 10); break;
-      case '-W': opts.W = parseInt(args[++i], 10); break;
-      case '-I': opts.I = parseInt(args[++i], 10); break;
-      case '-d': opts.d = parseChageDate(args[++i]); break;
-      case '-E': opts.E = parseChageDate(args[++i]); break;
-      case '-l': opts.l = true; break;
-      default:
-        if (!args[i].startsWith('-')) username = args[i];
-        break;
-    }
-  }
-
-  if (!username) return 'Usage: chage [options] LOGIN';
-  return ctx.userMgr.chage(username, opts);
-}
-
-/**
  * `faillock` — display or reset the `pam_faillock` consecutive-failure tally.
  *
  *   faillock                       show every account that has failures
@@ -207,23 +184,12 @@ export function cmdFaillock(ctx: ShellContext, args: string[]): string {
   return blocks.join('\n\n');
 }
 
-/** Long-form `chage` flags mapped to their short equivalents. */
-const CHAGE_LONG_OPTIONS: Record<string, string> = {
-  '--maxdays': '-M',
-  '--mindays': '-m',
-  '--warndays': '-W',
-  '--inactive': '-I',
-  '--lastday': '-d',
-  '--expiredate': '-E',
-  '--list': '-l',
-};
-
 /**
  * Parse a `chage` date argument. Accepts a `YYYY-MM-DD` calendar date, a plain
  * day count (days since the epoch), or `-1` / `''` meaning "disabled" — all
  * resolved to the shadow-file day unit.
  */
-function parseChageDate(value: string | undefined): number | undefined {
+export function parseChageDate(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
   if (trimmed === '' || trimmed === '-1') return -1;

@@ -26,7 +26,7 @@
  *     ciscoR1=10.0.0.6 hwR1=10.0.0.8
  *     (ciscoS1, hwS1 are pure L2 switches — no L3 address)
  *   - Linux user: `alice` / `admin` (sudoer); fallback default `user` / `admin`.
- *   - Windows user: `User` / `Passw0rd!` (Administrator / `Passw0rd!`).
+ *   - Windows user: `User` / `user` — the account WindowsPC seeds.
  *   - Cisco / Huawei VTY user: `admin` / `Admin@123`.
  *   - Every section is its own describe block. test.each drives every
  *     section so adding cases is one row of data.
@@ -122,9 +122,9 @@ async function buildXLan(): Promise<XLan> {
     for (const u of ['alice', 'bob', 'carol', 'admin']) {
       if (!um.getUser(u)) {
         um.useradd(u, { m: true, s: '/bin/bash' });
-        um.setPassword(u, 'admin');
         if (u === 'alice' || u === 'admin') um.usermod(u, { aG: 'sudo' });
       }
+      um.setPassword(u, 'admin');
     }
   }
 
@@ -446,9 +446,14 @@ describe('§5 — Linux → Cisco IOS SSH', () => {
       contains: [/IOS|Cisco/i], excludes: [/bash:|command not found/i],
     },
     {
-      name: 'show interfaces status lists router data ports',
-      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show interfaces status"',
-      contains: [/connected|notconnect|Port\s+Name|GigabitEthernet/i],
+      // `show interfaces status` est une commande de commutation LAN :
+      // ciscoR1 est un ROUTEUR, et un vrai ISR ne la connaît pas. Le nom
+      // de ce cas — « lists router data ports » — décrit bien l'intention,
+      // c'est la commande qui ne correspondait pas à l'équipement.
+      // `show ip interface brief` est son équivalent côté routeur.
+      name: 'show ip interface brief lists router data ports',
+      on: l => l.linux1, cmd: 'ssh admin@10.0.0.6 "show ip interface brief"',
+      contains: [/GigabitEthernet/i, /Interface\s+IP-Address/i],
     },
     {
       name: 'remote prompt is the IOS hostname, never bash',
@@ -1073,7 +1078,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp file from linux1 to linux2 lands with the same content',
       setup: async (l) => {
         await l.linux1.executeCommand('echo "hello from linux1" > /tmp/payload.txt');
-        await l.linux1.executeCommand('scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/payload.txt alice@10.0.0.2:/tmp/payload.txt');
       },
       on: l => l.linux2, cmd: 'cat /tmp/payload.txt',
       contains: [/^hello from linux1$/m],
@@ -1082,7 +1087,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp -p preserves mtime and mode',
       setup: async (l) => {
         await l.linux1.executeCommand('echo data > /tmp/keep.txt && chmod 640 /tmp/keep.txt');
-        await l.linux1.executeCommand('scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
+        await l.linux1.executeCommand('sshpass -p admin scp -p /tmp/keep.txt alice@10.0.0.2:/tmp/keep.txt');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/keep.txt',
       contains: [/^640$/m],
@@ -1091,7 +1096,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       name: 'scp pull from win1 onto linux1 reads cmd.exe-style path',
       setup: async (l) => {
         await l.win1.executeCommand('echo win-payload > C:\\Users\\User\\payload.txt');
-        await l.linux1.executeCommand('scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt');
+        await l.linux1.executeCommand("sshpass -p user scp User@10.0.0.4:/C:/Users/User/payload.txt /tmp/win-payload.txt");
       },
       on: l => l.linux1, cmd: 'cat /tmp/win-payload.txt',
       contains: [/^win-payload$/m],
@@ -1101,11 +1106,11 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo roundtrip > /tmp/rt.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
         );
         await l.linux1.executeCommand('rm /tmp/rt.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nget /tmp/rt.txt /tmp/rt.txt\nbye\nEOF",
         );
       },
       on: l => l.linux1, cmd: 'cat /tmp/rt.txt',
@@ -1117,7 +1122,7 @@ describe('§15 — SCP / SFTP cross-platform transfer', () => {
         await l.ciscoR1.executeCommand('configure terminal');
         await l.ciscoR1.executeCommand('ip scp server enable');
         await l.ciscoR1.executeCommand('end');
-        await l.linux1.executeCommand('scp admin@10.0.0.6:running-config /tmp/running.txt');
+        await l.linux1.executeCommand("sshpass -p 'Admin@123' scp admin@10.0.0.6:running-config /tmp/running.txt");
       },
       on: l => l.linux1, cmd: 'grep hostname /tmp/running.txt',
       contains: [/hostname ciscoR1/i],
@@ -1401,7 +1406,7 @@ describe('§20 — Environment forwarding', () => {
       setup: async (l) => {
         await l.linux2.executeCommand('sudo sed -i "s/^#\\?PermitUserEnvironment.*/PermitUserEnvironment yes/" /etc/ssh/sshd_config');
         await l.linux2.executeCommand('sudo systemctl restart ssh');
-        await l.linux2.executeCommand('mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /home/alice/.ssh && echo MOOD=happy > /home/alice/.ssh/environment && chown -R alice:alice /home/alice/.ssh"');
       },
       on: l => l.linux1,
       cmd: 'ssh alice@10.0.0.2 \'echo $MOOD\'',
@@ -1815,22 +1820,26 @@ describe('§27 — Strict-mode permission coherence', () => {
 
   const rows: Row[] = [
     {
-      name: 'authorized_keys mode 0644 is accepted',
+      // authorized_keys ne doit garder *aucune* permission group/other —
+      // c'est la règle universelle des guides SSH (« le fichier doit être
+      // 0600 »). Le simulateur l'applique strictement : 0644 (lecture
+      // group/other) est refusé au même titre que 0777.
+      name: 'authorized_keys mode 0644 is refused (read-bit leaks to group/other)',
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chmod 0644 /home/alice/.ssh/authorized_keys');
+        await l.linux2.executeCommand('sudo chmod 0644 /home/alice/.ssh/authorized_keys');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
-      contains: [/^alice$/m],
+      contains: [/Permission denied/i],
     },
     {
       name: 'authorized_keys mode 0777 is refused (StrictModes yes)',
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chmod 0777 /home/alice/.ssh/authorized_keys');
+        await l.linux2.executeCommand('sudo chmod 0777 /home/alice/.ssh/authorized_keys');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
@@ -1841,7 +1850,7 @@ describe('§27 — Strict-mode permission coherence', () => {
       setup: async (l) => {
         await l.linux1.executeCommand("ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa");
         await l.linux1.executeCommand('ssh-copy-id alice@10.0.0.2');
-        await l.linux2.executeCommand('chown -R bob:bob /home/alice/.ssh');
+        await l.linux2.executeCommand('sudo sh -c "chown -R bob:bob /home/alice/.ssh"');
       },
       on: l => l.linux1,
       cmd: 'ssh -o PasswordAuthentication=no alice@10.0.0.2 whoami',
@@ -2000,9 +2009,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
     {
       name: 'aliased sudo via SSH escalates exactly like the canonical command',
       setup: async (l) => {
-        await l.linux2.executeCommand('su - alice');
-        await l.linux2.executeCommand("echo \"alias please='sudo'\" >> /home/alice/.bashrc");
-        await l.linux2.executeCommand('chown alice:alice /home/alice/.bashrc');
+        await l.linux2.executeCommand(`sudo sh -c "echo \\"alias please='sudo'\\" >> /home/alice/.bashrc && chown alice:alice /home/alice/.bashrc"`);
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "please whoami"',
       contains: [/^root$/m],
@@ -2012,7 +2019,7 @@ describe('§30 — Command flow respects aliases through SSH', () => {
       name: 'shell function defined remotely is invoked through SSH',
       setup: async (l) => {
         await l.linux2.executeCommand(`sudo sh -c 'echo "myfn() { echo CUSTOM:\\$1; }" >> /home/alice/.bashrc'`);
-        await l.linux2.executeCommand('sudo chown alice:alice /home/alice/.bashrc');
+        await l.linux2.executeCommand('sudo sh -c "sudo chown alice:alice /home/alice/.bashrc"');
       },
       on: l => l.linux1, cmd: 'ssh -t alice@10.0.0.2 "myfn ping"',
       contains: [/^CUSTOM:ping$/m],
@@ -2092,7 +2099,7 @@ describe('§31 — Filesystem coherence across SSH/local boundary', () => {
       name: 'sftp put then local cat sees the exact bytes',
       setup: async (l) => {
         await l.linux1.executeCommand('echo bridged > /tmp/x');
-        await l.linux1.executeCommand("sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
+        await l.linux1.executeCommand("sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/x /tmp/x\nbye\nEOF");
       },
       on: l => l.linux2, cmd: 'cat /tmp/x',
       contains: [/^bridged$/m],
@@ -2232,13 +2239,13 @@ describe('§34 — SCP error paths', () => {
   const rows: Row[] = [
     {
       name: 'missing source file fails with scp: prefix',
-      on: l => l.linux1, cmd: 'scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp /tmp/does-not-exist alice@10.0.0.2:/tmp/x',
       contains: [/^scp:/m],
     },
     {
       name: 'directory source without -r is refused',
       setup: async (l) => { await l.linux1.executeCommand('mkdir -p /tmp/dir1'); },
-      on: l => l.linux1, cmd: 'scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp /tmp/dir1 alice@10.0.0.2:/tmp/dir1',
       contains: [/not a regular file|^scp:/m],
     },
     {
@@ -2256,7 +2263,7 @@ describe('§34 — SCP error paths', () => {
       name: 'failed transfer leaves the remote VFS untouched',
       setup: async (l) => {
         await l.linux2.executeCommand('echo original > /tmp/keep');
-        await l.linux1.executeCommand('scp /tmp/missing alice@10.0.0.2:/tmp/keep');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/missing alice@10.0.0.2:/tmp/keep');
       },
       on: l => l.linux2, cmd: 'cat /tmp/keep',
       contains: [/^original$/m],
@@ -2283,7 +2290,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'scp -r flat dir between two Linux hosts',
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/box && echo A > /tmp/box/a && echo B > /tmp/box/b');
-        await l.linux1.executeCommand('scp -r /tmp/box alice@10.0.0.2:/tmp/box');
+        await l.linux1.executeCommand('sshpass -p admin scp -r /tmp/box alice@10.0.0.2:/tmp/box');
       },
       on: l => l.linux2, cmd: 'cat /tmp/box/a /tmp/box/b',
       contains: [/^A$/m, /^B$/m],
@@ -2292,7 +2299,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'scp -r nested tree preserves every file',
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/tree/inner && echo deep > /tmp/tree/inner/leaf && echo top > /tmp/tree/top');
-        await l.linux1.executeCommand('scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
+        await l.linux1.executeCommand('sshpass -p admin scp -r /tmp/tree alice@10.0.0.2:/tmp/tree');
       },
       on: l => l.linux2, cmd: 'cat /tmp/tree/top /tmp/tree/inner/leaf',
       contains: [/^top$/m, /^deep$/m],
@@ -2301,7 +2308,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       name: 'pull -r reads a tree from lxsrv1 back to linux1',
       setup: async (l) => {
         await l.lxsrv1.executeCommand('mkdir -p /tmp/pull && echo P1 > /tmp/pull/p1 && echo P2 > /tmp/pull/p2');
-        await l.linux1.executeCommand('scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
+        await l.linux1.executeCommand('sshpass -p admin scp -r alice@10.0.0.3:/tmp/pull /tmp/pull');
       },
       on: l => l.linux1, cmd: 'cat /tmp/pull/p1 /tmp/pull/p2',
       contains: [/^P1$/m, /^P2$/m],
@@ -2311,7 +2318,7 @@ describe('§35 — SCP recursive directory transfers', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('mkdir -p /tmp/exitchk && echo x > /tmp/exitchk/x');
       },
-      on: l => l.linux1, cmd: 'scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
+      on: l => l.linux1, cmd: 'sshpass -p admin scp -r /tmp/exitchk alice@10.0.0.2:/tmp/exitchk; echo rc=$?',
       contains: [/rc=0/],
     },
   ];
@@ -2336,13 +2343,13 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'cd + pwd reports the requested remote working directory',
       setup: async (l) => {
-        await l.linux2.executeCommand('mkdir -p /var/tmp/run');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/run"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
         );
       },
       on: l => l.linux1,
-      cmd: "sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
+      cmd: "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\ncd /var/tmp/run\npwd\nbye\nEOF",
       contains: [/Remote working directory: \/var\/tmp\/run/],
     },
     {
@@ -2350,7 +2357,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo m > /tmp/m.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmkdir /tmp/box-sftp\nput /tmp/m.txt /tmp/box-sftp/m.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/box-sftp/m.txt',
@@ -2361,7 +2368,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo s > /tmp/s.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/s.txt /tmp/s.txt\nchmod 600 /tmp/s.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/s.txt',
@@ -2370,9 +2377,9 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rm removes a remote file',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo doomed > /tmp/zap && chown alice:alice /tmp/zap');
+        await l.linux2.executeCommand('sudo sh -c "echo doomed > /tmp/zap && chown alice:alice /tmp/zap"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrm /tmp/zap\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'ls /tmp/zap',
@@ -2381,9 +2388,9 @@ describe('§36 — SFTP interactive REPL', () => {
     {
       name: 'rename moves a remote file in one step',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo moveme > /tmp/from && chown alice:alice /tmp/from');
+        await l.linux2.executeCommand('sudo sh -c "echo moveme > /tmp/from && chown alice:alice /tmp/from"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/from /tmp/to\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/to',
@@ -2394,7 +2401,7 @@ describe('§36 — SFTP interactive REPL', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo k > /tmp/k.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nfubar /tmp\nput /tmp/k.txt /tmp/k.txt\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/k.txt',
@@ -2423,7 +2430,7 @@ describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
       name: 'scp push: linux1 → win1 lands at the translated NTFS path',
       setup: async (l) => {
         await l.linux1.executeCommand('echo from-linux > /tmp/push.txt');
-        await l.linux1.executeCommand('scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt');
+        await l.linux1.executeCommand("sshpass -p user scp /tmp/push.txt User@10.0.0.4:/C:/Users/User/push.txt");
       },
       on: l => l.win1, cmd: 'type C:\\Users\\User\\push.txt',
       contains: [/from-linux/],
@@ -2433,7 +2440,7 @@ describe('§37 — SCP/SFTP cross-vendor Linux ↔ Windows', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo via-sftp > /tmp/sf.txt');
         await l.linux1.executeCommand(
-          "sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
+          "sshpass -p user sftp User@10.0.0.4 <<'EOF'\nput /tmp/sf.txt /C:/Users/User/sf.txt\nbye\nEOF",
         );
       },
       on: l => l.win1, cmd: 'type C:\\Users\\User\\sf.txt',
@@ -2475,7 +2482,7 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'scp -p replicates mode 0600 on push',
       setup: async (l) => {
         await l.linux1.executeCommand('echo top > /tmp/top.secret && chmod 600 /tmp/top.secret');
-        await l.linux1.executeCommand('scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
+        await l.linux1.executeCommand('sshpass -p admin scp -p /tmp/top.secret alice@10.0.0.2:/tmp/top.secret');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/top.secret',
       contains: [/^600$/m],
@@ -2484,7 +2491,7 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'scp without -p uses the default umask mode (664)',
       setup: async (l) => {
         await l.linux1.executeCommand('echo plain > /tmp/plain && chmod 600 /tmp/plain');
-        await l.linux1.executeCommand('scp /tmp/plain alice@10.0.0.2:/tmp/plain');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/plain alice@10.0.0.2:/tmp/plain');
       },
       on: l => l.linux2, cmd: 'stat -c "%a" /tmp/plain',
       contains: [/^(644|664)$/m],
@@ -2493,8 +2500,8 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       name: 'repeated scp is idempotent (content stays identical)',
       setup: async (l) => {
         await l.linux1.executeCommand('echo same > /tmp/idem');
-        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
-        await l.linux1.executeCommand('scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/idem alice@10.0.0.2:/tmp/idem');
+        await l.linux1.executeCommand('sshpass -p admin scp /tmp/idem alice@10.0.0.2:/tmp/idem');
       },
       on: l => l.linux2, cmd: 'cat /tmp/idem',
       contains: [/^same$/m],
@@ -2504,11 +2511,11 @@ describe('§38 — SCP attribute preservation + idempotency', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo v1 > /tmp/over');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
         );
         await l.linux1.executeCommand('echo v2 > /tmp/over');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nput /tmp/over /tmp/over\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/over',
@@ -2535,9 +2542,9 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename within same directory',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo r1 > /tmp/r1 && chown alice:alice /tmp/r1');
+        await l.linux2.executeCommand('sudo sh -c "echo r1 > /tmp/r1 && chown alice:alice /tmp/r1"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/r1 /tmp/r2\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/r2',
@@ -2546,9 +2553,9 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename across directories',
       setup: async (l) => {
-        await l.linux2.executeCommand('mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst');
+        await l.linux2.executeCommand('sudo sh -c "mkdir -p /var/tmp/dst && echo cross > /tmp/cross && chown alice:alice /tmp/cross /var/tmp/dst"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/cross /var/tmp/dst/cross\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /var/tmp/dst/cross',
@@ -2559,7 +2566,7 @@ describe('§39 — SFTP file movement', () => {
       setup: async (l) => {
         await l.linux1.executeCommand('echo chained > /tmp/c.txt');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmkdir /var/chain\nput /tmp/c.txt /var/chain/raw\nrename /var/chain/raw /var/chain/final\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /var/chain/final',
@@ -2568,9 +2575,9 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'rename source vanishes from the original path',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo gone > /tmp/gone && chown alice:alice /tmp/gone');
+        await l.linux2.executeCommand('sudo sh -c "echo gone > /tmp/gone && chown alice:alice /tmp/gone"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nrename /tmp/gone /tmp/gone-renamed\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'ls /tmp/gone',
@@ -2579,9 +2586,9 @@ describe('§39 — SFTP file movement', () => {
     {
       name: 'mv alias works exactly like rename',
       setup: async (l) => {
-        await l.linux2.executeCommand('echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv');
+        await l.linux2.executeCommand('sudo sh -c "echo alias > /tmp/with-mv && chown alice:alice /tmp/with-mv"');
         await l.linux1.executeCommand(
-          "sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
+          "sshpass -p admin sftp alice@10.0.0.2 <<'EOF'\nmv /tmp/with-mv /tmp/moved\nbye\nEOF",
         );
       },
       on: l => l.linux2, cmd: 'cat /tmp/moved',

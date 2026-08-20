@@ -45,15 +45,12 @@ const SERVICE_PORTS: Record<string, { port: string; proto: string }> = {
 };
 
 // ─── App profiles ────────────────────────────────────────────────────
-const APP_PROFILES: Record<string, { title: string; description: string; ports: string }> = {
-  'OpenSSH': { title: 'OpenSSH', description: 'Secure Shell server', ports: '22/tcp' },
-  'Apache': { title: 'Apache', description: 'Apache HTTP Server', ports: '80/tcp' },
-  'Apache Full': { title: 'Apache Full', description: 'Apache HTTP + HTTPS', ports: '80,443/tcp' },
-  'Apache Secure': { title: 'Apache Secure', description: 'Apache HTTPS', ports: '443/tcp' },
-  'Nginx HTTP': { title: 'Nginx HTTP', description: 'Nginx HTTP Server', ports: '80/tcp' },
-  'Nginx Full': { title: 'Nginx Full', description: 'Nginx HTTP + HTTPS', ports: '80,443/tcp' },
-  'Nginx HTTPS': { title: 'Nginx HTTPS', description: 'Nginx HTTPS Server', ports: '443/tcp' },
-};
+// PRD-Iptables-UFW.md Phase 6 (objectif B.4): profiles are read from
+// /etc/ufw/applications.d/* in the VFS (see readAppProfilesFromVfs), not
+// from a static object here — real ufw scans that directory literally.
+// Without a VFS (unit tests that construct this class directly), there is
+// simply nowhere to read profiles from, matching reality.
+interface AppProfile { title: string; description: string; ports: string }
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -78,12 +75,14 @@ interface UfwRule {
 export class LinuxFirewallManager {
   private vfs: VirtualFileSystem | null = null;
   private iptables: LinuxIptablesManager;
+  private ip6tables: LinuxIptablesManager;
   private enabled = false;
   private rules: UfwRule[] = [];
   private defaultIncoming: DefaultPolicy = 'deny';
   private defaultOutgoing: DefaultPolicy = 'allow';
   private defaultRouted: DefaultPolicy | 'disabled' = 'disabled';
-  private logging = false;
+  // Real ufw ships ufw.conf with LOGLEVEL=low from the first install.
+  private logging = true;
   private loggingLevel = 'low';
 
   // Rate limiting state: key = "srcIP:ruleIndex" → timestamps of recent hits
@@ -91,9 +90,10 @@ export class LinuxFirewallManager {
   private readonly RATE_LIMIT_MAX = 6;      // Max connections
   private readonly RATE_LIMIT_WINDOW = 30000; // 30 seconds (ms)
 
-  constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager) {
+  constructor(vfs: VirtualFileSystem | undefined, iptables: LinuxIptablesManager, ip6tables: LinuxIptablesManager) {
     if (vfs) this.vfs = vfs;
     this.iptables = iptables;
+    this.ip6tables = ip6tables;
   }
 
   /** Check whether UFW is currently enabled. */
@@ -159,16 +159,29 @@ export class LinuxFirewallManager {
    * And add jumps from INPUT → ufw-user-input, OUTPUT → ufw-user-output.
    */
   private setupIptablesChains(): void {
-    const ipt = this.iptables;
+    this.setupChainsOn(this.iptables, false);
+    this.setupChainsOn(this.ip6tables, true);
 
-    // Create UFW chains
+    // Set chain policies based on UFW defaults
+    this.applyDefaultPolicies();
+
+    // Inject all current UFW rules — each rule goes to the engine matching
+    // its own family (v4 rules → iptables, v6 rules → ip6tables).
+    for (const rule of this.rules) {
+      this.injectRuleToIptables(rule);
+    }
+
+    // Add catch-all REJECT rules if default policy is 'reject'
+    this.addRejectCatchAll();
+  }
+
+  private setupChainsOn(ipt: LinuxIptablesManager, v6: boolean): void {
     ipt.createChain('filter', 'ufw-user-input');
     ipt.createChain('filter', 'ufw-user-output');
     ipt.createChain('filter', 'ufw-user-forward');
     ipt.createChain('filter', 'ufw-user-limit');
     ipt.createChain('filter', 'ufw-user-limit-accept');
 
-    // Set up ufw-user-limit chain: REJECT and RETURN
     ipt.appendRule('filter', 'ufw-user-limit', LinuxIptablesManager.createRule({
       target: 'REJECT', targetOptions: { '--reject-with': 'icmp-port-unreachable' },
     }));
@@ -176,38 +189,58 @@ export class LinuxFirewallManager {
       target: 'ACCEPT',
     }));
 
-    // Add jumps from INPUT/OUTPUT/FORWARD → ufw-user-* chains
-    ipt.appendRule('filter', 'INPUT', LinuxIptablesManager.createRule({
-      target: 'ufw-user-input',
-    }));
-    ipt.appendRule('filter', 'OUTPUT', LinuxIptablesManager.createRule({
-      target: 'ufw-user-output',
-    }));
-    ipt.appendRule('filter', 'FORWARD', LinuxIptablesManager.createRule({
-      target: 'ufw-user-forward',
-    }));
+    this.setupBeforeAfterChains(ipt, v6);
 
-    // Set chain policies based on UFW defaults
-    this.applyDefaultPolicies();
+    // before → user → after, in that order, matching real ufw
+    for (const [chain, suffix] of [['INPUT', 'input'], ['OUTPUT', 'output'], ['FORWARD', 'forward']] as const) {
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-before-${suffix}` }));
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-user-${suffix}` }));
+      ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ target: `ufw-after-${suffix}` }));
+    }
+  }
 
-    // Inject all current UFW rules into iptables
-    for (const rule of this.rules) {
-      if (!rule.v6) {
-        this.injectRuleToIptables(rule);
-      }
+  // Populates ufw-before- and ufw-after- chains from before(6).rules and
+  // after(6).rules. v6 files use the ufw6- prefix; rewritten to the plain
+  // ufw- prefix this engine already uses internally for ufw-user-.
+  private setupBeforeAfterChains(ipt: LinuxIptablesManager, v6: boolean): void {
+    for (const suffix of ['input', 'output', 'forward']) {
+      ipt.createChain('filter', `ufw-before-${suffix}`);
+      ipt.createChain('filter', `ufw-after-${suffix}`);
+      // Empty chain = RETURN-equivalent, matching real ufw's
+      // ufw-skip-to-policy-* jump target in after.rules.
+      ipt.createChain('filter', `ufw-skip-to-policy-${suffix}`);
     }
 
-    // Add catch-all REJECT rules if default policy is 'reject'
-    this.addRejectCatchAll();
+    if (!this.vfs) return;
+    const beforePath = v6 ? '/etc/ufw/before6.rules' : '/etc/ufw/before.rules';
+    const afterPath = v6 ? '/etc/ufw/after6.rules' : '/etc/ufw/after.rules';
+    for (const path of [beforePath, afterPath]) {
+      const content = this.vfs.readFile(path);
+      if (!content) continue;
+      for (const raw of content.split('\n')) {
+        let line = raw.trim();
+        if (!line.startsWith('-A ')) continue;
+        // Skip the ICMP allowlist: it would let ping through regardless of
+        // ufw's own deny rules, which contradicts the existing ping-block
+        // test suite (linux-ufw.test.ts G8-16) that treats ICMP like any
+        // other traffic, fully subject to ufw allow/deny.
+        if (/-p\s+icmp/.test(line)) continue;
+        if (v6) line = line.replace(/\bufw6-/g, 'ufw-');
+        ipt.execute(line.split(/\s+/));
+      }
+    }
   }
 
   /**
-   * Remove all UFW chains and rules from iptables.
+   * Remove all UFW chains and rules from iptables (both families).
    * Called when `ufw disable` is run.
    */
   private teardownIptablesChains(): void {
-    const ipt = this.iptables;
+    this.teardownChainsOn(this.iptables);
+    this.teardownChainsOn(this.ip6tables);
+  }
 
+  private teardownChainsOn(ipt: LinuxIptablesManager): void {
     // Reset INPUT/OUTPUT/FORWARD policies to ACCEPT
     ipt.setPolicy('filter', 'INPUT', 'ACCEPT');
     ipt.setPolicy('filter', 'OUTPUT', 'ACCEPT');
@@ -220,7 +253,12 @@ export class LinuxFirewallManager {
     ipt.flushChain('filter', 'FORWARD');
 
     // Flush UFW chains
-    const ufwChains = ['ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept'];
+    const ufwChains = [
+      'ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept',
+      'ufw-before-input', 'ufw-before-output', 'ufw-before-forward',
+      'ufw-after-input', 'ufw-after-output', 'ufw-after-forward',
+      'ufw-skip-to-policy-input', 'ufw-skip-to-policy-output', 'ufw-skip-to-policy-forward',
+    ];
     for (const chain of ufwChains) {
       ipt.flushChain('filter', chain);
       ipt.deleteChain('filter', chain);
@@ -236,18 +274,19 @@ export class LinuxFirewallManager {
    * so that unmatched packets get a proper ICMP reject response.
    */
   private applyDefaultPolicies(): void {
-    const ipt = this.iptables;
     // 'deny' → DROP, 'reject' → DROP (with REJECT catch-all), 'allow' → ACCEPT
     const inPolicy = this.defaultIncoming === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
     const outPolicy = this.defaultOutgoing === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
-    ipt.setPolicy('filter', 'INPUT', inPolicy);
-    ipt.setPolicy('filter', 'OUTPUT', outPolicy);
-    // FORWARD chain policy: 'disabled' means DROP (no forwarding unless explicit rules)
-    if (this.defaultRouted !== 'disabled') {
-      const fwdPolicy = this.defaultRouted === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
-      ipt.setPolicy('filter', 'FORWARD', fwdPolicy);
-    } else {
-      ipt.setPolicy('filter', 'FORWARD', 'DROP');
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      ipt.setPolicy('filter', 'INPUT', inPolicy);
+      ipt.setPolicy('filter', 'OUTPUT', outPolicy);
+      // FORWARD chain policy: 'disabled' means DROP (no forwarding unless explicit rules)
+      if (this.defaultRouted !== 'disabled') {
+        const fwdPolicy = this.defaultRouted === 'allow' ? 'ACCEPT' as const : 'DROP' as const;
+        ipt.setPolicy('filter', 'FORWARD', fwdPolicy);
+      } else {
+        ipt.setPolicy('filter', 'FORWARD', 'DROP');
+      }
     }
 
     // For 'reject' defaults, add catch-all REJECT rules at end of ufw chains
@@ -256,27 +295,29 @@ export class LinuxFirewallManager {
 
   /**
    * Add catch-all REJECT rules when default policy is 'reject'.
-   * Called after all user rules are injected into the chain.
+   * Called after all user rules are injected into the chain, on both
+   * families.
    */
   private addRejectCatchAll(): void {
-    const ipt = this.iptables;
-    if (this.defaultIncoming === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-input', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
-    }
-    if (this.defaultOutgoing === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-output', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
-    }
-    if (this.defaultRouted === 'reject') {
-      ipt.appendRule('filter', 'ufw-user-forward', LinuxIptablesManager.createRule({
-        target: 'REJECT',
-        targetOptions: { '--reject-with': 'icmp-port-unreachable' },
-      }));
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      if (this.defaultIncoming === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-input', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
+      if (this.defaultOutgoing === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-output', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
+      if (this.defaultRouted === 'reject') {
+        ipt.appendRule('filter', 'ufw-user-forward', LinuxIptablesManager.createRule({
+          target: 'REJECT',
+          targetOptions: { '--reject-with': 'icmp-port-unreachable' },
+        }));
+      }
     }
   }
 
@@ -284,7 +325,7 @@ export class LinuxFirewallManager {
    * Translate a single UFW rule into iptables rule(s) and inject into iptables.
    */
   private injectRuleToIptables(ufwRule: UfwRule): void {
-    const ipt = this.iptables;
+    const ipt = ufwRule.v6 ? this.ip6tables : this.iptables;
     const chain = ufwRule.route ? 'ufw-user-forward'
                 : ufwRule.direction === 'out' ? 'ufw-user-output' : 'ufw-user-input';
 
@@ -354,18 +395,16 @@ export class LinuxFirewallManager {
   private rebuildIptablesRules(): void {
     if (!this.enabled) return;
 
-    const ipt = this.iptables;
+    // Flush user chains on both families (keep the chains themselves and the jumps)
+    for (const ipt of [this.iptables, this.ip6tables]) {
+      ipt.flushChain('filter', 'ufw-user-input');
+      ipt.flushChain('filter', 'ufw-user-output');
+      ipt.flushChain('filter', 'ufw-user-forward');
+    }
 
-    // Flush user chains (keep the chains themselves and the jumps)
-    ipt.flushChain('filter', 'ufw-user-input');
-    ipt.flushChain('filter', 'ufw-user-output');
-    ipt.flushChain('filter', 'ufw-user-forward');
-
-    // Re-inject all rules
+    // Re-inject all rules — each to its own family's engine
     for (const rule of this.rules) {
-      if (!rule.v6) {
-        this.injectRuleToIptables(rule);
-      }
+      this.injectRuleToIptables(rule);
     }
 
     // Update policies
@@ -449,15 +488,18 @@ export class LinuxFirewallManager {
   }
 
   private cmdReload(): string {
-    this.loadFromVfs();
-    if (this.enabled) {
-      this.rebuildIptablesRules();
-    }
+    this.reconcileFromBoot();
     this.syncToVfs();
     return 'Firewall reloaded';
   }
 
-  /** Re-read configuration from /etc/ufw/ufw.conf in the VFS. */
+  /**
+   * Re-read configuration from the VFS: /etc/ufw/ufw.conf (ENABLED=/
+   * LOGLEVEL=) and, per PRD-Iptables-UFW.md Phase 6 (objectif B.3),
+   * /etc/ufw/user.rules and user6.rules — a hand-edited rule file now has
+   * an observable effect on the next reload/boot, instead of being a
+   * write-only artifact.
+   */
   private loadFromVfs(): void {
     if (!this.vfs) return;
 
@@ -480,6 +522,134 @@ export class LinuxFirewallManager {
           this.loggingLevel = level;
         }
       }
+    }
+
+    const v4Content = this.vfs.readFile('/etc/ufw/user.rules');
+    const v6Content = this.vfs.readFile('/etc/ufw/user6.rules');
+    if (v4Content !== null || v6Content !== null) {
+      const v4Rules = v4Content !== null ? this.parseUfwRulesFile(v4Content, false) : this.rules.filter(r => !r.v6);
+      const v6Rules = v6Content !== null ? this.parseUfwRulesFile(v6Content, true) : this.rules.filter(r => r.v6);
+      this.rules = [...v4Rules, ...v6Rules];
+    }
+  }
+
+  /**
+   * Parse a `user.rules`/`user6.rules`-format file (the same `-A <chain>
+   * ...` lines `generateIptablesRules` writes) back into `UfwRule`s.
+   * Chain names are matched by suffix (`-user-input/output/forward`)
+   * regardless of the `ufw`/`ufw6` prefix, since the v6 file legitimately
+   * uses `ufw6-*` (matching real ufw) while the live engines don't need
+   * the distinction (they're already two separate engine instances).
+   *
+   * Simplification: a protocol-less rule (e.g. `ufw allow 53`) is written
+   * as two lines (`-p tcp --dport 53` and `-p udp --dport 53`) and is read
+   * back as two separate rules with explicit protocols rather than being
+   * merged into one. Functionally equivalent (the same traffic is
+   * accepted/dropped either way) — only `ufw status`'s display would show
+   * two lines instead of one after a round trip through hand-edited files.
+   */
+  private parseUfwRulesFile(content: string, v6: boolean): UfwRule[] {
+    const rules: UfwRule[] = [];
+
+    for (const raw of content.split('\n')) {
+      const line = raw.trim();
+      if (!line.startsWith('-A ')) continue;
+      const tokens = line.slice(3).split(/\s+/);
+      const chainMatch = tokens[0]?.match(/-user-(input|output|forward)$/);
+      if (!chainMatch) continue;
+      const chainKind = chainMatch[1];
+
+      let proto = '';
+      let dport = '';
+      let source = '';
+      let destination = '';
+      let iface = '';
+      let outIface = '';
+      let target = '';
+      let comment = '';
+
+      for (let i = 1; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (tok === '-p') proto = tokens[++i] ?? '';
+        else if (tok === '--dport') dport = tokens[++i] ?? '';
+        else if (tok === '-s') source = tokens[++i] ?? '';
+        else if (tok === '-d') destination = tokens[++i] ?? '';
+        else if (tok === '-i') iface = tokens[++i] ?? '';
+        else if (tok === '-o') outIface = tokens[++i] ?? '';
+        else if (tok === '-j') target = tokens[++i] ?? '';
+        else if (tok === '-m' && tokens[i + 1] === 'comment') {
+          i += 2;
+          if (tokens[i] === '--comment') {
+            comment = tokens.slice(i + 1).join(' ').replace(/^'|'$/g, '');
+            break;
+          }
+        }
+      }
+      if (!target) continue;
+
+      const action: Action | null =
+        target === 'ACCEPT' ? 'ALLOW'
+        : target === 'DROP' ? 'DENY'
+        : target === 'REJECT' ? 'REJECT'
+        : target.endsWith('-user-limit-accept') ? 'LIMIT'
+        : null;
+      if (!action) continue;
+
+      const direction: RuleDirection = chainKind === 'output' ? 'out' : 'in';
+      const route = chainKind === 'forward';
+      const port = dport ? (proto ? `${dport}/${proto}` : dport) : 'Anywhere';
+
+      const rule: UfwRule = {
+        action, direction, port,
+        from: source || 'Anywhere',
+        to: destination || 'Anywhere',
+        iface: route ? iface : (direction === 'out' ? outIface : iface),
+        v6, comment, route,
+      };
+      if (route) (rule as unknown as { outIface: string }).outIface = outIface;
+      rules.push(rule);
+    }
+
+    return rules;
+  }
+
+  /**
+   * Reconcile live firewall state with the persisted VFS — called when the
+   * `ufw` systemd unit starts (a real `systemctl start ufw`, or the
+   * boot-time activation of enabled units) and by `ufw reload`. Mirrors
+   * real `/lib/ufw/ufw-init start`: starting the unit doesn't blindly turn
+   * the firewall on or off, it defers to `ENABLED=yes/no` already on disk —
+   * and, per Phase 6, to the rule set in `user.rules`/`user6.rules` too, so
+   * a hand-edited file takes effect even when the enabled/disabled state
+   * itself didn't change.
+   *
+   * Deliberately not mirrored for the `stop` lifecycle event: a generic
+   * reboot cycle stops every active unit before restarting the enabled
+   * ones, so treating `stop` as "the administrator ran `ufw disable`"
+   * would persist `ENABLED=no` for the split second before the unit
+   * restarts — corrupting the very state this method exists to restore.
+   * Real `ufw.service` has no meaningful `ExecStop` for the same reason:
+   * stopping the oneshot activation script doesn't flush currently-loaded
+   * rules.
+   */
+  reconcileFromBoot(): void {
+    this.loadFromVfs();
+    // Decide setup-from-scratch vs. rebuild-in-place by whether the
+    // ufw-user-input chain actually still exists in the live engine —
+    // not by whether ufw's own `enabled` flag just flipped. These used to
+    // be the same signal because nothing ever flushed the live engine
+    // independently of ufw; now that `reboot` really does wipe it
+    // (LinuxIptablesManager.resetAll(), PRD-Iptables-UFW.md Phase 7 item
+    // B.6), a reboot with ufw already enabled needs the *setup* path
+    // (recreate chains + jumps) even though `this.enabled` never
+    // transitioned — rebuildIptablesRules() only flushes/re-injects rules
+    // into chains it assumes already exist.
+    const chainsExist = this.iptables.hasChain('filter', 'ufw-user-input');
+    if (this.enabled) {
+      if (!chainsExist) this.setupIptablesChains();
+      else this.rebuildIptablesRules();
+    } else if (chainsExist) {
+      this.teardownIptablesChains();
     }
   }
 
@@ -668,7 +838,7 @@ export class LinuxFirewallManager {
     }
 
     // ufw allow [in|out] [on <iface>] <app_profile_name>
-    const profile = APP_PROFILES[remaining.join(' ')];
+    const profile = this.readAppProfilesFromVfs()[remaining.join(' ')];
     if (profile) {
       return { action, direction, port: profile.ports, from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
     }
@@ -1039,22 +1209,55 @@ export class LinuxFirewallManager {
 
   // ─── App profiles ────────────────────────────────────────────────
 
+  /**
+   * Read all application profiles from /etc/ufw/applications.d/*, exactly
+   * like real `ufw` scans that directory — one file may declare several
+   * `[Profile Name]` blocks (INI-style: title=/description=/ports=).
+   * Returns an empty map without a VFS (nowhere to read from).
+   */
+  private readAppProfilesFromVfs(): Record<string, AppProfile> {
+    const profiles: Record<string, AppProfile> = {};
+    if (!this.vfs) return profiles;
+    const entries = this.vfs.listDirectory('/etc/ufw/applications.d');
+    if (!entries) return profiles;
+
+    for (const entry of entries) {
+      const content = this.vfs.readFile(`/etc/ufw/applications.d/${entry.name}`);
+      if (!content) continue;
+      for (const block of content.split(/\n(?=\[)/)) {
+        const nameMatch = block.match(/^\[(.+?)\]/);
+        if (!nameMatch) continue;
+        const titleMatch = block.match(/^title\s*=\s*(.*)$/m);
+        const descMatch = block.match(/^description\s*=\s*(.*)$/m);
+        const portsMatch = block.match(/^ports\s*=\s*(.*)$/m);
+        profiles[nameMatch[1]] = {
+          title: titleMatch ? titleMatch[1].trim() : nameMatch[1],
+          description: descMatch ? descMatch[1].trim() : '',
+          ports: portsMatch ? portsMatch[1].trim() : '',
+        };
+      }
+    }
+    return profiles;
+  }
+
   private cmdApp(args: string[]): string {
     if (args.length === 0) return 'ERROR: wrong number of arguments';
 
+    const profiles = this.readAppProfilesFromVfs();
+
     if (args[0] === 'list') {
-      const names = Object.keys(APP_PROFILES);
+      const names = Object.keys(profiles);
       return 'Available applications:\n' + names.map(n => `  ${n}`).join('\n');
     }
 
     if (args[0] === 'info') {
       const name = args.slice(1).join(' ');
-      const profile = APP_PROFILES[name];
+      const profile = profiles[name];
       if (!profile) {
         return `ERROR: Could not find a profile matching '${name}'`;
       }
       return [
-        `Profile: ${profile.title}`,
+        `Profile: ${name}`,
         `Title: ${profile.title}`,
         `Description: ${profile.description}`,
         '',
@@ -1210,9 +1413,14 @@ export class LinuxFirewallManager {
     const v6Rules = this.rules.filter(r => r.v6);
     this.vfs.writeFile('/etc/ufw/user6.rules', this.generateIptablesRules(v6Rules, true), 0, 0, 0o022);
 
-    // Also persist iptables state to /etc/iptables/rules.v4
+    // Also persist iptables state to /etc/iptables/rules.v4/rules.v6 —
+    // symmetric with real iptables-persistent, which dumps both address
+    // families whenever either engine's rule set changes.
     const iptSave = this.iptables.executeSave();
     this.vfs.writeFile('/etc/iptables/rules.v4', iptSave, 0, 0, 0o022);
+
+    const ip6Save = this.ip6tables.executeSave();
+    this.vfs.writeFile('/etc/iptables/rules.v6', ip6Save, 0, 0, 0o022);
   }
 
   private generateIptablesRules(rules: UfwRule[], ipv6: boolean): string {
@@ -1320,7 +1528,7 @@ export class LinuxFirewallManager {
     sport: number;
     dport: number;
   }): void {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.logging) return;
     const tag = opts.verdict === 'reject' ? '[UFW REJECT]' : '[UFW BLOCK]';
     this.appendUfwLine(
       `${tag} IN=${opts.iface} OUT= SRC=${opts.src} DST=${opts.dst} ` +

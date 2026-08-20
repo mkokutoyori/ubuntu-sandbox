@@ -51,10 +51,19 @@ export interface CdpConfigChangedPayload extends CdpDeviceRef {
   holdtimeSec: number;
 }
 
+export interface CdpNativeVlanMismatchPayload extends CdpDeviceRef {
+  port: string;
+  localVlan: number;
+  remoteHost: string;
+  remotePort: string;
+  remoteVlan: number;
+}
+
 export type CdpDomainEvent =
   | { topic: 'cdp.frame.sent';            payload: CdpFrameSentPayload }
   | { topic: 'cdp.frame.received';        payload: CdpFrameReceivedPayload }
   | { topic: 'cdp.neighbor.discovered';   payload: CdpNeighborDiscoveredPayload }
   | { topic: 'cdp.neighbor.refreshed';    payload: CdpNeighborRefreshedPayload }
   | { topic: 'cdp.neighbor.expired';      payload: CdpNeighborExpiredPayload }
-  | { topic: 'cdp.config.changed';        payload: CdpConfigChangedPayload };
+  | { topic: 'cdp.config.changed';        payload: CdpConfigChangedPayload }
+  | { topic: 'cdp.native-vlan.mismatch';  payload: CdpNativeVlanMismatchPayload };

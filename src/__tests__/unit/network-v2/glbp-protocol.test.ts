@@ -48,7 +48,7 @@ describe('GLBP — single-speaker AVG election', () => {
   it('the only configured speaker becomes AVG', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     const g = r.getGlbpAgent().getGroup('GigabitEthernet0/0', 1);
     expect(g?.avgState).toBe('active');
@@ -58,7 +58,7 @@ describe('GLBP — single-speaker AVG election', () => {
   it('AVG self-assigns forwarder 1 with virtual MAC 0007.b400.01.01', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     const g = r.getGlbpAgent().getGroup('GigabitEthernet0/0', 1);
     const f1 = g?.forwarders.get(1);
@@ -75,8 +75,8 @@ describe('GLBP — two-speaker AVG election', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureGlbp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     expect(r1.getGlbpAgent().getGroup('GigabitEthernet0/0', 1)?.avgState).toBe('active');
@@ -89,8 +89,8 @@ describe('GLBP — two-speaker AVG election', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureGlbp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const g1 = r1.getGlbpAgent().getGroup('GigabitEthernet0/0', 1)!;
@@ -124,7 +124,7 @@ describe('GLBP — wire format', () => {
         };
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254');
     expect(seen).not.toBeNull();
     expect(seen!.sport).toBe(UDP_PORT_GLBP);
@@ -141,8 +141,8 @@ describe('GLBP — reactive bus', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     const avgs: Array<{ deviceId: string; newState: string }> = [];
     const avfs: Array<{ deviceId: string; forwarderNumber: number; ownerIp: string }> = [];
     bus.subscribe('glbp.avg.changed', (e) => avgs.push(e.payload));
@@ -158,7 +158,7 @@ describe('GLBP — link-down behaviour', () => {
   it('link-down brings the AVG back to Init', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254');
     expect(r.getGlbpAgent().getGroup('GigabitEthernet0/0', 1)?.avgState).toBe('active');
     r.getPort('GigabitEthernet0/0')!.setUp(false);
@@ -173,8 +173,8 @@ describe('GLBP — load balancing', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureGlbp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const g = r1.getGlbpAgent().getGroup('GigabitEthernet0/0', 1)!;
@@ -193,8 +193,8 @@ describe('GLBP — load balancing', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureGlbp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     r1.getGlbpAgent().setLoadBalancing('GigabitEthernet0/0', 1, 'host-dependent');
@@ -210,7 +210,7 @@ describe('GLBP — show glbp', () => {
   it('show glbp reports State is Active', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r.executeCommand('show glbp');
     expect(out).toMatch(/State is Active/);
@@ -224,8 +224,8 @@ describe('GLBP — show glbp', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureGlbp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureGlbp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r2.executeCommand('show glbp brief');
@@ -237,7 +237,7 @@ describe('GLBP — weighting tracking (interface objects)', () => {
   it('glbp weighting track lowers the forwarder weighting while the tracked link is down, restores it on up', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureGlbp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
 
     await r.executeCommand('enable');
@@ -251,7 +251,7 @@ describe('GLBP — weighting tracking (interface objects)', () => {
     const own = [...g.forwarders.values()].find(f => f.ownerIp === '10.0.0.1');
     expect(own?.weighting).toBe(20);
 
-    new Cable('t').connect(r.getPort('GigabitEthernet0/1')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('t').connect(r.getPort('GigabitEthernet0/1')!, sw.getPort('FastEthernet0/2')!);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('interface GigabitEthernet0/1');

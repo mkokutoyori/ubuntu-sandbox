@@ -89,8 +89,31 @@ async function typeRoot(t: TerminalSession, line: string): Promise<void> {
   t.setInput(line); t.handleKey(key('Enter')); await flush();
 }
 
+/**
+ * Tape une ligne dans la session distante, puis VIDE LE PAGER.
+ *
+ * Une sortie plus longue que l'écran fait entrer IOS en `--More--`, et
+ * la touche suivante y est consommée au lieu d'atteindre le shell —
+ * c'est le comportement d'un vrai routeur. Sans cette boucle, la
+ * première commande un peu longue laissait la session au pager et tout
+ * ce qui suivait était avalé en silence : `show version` passant de 16
+ * à 26 lignes (table de licences) a suffi à faire tomber ces parcours,
+ * qui croyaient taper des commandes alors qu'ils appuyaient sur
+ * « page suivante ».
+ */
 async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  for (let garde = 0; garde < 50 && t.foreground.currentInputMode.type === 'pager'; garde++) {
+    t.handleKey(key(' '));
+    await flush();
+  }
+}
+
+async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
+  t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  if (t.foreground.currentInputMode.type === 'password') {
+    t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
+  }
 }
 
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
@@ -117,7 +140,7 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
     await typeSub(t, 'cat /etc/passwd | head -n 5');
     expectAnyLine(t, /^root:/);
-    await typeSub(t, 'sudo tail -n 5 /var/log/auth.log');
+    await sudoSub(t, 'sudo tail -n 5 /var/log/auth.log', 'alice');
     expectAnyLine(t, /sshd/);
     await typeSub(t, 'systemctl is-active ssh');
     expectAnyLine(t, /^active$/);
@@ -148,9 +171,9 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo useradd -m zoe');
-    await typeSub(t, 'sudo gpasswd -a zoe sudo');
-    await typeSub(t, 'sudo passwd zoe');
+    await sudoSub(t, 'sudo useradd -m zoe', 'alice');
+    await sudoSub(t, 'sudo gpasswd -a zoe sudo', 'alice');
+    await sudoSub(t, 'sudo passwd zoe', 'alice');
     await typeSub(t, 'echo "zoepw\\nzoepw" | sudo passwd --stdin zoe 2>/dev/null || true');
     await typeSub(t, 'getent passwd zoe');
     expectAnyLine(t, /^zoe:/);
@@ -217,7 +240,19 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     await linuxSrv.executeCommand('systemctl reload ssh');
     await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
     expectAnyLine(t, /Permission denied/);
+
+    // Deleting the config is NOT how you get the defaults back: sshd
+    // reads that file at start-up, so its absence is a start-up failure,
+    // not an empty ruleset (docs/PRD-Pannes.md §F7.1). The reload is
+    // refused and carl stays locked out.
     await linuxSrv.executeCommand('rm /etc/ssh/sshd_config');
+    const reload = await linuxSrv.executeCommand('systemctl reload ssh');
+    expect(reload).toMatch(/No such file or directory/);
+    await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
+    expect(t.getPrompt()).not.toMatch(/carl@linuxSrv/);
+
+    // Writing a clean config is what actually reverses the incident.
+    await linuxSrv.executeCommand("sh -c 'echo \"PermitRootLogin prohibit-password\" > /etc/ssh/sshd_config'");
     await linuxSrv.executeCommand('systemctl reload ssh');
     await winSshLogin(t, 'ssh carl@10.0.0.3', 'carl');
     expect(t.getPrompt()).toMatch(/carl@linuxSrv/);
@@ -268,7 +303,7 @@ describe('SSH operator journeys — multi-step end-to-end scenarios', () => {
     await typeSub(t, 'SELECT instance_name FROM v$instance;');
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
-    await typeSub(t, 'sudo cat /var/log/auth.log');
+    await sudoSub(t, 'sudo cat /var/log/auth.log', 'alice');
     expectAnyLine(t, /Accepted password for alice/);
     await typeSub(t, 'exit');
     expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);

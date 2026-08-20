@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-isis-rip-bgp
-Generated: 2026-06-12T11:49:17.051Z
+Generated: 2026-08-19T07:03:19.186Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP RIP/IS-IS/BGP: peers, import-route, policy, display
 Total steps: 260
@@ -14,25 +14,25 @@ Total steps: 260
 [2/260] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/260] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+[3/260] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[4/260] r1 [R1-GE0/0/0] undo shutdown
+[4/260] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/260] r1 [R1-GE0/0/0] quit
+[5/260] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/260] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/260] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/260] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/260] r1 [R1-GE0/0/1] undo shutdown
+[8/260] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/260] r1 [R1-GE0/0/1] quit
+[9/260] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/260] r1 [R1] return
@@ -115,28 +115,28 @@ Total steps: 260
 [35/260] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[36/260] r1 [R1-GE0/0/1] rip version 2 multicast
+[36/260] r1 [R1-GigabitEthernet0/0/1] rip version 2 multicast
 <empty>
 
-[37/260] r1 [R1-GE0/0/1] rip authentication-mode md5 usual cipher RipKey123
+[37/260] r1 [R1-GigabitEthernet0/0/1] rip authentication-mode md5 usual cipher RipKey123
 <empty>
 
-[38/260] r1 [R1-GE0/0/1] rip metricin 1
+[38/260] r1 [R1-GigabitEthernet0/0/1] rip metricin 1
 <empty>
 
-[39/260] r1 [R1-GE0/0/1] rip metricout 2
+[39/260] r1 [R1-GigabitEthernet0/0/1] rip metricout 2
 <empty>
 
-[40/260] r1 [R1-GE0/0/1] rip split-horizon
+[40/260] r1 [R1-GigabitEthernet0/0/1] rip split-horizon
 <empty>
 
-[41/260] r1 [R1-GE0/0/1] rip poison-reverse
+[41/260] r1 [R1-GigabitEthernet0/0/1] rip poison-reverse
 <empty>
 
-[42/260] r1 [R1-GE0/0/1] rip summary-address 10.0.0.0 255.0.0.0
+[42/260] r1 [R1-GigabitEthernet0/0/1] rip summary-address 10.0.0.0 255.0.0.0
 <empty>
 
-[43/260] r1 [R1-GE0/0/1] quit
+[43/260] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [44/260] r1 [R1] return
@@ -230,10 +230,10 @@ Total steps: 260
 <empty>
 
 [51/260] r1 <R1> debugging rip 1
-<empty>
+  Info: RIP debugging is on.
 
 [52/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  Info: 1 debugging switch(es) have been turned off.
 
 
 --- [53] § IS-IS ---
@@ -288,28 +288,28 @@ Total steps: 260
 [69/260] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[70/260] r1 [R1-GE0/0/1] isis enable 1
+[70/260] r1 [R1-GigabitEthernet0/0/1] isis enable 1
 <empty>
 
-[71/260] r1 [R1-GE0/0/1] isis circuit-level level-2
+[71/260] r1 [R1-GigabitEthernet0/0/1] isis circuit-level level-2
 <empty>
 
-[72/260] r1 [R1-GE0/0/1] isis cost 10 level-2
+[72/260] r1 [R1-GigabitEthernet0/0/1] isis cost 10 level-2
 <empty>
 
-[73/260] r1 [R1-GE0/0/1] isis circuit-type p2p
+[73/260] r1 [R1-GigabitEthernet0/0/1] isis circuit-type p2p
 <empty>
 
-[74/260] r1 [R1-GE0/0/1] isis timer hello 10 level-2
+[74/260] r1 [R1-GigabitEthernet0/0/1] isis timer hello 10 level-2
 <empty>
 
-[75/260] r1 [R1-GE0/0/1] isis timer holding-multiplier 3 level-2
+[75/260] r1 [R1-GigabitEthernet0/0/1] isis timer holding-multiplier 3 level-2
 <empty>
 
-[76/260] r1 [R1-GE0/0/1] isis authentication-mode md5 cipher IsisKey level-2
+[76/260] r1 [R1-GigabitEthernet0/0/1] isis authentication-mode md5 cipher IsisKey level-2
 <empty>
 
-[77/260] r1 [R1-GE0/0/1] quit
+[77/260] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [78/260] r1 [R1] return
@@ -349,10 +349,10 @@ Total steps: 260
 <empty>
 
 [86/260] r1 <R1> debugging isis adjacency
-<empty>
+  Error: The IS-IS module produces no debugging information in this simulator.
 
 [87/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  Info: All possible debugging functions are off.
 
 
 --- [88] § BGP ---
@@ -504,12 +504,12 @@ Total steps: 260
 <empty>
 
 [137/260] r1 [R1] ipv6-family unicast
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   ipv6-family unicast
   ^
 
 [138/260] r1 [R1] network 2001:db8:: 32
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   network 2001:db8:: 32
   ^
 
@@ -525,42 +525,42 @@ Total steps: 260
 [142/260] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 0
+  Total number of peers : 7              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  0s            Established       0
 
 [143/260] r1 <R1> display bgp peer verbose
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 0
+  Total number of peers : 7              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  0s            Established       0
 
 [144/260] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [145/260] r1 <R1> display bgp routing-table statistics
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [146/260] r1 <R1> display bgp network
     192.168.1.0/255.255.255.0
@@ -573,8 +573,8 @@ Total steps: 260
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [149/260] r1 <R1> display bgp paths
   Info: No BGP paths.
@@ -597,10 +597,10 @@ Total steps: 260
 <empty>
 
 [154/260] r1 <R1> debugging bgp event
-<empty>
+  Info: BGP debugging is on.
 
 [155/260] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  Info: 1 debugging switch(es) have been turned off.
 
 
 --- [156] § regression: display family ---
@@ -626,6 +626,8 @@ Total steps: 260
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -638,9 +640,10 @@ Total steps: 260
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   rip 1
    version 2
+   undo summary
+   maximum load-balancing 6
    network 10.1.0.0
    network 10.2.0.0
    network 10.3.0.0
@@ -649,73 +652,125 @@ Total steps: 260
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   maximum load-balancing 4
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  #
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   maximum load-balancing 4
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
   #
 
 [159/260] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-   network 10.1.0.0
-   network 10.2.0.0
-   network 10.3.0.0
-   network 10.4.0.0
-   network 10.5.0.0
-   network 10.6.0.0
-   network 192.168.1.0
-   network 10.0.0.0
-  #
+  Error: The configuration file doesn't exist.
 
 [160/260] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [161/260] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -780,67 +835,6 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
-  #
-  bgp 65000
-   router-id 1.1.1.1
-   network 192.168.1.0 255.255.255.0
-   network 10.0.0.0 255.255.255.252
-   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-   group IBGP internal
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
-   peer 10.0.0.2 connect-interface LoopBack0
-   peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
-   peer 10.0.0.2 timer keepalive 10 hold 30
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
-   peer 10.0.0.3 connect-interface LoopBack0
-   peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
-   peer 10.0.0.3 timer keepalive 10 hold 30
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
-   peer 10.0.0.4 connect-interface LoopBack0
-   peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
-   peer 10.0.0.4 timer keepalive 10 hold 30
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
-   peer 10.0.0.5 connect-interface LoopBack0
-   peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
-   peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.1
-   peer 10.0.0.1 enable
-   peer 10.0.0.1 next-hop-local
-   peer 10.0.0.1 reflect-client
-   peer 10.0.0.1 route-policy RP import
-   peer 10.0.0.1 ip-prefix PL-IN import
-   peer 10.0.0.1 advertise-community
-   peer 10.0.0.1 default-route-advertise
-   peer 10.0.0.1 route-limit 1000
-   graceful-restart
-   timer keepalive 10 hold 30
-   import-route direct
-   import-route static
-   import-route ospf 1
-  isis 1
-   network-entity 49.0001.0000.0000.0001.00
-   is-level level-2
-   cost-style wide
-   default-route-advertise
-   import-route direct
-   import-route static
-   import-route ospf 1 cost 10 level-2
 
 [172/260] r1 <R1> display rip 1 route
   RIP process 1
@@ -860,93 +854,34 @@ Total steps: 260
       10.0.0.0/255.0.0.0
   
     Routes: 0
-  #
-  bgp 65000
-   router-id 1.1.1.1
-   network 192.168.1.0 255.255.255.0
-   network 10.0.0.0 255.255.255.252
-   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
-   group IBGP internal
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 as-number 65002
-   peer 10.0.0.2 description PEER-1
-   peer 10.0.0.2 connect-interface LoopBack0
-   peer 10.0.0.2 ebgp-max-hop 2
-   peer 10.0.0.2 password cipher BgpKey1
-   peer 10.0.0.2 timer keepalive 10 hold 30
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 as-number 65003
-   peer 10.0.0.3 description PEER-2
-   peer 10.0.0.3 connect-interface LoopBack0
-   peer 10.0.0.3 ebgp-max-hop 2
-   peer 10.0.0.3 password cipher BgpKey2
-   peer 10.0.0.3 timer keepalive 10 hold 30
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 as-number 65004
-   peer 10.0.0.4 description PEER-3
-   peer 10.0.0.4 connect-interface LoopBack0
-   peer 10.0.0.4 ebgp-max-hop 2
-   peer 10.0.0.4 password cipher BgpKey3
-   peer 10.0.0.4 timer keepalive 10 hold 30
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 as-number 65005
-   peer 10.0.0.5 description PEER-4
-   peer 10.0.0.5 connect-interface LoopBack0
-   peer 10.0.0.5 ebgp-max-hop 2
-   peer 10.0.0.5 password cipher BgpKey4
-   peer 10.0.0.5 timer keepalive 10 hold 30
-   peer IBGP
-   peer IBGP connect-interface LoopBack0
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.10 group IBGP
-   peer 10.0.0.1
-   peer 10.0.0.1 enable
-   peer 10.0.0.1 next-hop-local
-   peer 10.0.0.1 reflect-client
-   peer 10.0.0.1 route-policy RP import
-   peer 10.0.0.1 ip-prefix PL-IN import
-   peer 10.0.0.1 advertise-community
-   peer 10.0.0.1 default-route-advertise
-   peer 10.0.0.1 route-limit 1000
-   graceful-restart
-   timer keepalive 10 hold 30
-   import-route direct
-   import-route static
-   import-route ospf 1
-  isis 1
-   network-entity 49.0001.0000.0000.0001.00
-   is-level level-2
-   cost-style wide
-   default-route-advertise
-   import-route direct
-   import-route static
-   import-route ospf 1 cost 10 level-2
 
 [173/260] r1 <R1> display bgp peer
   BGP local router ID : 1.1.1.1
   Local AS number : 65000
-  Total number of peers : 7              Peers in established state : 0
+  Total number of peers : 7              Peers in established state : 1
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
-    10.0.0.2         4    65002     0        0     0  00:00:00          Idle       0
-    10.0.0.3         4    65003     0        0     0  00:00:00          Idle       0
-    10.0.0.4         4    65004     0        0     0  00:00:00          Idle       0
-    10.0.0.5         4    65005     0        0     0  00:00:00          Idle       0
-    IBGP             4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.10        4    65000     0        0     0  00:00:00          Idle       0
-    10.0.0.1         4    65000     0        0     0  00:00:00          Idle       0
+    10.0.0.2         4    65002     0        0     0  00:00:00      Idle       0
+    10.0.0.3         4    65003     0        0     0  00:00:00      Idle       0
+    10.0.0.4         4    65004     0        0     0  00:00:00      Idle       0
+    10.0.0.5         4    65005     0        0     0  00:00:00      Idle       0
+    IBGP             4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.10        4    65000     0        0     0  00:00:00      Idle       0
+    10.0.0.1         4    65000     0        0     0  0s            Established       0
 
 [174/260] r1 <R1> display bgp routing-table
   BGP Local router ID : 1.1.1.1
    Total Number of Routes: 2
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
-   192.168.1.0/255.255.255.00.0.0.0         0          100       0       i
-   10.0.0.0/255.255.255.2520.0.0.0         0          100       0       i
+   10.0.0.0/30        0.0.0.0         0          100       32768   i
+   192.168.1.0/24     0.0.0.0         0          100       32768   i
 
 [175/260] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [176/260] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [177/260] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -968,8 +903,9 @@ Total steps: 260
   Info: No VRRP backup group is configured.
 
 [181/260] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [182/260] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -997,14 +933,22 @@ Total steps: 260
 [189/260] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:19.288  Aug 19 2026(EE2FD3B7.49BA5E35)
 
 [190/260] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [191/260] r1 <R1> display clock
-  2026-06-12 11:49:17
-  Friday
+  2026-08-19 07:03:19
+  Wednesday
   Time Zone(UTC) : UTC
 
 [192/260] r1 <R1> display lldp neighbor
@@ -1016,13 +960,13 @@ Total steps: 260
 [194/260] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:17
+  CPU Usage Stat. Time : 2026-08-19 07:03:19
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [195/260] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:17
+  Memory utilization statistics at 2026-08-19 07:03:19
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1039,8 +983,7 @@ Total steps: 260
   -------------------------------------------------------------------------------
 
 [197/260] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1058,12 +1001,17 @@ Total steps: 260
 
 [199/260] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 5
+  2026-08-19 07:03:19 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:19 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:19 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:19 %01BGP/5/NOTIFICATIONS: neighbor 10.0.0.1 Up
 
 [200/260] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1111,17 +1059,17 @@ Total steps: 260
 
 [206/260] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [207/260] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1131,9 +1079,9 @@ Total steps: 260
       Output: 0 packets, 0 bytes
 
 [208/260] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1141,6 +1089,8 @@ Total steps: 260
 [209/260] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1154,9 +1104,10 @@ Total steps: 260
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   rip 1
    version 2
+   undo summary
+   maximum load-balancing 6
    network 10.1.0.0
    network 10.2.0.0
    network 10.3.0.0
@@ -1165,6 +1116,84 @@ Total steps: 260
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   maximum load-balancing 4
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  #
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   maximum load-balancing 4
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
   #
 
 [210/260] r1 <R1> display diagnostic-information
@@ -1198,21 +1227,23 @@ Total steps: 260
 
 [215/260] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [216/260] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [217] § regression: pipe filters ---
 [217/260] r1 <R1> display current-configuration | include ospf
-<empty>
+   import-route ospf 1
+   import-route ospf 1 cost 10 level-2
 
 [218/260] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1227,9 +1258,10 @@ Total steps: 260
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   rip 1
    version 2
+   undo summary
+   maximum load-balancing 6
    network 10.1.0.0
    network 10.2.0.0
    network 10.3.0.0
@@ -1239,9 +1271,88 @@ Total steps: 260
    network 192.168.1.0
    network 10.0.0.0
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   maximum load-balancing 4
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  #
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   maximum load-balancing 4
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
+  #
 
 [219/260] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
@@ -1252,6 +1363,8 @@ Total steps: 260
    shutdown
   rip 1
    version 2
+   undo summary
+   maximum load-balancing 6
    network 10.1.0.0
    network 10.2.0.0
    network 10.3.0.0
@@ -1260,16 +1373,89 @@ Total steps: 260
    network 10.6.0.0
    network 192.168.1.0
    network 10.0.0.0
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  bgp 65000
+   router-id 1.1.1.1
+   network 192.168.1.0 255.255.255.0
+   network 10.0.0.0 255.255.255.252
+   aggregate 192.168.0.0 255.255.0.0 detail-suppressed
+   group IBGP internal
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 as-number 65002
+   peer 10.0.0.2 description PEER-1
+   peer 10.0.0.2 connect-interface LoopBack0
+   peer 10.0.0.2 ebgp-max-hop 2
+   peer 10.0.0.2 password cipher BgpKey1
+   peer 10.0.0.2 timer keepalive 10 hold 30
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 as-number 65003
+   peer 10.0.0.3 description PEER-2
+   peer 10.0.0.3 connect-interface LoopBack0
+   peer 10.0.0.3 ebgp-max-hop 2
+   peer 10.0.0.3 password cipher BgpKey2
+   peer 10.0.0.3 timer keepalive 10 hold 30
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 as-number 65004
+   peer 10.0.0.4 description PEER-3
+   peer 10.0.0.4 connect-interface LoopBack0
+   peer 10.0.0.4 ebgp-max-hop 2
+   peer 10.0.0.4 password cipher BgpKey3
+   peer 10.0.0.4 timer keepalive 10 hold 30
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 as-number 65005
+   peer 10.0.0.5 description PEER-4
+   peer 10.0.0.5 connect-interface LoopBack0
+   peer 10.0.0.5 ebgp-max-hop 2
+   peer 10.0.0.5 password cipher BgpKey4
+   peer 10.0.0.5 timer keepalive 10 hold 30
+   peer IBGP
+   peer IBGP connect-interface LoopBack0
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.10 group IBGP
+   peer 10.0.0.1
+   peer 10.0.0.1 enable
+   peer 10.0.0.1 next-hop-local
+   peer 10.0.0.1 reflect-client
+   peer 10.0.0.1 route-policy RP import
+   peer 10.0.0.1 ip-prefix PL-IN import
+   peer 10.0.0.1 advertise-community
+   peer 10.0.0.1 default-route-advertise
+   peer 10.0.0.1 route-limit 1000
+   maximum load-balancing 4
+   graceful-restart
+   timer keepalive 10 hold 30
+   import-route direct
+   import-route static
+   import-route ospf 1
+  isis 1
+   network-entity 49.0001.0000.0000.0001.00
+   is-level level-2
+   cost-style wide
+   default-route-advertise
+   maximum load-balancing 4
+   import-route direct
+   import-route static
+   import-route ospf 1 cost 10 level-2
 
 [220/260] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [221/260] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
 
 --- [222] § regression: view nav + undo ---
@@ -1339,19 +1525,19 @@ Total steps: 260
 [243/260] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[244/260] r1 [Huawei-GE0/0/0] display this
+[244/260] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
 
-[245/260] r1 [Huawei-GE0/0/0] shutdown
+[245/260] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[246/260] r1 [Huawei-GE0/0/0] undo shutdown
+[246/260] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[247/260] r1 [Huawei-GE0/0/0] quit
+[247/260] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [248/260] r1 [Huawei] ospf 1
@@ -1381,47 +1567,60 @@ Total steps: 260
   Enter system view, return user view with return command.
 
 [255/260] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [256/260] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [257/260] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [258/260] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [259/260] r1 [Huawei] return
 <empty>

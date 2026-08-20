@@ -16,6 +16,9 @@
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 
+const IPV4_LITERAL_RE = /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d?\d)$/;
+function isIPv4Literal(s: string): boolean { return IPV4_LITERAL_RE.test(s); }
+
 // ─── Helper: get or create IPSec engine on the router ───────────────
 
 function eng(ctx: CiscoShellContext) {
@@ -38,13 +41,37 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   });
 
   // ── crypto isakmp key KEY address IP ─────────────────────────────
+  /**
+   * `crypto isakmp key KEY {address IP | hostname NOM}`
+   *
+   * La forme `hostname` était refusée, alors que tout ce qu'il lui faut
+   * existait déjà : un pair configuré `crypto isakmp identity hostname`
+   * annonce son nom dans l'offre IKE, et le répondeur cherche la clé par
+   * cette identité AVANT l'adresse source. Il ne manquait que la
+   * commande qui pose la clé sous un nom — l'authentification par nom
+   * marche donc pour de vrai, elle n'est pas mémorisée pour l'affichage.
+   */
   trie.registerGreedy('crypto isakmp key', 'Set IKE pre-shared key', (args) => {
-    // Syntax: crypto isakmp key KEY address IP [/mask]
-    const addrIdx = args.indexOf('address');
-    if (addrIdx === -1 || addrIdx === 0) return '% Incomplete command. Usage: crypto isakmp key KEY address IP';
-    const key = args.slice(0, addrIdx).join(' ');
-    const addr = args[addrIdx + 1] || '0.0.0.0';
-    eng(ctx).addPreSharedKey(addr, key);
+    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
+    if (idx <= 0) {
+      return '% Incomplete command. Usage: crypto isakmp key KEY {address IP | hostname NAME}';
+    }
+    const cible = args[idx + 1];
+    if (!cible) return '% Incomplete command.';
+    const key = args.slice(0, idx).join(' ');
+    if (args[idx] === 'hostname') {
+      // Un nom, pas une adresse : le refuser ici évite qu'une faute de
+      // frappe soit stockée comme une identité que rien n'annoncera.
+      if (isIPv4Literal(cible)) return "% Invalid input detected at '^' marker.";
+      // Minuscule à la pose : un nom d'hôte est insensible à la casse
+      // (RFC 4343), et la table `ip host` de l'équipement le range déjà
+      // ainsi. Sans cette normalisation, `hostname rB` ne se retrouvait
+      // pas depuis un `ip host rB …` rangé en `rb` — mesuré : le tunnel
+      // ne montait pas alors que les deux côtés étaient bien configurés.
+      eng(ctx).addPreSharedKey(cible.toLowerCase(), key, true);
+      return '';
+    }
+    eng(ctx).addPreSharedKey(cible, key);
     return '';
   });
 
@@ -58,29 +85,11 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
 
   // ── crypto isakmp keepalive N R [periodic|on-demand] ─────────────
   trie.register('crypto isakmp invalid-spi-recovery', 'Enable invalid SPI recovery', () => {
-    const e = eng(ctx) as unknown as Record<string, unknown>;
-    e.invalidSpiRecovery = true;
+    eng(ctx).setInvalidSpiRecovery(true);
     return '';
   });
   trie.registerGreedy('crypto isakmp identity', 'Set IKE identity', (args) => {
-    const e = eng(ctx) as unknown as Record<string, unknown>;
-    e.isakmpIdentity = args.join(' ').toLowerCase();
-    return '';
-  });
-
-  trie.registerGreedy('crypto isakmp keepalive', 'Configure IKE keepalive (DPD)', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const interval = parseInt(args[0], 10);
-    const retries  = parseInt(args[1] ?? '3', 10);
-    const modeStr  = (args[2] ?? 'periodic').toLowerCase();
-    const mode     = modeStr === 'on-demand' ? 'on-demand' : 'periodic';
-    if (!isNaN(interval)) eng(ctx).setDPD(interval, isNaN(retries) ? 3 : retries, mode);
-    return '';
-  });
-
-  // ── no crypto isakmp keepalive ────────────────────────────────────
-  trie.register('no crypto isakmp keepalive', 'Disable DPD', () => {
-    eng(ctx).setDPD(0, 0, 'periodic');
+    eng(ctx).setIsakmpIdentity(args.join(' ').toLowerCase());
     return '';
   });
 
@@ -93,11 +102,16 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── no crypto isakmp key KEY address IP ─────────────────────────
+  // ── no crypto isakmp key KEY {address IP | hostname NOM} ────────
+  // La forme `hostname` retirait l'entrée `0.0.0.0` au lieu de la
+  // bonne : `indexOf('address')` ne la voyait pas et le repli sur le
+  // joker s'appliquait, si bien que la clé nommée survivait à son
+  // propre `no` — et qu'une clé joker configurée disparaissait à sa
+  // place.
   trie.registerGreedy('no crypto isakmp key', 'Remove IKE pre-shared key', (args) => {
-    const addrIdx = args.indexOf('address');
-    const addr = addrIdx >= 0 ? (args[addrIdx + 1] || '0.0.0.0') : '0.0.0.0';
-    eng(ctx).removePreSharedKey(addr);
+    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
+    const cible = idx >= 0 ? (args[idx + 1] || '0.0.0.0') : '0.0.0.0';
+    eng(ctx).removePreSharedKey(args[idx] === 'hostname' ? cible.toLowerCase() : cible);
     return '';
   });
 
@@ -184,17 +198,29 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   trie.registerGreedy('crypto isakmp profile', 'Define an ISAKMP profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
-    const e = eng(ctx) as any;
-    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
-    if (!profiles.has(name)) profiles.set(name, { name });
+    eng(ctx).getOrCreateISAKMPProfile(name);
     ctx.setSelectedISAKMPProfile(name);
     ctx.setMode('config-isakmp-profile');
     return '';
   });
   trie.registerGreedy('no crypto isakmp profile', 'Remove an ISAKMP profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    const e = eng(ctx) as any;
-    (e.isakmpProfiles as Map<string, any> | undefined)?.delete(args[0]);
+    eng(ctx).removeISAKMPProfile(args[0]);
+    return '';
+  });
+
+  // ── crypto keyring NAME ───────────────────────────────────────────
+  trie.registerGreedy('crypto keyring', 'Define an ISAKMP keyring', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    const name = args[0];
+    eng(ctx).getOrCreateISAKMPKeyring(name);
+    ctx.setSelectedISAKMPKeyring(name);
+    ctx.setMode('config-keyring');
+    return '';
+  });
+  trie.registerGreedy('no crypto keyring', 'Remove an ISAKMP keyring', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    eng(ctx).removeISAKMPKeyring(args[0]);
     return '';
   });
 
@@ -391,13 +417,9 @@ export function buildISAKMPPolicyCommands(trie: CommandTrie, ctx: CiscoShellCont
 
 export function buildISAKMPProfileCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
   const profile = () => {
-    const e = eng(ctx) as any;
     const name = ctx.getSelectedISAKMPProfile();
     if (!name) return null;
-    const profiles: Map<string, any> = e.isakmpProfiles ?? (e.isakmpProfiles = new Map());
-    let p = profiles.get(name);
-    if (!p) { p = { name }; profiles.set(name, p); }
-    return p;
+    return eng(ctx).getOrCreateISAKMPProfile(name);
   };
   trie.registerGreedy('keyring', 'Reference a keyring', (args) => {
     const p = profile(); if (!p) return '';
@@ -423,6 +445,26 @@ export function buildISAKMPProfileCommands(trie: CommandTrie, ctx: CiscoShellCon
   trie.registerGreedy('vrf', 'Bind to a VRF', (args) => {
     const p = profile(); if (!p) return '';
     p.vrf = args[0];
+    return '';
+  });
+}
+
+// ─── config-keyring sub-mode ──────────────────────────────────────────
+
+export function buildISAKMPKeyringCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
+  trie.registerGreedy('pre-shared-key', 'Configure a pre-shared key for a peer', (args) => {
+    const name = ctx.getSelectedISAKMPKeyring();
+    if (!name) return '% No keyring selected';
+    if (args[0]?.toLowerCase() !== 'address' || !args[1]) {
+      return '% Usage: pre-shared-key address IP [MASK] key SECRET';
+    }
+    const address = args[1];
+    const keyIdx = args.indexOf('key');
+    if (keyIdx === -1 || !args[keyIdx + 1]) {
+      return '% Usage: pre-shared-key address IP [MASK] key SECRET';
+    }
+    const kr = eng(ctx).getOrCreateISAKMPKeyring(name);
+    kr.peers.set(address, args.slice(keyIdx + 1).join(' '));
     return '';
   });
 }
@@ -503,8 +545,14 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
     const seq     = ctx.getSelectedCryptoMapSeq();
     if (!mapName || seq === null) return '% No crypto map selected';
     if (ctx.getSelectedCryptoMapIsDynamic()) return '% Dynamic maps do not have static peers';
+    const filtered = args.filter(a => a && a !== 'default' && a.toLowerCase() !== 'dynamic');
+    if (filtered.length === 1 && !isIPv4Literal(filtered[0])) {
+      const err = eng(ctx).setDdnsPeer(mapName, seq, filtered[0]);
+      return err ? `% ${err}` : '';
+    }
     const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
-    entry.peers = args.filter(a => a && a !== 'default');
+    entry.peerHostname = undefined;
+    entry.peers = filtered;
     return '';
   });
 
@@ -571,6 +619,15 @@ export function buildCryptoMapEntryCommands(trie: CommandTrie, ctx: CiscoShellCo
     entry.ikev2ProfileName = args[0] || '';
     return '';
   });
+
+  trie.registerGreedy('set isakmp-profile', 'Associate ISAKMP profile', (args) => {
+    const mapName = ctx.getSelectedCryptoMap();
+    const seq     = ctx.getSelectedCryptoMapSeq();
+    if (!mapName || seq === null || ctx.getSelectedCryptoMapIsDynamic()) return '';
+    const entry = eng(ctx).getOrCreateCryptoMapEntry(mapName, seq);
+    entry.isakmpProfileName = args[0] || '';
+    return '';
+  });
 }
 
 // ─── config-ipsec-profile sub-mode ───────────────────────────────────
@@ -635,104 +692,77 @@ export function buildIPSecIfCommands(trie: CommandTrie, ctx: CiscoShellContext):
   });
 
   // tunnel protection ipsec profile NAME [shared]
-  trie.registerGreedy('tunnel protection ipsec profile', 'Apply IPSec profile to tunnel', (args) => {
-    const iface = ctx.getSelectedInterface();
-    if (!iface) return '% No interface selected';
-    if (args.length < 1) return '% Incomplete command.';
-    const profileName = args[0];
-    const shared = args.includes('shared');
-    eng(ctx).setTunnelProtection(iface, profileName, shared);
-    return '';
-  });
 
-  trie.register('no tunnel protection ipsec profile', 'Remove IPSec profile from tunnel', () => {
-    const iface = ctx.getSelectedInterface();
-    if (!iface) return '% No interface selected';
-    eng(ctx).removeTunnelProtection(iface);
-    return '';
-  });
 }
 
 // ─── Privileged mode: clear crypto commands ──────────────────────────
 
 export function buildIPSecPrivilegedCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
 
-  trie.register('clear crypto isakmp sa', 'Clear all IKE SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.register('clear crypto ipsec sa', 'Clear all IPSec SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.register('clear crypto ikev2 sa', 'Clear all IKEv2 SAs', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.clearAllSAs();
-    return '';
-  });
 
-  trie.registerGreedy('clear crypto session', 'Clear IPSec session', (args) => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
-    if (!engine) return '';
-    if (args.length >= 2 && args[0] === 'remote') {
-      engine.clearSAsForPeer(args[1]);
-    } else {
-      engine.clearAllSAs();
-    }
-    return '';
-  });
 
   // ── debug crypto commands ─────────────────────────────────────────
-  trie.register('debug crypto isakmp', 'Enable IKE/ISAKMP debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('isakmp', true);
-    return 'Crypto ISAKMP debugging is on';
-  });
+  const debugSvc = () => ctx.r().getDebugService();
+  const engineFor = () => (ctx.r() as any)._getOrCreateIPSecEngine();
 
-  trie.register('no debug crypto isakmp', 'Disable IKE/ISAKMP debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('isakmp', false);
-    return 'Crypto ISAKMP debugging is off';
-  });
+  const IKEV2_REFUS = '% IKEv2 has no trace point on this platform:'
+    + ' the IPSec engine emits its exchange on the ISAKMP channel';
+  trie.registerGreedy('debug crypto ikev2', 'Enable IKEv2 debug output', () => IKEV2_REFUS);
+  trie.registerGreedy('no debug crypto ikev2', 'Disable IKEv2 debug output', () => IKEV2_REFUS);
+  for (const [verb, kind, category] of [
+    ['isakmp', 'isakmp', 'crypto.isakmp'],
+    ['ipsec', 'ipsec', 'crypto.ipsec'],
+  ] as const) {
+    trie.registerGreedy(`debug crypto ${verb}`, `Enable ${verb.toUpperCase()} debug output`, (args) => {
+      const detail = /^detail$/i.test(args.join(' ').trim());
+      engineFor().setDebug(kind, true);
+      engineFor().setDebugDetail?.(kind, detail);
+      return detail ? debugSvc().enable(category, 'detail') : debugSvc().enable(category);
+    }, ['detail']);
+    trie.registerGreedy(`no debug crypto ${verb}`, `Disable ${verb.toUpperCase()} debug output`, () => {
+      (ctx.r() as any)._getIPSecEngineInternal()?.setDebug(kind, false);
+      return debugSvc().disable(category);
+    }, ['detail']);
+  }
 
-  trie.register('debug crypto ipsec', 'Enable IPSec debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ipsec', true);
-    return 'Crypto IPSEC debugging is on';
-  });
-
-  trie.register('no debug crypto ipsec', 'Disable IPSec debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ipsec', false);
-    return 'Crypto IPSEC debugging is off';
-  });
-
-  trie.register('debug crypto ikev2', 'Enable IKEv2 debug output', () => {
-    (ctx.r() as any)._getOrCreateIPSecEngine().setDebug('ikev2', true);
-    return 'Crypto IKEv2 debugging is on';
-  });
-
-  trie.register('no debug crypto ikev2', 'Disable IKEv2 debug output', () => {
-    (ctx.r() as any)._getIPSecEngineInternal()?.setDebug('ikev2', false);
-    return 'Crypto IKEv2 debugging is off';
-  });
-
-  trie.register('undebug all', 'Disable all debugging', () => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+  const ipsecEngineOf = (r: unknown): { setDebug(k: string, on: boolean): void } | undefined =>
+    (r as { _getIPSecEngineInternal?: () => { setDebug(k: string, on: boolean): void } })
+      ._getIPSecEngineInternal?.();
+  const turnEverythingOff = (): string => {
+    const engine = ipsecEngineOf(ctx.r());
     if (engine) {
       engine.setDebug('isakmp', false);
       engine.setDebug('ipsec', false);
       engine.setDebug('ikev2', false);
     }
+    const nat = ctx.r()._getNATEngine();
+    nat.setDebugEnabled(false);
+    nat.setDebugDetailed(false);
+    const dhcp = ctx.r()._getDHCPServerInternal?.();
+    dhcp?.setDebugServerPacket(false);
+    dhcp?.setDebugServerEvents(false);
+    ctx.r().getDebugService().disableAll();
     return 'All possible debugging has been turned off';
-  });
+  };
 
-  trie.register('no debug all', 'Disable all debugging', () => {
-    const engine = (ctx.r() as any)._getIPSecEngineInternal();
+  trie.register('debug all', 'Enable all debugging', () => {
+    const engine = ipsecEngineOf(ctx.r());
     if (engine) {
-      engine.setDebug('isakmp', false);
-      engine.setDebug('ipsec', false);
-      engine.setDebug('ikev2', false);
+      engine.setDebug('isakmp', true);
+      engine.setDebug('ipsec', true);
     }
-    return 'All possible debugging has been turned off';
+    const nat = ctx.r()._getNATEngine();
+    nat.setDebugEnabled(true);
+    const dhcp = ctx.r()._getDHCPServerInternal?.();
+    dhcp?.setDebugServerPacket(true);
+    dhcp?.setDebugServerEvents(true);
+    return ctx.r().getDebugService().enableAll();
   });
+  trie.register('undebug all', 'Disable all debugging', turnEverythingOff);
+  trie.register('no debug all', 'Disable all debugging', turnEverythingOff);
+  trie.register('undebug', 'Disable all debugging', turnEverythingOff);
 
   // ── show crypto engine ─────────────────────────────────────────────
   trie.register('show crypto engine brief', 'Display crypto engine information', () => {

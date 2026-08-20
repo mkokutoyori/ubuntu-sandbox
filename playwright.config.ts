@@ -15,7 +15,12 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1280, height: 800 },
     actionTimeout: 10_000,
-    navigationTimeout: 15_000,
+    // The first navigation of a run pays for Vite transforming the whole
+    // module graph on demand, which is well over 15s for an app this
+    // size; every later one hits the warm cache in about 3s. At 15s the
+    // opening test of every spec file failed on `page.goto` alone —
+    // measured on `cable-unplug.spec.ts` as much as on the newer ones.
+    navigationTimeout: 60_000,
   },
   projects: [
     {

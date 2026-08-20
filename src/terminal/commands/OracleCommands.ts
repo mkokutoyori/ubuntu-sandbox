@@ -278,16 +278,14 @@ export function handleTnsping(
   // unknown service, because it never sends a CONNECT_DATA probe).
   const probe = resolveOracleConnectTarget(
     device, `//${desc.host}:${desc.port}/${desc.service}`, getOracleDatabase);
-  if (probe.ok) {
-    const latency = Math.floor(Math.random() * 5) + 1;
-    addLine(`OK (${latency} msec)`);
-  } else if (/ORA-12514|ORA-12528/.test(probe.error)) {
-    // Listener answered; service-level refusals are invisible to tnsping.
-    const latency = Math.floor(Math.random() * 5) + 1;
-    addLine(`OK (${latency} msec)`);
-  } else {
+  if (probe.ok === false && !/ORA-12514|ORA-12528/.test(probe.error)) {
     addLine(TNS_ERRORS.TNS_12541);
     addLine(` ${TNS_ERRORS.TNS_12560}`);
+  } else {
+    // Listener answered; service-level refusals (ORA-12514/12528) are
+    // invisible to tnsping — it never sends a CONNECT_DATA probe.
+    const latency = Math.floor(Math.random() * 5) + 1;
+    addLine(`OK (${latency} msec)`);
   }
 }
 

@@ -20,6 +20,8 @@ export interface NetFlowHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 interface ActiveFlow extends NetFlowV5Record {
@@ -37,7 +39,7 @@ export interface NetFlowRecordInput {
 export class NetFlowAgent {
   private config: NetFlowConfig = createDefaultNetFlowConfig();
   private activeFlows = new Map<string, ActiveFlow>();
-  private startedAtMs = Date.now();
+  private startedAtMs = 0;
   private flowSequence = 0;
   private samplingCounter = 0;
   private exportTimer: TimerHandle | null = null;
@@ -54,7 +56,7 @@ export class NetFlowAgent {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.startedAtMs = Date.now();
+    this.startedAtMs = this.nowMs();
     if (this.config.enabled) this.startTimers();
   }
 
@@ -122,13 +124,13 @@ export class NetFlowAgent {
       this.samplingCounter = (this.samplingCounter + 1) % this.config.samplingInterval;
       if (this.samplingCounter !== 0) return;
     }
-    const r = newRecord(input);
+    const r = newRecord(input, this.nowMs());
     const key = flowKey(r);
     const existing = this.activeFlows.get(key);
     if (existing) {
       existing.packets += r.packets;
       existing.octets += r.octets;
-      existing.lastSwitchedMs = Date.now();
+      existing.lastSwitchedMs = this.nowMs();
       existing.tcpFlags |= r.tcpFlags;
       this.getBus().publish({
         topic: 'netflow.flow.recorded',
@@ -202,14 +204,14 @@ export class NetFlowAgent {
   private exportTo(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
     const egress = this.resolveEgress(collector.ip);
     if (!egress) return;
-    const srcIp = egress.port.getIPAddress();
+    const srcIp = this.sourceIpFor(egress.port);
     if (!srcIp) return;
     const header: NetFlowV5Header = {
       version: NETFLOW_V5_VERSION,
       count: chunk.length,
-      sysUptimeMs: Date.now() - this.startedAtMs,
-      unixSecs: Math.floor(Date.now() / 1000),
-      unixNsecs: (Date.now() % 1000) * 1_000_000,
+      sysUptimeMs: this.nowMs() - this.startedAtMs,
+      unixSecs: Math.floor(this.nowMs() / 1000),
+      unixNsecs: (this.nowMs() % 1000) * 1_000_000,
       flowSequence: this.flowSequence,
       engineType: this.config.engineType,
       engineId: this.config.engineId,
@@ -233,15 +235,19 @@ export class NetFlowAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: egress.port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(egress.name, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(egress.name, ipPkt, new IPAddress(collector.ip));
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: egress.port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(egress.name, eth);
+    }
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
-    collector.lastExportMs = Date.now();
+    collector.lastExportMs = this.nowMs();
     this.getBus().publish({
       topic: 'netflow.packet.exported',
       payload: {
@@ -253,6 +259,15 @@ export class NetFlowAgent {
     Logger.info(this.host.id, 'netflow:export',
       `${this.host.name}: ${chunk.length} flows → ${collector.ip}:${collector.port}`);
   }
+
+  /**
+   * The clock flows age against. It has to be the scheduler's, not the
+   * wall clock: the ageing timer runs on the injected scheduler, so
+   * under a virtual one wall time never moves and a `Date.now()` stamp
+   * compared on a scheduler tick never elapses — no flow ever expired
+   * and nothing was ever exported. Same rule `StpAgent.nowMs()` states.
+   */
+  private nowMs(): number { return this.getScheduler().now(); }
 
   private startTimers(): void {
     const s = this.getScheduler();
@@ -281,7 +296,7 @@ export class NetFlowAgent {
   }
 
   private ageOut(): void {
-    const now = Date.now();
+    const now = this.nowMs();
     const inactiveMs = this.config.inactiveTimeoutSec * 1000;
     const activeMs = this.config.activeTimeoutSec * 1000;
     const expired: ActiveFlow[] = [];
@@ -299,11 +314,24 @@ export class NetFlowAgent {
     this.shipRecords(expired);
   }
 
+  /**
+   * The source address to stamp on a management datagram.
+   *
+   * The egress interface and the source address are two different
+   * decisions: routing picks the first, `source-interface` picks the
+   * second. Returning the source interface AS the egress port sent the
+   * datagram out of a loopback, which has no cable, so nothing left the
+   * machine at all — the command silenced the very feature it
+   * configures.
+   */
+  private sourceIpFor(egressPort: import('../hardware/Port').Port): import('../core/types').IPAddress | null {
+    const named = this.config.sourceInterface
+      ? this.host.getPort(this.config.sourceInterface)?.getIPAddress() ?? null
+      : null;
+    return named ?? egressPort.getIPAddress();
+  }
+
   private resolveEgress(targetIp: string): { name: string; port: import('../hardware/Port').Port } | null {
-    if (this.config.sourceInterface) {
-      const p = this.host.getPort(this.config.sourceInterface);
-      if (p) return { name: this.config.sourceInterface, port: p };
-    }
     const target = targetIp.split('.').map(Number);
     for (const port of this.host.getPorts()) {
       const ip = port.getIPAddress();

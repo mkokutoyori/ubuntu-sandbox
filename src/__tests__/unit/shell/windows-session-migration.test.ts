@@ -93,7 +93,7 @@ describe('Phase 1B — WindowsTerminalSession migrated onto IShell', () => {
     expect(term.shellMode).toBe('cmd');
   });
 
-  test('SSH push from cmd uses the IShell layer (adapter wraps CrossVendorRemoteShell)', async () => {
+  test('SSH push from cmd lands on the remote real terminal session', async () => {
     term.setInput('ssh User@10.0.0.2');
     term.handleKey(key('Enter'));
     await flush();
@@ -101,8 +101,8 @@ describe('Phase 1B — WindowsTerminalSession migrated onto IShell', () => {
     term.setPasswordBuf('user');
     term.handleKey(key('Enter'));
     await flush();
-    const active = (term as unknown as { activeSubShell: unknown }).activeSubShell;
-    expect(active).toBeInstanceOf(ShellSubShellAdapter);
+    expect(term.foreground).not.toBe(term);
+    expect(term.foreground.isRemoteChild).toBe(true);
   });
 
   test('two terminals on the same WindowsPC keep independent cwd through PS', async () => {

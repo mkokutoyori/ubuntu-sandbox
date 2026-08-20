@@ -29,8 +29,11 @@ import { HuaweiSwitch } from '@/network/devices/HuaweiSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
+  __assumeCarrierOnUncabledPorts(true);
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
@@ -258,7 +261,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
       await r.executeCommand('return');
 
       const output = await r.executeCommand('display ip interface brief');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('192.168.1.1');
     });
   });
@@ -320,7 +323,7 @@ describe('Group 2: Huawei Router — Basic VRP Commands', () => {
     it('should display interface statistics', async () => {
       const r = new HuaweiRouter('R1');
       const output = await r.executeCommand('display interface GE0/0/0');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('Input:');
       expect(output).toContain('Output:');
     });
@@ -383,7 +386,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       sw.advanceSTPTimer('GigabitEthernet0/0/1');
 
       // Ping from PC1 to PC2
-      const output = await pc1.executeCommand('ping -c 3 10.0.1.20');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 3 10.0.1.20');
       expect(output).toContain('64 bytes from 10.0.1.20');
       expect(output).toContain('3 received');
     });
@@ -414,7 +417,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       c2.connect(r1.getPort('GE0/0/1')!, pc2.getPort('eth0')!);
 
       // Ping with TTL=1 — should get Time Exceeded from R1
-      const output = await pc1.executeCommand('ping -c 1 -t 1 10.0.2.2');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 1 -t 1 10.0.2.2');
       expect(output).toContain('Time to live exceeded');
 
       // Router should have incremented ICMP Time Exceeded counter
@@ -428,7 +431,7 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
   // ----------------------------------------------------------------
   describe('3.3 ICMP Destination Unreachable', () => {
 
-    it('should generate "Destination Host Unreachable" when no route exists', async () => {
+    it('should generate "Destination Net Unreachable" when no route exists (ICMP code 0)', async () => {
       const r1 = new HuaweiRouter('R1');
       const pc = new LinuxPC('linux-pc', 'PC');
 
@@ -439,9 +442,11 @@ describe('Group 3: ICMP Protocol — Huawei Devices', () => {
       const c = new Cable('c');
       c.connect(pc.getPort('eth0')!, r1.getPort('GE0/0/0')!);
 
-      // No route to 172.16.1.1 on R1
-      const output = await pc.executeCommand('ping -c 1 172.16.1.1');
-      expect(output).toContain('Destination Host Unreachable');
+      // No route to 172.16.1.1 on R1 — a missing route is ICMP code 0
+      // (net unreachable), which real ping reports distinctly from code 1
+      // (host unreachable).
+      const output = await pingOnSimulatedClock(pc, 'ping -c 1 172.16.1.1');
+      expect(output).toContain('Destination Net Unreachable');
 
       const counters = r1.getCounters();
       expect(counters.icmpOutDestUnreachs).toBeGreaterThanOrEqual(1);
@@ -507,7 +512,7 @@ describe('Group 4: ARP Protocol — Huawei Devices', () => {
       sw.setAllPortsSTPState('forwarding');
 
       // Ping triggers ARP resolution
-      await pc1.executeCommand('ping -c 1 10.0.1.20');
+      await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.1.20');
 
       // Check ARP table on PC1
       const arpTable = await pc1.executeCommand('arp -a');
@@ -706,7 +711,7 @@ describe('Group 6: STP & Switch Internals', () => {
       const c2 = new Cable('c2'); c2.connect(pc2.getPort('eth0')!, sw.getPort('GigabitEthernet0/0/1')!);
 
       // Ping from PC1 to PC2 — MAC of PC1 learned on port 0
-      await pc1.executeCommand('ping -c 1 10.0.1.20');
+      await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.1.20');
 
       // A clean cable swap is NOT a MAC move on real hardware: link-down
       // flushes the entry and the new port re-learns it from scratch.
@@ -820,7 +825,7 @@ describe('Group 7: Inter-VLAN Routing (Huawei)', () => {
     const c2 = new Cable('c2'); c2.connect(sw.getPort('GigabitEthernet0/0/2')!, r.getPort('GE0/0/0')!);
 
     // Test: PC1 can ping router (same VLAN)
-    const pingRouter = await pc1.executeCommand('ping -c 1 10.0.10.1');
+    const pingRouter = await pingOnSimulatedClock(pc1, 'ping -c 1 10.0.10.1');
     expect(pingRouter).toContain('64 bytes from 10.0.10.1');
   });
 });
@@ -853,7 +858,7 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       const r = new HuaweiRouter('R1');
       r.configureInterface('GE0/0/0', new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
       const output = await r.executeCommand('dis ip int b');
-      expect(output).toContain('GE0/0/0');
+      expect(output).toContain('GigabitEthernet0/0/0');
       expect(output).toContain('10.0.0.1');
     });
 
@@ -884,7 +889,10 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       await r.executeCommand('system-view');
       await r.executeCommand('int GE0/0/0');
       const prompt = r.getPrompt();
-      expect(prompt).toContain('GE0/0/0');
+      // L'abreviation est acceptee ; ce que l'invite AFFICHE est le nom
+      // complet, `GE0/0/0` etant le nom interne du port
+      // (PRD-CLI-Fidelite-VRP §1.5).
+      expect(prompt).toContain('GigabitEthernet0/0/0');
     });
   });
 
@@ -1086,7 +1094,7 @@ describe('Group 8: Huawei Router — CLI Completion & Help', () => {
       await r.executeCommand('system-view');
       expect(r.getPrompt()).toBe('[R1]');
       await r.executeCommand('interface GE0/0/0');
-      expect(r.getPrompt()).toContain('GE0/0/0');
+      expect(r.getPrompt()).toContain('GigabitEthernet0/0/0');
       await r.executeCommand('quit');
       expect(r.getPrompt()).toBe('[R1]');
       await r.executeCommand('return');

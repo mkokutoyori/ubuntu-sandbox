@@ -12,6 +12,7 @@ import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { WindowsSftpFSAdapter } from '../sftp/WindowsSftpFSAdapter';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
+import type { SshVtyShell } from './SshExecTarget';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
   type ILinuxShell,
@@ -38,6 +39,15 @@ const HOST_KEY_PUB_PATH = `${SSH_DIR}\\ssh_host_ed25519_key.pub`;
 
 export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
+  /** Current cmd working directory — rendered as the `C:\…>` prompt. */
+  getCwd?(): string;
+  /**
+   * A stacked CLI session for one SSH channel: cmd at the bottom, with
+   * `powershell` and friends pushed on top server-side, so the client
+   * only ever sees lines and a prompt
+   * (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  createVtyShell?(user: string): SshVtyShell | null;
 }
 
 /**
@@ -103,6 +113,42 @@ export class WindowsSshServerContext implements ISshServerContext {
 
   getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
     const exec = this.shellExecutor;
+
+    const vty = exec?.createVtyShell?.(_userCtx.username);
+    if (vty) {
+      return {
+        async execute(line: string) {
+          const stdout = await vty.execute(line);
+          return {
+            stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+            stderr: '',
+            exitCode: 0,
+            clearScreen: vty.lastClearedScreen?.() ?? false,
+            pendingInput: vty.lastPendingInput?.() ?? undefined,
+            sessionEnded: vty.lastEndedSession?.() ?? false,
+          };
+        },
+        provideInput: vty.handleInput
+          ? async (value: string) => {
+              const stdout = await vty.handleInput!(value);
+              return {
+                stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+                stderr: '',
+                exitCode: 0,
+                clearScreen: vty.lastClearedScreen?.() ?? false,
+                pendingInput: vty.lastPendingInput?.() ?? undefined,
+                sessionEnded: vty.lastEndedSession?.() ?? false,
+              };
+            }
+          : undefined,
+        getPrompt: () => vty.getPrompt(),
+        getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+        isNested: vty.isNested ? () => vty.isNested!() : undefined,
+        // cmd.exe ignores Ctrl+D and has no `clear` — it has `cls`.
+        posixShell: false,
+      };
+    }
+
     if (!exec) {
       return {
         async execute(line: string) {
@@ -125,6 +171,7 @@ export class WindowsSshServerContext implements ISshServerContext {
           exitCode: looksLikeError ? 1 : 0,
         };
       },
+      getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
     };
   }
 
@@ -209,9 +256,11 @@ export class WindowsSshServerContext implements ISshServerContext {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
         if (!this.userAllowed(user)) { this.reportLogon?.(user, false); return false; }
         if (!this.config.passwordAuthentication) { this.reportLogon?.(user, false); return false; }
-        const ok = this.userManager.checkPassword(user, password);
-        this.reportLogon?.(user, ok);
-        return ok;
+        // logonType 10 (RemoteInteractive) — checkPassword itself now
+        // publishes the one and only windows.account.logon for this
+        // attempt (PRD-Winlogon.md §1.2 point 1); no separate
+        // reportLogon call here, or SSH would double-publish 4624/4625.
+        return this.userManager.checkPassword(user, password, 10);
       },
       // BRD SSH-03-R6: public-key authentication on Windows OpenSSH stores
       // authorized_keys per-user under C:\Users\<user>\.ssh\. Each line is

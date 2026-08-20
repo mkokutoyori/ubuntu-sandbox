@@ -1,0 +1,1236 @@
+import type { EditorFsContext } from './EditorFsContext';
+import type { EditorKeyInput } from './EditorKeyInput';
+import { dotSwapPathFor } from './editorPaths';
+import { displayNotation, displayWidth, displayColumnFor } from './editorRender';
+
+export type NanoMode =
+  | 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search'
+  | 'replace-search' | 'replace-with' | 'replace-confirm' | 'goto-line'
+  | 'help' | 'execute-prompt' | 'read-file-prompt';
+
+/** Column width `^J` (Justify) wraps a paragraph to. */
+const JUSTIFY_WIDTH = 80;
+
+/**
+ * Lines a PageUp/PageDown jumps by. Real nano ties this to the terminal
+ * window's actual row count; this headless engine has no live viewport,
+ * so — like VimEditor's own `visibleLineCount` assumption — a fixed
+ * value approximates "a screen's worth" well enough for chunked
+ * navigation through a long file.
+ */
+const PAGE_SIZE = 30;
+
+export interface PendingReplaceMatch {
+  line: number;
+  start: number;
+  end: number;
+  matchText: string;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Ctrl+Left/Right word-jump boundary: any non-whitespace character. */
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && !/\s/.test(ch);
+}
+
+/** Search `line` for the next match of `regex` at or after column `fromCol`. */
+function execFrom(line: string, regex: RegExp, fromCol: number): RegExpExecArray | null {
+  const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
+  re.lastIndex = fromCol;
+  return re.exec(line);
+}
+
+/**
+ * Headless GNU nano engine. Owns the buffer, cursor, and modal
+ * (edit / save-prompt / exit-save-prompt / search) state machine, and
+ * drives all filesystem side effects (main file + lock file) through an
+ * injected EditorFsContext. No DOM/React dependency, so it can be driven
+ * keystroke-by-keystroke from a Vitest test exactly like a real terminal
+ * would drive it.
+ */
+export class NanoEngine {
+  private linesArr: string[];
+  private _mode: NanoMode = 'edit';
+  private _cursorLine = 0;
+  private _cursorCol = 0;
+  private _modified = false;
+  private _statusMessage: string;
+  private _exited = false;
+  private _savedOnExit = false;
+  private saveFileNameBuffer: string;
+  private gotoLineBuffer = '';
+  private executeCmdBuffer = '';
+  private readFileBuffer = '';
+  /** Cursor position within whichever single-line prompt field is
+   *  currently active (search/replace/save-name/goto-line/execute/
+   *  read-file) — only one prompt is ever open at once, so one shared
+   *  field suffices. Reset to the field's length wherever that field is
+   *  freshly populated (prompt opened, prefilled, history recall). */
+  private _promptCursor = 0;
+  /** Set by ^X→Y: the save-prompt this opens must exit on a successful write, not just return to editing. */
+  private exitAfterSave = false;
+  private caseSensitive = false;
+  private searchDir: 'forward' | 'backward' = 'forward';
+  private searchQueryBuffer = '';
+  private lastSearchTerm = '';
+  // Up/Down history recall in the Search: prompt, scoped to this session.
+  private searchHistoryList: string[] = [];
+  private historyNavIndex: number | null = null;
+  private historyNavStash = '';
+  private useRegex = false;
+  private replaceSearchBuffer = '';
+  private replaceWithBuffer = '';
+  private replaceState: { regex: RegExp; replacement: string; currentLine: number; currentCol: number; totalReplaced: number } | null = null;
+  private _pendingReplaceMatch: PendingReplaceMatch | null = null;
+  private cutBuffer: { kind: 'lines'; lines: string[] } | { kind: 'chars'; text: string } | null = null;
+  private lastActionWasCut = false;
+  /** Set by ^6/M-A (Set Mark); the region runs from here to the cursor. */
+  private markLine: number | null = null;
+  private markCol: number | null = null;
+  private readonly lockPath: string;
+
+  // Undo/redo (Alt+U / Alt+E — real nano's M-U/M-E), multi-level, with
+  // real nano's action-grouping: a run of consecutive keystrokes of the
+  // same coalescable kind (typing, or Backspace, or Delete) is one undo
+  // step; a cursor move or a different action kind starts a new step.
+  private undoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
+  private redoStack: { lines: string[]; cursorLine: number; cursorCol: number }[] = [];
+  private lastEditKind: 'type' | 'backspace' | 'delete' | null = null;
+
+  constructor(
+    private readonly fs: EditorFsContext,
+    public readonly filePath: string,
+    initialContent: string,
+    isNewFile: boolean,
+    private readonly _readOnly = false,
+    /** `nano +LINE[,COLUMN] file` — both 1-indexed, clamped to the buffer. */
+    initialCursor?: { line: number; col?: number },
+    /** `nano -l` / `--linenumbers`. */
+    private _showLineNumbers = false,
+  ) {
+    const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
+    this.linesArr = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
+    this._statusMessage = _readOnly
+      ? '[ View mode ]'
+      : isNewFile
+        ? '[ New File ]'
+        : `[ Read ${this.linesArr.length} line${this.linesArr.length === 1 ? '' : 's'} ]`;
+    this.saveFileNameBuffer = filePath;
+    // GNU nano creates a `.<file>.swp` lock file for the duration of the
+    // editing session to prevent two nano instances from editing the same
+    // file concurrently; removed on clean exit (see swapFilePath below).
+    // View mode (-v) never locks — it never intends to write. A genuinely
+    // unnamed buffer (filePath === '') has no real file to protect yet —
+    // resolving '' would collapse to the cwd's own directory path — so no
+    // lock is created until a real name exists (Write Out gives it one).
+    this.lockPath = filePath === '' ? '' : dotSwapPathFor(fs.resolvePath(filePath));
+    if (!_readOnly && this.lockPath !== '') this.fs.writeFile(this.lockPath, `nano lock: ${filePath}\n`);
+    if (initialCursor) this.gotoLineNumbers(initialCursor.line, initialCursor.col);
+  }
+
+  // ── Public state (read-only) ──────────────────────────────────────
+
+  get content(): string { return this.linesArr.join('\n'); }
+  /**
+   * Real nano always renders non-printable control bytes as `^X` (never
+   * the raw byte, which would corrupt the terminal) — unlike vim's opt-in
+   * `:set list`, this isn't a toggle. Tab and newline stay real characters
+   * (they're structural, not garbage); everything else below 0x20, plus
+   * DEL (0x7f), gets the caret notation.
+   */
+  get displayContent(): string {
+    let out = '';
+    for (const ch of this.content) out += displayNotation(ch);
+    return out;
+  }
+  /**
+   * Flat offset into `displayContent` for the current cursor — the
+   * caret position the textarea must show. Differs from a plain raw
+   * offset whenever a control character before the cursor expanded to
+   * the two-character `^X` notation.
+   */
+  get displayCursorOffset(): number {
+    let offset = 0;
+    for (let i = 0; i < this._cursorLine; i++) {
+      for (const ch of this.line(i)) offset += displayWidth(ch);
+      offset += 1; // newline
+    }
+    const cur = this.line(this._cursorLine);
+    for (let i = 0; i < this._cursorCol; i++) offset += displayWidth(cur[i]);
+    return offset;
+  }
+  /**
+   * Raw column `col` on `line`, translated into its column within that
+   * SAME line's rendered `displayContent` — i.e. how many `ch` units to
+   * the right of the line start it actually sits, accounting for any
+   * `^X` control-character expansion earlier on the line. Used to
+   * position the `pendingReplaceMatch` highlight over the textarea.
+   */
+  displayColumnFor(line: number, col: number): number {
+    return displayColumnFor(this.linesArr, line, col);
+  }
+  /** What gets written to disk: buffer content plus the trailing newline nano always restores on save. */
+  private serialize(): string { return this.linesArr.join('\n') + '\n'; }
+  get lines(): readonly string[] { return this.linesArr; }
+  get mode(): NanoMode { return this._mode; }
+  get cursorLine(): number { return this._cursorLine; }
+  get cursorCol(): number { return this._cursorCol; }
+  get modified(): boolean { return this._modified; }
+  get statusMessage(): string { return this._statusMessage; }
+  get exited(): boolean { return this._exited; }
+  get savedOnExit(): boolean { return this._savedOnExit; }
+  get saveFileName(): string { return this.saveFileNameBuffer; }
+  /** Cursor offset within the currently active prompt field (search/replace/save-name/goto-line/execute/read-file). */
+  get promptCursor(): number { return this._promptCursor; }
+  get gotoLineQuery(): string { return this.gotoLineBuffer; }
+  get executeCommandQuery(): string { return this.executeCmdBuffer; }
+  get readFileQuery(): string { return this.readFileBuffer; }
+  /** Real nano's M-C toggle inside a search/replace prompt (default: case-insensitive). */
+  get caseSensitiveSearch(): boolean { return this.caseSensitive; }
+  /** Real nano's M-B toggle inside the search prompt (default: forward). */
+  get searchDirection(): 'forward' | 'backward' { return this.searchDir; }
+  /** A compact reference of the bindings this engine actually implements — shown by ^G. */
+  get helpText(): string {
+    return [
+      'GNU nano Help Text',
+      '',
+      'The nano editor is a small, free text editor.',
+      '',
+      'Key bindings:',
+      '  ^G  Display this help text',
+      '  ^X  Exit / close a prompt',
+      '  ^O  Write the current buffer to disk',
+      '  ^R  Insert another file at the cursor',
+      '  ^T  Insert the output of a shell command',
+      '  ^W  Search for text (M-C case sensitive, M-R regexp, M-B backwards)',
+      '  ^\\  Search and replace text',
+      '  ^K  Cut the current line',
+      '  ^U  Paste the last cut text',
+      '  ^J  Justify the current paragraph',
+      '  ^_  Go to a specific line and column',
+      '  ^C  Show the current cursor position',
+      '  ^Y  Scroll up one page',
+      '  ^V  Scroll down one page',
+      '  M-U Undo the last action',
+      '  M-E Redo the last undone action',
+      '',
+      'Press ^X to close this help screen.',
+    ].join('\n');
+  }
+  get searchQuery(): string { return this.searchQueryBuffer; }
+  get swapFilePath(): string { return this.lockPath; }
+  get swapFileExists(): boolean { return this.fs.exists(this.lockPath); }
+  /** True when opened with `-v` (view mode) — real nano refuses all edits and offers no Write Out. */
+  get isReadOnly(): boolean { return this._readOnly; }
+  /** `nano -l`/`--linenumbers` at open, toggled at runtime by M-#. */
+  get lineNumbersShown(): boolean { return this._showLineNumbers; }
+  /** Real nano's regex-search toggle (Meta+R / Alt+R inside a search or replace prompt). */
+  get regexSearchEnabled(): boolean { return this.useRegex; }
+  get replaceSearchQuery(): string { return this.replaceSearchBuffer; }
+  get replaceWithText(): string { return this.replaceWithBuffer; }
+  get pendingReplaceMatch(): PendingReplaceMatch | null { return this._pendingReplaceMatch; }
+
+  // ── Key dispatch ─────────────────────────────────────────────────
+
+  applyKey(k: EditorKeyInput): void {
+    if (this._exited) return;
+    switch (this._mode) {
+      case 'edit': return this.applyEditKey(k);
+      case 'save-prompt': return this.applySavePromptKey(k);
+      case 'exit-save-prompt': return this.applyExitSavePromptKey(k);
+      case 'search': return this.applySearchKey(k);
+      case 'replace-search': return this.applyReplaceSearchKey(k);
+      case 'replace-with': return this.applyReplaceWithKey(k);
+      case 'replace-confirm': return this.applyReplaceConfirmKey(k);
+      case 'goto-line': return this.applyGotoLineKey(k);
+      case 'help': return this.applyHelpKey(k);
+      case 'execute-prompt': return this.applyExecutePromptKey(k);
+      case 'read-file-prompt': return this.applyReadFilePromptKey(k);
+    }
+  }
+
+  /**
+   * Move the cursor to the raw (line, col) position corresponding to a
+   * flat offset into `displayContent` — the inverse of
+   * `displayCursorOffset`. Drives mouse-click cursor placement: the
+   * textarea shows `displayContent`, so a click's `selectionStart` is a
+   * display-space offset that must be mapped back through any `^X`
+   * control-char expansion before touching the buffer.
+   */
+  moveCursorToDisplayOffset(offset: number): void {
+    if (this._mode !== 'edit') return;
+    let remaining = offset;
+    for (let line = 0; line < this.linesArr.length; line++) {
+      const text = this.linesArr[line];
+      for (let col = 0; col < text.length; col++) {
+        const w = displayWidth(text[col]);
+        if (remaining < w) { this.setCursor(line, col); return; }
+        remaining -= w;
+      }
+      if (remaining === 0) { this.setCursor(line, text.length); return; }
+      remaining -= 1; // newline
+    }
+    const lastLine = Math.max(0, this.linesArr.length - 1);
+    this.setCursor(lastLine, this.line(lastLine).length);
+  }
+
+  private setCursor(line: number, col: number): void {
+    this._cursorLine = line;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
+  /**
+   * Insert pasted text at the cursor (edit mode) or at the active
+   * prompt field's cursor (search/replace/save-name — single-line, so
+   * embedded newlines are dropped past the first). No bracketed-paste
+   * distinction is modeled: characters land exactly as if typed very
+   * fast, so a literal Tab in the clipboard still inserts `\t` even
+   * though the Tab *key* is otherwise unbound in edit mode.
+   */
+  applyPaste(text: string): void {
+    if (this._exited || !text) return;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const firstLine = normalized.split('\n')[0];
+    switch (this._mode) {
+      case 'edit':
+        this.pasteIntoBuffer(normalized);
+        return;
+      case 'save-prompt':
+        this.insertIntoPromptField(() => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; }, firstLine);
+        return;
+      case 'search':
+        this.insertIntoPromptField(() => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; }, firstLine);
+        return;
+      case 'replace-search':
+        this.insertIntoPromptField(() => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; }, firstLine);
+        return;
+      case 'replace-with':
+        this.insertIntoPromptField(() => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; }, firstLine);
+        return;
+      case 'goto-line':
+        this.insertIntoPromptField(() => this.gotoLineBuffer, (v) => { this.gotoLineBuffer = v; }, firstLine);
+        return;
+      case 'execute-prompt':
+        this.insertIntoPromptField(() => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; }, firstLine);
+        return;
+      case 'read-file-prompt':
+        this.insertIntoPromptField(() => this.readFileBuffer, (v) => { this.readFileBuffer = v; }, firstLine);
+        return;
+      default:
+        return;
+    }
+  }
+
+  private pasteIntoBuffer(text: string): void {
+    if (this._readOnly) return;
+    this.beginDiscreteEdit();
+    for (const ch of text) {
+      if (ch === '\n') {
+        const cur = this.line(this._cursorLine);
+        const before = cur.slice(0, this._cursorCol);
+        const after = cur.slice(this._cursorCol);
+        this.linesArr.splice(this._cursorLine, 1, before, after);
+        this._cursorLine++;
+        this._cursorCol = 0;
+      } else {
+        const cur = this.line(this._cursorLine);
+        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + ch + cur.slice(this._cursorCol);
+        this._cursorCol++;
+      }
+    }
+    this._modified = true;
+    this.lastActionWasCut = false;
+    this.lastEditKind = null;
+  }
+
+  private line(i: number): string { return this.linesArr[i] ?? ''; }
+
+  private clampCol(line: number, col: number): number {
+    return Math.max(0, Math.min(col, this.line(line).length));
+  }
+
+  // ── Undo/redo ────────────────────────────────────────────────────
+
+  private pushUndoSnapshot(): void {
+    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.redoStack = [];
+  }
+
+  /** Start (or continue) a run of same-kind edits as one undo step; a kind change snapshots the pre-edit state. */
+  private beginCoalescableEdit(kind: 'type' | 'backspace' | 'delete'): void {
+    if (this.lastEditKind !== kind) this.pushUndoSnapshot();
+    this.lastEditKind = kind;
+  }
+
+  /** Always its own undo step (Enter, Cut, Paste — never coalesced with adjacent edits). */
+  private beginDiscreteEdit(): void {
+    this.pushUndoSnapshot();
+    this.lastEditKind = null;
+  }
+
+  private performUndo(): void {
+    const snap = this.undoStack.pop();
+    if (!snap) { this._statusMessage = 'Nothing to undo!'; return; }
+    this.redoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.linesArr = [...snap.lines];
+    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
+    this._cursorCol = snap.cursorCol;
+    this._modified = this.undoStack.length > 0;
+    this._statusMessage = 'Undid action';
+    this.lastEditKind = null;
+  }
+
+  private performRedo(): void {
+    const snap = this.redoStack.pop();
+    if (!snap) { this._statusMessage = 'Nothing to redo!'; return; }
+    this.undoStack.push({ lines: [...this.linesArr], cursorLine: this._cursorLine, cursorCol: this._cursorCol });
+    this.linesArr = [...snap.lines];
+    this._cursorLine = Math.min(snap.cursorLine, this.linesArr.length - 1);
+    this._cursorCol = snap.cursorCol;
+    this._modified = true;
+    this._statusMessage = 'Redid action';
+    this.lastEditKind = null;
+  }
+
+  // ── Edit mode ────────────────────────────────────────────────────
+
+  private applyEditKey(k: EditorKeyInput): void {
+    if (k.ctrl) return this.applyEditCtrlKey(k);
+    if (k.alt) return this.applyEditAltKey(k);
+    // View mode (-v): navigation still works, but the buffer is immutable —
+    // real nano simply ignores keys that would modify it.
+    if (this._readOnly && (k.key === 'Enter' || k.key === 'Backspace' || k.key === 'Delete' || k.key === 'Tab'
+      || (k.key.length === 1 && !k.alt))) {
+      return;
+    }
+
+    switch (k.key) {
+      case 'ArrowLeft':
+        if (this._cursorCol > 0) this._cursorCol--;
+        else if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.line(this._cursorLine).length; }
+        this.lastEditKind = null;
+        return;
+      case 'ArrowRight':
+        if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol++;
+        else if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = 0; }
+        this.lastEditKind = null;
+        return;
+      case 'ArrowUp':
+        if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
+        this.lastEditKind = null;
+        return;
+      case 'ArrowDown':
+        if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol); }
+        this.lastEditKind = null;
+        return;
+      case 'Home':
+        this._cursorCol = 0;
+        this.lastEditKind = null;
+        return;
+      case 'End':
+        this._cursorCol = this.line(this._cursorLine).length;
+        this.lastEditKind = null;
+        return;
+      case 'PageUp':
+        this.pageUp();
+        return;
+      case 'PageDown':
+        this.pageDown();
+        return;
+      case 'Tab': {
+        this.beginCoalescableEdit('type');
+        const cur = this.line(this._cursorLine);
+        this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + '\t' + cur.slice(this._cursorCol);
+        this._cursorCol++;
+        this._modified = true;
+        this.lastActionWasCut = false;
+        return;
+      }
+      case 'Enter': {
+        this.beginDiscreteEdit();
+        const cur = this.line(this._cursorLine);
+        const before = cur.slice(0, this._cursorCol);
+        const after = cur.slice(this._cursorCol);
+        this.linesArr.splice(this._cursorLine, 1, before, after);
+        this._cursorLine++;
+        this._cursorCol = 0;
+        this._modified = true;
+        this.lastActionWasCut = false;
+        return;
+      }
+      case 'Backspace': {
+        if (this._cursorCol > 0 || this._cursorLine > 0) this.beginCoalescableEdit('backspace');
+        if (this._cursorCol > 0) {
+          const cur = this.line(this._cursorLine);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
+          this._cursorCol--;
+          this._modified = true;
+        } else if (this._cursorLine > 0) {
+          const prevLen = this.line(this._cursorLine - 1).length;
+          this.linesArr[this._cursorLine - 1] += this.line(this._cursorLine);
+          this.linesArr.splice(this._cursorLine, 1);
+          this._cursorLine--;
+          this._cursorCol = prevLen;
+          this._modified = true;
+        }
+        this.lastActionWasCut = false;
+        return;
+      }
+      case 'Delete': {
+        const cur = this.line(this._cursorLine);
+        if (this._cursorCol < cur.length || this._cursorLine < this.linesArr.length - 1) this.beginCoalescableEdit('delete');
+        if (this._cursorCol < cur.length) {
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
+          this._modified = true;
+        } else if (this._cursorLine < this.linesArr.length - 1) {
+          this.linesArr[this._cursorLine] = cur + this.line(this._cursorLine + 1);
+          this.linesArr.splice(this._cursorLine + 1, 1);
+          this._modified = true;
+        }
+        this.lastActionWasCut = false;
+        return;
+      }
+      default:
+        if (k.key.length === 1 && !k.alt) {
+          this.beginCoalescableEdit('type');
+          const cur = this.line(this._cursorLine);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + k.key + cur.slice(this._cursorCol);
+          this._cursorCol++;
+          this._modified = true;
+          this.lastActionWasCut = false;
+        }
+        return;
+    }
+  }
+
+  private applyEditCtrlKey(k: EditorKeyInput): void {
+    // Ctrl+Left/Right: word jump — pure navigation, always available
+    // (including view mode), so it's checked before the mnemonic switch
+    // below (which keys off the lowercased letter, not arrow names).
+    if (k.key === 'ArrowLeft') { this.jumpWordLeft(); return; }
+    if (k.key === 'ArrowRight') { this.jumpWordRight(); return; }
+    const key = k.key.toLowerCase();
+    // View mode (-v): no Write Out, Cut, Paste, Replace, Justify, Read
+    // File or Execute Command — real nano has none of these bound while
+    // read-only, since every one of them would mutate the buffer.
+    if (this._readOnly && (key === 'o' || key === 'k' || key === 'u' || key === '\\'
+      || key === 'j' || key === 'r' || key === 't')) {
+      return;
+    }
+    switch (key) {
+      case 'o': // Write Out
+        this.saveFileNameBuffer = this.filePath;
+        this._promptCursor = this.saveFileNameBuffer.length;
+        this._mode = 'save-prompt';
+        return;
+      case 'x': // Exit
+        if (this._modified) {
+          this._mode = 'exit-save-prompt';
+          this._statusMessage = 'Save modified buffer?';
+        } else {
+          this.finishExit(true);
+        }
+        return;
+      case 'k': { // Cut line, or the marked region if a mark is active
+        const region = this.getMarkedRegion();
+        if (region) {
+          this.beginDiscreteEdit();
+          this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
+          this.deleteRegion(region);
+          this.clearMark();
+          this._modified = true;
+          this._statusMessage = 'Cut region';
+          this.lastActionWasCut = false; // a region cut is discrete, never accumulated
+          return;
+        }
+        if (this._cursorLine < this.linesArr.length) {
+          this.beginDiscreteEdit();
+          const cut = this.linesArr[this._cursorLine];
+          const prevLines = this.lastActionWasCut && this.cutBuffer?.kind === 'lines' ? this.cutBuffer.lines : [];
+          this.cutBuffer = { kind: 'lines', lines: [...prevLines, cut] };
+          this.linesArr.splice(this._cursorLine, 1);
+          if (this.linesArr.length === 0) this.linesArr.push('');
+          this._cursorCol = 0;
+          this._modified = true;
+          const n = this.cutBuffer.lines.length;
+          this._statusMessage = `Cut ${n} line${n === 1 ? '' : 's'}`;
+          this.lastActionWasCut = true;
+        }
+        return;
+      }
+      case 'u': // Paste (uncut)
+        if (this.cutBuffer) {
+          if (this.cutBuffer.kind === 'lines') {
+            this.beginDiscreteEdit();
+            const n = this.cutBuffer.lines.length;
+            this.linesArr.splice(this._cursorLine, 0, ...this.cutBuffer.lines);
+            this._cursorLine += n;
+            this._cursorCol = 0;
+            this._modified = true;
+            this._statusMessage = `Pasted ${n} line${n === 1 ? '' : 's'}`;
+          } else {
+            this.pasteIntoBuffer(this.cutBuffer.text);
+            this._statusMessage = 'Pasted region';
+          }
+        }
+        this.lastActionWasCut = false;
+        return;
+      case 'w': // Where Is (search) — prefilled with the last search term, like real nano
+        this.searchQueryBuffer = this.lastSearchTerm;
+        this._promptCursor = this.searchQueryBuffer.length;
+        this._mode = 'search';
+        this.historyNavIndex = null;
+        this.lastActionWasCut = false;
+        return;
+      case '\\': // Replace
+        this.replaceSearchBuffer = this.lastSearchTerm;
+        this._promptCursor = this.replaceSearchBuffer.length;
+        this._mode = 'replace-search';
+        this.lastActionWasCut = false;
+        return;
+      case 'g': // Get Help
+        this._mode = 'help';
+        this.lastActionWasCut = false;
+        return;
+      case 'c': { // Cur Pos
+        const total = this.linesArr.length;
+        this._statusMessage = `[ line ${this._cursorLine + 1}/${total}, col ${this._cursorCol + 1} ]`;
+        this.lastActionWasCut = false;
+        return;
+      }
+      case 'j': // Justify
+        this.justifyParagraph();
+        this.lastActionWasCut = false;
+        return;
+      case '6': // Mark Text (Set Mark) — toggles a mark at the cursor
+        this.toggleMark();
+        this.lastActionWasCut = false;
+        return;
+      case 'r': // Read File (insert another file's content at the cursor)
+        this.readFileBuffer = '';
+        this._promptCursor = 0;
+        this._mode = 'read-file-prompt';
+        this.lastActionWasCut = false;
+        return;
+      case 't': // Execute Command (insert a shell command's output at the cursor)
+        this.executeCmdBuffer = '';
+        this._promptCursor = 0;
+        this._mode = 'execute-prompt';
+        this.lastActionWasCut = false;
+        return;
+      case 'y': // Prev Page
+        this.pageUp();
+        this.lastActionWasCut = false;
+        return;
+      case 'v': // Next Page
+        this.pageDown();
+        this.lastActionWasCut = false;
+        return;
+      case '_': // Go To Line
+        this.gotoLineBuffer = '';
+        this._promptCursor = 0;
+        this._mode = 'goto-line';
+        this.lastActionWasCut = false;
+        return;
+      default:
+        this.lastActionWasCut = false;
+        return;
+    }
+  }
+
+  private pageUp(): void {
+    this._cursorLine = Math.max(0, this._cursorLine - PAGE_SIZE);
+    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
+    this.lastEditKind = null;
+  }
+
+  private pageDown(): void {
+    this._cursorLine = Math.min(this.linesArr.length - 1, this._cursorLine + PAGE_SIZE);
+    this._cursorCol = this.clampCol(this._cursorLine, this._cursorCol);
+    this.lastEditKind = null;
+  }
+
+  /**
+   * One Ctrl+Left/Right press crosses exactly ONE boundary — either a
+   * word edge within the current line, or (only when already sitting
+   * at the line's very edge) into the adjacent line. Crossing both in
+   * a single press would skip past the last word of a line entirely.
+   */
+  private jumpWordLeft(): void {
+    if (this._cursorCol === 0) {
+      if (this._cursorLine === 0) return;
+      this._cursorLine--;
+      this._cursorCol = this.line(this._cursorLine).length;
+      this.lastEditKind = null;
+      return;
+    }
+    const text = this.line(this._cursorLine);
+    let col = this._cursorCol;
+    while (col > 0 && !isWordChar(text[col - 1])) col--;
+    while (col > 0 && isWordChar(text[col - 1])) col--;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
+  private jumpWordRight(): void {
+    const text = this.line(this._cursorLine);
+    if (this._cursorCol >= text.length) {
+      if (this._cursorLine >= this.linesArr.length - 1) return;
+      this._cursorLine++;
+      this._cursorCol = 0;
+      this.lastEditKind = null;
+      return;
+    }
+    let col = this._cursorCol;
+    while (col < text.length && isWordChar(text[col])) col++;
+    while (col < text.length && !isWordChar(text[col])) col++;
+    this._cursorCol = col;
+    this.lastEditKind = null;
+  }
+
+  private applyEditAltKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (key === 'u') { this.performUndo(); this.lastActionWasCut = false; return; }
+    if (key === 'e') { this.performRedo(); this.lastActionWasCut = false; return; }
+    if (key === 'g') { // Go To Line (M-G alias)
+      this.gotoLineBuffer = '';
+      this._promptCursor = 0;
+      this._mode = 'goto-line';
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '\\') { // First Line
+      this._cursorLine = 0;
+      this._cursorCol = 0;
+      this.lastEditKind = null;
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '/') { // Last Line
+      this._cursorLine = this.linesArr.length - 1;
+      this._cursorCol = this.line(this._cursorLine).length;
+      this.lastEditKind = null;
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (key === 'a') { // Mark Text (M-A alias of ^6)
+      this.toggleMark();
+      this.lastActionWasCut = false;
+      return;
+    }
+    if (k.key === '6') { // Copy Text — the marked region, or the current line without a mark
+      this.copyMark();
+      this.lastActionWasCut = false;
+      return;
+    }
+    // Toggle line numbers — a display setting, not a buffer edit. Real
+    // browsers don't shift-transform `key` when Alt is already held (a
+    // physical Alt+Shift+3 on a US layout reports key:'3', not '#'), so
+    // both the literal character and the raw shifted digit are accepted.
+    if (k.key === '#' || (k.shift && k.key === '3')) {
+      this._showLineNumbers = !this._showLineNumbers;
+      return;
+    }
+  }
+
+  // ── Mark / region (^6, M-A, M-6) ─────────────────────────────────
+
+  private toggleMark(): void {
+    if (this.markLine !== null) {
+      this.clearMark();
+      this._statusMessage = 'Mark Unset';
+    } else {
+      this.markLine = this._cursorLine;
+      this.markCol = this._cursorCol;
+      this._statusMessage = 'Mark Set';
+    }
+  }
+
+  private clearMark(): void {
+    this.markLine = null;
+    this.markCol = null;
+  }
+
+  /** The marked region, ordered so `start` precedes `end` regardless of
+   *  which of the mark/cursor came first. `null` when no mark is set. */
+  private getMarkedRegion(): { startLine: number; startCol: number; endLine: number; endCol: number } | null {
+    if (this.markLine === null || this.markCol === null) return null;
+    const a = { line: this.markLine, col: this.markCol };
+    const b = { line: this._cursorLine, col: this._cursorCol };
+    const aFirst = a.line < b.line || (a.line === b.line && a.col <= b.col);
+    const [start, end] = aFirst ? [a, b] : [b, a];
+    return { startLine: start.line, startCol: start.col, endLine: end.line, endCol: end.col };
+  }
+
+  private extractRegionText(r: { startLine: number; startCol: number; endLine: number; endCol: number }): string {
+    if (r.startLine === r.endLine) return this.line(r.startLine).slice(r.startCol, r.endCol);
+    const parts: string[] = [this.line(r.startLine).slice(r.startCol)];
+    for (let l = r.startLine + 1; l < r.endLine; l++) parts.push(this.line(l));
+    parts.push(this.line(r.endLine).slice(0, r.endCol));
+    return parts.join('\n');
+  }
+
+  private deleteRegion(r: { startLine: number; startCol: number; endLine: number; endCol: number }): void {
+    if (r.startLine === r.endLine) {
+      const text = this.line(r.startLine);
+      this.linesArr[r.startLine] = text.slice(0, r.startCol) + text.slice(r.endCol);
+    } else {
+      const merged = this.line(r.startLine).slice(0, r.startCol) + this.line(r.endLine).slice(r.endCol);
+      this.linesArr.splice(r.startLine, r.endLine - r.startLine + 1, merged);
+    }
+    this._cursorLine = r.startLine;
+    this._cursorCol = r.startCol;
+  }
+
+  private copyMark(): void {
+    const region = this.getMarkedRegion();
+    if (region) {
+      this.cutBuffer = { kind: 'chars', text: this.extractRegionText(region) };
+      this.clearMark();
+      this._statusMessage = 'Copied region';
+    } else {
+      this.cutBuffer = { kind: 'lines', lines: [this.line(this._cursorLine)] };
+      this._statusMessage = 'Copied 1 line';
+    }
+  }
+
+  // ── Shared single-line prompt field editing ───────────────────────
+
+  /**
+   * Left/Right/Home/End move `_promptCursor`; Backspace/Delete edit
+   * around it; a printable character (or a pasted string, via
+   * `applyPaste`) inserts at it. Shared by all seven single-line
+   * prompts (search/replace-search/replace-with/save-name/goto-line/
+   * execute/read-file) so cursor-aware editing isn't reimplemented
+   * seven times. Returns true when the key was handled — callers fall
+   * through to their own Enter/Escape/mode-specific handling otherwise.
+   */
+  private applyPromptFieldKey(k: EditorKeyInput, get: () => string, set: (v: string) => void): boolean {
+    const text = get();
+    if (k.key === 'ArrowLeft') { this._promptCursor = Math.max(0, this._promptCursor - 1); return true; }
+    if (k.key === 'ArrowRight') { this._promptCursor = Math.min(text.length, this._promptCursor + 1); return true; }
+    if (k.key === 'Home') { this._promptCursor = 0; return true; }
+    if (k.key === 'End') { this._promptCursor = text.length; return true; }
+    if (k.key === 'Delete') {
+      if (this._promptCursor < text.length) set(text.slice(0, this._promptCursor) + text.slice(this._promptCursor + 1));
+      return true;
+    }
+    if (k.key === 'Backspace') {
+      if (this._promptCursor > 0) {
+        set(text.slice(0, this._promptCursor - 1) + text.slice(this._promptCursor));
+        this._promptCursor--;
+      }
+      return true;
+    }
+    if (!k.ctrl && !k.alt && k.key.length === 1) {
+      set(text.slice(0, this._promptCursor) + k.key + text.slice(this._promptCursor));
+      this._promptCursor++;
+      return true;
+    }
+    return false;
+  }
+
+  /** Insert pasted text at the prompt field's cursor (newlines already stripped to the first line by the caller). */
+  private insertIntoPromptField(get: () => string, set: (v: string) => void, insert: string): void {
+    const text = get();
+    set(text.slice(0, this._promptCursor) + insert + text.slice(this._promptCursor));
+    this._promptCursor += insert.length;
+  }
+
+  // ── Save prompt ──────────────────────────────────────────────────
+
+  private applySavePromptKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      const ok = this.fs.writeFile(this.saveFileNameBuffer, this.serialize());
+      const wasExitFlow = this.exitAfterSave;
+      this.exitAfterSave = false;
+      this._mode = 'edit';
+      if (!ok) {
+        this._statusMessage = `[ Error writing ${this.saveFileNameBuffer} ]`;
+        return;
+      }
+      this._modified = false;
+      if (wasExitFlow) {
+        this.finishExit(true);
+        return;
+      }
+      const n = this.linesArr.length;
+      this._statusMessage = `[ Wrote ${n} line${n === 1 ? '' : 's'} ]`;
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this.exitAfterSave = false;
+      this._statusMessage = 'Cancelled';
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.saveFileNameBuffer, (v) => { this.saveFileNameBuffer = v; });
+  }
+
+  // ── Exit-save (Y/N/^C) prompt ───────────────────────────────────
+
+  private applyExitSavePromptKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (!k.ctrl && key === 'y') {
+      // Real nano always chains to "File Name to Write:" here, exactly
+      // like a plain ^O — it never writes directly.
+      this.exitAfterSave = true;
+      this.saveFileNameBuffer = this.filePath;
+      this._promptCursor = this.saveFileNameBuffer.length;
+      this._mode = 'save-prompt';
+      return;
+    }
+    if (!k.ctrl && key === 'n') {
+      this.finishExit(false);
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && key === 'c')) {
+      this._statusMessage = '';
+      this._mode = 'edit';
+    }
+  }
+
+  // ── Go To Line (^_ / M-G) ────────────────────────────────────────
+
+  private applyGotoLineKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      this.performGotoLine(this.gotoLineBuffer);
+      this._mode = 'edit';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.gotoLineBuffer, (v) => { this.gotoLineBuffer = v; });
+  }
+
+  /** Parses real nano's "line[,column]" goto-line syntax (both 1-indexed). Invalid/non-numeric input is a silent no-op. */
+  private performGotoLine(input: string): void {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    const [lineStr, colStr] = trimmed.split(',');
+    const lineNum = parseInt(lineStr, 10);
+    if (!Number.isFinite(lineNum) || lineNum < 1) return;
+    const colNum = colStr !== undefined ? parseInt(colStr, 10) : NaN;
+    this.gotoLineNumbers(lineNum, Number.isFinite(colNum) ? colNum : undefined);
+  }
+
+  /** 1-indexed line[,col], clamped to the buffer — shared by the ^_ prompt and the `+N[,C]` CLI argument. */
+  private gotoLineNumbers(line: number, col?: number): void {
+    const targetLine = Math.min(Math.max(1, line), this.linesArr.length) - 1;
+    this._cursorLine = targetLine;
+    this._cursorCol = col !== undefined && col >= 1 ? this.clampCol(targetLine, col - 1) : 0;
+    this.lastEditKind = null;
+  }
+
+  // ── Help (^G) ────────────────────────────────────────────────────
+
+  private applyHelpKey(k: EditorKeyInput): void {
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'x')) {
+      this._mode = 'edit';
+    }
+  }
+
+  // ── Execute Command (^T) — insert a shell command's output ───────
+
+  private applyExecutePromptKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      const output = this.fs.runShellCommand(this.executeCmdBuffer);
+      this._mode = 'edit';
+      const body = output.endsWith('\n') ? output.slice(0, -1) : output;
+      if (body.length > 0) this.pasteIntoBuffer(body);
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.executeCmdBuffer, (v) => { this.executeCmdBuffer = v; });
+  }
+
+  // ── Read File (^R) — insert a file's content at the cursor ───────
+
+  private applyReadFilePromptKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') {
+      const content = this.fs.readFile(this.readFileBuffer);
+      this._mode = 'edit';
+      if (content === null) {
+        this._statusMessage = `[ Error reading ${this.readFileBuffer}: No such file or directory ]`;
+        return;
+      }
+      const body = content.endsWith('\n') ? content.slice(0, -1) : content;
+      if (body.length > 0) this.pasteIntoBuffer(body);
+      this._statusMessage = '';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.readFileBuffer, (v) => { this.readFileBuffer = v; });
+  }
+
+  // ── Justify (^J) — reflow the current paragraph to JUSTIFY_WIDTH ──
+
+  private justifyParagraph(): void {
+    if (this.line(this._cursorLine).trim() === '') return; // real nano: nothing to justify on a blank line
+    let start = this._cursorLine;
+    while (start > 0 && this.line(start - 1).trim() !== '') start--;
+    let end = this._cursorLine;
+    while (end < this.linesArr.length - 1 && this.line(end + 1).trim() !== '') end++;
+
+    const words = this.linesArr.slice(start, end + 1).join(' ').split(/\s+/).filter((w) => w.length > 0);
+    const wrapped: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      if (cur.length === 0) { cur = w; continue; }
+      if (cur.length + 1 + w.length <= JUSTIFY_WIDTH) cur += ' ' + w;
+      else { wrapped.push(cur); cur = w; }
+    }
+    if (cur.length > 0) wrapped.push(cur);
+    if (wrapped.length === 0) wrapped.push('');
+
+    this.beginDiscreteEdit();
+    this.linesArr.splice(start, end - start + 1, ...wrapped);
+    this._cursorLine = start + wrapped.length - 1;
+    this._cursorCol = wrapped[wrapped.length - 1].length;
+    this._modified = true;
+  }
+
+  // ── Search ───────────────────────────────────────────────────────
+
+  private applySearchKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'r') {
+      this.useRegex = !this.useRegex;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'b') {
+      this.searchDir = this.searchDir === 'forward' ? 'backward' : 'forward';
+      return;
+    }
+    if (k.key === 'Enter') {
+      if (this.searchQueryBuffer) {
+        this.lastSearchTerm = this.searchQueryBuffer;
+        this.searchHistoryList.push(this.searchQueryBuffer);
+        this.performSearch(this.searchQueryBuffer);
+      }
+      this._mode = 'edit';
+      this.historyNavIndex = null;
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      this.historyNavIndex = null;
+      return;
+    }
+    if (k.key === 'ArrowUp') {
+      if (this.historyNavIndex === null) {
+        if (this.searchHistoryList.length === 0) return;
+        this.historyNavStash = this.searchQueryBuffer;
+        this.historyNavIndex = this.searchHistoryList.length - 1;
+      } else if (this.historyNavIndex > 0) {
+        this.historyNavIndex--;
+      }
+      this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
+      this._promptCursor = this.searchQueryBuffer.length;
+      return;
+    }
+    if (k.key === 'ArrowDown') {
+      if (this.historyNavIndex === null) return;
+      if (this.historyNavIndex < this.searchHistoryList.length - 1) {
+        this.historyNavIndex++;
+        this.searchQueryBuffer = this.searchHistoryList[this.historyNavIndex];
+      } else {
+        this.historyNavIndex = null;
+        this.searchQueryBuffer = this.historyNavStash;
+      }
+      this._promptCursor = this.searchQueryBuffer.length;
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.searchQueryBuffer, (v) => { this.searchQueryBuffer = v; });
+  }
+
+  private buildSearchRegex(query: string): RegExp {
+    // Real nano's search is case-insensitive by default (M-C toggles it).
+    return new RegExp(this.useRegex ? query : escapeRegExp(query), this.caseSensitive ? '' : 'i');
+  }
+
+  private setCursorFromFlatOffset(idx: number): void {
+    const before = this.content.slice(0, idx).split('\n');
+    this._cursorLine = before.length - 1;
+    this._cursorCol = before[before.length - 1].length;
+  }
+
+  private performSearch(query: string): void {
+    const flatOffset = this.linesArr.slice(0, this._cursorLine).join('\n').length
+      + (this._cursorLine > 0 ? 1 : 0) + this._cursorCol;
+    const text = this.content;
+    const re = this.buildSearchRegex(query);
+
+    if (this.searchDir === 'backward') {
+      const globalRe = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+      const before = [...text.slice(0, flatOffset).matchAll(globalRe)];
+      let idx: number;
+      let wrapped = false;
+      if (before.length > 0) {
+        idx = before[before.length - 1].index!;
+      } else {
+        const all = [...text.matchAll(globalRe)];
+        if (all.length === 0) {
+          this._statusMessage = `[ "${query}" not found ]`;
+          return;
+        }
+        idx = all[all.length - 1].index!;
+        wrapped = true;
+      }
+      this.setCursorFromFlatOffset(idx);
+      this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
+      return;
+    }
+
+    let m = text.slice(flatOffset + 1).match(re);
+    let idx = m && m.index !== undefined ? flatOffset + 1 + m.index : -1;
+    let wrapped = false;
+    if (idx < 0) {
+      m = text.match(re);
+      idx = m && m.index !== undefined ? m.index : -1;
+      wrapped = true;
+    }
+    if (idx < 0) {
+      this._statusMessage = `[ "${query}" not found ]`;
+      return;
+    }
+    this.setCursorFromFlatOffset(idx);
+    this._statusMessage = wrapped ? '[ Search Wrapped ]' : '';
+  }
+
+  // ── Replace (Ctrl+\) ────────────────────────────────────────────
+
+  private applyReplaceSearchKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'r') {
+      this.useRegex = !this.useRegex;
+      return;
+    }
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
+      return;
+    }
+    if (k.key === 'Enter') {
+      if (!this.replaceSearchBuffer) { this._mode = 'edit'; return; }
+      this.lastSearchTerm = this.replaceSearchBuffer;
+      this.replaceWithBuffer = '';
+      this._promptCursor = 0;
+      this._mode = 'replace-with';
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.replaceSearchBuffer, (v) => { this.replaceSearchBuffer = v; });
+  }
+
+  private applyReplaceWithKey(k: EditorKeyInput): void {
+    if (k.alt && k.key.toLowerCase() === 'c') {
+      this.caseSensitive = !this.caseSensitive;
+      return;
+    }
+    if (k.key === 'Enter') {
+      this.startReplace();
+      return;
+    }
+    if (k.key === 'Escape' || (k.ctrl && k.key.toLowerCase() === 'c')) {
+      this._mode = 'edit';
+      return;
+    }
+    this.applyPromptFieldKey(k, () => this.replaceWithBuffer, (v) => { this.replaceWithBuffer = v; });
+  }
+
+  private startReplace(): void {
+    const regex = this.buildSearchRegex(this.lastSearchTerm);
+    this.replaceState = { regex, replacement: this.replaceWithBuffer, currentLine: 0, currentCol: 0, totalReplaced: 0 };
+    if (!this.advanceReplaceMatch()) this.finishReplace();
+  }
+
+  private advanceReplaceMatch(): boolean {
+    const st = this.replaceState;
+    if (!st) return false;
+    while (st.currentLine < this.linesArr.length) {
+      const m = execFrom(this.linesArr[st.currentLine], st.regex, st.currentCol);
+      if (m) {
+        this._pendingReplaceMatch = { line: st.currentLine, start: m.index, end: m.index + m[0].length, matchText: m[0] };
+        this._mode = 'replace-confirm';
+        return true;
+      }
+      st.currentLine++;
+      st.currentCol = 0;
+    }
+    return false;
+  }
+
+  private applyPendingReplaceMatch(): void {
+    const st = this.replaceState!;
+    const pm = this._pendingReplaceMatch!;
+    const line = this.linesArr[pm.line];
+    // Real nano's replacement text is always literal — it does not support
+    // \1-style backreferences even when the search side is a regex.
+    this.linesArr[pm.line] = line.slice(0, pm.start) + st.replacement + line.slice(pm.end);
+    st.totalReplaced++;
+    this._modified = true;
+    st.currentCol = pm.start + st.replacement.length;
+  }
+
+  private applyReplaceConfirmKey(k: EditorKeyInput): void {
+    const key = k.key.toLowerCase();
+    if (k.key === 'Escape' || (k.ctrl && key === 'c')) { this.finishReplace(); return; }
+    if (key === 'y') {
+      this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      if (!this.advanceReplaceMatch()) this.finishReplace();
+      return;
+    }
+    if (key === 'n') {
+      const st = this.replaceState!;
+      const pm = this._pendingReplaceMatch!;
+      st.currentCol = pm.end;
+      this._pendingReplaceMatch = null;
+      if (!this.advanceReplaceMatch()) this.finishReplace();
+      return;
+    }
+    if (key === 'a') {
+      this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      while (this.advanceReplaceMatch()) this.applyPendingReplaceMatch();
+      this._pendingReplaceMatch = null;
+      this.finishReplace();
+      return;
+    }
+  }
+
+  private finishReplace(): void {
+    const st = this.replaceState;
+    this._mode = 'edit';
+    this._pendingReplaceMatch = null;
+    this.replaceState = null;
+    if (st) {
+      this._statusMessage = `Replaced ${st.totalReplaced} occurrence${st.totalReplaced === 1 ? '' : 's'}`;
+    }
+  }
+
+  // ── Exit bookkeeping ─────────────────────────────────────────────
+
+  private finishExit(saved: boolean): void {
+    this._exited = true;
+    this._savedOnExit = saved;
+    if (this.lockPath !== '') this.fs.deleteFile(this.lockPath);
+  }
+}

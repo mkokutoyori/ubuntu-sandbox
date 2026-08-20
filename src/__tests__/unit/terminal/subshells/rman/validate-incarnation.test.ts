@@ -88,7 +88,7 @@ describe('VALIDATE command', () => {
     s.connect();
     const r = s.processLine('VALIDATE BACKUPSET 999');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_06004');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06004');
   });
 });
 

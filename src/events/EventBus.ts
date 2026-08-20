@@ -85,7 +85,12 @@ export class EventBus implements IEventBus {
   ): Unsubscribe {
     const wrapped: Handler<DomainEvent> = (event) => {
       const typed = event as EventOf<T>;
-      if (predicate(typed.payload)) {
+      // EventOf<T>['payload'] is a deferred conditional type — inside this
+      // generic method it doesn't reliably match predicate's own reference
+      // to the same type. Narrow through unknown to predicate's actual
+      // parameter type.
+      const payload = typed.payload as unknown as Parameters<typeof predicate>[0];
+      if (predicate(payload)) {
         (handler as unknown as Handler<DomainEvent>)(event);
       }
     };
@@ -155,10 +160,30 @@ export class EventBus implements IEventBus {
   }
 }
 
+/**
+ * Machine-internal bus (refactor-frame-only.md): subscriptions are local to
+ * one machine; every published event is forwarded one-way to the upstream
+ * observer bus (Logger/UI/tests). No other machine can subscribe here.
+ */
+export class ForwardingEventBus extends EventBus {
+  constructor(private readonly upstream: IEventBus) {
+    super();
+    this.installTap();
+  }
+
+  private installTap(): void {
+    super.subscribeAll((event) => this.upstream.publish(event));
+  }
+
+  override clear(): void {
+    super.clear();
+    this.installTap();
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
-// Default singleton (used as fallback when no bus is injected).
-// Production code is encouraged to inject an explicit bus; tests should
-// always create their own to remain isolated.
+// Default singleton — the OBSERVER bus (Logger/UI/tests). Machine code must
+// not subscribe here; a machine only reads its own internal bus.
 // ──────────────────────────────────────────────────────────────────────────
 
 let defaultBusInstance: EventBus | null = null;

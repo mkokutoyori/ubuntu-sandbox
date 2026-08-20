@@ -23,7 +23,7 @@ describe('Windows cmd.exe shell session isolation', () => {
     __setDefaultEventBus(bus);
     EquipmentRegistry.getInstance().setEventBus(bus);
     manager = new TerminalManager(bus);
-    pc = new WindowsPC('PC1', 0, 0);
+    pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.setEventBus(bus);
   });
 

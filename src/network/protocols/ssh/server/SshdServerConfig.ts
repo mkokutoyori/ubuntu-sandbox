@@ -121,6 +121,9 @@ export interface SshdServerConfigSnapshot {
   readonly macs: readonly string[];
   readonly kexAlgorithms: readonly string[];
   readonly hostKeyAlgorithms: readonly string[];
+  readonly forceCommand: string | null;
+  readonly chrootDirectory: string | null;
+  readonly permitOpen: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 }
 
@@ -161,6 +164,50 @@ const YES_NO = (v: string | undefined, fallback: boolean): boolean => {
 function globMatch(pattern: string, value: string): boolean {
   const reSrc = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
   return new RegExp(reSrc).test(value);
+}
+
+function ipv4ToUint32(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  let acc = 0;
+  for (const p of parts) {
+    const n = Number.parseInt(p, 10);
+    if (!Number.isFinite(n) || n < 0 || n > 255 || String(n) !== p) return null;
+    acc = ((acc << 8) | n) >>> 0;
+  }
+  return acc;
+}
+
+function singleAddressMatches(pattern: string, ip: string): boolean {
+  if (pattern === '*' || pattern === 'any') return true;
+  if (pattern === ip) return true;
+  if (pattern.includes('/')) {
+    const [base, bitsStr] = pattern.split('/');
+    const bits = Number.parseInt(bitsStr, 10);
+    const a = ipv4ToUint32(base);
+    const b = ipv4ToUint32(ip);
+    if (a === null || b === null || !Number.isFinite(bits) || bits < 0 || bits > 32) return false;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return (a & mask) === (b & mask);
+  }
+  if (pattern.includes('*') || pattern.includes('?')) return globMatch(pattern, ip);
+  return false;
+}
+
+function addressListMatches(patternList: string, ip: string): boolean {
+  const tokens = patternList.split(',').map(s => s.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  let anyPositive = false;
+  let matchedPositive = false;
+  for (const t of tokens) {
+    if (t.startsWith('!')) {
+      if (singleAddressMatches(t.slice(1), ip)) return false;
+    } else {
+      anyPositive = true;
+      if (singleAddressMatches(t, ip)) matchedPositive = true;
+    }
+  }
+  return anyPositive ? matchedPositive : true;
 }
 
 export class SshdServerConfig implements SshdServerConfigSnapshot {
@@ -210,6 +257,9 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
   readonly macs: readonly string[];
   readonly kexAlgorithms: readonly string[];
   readonly hostKeyAlgorithms: readonly string[];
+  readonly forceCommand: string | null;
+  readonly chrootDirectory: string | null;
+  readonly permitOpen: readonly string[];
   readonly matchBlocks: readonly SshdMatchBlock[];
 
   private constructor(s: SshdServerConfigSnapshot) {
@@ -259,6 +309,9 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
     this.macs = s.macs;
     this.kexAlgorithms = s.kexAlgorithms;
     this.hostKeyAlgorithms = s.hostKeyAlgorithms;
+    this.forceCommand = s.forceCommand;
+    this.chrootDirectory = s.chrootDirectory;
+    this.permitOpen = s.permitOpen;
     this.matchBlocks = s.matchBlocks;
   }
 
@@ -310,12 +363,16 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       macs: Object.freeze([...DEFAULT_MACS]),
       kexAlgorithms: Object.freeze([...DEFAULT_KEX]),
       hostKeyAlgorithms: Object.freeze([...DEFAULT_HOSTKEY_ALGOS]),
+      forceCommand: null,
+      chrootDirectory: null,
+      permitOpen: Object.freeze(['any']),
       matchBlocks: Object.freeze([]),
     });
   }
 
   snapshot(): SshdServerConfigSnapshot { return { ...this }; }
-  private mutate(patch: Partial<SshdServerConfigSnapshot>): SshdServerConfig {
+  /** @internal shared by the module-level directive parser. */
+  mutate(patch: Partial<SshdServerConfigSnapshot>): SshdServerConfig {
     return new SshdServerConfig({ ...this.snapshot(), ...patch });
   }
 
@@ -409,7 +466,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
       x11Forwarding: this.x11Forwarding,
       permitEmptyPasswords: this.permitEmptyPasswords,
       banner: this.bannerPath,
-      forceCommand: null,
+      forceCommand: this.forceCommand,
       acceptEnv: this.acceptEnv,
       allowAgentForwarding: this.allowAgentForwarding,
       gatewayPorts: this.gatewayPorts,
@@ -431,7 +488,7 @@ export class SshdServerConfig implements SshdServerConfigSnapshot {
         case 'Group':      if (!(ctx.groups ?? []).some(g => globMatch(c.value, g))) return false; break;
         case 'Host':       if (!ctx.host || !globMatch(c.value, ctx.host)) return false; break;
         case 'Address':
-        case 'LocalAddress': if (!ctx.address || !globMatch(c.value, ctx.address)) return false; break;
+        case 'LocalAddress': if (!ctx.address || !addressListMatches(c.value, ctx.address)) return false; break;
         case 'LocalPort':  if (ctx.localPort === undefined || String(ctx.localPort) !== c.value) return false; break;
       }
     }
@@ -564,6 +621,8 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
     case 'loglevel': return cfg.withLogLevel(value.toUpperCase() as SshdLogLevel);
     case 'syslogfacility': return cfg.withSyslogFacility(value.toUpperCase() as SshdSyslogFacility);
     case 'banner': return cfg.withBannerPath(value === 'none' ? null : value);
+    case 'forcecommand': return cfg.mutate({ forceCommand: value });
+    case 'chrootdirectory': return cfg.mutate({ chrootDirectory: value === 'none' ? null : value });
     case 'motdpath': return cfg.withMotdPath(value);
     case 'allowusers':  return cfg.withAllowUsers(value.split(/\s+/));
     case 'denyusers':   return cfg.withDenyUsers(value.split(/\s+/));
@@ -578,6 +637,7 @@ function applyTopLevelDirective(cfg: SshdServerConfig, key: string, value: strin
       const [name, ...rest] = value.split(/\s+/);
       return cfg.withSubsystem(name, rest.join(' '));
     }
+    case 'permitopen': return cfg.mutate({ permitOpen: Object.freeze(value.split(/\s+/).filter(Boolean)) });
     default: return cfg;
   }
 }

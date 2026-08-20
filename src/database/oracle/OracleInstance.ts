@@ -216,9 +216,13 @@ export class OracleInstance {
     this._archiveLogMode = this.config.archiveLogMode;
     this.initParameters();
     this.initRedoLogs();
-    // Attach the signal refresh actor immediately so observables work
-    // even when no explicit setEventBus/setDeviceId is called.
     this.reattachRefreshActor();
+    this._listener.setLogSink((line) => {
+      this.getBus().publish({
+        topic: 'oracle.listener.connection-logged',
+        payload: { ...this.ref(), line },
+      });
+    });
   }
 
   /** Inject (or replace) the bus this instance publishes to. */
@@ -904,6 +908,10 @@ export class OracleInstance {
     p.set('db_unique_name', this.config.sid);
     p.set('instance_name', this.config.sid);
     p.set('service_names', this.config.serviceName);
+    // Real Oracle always exposes this parameter; RAC membership
+    // (RacClusterRegistry.joinOrCreateCluster) flips it to TRUE and
+    // overrides instance_name to the node's own hostname.
+    p.set('cluster_database', 'FALSE');
 
     // Memory
     p.set('db_block_size', String(this.config.dbBlockSize));
@@ -1080,6 +1088,10 @@ export class OracleInstance {
 
   getAlertLog(): string[] {
     return [...this._alertLog];
+  }
+
+  getListenerLog(): import('./listener/ListenerControl').ListenerConnectionLogEntry[] {
+    return [...this._listener.getConnectionLog()];
   }
 
   // ── Archive log mode ─────────────────────────────────────────────

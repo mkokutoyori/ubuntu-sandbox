@@ -8,6 +8,7 @@
  */
 
 import { Router } from './Router';
+import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP } from './router/ACLEngine';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import type { IRouterShell } from './shells/IRouterShell';
@@ -34,7 +35,11 @@ import { IP_PROTO_PIM, PIM_ALL_ROUTERS_MAC } from '../pim/types';
 import { SyslogAgent } from '../syslog/SyslogAgent';
 import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
-import { UDP_PORT_RADIUS_AUTH } from '../radius/types';
+import { RadiusAccountingClient } from '../radius/RadiusAccountingClient';
+import { CoaListener, type CoaSessionHandler } from '../radius/CoaListener';
+import { CoaClient } from '../radius/CoaClient';
+import { RadiusTcpClient, RadiusTcpServer } from '../radius/RadiusTcpTransport';
+import { UDP_PORT_RADIUS_AUTH, UDP_PORT_RADIUS_ACCT, UDP_PORT_RADIUS_COA } from '../radius/types';
 import { GreAgent } from '../gre/GreAgent';
 import { IP_PROTO_GRE } from '../gre/types';
 import { SnmpAgent } from '../snmp/SnmpAgent';
@@ -45,10 +50,11 @@ import { TacacsServerAgent } from '../tacacs/TacacsServerAgent';
 import { VxlanAgent } from '../vxlan/VxlanAgent';
 import { UDP_PORT_VXLAN } from '../vxlan/types';
 import { TcpStack } from '../tcp/TcpStack';
-import type { EthernetFrame, IPv4Packet, UDPPacket } from '../core/types';
+import type { EthernetFrame, IPv4Packet, UDPPacket, IPAddress } from '../core/types';
 import { IP_PROTO_UDP, IP_PROTO_TCP } from '../core/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 
 export class HuaweiRouter extends Router {
   private readonly lldpAgent: LldpAgent;
@@ -57,10 +63,16 @@ export class HuaweiRouter extends Router {
   private readonly bfdAgent: BfdAgent;
   private readonly igmpAgent: IgmpAgent;
   private readonly pimAgent: PimAgent;
+  private igmpPimUnsubs: Array<() => void> = [];
   private readonly syslogAgent: SyslogAgent;
   private readonly radiusClient: RadiusClientAgent;
   private readonly agents = new AgentRegistry();
   private readonly radiusServer: RadiusServerAgent;
+  private readonly radiusAccountingClient: RadiusAccountingClient;
+  private readonly coaListener: CoaListener;
+  private readonly coaClient: CoaClient;
+  private readonly radiusTcpClient: RadiusTcpClient;
+  private readonly radiusTcpServer: RadiusTcpServer;
   private readonly greAgent: GreAgent;
   private readonly snmpAgent: SnmpAgent;
   private readonly netflowAgent: NetFlowAgent;
@@ -69,6 +81,16 @@ export class HuaweiRouter extends Router {
   private readonly vxlanAgent: VxlanAgent;
   constructor(name: string = 'Router', x: number = 0, y: number = 0) {
     super('router-huawei', name, x, y);
+    // VRP numérote autrement qu'IOS : 2000-2999 « basic », 3000-3999
+    // « advanced ». Sans cette pose, le moteur appliquerait les plages
+    // IOS, où 2000-2699 sont des listes ÉTENDUES.
+    this._setAclNumberingPolicy(VRP_ACL_NUMBERING);
+    // VRP numerote les regles par multiples du pas, en partant du pas (5).
+    this._setAclSequencingPolicy(VRP_SEQUENCING, VRP_DEFAULT_STEP);
+    // Et `traffic-filter` LAISSE PASSER un paquet qu'aucune regle
+    // n'apparie, la ou IOS le refuse. Sans ce reglage, une ACL VRP ne
+    // contenant qu'un `deny` bloquait tout le reste du trafic.
+    this._setAclUnmatchedDataPlaneAction('permit');
     const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
@@ -76,16 +98,39 @@ export class HuaweiRouter extends Router {
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      resolveMac: (ip: string) => this._getArpTableInternal().get(ip)?.mac ?? null,
+      resolveRoute: (ip: string) => this.resolveRouteForHost(ip),
+      sendIpv4FrameArpAware: (p: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(p, ipPkt, nextHopIP),
+      sendArpRequestFor: (iface: string, target: IPAddress) =>
+        this.sendArpRequestFor(iface, target),
+      tcpConnect: (ip: string, port: number, opts: { onOpen?: () => void; onClose?: () => void }) =>
+        this.getTcpStack().connect(ip, port, opts),
     };
     this.lldpAgent = new LldpAgent(hostBase, () => this.getBus());
     this.vrrpAgent = new VrrpAgent(hostBase, () => this.getBus());
     this.ntpAgent = new NtpAgent(hostBase, () => this.getBus());
+    // Un routeur repond a `ntpq` ; un poste sous chronyd non.
+    this.ntpAgent.setModeControlResponder(true);
     this.bfdAgent = new BfdAgent(hostBase, () => this.getBus());
+    this.getBus().subscribe('bfd.session.changed', (e) => {
+      if (e.payload.deviceId !== this.id) return;
+      if (e.payload.newState !== 'down' && e.payload.newState !== 'admin-down') return;
+      this.ospfIntegration.onBfdSessionDown(e.payload.iface, e.payload.neighborIp);
+    });
     this.igmpAgent = new IgmpAgent(hostBase, () => this.getBus());
     this.pimAgent = new PimAgent(hostBase, () => this.getBus());
-    this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus());
+    this.bindIgmpToPim();
+    this.syslogAgent = new SyslogAgent(hostBase, () => this.getBus(),
+      () => this.getRouterScheduler());
     this.radiusClient = new RadiusClientAgent(hostBase, () => this.getBus());
     this.radiusServer = new RadiusServerAgent(hostBase, () => this.getBus());
+    this.radiusAccountingClient = new RadiusAccountingClient(hostBase, () => this.getBus());
+    this.coaListener = new CoaListener(hostBase, () => this.getBus());
+    this.coaListener.setSessionHandler(this.defaultCoaSessionHandler());
+    this.coaClient = new CoaClient(hostBase, () => this.getBus());
+    this.radiusTcpClient = new RadiusTcpClient(hostBase, () => this.getBus(), () => this.tcpv2);
+    this.radiusTcpServer = new RadiusTcpServer(hostBase, () => this.getBus(), () => this.tcpv2);
     this.greAgent = new GreAgent(hostBase, () => this.getBus());
     this.snmpAgent = new SnmpAgent({
       ...hostBase,
@@ -99,10 +144,30 @@ export class HuaweiRouter extends Router {
     this.agents.registerAll(
       this.lldpAgent, this.vrrpAgent, this.ntpAgent, this.bfdAgent,
       this.igmpAgent, this.pimAgent, this.syslogAgent, this.radiusClient,
-      this.radiusServer, this.greAgent, this.snmpAgent, this.netflowAgent,
+      this.radiusServer, this.radiusAccountingClient, this.coaListener, this.coaClient,
+      this.radiusTcpClient, this.radiusTcpServer,
+      this.greAgent, this.snmpAgent, this.netflowAgent,
       this.tacacsClient, this.tacacsServer, this.vxlanAgent,
     );
     this.agents.startAll();
+  }
+
+  /** See CiscoRouter's identical helper — RFC 5176 CoA/Disconnect acting on this NAS's VTY/SSH sessions. */
+  private defaultCoaSessionHandler(): CoaSessionHandler {
+    return {
+      disconnect: (ids) => {
+        if (!ids.username) return { ok: false, errorCause: 'missing-attribute' };
+        const closed = this.getSshSessionRegistry().closeWhere(
+          (s) => s.user === ids.username, 'radius-disconnect',
+        );
+        return closed > 0 ? { ok: true } : { ok: false, errorCause: 'session-context-not-found' };
+      },
+      reauthorize: (ids) => {
+        if (!ids.username) return { ok: false, errorCause: 'missing-attribute' };
+        const hasSession = this.getSshSessionRegistry().list().some((s) => s.user === ids.username && s.state !== 'closed');
+        return hasSession ? { ok: true } : { ok: false, errorCause: 'session-context-not-found' };
+      },
+    };
   }
 
   override setEventBus(bus: IEventBus | null): void {
@@ -111,6 +176,118 @@ export class HuaweiRouter extends Router {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+    this.bindIgmpToPim();
+  }
+
+  /**
+   * IGMP membership → PIM outgoing-interface list. Held as an explicit
+   * subscription pair so a bus swap re-establishes it, like `restartAll`
+   * does for the agents themselves.
+   */
+  private bindIgmpToPim(): void {
+    if (!this.pimAgent) return;
+    for (const u of this.igmpPimUnsubs) u();
+    const bus = this.getBus();
+    this.igmpPimUnsubs = [
+      bus.subscribe('igmp.group.joined', (e) => {
+        if (e.payload.deviceId !== this.id) return;
+        this.pimAgent.joinGroup(e.payload.groupAddress, e.payload.iface);
+      }),
+      bus.subscribe('igmp.group.left', (e) => {
+        if (e.payload.deviceId !== this.id) return;
+        this.pimAgent.leaveGroup(e.payload.groupAddress, e.payload.iface);
+      }),
+    ];
+  }
+
+  private _huaweiDebugService: HuaweiDebugService | null = null;
+
+  /**
+   * Not named `getDebugService` (and not an `override` of `Router`'s
+   * method): `Router.getDebugService()` is typed to return the
+   * Cisco-flavoured `RouterDebugService`, and `HuaweiDebugService` has an
+   * incompatible category type, so overriding it would violate Liskov
+   * substitution. Huawei-side callers look this up by name via a cast
+   * (see HuaweiOspfCommands.ts, HuaweiDisplayCommands.ts, HuaweiVRPShell.ts,
+   * HuaweiTerminalSession.ts).
+   */
+  getHuaweiDebugService(): HuaweiDebugService {
+    if (!this._huaweiDebugService) {
+      this._huaweiDebugService = new HuaweiDebugService();
+      this._huaweiDebugService.setPlatform('router');
+      this._registerDebugSwitchboards(this._huaweiDebugService);
+    }
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    return this._huaweiDebugService;
+  }
+
+  /**
+   * DHCP et IPSec tiennent legitimement leur propre drapeau : ils
+   * s'annoncent au magasin unique plutot que d'etre recopies dedans, ce
+   * qui donne une seule voix a `display debugging` et fait enfin porter
+   * `undo debugging all` sur eux.
+   */
+  private _registerDebugSwitchboards(svc: HuaweiDebugService): void {
+    svc.registerSwitchboard({
+      lignes: () => {
+        const d = this._getDHCPServerInternal().getDebugFlags();
+        const out: string[] = [];
+        if (d.serverPacket) out.push('DHCP server packet debugging is on');
+        if (d.serverEvents) out.push('DHCP server event debugging is on');
+        return out;
+      },
+      eteindre: () => {
+        const dhcp = this._getDHCPServerInternal();
+        dhcp.setDebugServerPacket(false);
+        dhcp.setDebugServerEvents(false);
+      },
+    });
+    svc.registerSwitchboard({
+      lignes: () => {
+        const eng = (this as unknown as {
+          _getIPSecEngineInternal?: () => { isDebugEnabled?: (k: string) => boolean };
+        })._getIPSecEngineInternal?.();
+        if (!eng?.isDebugEnabled) return [];
+        const out: string[] = [];
+        if (eng.isDebugEnabled('isakmp')) out.push('IKE debugging is on');
+        if (eng.isDebugEnabled('ipsec')) out.push('IPSec debugging is on');
+        if (eng.isDebugEnabled('ikev2')) out.push('IKEv2 debugging is on');
+        return out;
+      },
+      eteindre: () => {
+        const eng = (this as unknown as {
+          _getIPSecEngineInternal?: () => { setDebug?: (k: string, on: boolean) => void };
+        })._getIPSecEngineInternal?.();
+        for (const k of ['isakmp', 'ipsec', 'ikev2']) eng?.setDebug?.(k, false);
+      },
+    });
+  }
+
+  /**
+   * A VRP session reads its `debugging` traces from the VRP registry —
+   * the Cisco-flavoured one this device also inherits stays empty.
+   */
+  protected override getVtyDebugSource(): { subscribe(listener: (line: string) => void): () => void } {
+    return this.getHuaweiDebugService();
+  }
+
+  /** VRP announces the incoming telnet login differently from IOS. */
+  protected override getVtyAuthHeader(): string { return 'Login authentication'; }
+
+  /**
+   * VRP's counterpart of IOS's RSA host keys.
+   *
+   * `stelnet server enable` is not enough on its own: without a local key
+   * pair there is nothing for the server to present, and VRP refuses. So
+   * `rsa local-key-pair create` is what actually brings STelnet up and
+   * `rsa local-key-pair destroy` takes it back down — the same fault, and
+   * the same repair, as `crypto key generate`/`zeroize rsa` on the Cisco
+   * side (docs/PRD-Pannes.md §F7.2). `display rsa local-key-pair public`
+   * reads the same store, so the config and the service cannot disagree.
+   */
+  override hasSshHostKeys(): boolean {
+    return this.getKeypairService().list().length > 0;
   }
 
   protected override processIPv4(inPort: string, ipPkt: IPv4Packet): void {
@@ -144,6 +321,22 @@ export class HuaweiRouter extends Router {
       }
       if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_AUTH) {
         this.radiusClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_ACCT) {
+        this.radiusServer.handleAcctUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_ACCT) {
+        this.radiusAccountingClient.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.destinationPort === UDP_PORT_RADIUS_COA) {
+        this.coaListener.handleUdp(inPort, ipPkt.sourceIP, udp);
+        return;
+      }
+      if (udp && udp.type === 'udp' && udp.sourcePort === UDP_PORT_RADIUS_COA) {
+        this.coaClient.handleUdp(inPort, ipPkt.sourceIP, udp);
         return;
       }
       if (udp && udp.type === 'udp'
@@ -202,6 +395,11 @@ export class HuaweiRouter extends Router {
   getSyslogAgent(): SyslogAgent { return this.syslogAgent; }
   getRadiusClient(): RadiusClientAgent { return this.radiusClient; }
   getRadiusServer(): RadiusServerAgent { return this.radiusServer; }
+  getRadiusAccountingClient(): RadiusAccountingClient { return this.radiusAccountingClient; }
+  getCoaListener(): CoaListener { return this.coaListener; }
+  getCoaClient(): CoaClient { return this.coaClient; }
+  getRadiusTcpClient(): RadiusTcpClient { return this.radiusTcpClient; }
+  getRadiusTcpServer(): RadiusTcpServer { return this.radiusTcpServer; }
   getGreAgent(): GreAgent { return this.greAgent; }
   getSnmpAgent(): SnmpAgent { return this.snmpAgent; }
   override getNetFlowAgent(): NetFlowAgent { return this.netflowAgent; }
@@ -253,8 +451,24 @@ export class HuaweiRouter extends Router {
       const header = 'Logging buffer configuration and contents: enabled\nAllowed max buffer size : 1024\nActual buffer size : 1024\nChannel number : 4, Channel name : logbuffer\nDropped messages : 0\nOverwritten messages : 0\nCurrent messages : ' + audit.entries().length + '\n';
       return { output: `${header}${audit.format()}\n`, exitCode: 0 };
     }
+    // Le chemin SSH synchrone ne traverse pas le trie : la commande est
+    // interceptee ici comme ses voisines. Ce n'est PAS un second rendu —
+    // les deux routes appellent le meme `formatDisplayUsers`.
     if (/^display\s+users\s*$/i.test(cmd)) {
       return { output: `${this.getSshSessionRegistry().formatDisplayUsers()}\n`, exitCode: 0 };
+    }
+    if (/^display\s+ssh\s+server\s+session\s*$/i.test(cmd)) {
+      const header = 'Conn   Ver  Idle    User       IP';
+      const sessions = this.getSshSessionRegistry().list();
+      const rows = sessions.length === 0
+        ? [`(none) 2    --      --         --`]
+        : sessions.map((s, i) => {
+          const h = Math.floor(s.idleSeconds / 3600).toString().padStart(2, '0');
+          const m = Math.floor((s.idleSeconds % 3600) / 60).toString().padStart(2, '0');
+          const sec = Math.floor(s.idleSeconds % 60).toString().padStart(2, '0');
+          return `${(i + 1).toString().padEnd(6)} 2    ${h}:${m}:${sec}  ${s.user.padEnd(10)} ${s.fromIp}`;
+        });
+      return { output: `${[header, ...rows].join('\n')}\n`, exitCode: 0 };
     }
     if (/^display\s+local-user\s*$/i.test(cmd)) {
       const users = this._listLocalUsers();
@@ -292,7 +506,7 @@ export class HuaweiRouter extends Router {
     // were captured by the shell hooks.
     const dispMatch = /^display\s+current-configuration(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
     if (dispMatch) {
-      const base = displayCurrentConfig(this, false, false, new Set());
+      const base = displayCurrentConfig(this, false, false);
       const lines = base.split('\n');
       for (const u of this._listLocalUsers()) {
         lines.push(`local-user ${u.name} password cipher ${u.secret}`);
@@ -305,11 +519,12 @@ export class HuaweiRouter extends Router {
       // the permitted protocols (not just when 'all' is set), so the
       // grep-style assertions in operations notebooks keep working.
       if (this.sshServerEnabled) lines.push('stelnet server enable');
-      if (this.vtyTransportInput === 'all' || this.vtyTransportInput === 'ssh') {
+      const admis = this._getVtyTransportInput();
+      if (admis === 'all' || admis === 'ssh') {
         lines.push('protocol inbound ssh');
-      } else if (this.vtyTransportInput === 'telnet') {
+      } else if (admis === 'telnet') {
         lines.push('protocol inbound telnet');
-      } else if (this.vtyTransportInput === 'none') {
+      } else {
         lines.push('protocol inbound none');
       }
       const out = lines.join('\n');

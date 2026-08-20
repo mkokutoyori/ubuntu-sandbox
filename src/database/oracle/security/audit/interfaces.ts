@@ -16,7 +16,7 @@ import type { SecurityAnomalyKind } from '../../events';
 
 export type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type ConnectionOutcome = 'SUCCESS' | 'FAILURE' | 'LOGOFF';
-export type AccessAction = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'TRUNCATE' | 'EXPORT';
+export type AccessAction = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'MERGE' | 'TRUNCATE' | 'EXPORT';
 export type SensitivityClass = 'PII' | 'PCI' | 'PHI' | 'FINANCIAL' | 'CREDENTIALS' | 'CUSTOM';
 
 // ── Connection trace ────────────────────────────────────────────────

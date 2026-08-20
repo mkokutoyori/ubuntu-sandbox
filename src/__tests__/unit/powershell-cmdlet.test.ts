@@ -27,7 +27,7 @@ function createPC(name = 'WIN-CMD'): WindowsPC {
 }
 
 function createPS(pc: WindowsPC): PowerShellExecutor {
-  return new PowerShellExecutor(pc);
+  return new PowerShellExecutor(pc as any);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1153,8 +1153,11 @@ describe('9. Get‑NetIPAddress', () => {
   it('-AddressFamily IPv4', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    // An unconfigured adapter has NO IPv4 (the sim no longer invents one):
+    // configure a real address first, then the filter must return it.
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -AddressFamily IPv4');
-    expect(out).toContain('192.');
+    expect(out).toContain('192.168.1.50');
   });
 
   it('-InterfaceAlias filter', async () => {
@@ -1174,8 +1177,11 @@ describe('9. Get‑NetIPAddress', () => {
   it('-PrefixLength filter', async () => {
     const pc = createPC();
     const ps = createPS(pc);
+    // A /24 exists only once an address is actually configured.
+    await ps.execute('New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.50 -PrefixLength 24');
     const out = await ps.execute('Get-NetIPAddress -PrefixLength 24');
-    expect(out).toContain('24');
+    expect(out).toContain('192.168.1.50');
+    expect(out).toContain('PrefixLength      : 24');
   });
 
   it('returns objects with InterfaceAlias, IPAddress, PrefixLength', async () => {

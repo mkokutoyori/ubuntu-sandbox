@@ -23,8 +23,8 @@ describe('EndHost — TcpStack v2', () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cli.setEventBus(bus); srv.setEventBus(bus); sw.setEventBus(bus);
     cli.powerOn(); srv.powerOn();
-    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

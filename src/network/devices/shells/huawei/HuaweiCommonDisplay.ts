@@ -7,6 +7,7 @@
  * entry to these pure functions.
  */
 
+import { pad2 } from '@/lib/format';
 import {
   HuaweiHardwareProfile, S5720_HARDWARE_PROFILE,
   renderHardwareDevice, renderHardwareElabel,
@@ -16,20 +17,40 @@ const WEEKDAYS = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
 ];
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-/** `display clock` — date, weekday, timezone (VRP layout). */
-export function displayClock(now: Date = new Date()): string {
-  const date =
-    `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-  const time =
-    `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+/**
+ * `display clock` — date, jour, fuseau.
+ *
+ * Le fuseau etait ecrit EN DUR (`Time Zone(UTC) : UTC`), si bien qu'un
+ * `clock timezone WAT add 01:00:00` accepte par la machine n'apparaissait
+ * nulle part et que l'heure restait UTC — alors que la meme commande, du
+ * cote Cisco, decalait bien l'affichage (lot N2). Le decalage vient
+ * desormais de la configuration d'horloge, comme chez Cisco.
+ */
+export function displayClock(
+  now: Date = new Date(),
+  fuseau?: { timezone: string; offsetMin: number },
+): string {
+  const decale = fuseau && fuseau.offsetMin
+    ? new Date(now.getTime() + fuseau.offsetMin * 60_000)
+    : now;
+  const d = fuseau ? {
+    an: decale.getUTCFullYear(), mo: decale.getUTCMonth() + 1, j: decale.getUTCDate(),
+    h: decale.getUTCHours(), mi: decale.getUTCMinutes(), s: decale.getUTCSeconds(),
+    jour: decale.getUTCDay(),
+  } : {
+    an: now.getFullYear(), mo: now.getMonth() + 1, j: now.getDate(),
+    h: now.getHours(), mi: now.getMinutes(), s: now.getSeconds(), jour: now.getDay(),
+  };
+  const nom = fuseau?.timezone || 'UTC';
+  const signe = (fuseau?.offsetMin ?? 0) < 0 ? 'minus' : 'add';
+  const abs = Math.abs(fuseau?.offsetMin ?? 0);
+  const decalage = `${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}:00`;
   return [
-    `${date} ${time}`,
-    WEEKDAYS[now.getDay()],
-    'Time Zone(UTC) : UTC',
+    `${d.an}-${pad2(d.mo)}-${pad2(d.j)} ${pad2(d.h)}:${pad2(d.mi)}:${pad2(d.s)}`,
+    WEEKDAYS[d.jour],
+    fuseau && fuseau.offsetMin
+      ? `Time Zone(${nom}) : UTC ${signe} ${decalage}`
+      : `Time Zone(${nom}) : UTC`,
   ].join('\n');
 }
 
@@ -61,14 +82,19 @@ export function displayMemoryUsage(now: Date = new Date()): string {
   ].join('\n');
 }
 
-/** `display users` — active management sessions (console only by default). */
-export function displayUsers(): string {
-  return [
-    '  User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag',
-    '+ 0    CON 0   00:00:00                              pass            no',
-    '',
-    'Wait     : Wait for the user to press ENTER.',
-  ].join('\n');
+/**
+ * `display users` — les sessions de gestion ouvertes.
+ *
+ * Ce texte etait une CONSTANTE : il decrivait toujours une console libre
+ * quel que soit qui etait connecte, et ne lisait aucun registre. Il lit
+ * desormais celui de l'equipement, le meme que le routeur, avec le meme
+ * rendu — deux textes possibles pour une seule question feraient douter
+ * de la machine.
+ */
+export function displayUsers(equipement?: {
+  getSshSessionRegistry?: () => { formatDisplayUsers: () => string };
+} | null): string {
+  return equipement?.getSshSessionRegistry?.().formatDisplayUsers() ?? '';
 }
 
 /** `display device` — chassis/board inventory (single-board S-series/AR). */
@@ -124,13 +150,20 @@ export function displayLogbuffer(now: Date = new Date()): string {
   ].join('\n');
 }
 
-/** `display trapbuffer` — informational trap ring buffer. */
-export function displayTrapbuffer(): string {
+/**
+ * `display trapbuffer`.
+ *
+ * La taille et le canal viennent d'`info-center` quand la machine en a
+ * un : `info-center trapbuffer size <n>` était accepté et cette vue
+ * annonçait toujours 256.
+ */
+export function displayTrapbuffer(vrp?: { size: number; channel: number; channelName: string }): string {
+  const taille = vrp?.size ?? 256;
   return [
     'Trapping buffer configuration and contents: enabled',
-    'Allowed max buffer size : 256',
-    'Actual buffer size : 256',
-    'Channel number : 3 , Channel name : trapbuffer',
+    `Allowed max buffer size : ${taille}`,
+    `Actual buffer size : ${taille}`,
+    `Channel number : ${vrp?.channel ?? 3} , Channel name : ${vrp?.channelName ?? 'trapbuffer'}`,
     'Dropped messages : 0',
     'Current messages : 0',
   ].join('\n');

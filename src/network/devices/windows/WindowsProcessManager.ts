@@ -19,6 +19,12 @@ export interface WindowsProcess {
   pid: number;
   name: string;
   ppid: number;
+  /**
+   * Ligne de commande complète. Par défaut le seul nom de l'image, ce
+   * qu'est bien la ligne de commande d'un processus lancé sans
+   * argument ; les appelants qui en ont une vraie la passent.
+   */
+  commandLine?: string;
   session: ProcessSession;
   sessionId: number;
   owner: string;
@@ -32,6 +38,10 @@ export interface WindowsProcess {
   wsK: number;
   /** CPU time (seconds) */
   cpuSec: number;
+  /** Thread count */
+  threads: number;
+  /** Point-in-time CPU utilization (0-100), independent of cumulative cpuSec */
+  cpuPercent: number;
   /** Status: Running, Not Responding */
   status: 'Running' | 'Not Responding';
   /** Window title (for /V verbose) */
@@ -42,6 +52,32 @@ export interface WindowsProcess {
   systemOwned: boolean;
   /** Service names hosted by this process (for svchost instances) */
   hostedServices: string[];
+  /** Per-simulated-second resource drift — undefined means static (no leak). */
+  leakProfile?: ProcessLeakProfile;
+  /**
+   * Real UAC token-elevation context (PRD-Winlogon.md §2.1 P5), when a
+   * caller knows it: `'full'` — launched under an explicit `runas`
+   * elevation; `'default'` — a session already opened directly as
+   * administrator (no `runas` involved); `'limited'` — an
+   * Administrators-group member running *without* elevating (UAC's
+   * filtered token, %%1938). Undefined when no caller has this context
+   * (most spawns) — `WindowsSecurityAudit.processCreated` then falls
+   * back to its own name-based heuristic, exactly as before this field
+   * existed.
+   */
+  elevation?: 'full' | 'default' | 'limited';
+}
+
+/** Per-second growth rates driving a simulated resource leak (Get-Counter /
+ *  WMI perf-class scenarios). Set via `WindowsProcessManager.setLeakProfile`
+ *  and applied by `advanceTime` as the device's simulated clock moves. */
+export interface ProcessLeakProfile {
+  wsKPerSec: number;
+  handlesPerSec: number;
+  threadsPerSec: number;
+  cpuPercentPerSec: number;
+  /** Ceiling for cpuPercent growth. Defaults to 100. */
+  cpuPercentCap?: number;
 }
 
 const CRITICAL_PROCESSES = new Set([
@@ -56,8 +92,19 @@ export class WindowsProcessManager {
   private bus: IEventBus | null = null;
   private deviceId = '';
 
+  /** The service controller and the device's simulated clock — wired once
+   *  so a killed process that hosted a service is reported as a crash
+   *  (SCM recovery actions), not a graceful `Stop-Service`. */
+  private serviceManager: WindowsServiceManager | null = null;
+  private nowMs: () => number = () => Date.now();
+
   constructor() {
     this.initDefaults();
+  }
+
+  attachServiceManager(mgr: WindowsServiceManager, nowMs: () => number): void {
+    this.serviceManager = mgr;
+    this.nowMs = nowMs;
   }
 
   /**
@@ -70,9 +117,17 @@ export class WindowsProcessManager {
   }
 
   private publishProcess(pid: number, name: string, started: boolean): void {
+    const proc = this.processes.get(pid);
     this.bus?.publish({
       topic: started ? 'windows.process.started' : 'windows.process.stopped',
-      payload: { deviceId: this.deviceId, pid, name, started },
+      payload: {
+        deviceId: this.deviceId, pid, name, started,
+        ppid: proc?.ppid,
+        parentName: proc ? this.processes.get(proc.ppid)?.name : undefined,
+        owner: proc?.owner,
+        commandLine: proc?.commandLine,
+        elevation: proc?.elevation,
+      },
     });
   }
 
@@ -128,6 +183,9 @@ export class WindowsProcessManager {
     this.addProcess(2400, 'LanmanWorkstation.exe', 620, 'Services', 0,
       'NT AUTHORITY\\NetworkService', 280, 8, 4096, 10000, 0.2, 'Running', '', false, true,
       ['LanmanWorkstation']);
+    this.addProcess(1088, 'sshd.exe', 620, 'Services', 0,
+      'NT AUTHORITY\\SYSTEM', 260, 12, 8192, 18000, 0.4, 'Running', 'OpenSSH SSH Server', false, true,
+      ['sshd']);
   }
 
   private addSystem(
@@ -158,7 +216,10 @@ export class WindowsProcessManager {
   ): void {
     this.processes.set(pid, {
       pid, name, ppid, session, sessionId, owner,
-      handles, npmK, pmK, wsK, cpuSec, status, windowTitle,
+      handles, npmK, pmK, wsK, cpuSec,
+      threads: Math.max(1, Math.round(handles / 15)),
+      cpuPercent: Math.min(100, cpuSec * 2),
+      status, windowTitle,
       critical, systemOwned, hostedServices,
     });
     if (pid >= this.nextPid) this.nextPid = pid + 4;
@@ -223,7 +284,7 @@ export class WindowsProcessManager {
   /** Spawn a new process (used by service start, etc.) */
   spawnProcess(name: string, ppid: number, owner: string, opts: {
     session?: ProcessSession; sessionId?: number; hostedServices?: string[];
-    systemOwned?: boolean;
+    systemOwned?: boolean; commandLine?: string; elevation?: 'full' | 'default' | 'limited';
   } = {}): WindowsProcess {
     const pid = this.allocatePid();
     const proc: WindowsProcess = {
@@ -236,11 +297,15 @@ export class WindowsProcessManager {
       pmK:     this.statFor(name, pid, 2, 2048, 8192),
       wsK:     this.statFor(name, pid, 3, 4096, 16384),
       cpuSec: 0,
+      threads: this.statFor(name, pid, 4, 3, 12),
+      cpuPercent: 0,
       status: 'Running',
       windowTitle: '',
       critical: false,
       systemOwned: opts.systemOwned ?? false,
       hostedServices: opts.hostedServices ?? [],
+      commandLine: opts.commandLine ?? name,
+      elevation: opts.elevation,
     };
     this.processes.set(pid, proc);
     this.publishProcess(pid, name, true);
@@ -257,8 +322,11 @@ export class WindowsProcessManager {
     if (proc.systemOwned && !isAdmin) return `ERROR: Access is denied.`;
     if (proc.critical) return `ERROR: The process "${proc.name}" with PID ${pid} is critical and cannot be terminated.`;
 
-    this.processes.delete(pid);
     this.publishProcess(pid, proc.name, false);
+    this.processes.delete(pid);
+    for (const serviceName of proc.hostedServices) {
+      this.serviceManager?.recordCrash(serviceName, this.nowMs());
+    }
     return '';
   }
 
@@ -334,5 +402,36 @@ export class WindowsProcessManager {
    */
   resolveOwner(proc: WindowsProcess, currentUser: string): string {
     return proc.owner === '{USER}' ? `${currentUser}` : proc.owner;
+  }
+
+  /** PID of the process hosting a given service, or 0 if none is running. */
+  getPidForService(serviceName: string): number {
+    for (const p of this.processes.values()) {
+      if (p.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) return p.pid;
+    }
+    return 0;
+  }
+
+  /** Attach (or clear, passing undefined) a resource-drift profile to a process. */
+  setLeakProfile(pid: number, profile: ProcessLeakProfile | undefined): void {
+    const proc = this.processes.get(pid);
+    if (!proc) return;
+    proc.leakProfile = profile;
+  }
+
+  /** Apply every process's leak profile for `deltaMs` of simulated time. */
+  advanceTime(deltaMs: number): void {
+    const deltaSec = deltaMs / 1000;
+    if (deltaSec <= 0) return;
+    for (const proc of this.processes.values()) {
+      const profile = proc.leakProfile;
+      if (!profile) continue;
+      proc.wsK += profile.wsKPerSec * deltaSec;
+      proc.handles = Math.max(0, Math.round(proc.handles + profile.handlesPerSec * deltaSec));
+      proc.threads = Math.max(1, Math.round(proc.threads + profile.threadsPerSec * deltaSec));
+      const cap = profile.cpuPercentCap ?? 100;
+      proc.cpuPercent = Math.min(cap, proc.cpuPercent + profile.cpuPercentPerSec * deltaSec);
+      proc.cpuSec += (proc.cpuPercent / 100) * deltaSec;
+    }
   }
 }

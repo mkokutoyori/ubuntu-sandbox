@@ -1,0 +1,99 @@
+import type { RuleAction } from '../../model/SecurityRule';
+import type { ZoneType } from '../../model/SecurityZone';
+import type { FirewallProfile } from '../../FirewallProfile';
+
+export const FORTIOS_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind',
+  'switch-bridge',
+  'ingress-zone',
+  'session-lookup',
+  'tcp-state-check',
+  'nat-destination',
+  'policy-route',
+  'route-lookup',
+  'egress-zone',
+  'policy-lookup',
+  'auth-check',
+  'utm-inspect',
+  'nat-source',
+  'session-install',
+]);
+
+export const FORTIOS_TRANSPARENT_PIPELINE: readonly string[] = Object.freeze([
+  'vdom-bind',
+  'switch-bridge',
+  'ingress-zone',
+  'session-lookup',
+  'tcp-state-check',
+  'mac-lookup',
+  'egress-zone',
+  'policy-lookup',
+  'auth-check',
+  'utm-inspect',
+  'session-install',
+]);
+
+export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
+  vendor: 'fortios',
+  displayName: 'Fortinet FortiGate',
+  osName: 'fortios',
+  defaultVersion: '7.4.4',
+
+  pipeline: Object.freeze({
+    nat: FORTIOS_PIPELINE,
+    transparent: FORTIOS_TRANSPARENT_PIPELINE,
+  }),
+  natOrder: Object.freeze({
+    destinationNatBeforePolicy: true,
+    sourceNatBeforePolicy: false,
+    policySeesPreNatSource: true,
+    policySeesPreNatDestination: false,
+    policySeesPostNatZone: true,
+  }),
+  applicationShift: false,
+  selfTrafficHandling: 'local-in-policy',
+
+  policyKeyedBy: 'interface',
+  implicitPolicy: 'deny-all',
+  implicitRuleEditable: false,
+  supportedActions: Object.freeze<RuleAction[]>(['allow', 'deny']),
+  supportsNegation: true,
+  natIsPolicyField: true,
+
+  zoneModel: 'both',
+  defaultIntraZoneAction: 'deny',
+  zoneTypes: Object.freeze<ZoneType[]>(['layer3', 'layer2']),
+
+  objectsMandatoryInPolicy: true,
+  maxGroupNesting: 10,
+
+  timeouts: Object.freeze({
+    tcpEstablished: 3600,
+    tcpHandshake: 30,
+    tcpTimeWait: 120,
+    udp: 180,
+    icmp: 60,
+    other: 180,
+  }),
+  tcpSynCheckDefault: true,
+
+  deploymentScope: 'device',
+  configurationModel: 'immediate',
+  virtualizationName: 'vdom',
+
+  portPrefix: 'port',
+  portCount: 8,
+  portFirstIndex: 1,
+
+  syslogCatalog: Object.freeze({
+    'session-built': Object.freeze({ id: '0000000013', severity: 'notifications' as const }),
+    'session-torn-down': Object.freeze({ id: '0000000014', severity: 'notifications' as const }),
+    'policy-deny': Object.freeze({ id: '0000000015', severity: 'warnings' as const }),
+  }),
+
+  unimplemented: Object.freeze([
+    'config vpn ipsec',
+    'diagnose debug flow',
+    'execute backup',
+  ]),
+});

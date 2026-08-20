@@ -13,6 +13,17 @@
 import type { Router } from '../../Router';
 import type { HuaweiShellContext } from './HuaweiConfigCommands';
 import type { CommandTrie } from '../CommandTrie';
+import { huaweiDisplayInterfaceName } from '../cli-utils';
+
+/** Reserved DHCPServer pool name backing an interface in `dhcp select interface` mode. */
+export function interfacePoolName(ifName: string): string {
+  return `__if:${ifName}`;
+}
+
+/** True for the synthetic per-interface pools above — excluded from `ip pool`/`display ip pool` listings. */
+export function isInterfacePoolName(name: string): boolean {
+  return name.startsWith('__if:');
+}
 
 // ─── Callbacks for shell-owned state ────────────────────────────────
 
@@ -78,9 +89,18 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
     if (!entry) { entry = {}; ext.set(ifName, entry); }
     return entry;
   };
+  /** The real backing pool for this interface, if `dhcp select interface` has been issued. */
+  const ifPool = (): string | null => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return null;
+    const name = interfacePoolName(ifName);
+    return ctx.r()._getDHCPServerInternal().getPool(name) ? name : null;
+  };
 
   trie.registerGreedy('dhcp server dns-list', 'DNS servers for interface DHCP', (args) => {
     const e = dhcpExtra(); if (e) e.dnsList = [...args];
+    const pool = ifPool();
+    if (pool) ctx.r()._getDHCPServerInternal().configurePoolDNS(pool, [...args]);
     return '';
   });
   trie.registerGreedy('dhcp server lease', 'Set lease (day H hour M minute)', (args) => {
@@ -93,6 +113,8 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
       else if (kw === 'minute' && args[i + 1]) { mins = parseInt(args[++i], 10) || 0; }
     }
     e.leaseSec = days * 86400 + hours * 3600 + mins * 60 || 86400;
+    const pool = ifPool();
+    if (pool) ctx.r()._getDHCPServerInternal().configurePoolLease(pool, e.leaseSec);
     return '';
   });
   trie.registerGreedy('dhcp server excluded-ip-address', 'Exclude IP range', (args) => {
@@ -109,6 +131,11 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
     }
     const e = dhcpExtra();
     if (e && ip && mac) (e.staticBindings ??= []).push({ ip, mac });
+    const pool = ifPool();
+    if (pool && ip && mac) {
+      const result = ctx.r()._getDHCPServerInternal().addStaticBinding(pool, mac, ip);
+      if (!result.ok) return `Error: ${result.error}`;
+    }
     return '';
   });
   trie.register('dhcp relay information enable', 'Enable DHCP relay option-82', () => {
@@ -134,6 +161,8 @@ export function registerDhcpInterfaceCommands(trie: CommandTrie, ctx: HuaweiShel
   });
   trie.registerGreedy('dhcpv6 server', 'Assign DHCPv6 pool to interface', (args) => {
     const e = dhcpExtra(); if (e && args[0]) e.dhcpv6PoolRef = args[0];
+    const ifName = ctx.getSelectedInterface();
+    if (ifName && args[0]) ctx.r().setDhcpv6ServerPool(ifName, args[0]);
     return '';
   });
 }
@@ -148,21 +177,38 @@ export function registerDhcpv6SystemCommands(trie: CommandTrie, ctx: HuaweiShell
     const pools = v6();
     if (!pools.has(args[0])) pools.set(args[0], { name: args[0] });
     (ctx as any)._dhcpv6Selected = args[0];
+    if (!ctx.r()._getDHCPv6ServerInternal().getPool(args[0])) {
+      ctx.r()._getDHCPv6ServerInternal().createPool(args[0]);
+    }
     return '';
   });
   trie.registerGreedy('address prefix', 'DHCPv6 pool address prefix', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) p.prefix = args[0];
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) {
+      const [prefix, lenStr] = args[0].split('/');
+      const len = parseInt(lenStr ?? '', 10);
+      if (prefix && !isNaN(len)) ctx.r()._getDHCPv6ServerInternal().configurePoolPrefix(name, prefix, len);
+    }
     return '';
   });
   trie.registerGreedy('dns-server', 'DHCPv6 DNS server', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) (p.dnsServers ??= []).push(args[0]);
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) {
+      const server = ctx.r()._getDHCPv6ServerInternal();
+      const pool = server.getPool(name);
+      server.configurePoolDns(name, [...(pool?.dnsServers ?? []), args[0]]);
+    }
     return '';
   });
   trie.registerGreedy('dns-domain-name', 'DHCPv6 domain-name', (args) => {
     const p = (v6().get((ctx as any)._dhcpv6Selected));
     if (p && args[0]) p.domainName = args[0];
+    const name = (ctx as any)._dhcpv6Selected as string | undefined;
+    if (name && args[0]) ctx.r()._getDHCPv6ServerInternal().configurePoolDomain(name, args[0]);
     return '';
   });
 }
@@ -273,8 +319,9 @@ export function buildDhcpPoolCommands(trie: CommandTrie, ctx: HuaweiShellContext
       if (a === 'ip-address' && args[i + 1]) { ip = args[++i]; }
       else if (a === 'mac-address' && args[i + 1]) { mac = args[++i]; }
     }
-    if (ip && mac) getRouter()._getDHCPServerInternal().addStaticBinding(ctx.getSelectedPool()!, mac, ip);
-    return '';
+    if (!ip || !mac) return '';
+    const result = getRouter()._getDHCPServerInternal().addStaticBinding(ctx.getSelectedPool()!, mac, ip);
+    return result.ok ? '' : `Error: ${result.error}`;
   });
   trie.registerGreedy('undo static-bind', 'Remove a static binding', (args) => {
     if (!ctx.getSelectedPool()) return '';

@@ -8,6 +8,7 @@
 
 import type {
   LSA, RouterLSA, NetworkLSA, SummaryLSA, ExternalLSA, NSSAExternalLSA,
+  OSPFv3LinkLSA, OSPFv3IntraAreaPrefixLSA, OSPFv3Prefix,
 } from './types';
 
 /**
@@ -102,4 +103,84 @@ export function computeOSPFLSAChecksum(lsa: LSA): number {
 export function verifyOSPFLSAChecksum(lsa: LSA): boolean {
   if (lsa.checksum === 0) return false;
   return lsa.checksum === computeOSPFLSAChecksum(lsa);
+}
+
+// OSPFv3 reuses Fletcher-16 (RFC 5340 §A.4.5 references RFC 2328 Annex C),
+// but with v3-specific LSA headers/bodies. Wire format isn't packed by the
+// simulator — strings are hashed for byte stability, not for on-wire interop.
+
+function strBytes(s: string): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xFF);
+  return out;
+}
+
+function u32(n: number): number[] {
+  return [(n >>> 24) & 0xFF, (n >>> 16) & 0xFF, (n >>> 8) & 0xFF, n & 0xFF];
+}
+
+function u16(n: number): number[] {
+  return [(n >>> 8) & 0xFF, n & 0xFF];
+}
+
+function serializeV3Prefix(p: OSPFv3Prefix): number[] {
+  return [
+    p.prefixLen & 0xFF,
+    p.prefixOptions & 0xFF,
+    ...u16(p.metric & 0xFFFF),
+    ...strBytes(p.prefix),
+  ];
+}
+
+type OSPFv3LSAUnion = OSPFv3LinkLSA | OSPFv3IntraAreaPrefixLSA;
+
+function serializeOSPFv3LSAForChecksum(lsa: OSPFv3LSAUnion): number[] {
+  const bytes: number[] = [];
+  bytes.push(...u16(lsa.lsType & 0xFFFF));
+  bytes.push(...u32(fnv32(lsa.linkStateId)));
+  bytes.push(...u32(fnv32(lsa.advertisingRouter)));
+  bytes.push(...u32(lsa.lsSequenceNumber >>> 0));
+  bytes.push(0, 0);
+  bytes.push(...u16(lsa.length & 0xFFFF));
+
+  if (lsa.lsType === 0x0008) {
+    const l = lsa as OSPFv3LinkLSA;
+    bytes.push(l.priority & 0xFF, 0, 0, l.options & 0xFF);
+    bytes.push(...strBytes(l.linkLocalAddress));
+    bytes.push(...u32(l.prefixes.length));
+    for (const p of l.prefixes) bytes.push(...serializeV3Prefix(p));
+  } else if (lsa.lsType === 0x2009) {
+    const i = lsa as OSPFv3IntraAreaPrefixLSA;
+    bytes.push(...u16(i.numPrefixes & 0xFFFF));
+    bytes.push(...u16(i.referencedLSType & 0xFFFF));
+    bytes.push(...u32(fnv32(i.referencedLSId)));
+    bytes.push(...u32(fnv32(i.referencedAdvRouter)));
+    for (const p of i.prefixes) bytes.push(...serializeV3Prefix(p));
+  }
+  return bytes;
+}
+
+function fnv32(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+export function computeOSPFv3LSAChecksum(lsa: OSPFv3LSAUnion): number {
+  const bytes = serializeOSPFv3LSAForChecksum(lsa);
+  let c0 = 0, c1 = 0;
+  for (const b of bytes) {
+    c0 = (c0 + b) % 255;
+    c1 = (c1 + c0) % 255;
+  }
+  const result = ((c0 & 0xFF) << 8) | (c1 & 0xFF);
+  return result !== 0 ? result : 0xFFFF;
+}
+
+export function verifyOSPFv3LSAChecksum(lsa: OSPFv3LSAUnion): boolean {
+  if (lsa.checksum === 0) return false;
+  return lsa.checksum === computeOSPFv3LSAChecksum(lsa);
 }

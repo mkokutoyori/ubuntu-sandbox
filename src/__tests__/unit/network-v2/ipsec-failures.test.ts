@@ -20,6 +20,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { VirtualTimeScheduler } from "@/events/Scheduler";
 import { resetCounters } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -64,7 +65,11 @@ async function buildBaseTopology() {
   await pc2.executeCommand('sudo ip addr add 192.168.2.10/24 dev eth0');
   await pc2.executeCommand('sudo ip route add default via 192.168.2.1');
 
-  return { r1, r2, pc1, pc2, cableWAN };
+  const clock = new VirtualTimeScheduler();
+  pc1.setScheduler(clock);
+  pc2.setScheduler(clock);
+
+  return { r1, r2, pc1, pc2, cableWAN, clock };
 }
 
 /**
@@ -130,7 +135,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.01 : Pas de proposal IKE commun ───────────────────────────────────
   it('6.01 – should fail IKE negotiation when no common ISAKMP proposal exists', { timeout: 15000 }, async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // R1 : AES-256 + SHA256 + group14
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0',
@@ -141,7 +146,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
       'Secret1', '3des', 'md5', '2');
 
     // Trafic intéressant → déclenche IKE
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // Aucune SA IKE ne doit avoir atteint QM_IDLE
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
@@ -156,13 +161,13 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     expect(ipsecR1).not.toContain('inbound esp sas:');
 
     // Le ping doit échouer (trafic non chiffré ne traverse pas, pas de route alternative)
-    const finalPing = await pc1.executeCommand('ping -c 1 192.168.2.10');
+    const finalPing = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 1 192.168.2.10'));
     expect(finalPing).toContain('100% packet loss');
   });
 
   // ─── 6.02 : Pas de transform-set commun ──────────────────────────────────
   it('6.02 – should fail Phase 2 when no common transform-set exists', { timeout: 15000 }, async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // IKE phase 1 compatible, mais Phase 2 incompatible
     // R1 : ESP AES-256 + SHA256
@@ -173,7 +178,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0',
       'Secret1', 'aes 256', 'sha256', '14', 'ah-sha256-hmac');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // La Phase 1 (IKE SA) peut réussir
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
@@ -186,13 +191,13 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     expect(ipsecR1).not.toContain('outbound esp sas:');
 
     // Trafic ne passe pas
-    const ping = await pc1.executeCommand('ping -c 1 192.168.2.10');
+    const ping = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 1 192.168.2.10'));
     expect(ping).toContain('100% packet loss');
   });
 
   // ─── 6.03 : Clé PSK incorrecte ───────────────────────────────────────────
   it('6.03 – should fail authentication with mismatched pre-shared keys', { timeout: 15000 }, async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // R1 : clé "CorrectKey"
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'CorrectKey');
@@ -200,7 +205,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     // R2 : clé "WrongKey" → échec d'authentification
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'WrongKey');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // L'échange IKE démarre (MM_KEY_EXCH) mais échoue à l'authentification
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
@@ -213,7 +218,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     expect(ipsecR1).not.toContain('inbound esp sas:');
 
     // Ping échoue
-    const ping = await pc1.executeCommand('ping -c 1 192.168.2.10');
+    const ping = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 1 192.168.2.10'));
     expect(ping).toContain('100% packet loss');
   });
 
@@ -221,6 +226,8 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
   it('6.04 – should not create SA when remote peer is unreachable', { timeout: 15000 }, async () => {
     const r1  = new CiscoRouter('R1');
     const pc1 = new LinuxPC('linux-pc', 'PC1');
+    const clock = new VirtualTimeScheduler();
+    pc1.setScheduler(clock);
     new Cable('lan1').connect(pc1.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
 
     // R1 configuré mais sans câble WAN → peer injoignable
@@ -263,7 +270,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     await pc1.executeCommand('sudo ip route add default via 192.168.1.1');
 
     // Trafic intéressant → IKE démarre mais timeout (peer injoignable)
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // Aucune SA établie
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
@@ -275,12 +282,12 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.05 : Déconnexion du câble pendant le trafic ────────────────────────
   it('6.05 – should drop packets when WAN cable is disconnected mid-traffic', { timeout: 20000 }, async () => {
-    const { r1, r2, pc1, pc2, cableWAN } = await buildBaseTopology();
+    const { r1, r2, pc1, pc2, cableWAN, clock } = await buildBaseTopology();
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1');
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
 
     // Tunnel établi et fonctionnel
-    const pingAvant = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingAvant = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
     expect(pingAvant).toContain('3 received');
     expect(pingAvant).toContain('0% packet loss');
 
@@ -292,7 +299,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     cableWAN.disconnect();
 
     // Les paquets doivent être perdus immédiatement
-    const pingPendant = await pc1.executeCommand('ping -c 1 192.168.2.10');
+    const pingPendant = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 1 192.168.2.10'));
     expect(pingPendant).toContain('100% packet loss');
 
     // L'interface est down → les SAs IPSec sont effacées (DPD on-demand)
@@ -306,18 +313,18 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.06 : Reconnexion et re-établissement ───────────────────────────────
   it('6.06 – should re-establish tunnel automatically after WAN cable is reconnected', async () => {
-    const { r1, r2, pc1, pc2, cableWAN } = await buildBaseTopology();
+    const { r1, r2, pc1, pc2, cableWAN, clock } = await buildBaseTopology();
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1');
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
 
     // Tunnel initial
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
     const saInitiale = await r1.executeCommand('show crypto ipsec sa');
     expect(saInitiale).toContain('#pkts encaps: 2');
 
     // Coupure
     cableWAN.disconnect();
-    const pingCoupure = await pc1.executeCommand('ping -c 2 192.168.2.10');
+    const pingCoupure = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
     expect(pingCoupure).toContain('100% packet loss');
 
     // Reconnecter le câble
@@ -325,7 +332,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     newCable.connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/1')!);
 
     // Le premier ping re-déclenche IKE + IPSec
-    const pingRetabli = await pc1.executeCommand('ping -c 3 192.168.2.10');
+    const pingRetabli = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
     expect(pingRetabli).toContain('3 received');
     expect(pingRetabli).toContain('0% packet loss');
 
@@ -337,7 +344,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.07 : ACL trafic intéressant absente ────────────────────────────────
   it('6.07 – should not trigger IKE when no interesting traffic ACL matches', async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // R1 : ACL qui ne matche pas le trafic généré
     await r1.executeCommand('enable');
@@ -368,7 +375,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
     // Le ping de 192.168.1.10 → 192.168.2.10 ne matche pas l'ACL
     // IKE ne doit pas être déclenché
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
     // Aucune SA IKE ne doit exister
@@ -381,7 +388,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.08 : Crypto map non appliquée à l'interface ───────────────────────
   it('6.08 – should not encrypt traffic when crypto map is not applied to interface', async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // R1 : crypto map configurée mais NOT appliquée (applyMap=false)
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1',
@@ -389,7 +396,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
 
-    await pc1.executeCommand('ping -c 2 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
 
     // Sans application de la crypto map, IKE n'est jamais déclenché
     const ikeR1 = await r1.executeCommand('show crypto isakmp sa');
@@ -407,7 +414,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
 
   // ─── 6.09 : Lifetime IPSec expiré → rekey ────────────────────────────────
   it('6.09 – should rekey IPSec SA before it expires (new SPI generated)', async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
 
     // Lifetime IPSec très court pour tester le rekey
     await r1.executeCommand('enable');
@@ -418,7 +425,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1');
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
 
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
 
     // Récupération du SPI initial
     const sa1 = await r1.executeCommand('show crypto ipsec sa');
@@ -434,18 +441,18 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     expect(sa2).toContain('120');  // lifetime configuré
 
     // Le tunnel reste fonctionnel après rekey
-    const pingPost = await pc1.executeCommand('ping -c 2 192.168.2.10');
+    const pingPost = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
     expect(pingPost).toContain('2 received');
   });
 
   // ─── 6.10 : Interface outside shutdown → SA effacée ─────────────────────
   it('6.10 – should clear IPSec SA when crypto map interface goes down', async () => {
-    const { r1, r2, pc1 } = await buildBaseTopology();
+    const { r1, r2, pc1, clock } = await buildBaseTopology();
     await addIPSecConfig(r1, '10.0.12.2', '192.168.1.0', '192.168.2.0', 'Secret1');
     await addIPSecConfig(r2, '10.0.12.1', '192.168.2.0', '192.168.1.0', 'Secret1');
 
     // Tunnel établi
-    await pc1.executeCommand('ping -c 3 192.168.2.10');
+    await clock.advanceUntilSettled(pc1.executeCommand('ping -c 3 192.168.2.10'));
     const saAvant = await r1.executeCommand('show crypto isakmp sa');
     expect(saAvant).toContain('QM_IDLE');
 
@@ -469,7 +476,7 @@ describe('IPSec – Scénarios d\'échec et de récupération', () => {
     expect(ipsecApres).not.toContain('inbound esp sas:');
 
     // Le ping doit échouer
-    const ping = await pc1.executeCommand('ping -c 2 192.168.2.10');
+    const ping = await clock.advanceUntilSettled(pc1.executeCommand('ping -c 2 192.168.2.10'));
     expect(ping).toContain('100% packet loss');
   });
 });

@@ -18,11 +18,24 @@ export interface LacpHost {
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
+  /**
+   * A port joined or left an aggregate. STP knows a bundled port by its
+   * group name, so the change has to reach it — same host-callback shape
+   * DTP and UDLD already use for their own state changes.
+   */
+  onLacpBundleChanged?(portName: string, groupKey: string, bundled: boolean): void;
 }
 
 export class LacpAgent extends ReactiveAgentBase {
   private config: LacpConfig;
   private readonly advertising = new Set<string>();
+  private readonly lacpduSent = new Map<string, number>();
+  private readonly lacpduReceived = new Map<string, number>();
+
+  /** `display lacp statistics` — real per-port LACPDU tx/rx counts. */
+  getStatistics(portName: string): { sent: number; received: number } {
+    return { sent: this.lacpduSent.get(portName) ?? 0, received: this.lacpduReceived.get(portName) ?? 0 };
+  }
 
   constructor(
     private readonly host: LacpHost,
@@ -40,6 +53,18 @@ export class LacpAgent extends ReactiveAgentBase {
     if (priority < 0 || priority > 65535) return;
     this.config.systemPriority = priority;
     this.recompute();
+  }
+
+  /**
+   * `lacp port-priority`. Advertised to the partner, which is the
+   * field's real job; nothing here arbitrates on it, since this engine
+   * bundles every eligible member and has no cap to break ties over.
+   */
+  setPortPriority(portName: string, priority: number): void {
+    const p = this.config.ports.get(portName);
+    if (!p || priority < 0 || priority > 65535) return;
+    p.portPriority = priority;
+    this.advertise(portName);
   }
 
   setFastRate(on: boolean): void {
@@ -66,7 +91,7 @@ export class LacpAgent extends ReactiveAgentBase {
     let p = this.config.ports.get(portName);
     if (!p) {
       p = {
-        portName, groupId, mode,
+        portName, groupId, mode, portPriority: 32768,
         state: 'standalone', partner: null,
         selected: false, bundled: false, lastRxMs: 0,
       };
@@ -124,6 +149,7 @@ export class LacpAgent extends ReactiveAgentBase {
     const p = this.config.ports.get(portName);
     if (!p) return;
     if (p.mode === 'on') return;
+    this.lacpduReceived.set(portName, (this.lacpduReceived.get(portName) ?? 0) + 1);
     p.partner = { ...payload.actor };
     p.lastRxMs = Date.now();
     // A fresh LACPDU revives an expired port (802.3ad receive machine:
@@ -152,7 +178,7 @@ export class LacpAgent extends ReactiveAgentBase {
       systemPriority: this.config.systemPriority,
       systemId: this.config.systemId,
       key: p.groupId,
-      portPriority: 32768,
+      portPriority: p.portPriority,
       portNumber: this.portNumberFor(portName),
       state: buildActorState(p.mode, p),
     };
@@ -174,6 +200,7 @@ export class LacpAgent extends ReactiveAgentBase {
     this.advertising.add(portName);
     try { this.host.sendFrame(portName, eth); }
     finally { this.advertising.delete(portName); }
+    this.lacpduSent.set(portName, (this.lacpduSent.get(portName) ?? 0) + 1);
     this.getBus().publish({
       topic: 'lacp.frame.sent',
       payload: {
@@ -295,7 +322,10 @@ export class LacpAgent extends ReactiveAgentBase {
       const oldState = p.state;
       const oldBundled = p.bundled;
       const port = this.host.getPort(p.portName);
-      const linkUp = !!port && port.getIsUp() && port.isConnected();
+      // « un câble est branché » ne suffit pas : un membre dont le pair
+      // est désactivé ou hors tension ne porte plus rien et doit quitter
+      // l'agrégat (docs/PRD-Link-State.md §6).
+      const linkUp = !!port && port.isOperationallyUp();
       if (!linkUp) {
         p.state = 'standalone'; p.selected = false; p.bundled = false;
       } else if (p.mode === 'on') {
@@ -323,7 +353,7 @@ export class LacpAgent extends ReactiveAgentBase {
 
   private maybeEmitStateChange(
     p: LacpPortInfo, oldState: LacpPortState, oldBundled: boolean,
-    unbundleCause = 'partner-loss',
+    unbundleCause: 'link-down' | 'partner-loss' | 'admin-change' | 'partner-timeout' = 'partner-loss',
   ): void {
     if (oldState !== p.state) {
       this.getBus().publish({
@@ -336,6 +366,9 @@ export class LacpAgent extends ReactiveAgentBase {
       });
       Logger.info(this.host.id, 'lacp:state',
         `${this.host.name}: ${p.portName} ${oldState} → ${p.state}`);
+    }
+    if (oldBundled !== p.bundled) {
+      this.host.onLacpBundleChanged?.(p.portName, `${p.groupId}`, p.bundled);
     }
     if (!oldBundled && p.bundled) {
       this.getBus().publish({

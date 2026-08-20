@@ -37,7 +37,7 @@ describe('CONNECT TARGET — DEF-RMAN-19', () => {
     const s = new RmanSession(new RmanSessionOptionsBuilder().build(), ctxAt('SHUTDOWN'));
     const r = s.processLine('CONNECT TARGET /');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_04014');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_04014');
   });
 
   it('against an OPEN instance, CONNECT succeeds', () => {

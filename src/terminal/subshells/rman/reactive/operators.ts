@@ -7,60 +7,45 @@
 
 import type { RmanObservable, RmanOperator } from './RmanSubject';
 
+/**
+ * Builds an `RmanObservable<U>` from a `subscribe` implementation, wiring
+ * up a `pipe()` that matches `RmanObservable`'s fully-overloaded surface
+ * via the same cast `RmanSubject.asObservable()` uses (a plain rest-arg
+ * `pipe` can never structurally satisfy those overloads on its own).
+ * Shared by every operator below instead of duplicating this boilerplate.
+ */
+function makeObservable<U>(subscribe: (fn: (value: U) => void) => () => void): RmanObservable<U> {
+  const obs = {
+    subscribe,
+    pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
+      let cur: RmanObservable<unknown> = obs as RmanObservable<unknown>;
+      for (const o of ops) cur = o(cur);
+      return cur;
+    },
+  };
+  return obs as RmanObservable<U>;
+}
+
 export const Operators = {
   filter<T>(predicate: (v: T) => boolean): RmanOperator<T, T> {
-    return (source) => ({
-      subscribe(fn) {
-        return source.subscribe(v => { if (predicate(v)) fn(v); });
-      },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
-    });
+    return (source) => makeObservable(fn => source.subscribe(v => { if (predicate(v)) fn(v); }));
   },
 
   map<T, U>(transform: (v: T) => U): RmanOperator<T, U> {
-    return (source) => ({
-      subscribe(fn) { return source.subscribe(v => fn(transform(v))); },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
-    });
+    return (source) => makeObservable(fn => source.subscribe(v => fn(transform(v))));
   },
 
   ofType<T, K extends T>(guard: (v: T) => v is K): RmanOperator<T, K> {
-    return (source) => ({
-      subscribe(fn) {
-        return source.subscribe(v => { if (guard(v)) fn(v); });
-      },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
-    });
+    return (source) => makeObservable(fn => source.subscribe(v => { if (guard(v)) fn(v); }));
   },
 
   distinctUntilChanged<T>(eq: (a: T, b: T) => boolean = (a, b) => a === b): RmanOperator<T, T> {
     return (source) => {
       let last: T | undefined;
       let hasLast = false;
-      return {
-        subscribe(fn) {
-          return source.subscribe(v => {
-            if (!hasLast || !eq(last as T, v)) { last = v; hasLast = true; fn(v); }
-          });
-        },
-        pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
-      };
+      return makeObservable(fn => source.subscribe(v => {
+        if (!hasLast || !eq(last as T, v)) { last = v; hasLast = true; fn(v); }
+      }));
     };
   },
 
@@ -70,53 +55,32 @@ export const Operators = {
    * (cold-style state per subscription).
    */
   scan<T, U>(seed: U, reducer: (acc: U, v: T) => U): RmanOperator<T, U> {
-    return (source) => ({
-      subscribe(fn) {
-        let acc = seed;
-        return source.subscribe(v => { acc = reducer(acc, v); fn(acc); });
-      },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
+    return (source) => makeObservable(fn => {
+      let acc = seed;
+      return source.subscribe(v => { acc = reducer(acc, v); fn(acc); });
     });
   },
 
   /** startWith(seed) — emit `seed` synchronously, then mirror the source. */
   startWith<T>(seed: T): RmanOperator<T, T> {
-    return (source) => ({
-      subscribe(fn) {
-        fn(seed);
-        return source.subscribe(fn);
-      },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
+    return (source) => makeObservable(fn => {
+      fn(seed);
+      return source.subscribe(fn);
     });
   },
 
   /** take(n) — forward the first `n` emissions, then auto-unsubscribe. */
   take<T>(n: number): RmanOperator<T, T> {
-    return (source) => ({
-      subscribe(fn) {
-        let count = 0;
-        let unsub: (() => void) | undefined;
-        unsub = source.subscribe(v => {
-          if (count >= n) return;
-          count++;
-          fn(v);
-          if (count >= n) unsub?.();
-        });
-        return unsub;
-      },
-      pipe(...ops: Array<RmanOperator<unknown, unknown>>) {
-        let cur: RmanObservable<unknown> = this as RmanObservable<unknown>;
-        for (const o of ops) cur = o(cur);
-        return cur;
-      },
+    return (source) => makeObservable(fn => {
+      let count = 0;
+      let unsub: (() => void) | undefined;
+      unsub = source.subscribe(v => {
+        if (count >= n) return;
+        count++;
+        fn(v);
+        if (count >= n) unsub?.();
+      });
+      return unsub;
     });
   },
 };

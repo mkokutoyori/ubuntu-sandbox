@@ -8,7 +8,7 @@ const run = (sql: string) => session.processLine(sql).output.join('\n');
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   session = new SQLPlusSession(db);
   session.login('SYS', '', true);
   run('CREATE TABLE hr.tgt (id NUMBER PRIMARY KEY, val VARCHAR2(10));');

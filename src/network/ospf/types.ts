@@ -17,6 +17,7 @@
  */
 
 import { IPAddress, SubnetMask, IPv6Address } from '../core/types';
+import type { NetworkPdu } from '../core/NetworkPdu';
 
 // ─── OSPF Constants ──────────────────────────────────────────────────
 
@@ -94,6 +95,31 @@ export interface OSPFArea {
 }
 
 export const OSPF_BACKBONE_AREA = '0.0.0.0';
+
+export function normalizeAreaId(areaId: string): string {
+  const raw = areaId?.trim();
+  if (!raw) return areaId;
+
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0 || n > 0xFFFFFFFF) return areaId;
+    return [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+  }
+
+  const octets = raw.split('.');
+  if (octets.length !== 4) return areaId;
+  const values = octets.map((o) => (/^\d{1,3}$/.test(o) ? Number(o) : NaN));
+  if (values.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) return areaId;
+  return values.join('.');
+}
+
+export function areasEqual(a: string, b: string): boolean {
+  return normalizeAreaId(a) === normalizeAreaId(b);
+}
+
+export function isBackboneAreaId(areaId: string): boolean {
+  return normalizeAreaId(areaId) === OSPF_BACKBONE_AREA;
+}
 
 // ─── Neighbor State Machine (RFC 2328 §10.1) ────────────────────────
 
@@ -177,7 +203,17 @@ export type OSPFNetworkType =
   | 'broadcast'
   | 'point-to-point'
   | 'nbma'
-  | 'point-to-multipoint';
+  | 'point-to-multipoint'
+  /**
+   * Le type qu'OSPF donne LUI-MÊME à une interface de bouclage, et qui
+   * manquait ici. Il n'est pas configurable : `ip ospf network` en
+   * choisit un autre, il ne choisit pas celui-ci. Ses conséquences ne
+   * sont pas cosmétiques — une interface de ce type n'élit pas de DR,
+   * n'émet pas de Hello et est annoncée comme HÔTE ISOLÉ en /32, quel
+   * que soit le masque configuré. Sans lui, une loopback était déclarée
+   * `broadcast`, donc DR d'elle-même.
+   */
+  | 'loopback';
 
 export interface OSPFInterface {
   /** Interface name (e.g., GigabitEthernet0/0) */

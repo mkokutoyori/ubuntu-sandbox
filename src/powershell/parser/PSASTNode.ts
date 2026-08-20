@@ -56,6 +56,7 @@ export type PSStatement =
   | PSClassDefinition
   | PSEnumDefinition
   | PSReturnStatement
+  | PSExitStatement
   | PSBreakStatement
   | PSContinueStatement
   | PSThrowStatement
@@ -258,6 +259,12 @@ export interface PSReturnStatement extends ASTBase {
   value: PSExpression | null;
 }
 
+/** `exit [<code>]` — ends the running script and sets $LASTEXITCODE. */
+export interface PSExitStatement extends ASTBase {
+  type: 'ExitStatement';
+  value: PSExpression | null;
+}
+
 export interface PSBreakStatement extends ASTBase {
   type: 'BreakStatement';
   label: string | null;
@@ -408,7 +415,7 @@ export interface PSTypeLiteral extends ASTBase {
 
 // ─── Unary expressions ────────────────────────────────────────────────────────
 
-export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-';
+export type PSUnaryOperator = '-not' | '!' | '-bnot' | '+' | '-' | ',';
 
 export interface PSUnaryExpression extends ASTBase {
   type: 'UnaryExpression';
@@ -558,7 +565,10 @@ export function makeLiteral(value: PSLiteralValue, raw: string, kind: PSLiteralE
 
 export function makeVariable(name: string, pos?: SourcePosition): PSVariableExpression {
   const colonIdx = name.indexOf(':');
-  const scope = colonIdx >= 0 ? name.substring(0, colonIdx) : null;
+  // Scope modifiers are case-insensitive in PowerShell ($Global:x, $GLOBAL:x,
+  // $global:x are the same). Normalize here — the single source of truth —
+  // rather than at every runtime `scope === 'global'` comparison site.
+  const scope = colonIdx >= 0 ? name.substring(0, colonIdx).toLowerCase() : null;
   const varName = colonIdx >= 0 ? name.substring(colonIdx + 1) : name;
   return { type: 'VariableExpression', name, scope, varName, position: pos };
 }

@@ -5,6 +5,7 @@
 import { queryResult } from '../../engine/executor/ResultSet';
 import { oracleVarchar2, oracleNumber } from '../../engine/catalog/DataType';
 import { registerView } from './registry';
+import { ROW_FOOTPRINT_BYTES } from './_fileSize';
 
 registerView({
   name: 'DBA_SEGMENTS',
@@ -29,7 +30,7 @@ registerView({
       ],
       storage.getAllTables().map(t => [
         t.schema, t.name, null, 'TABLE', t.tablespace ?? 'USERS',
-        t.rowCount * 200, Math.ceil(t.rowCount * 200 / 8192), 1,
+        t.rowCount * ROW_FOOTPRINT_BYTES, Math.ceil(t.rowCount * ROW_FOOTPRINT_BYTES / 8192), 1,
         65536, 1048576, 1, 2147483645, 0, 'DEFAULT',
       ])
     );

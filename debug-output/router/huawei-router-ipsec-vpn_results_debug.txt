@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ipsec-vpn
-Generated: 2026-06-12T11:49:24.080Z
+Generated: 2026-08-19T07:03:22.548Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP IKE/IKEv2/IPsec proposal-policy/profile/GRE-IPsec
 Total steps: 279
@@ -14,25 +14,25 @@ Total steps: 279
 [2/279] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/279] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+[3/279] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[4/279] r1 [R1-GE0/0/0] undo shutdown
+[4/279] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/279] r1 [R1-GE0/0/0] quit
+[5/279] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/279] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/279] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/279] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/279] r1 [R1-GE0/0/1] undo shutdown
+[8/279] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/279] r1 [R1-GE0/0/1] quit
+[9/279] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/279] r1 [R1] interface LoopBack0
@@ -389,7 +389,7 @@ Total steps: 279
 
 [110/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -408,7 +408,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map MAP1:
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -427,7 +427,7 @@ Total steps: 279
 
 [111/279] r1 <R1> display ipsec policy brief
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -446,7 +446,7 @@ Total steps: 279
   	}
   	Interfaces using crypto map MAP1:
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -482,10 +482,10 @@ Total steps: 279
 [115/279] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[116/279] r1 [R1-GE0/0/1] ipsec policy MAP1
+[116/279] r1 [R1-GigabitEthernet0/0/1] ipsec policy MAP1
 <empty>
 
-[117/279] r1 [R1-GE0/0/1] quit
+[117/279] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [118/279] r1 [R1] ipsec profile PROF1
@@ -550,7 +550,7 @@ Total steps: 279
 
 [138/279] r1 <R1> display ipsec policy interface GigabitEthernet0/0/1
   Interface GigabitEthernet0/0/1: Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -571,7 +571,7 @@ Total steps: 279
   	Interfaces using crypto map MAP1:
   		GE0/0/1
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -588,25 +588,24 @@ Total steps: 279
   	}
   	Interfaces using crypto map DYN1:
   Crypto Map "PROF1" 0 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
   	DH group: dh-group19
   	Transform sets={
-  		TP1: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map PROF1:
 
 [139/279] r1 <R1> display ipsec profile
   IPsec Profile "PROF1"
-    Transform sets: { : {  } }
+    Transform sets: { TP1: { esp-aes 256 esp-sha256-hmac } }
     Mode: tunnel
 
 [140/279] r1 <R1> display interface Tunnel0/0/0
   Tunnel0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 172.16.0.1/255.255.255.252
+  Internet Address is 172.16.0.1/30
   Tunnel source 10.0.0.1
   Tunnel destination 10.0.0.2
   Tunnel protection IPSec profile PROF1
@@ -701,7 +700,7 @@ Total steps: 279
     Keychain    : KC1
 
 [166/279] r1 <R1> display ikev2 sa
-  Info: No IKEv2 SAs.
+  There are no IKEv2 SAs.
 
 
 --- [167] § crypto reset / debug ---
@@ -721,7 +720,7 @@ Total steps: 279
   Info: IPSec debugging is on.
 
 [172/279] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  Info: 2 debugging switch(es) have been turned off.
 
 [173/279] r1 <R1> display ike error-info
    Info: No IKE error records.
@@ -753,6 +752,8 @@ Total steps: 279
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -768,6 +769,8 @@ Total steps: 279
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
@@ -783,9 +786,8 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
-  #
   acl number 3100
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -848,168 +850,81 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [178/279] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-   ipsec policy MAP1
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   ip address 1.1.1.1 255.255.255.255
-  #
-  interface Tunnel0/0/0
-   ip address 172.16.0.1 255.255.255.252
-   tunnel-protocol ipsec
-   source 10.0.0.1
-   destination 10.0.0.2
-   ipsec profile PROF1
-  #
-  interface Tunnel0/0/1
-   ip address 172.16.0.5 255.255.255.252
-   tunnel-protocol gre
-   source LoopBack0
-   destination 10.0.0.2
-   ipsec profile PROF1
-  #
-  #
-  acl number 3100
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
-  #
-  ike proposal 1
-   encryption-algorithm aes-128
-   authentication-algorithm sha256
-   dh group14
-  #
-  ike proposal 2
-   encryption-algorithm aes-192
-   authentication-algorithm sha256
-   dh group14
-  #
-  ike proposal 3
-   encryption-algorithm aes-256
-   authentication-algorithm sha256
-   dh group14
-  #
-  ike proposal 4
-   encryption-algorithm aes-256
-   authentication-algorithm sha256
-   dh group14
-  #
-  ike peer PEER1
-   remote-address 10.0.0.2
-   pre-shared-key simple MyKey@12345
-  #
-  ike peer PEER2
-   remote-address 10.0.0.6
-   pre-shared-key simple Key2@12345
-  #
-  ipsec proposal TP1
-   transform esp
-   encapsulation-mode tunnel
-   esp encryption-algorithm aes 256
-   esp authentication-algorithm sha256
-  #
-  ipsec proposal TP2
-   transform esp
-   encapsulation-mode tunnel
-   esp encryption-algorithm aes 256
-   esp authentication-algorithm sha256
-  #
-  ipsec proposal TP3
-   transform esp
-   encapsulation-mode tunnel
-   esp encryption-algorithm aes 256
-   esp authentication-algorithm sha256
-  #
-  ipsec policy MAP1 10 isakmp
-   ike-peer PEER1
-   proposal TP1
-  #
-  ipsec policy MAP1 20 isakmp
-   proposal TP2
-  #
-  ipsec policy TPL1 1 isakmp
-   ike-peer PEER1
-   proposal TP1
-  #
-  ipsec policy DYN1 100 isakmp
-  #
-  ipsec policy PROF1 0 isakmp
-   ike-peer PEER1
-   proposal TP1
-  #
-  ipsec profile PROF1
-  #
+  Error: The configuration file doesn't exist.
 
 [179/279] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 5
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 5
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack0                         1.1.1.1/32           DOWN       DOWN
-  Tunnel0/0/0                       172.16.0.1/30        DOWN       DOWN
-  Tunnel0/0/1                       172.16.0.5/30        DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack0                         1.1.1.1/32           up         up(s)
+  Tunnel0/0/0                       172.16.0.1/30        up         up
+  Tunnel0/0/1                       172.16.0.5/30        up         up
 
 [180/279] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack0 current state : UP
-  Line protocol current state : UP
-  Internet Address is 1.1.1.1/255.255.255.255
+  Line protocol current state : UP (spoofing)
+  Internet Address is 1.1.1.1/32
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   Tunnel0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 172.16.0.1/255.255.255.252
+  Internet Address is 172.16.0.1/30
   Tunnel source 10.0.0.1
   Tunnel destination 10.0.0.2
   Tunnel protection IPSec profile PROF1
@@ -1018,7 +933,7 @@ Total steps: 279
   Output: 0 packets, 0 bytes
   Tunnel0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 172.16.0.5/255.255.255.252
+  Internet Address is 172.16.0.5/30
   Tunnel source LoopBack0
   Tunnel destination 10.0.0.2
   Tunnel protection IPSec profile PROF1
@@ -1082,10 +997,12 @@ Total steps: 279
   Info: BGP is not running.
 
 [194/279] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [195/279] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [196/279] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -1093,7 +1010,7 @@ Total steps: 279
 [197/279] r1 <R1> display acl all
   Advanced ACL 3100, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   Total 1 ACL(s)
 
 [198/279] r1 <R1> display dhcp server statistics
@@ -1110,8 +1027,9 @@ Total steps: 279
   Info: No VRRP backup group is configured.
 
 [200/279] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [201/279] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
@@ -1124,7 +1042,7 @@ Total steps: 279
 
 [203/279] r1 <R1> display ipsec policy
   Crypto Map "MAP1" 10 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 3100
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
@@ -1145,7 +1063,7 @@ Total steps: 279
   	Interfaces using crypto map MAP1:
   		GE0/0/1
   Crypto Map "TPL1" 1 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): N
@@ -1162,13 +1080,12 @@ Total steps: 279
   	}
   	Interfaces using crypto map DYN1:
   Crypto Map "PROF1" 0 ipsec-isakmp
-  	Peer = PEER1
+  	Peer = 10.0.0.2
   	Extended IP access list 
   	Security association lifetime: 4608000 kilobytes/3600 seconds
   	PFS (Y/N): Y
   	DH group: dh-group19
   	Transform sets={
-  		TP1: { esp-aes 256 esp-sha256-hmac },
   	}
   	Interfaces using crypto map PROF1:
 
@@ -1232,14 +1149,22 @@ Total steps: 279
 [208/279] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:22.633  Aug 19 2026(EE2FD3BA.A20C49BA)
 
 [209/279] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [210/279] r1 <R1> display clock
-  2026-06-12 11:49:24
-  Friday
+  2026-08-19 07:03:22
+  Wednesday
   Time Zone(UTC) : UTC
 
 [211/279] r1 <R1> display lldp neighbor
@@ -1251,13 +1176,13 @@ Total steps: 279
 [213/279] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:24
+  CPU Usage Stat. Time : 2026-08-19 07:03:22
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [214/279] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:24
+  Memory utilization statistics at 2026-08-19 07:03:22
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1274,8 +1199,7 @@ Total steps: 279
   -------------------------------------------------------------------------------
 
 [216/279] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1293,12 +1217,16 @@ Total steps: 279
 
 [218/279] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [219/279] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1346,20 +1274,20 @@ Total steps: 279
 
 [225/279] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
-  LoopBack0                   down    down      0%    0%       0          0
-  Tunnel0/0/0                 down    down      0%    0%       0          0
-  Tunnel0/0/1                 down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
+  LoopBack0                   up    up           0%     0%          0          0
+  Tunnel0/0/0                 up    up           0%     0%          0          0
+  Tunnel0/0/1                 up    up           0%     0%          0          0
 
 [226/279] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1369,9 +1297,9 @@ Total steps: 279
       Output: 0 packets, 0 bytes
 
 [227/279] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1379,6 +1307,8 @@ Total steps: 279
 [228/279] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1395,6 +1325,8 @@ Total steps: 279
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
@@ -1410,9 +1342,8 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
-  #
   acl number 3100
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1475,9 +1406,23 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [229/279] r1 <R1> display diagnostic-information
@@ -1511,16 +1456,17 @@ Total steps: 279
 
 [234/279] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [235/279] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [236] § regression: pipe filters ---
@@ -1543,6 +1489,8 @@ Total steps: 279
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
@@ -1558,9 +1506,8 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   #
-  #
   acl number 3100
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   #
   ike proposal 1
    encryption-algorithm aes-128
@@ -1623,13 +1570,28 @@ Total steps: 279
   #
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   #
   ipsec profile PROF1
+   proposal TP1
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [238/279] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
@@ -1641,6 +1603,8 @@ Total steps: 279
    shutdown
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
   interface Tunnel0/0/0
    ip address 172.16.0.1 255.255.255.252
    tunnel-protocol ipsec
@@ -1654,7 +1618,7 @@ Total steps: 279
    destination 10.0.0.2
    ipsec profile PROF1
   acl number 3100
-   rule 0 permit source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
+   rule 5 permit ip source 192.168.1.0 0.0.0.255 destination 192.168.2.0 0.0.0.255
   ike proposal 1
    encryption-algorithm aes-128
    authentication-algorithm sha256
@@ -1703,8 +1667,21 @@ Total steps: 279
   ipsec policy DYN1 100 isakmp
   ipsec policy PROF1 0 isakmp
    ike-peer PEER1
-   proposal TP1
   ipsec profile PROF1
+   proposal TP1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
 
 [239/279] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1714,10 +1691,11 @@ Total steps: 279
   172.16.0.4/30       Direct  0    0     D     172.16.0.5      Tunnel0/0/1
 
 [240/279] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  LoopBack0                         1.1.1.1/32           up         up(s)
+  Tunnel0/0/0                       172.16.0.1/30        up         up
+  Tunnel0/0/1                       172.16.0.5/30        up         up
 
 
 --- [241] § regression: view nav + undo ---
@@ -1787,19 +1765,19 @@ Total steps: 279
 [262/279] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[263/279] r1 [Huawei-GE0/0/0] display this
+[263/279] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
 
-[264/279] r1 [Huawei-GE0/0/0] shutdown
+[264/279] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[265/279] r1 [Huawei-GE0/0/0] undo shutdown
+[265/279] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[266/279] r1 [Huawei-GE0/0/0] quit
+[266/279] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [267/279] r1 [Huawei] ospf 1
@@ -1808,7 +1786,7 @@ Total steps: 279
 [268/279] r1 [Huawei-ospf-1] display this
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
   #
 
 [269/279] r1 [Huawei-ospf-1] quit
@@ -1829,47 +1807,60 @@ Total steps: 279
   Enter system view, return user view with return command.
 
 [274/279] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [275/279] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [276/279] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [277/279] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [278/279] r1 [Huawei] return
 <empty>

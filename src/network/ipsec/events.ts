@@ -60,7 +60,7 @@ export interface IpsecChildSaInstalledPayload extends IpsecDeviceRef {
 export interface IpsecChildSaDeletedPayload extends IpsecDeviceRef {
   peerIp: string;
   spiInbound: number;
-  reason: 'lifetime' | 'manual' | 'replaced' | 'shutdown';
+  reason: 'lifetime' | 'manual' | 'replaced' | 'shutdown' | 'dpd';
 }
 
 // ── DPD (Dead Peer Detection) ──────────────────────────────────────────

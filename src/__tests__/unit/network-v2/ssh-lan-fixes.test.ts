@@ -23,6 +23,7 @@ import { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
 import { WindowsUserManager } from '@/network/devices/windows/WindowsUserManager';
 import { WindowsSshServerContext } from '@/network/protocols/ssh/server/WindowsSshServerContext';
 import { SshHostKey } from '@/network/protocols/ssh/SshHostKey';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -40,7 +41,7 @@ describe('SSH analysis-doc remediations', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });

@@ -9,17 +9,102 @@
  */
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
+import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import { classfulMask } from './CiscoConfigCommands';
 import type { RoutingConfigRepository }
   from '../../inspection/config/RoutingConfigRepository';
+import { parseRedistribute, upsertRedistribute }
+  from '../../inspection/config/RoutingConfigRepository';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import type { SpecCollector } from '@/cli/commands/trieAdapter';
+import { collectRegistrations, specsFromTrieRegistrations }
+  from '@/cli/commands/trieAdapter';
 import { showIpProtocols } from './CiscoShowCommands';
+import {
+  showIpEigrpNeighbors, showIpEigrpNeighborsDetail,
+  showIpEigrpTopology, showIpEigrpInterfaces, eigrpProtocolBlock,
+} from './CiscoEigrpShow';
 
 type Proto = 'rip' | 'eigrp' | 'bgp';
 
 function curProto(ctx: CiscoShellContext): { proto: Proto; asn?: number } {
   return ctx.getSelectedRoutingProto() ?? { proto: 'rip' };
+}
+
+/**
+ * `config-router` est un seul arbre pour trois protocoles, et c'est la
+ * source unique qui dit à qui appartient chaque mot-clé. Les
+ * gestionnaires la lisent pour refuser, l'aide la lit pour ne pas
+ * proposer : le refus et la proposition ne peuvent donc pas diverger,
+ * ce qui était exactement le défaut — `router rip` offrait
+ * `neighbor … remote-as`, que la même machine refusait ensuite.
+ *
+ * Un mot-clé absent de la table appartient aux trois.
+ */
+export const ROUTER_MODE_OWNERS: ReadonlyMap<string, readonly Proto[]> = new Map([
+  ['version', ['rip']],
+  ['auto-summary', ['rip', 'eigrp']],
+  ['passive-interface', ['rip', 'eigrp']],
+  ['offset-list', ['rip', 'eigrp']],
+  ['output-delay', ['rip']],
+  ['flash-update-threshold', ['rip']],
+  ['validate-update-source', ['rip']],
+  ['distribute-list', ['rip', 'eigrp']],
+  ['traffic-share', ['eigrp']],
+  ['variance', ['eigrp']],
+  ['metric', ['eigrp']],
+  ['eigrp', ['eigrp']],
+  ['router-id', ['eigrp', 'bgp']],
+  ['bgp', ['bgp']],
+  ['aggregate-address', ['bgp']],
+  ['address-family', ['bgp']],
+  ['exit-address-family', ['bgp']],
+  ['synchronization', ['bgp']],
+] as ReadonlyArray<[string, readonly Proto[]]>);
+
+export function routerKeywordBelongsTo(keyword: string, proto: Proto): boolean {
+  const bare = keyword.toLowerCase().replace(/^no\s+/, '');
+  const owners = ROUTER_MODE_OWNERS.get(bare);
+  return !owners || owners.includes(proto);
+}
+
+/** Refuse au caret un mot-clé qui n'appartient pas au protocole courant. */
+function requireProto(ctx: CiscoShellContext, keyword: string): void {
+  if (!routerKeywordBelongsTo(keyword, curProto(ctx).proto)) throw new CliInvalidInput();
+}
+
+const STUB_OPTIONS = [
+  'connected', 'summary', 'static', 'redistributed', 'receive-only', 'leak-map',
+];
+
+export function toWildcard(mask: string | undefined): string | undefined {
+  if (!mask || mask === 'mask') return undefined;
+  const o = mask.split('.').map(Number);
+  if (o.length !== 4 || o.some((n) => Number.isNaN(n) || n < 0 || n > 255)) {
+    return mask;
+  }
+  const contiguous = /^1*0*$/.test(o.map((n) => n.toString(2).padStart(8, '0')).join(''));
+  if (!contiguous || o[0] === 0) return mask;
+  return o.map((n) => 255 - n).join('.');
+}
+
+/**
+ * A `network` statement names a classful unicast network: multicast,
+ * experimental and loopback addresses can never carry a RIP adjacency.
+ */
+function ripRoutableNetwork(addr: string): boolean {
+  const first = parseInt(addr.split('.')[0], 10);
+  return first > 0 && first < 224 && first !== 127;
+}
+
+function pushOnce(list: string[], value: string): boolean {
+  if (list.includes(value)) return false;
+  list.push(value);
+  return true;
 }
 
 export function buildRoutingProtoConfig(
@@ -33,12 +118,13 @@ export function buildRoutingProtoConfig(
   const converge = () => ctx.r().convergeDynamicRouting();
 
   configTrie.registerGreedy('router eigrp', 'Enter EIGRP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput({ token: a[0] });
     const asn = parseInt(a[0], 10);
-    const named = Number.isNaN(asn);
-    repo.ensureEigrp(named ? 0 : asn, named);
-    eigrpEng().enable({ asn: named ? 0 : asn });
-    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn: named ? 0 : asn });
+    if (asn < 1 || asn > 65535) throw new CliInvalidInput({ token: a[0] });
+    repo.ensureEigrp(asn);
+    eigrpEng().enable({ asn });
+    ctx.setSelectedRoutingProto({ proto: 'eigrp', asn });
     ctx.setMode('config-router');
     converge();
     return '';
@@ -50,10 +136,17 @@ export function buildRoutingProtoConfig(
     return '';
   });
   configTrie.registerGreedy('router bgp', 'Enter BGP configuration', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
-    repo.ensureBgp(parseInt(a[0], 10));
-    bgpEng().enable({ asn: parseInt(a[0], 10) });
-    ctx.setSelectedRoutingProto({ proto: 'bgp', asn: parseInt(a[0], 10) });
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) throw new CliInvalidInput();
+    const asn = parseInt(a[0], 10);
+    if (asn < 1 || asn > 4294967295) return '% Invalid AS number';
+    const existing = repo.getBgp();
+    if (existing && existing.asn !== asn) {
+      return `% Currently a BGP peer to AS ${existing.asn}`;
+    }
+    repo.ensureBgp(asn);
+    bgpEng().enable({ asn });
+    ctx.setSelectedRoutingProto({ proto: 'bgp', asn });
     ctx.setMode('config-router');
     converge();
     return '';
@@ -72,28 +165,28 @@ export function buildRoutingProtoConfig(
   routerTrie.registerGreedy('network', 'Advertise a network', (args) => {
     const { proto } = curProto(ctx);
     if (proto === 'rip') {
-      if (args.length < 1) return '% Incomplete command.';
+      if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
       if (!ctx.r().isRIPEnabled()) return '% RIP is not enabled.';
-      try {
-        const net = new IPAddress(args[0]);
-        const mask = args.length >= 2 && args[1] !== 'mask'
-          ? new SubnetMask(args[1]) : classfulMask(net);
-        ctx.r().ripAdvertiseNetwork(net, mask);
-        repo.rip.networks.push(args.join(' '));
-        return '';
-      } catch (e) {
-        return `% Invalid input: ${e instanceof Error ? e.message : e}`;
+      if (!isValidIPv4(args[0]) || !ripRoutableNetwork(args[0])) {
+        return CISCO_ERRORS.INVALID_INPUT;
       }
+      const net = new IPAddress(args[0]);
+      const mask = classfulMask(net);
+      const classful = net.networkAddress(mask);
+      ctx.r().ripAdvertiseNetwork(classful, mask);
+      pushOnce(repo.rip.networks, classful.toString());
+      return '';
     }
-    if (args.length < 1) return '% Incomplete command.';
-    if (!isValidIPv4(args[0])) return "% Invalid input detected at '^' marker.";
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
     if (proto === 'eigrp') {
-      eigrp().networks.push(args.join(' '));
-      eigrpEng().getConfig().networks.push({
-        network: args[0], wildcard: args[1] && args[1] !== 'mask' ? args[1] : undefined,
-      });
+      const wildcard = toWildcard(args[1]);
+      if (pushOnce(eigrp().networks, [args[0], wildcard].filter(Boolean).join(' '))) {
+        eigrpEng().getConfig().networks.push({ network: args[0], wildcard });
+      }
     } else {
-      bgp()?.networks.push(args.join(' '));
+      const proc = bgp();
+      if (proc && !pushOnce(proc.networks, args.join(' '))) return '';
       const mask = args[1] === 'mask' && args[2]
         ? args[2] : String(classfulMask(new IPAddress(args[0])));
       bgpEng().getConfig().networks.push({ network: args[0], mask });
@@ -102,11 +195,44 @@ export function buildRoutingProtoConfig(
     return '';
   });
 
+  routerTrie.registerGreedy('no network', 'Stop advertising a network', (args) => {
+    const { proto } = curProto(ctx);
+    if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
+    if (proto === 'rip') {
+      const net = new IPAddress(args[0]);
+      const classful = net.networkAddress(classfulMask(net)).toString();
+      ctx.r().ripWithdrawNetwork(new IPAddress(classful));
+      repo.rip.networks = repo.rip.networks.filter((n) => n !== classful);
+      return '';
+    }
+    if (proto === 'eigrp') {
+      const p = eigrp();
+      p.networks = p.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+      const ec = eigrpEng().getConfig();
+      ec.networks = ec.networks.filter((n) => n.network !== args[0]);
+      converge();
+      return '';
+    }
+    const proc = bgp();
+    if (proc) proc.networks = proc.networks.filter((n) => n.split(/\s+/)[0] !== args[0]);
+    return '';
+  });
+
   routerTrie.register('version 2', 'Use RIPv2', () => {
-    repo.rip.version = 2; return '';
+    repo.rip.version = 2;
+    ctx.r()._setRipVersion(2);
+    return '';
   });
   routerTrie.register('version 1', 'Use RIPv1', () => {
-    repo.rip.version = 1; return '';
+    repo.rip.version = 1;
+    ctx.r()._setRipVersion(1);
+    return '';
+  });
+  routerTrie.register('no version', 'Restore default version control', () => {
+    repo.rip.version = null;
+    ctx.r()._setRipVersion(1);
+    return '';
   });
 
   routerTrie.register('no router rip', 'Disable RIP', () => {
@@ -135,34 +261,42 @@ export function buildRoutingProtoConfig(
       if (passive) { repo.rip.passive.add(ifName); ctx.r().ripSetPassiveInterface(ifName); }
       else { repo.rip.passive.delete(ifName); ctx.r().ripRemovePassiveInterface(ifName); }
     } else if (p === 'eigrp') {
-      if (passive) { eigrp().passive.add(ifName); eigrpEng().getConfig().passive.add(ifName); }
-      else { eigrp().passive.delete(ifName); eigrpEng().getConfig().passive.delete(ifName); }
+      if (passive) {
+        eigrp().passive.add(ifName);
+        eigrpEng().getConfig().passive.add(ifName);
+        eigrpEng().onInterfacePassive(ifName);
+      } else {
+        eigrp().passive.delete(ifName);
+        eigrpEng().getConfig().passive.delete(ifName);
+      }
       converge();
     }
   };
   routerTrie.registerGreedy('passive-interface', 'Suppress updates', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = true;
+      else if (p === 'eigrp') eigrp().passiveDefault = true;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
       return '';
     }
     const ifName = ctx.resolveInterfaceName(a.join(' '));
-    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    if (!ifName) return '%Invalid interface type and number';
     setPassive(p, ifName, true);
     return '';
   });
   routerTrie.registerGreedy('no passive-interface', 'Allow updates', (a) => {
-    if (a.length < 1) return '% Incomplete command.';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
       if (p === 'rip') repo.rip.passiveDefault = false;
+      else if (p === 'eigrp') eigrp().passiveDefault = false;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, false);
       return '';
     }
     const ifName = ctx.resolveInterfaceName(a.join(' '));
-    if (!ifName) return `% Invalid interface "${a.join(' ')}"`;
+    if (!ifName) return '%Invalid interface type and number';
     setPassive(p, ifName, false);
     return '';
   });
@@ -170,30 +304,33 @@ export function buildRoutingProtoConfig(
   const parseRipRedistSource = (token: string | undefined) =>
     RIP_REDIST_SOURCES.find((s) => s === (token ?? '').toLowerCase());
   const REDIST_PROTOCOLS = ['connected', 'static', 'rip', 'ospf', 'eigrp', 'bgp', 'isis'];
-  routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a, raw) => {
-    if (!a[0]) return '% Incomplete command.';
-    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return "% Invalid input detected at '^' marker.";
-    const line = raw ?? `redistribute ${a.join(' ')}`;
+  routerTrie.registerGreedy('redistribute', 'Redistribute routes', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    if (!REDIST_PROTOCOLS.includes(a[0].toLowerCase())) return CISCO_ERRORS.INVALID_INPUT;
+    const parsed = parseRedistribute(a);
+    if (!parsed) throw new CliInvalidInput();
     const p = curProto(ctx).proto;
     if (p === 'rip') {
       const source = parseRipRedistSource(a[0]);
-      if (!source) return "% Invalid input detected at '^' marker.";
-      let metric: number | undefined;
-      const mIdx = a.findIndex((t) => t.toLowerCase() === 'metric');
-      if (mIdx >= 0 && a[mIdx + 1] !== undefined) {
-        const m = parseInt(a[mIdx + 1], 10);
-        if (!Number.isNaN(m)) metric = m;
-      }
-      ctx.r().ripSetRedistribution(source, metric);
-      repo.rip.redistribute.push(line);
+      if (!source) return CISCO_ERRORS.INVALID_INPUT;
+      ctx.r().ripSetRedistribution(source, parsed.metric?.[0]);
+      upsertRedistribute(repo.rip.redistribute, parsed);
     } else if (p === 'eigrp') {
-      eigrp().redistribute.push(line);
+      upsertRedistribute(eigrp().redistribute, parsed);
       const source = parseRipRedistSource(a[0]) ?? (a[0]?.toLowerCase() === 'rip' ? 'rip' : undefined);
       if (source && source !== 'eigrp') {
         eigrpEng().setRedistribution(source as 'static' | 'connected' | 'rip' | 'ospf' | 'bgp');
         converge();
       }
-    } else bgp()?.redistribute.push(line);
+      if (!parsed.metric && eigrp().defaultMetric === undefined
+        && a[0].toLowerCase() !== 'connected') {
+        return '% Warning: Redistributing without default metric — '
+          + 'routes will not be advertised until a metric is set';
+      }
+    } else {
+      const proc = bgp();
+      if (proc) upsertRedistribute(proc.redistribute, parsed);
+    }
     return '';
   });
   routerTrie.registerGreedy('no redistribute', 'Stop redistributing routes', (a) => {
@@ -203,8 +340,7 @@ export function buildRoutingProtoConfig(
       if (source === 'static' || source === 'connected' || source === 'rip'
         || source === 'ospf' || source === 'bgp') {
         eigrpEng().removeRedistribution(source);
-        eigrp().redistribute = eigrp().redistribute.filter(
-          (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+        eigrp().redistribute = eigrp().redistribute.filter((s) => s.protocol !== source);
         converge();
       }
       return '';
@@ -213,8 +349,7 @@ export function buildRoutingProtoConfig(
       const source = parseRipRedistSource(a[0]);
       if (!source) return '% Invalid input detected.';
       ctx.r().ripRemoveRedistribution(source);
-      repo.rip.redistribute = repo.rip.redistribute.filter(
-        (l) => !l.toLowerCase().startsWith(`redistribute ${source}`));
+      repo.rip.redistribute = repo.rip.redistribute.filter((s) => s.protocol !== source);
     }
     return '';
   });
@@ -233,28 +368,84 @@ export function buildRoutingProtoConfig(
     return '';
   });
   routerTrie.registerGreedy('default-metric', 'Set default metric', (a) => {
+    const m = parseInt(a[0], 10);
     if (curProto(ctx).proto === 'rip') {
-      const m = parseInt(a[0], 10);
       if (Number.isNaN(m)) return '% Invalid input detected.';
       repo.rip.defaultMetric = m;
       ctx.r().ripSetDefaultMetric(m);
+    } else if (curProto(ctx).proto === 'eigrp') {
+      if (Number.isNaN(m)) throw new CliInvalidInput({ token: a[0] });
+      eigrp().defaultMetric = m;
     }
     return '';
   });
   routerTrie.registerGreedy('distance', 'Administrative distance', (a) => {
+    if (curProto(ctx).proto !== 'rip') return '';
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) return CISCO_ERRORS.INVALID_INPUT;
     const n = parseInt(a[0], 10);
-    if (!Number.isNaN(n) && curProto(ctx).proto === 'rip') repo.rip.distance = n;
+    if (n < 1 || n > 255) return CISCO_ERRORS.INVALID_INPUT;
+    repo.rip.distance = n;
     return '';
   });
   routerTrie.registerGreedy('timers', 'Adjust timers', (a, raw) => {
-    if (curProto(ctx).proto === 'rip') repo.rip.timersBasic = raw ?? a.join(' ');
+    const line = raw ?? `timers ${a.join(' ')}`.trim();
+    const p = curProto(ctx).proto;
+    if (p === 'rip') {
+      if (a[0]?.toLowerCase() !== 'basic') return CISCO_ERRORS.INVALID_INPUT;
+      const values = a.slice(1);
+      if (values.length < 4) return CISCO_ERRORS.INCOMPLETE;
+      if (values.length > 4) return CISCO_ERRORS.INVALID_INPUT;
+      if (!values.every((v) => /^\d+$/.test(v) && Number(v) <= 4294967295)) {
+        return CISCO_ERRORS.INVALID_INPUT;
+      }
+      const [update, invalid, holddown, flush] = values.map(Number);
+      if (invalid <= update || flush <= invalid) return '% Invalid timers';
+      repo.rip.timersBasic = `basic ${update} ${invalid} ${holddown} ${flush}`;
+      ctx.r().ripConfigure({
+        updateInterval: update * 1000,
+        routeTimeout: invalid * 1000,
+        gcTimeout: (flush - invalid) * 1000,
+      });
+      return '';
+    }
+    // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
+    if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
+    else if (p === 'eigrp') pushOnce(eigrp().extras, line);
+    return '';
+  });
+  routerTrie.registerGreedy('no timers', 'Restore default timers', (a) => {
+    if (curProto(ctx).proto !== 'rip') return '';
+    if ((a[0] ?? 'basic').toLowerCase() !== 'basic') return CISCO_ERRORS.INVALID_INPUT;
+    repo.rip.timersBasic = undefined;
+    ctx.r().ripConfigure({
+      updateInterval: 30_000, routeTimeout: 180_000, gcTimeout: 60_000,
+    });
+    return '';
+  });
+  routerTrie.registerGreedy('no maximum-paths', 'Restore default path count', () => {
+    const p = curProto(ctx).proto;
+    ctx.r().setMaximumPaths(p, 4);
+    if (p === 'rip') repo.rip.maximumPaths = undefined;
+    return '';
+  });
+  routerTrie.registerGreedy('no distance', 'Restore default distance', () => {
+    if (curProto(ctx).proto === 'rip') repo.rip.distance = undefined;
     return '';
   });
   routerTrie.registerGreedy('maximum-paths', 'Max parallel routes', (a) => {
-    const n = parseInt(a[0], 10);
     const p = curProto(ctx).proto;
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (!/^\d+$/.test(a[0])) return CISCO_ERRORS.INVALID_INPUT;
+    const n = parseInt(a[0], 10);
+    if (p === 'rip' && (n < 1 || n > 16)) return CISCO_ERRORS.INVALID_INPUT;
+    if (n < 1 || n > 32) return CISCO_ERRORS.INVALID_INPUT;
+    // Le plafond va au ROUTEUR, qui est la seule chose que le plan de
+    // données consulte : sans cet appel, la valeur restait rangée dans
+    // le magasin du protocole et ne bornait rien.
+    ctx.r().setMaximumPaths(p, n);
     if (p === 'rip') repo.rip.maximumPaths = n;
-    else if (p === 'eigrp' && !Number.isNaN(n) && n >= 1) {
+    else if (p === 'eigrp') {
       eigrp().maximumPaths = n;
       eigrpEng().getConfig().maximumPaths = n;
       converge();
@@ -263,22 +454,74 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('neighbor', 'Configure a peer/neighbor', (a, raw) => {
     const { proto } = curProto(ctx);
-    if (!a[0]) return '% Incomplete command.';
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
     if (proto === 'rip') {
-      if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+      if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
       repo.rip.neighbors.push(a[0]); return '';
     }
+    if (proto === 'eigrp') {
+      // EIGRP's own form is `neighbor <ip> <interface>` (a unicast
+      // neighbour on a non-broadcast link). `remote-as` is a BGP keyword
+      // and does not exist here — it used to fall through every branch
+      // below and be accepted in silence, which reads as "configured".
+      if (!isValidIPv4(a[0])) throw new CliInvalidInput();
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!ctx.r().getPort(a[1])) throw new CliInvalidInput();
+      return '';
+    }
     if (proto === 'bgp') {
-      const isPeerGroupDef = a[1] === 'peer-group' && !a[2];
-      if (!isPeerGroupDef && !isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
-      if (!a[1]) return '% Incomplete command.';
-      if (a[1] === 'remote-as') {
-        if (!a[2]) return '% Incomplete command.';
-        const as = parseInt(a[2], 10);
-        if (Number.isNaN(as) || as < 1 || as > 4294967295) return "% Invalid input detected at '^' marker.";
-      }
       const b = bgp();
       if (!b) return '';
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (a[1] === 'remote-as') {
+        if (!a[2]) return CISCO_ERRORS.INCOMPLETE;
+        const as = parseInt(a[2], 10);
+        if (Number.isNaN(as) || as < 1 || as > 4294967295) return CISCO_ERRORS.INVALID_INPUT;
+      }
+
+      // `neighbor <nom> peer-group` (sans argument) DÉCLARE un gabarit.
+      // Il ne crée aucun voisin : un groupe n'a pas de session et n'a
+      // donc rien à faire dans la table des voisins ni dans
+      // `show ip bgp summary`. C'était le défaut — le nom du groupe y
+      // apparaissait comme un pair « AS 0, Idle » qui n'existe pas.
+      if (a[1] === 'peer-group' && !a[2]) {
+        repo.ensureBgpPeerGroup(a[0]);
+        return '';
+      }
+
+      // Un nom déjà déclaré comme gabarit : la commande règle le
+      // GABARIT, pas un voisin. C'est ce qui était refusé
+      // (`neighbor IBGP remote-as 65000`), alors que la moitié
+      // précédente était acceptée — accepter le début d'une
+      // construction et refuser la suite est plus trompeur que tout
+      // refuser.
+      const groupe = repo.getBgpPeerGroup(a[0]);
+      if (groupe) {
+        if (a[1] === 'remote-as') groupe.remoteAs = parseInt(a[2], 10);
+        else if (a[1] === 'description') groupe.description = a.slice(2).join(' ');
+        else if (a[1] === 'update-source') groupe.updateSource = a[2];
+        else if (a[1] === 'activate') groupe.activated = true;
+        else groupe.attrs.push(raw ?? a.join(' '));
+        // L'ordre ne doit pas compter : régler le gabarit APRÈS que des
+        // membres l'ont rejoint doit les atteindre quand même.
+        for (const membre of repo.applyBgpPeerGroup(a[0])) {
+          const ec2 = bgpEng().getConfig();
+          let bm = ec2.neighbors.get(membre.ip);
+          if (!bm) { bm = { ip: membre.ip, activated: false }; ec2.neighbors.set(membre.ip, bm); }
+          if (membre.remoteAs !== undefined) bm.remoteAs = membre.remoteAs;
+          if (membre.activated) bm.activated = true;
+        }
+        converge();
+        return '';
+      }
+
+      if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
+      // Rejoindre un groupe non déclaré est refusé, comme sur IOS :
+      // sinon le voisin hériterait d'un gabarit qui n'existe pas.
+      if (a[1] === 'peer-group' && a[2] && !repo.getBgpPeerGroup(a[2])) {
+        return `% Configure the peer-group ${a[2]} first`;
+      }
+
       const n = repo.ensureBgpNeighbor(a[0]);
       if (n) {
         if (a[1] === 'remote-as') n.remoteAs = parseInt(a[2], 10);
@@ -298,14 +541,20 @@ export function buildRoutingProtoConfig(
         const w = parseInt(a[2], 10);
         if (Number.isNaN(w) || w < 0 || w > 65535) return '% Invalid weight (0-65535)';
         bn.weight = w;
+      } else if (a[1] === 'peer-group' && a[2]) {
+        // L'adhésion fait hériter tout de suite : c'est ce qui rend le
+        // gabarit utile plutôt que décoratif.
+        repo.applyBgpPeerGroup(a[2]);
+        if (n?.remoteAs !== undefined) bn.remoteAs = n.remoteAs;
+        if (n?.activated) bn.activated = true;
       }
       converge();
     }
     return '';
   });
   routerTrie.registerGreedy('router-id', 'Set router-id', (a) => {
-    if (!a[0]) return '% Incomplete command.';
-    if (!isValidIPv4(a[0])) return "% Invalid input detected at '^' marker.";
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    if (!isValidIPv4(a[0])) return CISCO_ERRORS.INVALID_INPUT;
     const p = curProto(ctx).proto;
     if (p === 'eigrp') { eigrp().routerId = a[0]; eigrpEng().getConfig().routerId = a[0]; }
     else if (p === 'bgp') {
@@ -316,34 +565,68 @@ export function buildRoutingProtoConfig(
   });
   routerTrie.registerGreedy('eigrp', 'EIGRP option', (a) => {
     if (a[0] === 'router-id') {
+      if (!a[1]) return CISCO_ERRORS.INCOMPLETE;
+      if (!isValidIPv4(a[1])) throw new CliInvalidInput({ token: a[1] });
       eigrp().routerId = a[1];
       eigrpEng().getConfig().routerId = a[1];
-    } else if (a[0] === 'stub') {
-      eigrp().stub = a.slice(1).join(' ') || 'connected summary';
+      return '';
+    }
+    if (a[0] === 'stub') {
+      const words = a.slice(1).map((m) => m.toLowerCase());
+      const unknown = words.find((m) => !STUB_OPTIONS.includes(m));
+      if (unknown) throw new CliInvalidInput({ token: unknown });
+      const chosen = words.length ? words : ['connected', 'summary'];
+      eigrp().stub = chosen.join(' ');
+      eigrpEng().setStub({
+        connected: chosen.includes('connected'),
+        summary: chosen.includes('summary'),
+        staticRoutes: chosen.includes('static'),
+        redistributed: chosen.includes('redistributed'),
+        receiveOnly: chosen.includes('receive-only'),
+      });
+      return '';
+    }
+    throw new CliInvalidInput({ token: a[0] });
+  });
+  routerTrie.registerGreedy('no eigrp', 'Remove an EIGRP option', (a) => {
+    if (a[0] === 'stub') {
+      eigrp().stub = undefined;
+      eigrpEng().setStub(null);
+    } else if (a[0] === 'router-id') {
+      eigrp().routerId = undefined;
+      eigrpEng().getConfig().routerId = undefined;
     }
     return '';
   });
   routerTrie.registerGreedy('variance', 'EIGRP variance', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
     const v = parseInt(a[0], 10);
     if (Number.isNaN(v) || v < 1 || v > 128) {
-      return '% Invalid variance value (1-128)';
+      throw new CliInvalidInput({ token: a[0] });
     }
     eigrp().variance = v;
     eigrpEng().getConfig().variance = v;
     converge();
     return '';
   });
-  routerTrie.registerGreedy('metric', 'Metric options', (a, raw) => {
+  routerTrie.registerGreedy('metric', 'Metric options', (a) => {
     const { proto } = curProto(ctx);
     if (proto === 'rip') {
       // `default-metric`-style RIP knob recorded as remembered config.
       const n = parseInt(a[a.length - 1] ?? '', 10);
       if (!isNaN(n)) repo.rip.defaultMetric = n;
-      const line = raw ?? `metric ${a.join(' ')}`.trim();
-      if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
       return '';
     }
     if (proto === 'eigrp') {
+      // `metric maximum-hops <n>` — le diamètre au-delà duquel une route
+      // est déclarée inaccessible. Valeur réelle, rangée sur le processus
+      // et rendue par `show ip protocols`, plutôt qu'un mot avalé.
+      if (a[0] === 'maximum-hops') {
+        const h = parseInt(a[1] ?? '', 10);
+        if (Number.isNaN(h) || h < 1 || h > 255) return '% Invalid input detected.';
+        eigrp().maximumHops = h;
+        return '';
+      }
       // `metric weights <tos> k1 k2 k3 k4 k5` — feeds the composite metric.
       if (a[0] !== 'weights') return '% Invalid input detected.';
       const ks = a.slice(2, 7).map((n) => parseInt(n, 10));
@@ -357,7 +640,24 @@ export function buildRoutingProtoConfig(
     }
     return '';
   });
+  // `no bgp default ipv4-unicast` : la première ligne de toute
+  // configuration MP-BGP, et elle était refusée. Le drapeau est réel —
+  // il décide si un voisin échange des préfixes IPv4 sans avoir été
+  // explicitement `activate`é dans sa famille.
+  routerTrie.registerGreedy('no bgp', 'Disable a BGP option', (a) => {
+    const b = bgp();
+    if (!b) return '';
+    if (a[0] === 'default' && a[1] === 'ipv4-unicast') {
+      b.defaultIpv4Unicast = false;
+      return '';
+    }
+    return '';
+  });
   routerTrie.registerGreedy('bgp', 'BGP option', (a) => {
+    if (a[0] === 'default' && a[1] === 'ipv4-unicast') {
+      const b = bgp(); if (b) b.defaultIpv4Unicast = true;
+      return '';
+    }
     if (a[0] === 'router-id') {
       const b = bgp(); if (b) b.routerId = a[1];
       bgpEng().getConfig().routerId = a[1];
@@ -366,38 +666,80 @@ export function buildRoutingProtoConfig(
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
       bgpEng().getConfig().defaultLocalPref = lp;
       converge();
+    } else {
+      // Every other `bgp <option>` — `log-neighbor-changes` and friends —
+      // was accepted and rendered nowhere. Keep the line as typed.
+      const b = bgp();
+      if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     }
     return '';
   });
   routerTrie.registerGreedy('aggregate-address', 'BGP aggregate', (a, raw) => {
-    bgp()?.networks.push(raw ?? `aggregate-address ${a.join(' ')}`);
+    // Verbatim, NOT in `networks`: rendered from there it came back as
+    // ` network aggregate-address …`, a line IOS rejects on reload.
+    bgp()?.extras.push(raw ?? `aggregate-address ${a.join(' ')}`);
     return '';
   });
   routerTrie.registerGreedy('address-family', 'Enter address-family', (a) => {
     const p = curProto(ctx).proto;
+    if (p !== 'bgp') throw new CliInvalidInput();
     const af = a.join(' ');
-    if (p === 'bgp') bgp()?.addressFamilies.push(af);
-    else if (p === 'eigrp') eigrp().addressFamilies.push(af);
+    const proc = bgp();
+    if (proc && !proc.addressFamilies.includes(af)) proc.addressFamilies.push(af);
+    ctx.setMode('config-router-af');
     return '';
   });
-  // NOTE: `metric` is NOT in this catch-all list — it has a dedicated
-  // handler above (RIP default-metric / EIGRP `metric weights`).
-  for (const kw of ['exit-address-family', 'exit-af-interface',
-    'exit-af-topology', 'af-interface', 'topology',
+  routerTrie.register('exit-address-family', 'Leave address-family', () => {
+    ctx.setMode('config-router');
+    return '';
+  });
+  const PROTO_EXTRAS = [
     'offset-list', 'output-delay', 'flash-update-threshold',
-    'validate-update-source', 'synchronization', 'no synchronization',
-    'compatible', 'log-adjacency-changes',
-    'no neighbor', 'traffic-share']) {
-    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args, raw) => {
-      const sp = ctx.getSelectedRoutingProto();
-      const proto = sp?.proto;
-      const line = raw ?? `${kw} ${args.join(' ')}`.trim();
-      if (proto === 'rip') {
-        if (!repo.rip.networks.includes(line)) repo.rip.redistribute.push(line);
-      }
+    'validate-update-source', 'no validate-update-source',
+    'traffic-share', 'distribute-list',
+  ];
+  for (const kw of PROTO_EXTRAS) {
+    routerTrie.registerGreedy(kw, `Routing option (${kw})`, (args) => {
+      requireProto(ctx, kw);
+      const p = curProto(ctx).proto;
+      const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
+      if (p === 'rip') pushOnce(repo.rip.extras, line);
+      else pushOnce(eigrp().extras, line);
       return '';
     });
   }
+  routerTrie.requireArgs('address-family', 1);
+  routerTrie.requireArgs('no neighbor', 1);
+  for (const kw of ['synchronization', 'no synchronization']) {
+    routerTrie.register(kw, `BGP ${kw}`, () => {
+      const proc = bgp();
+      if (curProto(ctx).proto !== 'bgp' || !proc) throw new CliInvalidInput();
+      proc.extras = proc.extras.filter((l) => l !== 'synchronization' && l !== 'no synchronization');
+      proc.extras.push(kw);
+      return '';
+    });
+  }
+  routerTrie.registerGreedy('no neighbor', 'Remove a neighbor', (a) => {
+    const proc = bgp();
+    if (curProto(ctx).proto === 'bgp' && proc) {
+      if (a.length === 1) {
+        proc.neighbors.delete(a[0]);
+        proc.peerGroups.delete(a[0]);
+        bgpEng().getConfig().neighbors.delete(a[0]);
+      } else {
+        const n = proc.neighbors.get(a[0]);
+        if (n && a[1] === 'activate') n.activated = false;
+        if (n && a[1] === 'peer-group') n.peerGroup = undefined;
+      }
+      converge();
+      return '';
+    }
+    if (curProto(ctx).proto === 'rip') {
+      repo.rip.neighbors = repo.rip.neighbors.filter((n) => n !== a[0]);
+      return '';
+    }
+    throw new CliInvalidInput();
+  });
 }
 
 // ── show family ──────────────────────────────────────────────────
@@ -432,14 +774,43 @@ export function registerRoutingProtoShow(
     }
     return rows.join('\n');
   });
-  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbours', () => {
+  const BGP_TABLE_HEAD = '     Network          Next Hop            Metric LocPrf Weight Path';
+  const bgpTableRows = (rows: ReturnType<ReturnType<typeof bgpE>['getBgpTable']>): string[] =>
+    rows.map((r) => {
+      const prefix = `${r.network}/${r.mask.toCIDR()}`;
+      const nextHop = String(r.nextHop ?? '0.0.0.0');
+      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
+      return `*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}`
+        + `0         ${String(r.weight).padStart(5)} ${path}`;
+    });
+
+  trie.registerGreedy('show ip bgp neighbors', 'Display BGP neighbors', (a) => {
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
     const repoB = repo.getBgp();
     const byId = new Map(e.getNeighbors().map((n) => [n.id, n]));
+    // `show ip bgp neighbors <ip> [advertised-routes|routes]` : les
+    // arguments étaient ignorés, donc la commande rendait le détail de
+    // TOUS les voisins quoi qu'on demande.
+    const wanted = a[0] && isValidIPv4(a[0]) ? a[0] : null;
+    const sub = (wanted ? a[1] : a[0])?.toLowerCase();
+    if (wanted && !e.getConfig().neighbors.has(wanted)) {
+      return `% No such neighbor or address family`;
+    }
+    if (sub === 'advertised-routes' || sub === 'routes') {
+      if (!wanted) throw new CliIncomplete();
+      const rows = sub === 'advertised-routes'
+        ? e.getAdvertisedRoutes(wanted)
+        : e.getBgpTable().filter((r) => String(r.nextHop ?? '') === wanted);
+      const head = `Total number of prefixes ${rows.length}`;
+      return rows.length
+        ? [BGP_TABLE_HEAD, ...bgpTableRows(rows), head].join('\n')
+        : head;
+    }
     const out: string[] = [];
     for (const [ip, cfg] of e.getConfig().neighbors) {
+      if (wanted && ip !== wanted) continue;
       const v = byId.get(ip);
       const desc = repoB?.neighbors.get(ip)?.description ?? '(none)';
       out.push(`BGP neighbor is ${ip}, remote AS ${cfg.remoteAs ?? 'unset'}`);
@@ -449,22 +820,23 @@ export function registerRoutingProtoShow(
     }
     return out.length ? out.join('\n') : 'No bgp neighbors configured';
   });
-  trie.registerGreedy('show ip bgp', 'Display BGP table', () => {
+  trie.registerGreedy('show ip bgp', 'Display BGP table', (a) => {
     const e = bgpE();
     if (!e.isEnabled()) return '% BGP not active';
     live();
     const c = e.getConfig();
+    let table = e.getBgpTable();
+    // `show ip bgp <préfixe>` rejouait la table ENTIÈRE : l'argument
+    // n'était pas lu. IOS répond sur ce préfixe-là, ou dit qu'il n'y est pas.
+    if (a[0] && isValidIPv4(a[0])) {
+      table = table.filter((r) => String(r.network) === a[0]);
+      if (table.length === 0) return '% Network not in table';
+    }
     const rows = [
       `BGP table version is 1, local router ID is ${c.routerId ?? '0.0.0.0'}`,
-      '     Network          Next Hop            Metric LocPrf Weight Path',
+      BGP_TABLE_HEAD,
+      ...bgpTableRows(table),
     ];
-    for (const r of e.getBgpTable()) {
-      const prefix = `${r.network}/${r.mask.toCIDR()}`;
-      const nextHop = String(r.nextHop ?? '0.0.0.0');
-      const path = r.asPath.length ? `${r.asPath.join(' ')} i` : 'i';
-      rows.push(`*>   ${prefix.padEnd(17)}${nextHop.padEnd(20)}` +
-        `0         ${String(r.weight).padStart(5)} ${path}`);
-    }
     return rows.join('\n');
   });
   trie.registerGreedy('show bgp', 'Display BGP', () => {
@@ -476,86 +848,131 @@ export function registerRoutingProtoShow(
       `${e.getConfig().neighbors.size} neighbour(s), ${up} established`;
   });
 
-  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbours', () => {
+  // Les vues du mode nommé, qui n'existaient pas. Elles lisent
+  // exactement le même moteur que leurs équivalents classiques : un
+  // routeur ne tient pas deux EIGRP selon la syntaxe employée pour le
+  // configurer, et les faire diverger serait le vrai défaut.
+  trie.registerGreedy('show eigrp protocols', 'Display EIGRP protocol instances', () => {
     const e = eigrpE();
-    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
-    live();
-    const ns = e.getNeighbors();
-    const head = `EIGRP-IPv4 Neighbors for AS(${e.getConfig().asn})\n` +
-      'H   Address         Interface   Hold Uptime   SRTT   RTO  Q  Seq';
-    if (!ns.length) return `${head}\n(no neighbours — no real EIGRP peer cabled)`;
-    return [head, ...ns.map((n, i) =>
-      `${i}   ${n.address.padEnd(16)}${n.iface.padEnd(12)}` +
-      `13   ${n.uptimeSec}s     1      200  0  ${i + 1}`)].join('\n');
-  });
-  trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', () => {
-    const e = eigrpE();
-    if (!e.isEnabled()) return '% EIGRP not running (no autonomous-system configured)';
-    live();
-    const lines = [`EIGRP-IPv4 Topology Table for AS(${e.getConfig().asn})`];
-    const topo = e.getTopologyTable();
-    if (topo.size === 0) {
-      // No learned paths — show what this router really originates
-      // (real IOS lists connected, EIGRP-activated prefixes as P entries).
-      for (const pre of e.originatedPrefixes()) {
-        lines.push(`P ${pre.network}/${pre.mask.toCIDR()}, 1 successors, FD is 2816`);
-        lines.push(`        via Connected`);
-      }
-      for (const r of e.getContributedRoutes()) {
-        lines.push(`P ${r.network}/${r.mask.toCIDR()}, 1 successors, FD is ${r.metric}`);
-        lines.push(`        via ${r.nextHop} (${r.metric}/${Math.max(0, r.metric - 256)}), ${r.iface}`);
-      }
-      if (lines.length === 1) {
-        // Pure config projection — no live interface matches a network
-        // statement yet, so show the configured statements themselves.
-        for (const stmt of e.getConfig().networks) {
-          lines.push(`P ${stmt.network}, 0 successors, FD is Inaccessible`);
-        }
-      }
-    } else {
-      for (const [prefix, entry] of topo) {
-        const totalSuccessors = 1 + entry.feasibleSuccessors.length;
-        lines.push(`P ${prefix}, ${totalSuccessors} successors, FD is ${entry.fd}`);
-        lines.push(`        via ${entry.successorNextHop} (${entry.fd}/${Math.max(0, entry.fd - 256)}), ${entry.successorIface}`);
-        for (const fs of entry.feasibleSuccessors) {
-          lines.push(`        via ${fs.nextHop} (${fs.metric}/${fs.rd}), ${fs.iface}`);
-        }
-      }
-    }
-    return lines.join('\n');
-  });
-  trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', () => {
-    const e = eigrpE();
-    return e.isEnabled()
-      ? `EIGRP-IPv4 Interfaces for AS(${e.getConfig().asn})`
-      : '% EIGRP not running (no autonomous-system configured)';
+    if (!e.isEnabled()) return '';
+    const c = e.getConfig();
+    const p = repo.ensureEigrp(c.asn);
+    return [
+      `EIGRP-IPv4 Protocol for AS(${c.asn})`,
+      `  Metric weight K1=1, K2=0, K3=1, K4=0, K5=0`,
+      `  Soft SIA disabled`,
+      `  NSF-aware route hold timer is 240`,
+      `  Router-ID: ${c.routerId ?? '0.0.0.0'}`,
+      `  Topology : 0 (base)`,
+      `    Active Timer: 3 min`,
+      `    Distance: internal 90 external 170`,
+      `    Maximum path: ${p.maximumPaths ?? 4}`,
+      `    Maximum hopcount ${p.maximumHops ?? 100}`,
+      `    Maximum metric variance ${p.variance ?? 1}`,
+    ].join('\n');
   });
 
+  trie.registerGreedy('show eigrp address-family ipv4 neighbors',
+    'Display EIGRP neighbors (named mode)', () => {
+      const e = eigrpE();
+      if (!e.isEnabled()) return '';
+      live();
+      const out = [
+        `EIGRP-IPv4 Address-Family Neighbors for AS(${e.getConfig().asn})`,
+        'H   Address                 Interface       Hold Uptime   SRTT   RTO  Q  Seq',
+        '                                            (sec)         (ms)       Cnt Num',
+      ];
+      e.getNeighbors().forEach((n, i) => {
+        out.push(`${String(i).padEnd(4)}${n.address.padEnd(24)}${n.iface.padEnd(16)}`
+          + `${String(15).padEnd(5)}${String(n.uptimeSec).padEnd(9)}1      200  0  1`);
+      });
+      return out.join('\n');
+    });
+
+  // `show ip eigrp traffic` — les compteurs sont RÉELS, alimentés aux
+  // points d'émission et de réception du moteur. Query/Reply/SIA restent
+  // à zéro et c'est un fait, pas un trou : ce moteur n'a pas d'état
+  // Active et n'en émet donc jamais (voir `CLAUDE.md`).
+  trie.registerGreedy('show ip eigrp traffic', 'Display EIGRP traffic statistics', () => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    const t = e.traffic;
+    return [
+      `IP-EIGRP Traffic Statistics for AS ${e.getConfig().asn}`,
+      `  Hellos sent/received: ${t.helloSent}/${t.helloRcvd}`,
+      `  Updates sent/received: ${t.updateSent}/${t.updateRcvd}`,
+      `  Queries sent/received: ${t.querySent}/${t.queryRcvd}`,
+      `  Replies sent/received: ${t.replySent}/${t.replyRcvd}`,
+      `  Acks sent/received: ${t.ackSent}/${t.ackRcvd}`,
+      `  SIA-Queries sent/received: 0/0`,
+      `  SIA-Replies sent/received: 0/0`,
+      `  Hello Process ID: 0`,
+      `  PDM Process ID: 0`,
+    ].join('\n');
+  });
+
+  // `show ip eigrp accounting` — un état par voisin, lu de la table de
+  // voisins vivante. Les colonnes de préfixes reflètent ce que le moteur
+  // a réellement reçu de chacun.
+  trie.registerGreedy('show ip eigrp accounting', 'Display EIGRP prefix accounting', () => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    live();
+    const voisins = e.getNeighbors();
+    const out = [
+      `EIGRP-IPv4 Accounting for AS(${e.getConfig().asn})`,
+      `  Total Prefix Count: ${e.getTopologyTable().size}   States: A-Adjacency, P-Pending, D-Down`,
+      '',
+      'State   Address/Source     Interface   Prefix  Restart  Restart/  Reset',
+      '                                       Count    Count    Uptime',
+    ];
+    for (const n of voisins) {
+      out.push(`  A     ${n.address.padEnd(19)}${n.iface.padEnd(12)}`
+        + `${String(e.getTopologyTable().size).padEnd(8)}0        00:00:00`);
+    }
+    return out.join('\n');
+  });
+
+  trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', (a) => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    live();
+    return a[0]?.toLowerCase() === 'detail'
+      ? showIpEigrpNeighborsDetail(e)
+      : showIpEigrpNeighbors(e);
+  });
+  trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', (a) => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    live();
+    return showIpEigrpTopology(e, a[0]?.toLowerCase() === 'all-links');
+  });
+  trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', (a) => {
+    const e = eigrpE();
+    if (!e.isEnabled()) return '';
+    live();
+    const detail = a[0]?.toLowerCase() === 'detail';
+    const nom = detail ? a[1] : a[0];
+    const iface = nom ? ctx.resolveInterfaceName(nom) ?? nom : undefined;
+    return showIpEigrpInterfaces(e, detail, iface);
+  });
+
+  trie.registerGreedy('show ip protocols vrf', 'Display routing protocols in a VRF', (a) => {
+    if (!a[0]) return CISCO_ERRORS.INCOMPLETE;
+    const vrfs = (ctx.r() as unknown as { _vrfs?: Map<string, unknown> })._vrfs;
+    if (!vrfs?.has(a[0])) return `% VRF ${a[0]} does not exist`;
+    return `Routing Protocol is "connected"\n  VRF ${a[0]}`;
+  });
   trie.register('show ip protocols', 'Display routing protocol state', () => {
     const out: string[] = [];
-    if (ctx.r().isRIPEnabled()) {
-      // Reuse the RIP engine's canonical format (DRY), then append
-      // the extra knobs the engine doesn't model.
-      out.push(showIpProtocols(ctx.r()));
-      if (!repo.rip.autoSummary) {
-        out.push('  Automatic network summarization is not in effect');
-      }
-      if (repo.rip.passive.size || repo.rip.passiveDefault) {
-        out.push('  Passive Interface(s):');
-        if (repo.rip.passiveDefault) out.push('    (default)');
-        for (const p of repo.rip.passive) out.push(`    ${p}`);
-      }
-      for (const r of repo.rip.redistribute) out.push(`  ${r}`);
-      if (repo.rip.distance !== undefined) {
-        out.push(`  Distance: ${repo.rip.distance}`);
-      }
-    }
+    // `showIpProtocols` rend DÉJÀ les blocs OSPF et RIP. L'appeler sous
+    // condition de RIP laissait OSPF muet sans RIP ; lui ajouter un
+    // second bloc OSPF ici le rendait deux fois avec RIP. Il est le seul
+    // rendu, appelé sans condition.
+    const canonique = showIpProtocols(ctx.r());
+    if (canonique !== 'No routing protocol is configured.') out.push(canonique);
     for (const p of repo.allEigrp()) {
-      out.push(`Routing Protocol is "eigrp ${p.asn}"`);
-      if (p.routerId) out.push(`  Router-ID: ${p.routerId}`);
-      out.push('  Routing for Networks:');
-      for (const n of p.networks) out.push(`    ${n}`);
-      for (const r of p.redistribute) out.push(`  ${r}`);
+      out.push(...eigrpProtocolBlock(p, eigrpE(), ctx.r()));
     }
     const b = repo.getBgp();
     if (b) {
@@ -568,4 +985,86 @@ export function registerRoutingProtoShow(
     }
     return out.length ? out.join('\n') : 'No routing protocol is configured.';
   });
+}
+
+const ROUTING_PROTO_SHOW_KEYWORDS:
+Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string }>>> = {
+  'show ip eigrp neighbors': [
+    { keyword: 'detail', description: 'Show detailed peer information' },
+  ],
+  'show ip eigrp topology': [
+    { keyword: 'all-links', description: 'Show all links in topology table' },
+  ],
+  'show ip eigrp interfaces': [
+    { keyword: 'detail', description: 'Show detailed interface information' },
+  ],
+};
+
+const ROUTING_PROTO_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show ip bgp': ['A.B.C.D', 'Network in the BGP routing table to display'],
+  'show ip protocols vrf': ['WORD', 'VRF name'],
+  'show ip eigrp interfaces': ['WORD', 'Interface name'],
+};
+
+const BGP_NEIGHBORS_PATH = 'show ip bgp neighbors';
+
+const BGP_NEIGHBOR_ADDRESS: ArgumentSpec = {
+  name: 'neighbor', type: 'IP_ADDR', optional: true,
+  description: 'Neighbor to display information about',
+};
+
+const BGP_NEIGHBOR_VIEWS: ReadonlyArray<{ keyword: string; description: string }> = [
+  { keyword: 'advertised-routes', description: 'Routes advertised to this neighbor' },
+  { keyword: 'routes', description: 'Routes learned from this neighbor' },
+];
+
+function bgpNeighborSpecs(action: (args: string[]) => string): CommandSpec[] {
+  const words = BGP_NEIGHBORS_PATH.split(' ');
+  const lire = (args: Record<string, string>): string =>
+    String(args[BGP_NEIGHBOR_ADDRESS.name] ?? '').trim();
+
+  const specs: CommandSpec[] = [{
+    id: words.join('-'),
+    path: [...words, BGP_NEIGHBOR_ADDRESS],
+    description: 'Display BGP neighbors',
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    run: ((_session: unknown, args: Record<string, string>) => {
+      const adresse = lire(args);
+      return action(adresse.length === 0 ? [] : [adresse]);
+    }) as CommandSpec['run'],
+  }];
+
+  for (const vue of BGP_NEIGHBOR_VIEWS) {
+    specs.push({
+      id: [...words, vue.keyword].join('-'),
+      path: [...words, BGP_NEIGHBOR_ADDRESS, vue.keyword],
+      description: vue.description,
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      run: ((_session: unknown, args: Record<string, string>) =>
+        action([lire(args), vue.keyword])) as CommandSpec['run'],
+    });
+  }
+  return specs;
+}
+
+export function routingProtoShowSpecs(
+  ctx: CiscoShellContext, repo: RoutingConfigRepository,
+): CommandSpec[] {
+  const register = (collector: SpecCollector) => registerRoutingProtoShow(
+    collector as unknown as CommandTrie, ctx, repo);
+
+  const specs = specsFromTrieRegistrations(register, {
+    modes: ['user', 'privileged'],
+    minPrivilege: 1,
+    skip: (path) => path === BGP_NEIGHBORS_PATH,
+    restDescriptionFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[1],
+    restLiteralFor: (path) => ROUTING_PROTO_SHOW_ARGUMENTS[path]?.[0],
+    keywordsFor: (path) => ROUTING_PROTO_SHOW_KEYWORDS[path],
+  });
+
+  const voisins = collectRegistrations(register)
+    .find((entry) => entry.path === BGP_NEIGHBORS_PATH);
+  return voisins ? [...specs, ...bgpNeighborSpecs(voisins.action)] : specs;
 }

@@ -70,6 +70,29 @@ describe('A. stateful FS scripts', () => {
     expect(cfg).toContain('root /var/www');
   });
 
+  it('A2b a quoted-delimiter heredoc preserves literal backslashes verbatim (no doubling)', () => {
+    runScript(`
+      cat > /tmp/colors.sh <<'EOF'
+GREEN='\\033[0;32m'
+EOF
+    `);
+    const body = read('/tmp/colors.sh') ?? '';
+    expect(body).toContain("GREEN='\\033[0;32m'");
+    expect(body).not.toContain('\\\\033');
+  });
+
+  it('A2c an unquoted-delimiter heredoc still escapes \\$VAR to a literal dollar (not an empty expansion)', () => {
+    const out = runScript(`
+      cat > /tmp/ttl.txt << EOF
+\\$TTL    604800
+EOF
+      cat /tmp/ttl.txt
+    `);
+    expect(out).toContain('$TTL    604800');
+    const body = read('/tmp/ttl.txt') ?? '';
+    expect(body).toContain('$TTL    604800');
+  });
+
   it('A3 rotates a log file (mv current → .1, recreate empty)', () => {
     run('echo "old entry" > /var/log/app.log');
     runScript(`

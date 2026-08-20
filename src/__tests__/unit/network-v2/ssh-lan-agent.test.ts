@@ -20,6 +20,7 @@ import { Logger } from '@/network/core/Logger';
 import { Equipment } from '@/network';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { SshAgent } from '@/network/protocols/ssh/SshAgent';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
   let pc: LinuxPC;
@@ -29,7 +30,7 @@ describe('SSH LAN — in-memory ssh-agent + ssh-add', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     pc = new LinuxPC('linux-pc', 'PC1');
     agent = new SshAgent();
   });

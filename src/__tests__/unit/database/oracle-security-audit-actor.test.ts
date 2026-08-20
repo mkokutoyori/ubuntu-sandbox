@@ -45,7 +45,7 @@ describe('security audit — connection traces', () => {
     const sh = newSession('sec-conn-2');
     const out = run(sh, `SELECT USERNAME, LAST_LOGIN FROM DBA_USERS WHERE USERNAME='SYS';`);
     expect(out).toMatch(/SYS/);
-    expect(out).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+    expect(out).toMatch(/\d{2}-[A-Z]{3}-\d{2}/);
     sh.dispose();
   });
 

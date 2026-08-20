@@ -1,6 +1,7 @@
 import type { DeviceType } from './types';
 
-export type DeviceOSType = 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp';
+export type DeviceOSType =
+  | 'linux' | 'windows' | 'cisco-ios' | 'huawei-vrp' | 'asa' | 'fortios';
 
 export type DeviceCategoryId = 'computers' | 'servers' | 'switches' | 'routers' | 'security';
 
@@ -70,15 +71,20 @@ export const DEVICE_CATALOG: Record<DeviceType, DeviceDefinition> = {
     osType: 'huawei-vrp', namePrefix: 'Router',
     hasTerminal: true, fullyImplemented: true, paletteCategory: 'routers',
   },
+  'firewall-generic': {
+    label: 'Generic Firewall', description: 'Vendor-neutral stateful firewall base',
+    osType: 'linux', namePrefix: 'FW',
+    hasTerminal: false, fullyImplemented: false, paletteCategory: null,
+  },
   'firewall-cisco': {
     label: 'Cisco ASA', description: 'Cisco Adaptive Security Appliance',
-    osType: 'linux', namePrefix: 'FW',
+    osType: 'asa', namePrefix: 'FW',
     hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
   },
   'firewall-fortinet': {
-    label: 'FortiGate', description: 'Fortinet firewall',
-    osType: 'linux', namePrefix: 'FW',
-    hasTerminal: true, fullyImplemented: false, paletteCategory: 'security',
+    label: 'FortiGate', description: 'Fortinet FortiOS firewall',
+    osType: 'fortios', namePrefix: 'FW',
+    hasTerminal: true, fullyImplemented: true, paletteCategory: 'security',
   },
   'firewall-paloalto': {
     label: 'Palo Alto', description: 'Palo Alto firewall',

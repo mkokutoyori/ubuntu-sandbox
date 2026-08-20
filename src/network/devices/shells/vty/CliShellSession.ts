@@ -21,6 +21,8 @@
 
 let nextSessionSeq = 1;
 
+export type CliLineKind = 'con' | 'aux' | 'vty';
+
 /**
  * Structured snapshot of all mode-related fields. Keep this in sync with
  * the shell's snapshot/restore helpers — the fields enumerated here are
@@ -34,6 +36,18 @@ export interface VtySnapshot {
   mode: unknown;
   // ── Selection context (sub-mode pointers) ─────────────────────────
   selectedInterface: string | null;
+  /** Switch-only: `interface range ...` — Router shells leave this []. */
+  selectedInterfaceRange: string[];
+  /** Switch-only: `vlan N` config context — Router shells leave this null. */
+  selectedVlan: number | null;
+  /** Switch-only: ARP ACL context (Cisco `arp access-list`) — Router shells leave this null. */
+  selectedArpAcl: string | null;
+  /** Switch-only: `vlan access-map NAME SEQ` context — Router shells leave this null. */
+  selectedAccessMap: unknown;
+  /** Huawei switch-only: traffic-classifier/behavior/policy (MQC) name context. */
+  selectedMqcName: string | null;
+  /** Huawei switch-only: active `port-group` bulk-config member range. */
+  selectedPortGroup: string[] | string | null;
   selectedRoutingProto: unknown;
   selectedTrack: number | null;
   selectedIpSla: number | null;
@@ -57,8 +71,43 @@ export interface VtySnapshot {
   terminalLength: number;
   /** `terminal width N` — character width hint (default 80). */
   terminalWidth: number;
+  /** `terminal monitor` — stream this line's syslog output to the terminal. */
+  terminalMonitor: boolean;
+  /**
+   * True once the operator has typed `terminal monitor` or `terminal no
+   * monitor` on this line. The console receives debug output without
+   * asking, so "off" and "never set" cannot be the same state — otherwise
+   * `terminal no monitor` has nothing to distinguish itself from a fresh
+   * console and cannot silence anything.
+   */
+  terminalMonitorExplicit?: boolean;
+  /** Huawei VRP `terminal debugging` — route debug output to this vty. */
+  terminalDebugging: boolean;
   /** Privilege level 0–15. 15 = enable. 1 = user. */
   privilegeLevel: number;
+  /**
+   * La vue d'analyseur active, ou `null` a la racine (Cisco CLI Views).
+   *
+   * Elle vivait sur le SHELL, que toutes les sessions partagent : une
+   * vue survivait donc a la deconnexion de celui qui l'avait ouverte —
+   * la console suivante etait enfermee dans le role du precedent et ne
+   * pouvait meme pas demander lequel. Meme defaut que `terminal
+   * monitor`, meme correctif : ce qui est per-session voyage avec la
+   * session.
+   */
+  activeParserView: string | null;
+  /**
+   * L'utilisateur au nom de qui cette session s'execute, ou `null` pour
+   * la console anonyme.
+   *
+   * L'identite vivait sur le SHELL (`configSessionLabel`), que toutes
+   * les sessions partagent : deux sessions simultanees se seraient
+   * attribue les commandes l'une de l'autre dans les traces de
+   * comptabilite, et l'autorisation AAA par commande n'avait aucun nom a
+   * soumettre pour une session ouverte par le terminal. Meme regle que
+   * le niveau et la vue : ce qui est per-session voyage avec elle.
+   */
+  sessionUser: string | null;
   /** `terminal history size N` — bounded ring length. */
   historySize: number;
   /** `show history` buffer. */
@@ -80,13 +129,26 @@ export interface CliShellSessionInit {
 export class CliShellSession {
   readonly id: string;
 
-  // ── Identity ────────────────────────────────────────────────────
-  /**
-   * vty line identifier (vty 0 / vty 1 / …). Real Cisco IOS allocates
-   * up to 5 lines by default; we don't enforce that cap here since
-   * the simulator is meant for teaching, not capacity-planning.
-   */
-  readonly lineId: string;
+  private _lineKind: CliLineKind | null = null;
+  private _lineIndex = 0;
+  private _lineRecordId: string | null = null;
+
+  get lineKind(): CliLineKind | null { return this._lineKind; }
+
+  get lineIndex(): number { return this._lineIndex; }
+
+  get lineRecordId(): string | null { return this._lineRecordId; }
+
+  get lineId(): string {
+    return this._lineKind === null ? this.id : `${this._lineKind} ${this._lineIndex}`;
+  }
+
+  assignLine(kind: CliLineKind, index: number, recordId: string | null = null): void {
+    this._lineKind = kind;
+    this._lineIndex = index;
+    this._lineRecordId = recordId;
+  }
+
   readonly openedAt: number = Date.now();
 
   // ── Mutable state — snapshot.ed by the shell on every exec ──────
@@ -96,11 +158,16 @@ export class CliShellSession {
   disposed: boolean = false;
 
   constructor(init: CliShellSessionInit) {
-    this.id = `vty-${nextSessionSeq++}`;
-    this.lineId = `vty ${nextSessionSeq - 1}`;
+    this.id = `cli-${nextSessionSeq++}`;
     this.state = {
       mode: init.initialMode,
       selectedInterface: null,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: null,
       selectedTrack: null,
       selectedIpSla: null,
@@ -121,7 +188,12 @@ export class CliShellSession {
       selectedIKEv2Profile: null,
       terminalLength: init.initialLength ?? 24,
       terminalWidth: 80,
+      terminalMonitor: false,
+      terminalMonitorExplicit: false,
+      terminalDebugging: false,
       privilegeLevel: 1,
+      activeParserView: null,
+      sessionUser: null,
       historySize: 10,
       cmdHistory: [],
     };

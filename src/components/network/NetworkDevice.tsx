@@ -29,6 +29,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
   // longer re-renders this one. Actions are stable references.
   const selectDevice = useNetworkStore(s => s.selectDevice);
   const moveDevice = useNetworkStore(s => s.moveDevice);
+  const commitMove = useNetworkStore(s => s.commitMove);
   const removeDevice = useNetworkStore(s => s.removeDevice);
   const updateDevice = useNetworkStore(s => s.updateDevice);
   const startConnecting = useNetworkStore(s => s.startConnecting);
@@ -44,6 +45,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
   const [showTargetSelector, setShowTargetSelector] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const dragOffset = useRef({ x: 0, y: 0 });
+  const dragStartPos = useRef({ x: 0, y: 0 });
   const deviceRef = useRef<HTMLDivElement>(null);
 
   const isSelected = selectedDeviceId === device.id;
@@ -72,6 +74,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
 
     selectDevice(device.id);
     setIsDragging(true);
+    dragStartPos.current = { x: device.x, y: device.y };
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     dragOffset.current = {
@@ -96,6 +99,13 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      // One undo step per drag gesture, not per pixel — the position was
+      // already applied live via moveDevice above.
+      const current = useNetworkStore.getState().deviceInstances.get(device.id);
+      if (current) {
+        const pos = current.getPosition();
+        commitMove(device.id, dragStartPos.current, { x: pos.x, y: pos.y });
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -105,7 +115,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, device.id, zoom, moveDevice]);
+  }, [isDragging, device.id, zoom, moveDevice, commitMove]);
 
   // Open source interface selector (instead of auto-selecting first free)
   const handleStartConnection = (e: React.MouseEvent) => {
@@ -135,14 +145,80 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
     updateDevice(device.id, { isPoweredOn: !device.isPoweredOn });
   };
 
+  const handleFocus = useCallback(() => {
+    if (!isConnecting) selectDevice(device.id);
+  }, [device.id, isConnecting, selectDevice]);
+
+  // Keyboard equivalent of mouse drag/click: the device card used to be a
+  // plain unfocusable <div>, so a keyboard/screen-reader user had no way
+  // to select, move, or delete it (rapport 09 audit). Arrow keys nudge
+  // position (Shift = bigger step) using the same moveDevice the drag
+  // handler uses; Delete/Backspace removes the device; Enter/Space opens
+  // the terminal when available, mirroring double-click.
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const STEP = e.shiftKey ? 40 : 10;
+    const nudge = (x: number, y: number) => {
+      const from = { x: device.x, y: device.y };
+      const to = { x, y };
+      moveDevice(device.id, to.x, to.y);
+      commitMove(device.id, from, to);
+    };
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault();
+        nudge(device.x, Math.max(0, device.y - STEP));
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        nudge(device.x, device.y + STEP);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        nudge(Math.max(0, device.x - STEP), device.y);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        nudge(device.x + STEP, device.y);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        removeDevice(device.id);
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (isConnecting && !isConnectionSource) {
+          setPopoverPosition(getPopoverPosition());
+          setShowTargetSelector(true);
+        } else if (hasTerminal && onOpenTerminal) {
+          onOpenTerminal(device.instance);
+        }
+        break;
+      default:
+        break;
+    }
+  }, [
+    device, moveDevice, commitMove, removeDevice, isConnecting, isConnectionSource,
+    hasTerminal, onOpenTerminal, getPopoverPosition,
+  ]);
+
+  const stateLabel = device.isPoweredOn ? 'powered on' : 'powered off';
+  const deviceAriaLabel = `${device.name} (${device.type}), ${stateLabel}${isSelected ? ', selected' : ''}`;
+
   return (
     <>
       <div
         ref={deviceRef}
         data-device-id={device.id}
+        role="button"
+        tabIndex={0}
+        aria-label={deviceAriaLabel}
+        aria-pressed={isSelected}
         className={cn(
-          "absolute flex flex-col items-center gap-1 cursor-pointer select-none",
+          "group absolute flex flex-col items-center gap-1 cursor-pointer select-none",
           "transition-transform duration-75",
+          "focus-visible:outline-none",
           isDragging && "z-50"
         )}
         style={{
@@ -152,6 +228,8 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
         }}
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
+        onFocus={handleFocus}
+        onKeyDown={handleKeyDown}
       >
         {/* Device Card */}
         <div
@@ -164,7 +242,8 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
               : "border-white/20 hover:border-white/30",
             isConnectionSource && "border-green-500 ring-2 ring-green-500/50",
             isConnecting && !isConnectionSource && "hover:border-green-400 hover:ring-2 hover:ring-green-400/50",
-            !device.isPoweredOn && "opacity-50"
+            !device.isPoweredOn && "opacity-50",
+            "group-focus-visible:ring-2 group-focus-visible:ring-primary/60"
           )}
         >
           {/* Power indicator */}
@@ -204,6 +283,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
                 device.isPoweredOn ? "text-green-400" : "text-gray-400"
               )}
               title="Toggle Power"
+              aria-label={device.isPoweredOn ? `Power off ${device.name}` : `Power on ${device.name}`}
             >
               <Power className="w-3.5 h-3.5" />
             </button>
@@ -211,6 +291,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
               onClick={handleStartConnection}
               className="p-1.5 rounded-md hover:bg-white/10 text-blue-400 transition-colors"
               title="Connect"
+              aria-label={`Connect ${device.name} to another device`}
             >
               <Link className="w-3.5 h-3.5" />
             </button>
@@ -219,6 +300,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
                 onClick={(e) => { e.stopPropagation(); onOpenTerminal(device.instance); }}
                 className="p-1.5 rounded-md hover:bg-white/10 text-green-400 transition-colors"
                 title="Open Terminal"
+                aria-label={`Open terminal on ${device.name}`}
               >
                 <Terminal className="w-3.5 h-3.5" />
               </button>
@@ -227,6 +309,7 @@ function NetworkDeviceImpl({ device, zoom, onOpenTerminal }: NetworkDeviceProps)
               onClick={(e) => { e.stopPropagation(); removeDevice(device.id); }}
               className="p-1.5 rounded-md hover:bg-white/10 text-red-400 transition-colors"
               title="Delete"
+              aria-label={`Delete ${device.name}`}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

@@ -16,7 +16,7 @@
  */
 
 import type { Statement, SelectStatement, InsertStatement, UpdateStatement, DeleteStatement,
-  TableRef, BinaryExpr, IdentifierExpr } from '../../engine/parser/ASTNode';
+  TableRef, TableReference, BinaryExpr, IdentifierExpr } from '../../engine/parser/ASTNode';
 import type { OracleStorage } from '../OracleStorage';
 import type { OracleInstance } from '../OracleInstance';
 import { ExecutionPlan, PlanNode, type PlanOperation } from './ExecutionPlan';
@@ -214,7 +214,7 @@ export class PlanGenerator {
 
   // ── Estimation helpers ───────────────────────────────────────────
 
-  private estimateRowsFor(t: TableRef, defaultSchema: string): number {
+  private estimateRowsFor(t: TableReference, defaultSchema: string): number {
     if (t.type !== 'TableRef') return 1000;
     const schema = (t.schema ?? defaultSchema).toUpperCase();
     const name = t.name.toUpperCase();

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-info-snmp-ntp
-Generated: 2026-06-12T11:48:26.202Z
+Generated: 2026-08-19T07:03:18.832Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP info-center/SNMPv1-3/NTP/LLDP/NQA/sFlow
 Total steps: 233
@@ -14,13 +14,13 @@ Total steps: 233
 [2/233] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[3/233] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[3/233] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[4/233] r1 [R1-GE0/0/1] undo shutdown
+[4/233] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[5/233] r1 [R1-GE0/0/1] quit
+[5/233] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [6/233] r1 [R1] interface LoopBack0
@@ -47,7 +47,8 @@ Total steps: 233
 <empty>
 
 [13/233] r1 [R1] info-center timestamp debugging date precision-time tenth-second
-<empty>
+                        ^
+  Error: Wrong parameter found at '^' position.
 
 [14/233] r1 [R1] info-center logbuffer
 <empty>
@@ -83,31 +84,45 @@ Total steps: 233
 <empty>
 
 [25/233] r1 [R1] info-center filter-id bymodule-alias default default
-<empty>
+  Error: Unrecognized command found at '^' position.
+  info-center filter-id bymodule-alias default default
+              ^
 
 [26/233] r1 [R1] info-center max-logfile-number 8
-<empty>
+  Error: Unrecognized command found at '^' position.
+  info-center max-logfile-number 8
+              ^
 
 [27/233] r1 [R1] info-center statistic-suppress enable
-<empty>
+  Error: Unrecognized command found at '^' position.
+  info-center statistic-suppress enable
+              ^
 
 [28/233] r1 [R1] return
 <empty>
 
 [29/233] r1 <R1> display info-center
   Info-center: Enabled
-  Timestamp format: debugging
+  Log host: 10.0.0.2, 10.0.0.3, 10.0.0.4
+  Log host source interface: LoopBack0
+  Log buffer size: 1024
+  Trap buffer size: 256
+  Timestamp: log date, trap date, debug date
   Configured sources: 2
-  Configured loghosts: 4
+  Configured loghosts: 3
 
 [30/233] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 1024
+  Actual buffer size : 1024
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [31/233] r1 <R1> display logbuffer summary
   Log buffer: 0 messages.
@@ -121,7 +136,48 @@ Total steps: 233
   Current messages : 0
 
 [33/233] r1 <R1> display channel
-  Info: No info-center channels configured.
+  channel number:channel name, dest:destination, mod:module, level:severity
+  
+  channel number:0, channel name:console
+    dest: console
+    default    log     state:on    level:debugging
+  
+  channel number:1, channel name:monitor
+    dest: monitor
+    default    log     state:on    level:debugging
+  
+  channel number:2, channel name:loghost
+    dest: loghost
+    default    log     state:on    level:informational
+    IFNET      log     state:on    level:warning
+  
+  channel number:3, channel name:trapbuffer
+    dest: trapbuffer
+    default    log     state:on    level:debugging
+  
+  channel number:4, channel name:logbuffer
+    dest: logbuffer
+    default    log     state:on    level:debugging
+  
+  channel number:5, channel name:snmpagent
+    dest: snmpagent
+    default    log     state:on    level:debugging
+  
+  channel number:6, channel name:channel6
+    dest: (none)
+    default    log     state:on    level:debugging
+  
+  channel number:7, channel name:channel7
+    dest: (none)
+    default    log     state:on    level:debugging
+  
+  channel number:8, channel name:channel8
+    dest: (none)
+    default    log     state:on    level:debugging
+  
+  channel number:9, channel name:channel9
+    dest: (none)
+    default    log     state:on    level:debugging
 
 [34/233] r1 <R1> reset logbuffer
 <empty>
@@ -267,7 +323,7 @@ Total steps: 233
   SNMP version running in the system: SNMPv2c SNMPv3
 
 [75/233] r1 <R1> display snmp-agent local-engineid
-  SNMP local EngineID: 8000000903D4036F16
+  SNMP local EngineID: 80000009038C2212C9
 
 
 --- [76] § NTP ---
@@ -314,10 +370,14 @@ Total steps: 233
 <empty>
 
 [90/233] r1 [R1] ntp-service max-dynamic-sessions 20
-<empty>
+  Error: Wrong parameter found at '^' position.
+  ntp-service max-dynamic-sessions 20
+              ^
 
 [91/233] r1 [R1] ntp-service server disable
-<empty>
+  Error: Wrong parameter found at '^' position.
+  ntp-service server disable
+              ^
 
 [92/233] r1 [R1] undo ntp-service server disable
 <empty>
@@ -326,12 +386,30 @@ Total steps: 233
 <empty>
 
 [94/233] r1 <R1> display ntp-service status
-  Clock status: unsynchronized
-  Clock stratum: 16
-  Reference clock ID: .INIT.
+  Clock status: synchronized
+  Clock stratum: 3
+  Reference clock ID: LOCAL(0)
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 0.00 ms
+  Peer dispersion: 0.00 ms
+  Reference time: 07:03:18.847  Aug 19 2026(EE2FD3B6.D8D4FDF3)
+  Source interface: LoopBack0
 
 [95/233] r1 <R1> display ntp-service sessions
-  No NTP associations
+  clock stratum: 3
+  source-interface: LoopBack0
+   source          reference       stra reach poll  now offset   delay  disper
+  ******************************************************************************
+   10.0.0.21       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.22       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.23       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.30       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+  ******************************************************************************
+  Total sessions: 4
 
 [96/233] r1 <R1> display ntp-service trace
    clock status: unsynchronized
@@ -343,8 +421,8 @@ Total steps: 233
    clock offset: 0.0000 ms
 
 [97/233] r1 <R1> display clock
-  2026-06-12 11:48:26
-  Friday
+  2026-08-19 07:03:18
+  Wednesday
   Time Zone(UTC) : UTC
 
 
@@ -367,13 +445,13 @@ Total steps: 233
 [103/233] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[104/233] r1 [R1-GE0/0/1] lldp enable
+[104/233] r1 [R1-GigabitEthernet0/0/1] lldp enable
 <empty>
 
-[105/233] r1 [R1-GE0/0/1] lldp admin-status txrx
+[105/233] r1 [R1-GigabitEthernet0/0/1] lldp admin-status txrx
 <empty>
 
-[106/233] r1 [R1-GE0/0/1] quit
+[106/233] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [107/233] r1 [R1] nqa test-instance admin jitter
@@ -406,16 +484,16 @@ Total steps: 233
 [116/233] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[117/233] r1 [R1-GE0/0/1] sflow flow-sampling collector 1
+[117/233] r1 [R1-GigabitEthernet0/0/1] sflow flow-sampling collector 1
 <empty>
 
-[118/233] r1 [R1-GE0/0/1] sflow flow-sampling rate 1000
+[118/233] r1 [R1-GigabitEthernet0/0/1] sflow flow-sampling rate 1000
 <empty>
 
-[119/233] r1 [R1-GE0/0/1] sflow counter-sampling collector 1
+[119/233] r1 [R1-GigabitEthernet0/0/1] sflow counter-sampling collector 1
 <empty>
 
-[120/233] r1 [R1-GE0/0/1] quit
+[120/233] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [121/233] r1 [R1] return
@@ -434,16 +512,8 @@ Total steps: 233
    No LLDP neighbors.
 
 [126/233] r1 <R1> display nqa results test-instance admin jitter
-  NQA entry(admin, jitter) :
-    Send operation times: 0             Receive response times: 0
-    Completion: active                  RTD OverThresholds number: 0
-    Attempts number: 0    Drop operation number: 0
-    Disconnect operation number: 0              Operation timeout number: 0
-    System busy operation number: 0             Connection fail number: 0
-    Operation sequence errors number: 0         RTT Stats errors number: 0
-    Destination ip address: 10.0.0.2
-    Min/Max/Avg RTT: 0/0/0 ms
-    Packet loss: 0.0%
+  NQA entry(admin, jitter) :testflag is active ,testtype is jitter
+    No result.
 
 [127/233] r1 <R1> display sflow
   sFlow: Enabled
@@ -485,6 +555,8 @@ Total steps: 233
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -499,81 +571,108 @@ Total steps: 233
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   acl number 2000
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  ntp-service refclock-master 3
+  ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.23 authentication-keyid 1 preference
+  ntp-service unicast-peer 10.0.0.30
+  ntp-service source-interface LoopBack0
+  ntp-service authentication enable
+  ntp-service authentication-keyid 1 authentication-mode md5 cipher
+  ntp-service authentication-keyid 2 authentication-mode hmac-sha256 cipher
+  ntp-service reliable authentication-keyid 1
+  ntp-service access peer 2000
+  ntp-service access server 2000
+  #
+  info-center source default channel 2 log state on level informational
+  info-center source IFNET channel 2 log state on level warning
+  info-center loghost source LoopBack0
+  info-center loghost 10.0.0.2 channel 2 facility local6
+  info-center loghost 10.0.0.3 channel 2 facility local6
+  info-center loghost 10.0.0.4 channel 2 facility local6
+  info-center logbuffer size 1024
+  #
+  sflow agent ip 1.1.1.1
+  sflow collector 1 ip 10.0.0.9 port 6343
+  #
+  nqa test-instance admin jitter
+   test-type jitter
+   destination-address ipv4 10.0.0.2
+   destination-port 16384
+   frequency 60
+   datasize 32
+   start now
+   #
   #
 
 [132/233] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   ip address 1.1.1.1 255.255.255.255
-  #
-  #
-  acl number 2000
-   rule 0 permit source 10.0.0.0 0.0.0.255
-  #
+  Error: The configuration file doesn't exist.
 
 [133/233] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 3
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 3
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack0                         1.1.1.1/32           DOWN       DOWN
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack0                         1.1.1.1/32           up         up(s)
 
 [134/233] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack0 current state : UP
-  Line protocol current state : UP
-  Internet Address is 1.1.1.1/255.255.255.255
+  Line protocol current state : UP (spoofing)
+  Internet Address is 1.1.1.1/32
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -631,10 +730,12 @@ Total steps: 233
   Info: BGP is not running.
 
 [148/233] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [149/233] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [150/233] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -642,7 +743,7 @@ Total steps: 233
 [151/233] r1 <R1> display acl all
   Basic ACL 2000, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
   Total 1 ACL(s)
 
 [152/233] r1 <R1> display dhcp server statistics
@@ -659,8 +760,9 @@ Total steps: 233
   Info: No VRRP backup group is configured.
 
 [154/233] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [155/233] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -686,16 +788,34 @@ Total steps: 233
   Chassis-id: <not set>
 
 [162/233] r1 <R1> display ntp status
-  Clock status: unsynchronized
-  Clock stratum: 16
-  Reference clock ID: .INIT.
+  Clock status: synchronized
+  Clock stratum: 3
+  Reference clock ID: LOCAL(0)
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 0.00 ms
+  Peer dispersion: 0.00 ms
+  Reference time: 07:03:18.907  Aug 19 2026(EE2FD3B6.E83126E9)
+  Source interface: LoopBack0
 
 [163/233] r1 <R1> display ntp session
-  No NTP associations
+  clock stratum: 3
+  source-interface: LoopBack0
+   source          reference       stra reach poll  now offset   delay  disper
+  ******************************************************************************
+   10.0.0.21       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.22       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.23       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+   10.0.0.30       LOCAL(0)        16 000   64    0   0.0000  0.0000 16000.000
+  ******************************************************************************
+  Total sessions: 4
 
 [164/233] r1 <R1> display clock
-  2026-06-12 11:48:26
-  Friday
+  2026-08-19 07:03:18
+  Wednesday
   Time Zone(UTC) : UTC
 
 [165/233] r1 <R1> display lldp neighbor
@@ -707,13 +827,13 @@ Total steps: 233
 [167/233] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:48:26
+  CPU Usage Stat. Time : 2026-08-19 07:03:18
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [168/233] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:48:26
+  Memory utilization statistics at 2026-08-19 07:03:18
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -730,8 +850,7 @@ Total steps: 233
   -------------------------------------------------------------------------------
 
 [170/233] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -749,12 +868,16 @@ Total steps: 233
 
 [172/233] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 1024
+  Actual buffer size : 1024
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:18 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:18 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [173/233] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -802,15 +925,15 @@ Total steps: 233
 
 [179/233] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
-  LoopBack0                   down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
+  LoopBack0                   up    up           0%     0%          0          0
 
 [180/233] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
@@ -823,7 +946,7 @@ Total steps: 233
       Output: 0 packets, 0 bytes
 
 [181/233] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -833,6 +956,8 @@ Total steps: 233
 [182/233] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    shutdown
@@ -848,10 +973,58 @@ Total steps: 233
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   acl number 2000
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  ntp-service refclock-master 3
+  ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.23 authentication-keyid 1 preference
+  ntp-service unicast-peer 10.0.0.30
+  ntp-service source-interface LoopBack0
+  ntp-service authentication enable
+  ntp-service authentication-keyid 1 authentication-mode md5 cipher
+  ntp-service authentication-keyid 2 authentication-mode hmac-sha256 cipher
+  ntp-service reliable authentication-keyid 1
+  ntp-service access peer 2000
+  ntp-service access server 2000
+  #
+  info-center source default channel 2 log state on level informational
+  info-center source IFNET channel 2 log state on level warning
+  info-center loghost source LoopBack0
+  info-center loghost 10.0.0.2 channel 2 facility local6
+  info-center loghost 10.0.0.3 channel 2 facility local6
+  info-center loghost 10.0.0.4 channel 2 facility local6
+  info-center logbuffer size 1024
+  #
+  sflow agent ip 1.1.1.1
+  sflow collector 1 ip 10.0.0.9 port 6343
+  #
+  nqa test-instance admin jitter
+   test-type jitter
+   destination-address ipv4 10.0.0.2
+   destination-port 16384
+   frequency 60
+   datasize 32
+   start now
+   #
   #
 
 [183/233] r1 <R1> display diagnostic-information
@@ -885,16 +1058,17 @@ Total steps: 233
 
 [188/233] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [189/233] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [190] § regression: pipe filters ---
@@ -916,14 +1090,63 @@ Total steps: 233
   #
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   acl number 2000
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  ntp-service refclock-master 3
+  ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.23 authentication-keyid 1 preference
+  ntp-service unicast-peer 10.0.0.30
+  ntp-service source-interface LoopBack0
+  ntp-service authentication enable
+  ntp-service authentication-keyid 1 authentication-mode md5 cipher
+  ntp-service authentication-keyid 2 authentication-mode hmac-sha256 cipher
+  ntp-service reliable authentication-keyid 1
+  ntp-service access peer 2000
+  ntp-service access server 2000
+  #
+  info-center source default channel 2 log state on level informational
+  info-center source IFNET channel 2 log state on level warning
+  info-center loghost source LoopBack0
+  info-center loghost 10.0.0.2 channel 2 facility local6
+  info-center loghost 10.0.0.3 channel 2 facility local6
+  info-center loghost 10.0.0.4 channel 2 facility local6
+  info-center logbuffer size 1024
+  #
+  sflow agent ip 1.1.1.1
+  sflow collector 1 ip 10.0.0.9 port 6343
+  #
+  nqa test-instance admin jitter
+   test-type jitter
+   destination-address ipv4 10.0.0.2
+   destination-port 16384
+   frequency 60
+   datasize 32
+   start now
+   #
   #
 
 [192/233] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    shutdown
   interface GigabitEthernet0/0/1
@@ -934,18 +1157,60 @@ Total steps: 233
    shutdown
   interface LoopBack0
    ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
   acl number 2000
-   rule 0 permit source 10.0.0.0 0.0.0.255
+   rule 5 permit source 10.0.0.0 0.0.0.255
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  ntp-service refclock-master 3
+  ntp-service unicast-server 10.0.0.21 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.22 authentication-keyid 1 preference
+  ntp-service unicast-server 10.0.0.23 authentication-keyid 1 preference
+  ntp-service unicast-peer 10.0.0.30
+  ntp-service source-interface LoopBack0
+  ntp-service authentication enable
+  ntp-service authentication-keyid 1 authentication-mode md5 cipher
+  ntp-service authentication-keyid 2 authentication-mode hmac-sha256 cipher
+  ntp-service reliable authentication-keyid 1
+  ntp-service access peer 2000
+  ntp-service access server 2000
+  info-center source default channel 2 log state on level informational
+  info-center source IFNET channel 2 log state on level warning
+  info-center loghost source LoopBack0
+  info-center loghost 10.0.0.2 channel 2 facility local6
+  info-center loghost 10.0.0.3 channel 2 facility local6
+  info-center loghost 10.0.0.4 channel 2 facility local6
+  info-center logbuffer size 1024
+  sflow agent ip 1.1.1.1
+  sflow collector 1 ip 10.0.0.9 port 6343
+  nqa test-instance admin jitter
+   test-type jitter
+   destination-address ipv4 10.0.0.2
+   destination-port 16384
+   frequency 60
+   datasize 32
+   start now
 
 [193/233] r1 <R1> display ip routing-table | include Direct
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
   1.1.1.1/32          Direct  0    0     D     1.1.1.1         LoopBack0
 
 [194/233] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  LoopBack0                         1.1.1.1/32           up         up(s)
 
 
 --- [195] § regression: view nav + undo ---
@@ -1015,19 +1280,19 @@ Total steps: 233
 [216/233] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[217/233] r1 [Huawei-GE0/0/0] display this
+[217/233] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[218/233] r1 [Huawei-GE0/0/0] shutdown
+[218/233] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[219/233] r1 [Huawei-GE0/0/0] undo shutdown
+[219/233] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[220/233] r1 [Huawei-GE0/0/0] quit
+[220/233] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [221/233] r1 [Huawei] ospf 1
@@ -1036,7 +1301,7 @@ Total steps: 233
 [222/233] r1 [Huawei-ospf-1] display this
   #
   ospf 1
-   router-id 10.0.0.1
+   router-id 1.1.1.1
   #
 
 [223/233] r1 [Huawei-ospf-1] quit
@@ -1057,47 +1322,60 @@ Total steps: 233
   Enter system view, return user view with return command.
 
 [228/233] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [229/233] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [230/233] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [231/233] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [232/233] r1 [Huawei] return
 <empty>

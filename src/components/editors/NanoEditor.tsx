@@ -1,255 +1,234 @@
 /**
- * NanoEditor - Realistic GNU nano 6.2 terminal editor
- *
- * Faithful reproduction of the real nano editor:
- * - Inverted header bar with "GNU nano 6.2" + filename
- * - Full-screen editing area with cursor
- * - Two-row shortcut bar at bottom (^G Help, ^O Write Out, etc.)
- * - Status messages appear centered above shortcuts
- * - Ctrl+O save flow with filename confirmation
- * - Ctrl+X exit with save prompt if modified
- * - Ctrl+K cut line, Ctrl+U paste line
- * - Ctrl+W search, Ctrl+G cursor position info
- * - Line wrapping, proper cursor tracking
+ * NanoEditor - GNU nano terminal editor, rendered from a headless
+ * NanoEngine (src/network/devices/linux/editors/NanoEngine.ts). The
+ * engine owns the buffer/cursor/mode state machine and all filesystem
+ * side effects (main file + lock/swap file); this component is a thin
+ * keystroke-forwarding renderer over it.
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useReducer } from 'react';
+import { scrollCaretIntoView } from './caretScroll';
+import { NanoEngine } from '@/network/devices/linux/editors/NanoEngine';
+import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
+
+/**
+ * What the renderer needs from whatever holds the buffer. A local
+ * NanoEngine satisfies it directly; a RemoteNanoController satisfies it
+ * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
+ */
+export type NanoEditorDriver = Pick<NanoEngine,
+  | 'applyKey' | 'applyPaste' | 'displayColumnFor' | 'moveCursorToDisplayOffset'
+  | 'lines' | 'mode' | 'cursorLine' | 'cursorCol' | 'modified' | 'exited'
+  | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown' | 'statusMessage'
+  | 'helpText' | 'displayContent' | 'displayCursorOffset' | 'promptCursor'
+  | 'saveFileName' | 'searchQuery' | 'gotoLineQuery' | 'executeCommandQuery'
+  | 'readFileQuery' | 'regexSearchEnabled' | 'replaceSearchQuery'
+  | 'replaceWithText' | 'pendingReplaceMatch'>;
 
 interface NanoEditorProps {
   filePath: string;
   initialContent: string;
   isNewFile: boolean;
-  onSave: (content: string, filePath: string) => void;
-  onExit: () => void;
+  fsContext?: EditorFsContext;
+  /** Drive an already-open buffer instead of constructing a local one. */
+  driver?: NanoEditorDriver;
+  onExit: (saved: boolean) => void;
+  /** `nano -v`: buffer is immutable, no Write Out. */
+  readOnly?: boolean;
+  /** `nano -c`: title bar shows the live cursor position. */
+  showPosition?: boolean;
+  /** `nano -l`/`--linenumbers`: line-number gutter shown at open. */
+  showLineNumbers?: boolean;
+  /** `nano +LINE[,COLUMN] file`: initial cursor position (1-indexed). */
+  initialCursorLine?: number;
+  initialCursorCol?: number;
 }
 
-type NanoMode = 'edit' | 'save-prompt' | 'exit-save-prompt' | 'search';
+type Shortcut = readonly [string, string];
+
+/** The bottom two-row shortcut bar is strictly contextual in real nano —
+ *  only the keys meaningful in the active mode are ever shown. */
+function shortcutsForMode(engine: NanoEditorDriver): readonly [readonly Shortcut[], readonly Shortcut[]] {
+  switch (engine.mode) {
+    case 'search':
+      return [
+        [['^G', 'Help'], ['^W', 'Search'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
+        [['^C', 'Cancel'], ['M-B', 'Backwards']],
+      ];
+    case 'replace-search':
+      return [
+        [['^G', 'Help'], ['M-C', 'Case Sens'], ['M-R', 'Regexp']],
+        [['^C', 'Cancel']],
+      ];
+    case 'replace-with':
+      return [
+        [['^G', 'Help'], ['M-C', 'Case Sens']],
+        [['^C', 'Cancel']],
+      ];
+    case 'replace-confirm':
+      return [
+        [['^G', 'Help'], ['Y', 'Yes'], ['A', 'All']],
+        [['N', 'No'], ['^C', 'Cancel']],
+      ];
+    case 'save-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'exit-save-prompt':
+      return [
+        [['^G', 'Help'], ['Y', 'Yes']],
+        [['N', 'No'], ['^C', 'Cancel']],
+      ];
+    case 'goto-line':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'execute-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'read-file-prompt':
+      return [
+        [['^G', 'Help']],
+        [['^C', 'Cancel']],
+      ];
+    case 'help':
+      return [
+        [['^X', 'Exit Help']],
+        [],
+      ];
+    case 'edit':
+    default:
+      if (engine.isReadOnly) {
+        // View mode: no Write Out, Cut, Paste, Replace, Read File,
+        // Execute, or Justify — nothing that could touch the buffer.
+        return [
+          [['^G', 'Help'], ['^W', 'Where Is']],
+          [['^X', 'Exit'], ['^_', 'Go To Line']],
+        ];
+      }
+      return [
+        [['^G', 'Help'], ['^O', 'Write Out'], ['^W', 'Where Is'], ['^K', 'Cut'], ['^T', 'Execute']],
+        [['^X', 'Exit'], ['^R', 'Read File'], ['^\\', 'Replace'], ['^U', 'Paste'], ['^J', 'Justify']],
+      ];
+  }
+}
 
 export const NanoEditor: React.FC<NanoEditorProps> = ({
   filePath,
   initialContent,
   isNewFile,
-  onSave,
+  fsContext,
+  driver,
   onExit,
+  readOnly = false,
+  showPosition = false,
+  showLineNumbers = false,
+  initialCursorLine,
+  initialCursorCol,
 }) => {
-  const [content, setContent] = useState(initialContent);
-  const [modified, setModified] = useState(false);
-  const [mode, setMode] = useState<NanoMode>('edit');
-  const [statusMessage, setStatusMessage] = useState(
-    isNewFile ? '[ New File ]' : ''
-  );
-  const [statusTimeout, setStatusTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [saveFileName, setSaveFileName] = useState(filePath);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [cutBuffer, setCutBuffer] = useState<string[]>([]);
-  const [cursorLine, setCursorLine] = useState(0);
-  const [cursorCol, setCursorCol] = useState(0);
+  const engineRef = useRef<NanoEditorDriver>();
+  if (!engineRef.current) {
+    engineRef.current = driver ?? new NanoEngine(
+      fsContext!, filePath, initialContent, isNewFile, readOnly,
+      initialCursorLine !== undefined ? { line: initialCursorLine, col: initialCursorCol } : undefined,
+      showLineNumbers,
+    );
+  }
+  const engine = engineRef.current;
+  const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const caretRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  // The textarea owns real, native scrolling (long buffers overflow its
+  // box and the browser scrolls it internally — that can't be delegated
+  // to an ancestor). The caret/highlight overlays and the line-number
+  // gutter are separate DOM nodes positioned from cursorLine/cursorCol
+  // alone, so a plain mouse-wheel scroll (which changes no engine state,
+  // triggers no re-render) used to leave them glued to their unscrolled
+  // position — floating disconnected from the text underneath. Tracked
+  // in a ref (not state) and applied as a `transform` written directly
+  // on scroll: going through setState here would re-run the selection
+  // sync effect below on every scroll tick and fight the user's manual
+  // scrolling by re-revealing the caret's real position each time.
+  const scrollRef = useRef({ top: 0, left: 0 });
 
-  const fileName = filePath.split('/').pop() || 'New Buffer';
-
-  // Focus management
   useEffect(() => {
-    if (mode === 'save-prompt' || mode === 'exit-save-prompt') {
+    if (engine.mode === 'save-prompt') {
       saveInputRef.current?.focus();
-    } else if (mode === 'search') {
+      const pos = engine.promptCursor;
+      saveInputRef.current?.setSelectionRange(pos, pos);
+    } else if (engine.mode === 'exit-save-prompt' || engine.mode === 'replace-confirm') {
+      // Hidden Y/N/A capture inputs — no text field, nothing to position.
+      saveInputRef.current?.focus();
+    } else if (engine.mode === 'search' || engine.mode === 'replace-search' || engine.mode === 'replace-with'
+      || engine.mode === 'goto-line' || engine.mode === 'execute-prompt' || engine.mode === 'read-file-prompt') {
       searchInputRef.current?.focus();
+      const pos = engine.promptCursor;
+      searchInputRef.current?.setSelectionRange(pos, pos);
     } else {
       textareaRef.current?.focus();
-    }
-  }, [mode]);
-
-  // Show a temporary status message
-  const showStatus = useCallback((msg: string, duration = 3000) => {
-    if (statusTimeout) clearTimeout(statusTimeout);
-    setStatusMessage(msg);
-    if (duration > 0) {
-      const t = setTimeout(() => setStatusMessage(''), duration);
-      setStatusTimeout(t);
-    }
-  }, [statusTimeout]);
-
-  // Track cursor position
-  const updateCursorPosition = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const pos = ta.selectionStart;
-    const textBefore = content.slice(0, pos);
-    const lines = textBefore.split('\n');
-    setCursorLine(lines.length - 1);
-    setCursorCol(lines[lines.length - 1].length);
-  }, [content]);
-
-  // Handle keyboard in edit mode
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!e.ctrlKey) {
-      // Update cursor on next tick
-      setTimeout(updateCursorPosition, 0);
-      return;
-    }
-
-    // Ctrl+O — Write Out (Save)
-    if (e.key === 'o' || e.key === 'O') {
-      e.preventDefault();
-      setSaveFileName(filePath);
-      setMode('save-prompt');
-      return;
-    }
-
-    // Ctrl+X — Exit
-    if (e.key === 'x' || e.key === 'X') {
-      e.preventDefault();
-      if (modified) {
-        setMode('exit-save-prompt');
-        showStatus('Save modified buffer?', 0);
-      } else {
-        onExit();
+      const pos = engine.displayCursorOffset;
+      textareaRef.current?.setSelectionRange(pos, pos);
+      if (textareaRef.current) {
+        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
       }
+    }
+  });
+
+  const dispatch = useCallback((e: React.KeyboardEvent, forwardToApp = true) => {
+    e.preventDefault();
+    engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+    if (engine.exited) {
+      onExit(engine.savedOnExit);
       return;
     }
+    if (forwardToApp) bump();
+  }, [engine, onExit, bump]);
 
-    // Ctrl+K — Cut current line
-    if (e.key === 'k' || e.key === 'K') {
-      e.preventDefault();
-      const lines = content.split('\n');
-      if (cursorLine < lines.length) {
-        const cutLine = lines[cursorLine];
-        setCutBuffer(prev => [...prev, cutLine]);
-        lines.splice(cursorLine, 1);
-        if (lines.length === 0) lines.push('');
-        setContent(lines.join('\n'));
-        setModified(true);
-        showStatus('Cut 1 line');
-      }
-      return;
-    }
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => dispatch(e), [dispatch]);
+  const handlePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => dispatch(e), [dispatch]);
 
-    // Ctrl+U — Paste (Uncut)
-    if (e.key === 'u' || e.key === 'U') {
-      e.preventDefault();
-      if (cutBuffer.length > 0) {
-        const lines = content.split('\n');
-        lines.splice(cursorLine, 0, ...cutBuffer);
-        setContent(lines.join('\n'));
-        setModified(true);
-        showStatus(`Pasted ${cutBuffer.length} line(s)`);
-      }
-      return;
-    }
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    engine.applyPaste(e.clipboardData.getData('text'));
+    bump();
+  }, [engine, bump]);
 
-    // Ctrl+W — Search
-    if (e.key === 'w' || e.key === 'W') {
-      e.preventDefault();
-      setSearchQuery('');
-      setMode('search');
-      return;
-    }
+  const handleEditMouseUp = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const offset = e.currentTarget.selectionStart ?? 0;
+    engine.moveCursorToDisplayOffset(offset);
+    bump();
+  }, [engine, bump]);
 
-    // Ctrl+G — Help / Cursor position
-    if (e.key === 'g' || e.key === 'G') {
-      e.preventDefault();
-      const totalLines = content.split('\n').length;
-      const totalChars = content.length;
-      const linePercent = totalLines > 0 ? Math.round(((cursorLine + 1) / totalLines) * 100) : 100;
-      showStatus(
-        `[ line ${cursorLine + 1}/${totalLines} (${linePercent}%), col ${cursorCol + 1}, char ${textareaRef.current?.selectionStart || 0}/${totalChars} ]`
-      );
-      return;
-    }
+  const handleEditScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    scrollRef.current = { top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft };
+    const { top, left } = scrollRef.current;
+    const shift = `translate(${-left}px, ${-top}px)`;
+    if (caretRef.current) caretRef.current.style.transform = shift;
+    if (highlightRef.current) highlightRef.current.style.transform = shift;
+    if (gutterRef.current) gutterRef.current.style.transform = `translateY(${-top}px)`;
+  }, []);
 
-    // Ctrl+C — Show cursor position (like nano)
-    if (e.key === 'c' || e.key === 'C') {
-      e.preventDefault();
-      const totalLines = content.split('\n').length;
-      showStatus(`[ line ${cursorLine + 1}/${totalLines}, col ${cursorCol + 1} ]`);
-      return;
-    }
+  const [shortcutsRow1, shortcutsRow2] = shortcutsForMode(engine);
 
-    setTimeout(updateCursorPosition, 0);
-  }, [content, cursorLine, cursorCol, cutBuffer, filePath, modified, onExit, showStatus, updateCursorPosition]);
-
-  // Handle save prompt
-  const handleSavePromptKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      onSave(content, saveFileName);
-      setModified(false);
-      const lines = content.split('\n').length;
-      const chars = content.length;
-      showStatus(`[ Wrote ${lines} line(s), ${chars} character(s) to ${saveFileName} ]`);
-      setMode('edit');
-      return;
-    }
-    if (e.key === 'Escape' || (e.ctrlKey && (e.key === 'c' || e.key === 'C'))) {
-      e.preventDefault();
-      showStatus('Cancelled');
-      setMode('edit');
-    }
-  }, [content, saveFileName, onSave, showStatus]);
-
-  // Handle exit-save prompt (Y/N/^C)
-  const handleExitSaveKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'y' || e.key === 'Y') {
-      e.preventDefault();
-      onSave(content, filePath);
-      onExit();
-      return;
-    }
-    if (e.key === 'n' || e.key === 'N') {
-      e.preventDefault();
-      onExit();
-      return;
-    }
-    if (e.key === 'Escape' || (e.ctrlKey && (e.key === 'c' || e.key === 'C'))) {
-      e.preventDefault();
-      setStatusMessage('');
-      setMode('edit');
-    }
-  }, [content, filePath, onSave, onExit]);
-
-  // Handle search
-  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (searchQuery) {
-        const pos = content.indexOf(searchQuery, (textareaRef.current?.selectionStart || 0) + 1);
-        if (pos >= 0) {
-          textareaRef.current?.setSelectionRange(pos, pos + searchQuery.length);
-          textareaRef.current?.focus();
-          showStatus('');
-        } else {
-          // Wrap around search
-          const wrapPos = content.indexOf(searchQuery);
-          if (wrapPos >= 0) {
-            textareaRef.current?.setSelectionRange(wrapPos, wrapPos + searchQuery.length);
-            textareaRef.current?.focus();
-            showStatus('[ Search Wrapped ]');
-          } else {
-            showStatus(`[ "${searchQuery}" not found ]`);
-          }
-        }
-      }
-      setMode('edit');
-      return;
-    }
-    if (e.key === 'Escape' || (e.ctrlKey && (e.key === 'c' || e.key === 'C'))) {
-      e.preventDefault();
-      setMode('edit');
-    }
-  }, [searchQuery, content, showStatus]);
-
-  const lines = content.split('\n');
-  const totalLines = lines.length;
-
-  // Shortcut definitions for the bottom bar (matching real nano)
-  const shortcuts = [
-    ['^G', 'Help'],     ['^O', 'Write Out'], ['^W', 'Where Is'],  ['^K', 'Cut'],
-    ['^C', 'Location'], ['^X', 'Exit'],      ['^R', 'Read File'], ['^\\ ', 'Replace'],
-    ['^U', 'Paste'],    ['^J', 'Justify'],   ['^T', 'Execute'],   ['^_', 'Go To Line'],
-  ];
+  const titleStatus = engine.isReadOnly
+    ? '[view]'
+    : engine.modified
+      ? 'Modified'
+      : isNewFile
+        ? 'New Buffer'
+        : '';
+  const titlePosition = showPosition
+    ? `line ${engine.cursorLine + 1}/${engine.lines.length} col ${engine.cursorCol + 1}`
+    : '';
 
   return (
     <div
@@ -264,7 +243,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
     >
       {/* ── Header bar (inverted: white bg, dark text, like real nano) ── */}
       <div
-        className="flex items-center justify-center shrink-0 px-2"
+        data-testid="nano-titlebar"
+        className="flex items-center shrink-0 px-2"
         style={{
           backgroundColor: '#d3d7cf',
           color: '#300a24',
@@ -273,24 +253,51 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         }}
       >
         <span className="mx-1">GNU nano 6.2</span>
-        {modified && <span className="mx-2">Modified</span>}
+        <span className="flex-1 text-center mx-1">{filePath}</span>
         <span className="mx-1">
-          {isNewFile ? 'New Buffer' : fileName}
+          {titleStatus}
+          {titleStatus && titlePosition && '    '}
+          {titlePosition}
         </span>
       </div>
 
-      {/* ── Editor content area ── */}
-      <div className="flex-1 relative overflow-hidden">
+      {/* ── Editor content area (optional line-number gutter + textarea) ── */}
+      <div className="flex-1 flex overflow-hidden">
+        {engine.lineNumbersShown && engine.mode !== 'help' && (
+          <div
+            ref={gutterRef}
+            data-testid="nano-gutter"
+            className="select-none shrink-0 text-right"
+            style={{
+              backgroundColor: '#300a24',
+              color: '#585b70',
+              minWidth: `${String(engine.lines.length).length + 1}ch`,
+              paddingTop: '0.25rem',
+              paddingRight: '0.5em',
+              lineHeight: '1.35',
+              fontSize: 'inherit',
+              fontFamily: 'inherit',
+              transform: `translateY(${-scrollRef.current.top}px)`,
+            }}
+          >
+            {engine.lines.map((_, i) => (
+              <div key={i} style={{ minHeight: '1.35em' }}>{i + 1}</div>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 relative overflow-hidden">
         <textarea
+          name="nanoBuffer"
+          autoComplete="off"
           ref={textareaRef}
-          value={content}
-          onChange={(e) => {
-            setContent(e.target.value);
-            setModified(true);
-            setTimeout(updateCursorPosition, 0);
-          }}
-          onKeyDown={handleKeyDown}
-          onClick={updateCursorPosition}
+          data-testid="nano-textarea"
+          value={engine.mode === 'help' ? engine.helpText : engine.displayContent}
+          onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
+          onKeyDown={handleEditKeyDown}
+          onPaste={engine.mode === 'help' ? undefined : handlePaste}
+          onMouseUp={engine.mode === 'help' ? undefined : handleEditMouseUp}
+          onScroll={handleEditScroll}
+          readOnly
           className="absolute inset-0 w-full h-full outline-none resize-none p-1"
           style={{
             backgroundColor: '#300a24',
@@ -303,27 +310,66 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             tabSize: 8,
           }}
           spellCheck={false}
-          autoComplete="off"
         />
+        {engine.mode === 'edit' && (
+          <div
+            ref={caretRef}
+            data-testid="nano-caret"
+            className="absolute pointer-events-none terminal-cursor"
+            style={{
+              top: `calc(0.25rem + ${engine.cursorLine} * 1.35em)`,
+              left: `calc(0.25rem + ${engine.displayColumnFor(engine.cursorLine, engine.cursorCol)}ch)`,
+              width: '2px',
+              height: '1.2em',
+              backgroundColor: '#ffffff',
+              transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
+            }}
+          />
+        )}
+        {engine.mode === 'replace-confirm' && engine.pendingReplaceMatch && (() => {
+          const m = engine.pendingReplaceMatch;
+          const startCol = engine.displayColumnFor(m.line, m.start);
+          const endCol = engine.displayColumnFor(m.line, m.end);
+          return (
+            <div
+              ref={highlightRef}
+              data-testid="nano-replace-highlight"
+              className="absolute pointer-events-none"
+              style={{
+                top: `calc(0.25rem + ${m.line} * 1.35em)`,
+                left: `calc(0.25rem + ${startCol}ch)`,
+                width: `${Math.max(1, endCol - startCol)}ch`,
+                height: '1.35em',
+                backgroundColor: 'rgba(255, 255, 0, 0.35)',
+                transform: `translate(${-scrollRef.current.left}px, ${-scrollRef.current.top}px)`,
+              }}
+            />
+          );
+        })()}
+        </div>
       </div>
 
       {/* ── Status message line (centered, above shortcuts) ── */}
       <div
+        data-testid="nano-status-message"
         className="text-center shrink-0"
         style={{
           minHeight: '1.35em',
-          color: statusMessage.startsWith('[') ? '#d3d7cf' : '#ffffff',
+          color: engine.statusMessage.startsWith('[') ? '#d3d7cf' : '#ffffff',
           backgroundColor: '#300a24',
         }}
       >
-        {mode === 'save-prompt' && (
+        {engine.mode === 'save-prompt' && (
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>File Name to Write: </span>
             <input
+              name="nanoSave"
+              autoComplete="off"
               ref={saveInputRef}
-              value={saveFileName}
-              onChange={(e) => setSaveFileName(e.target.value)}
-              onKeyDown={handleSavePromptKeyDown}
+              value={engine.saveFileName}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -332,11 +378,54 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
-        {mode === 'exit-save-prompt' && (
+        {engine.mode === 'execute-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Execute Command: </span>
+            <input
+              name="nanoSearch"
+              autoComplete="off"
+              ref={searchInputRef}
+              value={engine.executeCommandQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+            />
+          </div>
+        )}
+        {engine.mode === 'read-file-prompt' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>File to insert: </span>
+            <input
+              name="nanoSearch"
+              autoComplete="off"
+              ref={searchInputRef}
+              value={engine.readFileQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+            />
+          </div>
+        )}
+        {engine.mode === 'exit-save-prompt' && (
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>Save modified buffer? &nbsp;</span>
             <span style={{ color: '#ffffff', fontWeight: 'bold' }}> Y</span>
@@ -348,21 +437,26 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             <span style={{ color: '#ffffff', fontWeight: 'bold' }}> ^C</span>
             <span style={{ color: '#d3d7cf' }}> Cancel</span>
             <input
+              name="nanoSave"
+              autoComplete="off"
               ref={saveInputRef}
-              onKeyDown={handleExitSaveKeyDown}
+              onKeyDown={handlePromptKeyDown}
               className="absolute opacity-0 w-0 h-0"
               autoFocus
             />
           </div>
         )}
-        {mode === 'search' && (
+        {engine.mode === 'search' && (
           <div className="flex items-center px-1">
-            <span style={{ color: '#d3d7cf' }}>Search: </span>
+            <span style={{ color: '#d3d7cf' }}>{engine.regexSearchEnabled ? 'Search [Regexp]: ' : 'Search: '}</span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
+              value={engine.searchQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none"
               style={{
                 color: '#ffffff',
@@ -371,18 +465,108 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
-        {mode === 'edit' && statusMessage}
+        {engine.mode === 'replace-search' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>
+              {engine.regexSearchEnabled ? 'Search (to replace) [Regexp]: ' : 'Search (to replace): '}
+            </span>
+            <input
+              name="nanoSearch"
+              autoComplete="off"
+              ref={searchInputRef}
+              value={engine.replaceSearchQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+            />
+          </div>
+        )}
+        {engine.mode === 'replace-with' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Replace with: </span>
+            <input
+              name="nanoSearch"
+              autoComplete="off"
+              ref={searchInputRef}
+              value={engine.replaceWithText}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+            />
+          </div>
+        )}
+        {engine.mode === 'goto-line' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Enter line number, column number: </span>
+            <input
+              name="nanoSearch"
+              autoComplete="off"
+              ref={searchInputRef}
+              value={engine.gotoLineQuery}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={handlePromptKeyDown}
+              onPaste={handlePaste}
+              className="flex-1 bg-transparent outline-none"
+              style={{
+                color: '#ffffff',
+                caretColor: '#ffffff',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+              }}
+              spellCheck={false}
+            />
+          </div>
+        )}
+        {engine.mode === 'replace-confirm' && (
+          <div className="flex items-center px-1">
+            <span style={{ color: '#d3d7cf' }}>Replace this instance? &nbsp;</span>
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> Y</span>
+            <span style={{ color: '#d3d7cf' }}>es</span>
+            <span className="mx-1" />
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> N</span>
+            <span style={{ color: '#d3d7cf' }}>o</span>
+            <span className="mx-1" />
+            <span style={{ color: '#ffffff', fontWeight: 'bold' }}> A</span>
+            <span style={{ color: '#d3d7cf' }}>ll</span>
+            <input
+              name="nanoSave"
+              autoComplete="off"
+              ref={saveInputRef}
+              onKeyDown={handlePromptKeyDown}
+              className="absolute opacity-0 w-0 h-0"
+              autoFocus
+            />
+          </div>
+        )}
+        {engine.mode === 'edit' && engine.statusMessage}
       </div>
 
       {/* ── Bottom shortcut bar (two rows, inverted colors like real nano) ── */}
-      <div className="shrink-0" style={{ backgroundColor: '#300a24' }}>
-        {[0, 1].map((row) => (
-          <div key={row} className="flex flex-wrap" style={{ minHeight: '1.35em' }}>
-            {shortcuts.slice(row * 6, row * 6 + 6).map(([key, label]) => (
+      {/* Strictly contextual: shows exactly the shortcuts bound in the
+          active mode (edit/search/replace/save/...), like real nano. */}
+      <div data-testid="nano-shortcut-bar" className="shrink-0" style={{ backgroundColor: '#300a24' }}>
+        {[shortcutsRow1, shortcutsRow2].map((row, rowIdx) => (
+          <div key={rowIdx} className="flex flex-wrap" style={{ minHeight: '1.35em' }}>
+            {row.map(([key, label]) => (
               <div key={key} className="flex" style={{ minWidth: '16.66%' }}>
                 <span
                   style={{

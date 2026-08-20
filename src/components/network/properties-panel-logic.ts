@@ -5,28 +5,9 @@
 import type { ConnectionType } from '@/network';
 import { isConnectionActive, type Connection } from '@/store/networkStore';
 
-/**
- * Formats bandwidth in human-readable form.
- */
-export function formatBandwidth(mbps: number): string {
-  if (mbps === 0) return 'N/A';
-  if (mbps >= 1000) return `${mbps / 1000} Gbps`;
-  return `${mbps} Mbps`;
-}
-
-/**
- * Formats latency in human-readable form.
- */
-export function formatLatency(ms: number): string {
-  if (ms === 0) return '< 0.1 ms';
-  return `${ms} ms`;
-}
-
 export interface ConnectionDetails {
   type: ConnectionType;
   typeLabel: string;
-  bandwidth: string;
-  latency: string;
   sourceInterface: string;
   targetInterface: string;
   isActive: boolean;
@@ -38,37 +19,11 @@ const TYPE_LABELS: Record<string, string> = {
   console: 'Console'
 };
 
-/**
- * Extracts display details from a Connection, reading from its
- * concrete instance when available.
- */
+// Bandwidth / latency live in useConnectionPerf (subscribed to port.config events).
 export function getConnectionDetails(connection: Connection): ConnectionDetails {
-  const typeLabel = TYPE_LABELS[connection.type] || connection.type;
-
-  let bandwidth = 'N/A';
-  let latency = 'N/A';
-
-  // Defaults based on connection type
-  switch (connection.type) {
-    case 'ethernet':
-      bandwidth = '1 Gbps';
-      latency = '0.1 ms';
-      break;
-    case 'serial':
-      bandwidth = '1.544 Mbps';
-      latency = '5 ms';
-      break;
-    case 'console':
-      bandwidth = 'N/A';
-      latency = 'N/A';
-      break;
-  }
-
   return {
     type: connection.type,
-    typeLabel,
-    bandwidth,
-    latency,
+    typeLabel: TYPE_LABELS[connection.type] || connection.type,
     sourceInterface: connection.sourceInterfaceId,
     targetInterface: connection.targetInterfaceId,
     isActive: isConnectionActive(connection)

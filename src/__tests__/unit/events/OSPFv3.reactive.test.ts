@@ -64,7 +64,7 @@ function makeLinkLSA(routerId: string): LSA {
     lsSequenceNumber: OSPF_INITIAL_SEQUENCE_NUMBER,
     checksum: 0,
     length: 32,
-  } as LSA;
+  } as unknown as LSA;
 }
 
 describe('OSPFv3 — observables surface', () => {

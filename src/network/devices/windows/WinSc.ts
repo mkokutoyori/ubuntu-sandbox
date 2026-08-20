@@ -18,13 +18,15 @@
  *   - sc sdshow <name>        — show security descriptor
  */
 
-import type { WindowsServiceManager } from './WindowsServiceManager';
+import type { WindowsServiceManager, RecoveryAction, RecoveryActionType } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
 
 export interface ScContext {
   serviceManager: WindowsServiceManager;
   processManager: WindowsProcessManager;
   isAdmin: boolean;
+  /** Acting username, for security-audit attribution (`obj=` account changes). */
+  currentUser: string;
 }
 
 export function cmdSc(ctx: ScContext, args: string[]): string {
@@ -48,6 +50,7 @@ export function cmdSc(ctx: ScContext, args: string[]): string {
     case 'delete':      return scDelete(ctx, subArgs);
     case 'description': return scDescription(ctx, subArgs);
     case 'qfailure':    return scQfailure(ctx, subArgs);
+    case 'failure':     return scFailure(ctx, subArgs);
     case 'sdshow':      return scSdshow(ctx, subArgs);
     default:
       return `[SC] Unrecognized command "${subCmd}"`;
@@ -198,6 +201,17 @@ function scConfig(ctx: ScContext, args: string[]): string {
     if (err) return `[SC] ChangeServiceConfig FAILED:\n\n${err}`;
   }
 
+  if (opts.depend !== undefined) {
+    const deps = opts.depend.split('/').map(s => s.trim()).filter(Boolean);
+    const err = ctx.serviceManager.setDependencies(name, deps, ctx.isAdmin);
+    if (err) return `[SC] ChangeServiceConfig FAILED:\n\n${err}`;
+  }
+
+  if (opts.obj !== undefined) {
+    const err = ctx.serviceManager.setAccount(name, opts.obj, ctx.isAdmin, ctx.currentUser);
+    if (err) return `[SC] ChangeServiceConfig FAILED:\n\n${err}`;
+  }
+
   return '[SC] ChangeServiceConfig SUCCESS';
 }
 
@@ -217,7 +231,8 @@ function scCreate(ctx: ScContext, args: string[]): string {
     binaryPath: opts.binpath,
     displayName: opts.displayname || name,
     startType: opts.start ? startTypeMap[opts.start.toLowerCase()] : undefined,
-  }, ctx.isAdmin);
+    dependencies: opts.depend ? opts.depend.split('/').map(s => s.trim()).filter(Boolean) : undefined,
+  }, ctx.isAdmin, ctx.currentUser);
 
   if (err) {
     if (err.includes('already exists')) return `[SC] CreateService FAILED 1073:\n\n${err}`;
@@ -263,13 +278,7 @@ function scQueryEx(ctx: ScContext, args: string[]): string {
 }
 
 function findServicePid(ctx: ScContext, serviceName: string): number {
-  const procs = ctx.processManager.getAllProcesses();
-  for (const p of procs) {
-    if (p.hostedServices.some(s => s.toLowerCase() === serviceName.toLowerCase())) {
-      return p.pid;
-    }
-  }
-  return 0;
+  return ctx.processManager.getPidForService(serviceName);
 }
 
 // ─── description — show service description ──────────────────────
@@ -297,6 +306,39 @@ function scQfailure(ctx: ScContext, args: string[]): string {
   const svc = ctx.serviceManager.getService(args[0]);
   if (!svc) return `[SC] OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
   return ctx.serviceManager.formatScQfailure(svc);
+}
+
+// ─── failure — configure recovery actions ─────────────────────────
+
+function scFailure(ctx: ScContext, args: string[]): string {
+  if (args.length === 0) return '[SC] ChangeServiceConfig2: service name required.';
+  const name = args[0];
+  if (!ctx.serviceManager.getService(name)) {
+    return `[SC] OpenService FAILED 1060:\n\nThe specified service does not exist as an installed service.`;
+  }
+  const opts = parseScOptions(args.slice(1));
+  const resetPeriodSec = opts.reset ? parseInt(opts.reset, 10) : 0;
+  const err = ctx.serviceManager.setFailureConfig(name, {
+    resetPeriodSec: isNaN(resetPeriodSec) ? 0 : resetPeriodSec,
+    actions: opts.actions ? parseFailureActions(opts.actions) : [],
+    command: opts.command || undefined,
+  }, ctx.isAdmin);
+  if (err) return `[SC] ChangeServiceConfig2 FAILED:\n\n${err}`;
+  return '[SC] ChangeServiceConfig2 SUCCESS';
+}
+
+/** Parse `restart/10000/run/20000/reboot/30000` into ordered recovery tiers. */
+function parseFailureActions(raw: string): RecoveryAction[] {
+  const tokens = raw.split('/');
+  const out: RecoveryAction[] = [];
+  const validTypes: RecoveryActionType[] = ['restart', 'run', 'reboot', 'none'];
+  for (let i = 0; i < tokens.length; i += 2) {
+    const type = tokens[i].toLowerCase();
+    if (!validTypes.includes(type as RecoveryActionType)) continue;
+    const delayMs = parseInt(tokens[i + 1] ?? '0', 10);
+    out.push({ type: type as RecoveryActionType, delayMs: isNaN(delayMs) ? 0 : delayMs });
+  }
+  return out;
 }
 
 // ─── sdshow — show security descriptor ───────────────────────────

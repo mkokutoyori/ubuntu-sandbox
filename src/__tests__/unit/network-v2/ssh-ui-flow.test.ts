@@ -26,6 +26,8 @@ import { Cable } from '@/network/hardware/Cable';
 import { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { VirtualTimeScheduler } from '@/events/Scheduler';
+import { worstCaseRetransmitWindowMs } from '@/network/tcp/RttEstimator';
 
 // ── LAN fixture ────────────────────────────────────────────────────
 
@@ -104,9 +106,17 @@ async function waitFor(
   }
 }
 
-/** Type a command in normal (bash) mode and press Enter. */
+/**
+ * Type a command in normal (bash) mode and press Enter. Sets both
+ * `.input` (read by top-level/pushed-child dispatch) and `._inputBuf`
+ * (read by active-sub-shell dispatch, e.g. SshInteractiveSubShell) since
+ * this single helper drives commands both before and after an SSH
+ * connect, and which buffer is "live" depends on which mechanism is
+ * currently handling the session.
+ */
 async function typeNormal(session: LinuxTerminalSession, cmd: string) {
   session.setInput(cmd);
+  session.setInputBuf(cmd);
   session.handleKey(key('Enter'));
   await flush();
 }
@@ -215,7 +225,14 @@ describe('SSH UI — basic password authentication flow', () => {
   });
 
   it('shows "No route to host" when the target is unreachable', async () => {
+    // PRD-TCP.md P2: a SYN to an address nothing ever answers now really
+    // waits through the RTO retry window (P1) instead of failing on the
+    // same tick — fast-forward a virtual clock so the retries actually
+    // fire without the test waiting on real wall-clock time.
+    const scheduler = new VirtualTimeScheduler();
+    lan.pc1.setScheduler(scheduler);
     await typeNormal(session, `ssh user@99.99.99.99`);
+    scheduler.advance(worstCaseRetransmitWindowMs() + 1000);
     // Unreachable target — connect fails at TCP level before the auth phase,
     // so the password prompt never opens. Just wait for the error line.
     await waitFor(() =>
@@ -556,7 +573,7 @@ describe('SSH UI — input routing precedence', () => {
     await waitFor(() => session.currentInputMode.type === 'password');
 
     // No active sub-shell, no flow — only pendingSshIO should be awaiting.
-    expect(session.activeSubShell ?? null).toBeNull();
+    expect((session as any).activeSubShell ?? null).toBeNull();
     expect(session.isFlowActive).toBe(false);
 
     // Pressing arrow keys must NOT navigate history while a prompt is pending.

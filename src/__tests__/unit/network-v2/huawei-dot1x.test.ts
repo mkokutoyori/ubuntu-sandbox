@@ -53,14 +53,14 @@ describe('Huawei 802.1X — vendor-neutral Dot1xAgent wired on HuaweiSwitch', ()
   it('a real EAPOL handshake authorizes the port (frames processed on Huawei)', async () => {
     const sw = new HuaweiSwitch('switch-huawei', 'SW1', 24);
     const sup = new CiscoSwitch('switch-cisco', 'SUP', 4);
-    new Cable('c').connect(sw.getPort(IF)!, sup.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(sw.getPort(IF)!, sup.getPort('FastEthernet0/1')!);
     await sys(sw, ['dot1x enable', `interface ${IF}`, 'dot1x enable']);
     sw.getDot1xAgent().addLocalUser('alice', 'pw');
 
-    const mac = sup.getPort('FastEthernet0/0')!.getMAC().toString();
-    sup.getPort('FastEthernet0/0')!.sendFrame(eapolStart(mac));
+    const mac = sup.getPort('FastEthernet0/1')!.getMAC().toString();
+    sup.getPort('FastEthernet0/1')!.sendFrame(eapolStart(mac));
     const rt = sw.getDot1xAgent().getPortRuntime(IF)!;
-    sup.getPort('FastEthernet0/0')!.sendFrame(eapResponseId(mac, rt.pendingEapId!, 'alice'));
+    sup.getPort('FastEthernet0/1')!.sendFrame(eapResponseId(mac, rt.pendingEapId!, 'alice'));
 
     expect(sw.getDot1xAgent().isPortAuthorized(IF)).toBe(true);
   });

@@ -14,10 +14,14 @@
  *   - `auth` consults the device's {@link NetworkOsCredentialStore}
  *     (the same store backing `username admin secret …` and the
  *     existing cross-vendor host's gate).
- *   - `getShell` delegates each line to the router's
- *     {@link SshExecTarget.runSshCommandSync}, which already speaks IOS
- *     / VRP / cmd.exe semantics for the line-mode commands the cross-
- *     vendor test suite exercises.
+ *   - `getShell` prefers `target.createVtyShell()` — a real per-channel
+ *     CLI session (PRD-SSH-Unification.md Phase A2) whose mode
+ *     transitions (`enable`, `configure terminal`) and prompt genuinely
+ *     persist across lines, with tab-completion/`?` help riding the same
+ *     channel (Phase B1). It falls back to
+ *     {@link SshExecTarget.runSshCommandSync} — a stateless one-shot
+ *     line dispatch with no mode/prompt persistence — only for a target
+ *     that doesn't implement `createVtyShell`.
  *   - `getFilesystem` returns the vendor's {@link RouterSftpFileSystem}
  *     view (running-config / startup-config), keeping the SFTP subsystem
  *     coherent with what `copy running-config tftp:` would expose.
@@ -58,6 +62,8 @@ export interface RouterSshServerDeps {
   aaaAuthenticate?(username: string, password: string): Promise<boolean>;
   /** Router-style execution backend (IOS / VRP / cmd.exe line dispatch). */
   execTarget(): SshExecTarget;
+  /** `exec-timeout` of the VTY line an incoming session lands on, in ms. */
+  execIdleTimeoutMs?(): number | null;
   /** Optional sftp source (running-config, startup-config). */
   sftpSource?(): RouterSftpSource | null;
   /** Optional reactive event bus from the SSH event subsystem. */
@@ -69,7 +75,7 @@ export interface RouterSshServerDeps {
   /** Optional record-login callback when a session is established. */
   recordLogin?(user: string, fromIp: string): void;
   /** Optional rate-limit gate. */
-  isClientBlocked?(ip: string): boolean;
+  isClientBlocked?(ip: string, user?: string): boolean;
   /** Optional auth-failure hook for the audit log. */
   recordAuthFailure?(user: string, fromIp: string, reason: string): void;
 }
@@ -101,8 +107,41 @@ export class RouterSshServerContext implements ISshServerContext {
     return new RouterSftpFileSystem(src);
   }
 
+  execIdleTimeoutMs(): number | null {
+    return this.deps.execIdleTimeoutMs?.() ?? null;
+  }
+
   getShell(userCtx: SshUserContext, _cwd: string): ILinuxShell {
     const target = this.deps.execTarget();
+
+    // A real per-channel CLI session when the target can mint one: mode
+    // transitions (`enable`, `configure terminal`) then persist across
+    // lines, which the one-shot path below cannot express.
+    const vty = target.createVtyShell?.(userCtx.username);
+    if (vty) {
+      return {
+        execute: async (line: string) => {
+          const stdout = await vty.execute(line);
+          return {
+            stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+            stderr: '',
+            exitCode: 0,
+            sessionEnded: vty.lastEndedSession?.() ?? false,
+          };
+        },
+        getPrompt: () => vty.getPrompt(),
+        getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
+        subscribeAsyncOutput: vty.subscribeAsyncOutput
+          ? (sink: (line: string) => void) => vty.subscribeAsyncOutput!(sink)
+          : undefined,
+        dispose: vty.dispose ? () => vty.dispose!() : undefined,
+        supportsInlineHelp: true,
+        // `?` is a help key here, and `clear counters` is a real command
+        // — neither behaves the POSIX way.
+        posixShell: false,
+      };
+    }
+
     return {
       execute: async (line: string) => {
         const result = target.runSshCommandSync(userCtx.username, line);
@@ -143,8 +182,8 @@ export class RouterSshServerContext implements ISshServerContext {
     return new SshUserContext(username, 0, 0, [], `/`);
   }
 
-  isClientBlocked(ip: string): boolean {
-    return this.deps.isClientBlocked?.(ip) ?? false;
+  isClientBlocked(ip: string, user?: string): boolean {
+    return this.deps.isClientBlocked?.(ip, user) ?? false;
   }
 
   permitEmptyPasswords(): boolean { return false; }

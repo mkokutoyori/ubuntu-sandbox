@@ -9,12 +9,23 @@
 
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { executeDig } from '../../LinuxDnsService';
+import { executeDig } from './DigRunner';
 import { readResolverIP } from './resolverIP';
+import { makeArgCompleter } from '../completionHelpers';
+
+const DNS_RECORD_TYPES = ['A', 'AAAA', 'ANY', 'CNAME', 'MX', 'NS', 'PTR', 'SOA', 'SRV', 'TXT'];
 
 export const digCommand: LinuxCommand = {
   name: 'dig',
   needsNetworkContext: true,
+  complete(ctx, args) {
+    const partial = args[args.length - 1] ?? '';
+    if (args.length >= 2 && partial === partial.toUpperCase() && partial.length > 0) {
+      const types = DNS_RECORD_TYPES.filter(t => t.startsWith(partial.toUpperCase()));
+      if (types.length > 0) return types;
+    }
+    return makeArgCompleter({ hostsAtBarePosition: true })(ctx, args);
+  },
   manSection: 1,
   usage: 'dig [@server] [name] [type]',
   help:
@@ -26,7 +37,15 @@ export const digCommand: LinuxCommand = {
     '  name          The domain name to look up.\n' +
     '  type          The query type (A, AAAA, MX, NS, etc.).',
 
+  // Typed at a prompt: the tty shows stdout and stderr together, so the
+  // merged form is the faithful one here.
   run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return executeDig(args, (s, n, t, ms) => ctx.net.queryDns(s, n, t, ms), readResolverIP(ctx.executor));
+    return executeDig(
+      args,
+      (s, n, t, ms, opts) => ctx.net.queryDns(s, n, t, ms, opts),
+      readResolverIP(ctx.executor),
+      (path) => ctx.executor.readFile(path),
+    );
   },
+
 };

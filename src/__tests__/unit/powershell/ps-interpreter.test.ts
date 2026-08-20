@@ -892,7 +892,7 @@ describe('23. Scriptblocks & Dynamic Invocation', () => {
   it('Wait-Job waits and returns status', () => {
     const interp = new PSInterpreter();
     interp.execute('$job = Start-Job -ScriptBlock { Start-Sleep -Milliseconds 10; "done" }; Wait-Job -Job $job');
-    const status = interp.getVariable('job').State;
+    const status = (interp.getVariable('job') as any).State;
     expect(status).toBe('Completed');
   });
 
@@ -1338,7 +1338,7 @@ describe('33. Type Accelerators & Special Types', () => {
   it('[xml] type accelerator', () => {
     const interp = new PSInterpreter();
     interp.execute('$xml = [xml]"<root><child>hello</child></root>"');
-    expect(interp.getVariable('xml').root.child).toBe('hello');
+    expect((interp.getVariable('xml') as any).root.child).toBe('hello');
   });
 
   it('[regex] accelerator', () => {
@@ -1348,7 +1348,7 @@ describe('33. Type Accelerators & Special Types', () => {
   it('[PSCustomObject] type accelerator', () => {
     const interp = new PSInterpreter();
     interp.execute('$obj = [PSCustomObject]@{ Name = "test"; Value = 42 }');
-    expect(interp.getVariable('obj').Name).toBe('test');
+    expect((interp.getVariable('obj') as any).Name).toBe('test');
   });
 
   it('[guid]::NewGuid() returns a string guid', () => {
@@ -1451,8 +1451,8 @@ describe('36. JSON Cmdlets', () => {
   it('ConvertFrom-Json to object', () => {
     const interp = new PSInterpreter();
     interp.execute('$obj = \'{"name":"Bob","age":25}\' | ConvertFrom-Json');
-    expect(interp.getVariable('obj').name).toBe('Bob');
-    expect(interp.getVariable('obj').age).toBe(25);
+    expect((interp.getVariable('obj') as any).name).toBe('Bob');
+    expect((interp.getVariable('obj') as any).age).toBe(25);
   });
 
   it('ConvertTo-Json -Depth', () => {
@@ -1490,7 +1490,7 @@ describe('37. Providers & Drives', () => {
   it('Set-Location changes current location', () => {
     const interp = new PSInterpreter();
     interp.execute('Set-Location -Path TestDrive:\\');
-    const loc = interp.getVariable('PWD');
+    const loc = interp.getVariable('PWD') as any;
     expect(loc.Path).toContain('TestDrive');
   });
 
@@ -1559,7 +1559,7 @@ describe('39. Collections', () => {
     const interp = new PSInterpreter();
     interp.execute('$q = [System.Collections.Queue]::new(); $q.Enqueue(10); $q.Enqueue(20); $r = $q.Dequeue()');
     expect(interp.getVariable('r')).toBe(10);
-    expect(interp.getVariable('q').Count).toBe(1);
+    expect((interp.getVariable('q') as any).Count).toBe(1);
   });
 
   it('Stack push/pop', () => {

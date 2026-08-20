@@ -72,6 +72,11 @@ export interface NatStaleSweepedPayload extends NatDeviceRef {
   remainingSessions: number;
 }
 
+export interface NatPortExhaustedPayload extends NatDeviceRef {
+  protocol: number;
+  globalIp: string;
+}
+
 // ── Discriminated union ────────────────────────────────────────────────
 
 export type NatDomainEvent =
@@ -80,4 +85,5 @@ export type NatDomainEvent =
   | { topic: 'nat.session.removed'; payload: NatSessionRemovedPayload }
   | { topic: 'nat.translation.applied'; payload: NatTranslationAppliedPayload }
   | { topic: 'nat.tcp.state-changed'; payload: NatTcpStateChangedPayload }
-  | { topic: 'nat.stale.sweeped'; payload: NatStaleSweepedPayload };
+  | { topic: 'nat.stale.sweeped'; payload: NatStaleSweepedPayload }
+  | { topic: 'nat.port.exhausted'; payload: NatPortExhaustedPayload };

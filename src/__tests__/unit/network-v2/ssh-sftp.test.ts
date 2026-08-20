@@ -18,13 +18,14 @@
  *   - SFTP-17     df
  *   - SFTP-20     permission decorator
  *
- * The mock pair links two TcpConnections in-memory and registers a
+ * The mock pair links two MockTcpConnections in-memory and registers a
  * SshServerHandler on the server side, so the full handshake (hello,
  * auth, open_channel, op) is exercised exactly as in production.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { TcpConnection, type TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
+import { MockTcpConnection } from './MockTcpConnection';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { LinuxSshServerContext } from '@/network/protocols/ssh/server/LinuxSshServerContext';
@@ -93,15 +94,15 @@ function makeServer(opts: {
   return { vfs, userManager, context, handler };
 }
 
-function makeLinkedPair(handler: SshServerHandler): TcpConnection {
-  const bridge: { server: TcpConnection | null } = { server: null };
+function makeLinkedPair(handler: SshServerHandler): MockTcpConnection {
+  const bridge: { server: MockTcpConnection | null } = { server: null };
 
-  const client = new TcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
+  const client = new MockTcpConnection(LOCAL_IP, 49000, REMOTE_IP, 22, 100, (seg) => {
     if (seg.payload != null && bridge.server) {
       bridge.server.receiveData(String(seg.payload));
     }
   });
-  const server = new TcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
+  const server = new MockTcpConnection(REMOTE_IP, 22, LOCAL_IP, 49000, 200, (seg) => {
     if (seg.payload != null) client.receiveData(String(seg.payload));
   });
   bridge.server = server;

@@ -32,13 +32,18 @@ import type { DtpDomainEvent } from '@/network/dtp/events';
 import type { StpDomainEvent } from '@/network/stp/events';
 import type { LacpDomainEvent } from '@/network/lacp/events';
 import type { VtpDomainEvent } from '@/network/vtp/events';
+import type { FhrpDomainEvent } from '@/network/fhrp/events';
 import type { HsrpDomainEvent } from '@/network/hsrp/events';
 import type { VrrpDomainEvent } from '@/network/vrrp/events';
 import type { GlbpDomainEvent } from '@/network/glbp/events';
 import type { BfdDomainEvent } from '@/network/bfd/events';
+import type { IpSlaDomainEvent } from '@/network/ipsla/events';
 import type { UdldDomainEvent } from '@/network/udld/events';
 import type { IgmpDomainEvent } from '@/network/igmp/events';
+import type { LlmnrDomainEvent } from '@/network/llmnr/events';
+import type { MdnsDomainEvent } from '@/network/mdns/events';
 import type { IgmpSnoopingDomainEvent } from '@/network/igmp-snooping/events';
+import type { PimSnoopingDomainEvent } from '@/network/pim-snooping/events';
 import type { PimDomainEvent } from '@/network/pim/events';
 import type { SyslogDomainEvent } from '@/network/syslog/events';
 import type { RadiusDomainEvent } from '@/network/radius/events';
@@ -49,13 +54,29 @@ import type { NetFlowDomainEvent } from '@/network/netflow/events';
 import type { TacacsDomainEvent } from '@/network/tacacs/events';
 import type { VxlanDomainEvent } from '@/network/vxlan/events';
 import type { TcpDomainEvent } from '@/network/tcp/events';
-import type { UdpDomainEvent } from '@/network/udp/events';
+import type { BgpDomainEvent } from '@/network/bgp/events';
+import type { TlsDomainEvent } from '@/network/tls/events';
+import type { QuicDomainEvent } from '@/network/quic/events';
+import type { HttpDomainEvent } from '@/network/http/events';
+import type { FtpDomainEvent } from '@/network/ftp/events';
+import type { SmtpDomainEvent } from '@/network/smtp/events';
+import type { TftpDomainEvent } from '@/network/tftp/events';
+import type { SftpDomainEvent } from '@/network/protocols/ssh/sftp/events';
+import type { NetworkOsAccountEventEnvelope } from '@/network/devices/router/aaa/NetworkOsAccount';
+import type { SshSessionRecord } from '@/network/devices/router/aaa/SshSessionRegistry';
+import type { EigrpDomainEvent } from '@/network/eigrp/events';
 import type { NtpDomainEvent } from '@/network/ntp/events';
 import type { NatDomainEvent } from '@/network/devices/router/nat/events';
 import type { HostDomainEvent } from '@/network/devices/host/events';
 import type { LinuxProcessServiceDomainEvent } from '@/network/devices/linux/events';
 import type { LinuxIamDomainEvent } from '@/network/devices/linux/iam/events';
 import type { WindowsDomainEvent } from '@/network/devices/windows/events';
+import type { KerberosDomainEvent } from '@/network/kerberos/events';
+import type { ReplicationDomainEvent } from '@/network/devices/windows/server/ad/replication/events';
+import type { AdcsDomainEvent } from '@/network/devices/windows/server/adcs/events';
+import type { RdpDomainEvent } from '@/network/devices/windows/server/rdp/events';
+import type { ClusterDomainEvent } from '@/network/devices/windows/server/cluster/events';
+import type { DfsDomainEvent } from '@/network/devices/windows/server/dfs/events';
 import type { OracleDomainEvent } from '@/database/oracle/events';
 import type { RmanDomainEvent } from '@/terminal/subshells/rman/events';
 
@@ -86,6 +107,14 @@ export interface DeviceSyslogEntryPayload {
           | 'warnings' | 'notifications' | 'informational' | 'debugging';
   severityNum: number;
   tag: string;
+  /**
+   * Le mnémonique IOS (`UPDOWN`, `CONFIG_I`), qui complète `tag` et
+   * `severityNum` pour reconstituer le `%TAG-SEV-MNEMONIQUE` qu'un
+   * collecteur syslog attend. Sans lui, le relais devait inventer une
+   * forme, et la ligne partie sur le fil ne ressemblait pas à celle que
+   * la même machine affichait dans `show logging`.
+   */
+  mnemonic?: string;
   message: string;
   ts: number;
 }
@@ -161,7 +190,10 @@ export interface PortFrameDroppedPayload extends PortRef {
 }
 
 export interface PortLinkUpPayload extends PortRef {}
-export interface PortLinkDownPayload extends PortRef {}
+export interface PortLinkDownPayload extends PortRef {
+  /** True when the operator shut the port, false for a carrier loss. */
+  adminDown?: boolean;
+}
 
 export interface PortIpChangedPayload extends PortRef {
   ip: IPAddress | null;
@@ -250,12 +282,14 @@ export interface CableFrameDeliveredPayload extends CableRef {
 }
 
 export interface CableFrameLostPayload extends CableRef {
-  reason: 'simulated-loss' | 'cable-down' | 'no-peer';
+  reason: 'simulated-loss' | 'cable-down' | 'no-peer' | 'l2-loop-suppressed' | 'fcs-corrupted';
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Discriminated union
 // ──────────────────────────────────────────────────────────────────────────
+
+type DistributeTopics<T extends string, P> = T extends unknown ? { topic: T; payload: P } : never;
 
 export type DomainEvent =
   // Cross-cutting
@@ -295,6 +329,7 @@ export type DomainEvent =
   | { topic: 'switch.mac.aged'; payload: SwitchMacEntryPayload }
   | { topic: 'switch.mac.flushed'; payload: SwitchMacFlushedPayload }
   | { topic: 'switch.mac.cleared'; payload: { deviceId: string; hostname: string } }
+  | { topic: 'switch.mac.learning-discard'; payload: SwitchMacEntryPayload }
   // Cable
   | { topic: 'cable.connected'; payload: CableConnectedPayload }
   | { topic: 'cable.disconnected'; payload: CableDisconnectedPayload }
@@ -320,13 +355,20 @@ export type DomainEvent =
   | StpDomainEvent
   | LacpDomainEvent
   | VtpDomainEvent
+  | FhrpDomainEvent
   | HsrpDomainEvent
   | VrrpDomainEvent
   | GlbpDomainEvent
   | BfdDomainEvent
+  // IP SLA: sondes actives, cycle de vie des operations, reactions, track
+  // (sous-union, cf. src/network/ipsla/events.ts)
+  | IpSlaDomainEvent
   | UdldDomainEvent
   | IgmpDomainEvent
+  | LlmnrDomainEvent
+  | MdnsDomainEvent
   | IgmpSnoopingDomainEvent
+  | PimSnoopingDomainEvent
   | PimDomainEvent
   | SyslogDomainEvent
   | RadiusDomainEvent
@@ -337,7 +379,17 @@ export type DomainEvent =
   | TacacsDomainEvent
   | VxlanDomainEvent
   | TcpDomainEvent
-  | UdpDomainEvent
+  | BgpDomainEvent
+  | TlsDomainEvent
+  | QuicDomainEvent
+  | HttpDomainEvent
+  | FtpDomainEvent
+  | TftpDomainEvent
+  | SftpDomainEvent
+  | DistributeTopics<NetworkOsAccountEventEnvelope['topic'], NetworkOsAccountEventEnvelope['payload']>
+  | { topic: 'router.ssh.session.opened'; payload: { deviceId: string; session: SshSessionRecord } }
+  | { topic: 'router.ssh.session.closed'; payload: { deviceId: string; session: SshSessionRecord; reason: string } }
+  | EigrpDomainEvent
   | NtpDomainEvent
   // NAT (sub-union, see src/network/devices/router/nat/events.ts)
   | NatDomainEvent
@@ -353,7 +405,28 @@ export type DomainEvent =
   | RmanDomainEvent
   // Windows device: services, accounts, groups, processes
   // (sub-union, see src/network/devices/windows/events.ts)
-  | WindowsDomainEvent;
+  | WindowsDomainEvent
+  // Kerberos: AS/TGS exchange, cross-realm referrals, S4U2Proxy delegation
+  // (sub-union, see src/network/kerberos/events.ts)
+  | KerberosDomainEvent
+  // AD replication: pull cycles (sub-union, see
+  // src/network/devices/windows/server/ad/replication/events.ts)
+  | ReplicationDomainEvent
+  // AD CS: certificate issuance (sub-union, see
+  // src/network/devices/windows/server/adcs/events.ts)
+  | AdcsDomainEvent
+  // RDP: session lifecycle (sub-union, see
+  // src/network/devices/windows/server/rdp/events.ts)
+  | RdpDomainEvent
+  // WSFC cluster: node liveness, resource-group failover (sub-union, see
+  // src/network/devices/windows/server/cluster/events.ts)
+  | ClusterDomainEvent
+  // DFSR: replication cycles (sub-union, see
+  // src/network/devices/windows/server/dfs/events.ts)
+  | DfsDomainEvent
+  // SMTP: control channel, mail transaction, delivery outcomes, DSN, retry
+  // queue (sub-union, see src/network/smtp/events.ts)
+  | SmtpDomainEvent;
 
 export interface SwitchMacEntryPayload {
   deviceId: string;

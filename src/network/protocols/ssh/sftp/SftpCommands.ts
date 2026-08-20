@@ -114,10 +114,15 @@ export class SftpRenameCommand implements ISftpCommand<void> {
     const src = ctx.vfs.normalizePath(req.src, ctx.cwd);
     const dst = ctx.vfs.normalizePath(req.dst, ctx.cwd);
     if (ctx.vfs.exists(dst)) {
-      return err({
-        kind: 'IO_ERROR',
-        message: `rename: destination ${dst} already exists`,
-      });
+      // v5+ SSH_FXP_RENAME OVERWRITE flag (§2.1.17/P16): replace dst instead of failing.
+      if (!req.overwrite) {
+        return err({
+          kind: 'IO_ERROR',
+          message: `rename: destination ${dst} already exists`,
+        });
+      }
+      const removal = ctx.vfs.getEntryType(dst) === 'directory' ? ctx.vfs.rmdir(dst) : ctx.vfs.deleteFile(dst);
+      if (!removal.ok) return propagateErr(removal);
     }
     return ctx.vfs.rename(src, dst);
   }
@@ -223,5 +228,57 @@ export class SftpStatCommand implements ISftpCommand<SftpFileAttrs> {
     if (!p.ok) return propagateErr(p);
     const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
     return ctx.vfs.stat(path);
+  }
+}
+
+export class SftpSymlinkCommand implements ISftpCommand<void> {
+  readonly op = 'symlink';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    if (req.src === undefined || req.dst === undefined) {
+      return err({ kind: 'INVALID_ARGUMENT', message: 'symlink: missing src or dst' });
+    }
+    if (!ctx.vfs.createSymlink) {
+      return err({ kind: 'UNKNOWN_OP', op: 'symlink' });
+    }
+    // req.dst is the new link's path (normalized); req.src is the raw target, kept as given (may be relative).
+    const linkPath = ctx.vfs.normalizePath(req.dst, ctx.cwd);
+    if (ctx.vfs.exists(linkPath)) {
+      return err({ kind: 'IO_ERROR', message: `symlink: ${linkPath} already exists` });
+    }
+    return ctx.vfs.createSymlink(linkPath, req.src);
+  }
+}
+
+export class SftpReadlinkCommand implements ISftpCommand<{ target: string }> {
+  readonly op = 'readlink';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<{ target: string }> {
+    const p = requirePath(req);
+    if (!p.ok) return propagateErr(p);
+    if (!ctx.vfs.readSymlink) {
+      return err({ kind: 'UNKNOWN_OP', op: 'readlink' });
+    }
+    const path = ctx.vfs.normalizePath(p.value, ctx.cwd);
+    const result = ctx.vfs.readSymlink(path);
+    if (!result.ok) return propagateErr(result);
+    return ok({ target: result.value });
+  }
+}
+
+export class SftpHardlinkCommand implements ISftpCommand<void> {
+  readonly op = 'hardlink';
+  execute(req: SftpRequestPayload, ctx: SftpCommandContext): Result<void> {
+    if (req.src === undefined || req.dst === undefined) {
+      return err({ kind: 'INVALID_ARGUMENT', message: 'hardlink: missing src or dst' });
+    }
+    if (!ctx.vfs.createHardLink) {
+      return err({ kind: 'UNKNOWN_OP', op: 'hardlink' });
+    }
+    // req.src is the existing file being linked to; req.dst is the new link path.
+    const existingPath = ctx.vfs.normalizePath(req.src, ctx.cwd);
+    const newPath = ctx.vfs.normalizePath(req.dst, ctx.cwd);
+    if (ctx.vfs.exists(newPath)) {
+      return err({ kind: 'IO_ERROR', message: `hardlink: ${newPath} already exists` });
+    }
+    return ctx.vfs.createHardLink(newPath, existingPath);
   }
 }

@@ -138,14 +138,24 @@ export class LockManager {
     }
   }
 
+  /**
+   * TM lock for an ordinary DML statement, acquired before it touches
+   * storage (see OracleExecutor.dispatchStatement). A real conflicting
+   * table lock (e.g. another session's explicit LOCK TABLE) denies the
+   * statement immediately rather than lockTable's usual register-and-wait
+   * bookkeeping — this simulator can't suspend the caller until the
+   * holder releases, so failing fast beats silently letting the DML
+   * through unprotected.
+   */
   acquireDmlLock(args: {
     sessionId: string; sid: number; schema: string; table: string; txId: number;
   }): void {
-    try {
-      this.lockTable({ ...args, mode: 3, nowait: false });
-    } catch (e) {
-      if (e instanceof DeadlockError) throw e;
-    }
+    const id1 = this.objectId(args.schema.toUpperCase(), args.table.toUpperCase());
+    const conflicting = this.held.find(l =>
+      l.type === 'TM' && l.id1 === id1 && l.sessionId !== args.sessionId
+      && l.lmode > 0 && modesConflict(l.lmode, 3));
+    if (conflicting) throw new ResourceBusyError();
+    this.lockTable({ ...args, mode: 3, nowait: false });
   }
 
   releaseSession(sessionId: string): void {

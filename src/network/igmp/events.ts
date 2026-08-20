@@ -38,9 +38,16 @@ export interface IgmpQuerierChangedPayload extends IgmpDeviceRef {
   querierIp: string | null;
 }
 
+export interface IgmpHostMembershipPayload extends IgmpDeviceRef {
+  iface: string;
+  groupAddress: string;
+}
+
 export type IgmpDomainEvent =
   | { topic: 'igmp.packet.sent'; payload: IgmpPacketSentPayload }
   | { topic: 'igmp.packet.received'; payload: IgmpPacketReceivedPayload }
   | { topic: 'igmp.group.joined'; payload: IgmpGroupJoinedPayload }
   | { topic: 'igmp.group.left'; payload: IgmpGroupLeftPayload }
-  | { topic: 'igmp.querier.changed'; payload: IgmpQuerierChangedPayload };
+  | { topic: 'igmp.querier.changed'; payload: IgmpQuerierChangedPayload }
+  | { topic: 'igmp.host.joined'; payload: IgmpHostMembershipPayload }
+  | { topic: 'igmp.host.left'; payload: IgmpHostMembershipPayload };

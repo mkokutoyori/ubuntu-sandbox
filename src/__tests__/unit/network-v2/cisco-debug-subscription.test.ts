@@ -89,22 +89,33 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
 
   it('no debug stops the subscription — further events are silent', async () => {
     await enableOspf();
+    // Deux flux distincts portent l'évènement : le syslog (%OSPF-5-ADJCHG,
+    // qui n'est pas du debug et continue quoi qu'il arrive) et la sortie de
+    // `debug ip ospf adj`, qui depuis le lot D5 imprime ses PROPRES lignes
+    // d'adjacence au lieu de repeter le message syslog. On compte donc
+    // celles-la.
+    adjChange();
+    await flush();
+    const ligneDebug = (l: { text: string }) => / Nbr \S+ state /.test(l.text);
+    const sansDebug = session.lines.filter(ligneDebug).length;
+
     await type('debug ip ospf adj');
     adjChange();
     await flush();
-    const count = session.lines.filter((l) => l.text.includes('ADJCHG')).length;
-    expect(count).toBe(1);
+    const avecDebug = session.lines.filter(ligneDebug).length;
+    expect(avecDebug).toBeGreaterThan(sansDebug);
 
     await type('no debug ip ospf adj');
     expect(session.hasBackgroundAsyncJobs).toBe(false);
 
     adjChange();
     await flush();
-    expect(session.lines.filter((l) => l.text.includes('ADJCHG')).length).toBe(count);
+    const apresNoDebug = session.lines.filter(ligneDebug).length;
+    expect(apresNoDebug).toBe(avecDebug);
   });
 
-  it('sessions are isolated — a second terminal without debug sees nothing', async () => {
-    const sid2 = manager.openTerminal(router)!;
+  it('console et vty sont isolees — la vty sans debug ne voit rien', async () => {
+    const sid2 = manager.openTerminal(router, 'vty')!;
     const session2 = manager.getSession(sid2) as CiscoTerminalSession;
     await waitBoot(session2);
 
@@ -113,7 +124,13 @@ describe('Cisco debug ip ospf — event subscription streams into the terminal',
     adjChange();
     await flush();
 
-    expect(session.lines.some((l) => l.text.includes('ADJCHG'))).toBe(true);
-    expect(session2.lines.some((l) => l.text.includes('ADJCHG'))).toBe(false);
+    // La session sans debug peut recevoir la ligne SYSLOG (elle n'est pas du
+    // debug) ; ce qu'elle ne doit pas voir, c'est la sortie du debug de
+    // l'autre session — donc strictement moins de lignes.
+    const debugLigne = (l: { text: string }) => / Nbr \S+ state /.test(l.text);
+    const avec = session.lines.filter(debugLigne).length;
+    const sans = session2.lines.filter(debugLigne).length;
+    expect(avec).toBeGreaterThan(0);
+    expect(sans).toBe(0);
   });
 });

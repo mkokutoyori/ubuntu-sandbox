@@ -50,7 +50,14 @@ const NORMALISE_IFCONFIG = (s: string) =>
   );
 
 const NORMALISE_TRACEROUTE = (s: string) =>
-  stripTrailing(s.replace(/[\d.]+\s*ms/g, '*ms'));
+  stripTrailing(
+    s
+      .replace(/[\d.]+\s*ms/g, '*ms')
+      // Numeric (-n) hop lines print bare "X.XXX" RTTs with no "ms" suffix,
+      // isolated by the formatter's two-space field separator — an IP
+      // address token (multiple dots) never matches this single-dot shape.
+      .replace(/(?<=  )\d+\.\d{3}(?=  |$)/gm, '*'),
+  );
 
 const NORMALISE_PING = (s: string) =>
   stripTrailing(
@@ -127,7 +134,18 @@ const COMMAND_SPECS: readonly CmdSpec[] = [
   { label: 'ls -1 /etc', cmd: 'ls -1 /etc' },
   { label: 'ls -la /home/user', cmd: 'ls -la /home/user' },
   { label: 'ls -ld /etc/ssh', cmd: 'ls -ld /etc/ssh' },
-  { label: 'stat /etc/passwd', cmd: 'stat /etc/passwd' },
+  {
+    label: 'stat /etc/passwd',
+    cmd: 'stat /etc/passwd',
+    // `Access:` est la date de DERNIER ACCÈS, et ce test lit le fichier
+    // deux fois — une fois en local, une fois à travers SSH. Qu'elle
+    // diffère entre les deux lectures n'est pas un écart entre les deux
+    // chemins : c'est ce que fait un atime, ici comme sur une vraie
+    // machine. La comparaison octet à octet porte sur tout le reste —
+    // taille, inode, liens, permissions, propriétaire, mtime, ctime —,
+    // qui doit être rigoureusement identique.
+    normalise: (s) => stripTrailing(s).replace(/^Access: \S+$/m, 'Access: <atime>'),
+  },
   { label: 'stat -c %a /etc/passwd', cmd: 'stat -c %a /etc/passwd' },
   { label: 'file /etc/passwd', cmd: 'file /etc/passwd' },
 

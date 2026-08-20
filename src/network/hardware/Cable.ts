@@ -48,6 +48,7 @@ export interface CableOptions {
 export interface CableStats {
   framesTransmitted: number;
   framesLost: number;
+  framesCorrupted: number;
 }
 
 export interface CableInfo {
@@ -59,10 +60,31 @@ export interface CableInfo {
   isUp: boolean;
   isConnected: boolean;
   packetLossRate: number;
+  corruptionRate: number;
   stats: CableStats;
 }
 
 export class Cable {
+  /**
+   * Loop guard for the synchronous delivery chain. Delivery recurses
+   * through the whole topology in one call stack (transmit →
+   * receiveFrame → handleFrame → sendFrame → transmit …), so a physical
+   * L2 loop on switches with no STP agent used to recurse until
+   * `RangeError: Maximum call stack size exceeded`. Two static budgets
+   * bound one top-level send (a "cascade"):
+   *  - depth caps nested deliveries, which is what actually protects
+   *    the stack;
+   *  - cascade frames caps total deliveries, which is what stops a
+   *    mesh loop whose egress paths clone frames (depth alone would
+   *    explore an exponential number of paths).
+   * Both are far above anything a legitimate canvas topology produces;
+   * excess frames are dropped as `l2-loop-suppressed`.
+   */
+  private static deliveryDepth = 0;
+  private static cascadeFrames = 0;
+  static readonly MAX_SYNC_DELIVERY_DEPTH = 256;
+  static readonly MAX_CASCADE_FRAMES = 20_000;
+
   private readonly id: string;
   private portA: Port | null = null;
   private portB: Port | null = null;
@@ -71,7 +93,15 @@ export class Cable {
   private readonly lengthMeters: number;
   private readonly spec: CableSpec;
   private packetLossRate: number = 0;
-  private stats: CableStats = { framesTransmitted: 0, framesLost: 0 };
+  private corruptionRate: number = 0;
+  /** `tc qdisc ... netem delay <ms>` — added to `getPropagationDelay()`'s
+   *  physical-distance figure. Like that figure, this is exposed as
+   *  metadata for RTT reporting (ping) rather than an actual async delay
+   *  injected into frame delivery — `Cable.transmit()` stays synchronous
+   *  on the hot data-plane path; only the one consumer that reports a
+   *  wall-clock-shaped number to the user (ping's RTT) adds it in. */
+  private artificialDelayMs: number = 0;
+  private stats: CableStats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
 
   /** Reactive bus override (Phase 3 — defaults to singleton). */
   private busOverride: IEventBus | null = null;
@@ -117,6 +147,10 @@ export class Cable {
   getPropagationDelay(): number {
     return (this.lengthMeters * this.spec.propagationNsPerM) / 1_000_000;
   }
+
+  /** `tc qdisc ... netem delay` — see the field's own doc comment. */
+  getArtificialDelayMs(): number { return this.artificialDelayMs; }
+  setArtificialDelayMs(ms: number): void { this.artificialDelayMs = Math.max(0, ms); }
 
   // ─── Port Connections ──────────────────────────────────────────
 
@@ -179,11 +213,13 @@ export class Cable {
    * Notifies ports of link-down via disconnectCable().
    */
   disconnect(): void {
-    if (this.portA) this.portA.disconnectCable();
-    if (this.portB) this.portB.disconnectCable();
-    Logger.info(this.id, 'cable:disconnect', `Cable ${this.id} disconnected`);
+    const a = this.portA;
+    const b = this.portB;
     this.portA = null;
     this.portB = null;
+    if (a) a.disconnectCable();
+    if (b) b.disconnectCable();
+    Logger.info(this.id, 'cable:disconnect', `Cable ${this.id} disconnected`);
     this.getBus().publish({
       topic: 'cable.disconnected',
       payload: { cableId: this.id },
@@ -196,6 +232,15 @@ export class Cable {
    * Perform auto-negotiation between both ports.
    * Each port negotiates speed/duplex based on peer capabilities and cable max speed.
    */
+  /**
+   * Re-run negotiation because one end's speed, duplex or negotiation
+   * mode changed. On real hardware that bounces the link; here it is
+   * what makes a forced `speed`/`duplex` reach the negotiated values
+   * the views read — without it they kept reporting what the link had
+   * agreed on before the operator forced anything.
+   */
+  renegotiate(): void { this.negotiateLink(); }
+
   private negotiateLink(): void {
     if (!this.portA || !this.portB) return;
 
@@ -242,10 +287,27 @@ export class Cable {
     Logger.info(this.id, 'cable:loss-rate', `Cable ${this.id}: packet loss rate set to ${(rate * 100).toFixed(1)}%`);
   }
 
+  getCorruptionRate(): number { return this.corruptionRate; }
+
+  /**
+   * Simulated FCS/CRC failure rate — no byte-level frame encoding exists to
+   * corrupt, so this models the receiver-side effect directly: the frame
+   * silently fails to arrive (like a real NIC discarding a bad-FCS frame
+   * before it ever reaches the driver) and the receiving port's `errorsIn`
+   * counter increments, distinct from a generic simulated loss.
+   */
+  setCorruptionRate(rate: number): void {
+    if (rate < 0 || rate > 1) {
+      throw new Error(`Invalid corruption rate: ${rate}. Must be between 0 and 1.`);
+    }
+    this.corruptionRate = rate;
+    Logger.info(this.id, 'cable:corruption-rate', `Cable ${this.id}: corruption rate set to ${(rate * 100).toFixed(1)}%`);
+  }
+
   getStats(): Readonly<CableStats> { return { ...this.stats }; }
 
   resetStats(): void {
-    this.stats = { framesTransmitted: 0, framesLost: 0 };
+    this.stats = { framesTransmitted: 0, framesLost: 0, framesCorrupted: 0 };
   }
 
   // ─── Link State ────────────────────────────────────────────────
@@ -255,8 +317,12 @@ export class Cable {
   getIsUp(): boolean { return this.isUp; }
 
   setUp(up: boolean): void {
+    if (this.isUp === up) return;
     this.isUp = up;
     Logger.info(this.id, 'cable:state', `Cable ${this.id}: ${up ? 'up' : 'down'}`);
+    const state = up ? 'up' : 'down';
+    this.portA?._notifyCarrierChange(state);
+    this.portB?._notifyCarrierChange(state);
   }
 
   // ─── Frame Transmission ────────────────────────────────────────
@@ -269,7 +335,6 @@ export class Cable {
    */
   transmit(frame: EthernetFrame, fromPort: Port): boolean {
     if (!this.isUp) {
-      Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} is down, frame dropped`);
       this.getBus().publish({
         topic: 'cable.frame.lost',
         payload: { cableId: this.id, reason: 'cable-down' },
@@ -278,7 +343,6 @@ export class Cable {
     }
 
     if (!this.portA || !this.portB) {
-      Logger.warn(this.id, 'cable:blocked', `Cable ${this.id} not fully connected, frame dropped`);
       this.getBus().publish({
         topic: 'cable.frame.lost',
         payload: { cableId: this.id, reason: 'no-peer' },
@@ -298,6 +362,36 @@ export class Cable {
     }
 
     const targetPort = (fromPort === this.portA) ? this.portB : this.portA;
+
+    // Simulate FCS/CRC failure — the frame never reaches the receiver's
+    // handleFrame(), same as a real NIC discarding a bad-FCS frame before
+    // the driver ever sees it, but tracked distinctly from generic loss.
+    if (this.corruptionRate > 0 && this.rng() < this.corruptionRate) {
+      this.stats.framesCorrupted++;
+      targetPort.incrementCrcErrorsIn();
+      Logger.debug(this.id, 'cable:corrupted', `Cable ${this.id}: frame corrupted (simulated FCS failure)`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'fcs-corrupted' },
+      });
+      return false;
+    }
+
+    // A send arriving at depth 0 opens a fresh cascade.
+    if (Cable.deliveryDepth === 0) Cable.cascadeFrames = 0;
+    if (Cable.deliveryDepth >= Cable.MAX_SYNC_DELIVERY_DEPTH
+        || Cable.cascadeFrames >= Cable.MAX_CASCADE_FRAMES) {
+      this.stats.framesLost++;
+      Logger.warn(this.id, 'cable:loop-guard',
+        `Cable ${this.id}: frame suppressed (L2 loop suspected — ` +
+        `${Cable.deliveryDepth >= Cable.MAX_SYNC_DELIVERY_DEPTH ? 'delivery depth' : 'cascade frame budget'} exhausted). ` +
+        `Check the topology for a switching loop without STP.`);
+      this.getBus().publish({
+        topic: 'cable.frame.lost',
+        payload: { cableId: this.id, reason: 'l2-loop-suppressed' },
+      });
+      return false;
+    }
 
     Logger.debug(this.id, 'cable:transmit',
       `${fromPort.getEquipmentId()}.${fromPort.getName()} → ${targetPort.getEquipmentId()}.${targetPort.getName()}`,
@@ -322,7 +416,13 @@ export class Cable {
     // Phase 3: delivery stays synchronous to preserve current call-stack
     // semantics for tests. Phase 6 will migrate to scheduler-driven async
     // delivery (`scheduler.setTimeout(deliver, propagationMs)`).
-    targetPort.receiveFrame(frame);
+    Cable.deliveryDepth++;
+    Cable.cascadeFrames++;
+    try {
+      targetPort.receiveFrame(frame);
+    } finally {
+      Cable.deliveryDepth--;
+    }
     this.stats.framesTransmitted++;
 
     bus.publish({
@@ -344,6 +444,7 @@ export class Cable {
       isUp: this.isUp,
       isConnected: this.isConnected(),
       packetLossRate: this.packetLossRate,
+      corruptionRate: this.corruptionRate,
       stats: { ...this.stats },
     };
   }

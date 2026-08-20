@@ -19,22 +19,11 @@ import { EthernetFrame, DeviceType, generateId } from '../core/types';
 import { Logger } from '../core/Logger';
 import { EquipmentRegistry } from './EquipmentRegistry';
 import { DEVICE_CATALOG } from '../core/deviceCatalog';
-import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { getDefaultEventBus, ForwardingEventBus, type IEventBus } from '@/events/EventBus';
 
 export abstract class Equipment {
-  /**
-   * Global registry of all Equipment instances (for topology traversal).
-   * @deprecated Use EquipmentRegistry.getInstance() for new code.
-   * These static methods delegate to the singleton EquipmentRegistry.
-   */
-  private static get registry(): EquipmentRegistry { return EquipmentRegistry.getInstance(); }
-
-  static getById(id: string): Equipment | undefined { return EquipmentRegistry.getInstance().getById(id); }
-  static getAllEquipment(): Equipment[] { return EquipmentRegistry.getInstance().getAll(); }
-  static clearRegistry(): void { EquipmentRegistry.getInstance().clear(); }
-
-  protected readonly id: string;
-  protected name: string;
+  readonly id: string;
+  name: string;
   protected hostname: string;
   protected readonly deviceType: DeviceType;
   protected x: number;
@@ -48,12 +37,85 @@ export abstract class Equipment {
 
   getEnableSecret(): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null { return this._enableSecret; }
   _setEnableSecret(value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
-    this._enableSecret = { value, algo };
+    this._enableSecret = value === '' ? null : { value, algo };
   }
 
   getEnablePassword(): { value: string; algo: 'plain' | 'type-7' } | null { return this._enablePassword; }
   _setEnablePassword(value: string, algo: 'plain' | 'type-7'): void {
-    this._enablePassword = { value, algo };
+    this._enablePassword = value === '' ? null : { value, algo };
+  }
+
+  /**
+   * `line console 0` / `privilege level N` — le niveau auquel une
+   * session ouverte sur la console commence.
+   *
+   * Il vit sur l'EQUIPEMENT et non sur le shell, comme celui des vty :
+   * `createVtyShell()` construit un shell neuf par session, si bien que
+   * le reglage tape depuis une session SSH se rangeait sur le shell de
+   * cette session et disparaissait avec elle — la console n'en savait
+   * rien.
+   */
+  private _consoleLinePrivilege: number | null = null;
+
+  getConsoleLinePrivilege(): number | null { return this._consoleLinePrivilege; }
+  _setConsoleLinePrivilege(level: number | null): void {
+    this._consoleLinePrivilege = level;
+  }
+
+  // Per-level `enable secret level N` / `enable password level N` (N != 15
+  // — level 15 always uses the fields above, matching real IOS where the
+  // bare/unqualified form and `level 15` are the same thing).
+  private _enableSecretLevels: Map<number, { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> = new Map();
+  private _enablePasswordLevels: Map<number, { value: string; algo: 'plain' | 'type-7' }> = new Map();
+
+  getEnableSecretForLevel(level: number): { value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' } | null {
+    if (level === 15) return this.getEnableSecret();
+    return this._enableSecretLevels.get(level) ?? null;
+  }
+  _setEnableSecretForLevel(level: number, value: string, algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7'): void {
+    if (level === 15) { this._setEnableSecret(value, algo); return; }
+    if (value === '') this._enableSecretLevels.delete(level);
+    else this._enableSecretLevels.set(level, { value, algo });
+  }
+
+  getEnablePasswordForLevel(level: number): { value: string; algo: 'plain' | 'type-7' } | null {
+    if (level === 15) return this.getEnablePassword();
+    return this._enablePasswordLevels.get(level) ?? null;
+  }
+  _setEnablePasswordForLevel(level: number, value: string, algo: 'plain' | 'type-7'): void {
+    if (level === 15) { this._setEnablePassword(value, algo); return; }
+    if (value === '') this._enablePasswordLevels.delete(level);
+    else this._enablePasswordLevels.set(level, { value, algo });
+  }
+
+  /** All configured per-level (non-15) enable password entries — used by `show running-config`. */
+  listEnablePasswordLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'type-7' }> {
+    return [...this._enablePasswordLevels.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([level, v]) => ({ level, ...v }));
+  }
+  /** All configured per-level (non-15) enable secret entries — used by `show running-config`. */
+  /**
+   * Les drapeaux `service X` de la machine (`password-encryption`,
+   * `timestamps`, …).
+   *
+   * Ils vivaient sur `Router` seul, si bien que
+   * `service password-encryption` sur un Catalyst etait acceptee, sans
+   * magasin et sans effet : le mot de passe de ligne restait en clair
+   * dans la configuration, c'est-a-dire que la commande ne faisait rien
+   * de ce qu'elle promet sur la seule chose qu'elle existe pour couvrir.
+   * Le secret `enable`, lui, vit deja ici — les deux appartiennent au
+   * meme fait.
+   */
+  private readonly _serviceFlags: Map<string, boolean> = new Map();
+
+  getServiceFlags(): ReadonlyMap<string, boolean> { return this._serviceFlags; }
+  _setServiceFlag(name: string, on: boolean): void { this._serviceFlags.set(name, on); }
+
+  listEnableSecretLevels(): ReadonlyArray<{ level: number; value: string; algo: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'type-7' }> {
+    return [...this._enableSecretLevels.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([level, v]) => ({ level, ...v }));
   }
 
   getUptimeMs(): number { return Math.max(0, Date.now() - this.bootedAtMs); }
@@ -62,11 +124,14 @@ export abstract class Equipment {
   /** Optional bus override (Phase 2 of the reactive refactor). */
   private busOverride: IEventBus | null = null;
 
+  /** This machine's internal bus (lazy) — see refactor-frame-only.md. */
+  private machineBus: ForwardingEventBus | null = null;
+
   constructor(deviceType: DeviceType, name: string, x: number = 0, y: number = 0) {
     this.id = generateId();
     this.deviceType = deviceType;
-    this.name = name;
-    this.hostname = name;
+    this.name = typeof name === 'string' ? name : String(name);
+    this.hostname = this.name;
     this.x = x;
     this.y = y;
     EquipmentRegistry.getInstance().register(this);
@@ -75,14 +140,13 @@ export abstract class Equipment {
   /** Inject a custom bus (test-only / multi-topology scenarios). */
   setEventBus(bus: IEventBus | null): void {
     this.busOverride = bus;
-    // Cascade to hardware children so the Port-level events
-    // (port.frame.*, port.security.*) reach the same observer the
-    // equipment's events reach.
-    for (const port of this.ports.values()) port.setEventBus(bus);
+    for (const port of this.ports.values()) port.setEventBus(this.getBus());
   }
 
   protected getBus(): IEventBus {
-    return this.busOverride ?? getDefaultEventBus();
+    if (this.busOverride) return this.busOverride;
+    if (!this.machineBus) this.machineBus = new ForwardingEventBus(getDefaultEventBus());
+    return this.machineBus;
   }
 
   // ─── Identity ───────────────────────────────────────────────────
@@ -171,6 +235,7 @@ export abstract class Equipment {
       this._bootShown = false;
     }
     Logger.info(this.id, 'equipment:power', `${this.name}: powered ON`);
+    for (const port of this.ports.values()) port.setDevicePowered(true);
     if (!wasOn) {
       this.getBus().publish({
         topic: 'device.power-on',
@@ -185,6 +250,7 @@ export abstract class Equipment {
     // Clear boot flag so the next powerOn replays the boot banner.
     this._bootShown = false;
     Logger.info(this.id, 'equipment:power', `${this.name}: powered OFF`);
+    for (const port of this.ports.values()) port.setDevicePowered(false);
     if (wasOn) {
       this.getBus().publish({
         topic: 'device.power-off',
@@ -213,7 +279,8 @@ export abstract class Equipment {
    */
   protected addPort(port: Port): void {
     port.setEquipmentId(this.id);
-    if (this.busOverride) port.setEventBus(this.busOverride);
+    port.setOwner(this);
+    port.setEventBus(this.getBus());
     port.onFrame((portName, frame) => {
       if (!this.isPoweredOn) {
         Logger.warn(this.id, 'equipment:frame-dropped', `${this.name}: powered off, dropping frame on ${portName}`);
@@ -227,7 +294,7 @@ export abstract class Equipment {
   /**
    * Send a frame out of a specific port
    */
-  protected sendFrame(portName: string, frame: EthernetFrame): boolean {
+  sendFrame(portName: string, frame: EthernetFrame): boolean {
     if (!this.isPoweredOn) {
       Logger.warn(this.id, 'equipment:send-blocked', `${this.name}: powered off, cannot send`);
       return false;

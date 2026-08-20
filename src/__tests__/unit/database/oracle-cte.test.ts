@@ -30,7 +30,7 @@ let executor: OracleExecutor;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   const conn = db.connectAsSysdba();
   executor = conn.executor;
 });
@@ -635,7 +635,7 @@ describe('CTE with HR demo schema', () => {
     expect(result.isQuery).toBe(true);
     expect(result.rows.length).toBeGreaterThan(0);
     // First row should have the most employees
-    expect(result.rows[0][1]).toBeGreaterThanOrEqual(result.rows[result.rows.length - 1][1]);
+    expect(Number(result.rows[0][1])).toBeGreaterThanOrEqual(Number(result.rows[result.rows.length - 1][1]));
   });
 
   test('salary statistics per department via CTE', () => {
@@ -657,8 +657,8 @@ describe('CTE with HR demo schema', () => {
     expect(result.rows.length).toBeGreaterThan(0);
     // avg should be between min and max
     for (const row of result.rows) {
-      expect(row[3]).toBeGreaterThanOrEqual(row[1]);
-      expect(row[3]).toBeLessThanOrEqual(row[2]);
+      expect(Number(row[3])).toBeGreaterThanOrEqual(Number(row[1]));
+      expect(Number(row[3])).toBeLessThanOrEqual(Number(row[2]));
     }
   });
 

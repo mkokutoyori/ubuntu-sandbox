@@ -48,12 +48,22 @@ async function buildLan() {
   return { linuxA, linuxB, linuxSrv, winA, winB };
 }
 
+// Sets both `.input` (top-level / pushed-child dispatch) and `._inputBuf`
+// (active-sub-shell dispatch, e.g. SshInteractiveSubShell) since this
+// single helper drives commands both before and after an SSH connect.
 async function typeRoot(t: TerminalSession, line: string): Promise<void> {
-  t.setInput(line); t.handleKey(key('Enter')); await flush();
+  t.setInput(line); t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
 }
 
 async function typeSub(t: TerminalSession, line: string): Promise<void> {
   t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+}
+
+async function sudoSub(t: TerminalSession, line: string, pw: string): Promise<void> {
+  t.setInputBuf(line); t.handleKey(key('Enter')); await flush();
+  if (t.foreground.currentInputMode.type === 'password') {
+    t.setPasswordBuf(pw); t.handleKey(key('Enter')); await flush();
+  }
 }
 
 async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string): Promise<void> {
@@ -63,9 +73,27 @@ async function winSshLogin(t: WindowsTerminalSession, line: string, pw: string):
   }
 }
 
+/**
+ * True only while a REAL password/host-key prompt is outstanding — either
+ * the top-level pendingSshIO (first hop) or an active sub-shell's
+ * subShellPendingInput (any nested hop). Deliberately NOT based on
+ * currentInputMode.type alone: once connected, an active
+ * SshInteractiveSubShell reports 'interactive-text' for "idle, ready for
+ * the next line" too, which is indistinguishable from a real prompt by
+ * type string — and isInsideSshSession alone breaks for a *nested* login
+ * (it's already true from the outer hop before the inner one even starts).
+ */
+function hasRealPendingPrompt(t: LinuxTerminalSession): boolean {
+  const anyT = t as unknown as {
+    subShellPendingInput: unknown;
+    pendingSshIO?: { isWaitingForInput?: boolean } | null;
+  };
+  return anyT.subShellPendingInput !== null || !!anyT.pendingSshIO?.isWaitingForInput;
+}
+
 async function linuxSshLogin(t: LinuxTerminalSession, line: string, pw: string): Promise<void> {
   await typeRoot(t, line);
-  for (let i = 0; i < 4 && t.currentInputMode.type !== 'normal'; i++) {
+  for (let i = 0; i < 4 && hasRealPendingPrompt(t); i++) {
     if (t.currentInputMode.type === 'password') t.setPasswordBuf(pw);
     else if (t.currentInputMode.type === 'interactive-text') t.setInputBuf('yes');
     else break;
@@ -83,26 +111,30 @@ function expectAnyLine(t: TerminalSession, needle: string | RegExp): void {
 
 describe('SSH advanced realism — multi-hop, service control, user admin', () => {
   // ─── Multi-hop SSH (linux → linux → linux) ────────────────────────
-  test('§A01 — Linux→Linux→Linux double hop pushes two SSH frames', async () => {
+  test('§A01 — Linux→Linux→Linux: nested ssh typed inside a real-wire SSH session is a REAL second hop', async () => {
     const { linuxA } = await buildLan();
     const t = new LinuxTerminalSession('t', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxB/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
+    // linuxB opens its own genuine SshSession to linuxSrv
+    // (SshInteractiveSubShell.startNestedHop()) — real password
+    // challenge, real auth (see §A03's auth.log check below), and the
+    // prompt now reflects the second hop.
     await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
-    expect(t.getPrompt()).toMatch(/bob@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/bob@linuxSrv/);
   });
 
-  test('§A02 — Linux→Linux→Linux double hop unwinds one frame at a time', async () => {
+  test('§A02 — Linux→Linux→Linux: exiting each real SSH hop unwinds one level at a time', async () => {
     const { linuxA } = await buildLan();
     const t = new LinuxTerminalSession('t', linuxA);
     await t.init();
     await linuxSshLogin(t, 'ssh alice@10.0.0.2', 'alice');
     await linuxSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
     await typeRoot(t, 'exit');
-    expect(t.getPrompt()).toMatch(/alice@linuxB/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxB/);
     await typeRoot(t, 'exit');
-    expect(t.getPrompt()).toMatch(/@linuxA/);
+    expect(t.foreground.getPrompt()).toMatch(/@linuxA/);
   });
 
   test('§A03 — Multi-hop auth.log shows both transit logins', async () => {
@@ -173,7 +205,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo useradd -m zoe');
+    await sudoSub(t, 'sudo useradd -m zoe', 'alice');
     expect(linuxSrv.userExists('zoe')).toBe(true);
   });
 
@@ -182,7 +214,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo groupadd devs');
+    await sudoSub(t, 'sudo groupadd devs', 'alice');
     const out = await linuxSrv.executeCommand('getent group devs');
     expect(out).toMatch(/^devs:/);
   });
@@ -232,7 +264,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo iptables -L');
+    await sudoSub(t, 'sudo iptables -L', 'alice');
     expectAnyLine(t, /Chain INPUT|Chain FORWARD|Chain OUTPUT/);
   });
 
@@ -241,8 +273,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo iptables -A INPUT -p tcp --dport 8080 -j DROP');
-    await typeSub(t, 'sudo iptables -L INPUT -n');
+    await sudoSub(t, 'sudo iptables -A INPUT -p tcp --dport 8080 -j DROP', 'alice');
+    await sudoSub(t, 'sudo iptables -L INPUT -n', 'alice');
     expectAnyLine(t, /DROP\s+tcp.*dpt:8080/);
   });
 
@@ -251,8 +283,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    await typeSub(t, 'sudo ufw enable');
-    await typeSub(t, 'sudo ufw status');
+    await sudoSub(t, 'sudo ufw enable', 'alice');
+    await sudoSub(t, 'sudo ufw status', 'alice');
     expectAnyLine(t, /Status:\s+active/);
   });
 
@@ -263,7 +295,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
     await typeSub(t, 'logger -t test "ssh-debug-marker"');
-    await typeSub(t, 'sudo tail -n 5 /var/log/syslog');
+    await sudoSub(t, 'sudo tail -n 5 /var/log/syslog', 'alice');
     expectAnyLine(t, /ssh-debug-marker/);
   });
 
@@ -374,7 +406,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await typeRoot(t1, 'powershell');
     await typeSub(t1, 'cd D:\\');
     await typeRoot(t2, 'powershell');
-    expect(t1.getPrompt()).not.toBe(t2.getPrompt());
+    expect(t1.foreground.getPrompt()).not.toBe(t2.foreground.getPrompt());
   });
 
   test('§A30 — Windows→Linux: open then re-open SSH session keeps fresh history', async () => {
@@ -407,7 +439,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   // ─── Configuration reload semantics ────────────────────────────────
@@ -428,7 +460,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh root@10.0.0.3', 'admin');
-    expect(t.getPrompt()).toMatch(/root@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/root@linuxSrv/);
   });
 
   test('§A35 — Windows→Linux: AllowUsers list narrows access', async () => {
@@ -438,7 +470,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/alice@linuxSrv/);
+    expect(t.foreground.getPrompt()).toMatch(/alice@linuxSrv/);
   });
 
   // ─── Filesystem coherence across SSH ───────────────────────────────
@@ -454,7 +486,8 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
 
   test('§A37 — Windows→Linux: file deleted via SSH is gone on the device directly', async () => {
     const { winA, linuxSrv } = await buildLan();
-    await linuxSrv.executeCommand('echo bye > /tmp/toremove.txt');
+    // Owned by alice so she may unlink it from the sticky /tmp directory.
+    await linuxSrv.executeCommand('sh -c "echo bye > /tmp/toremove.txt && chown alice:alice /tmp/toremove.txt"');
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
@@ -499,7 +532,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/^alice@linuxSrv:/);
+    expect(t.foreground.getPrompt()).toMatch(/^alice@linuxSrv:/);
   });
 
   test('§A42 — Windows→Linux: prompt suffix is "$ " for non-root', async () => {
@@ -507,7 +540,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh alice@10.0.0.3', 'alice');
-    expect(t.getPrompt()).toMatch(/\$\s*$/);
+    expect(t.foreground.getPrompt()).toMatch(/\$\s*$/);
   });
 
   test('§A43 — Windows→Linux as root (PermitRootLogin yes): prompt suffix is "#"', async () => {
@@ -517,7 +550,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     const t = new WindowsTerminalSession('t', winA);
     await t.init();
     await winSshLogin(t, 'ssh root@10.0.0.3', 'admin');
-    expect(t.getPrompt()).toMatch(/#\s*$/);
+    expect(t.foreground.getPrompt()).toMatch(/#\s*$/);
   });
 
   // ─── Tail / cat / view operations ──────────────────────────────────
@@ -548,7 +581,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
     await typeSub(t, 'exit');
     await winSshLogin(t, 'ssh bob@10.0.0.3', 'bob');
     await typeSub(t, 'exit');
-    expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(t.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   test('§A47 — Three sequential logins, last user wins', async () => {
@@ -559,7 +592,7 @@ describe('SSH advanced realism — multi-hop, service control, user admin', () =
       await winSshLogin(t, `ssh ${u}@10.0.0.3`, u);
       await typeSub(t, 'exit');
     }
-    expect(t.getPrompt()).toMatch(/^[A-Z]:\\/);
+    expect(t.foreground.getPrompt()).toMatch(/^[A-Z]:\\/);
   });
 
   // ─── Cross-vendor PowerShell ───────────────────────────────────────

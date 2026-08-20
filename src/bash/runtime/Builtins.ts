@@ -30,7 +30,7 @@ export interface BuiltinResult {
 
 const BUILTIN_NAMES = new Set([
   'echo', 'printf', 'cd', 'pwd', 'export', 'unset', 'set',
-  'local', 'read', 'true', 'false',
+  'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
   'shift', 'source', '.', 'declare', 'readonly', 'let',
   'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
@@ -58,6 +58,11 @@ export function executeBuiltin(
     case 'unset': return builtinUnset(args, env);
     case 'true': return { output: '', exitCode: 0 };
     case 'false': return { output: '', exitCode: 1 };
+    // `:` (colon) — the classic no-op; args are already expanded by the
+    // time we get here, so any `${VAR:=default}`-style side effect has
+    // already happened. Common in `case ... : ;;` no-op branches and
+    // `while : ; do` infinite loops.
+    case ':': return { output: '', exitCode: 0 };
     case 'exit': return builtinExit(args);
     case 'return': return builtinReturn(args);
     case 'break': return builtinBreak(args);
@@ -179,7 +184,31 @@ function processEchoEscapes(text: string): { text: string; stopOutput: boolean }
         case 'a': result += '\x07'; i++; break;
         case 'b': result += '\b'; i++; break;
         case 'r': result += '\r'; i++; break;
+        case 'f': result += '\f'; i++; break;
+        case 'v': result += '\v'; i++; break;
+        // `\e` est l'échappement qui OUVRE une séquence ANSI, donc la
+        // seule façon pour un apprenant de produire une couleur à la
+        // main. Il tombait dans le `default` et repartait littéral :
+        // `echo -e "\e[31mrouge"` imprimait sa propre séquence.
+        case 'e': case 'E': result += '\x1b'; i++; break;
         case 'c': return { text: result, stopOutput: true };
+        case 'u': case 'U': {
+          // \uHHHH et \UHHHHHHHH — bash les accepte tous les deux.
+          const large = next === 'U';
+          const max = large ? 8 : 4;
+          let hex = '';
+          let j = i + 2;
+          while (j < text.length && hex.length < max && /[0-9a-fA-F]/.test(text[j])) {
+            hex += text[j]; j++;
+          }
+          if (hex) {
+            result += String.fromCodePoint(parseInt(hex, 16));
+            i = j - 1;
+          } else {
+            result += '\\' + next; i++;
+          }
+          break;
+        }
         case '0': {
           // Octal: \0NNN (up to 3 octal digits)
           let octal = '';
@@ -310,6 +339,12 @@ function printfFormat(format: string, fmtArgs: string[], argIdx: number): string
         case 'a': output += '\x07'; break;
         case 'b': output += '\b'; break;
         case 'r': output += '\r'; break;
+        case 'f': output += '\f'; break;
+        case 'v': output += '\v'; break;
+        // Comme pour `echo -e` : `\e` ouvre une séquence ANSI, et
+        // `printf` est la façon dont un script sérieux la produit —
+        // c'est même la seule portable, `echo -e` n'étant pas POSIX.
+        case 'e': case 'E': output += '\x1b'; break;
         case '0': {
           let octal = '';
           let j = i + 1;

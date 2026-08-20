@@ -15,7 +15,7 @@ import type {
   OspfRuntimeStatsVM,
 } from '@/network/ospf/observables';
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_LSDB: OspfLSDBSummaryVM = {
   totalLSAs: 0,
   perAreaCounts: new Map(),

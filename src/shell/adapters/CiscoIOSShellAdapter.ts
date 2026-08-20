@@ -2,6 +2,8 @@ import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult, ShellKeyEvent, ShellSpecialAction } from '../IShell';
 import { Router } from '@/network/devices/Router';
 import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import { isInteractionPlanner } from '../interaction/CommandInteraction';
+import { InteractionPlanRunner, type PlanAdvanceResult } from '../interaction/InteractionPlanRunner';
 
 export interface CiscoIOSShellOptions extends AbstractShellOptions {
   readonly vty?: CliShellSession | null;
@@ -59,12 +61,59 @@ export class CiscoIOSShellAdapter extends AbstractShell {
     return `${dev.getHostname() || 'Router'}#`;
   }
 
+  /** Active command-owned interactive dialogue (IoC), if any. */
+  private planRunner: InteractionPlanRunner | null = null;
+
   protected async dispatch(line: string): Promise<ShellLineResult> {
+    // Command-owned interactive flows (IoC): the SAME plans the UI
+    // terminal renders drive the SSH path, through pendingInput/handleInput.
+    const started = await this.tryStartInteractionPlan(line);
+    if (started) return started;
+
+    const raw = await this.execOnDevice(line);
+    return { output: raw ? raw.replace(/\n+$/, '').split('\n') : [] };
+  }
+
+  private async execOnDevice(line: string): Promise<string> {
     const dev = this.device as unknown as CiscoTarget;
-    const raw = (this.vty && this.device instanceof Router && dev.executeCommandInVty)
+    return (this.vty && this.device instanceof Router && dev.executeCommandInVty)
       ? await dev.executeCommandInVty(line, this.vty)
       : await dev.executeCommand(line);
-    return { output: raw ? raw.replace(/\n+$/, '').split('\n') : [] };
+  }
+
+  private currentMode(): string {
+    if (this.vty) return this.vty.state.mode;
+    const dev = this.device as unknown as { shell?: { getMode?: () => string } };
+    return dev.shell?.getMode?.() ?? 'user';
+  }
+
+  private async tryStartInteractionPlan(line: string): Promise<ShellLineResult | null> {
+    const shell = (this.device as unknown as { getShell?: () => unknown }).getShell?.();
+    if (!isInteractionPlanner(shell)) return null;
+    const plan = shell.interactionPlanFor(line, {
+      mode: this.currentMode(),
+      level: this.vty?.state.privilegeLevel,
+      device: this.device,
+    });
+    if (!plan) return null;
+    const runner = new InteractionPlanRunner(plan, (cmd) => this.execOnDevice(cmd));
+    const first = await runner.start();
+    if (!first.done) this.planRunner = runner;
+    return this.planResult(first);
+  }
+
+  private planResult(r: PlanAdvanceResult): ShellLineResult {
+    if (r.done) {
+      this.planRunner = null;
+      return { output: r.lines };
+    }
+    return { output: r.lines, pendingInput: r.pending };
+  }
+
+  /** Continuation of an active interaction plan (host-collected value). */
+  async handleInput(value: string): Promise<ShellLineResult> {
+    if (!this.planRunner) return { output: [] };
+    return this.planResult(await this.planRunner.provide(value));
   }
 
   protected override extraKeyMappings(e: ShellKeyEvent): ShellSpecialAction {

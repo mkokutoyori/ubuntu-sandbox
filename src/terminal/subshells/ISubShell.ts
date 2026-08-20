@@ -9,7 +9,7 @@
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import type { RichOutputLine } from '@/terminal/core/types';
 import type { IShellBase } from '@/shell/IShellBase';
-import type { PendingInputDirective } from '@/shell/IShell';
+import type { IShell, PendingInputDirective } from '@/shell/IShell';
 
 export interface SubShellResult {
   /** Lines to display in the terminal. */
@@ -33,6 +33,12 @@ export interface SubShellResult {
    * collected after Enter to `handleInput` on the sub-shell.
    */
   pendingInput?: PendingInputDirective;
+  /**
+   * When set, the host terminal pushes this `IShell` as the new active
+   * sub-shell (e.g. an interactive `ssh`/`sudo -i` handled inside another
+   * sub-shell's own `handleInput`, not the top-level `processLine` path).
+   */
+  childShell?: IShell;
 }
 
 /**
@@ -54,17 +60,47 @@ export interface ISubShell extends IShellBase {
    * Process a completed line of input (after Enter).
    * Returns output to display and whether the sub-shell has exited.
    * May be sync or async (e.g. PowerShell network commands are async).
+   *
+   * @param onProgress Optional. When provided, a sub-shell whose command
+   * streams output over time (e.g. a real-wire `ping` over an SSH shell
+   * channel) MAY call this repeatedly with one line of text at a time
+   * *before* its returned promise settles, instead of batching everything
+   * into the final `SubShellResult.output`. Sub-shells that don't stream
+   * simply ignore the parameter — the host always renders `output` too.
    */
-  processLine(line: string): SubShellResult | Promise<SubShellResult>;
+  processLine(
+    line: string,
+    onProgress?: (text: string) => void,
+  ): SubShellResult | Promise<SubShellResult>;
+
+  /**
+   * Optional: interrupt (Ctrl+C) the sub-shell's currently in-flight
+   * `processLine()` call, e.g. to stop a remote streaming job over the
+   * wire. Returns true if something was actually interrupted — the host
+   * then leaves its own "^C" echo to the sub-shell's own output instead
+   * of printing its own. Sub-shells without a cancellable in-flight
+   * command omit this; the host falls back to its default local-only
+   * "clear input, echo ^C" behaviour.
+   */
+  interruptForeground?(): boolean;
 
   /**
    * Tab-completion candidates for the current input line. The owning
    * session decides how to apply them (single match → complete inline,
    * many → list). Optional: sub-shells without completion can omit it.
    * Implementations return the full candidate token(s), not just the
-   * suffix, so the session's existing completeInput helper can diff.
+   * suffix, so the session's completion controller can diff.
    */
   getCompletions?(line: string): string[];
+
+  /**
+   * Completion candidates that can only be obtained asynchronously —
+   * a remote shell answering over an SSH channel, for instance. The
+   * owning session awaits this before running its Tab logic, and falls
+   * back to the synchronous {@link getCompletions} when it is absent
+   * (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  getCompletionsAsync?(line: string): Promise<string[]>;
 
   /**
    * Continuation hook: after the host terminal collects the value

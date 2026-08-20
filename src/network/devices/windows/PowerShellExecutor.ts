@@ -16,6 +16,8 @@ import type { WindowsUserManager } from './WindowsUserManager';
 import type { WindowsServiceManager } from './WindowsServiceManager';
 import type { WindowsProcessManager } from './WindowsProcessManager';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
+import type { IPAddress, SubnetMask } from '../../core/types';
+import { toDisplayName, toPortName, formatLinkSpeedMbps } from './WindowsInterfaceNaming';
 import {
   runPipeline, formatDefault, formatTable,
   buildProcessObjects, buildServiceObjects, buildCommandObjects,
@@ -29,7 +31,21 @@ import {
   psNewService, psRemoveService, buildDynamicServiceObjects,
 } from './PSServiceCmdlets';
 import { PSRegistryProvider, isRegistryPath } from './PSRegistryProvider';
-import { PSEventLogProvider, type EntryType } from './PSEventLogProvider';
+import { PSEventLogProvider } from './PSEventLogProvider';
+import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
+import { parsePSArgs } from './psArgs';
+import { psAddVpnConnection, psGetVpnConnection, psSetVpnConnection, psRemoveVpnConnection } from './PSVpnCmdlets';
+import { psNewNetFirewallRule, psSetNetFirewallRule, psToggleNetFirewallRule, psRemoveNetFirewallRule, psGetNetFirewallRule } from './PSFirewallCmdlets';
+import { LOCAL_ACCOUNT_CMDLETS } from './PSLocalAccountCmdlets';
+import { EVENT_LOG_CMDLETS } from './PSEventLogCmdlets';
+import { STORAGE_CMDLETS } from './PSStorageCmdlets';
+import { psGetDnsClientServerAddress, psSetDnsClientServerAddress, psGetNetConnectionProfile, psSetNetConnectionProfile, type PSNetConfigContext } from './PSNetConfigCmdlets';
+import { psTestPath, psResolvePath, psSplitPath, psJoinPath, type PSPathContext } from './PSPathCmdlets';
+import { formatGetHelp } from './PSHelpText';
+import { psGetItemProperty, psSetItemProperty, psRemoveItemProperty } from './PSRegistryCmdlets';
+import * as net from './PSNetCmdlets';
+import type { PSNetContext } from './PSNetCmdlets';
+import type { IEventBus } from '@/events/EventBus';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -66,7 +82,17 @@ export interface PSDeviceContext {
   /** Get current working directory */
   getCwd(): string;
   /** Get default gateway IP or null */
-  getDefaultGateway(): string | null;
+  getDefaultGatewayString(): string | null;
+  /** This machine's domain-join state, or null while in a workgroup (Get-WmiObject/Get-CimInstance Win32_ComputerSystem's `Domain`). */
+  getDomainMembership?(): { dnsName: string } | null;
+  /** Resolve a hostname to an IP synchronously (Test-NetConnection). */
+  resolveHostnameSync(name: string): IPAddress | null;
+  /** Synchronous ICMP probe (Test-NetConnection). */
+  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number };
+  /** Egress interface/next-hop for a target IP (Test-NetConnection). */
+  getEgressFor(targetIP: IPAddress): { sourceIp: IPAddress; interfaceName: string; nextHopIP: IPAddress } | null;
+  /** Synchronous TCP reachability probe (Test-NetConnection -Port). */
+  tcpProbeSync(targetIP: IPAddress, port: number): boolean;
   /** Get DNS servers for an interface */
   getDnsServers(ifName: string): string[];
   /** Set DNS servers for an interface (optional - for Set-DnsClientServerAddress) */
@@ -80,6 +106,24 @@ export interface PSDeviceContext {
   /** Get the process manager for process management cmdlets */
   getProcessManager(): WindowsProcessManager;
   /**
+   * Real network-state primitives (all implemented by WindowsPC/EndHost).
+   * The legacy Net* cmdlets MUST use these — never a parallel PS-only
+   * store — so cmd and PowerShell always describe the same device state
+   * (see AUDIT-COHERENCE-CMD-PS-UX-HELP.md §1).
+   */
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, origin?: string): boolean;
+  unconfigureInterface(ifName: string): boolean;
+  setDefaultGateway(gw: IPAddress): void;
+  clearDefaultGateway(): void;
+  getRoutingTable(): Array<{ network: IPAddress; mask: SubnetMask; nextHop: IPAddress | null; iface: string; metric: number; type?: string }>;
+  addStaticRoute(network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric?: number): boolean;
+  removeRoute(dest: IPAddress, mask: SubnetMask): boolean;
+  getSocketTable(): { getAll(): Array<{ protocol: string; localAddress: string; localPort: number; remoteAddress: string; remotePort: number; state: string; pid?: number }> };
+  /** Full sync DNS chain: hosts file → resolver cache → servers on the wire. */
+  resolveDnsSync(name: string): string[];
+  /** Shared scheduled-task store — the same map cmd's schtasks reads/writes. */
+  readonly scheduledTasks: Map<string, { taskName: string; taskPath: string; state: string; command?: string; runAt?: Date; intervalMs?: number }>;
+  /**
    * Phase 4 relocation: state holders that used to live as private fields
    * on PowerShellExecutor now live on the device. The executor reads/writes
    * through these references; the interpreter providers do too.
@@ -89,9 +133,12 @@ export interface PSDeviceContext {
   readonly adapterOverrides:     Map<string, { status?: string; displayName?: string }>;
   readonly dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }>;
   readonly networkProfiles:      Map<number, string>;
-  readonly vpnConnections:       Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }>;
+  readonly vpnConnections:       Map<string, VpnConnectionInfo>;
   readonly registry:             PSRegistryProvider;
   readonly eventLog:             PSEventLogProvider;
+  /** Device id + bus, for handlers that must publish domain events directly. */
+  readonly id: string;
+  getBus(): IEventBus;
 }
 
 // ─── PowerShell Executor ──────────────────────────────────────────
@@ -121,9 +168,20 @@ export class PowerShellExecutor {
   private device: PSDeviceContext;
   private commandHistory: string[];
   /** Registry hive — relocated to the device (Phase 4). */
-  get registry(): PSRegistryProvider { return (this.device as unknown as { registry: PSRegistryProvider }).registry; }
+  get registry(): PSRegistryProvider { return this.device.registry; }
+  /**
+   * `$PSVersionTable.OS` build string ("10.0.22631") — read from the same
+   * registry values `systeminfo`/`wmic os get caption` already source, so a
+   * Windows Server device reports its own build instead of the client's.
+   */
+  private currentVersionBuild(): string {
+    const values = this.registry.getItemPropertyValues('HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion');
+    const currentVersion = values?.['CurrentVersion'] ?? '10.0';
+    const buildNumber = values?.['CurrentBuildNumber'] ?? '22631';
+    return `${currentVersion}.${buildNumber}`;
+  }
   /** Event log — relocated to the device. */
-  get eventLog(): PSEventLogProvider { return (this.device as unknown as { eventLog: PSEventLogProvider }).eventLog; }
+  get eventLog(): PSEventLogProvider { return this.device.eventLog; }
   /** Session variables: $name → string value */
   private sessionVars: Map<string, string> = new Map();
   /** Session environment overrides (Set-Item Env:X) */
@@ -137,9 +195,9 @@ export class PowerShellExecutor {
   /** Additional IP addresses — now lives on the device (Phase 4 relocation).
    *  Kept as a public getter for the rest of this file (which references
    *  this.extraIPs in dozens of places) and for WindowsPSProviders. */
-  get extraIPs() { return (this.device as unknown as { extraIPs: Map<string, { ifAlias: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; skipAsSource: boolean; gateway?: string; addressFamily: string }> }).extraIPs; }
+  get extraIPs() { return this.device.extraIPs; }
   /** Extra routes — relocated to the device. */
-  get extraRoutes() { return (this.device as unknown as { extraRoutes: Map<string, { ifAlias: string; nextHop: string; metric: number }> }).extraRoutes; }
+  get extraRoutes() { return this.device.extraRoutes; }
   /** Location stack for Push-Location/Pop-Location */
   private locationStack: Map<string, string[]> = new Map();
   /** Array variables: $name → string[] */
@@ -151,9 +209,9 @@ export class PowerShellExecutor {
   /** Set to true when a `continue` statement is executed inside a loop */
   private continueSignal = false;
   /** Adapter overrides — relocated to the device. */
-  get adapterOverrides() { return (this.device as unknown as { adapterOverrides: Map<string, { status?: string; displayName?: string }> }).adapterOverrides; }
+  get adapterOverrides() { return this.device.adapterOverrides; }
   /** Dynamic firewall rules — relocated to the device. */
-  get dynamicFirewallRules() { return (this.device as unknown as { dynamicFirewallRules: Map<string, { name: string; displayName: string; enabled: boolean; action: string; direction: string; protocol: string; localPort: string; remotePort: string; description: string }> }).dynamicFirewallRules; }
+  get dynamicFirewallRules() { return this.device.dynamicFirewallRules; }
   /** WinHTTP proxy setting (empty = direct access) */
   private winhttpProxy: string = '';
   /** WLAN: currently connected SSID (empty = disconnected) */
@@ -161,9 +219,9 @@ export class PowerShellExecutor {
   /** WLAN: known profiles (SSIDs) */
   private wlanProfiles: Set<string> = new Set();
   /** Network connection profiles — relocated to the device. */
-  get networkProfiles() { return (this.device as unknown as { networkProfiles: Map<number, string> }).networkProfiles; }
+  get networkProfiles() { return this.device.networkProfiles; }
   /** VPN connections — relocated to the device. */
-  get vpnConnections() { return (this.device as unknown as { vpnConnections: Map<string, { name: string; serverAddress: string; tunnelType: string; encryptionLevel: string; authMethod: string }> }).vpnConnections; }
+  get vpnConnections() { return this.device.vpnConnections; }
 
   constructor(device: PSDeviceContext, initialCwd = 'C:\\Users\\User') {
     this.cwd = initialCwd;
@@ -273,7 +331,7 @@ export class PowerShellExecutor {
         case 'wsmanbuildversion':    return '3.0.0.0';
         case 'pscompatibleversions': return '1.0 2.0 3.0 4.0 5.0 5.1.19041.4412';
         case 'platform':             return 'Win32NT';
-        case 'os':                   return 'Microsoft Windows 10.0.19041';
+        case 'os':                   return `Microsoft Windows ${this.currentVersionBuild()}`;
         default:                     return '';
       }
     }
@@ -2051,7 +2109,7 @@ export class PowerShellExecutor {
 
     // -? help shortcut: any cmdlet with -? → show help
     if (args.includes('-?')) {
-      return this.formatGetHelp(cmd);
+      return formatGetHelp(cmd);
     }
 
     // ─── PowerShell variables ─────────────────────────────────────
@@ -2173,17 +2231,17 @@ export class PowerShellExecutor {
 
     // Get-ItemProperty / gp
     if (cmdLower === 'get-itemproperty' || cmdLower === 'gp') {
-      return this.handleGetItemProperty(args);
+      return psGetItemProperty({ registry: this.registry }, args);
     }
 
     // Set-ItemProperty / sp
     if (cmdLower === 'set-itemproperty' || cmdLower === 'sp') {
-      return this.handleSetItemProperty(args);
+      return psSetItemProperty({ registry: this.registry }, args);
     }
 
     // Remove-ItemProperty / rp
     if (cmdLower === 'remove-itemproperty' || cmdLower === 'rp') {
-      return this.handleRemoveItemProperty(args);
+      return psRemoveItemProperty({ registry: this.registry }, args);
     }
 
     // Get-PSDrive / gdr — feed the registry helper the live FS drive
@@ -2205,35 +2263,8 @@ export class PowerShellExecutor {
     }
 
     // ─── Event Log Cmdlets ────────────────────────────────────────
-
-    // Get-EventLog
-    if (cmdLower === 'get-eventlog') {
-      return this.handleGetEventLog(args);
-    }
-
-    // Write-EventLog
-    if (cmdLower === 'write-eventlog') {
-      return this.handleWriteEventLog(args);
-    }
-
-    // Clear-EventLog
-    if (cmdLower === 'clear-eventlog') {
-      return this.handleClearEventLog(args);
-    }
-
-    // New-EventLog
-    if (cmdLower === 'new-eventlog') {
-      return this.handleNewEventLog(args);
-    }
-
-    // Limit-EventLog
-    if (cmdLower === 'limit-eventlog') {
-      return this.handleLimitEventLog(args);
-    }
-
-    // Get-WinEvent
-    if (cmdLower === 'get-winevent') {
-      return this.handleGetWinEvent(args);
+    if (EVENT_LOG_CMDLETS[cmdLower]) {
+      return EVENT_LOG_CMDLETS[cmdLower]({ eventLog: this.eventLog }, args);
     }
 
     // Copy-Item / cpi / copy / cp
@@ -2297,6 +2328,30 @@ export class PowerShellExecutor {
       return psStartProcess(this.buildPSProcessCtx(), args);
     }
 
+    // Get-ComputerInfo — OS-identity subset, sourced from the same registry
+    // values `systeminfo`/`wmic os get caption` read, so a Windows Server
+    // device reports its own identity here too instead of the client's.
+    if (cmdLower === 'get-computerinfo') {
+      const values = this.registry.getItemPropertyValues('HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion') ?? {};
+      const productName = String(values['ProductName'] ?? 'Windows 10 Pro');
+      const editionId = String(values['EditionID'] ?? 'Professional');
+      const installationType = String(values['InstallationType'] ?? 'Client');
+      const buildNumber = String(values['CurrentBuildNumber'] ?? '22631');
+      const releaseId = String(values['ReleaseId'] ?? '2009');
+      return [
+        `WindowsProductName       : ${productName}`,
+        `WindowsEditionId         : ${editionId}`,
+        `WindowsInstallationType  : ${installationType}`,
+        `WindowsVersion           : ${releaseId}`,
+        `WindowsBuildLabEx        : ${buildNumber}.1.amd64fre.ni_release`,
+        `OsName                   : Microsoft ${productName}`,
+        `OsVersion                : ${this.currentVersionBuild()}`,
+        `OsHardwareAbstractionLayer: ${this.currentVersionBuild()}`,
+        `CsDNSHostName            : ${this.device.getHostname()}`,
+        `CsName                   : ${this.device.getHostname()}`,
+      ].join('\n');
+    }
+
     // Get-Help / man / help
     if (cmdLower === 'get-help' || cmdLower === 'man' || cmdLower === 'help') {
       let topic = '';
@@ -2323,7 +2378,7 @@ export class PowerShellExecutor {
         else if (!args[i].startsWith('-') && !topic) { topic = args[i].replace(/^["']|["']$/g, ''); }
       }
       const helpOpts = { examples, detailed, full, online, showWindow, parameter: paramName || undefined, category: category || undefined, component: component || undefined, role: role || undefined, functionality: functionality || undefined };
-      return this.formatGetHelp(topic || undefined, helpOpts);
+      return formatGetHelp(topic || undefined, helpOpts);
     }
 
     // Get-Command / gcm
@@ -2338,57 +2393,57 @@ export class PowerShellExecutor {
 
     // Get-NetIPConfiguration
     if (cmdLower === 'get-netipconfiguration') {
-      return this.handleGetNetIPConfiguration(args);
+      return net.handleGetNetIPConfiguration(this.buildPSNetCtx(), args);
     }
 
     // Get-NetIPAddress
     if (cmdLower === 'get-netipaddress') {
-      return this.handleGetNetIPAddress(args);
+      return net.handleGetNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // New-NetIPAddress
     if (cmdLower === 'new-netipaddress') {
-      return this.handleNewNetIPAddress(args);
+      return net.handleNewNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Remove-NetIPAddress
     if (cmdLower === 'remove-netipaddress') {
-      return this.handleRemoveNetIPAddress(args);
+      return net.handleRemoveNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Set-NetIPAddress
     if (cmdLower === 'set-netipaddress') {
-      return this.handleSetNetIPAddress(args);
+      return net.handleSetNetIPAddress(this.buildPSNetCtx(), args);
     }
 
     // Get-NetRoute
     if (cmdLower === 'get-netroute') {
-      return this.handleGetNetRoute(args);
+      return net.handleGetNetRoute(this.buildPSNetCtx(), args);
     }
 
     // New-NetRoute
     if (cmdLower === 'new-netroute') {
-      return this.handleNewNetRoute(args);
+      return net.handleNewNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Remove-NetRoute
     if (cmdLower === 'remove-netroute') {
-      return this.handleRemoveNetRoute(args);
+      return net.handleRemoveNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Get-DnsClientServerAddress
     if (cmdLower === 'get-dnsclientserveraddress') {
-      return this.handleGetDnsClientServerAddress(args);
+      return psGetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
     }
 
     // Set-DnsClientServerAddress
     if (cmdLower === 'set-dnsclientserveraddress') {
-      return this.handleSetDnsClientServerAddress(args);
+      return psSetDnsClientServerAddress(this.buildPSNetConfigCtx(), args);
     }
 
     // Get-NetAdapter
     if (cmdLower === 'get-netadapter') {
-      return this.handleGetNetAdapter(args);
+      return net.handleGetNetAdapter(this.buildPSNetCtx(), args);
     }
 
     // Test-Connection (PowerShell ping)
@@ -2398,108 +2453,107 @@ export class PowerShellExecutor {
 
     // Get-NetTCPConnection (simulated netstat-like)
     if (cmdLower === 'get-nettcpconnection') {
-      return this.formatGetNetTCPConnection(args);
+      return net.formatGetNetTCPConnection(this.buildPSNetCtx(), args);
     }
 
     // Get-NetFirewallRule
     if (cmdLower === 'get-netfirewallrule') {
-      return this.formatGetNetFirewallRule(args);
+      return psGetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // New-NetFirewallRule
     if (cmdLower === 'new-netfirewallrule') {
-      return this.handleNewNetFirewallRule(args);
+      return psNewNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Set-NetFirewallRule
     if (cmdLower === 'set-netfirewallrule') {
-      return this.handleSetNetFirewallRule(args);
+      return psSetNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Enable-NetFirewallRule
     if (cmdLower === 'enable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, true);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, true);
     }
 
     // Disable-NetFirewallRule
     if (cmdLower === 'disable-netfirewallrule') {
-      return this.handleToggleNetFirewallRule(args, false);
+      return psToggleNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args, false);
     }
 
     // Remove-NetFirewallRule
     if (cmdLower === 'remove-netfirewallrule') {
-      return this.handleRemoveNetFirewallRule(args);
+      return psRemoveNetFirewallRule({ dynamicFirewallRules: this.dynamicFirewallRules }, args);
     }
 
     // Disable-NetAdapter
     if (cmdLower === 'disable-netadapter') {
-      return this.handleDisableEnableNetAdapter(args, 'Disabled');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
     }
 
     // Enable-NetAdapter
     if (cmdLower === 'enable-netadapter') {
-      return this.handleDisableEnableNetAdapter(args, 'Up');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
     }
 
     // Rename-NetAdapter
     if (cmdLower === 'rename-netadapter') {
-      return this.handleRenameNetAdapter(args);
+      return net.handleRenameNetAdapter(this.buildPSNetCtx(), args);
     }
 
     // Restart-NetAdapter
     if (cmdLower === 'restart-netadapter') {
-      const params = this.parsePSArgs(args);
-      const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-      if (name) {
-        const override = this.adapterOverrides.get(name) ?? {};
-        override.status = 'Up';
-        this.adapterOverrides.set(name, override);
-      }
-      return '';
+      // Real restart = down then up on the actual adapter. Route through
+      // the shared handler so a backing port is truly cycled (admin down →
+      // up), visible to ipconfig/netsh — not just a PS-only override flip.
+      net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Disabled');
+      return net.handleDisableEnableNetAdapter(this.buildPSNetCtx(), args, 'Up');
     }
 
     // Set-NetRoute
     if (cmdLower === 'set-netroute') {
-      return this.handleSetNetRoute(args);
+      return net.handleSetNetRoute(this.buildPSNetCtx(), args);
     }
 
     // Test-NetConnection
     if (cmdLower === 'test-netconnection') {
-      return this.handleTestNetConnection(args);
+      return net.handleTestNetConnection(this.buildPSNetCtx(), args);
     }
 
     // Get-NetConnectionProfile
     if (cmdLower === 'get-netconnectionprofile') {
-      return this.handleGetNetConnectionProfile(args);
+      return psGetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
     }
 
     // Set-NetConnectionProfile
     if (cmdLower === 'set-netconnectionprofile') {
-      return this.handleSetNetConnectionProfile(args);
+      return psSetNetConnectionProfile(this.buildPSNetConfigCtx(), args);
     }
 
     // Add-VpnConnection
     if (cmdLower === 'add-vpnconnection') {
-      return this.handleAddVpnConnection(args);
+      return psAddVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Get-VpnConnection
     if (cmdLower === 'get-vpnconnection') {
-      return this.handleGetVpnConnection(args);
+      return psGetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Set-VpnConnection
     if (cmdLower === 'set-vpnconnection') {
-      return this.handleSetVpnConnection(args);
+      return psSetVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
     // Remove-VpnConnection
     if (cmdLower === 'remove-vpnconnection') {
-      return this.handleRemoveVpnConnection(args);
+      return psRemoveVpnConnection({ vpnConnections: this.vpnConnections }, args);
     }
 
-    // Clear-DnsClientCache
+    // Clear-DnsClientCache — flush the REAL resolver cache (the same one
+    // ipconfig /flushdns and Get-DnsClientCache read), not a no-op.
     if (cmdLower === 'clear-dnsclientcache') {
+      await this.device.executeCmdCommand('ipconfig /flushdns');
       return '';
     }
 
@@ -2509,41 +2563,48 @@ export class PowerShellExecutor {
         /^["']|["']$/g,
         '',
       );
-      return this.renderResolveDnsName(target);
+      return net.renderResolveDnsName(this.buildPSNetCtx(), target);
     }
 
-    // Get-Disk
-    if (cmdLower === 'get-disk') {
-      return this.handleGetDisk(args);
+    if (STORAGE_CMDLETS[cmdLower]) {
+      return STORAGE_CMDLETS[cmdLower]({ fs: this.device.getFileSystem() }, args);
     }
 
-    // Get-Volume
-    if (cmdLower === 'get-volume') {
-      return this.handleGetVolume(args);
-    }
-
-    // Get-ScheduledTask
+    // Get-ScheduledTask — reads the SAME store cmd's schtasks writes.
     if (cmdLower === 'get-scheduledtask') {
       const nameParam = args.find((a, i) => args[i - 1]?.toLowerCase() === '-taskname') || args.find(a => !a.startsWith('-'));
-      const tasks = [
-        { TaskName: 'GoogleUpdateTaskUser', TaskPath: '\\', State: 'Ready' },
-        { TaskName: 'OneDrive Standalone Update Task', TaskPath: '\\', State: 'Ready' },
-        { TaskName: '.NET Framework NGEN v4.0.30319', TaskPath: '\\Microsoft\\Windows\\.NET', State: 'Ready' },
-        { TaskName: 'SimTestTask', TaskPath: '\\', State: 'Ready' },
-      ];
-      const filtered = nameParam ? tasks.filter(t => t.TaskName.toLowerCase().includes(nameParam.toLowerCase())) : tasks;
+      const tasks = [...this.device.scheduledTasks.values()];
+      const filtered = nameParam
+        ? tasks.filter(t => t.taskName.toLowerCase().includes(nameParam.replace(/^["']|["']$/g, '').toLowerCase()))
+        : tasks;
+      if (filtered.length === 0) {
+        return nameParam
+          ? `Get-ScheduledTask : No MSFT_ScheduledTask objects found with property 'TaskName' equal to '${nameParam}'.`
+          : '';
+      }
       const lines = ['', 'TaskPath                          TaskName                        State    ', '--------                          --------                        -----    '];
       for (const t of filtered) {
-        lines.push(`${t.TaskPath.padEnd(34)}${t.TaskName.padEnd(32)}${t.State}`);
+        lines.push(`${t.taskPath.padEnd(34)}${t.taskName.padEnd(32)}${t.state}`);
       }
       return lines.join('\n');
     }
 
-    // Register-ScheduledTask
+    // Register-ScheduledTask — writes the SAME store cmd's schtasks reads.
     if (cmdLower === 'register-scheduledtask') {
       const nameIdx = args.findIndex(a => a.toLowerCase() === '-taskname');
       const name = nameIdx >= 0 ? args[nameIdx + 1]?.replace(/^["']|["']$/g, '') : 'Task';
+      if (name) {
+        this.device.scheduledTasks.set(name.toLowerCase(), { taskName: name, taskPath: '\\', state: 'Ready' });
+      }
       return `\n\\${name}\n`;
+    }
+
+    // Unregister-ScheduledTask — removes from the shared store.
+    if (cmdLower === 'unregister-scheduledtask') {
+      const nameIdx = args.findIndex(a => a.toLowerCase() === '-taskname');
+      const name = nameIdx >= 0 ? args[nameIdx + 1]?.replace(/^["']|["']$/g, '') : '';
+      if (name) this.device.scheduledTasks.delete(name.toLowerCase());
+      return '';
     }
 
     // New-ScheduledTaskAction / New-ScheduledTaskTrigger
@@ -2551,10 +2612,6 @@ export class PowerShellExecutor {
       return '';
     }
 
-    // Unregister-ScheduledTask
-    if (cmdLower === 'unregister-scheduledtask') {
-      return '';
-    }
 
     // Set-Acl
     if (cmdLower === 'set-acl') {
@@ -2566,9 +2623,13 @@ export class PowerShellExecutor {
       return '';
     }
 
-    // Get-Date
+    // Get-Date — PowerShell's default rendering is the full culture long
+    // date/time ("Sunday, July 19, 2026 3:04:05 PM"), not JS's Date string.
     if (cmdLower === 'get-date') {
-      return new Date().toString();
+      return new Date().toLocaleString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+      });
     }
 
     // Get-History / h / history
@@ -2594,7 +2655,7 @@ export class PowerShellExecutor {
 
     // Native commands that work in both CMD and PS
     if (['ipconfig', 'ping', 'netsh', 'tracert', 'route', 'arp', 'systeminfo', 'ver',
-         'tasklist', 'taskkill', 'sc', 'sc.exe'].includes(cmdLower)) {
+         'tasklist', 'taskkill', 'sc', 'sc.exe', 'curl', 'curl.exe'].includes(cmdLower)) {
       return await this.device.executeCmdCommand(cmdLower + ' ' + args.join(' '));
     }
 
@@ -2659,7 +2720,7 @@ export class PowerShellExecutor {
 
     // Test-Path
     if (cmdLower === 'test-path') {
-      return this.handleTestPath(args);
+      return psTestPath(this.buildPSPathCtx(), args);
     }
 
     // Out-File
@@ -2684,17 +2745,17 @@ export class PowerShellExecutor {
 
     // Resolve-Path / rvpa
     if (cmdLower === 'resolve-path' || cmdLower === 'rvpa') {
-      return this.handleResolvePath(args);
+      return psResolvePath(this.buildPSPathCtx(), args);
     }
 
     // Split-Path
     if (cmdLower === 'split-path') {
-      return this.handleSplitPath(args);
+      return psSplitPath(args);
     }
 
     // Join-Path
     if (cmdLower === 'join-path') {
-      return this.handleJoinPath(args);
+      return psJoinPath(args);
     }
 
     // ─── User/Group/ACL Management Cmdlets ──────────────────────
@@ -2704,79 +2765,13 @@ export class PowerShellExecutor {
       return await this.device.executeCmdCommand('whoami ' + args.join(' '));
     }
 
-    // Get-LocalUser
-    if (cmdLower === 'get-localuser') {
-      return this.handleGetLocalUser(args);
-    }
-
-    // New-LocalUser
-    if (cmdLower === 'new-localuser') {
-      return this.handleNewLocalUser(args);
-    }
-
-    // Set-LocalUser
-    if (cmdLower === 'set-localuser') {
-      return this.handleSetLocalUser(args);
-    }
-
-    // Remove-LocalUser
-    if (cmdLower === 'remove-localuser') {
-      return this.handleRemoveLocalUser(args);
-    }
-
-    // Enable-LocalUser
-    if (cmdLower === 'enable-localuser') {
-      return this.handleEnableLocalUser(args);
-    }
-
-    // Disable-LocalUser
-    if (cmdLower === 'disable-localuser') {
-      return this.handleDisableLocalUser(args);
-    }
-
-    // Get-LocalGroup
-    if (cmdLower === 'get-localgroup') {
-      return this.handleGetLocalGroup(args);
-    }
-
-    // New-LocalGroup
-    if (cmdLower === 'new-localgroup') {
-      return this.handleNewLocalGroup(args);
-    }
-
-    // Remove-LocalGroup
-    if (cmdLower === 'remove-localgroup') {
-      return this.handleRemoveLocalGroup(args);
-    }
-
-    // Add-LocalGroupMember
-    if (cmdLower === 'add-localgroupmember') {
-      return this.handleAddLocalGroupMember(args);
-    }
-
-    // Remove-LocalGroupMember
-    if (cmdLower === 'remove-localgroupmember') {
-      return this.handleRemoveLocalGroupMember(args);
-    }
-
-    // Get-LocalGroupMember
-    if (cmdLower === 'get-localgroupmember') {
-      return this.handleGetLocalGroupMember(args);
+    if (LOCAL_ACCOUNT_CMDLETS[cmdLower]) {
+      return LOCAL_ACCOUNT_CMDLETS[cmdLower]({ userManager: this.device.getUserManager() }, args);
     }
 
     // Get-Acl
     if (cmdLower === 'get-acl') {
       return this.handleGetAcl(args);
-    }
-
-    // Rename-LocalUser
-    if (cmdLower === 'rename-localuser') {
-      return this.handleRenameLocalUser(args);
-    }
-
-    // Rename-LocalGroup
-    if (cmdLower === 'rename-localgroup') {
-      return this.handleRenameLocalGroup(args);
     }
 
     // Write-Error / Write-Warning (executor-level fallback if interpreter misses them)
@@ -3067,48 +3062,6 @@ export class PowerShellExecutor {
     const result = fs.createFile(absPath, value);
     if (!result.ok) return `New-Item : ${result.error}`;
     return '';
-  }
-
-  private handleGetItemProperty(args: string[]): string {
-    let path = '', name = '';
-    for (let i = 0; i < args.length; i++) {
-      const al = args[i].toLowerCase();
-      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && !path) { path = args[i].replace(/^["']|["']$/g, ''); }
-      else if (!args[i].startsWith('-') && path && !name) { name = args[i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return "Get-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Get-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.getItemProperty(path, name || undefined);
-  }
-
-  private handleSetItemProperty(args: string[]): string {
-    let path = '', name = '', value: string | number = '';
-    for (let i = 0; i < args.length; i++) {
-      const al = args[i].toLowerCase();
-      if ((al === '-path' || al === '-literalpath') && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (al === '-value' && args[i + 1]) {
-        const raw = args[++i].replace(/^["']|["']$/g, '');
-        value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
-      }
-    }
-    if (!path) return "Set-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.setItemProperty(path, name, value);
-  }
-
-  private handleRemoveItemProperty(args: string[]): string {
-    let path = '', name = '';
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-path' && args[i + 1]) { path = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (a === '-name' && args[i + 1]) { name = args[++i].replace(/^["']|["']$/g, ''); }
-    }
-    if (!path) return "Remove-ItemProperty : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    if (!isRegistryPath(path)) return `Remove-ItemProperty : Cannot find path '${path}' because it does not exist.`;
-    return this.registry.removeItemProperty(path, name);
   }
 
   // ─── Get-ChildItem with Filter/Recurse/Env: ──────────────────────
@@ -3516,85 +3469,6 @@ export class PowerShellExecutor {
 
   // ─── Event Log Handlers ───────────────────────────────────────────
 
-  private handleGetEventLog(args: string[]): string {
-    const listFlag = args.some(a => a === '-List' || a.toLowerCase() === '-list');
-    if (listFlag) return this.eventLog.getEventLogList();
-
-    let logName = '', newest: number | undefined, entryType = '', source = '';
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (a === '-Newest' && args[i + 1]) { newest = parseInt(args[++i], 10); }
-      else if (a === '-EntryType' && args[i + 1]) { entryType = args[++i]; }
-      else if (a === '-Source' && args[i + 1]) { source = args[++i]; }
-      else if (!a.startsWith('-') && !logName) { logName = a; }
-    }
-    if (!logName) return "Get-EventLog : Cannot bind argument to parameter 'LogName' because it is null.";
-    return this.eventLog.getEventLog(logName, { newest, entryType: entryType || undefined, source: source || undefined });
-  }
-
-  private handleWriteEventLog(args: string[]): string {
-    let logName = '', source = '', message = '', entryType: EntryType = 'Information';
-    let eventId = 0;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (a === '-Source' && args[i + 1]) { source = args[++i].replace(/^['"]|['"]$/g, ''); }
-      else if (a === '-Message' && args[i + 1]) { message = args[++i].replace(/^['"]|['"]$/g, ''); }
-      else if (a === '-EventId' && args[i + 1]) { eventId = parseInt(args[++i], 10); }
-      else if (a === '-EntryType' && args[i + 1]) { entryType = args[++i] as EntryType; }
-    }
-    if (!logName || !source || !eventId) {
-      return "Write-EventLog : -LogName, -Source, and -EventId are required parameters.";
-    }
-    return this.eventLog.writeEventLog(logName, source, eventId, entryType, message);
-  }
-
-  private handleClearEventLog(args: string[]): string {
-    let logName = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (!args[i].startsWith('-') && !logName) { logName = args[i]; }
-    }
-    if (!logName) return "Clear-EventLog : -LogName is required.";
-    return this.eventLog.clearEventLog(logName);
-  }
-
-  private handleNewEventLog(args: string[]): string {
-    let logName = '', source = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (args[i] === '-Source' && args[i + 1]) { source = args[++i].replace(/^['"]|['"]$/g, ''); }
-    }
-    if (!logName) return "New-EventLog : -LogName is required.";
-    return this.eventLog.newEventLog(logName, source);
-  }
-
-  private handleLimitEventLog(args: string[]): string {
-    let logName = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (!args[i].startsWith('-') && !logName) { logName = args[i]; }
-    }
-    if (!logName) return '';
-    return this.eventLog.limitEventLog(logName);
-  }
-
-  private handleGetWinEvent(args: string[]): string {
-    const listLogFlag = args.some(a => a === '-ListLog');
-    if (listLogFlag) return this.eventLog.getWinEventList();
-
-    let logName = '', maxEvents: number | undefined;
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-LogName' && args[i + 1]) { logName = args[++i]; }
-      else if (a === '-MaxEvents' && args[i + 1]) { maxEvents = parseInt(args[++i], 10); }
-      else if (!a.startsWith('-') && !logName) { logName = a; }
-    }
-    if (!logName) return "Get-WinEvent : -LogName is required.";
-    return this.eventLog.getWinEvent(logName, maxEvents);
-  }
-
   // ─── Connection Handlers ──────────────────────────────────────────
 
   private async handleTestConnection(args: string[]): Promise<string> {
@@ -3662,320 +3536,6 @@ export class PowerShellExecutor {
     return lines.join('\n');
   }
 
-  private formatGetHelp(topic?: string, opts?: { examples?: boolean; detailed?: boolean; full?: boolean; parameter?: string; online?: boolean; showWindow?: boolean; category?: string; component?: string; role?: string; functionality?: string }): string {
-    const helpDb: Record<string, { synopsis: string; description: string; syntax: string; examples?: string; parameters?: string }> = {
-      'clear-host': {
-        synopsis: 'Clears the display in the host program.',
-        description: 'The Clear-Host cmdlet deletes the current text from the display, including commands and any output that might have accumulated.',
-        syntax: 'Clear-Host [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Clear-Host\n    (Screen is cleared)',
-        parameters: '-WhatIf, -Confirm, -Verbose',
-      },
-      'copy-item': {
-        synopsis: 'Copies an item from one location to another.',
-        description: 'The Copy-Item cmdlet copies an item from one location to another location in the same namespace.',
-        syntax: 'Copy-Item [-Path] <String[]> [[-Destination] <String>] [-Recurse] [-Force] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [-LiteralPath <String[]>] [-PassThru] [-Container] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Copy-Item C:\\source.txt C:\\dest.txt',
-        parameters: '-Path, -Destination, -Recurse, -Force, -Filter, -Include, -Exclude, -LiteralPath, -PassThru, -Container',
-      },
-      'get-childitem': {
-        synopsis: 'Gets the items and child items in one or more specified locations.',
-        description: 'The Get-ChildItem cmdlet gets the items in one or more specified locations. If the item is a container, it gets the items inside the container.',
-        syntax: 'Get-ChildItem [[-Path] <String[]>] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [-Recurse] [-Depth <UInt32>] [-Name] [-Directory] [-File] [-Hidden] [-System] [-Force] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-ChildItem C:\\',
-        parameters: '-Path, -Filter, -Include, -Exclude, -Recurse, -Depth, -Name, -Directory, -File, -Hidden, -System, -Force',
-      },
-      'get-command': {
-        synopsis: 'Gets all commands.',
-        description: 'The Get-Command cmdlet gets all commands that are installed on the computer.',
-        syntax: 'Get-Command [[-Name] <String[]>] [-CommandType <CommandTypes>] [-Module <String[]>] [-Noun <String>] [-Verb <String>] [-All] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Command\n    (Lists all available commands)',
-        parameters: '-Name, -CommandType, -Module, -Noun, -Verb, -All',
-      },
-      'get-content': {
-        synopsis: 'Gets the content of the item at the specified location.',
-        description: 'The Get-Content cmdlet gets the content of the item at the location specified by the path.',
-        syntax: 'Get-Content [-Path] <String[]> [-TotalCount <Int64>] [-Tail <Int32>] [-Raw] [-AsByteStream] [-Stream <String>] [-Wait] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Content C:\\file.txt',
-        parameters: '-Path, -LiteralPath, -TotalCount, -Tail, -Raw, -AsByteStream, -Stream, -Wait, -First, -Last',
-      },
-      'get-help': {
-        synopsis: 'Displays information about Windows PowerShell commands and concepts.',
-        description: 'The Get-Help cmdlet displays information about PowerShell concepts and commands.',
-        syntax: 'Get-Help [[-Name] <String>] [-Full] [-Detailed] [-Examples] [-Online] [-Parameter <String>] [-Category <String>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Help Get-Process',
-        parameters: '-Name, -Full, -Detailed, -Examples, -Online, -Parameter, -Category, -Component, -Role, -Functionality',
-      },
-      'get-location': {
-        synopsis: 'Gets information about the current working location or a location stack.',
-        description: 'The Get-Location cmdlet gets an object that represents the current directory.',
-        syntax: 'Get-Location [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Location\n    Path\n    ----\n    C:\\Users\\User',
-        parameters: '-Stack, -StackName',
-      },
-      'get-netadapter': {
-        synopsis: 'Gets the basic network adapter properties.',
-        description: 'The Get-NetAdapter cmdlet gets the basic network adapter properties, including the name, interface description, interface index, and MAC address.',
-        syntax: 'Get-NetAdapter [[-Name] <String[]>] [-Physical] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-NetAdapter',
-        parameters: '-Name, -Physical, -IncludeHidden, -All',
-      },
-      'get-netipaddress': {
-        synopsis: 'Gets the IP address configuration.',
-        description: 'The Get-NetIPAddress cmdlet gets the IP address configuration for the specified interface.',
-        syntax: 'Get-NetIPAddress [[-IPAddress] <String[]>] [-InterfaceAlias <String[]>] [-AddressFamily <AddressFamily>] [-PrefixLength <Byte>] [-AddressState <AddressState>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-NetIPAddress\n    (Lists all IP addresses)',
-        parameters: '-IPAddress, -InterfaceAlias, -InterfaceIndex, -AddressFamily, -PrefixLength, -AddressState, -PrefixOrigin, -SuffixOrigin',
-      },
-      'new-netipaddress': {
-        synopsis: 'Creates and configures an IP address.',
-        description: 'The New-NetIPAddress cmdlet creates and configures an IP address and related settings.',
-        syntax: 'New-NetIPAddress [-IPAddress] <String> -InterfaceAlias <String> -PrefixLength <Byte> [-DefaultGateway <String>] [-AddressFamily <AddressFamily>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> New-NetIPAddress -InterfaceAlias "Ethernet" -IPAddress 192.168.1.10 -PrefixLength 24',
-        parameters: '-IPAddress, -InterfaceAlias, -InterfaceIndex, -PrefixLength, -DefaultGateway, -AddressFamily, -SkipAsSource',
-      },
-      'remove-netipaddress': {
-        synopsis: 'Removes an IP address and its configuration.',
-        description: 'The Remove-NetIPAddress cmdlet removes an IP address and its related settings.',
-        syntax: 'Remove-NetIPAddress [[-IPAddress] <String[]>] [-InterfaceAlias <String[]>] [-AddressFamily <AddressFamily>] [-Confirm:$false] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Remove-NetIPAddress -IPAddress 192.168.1.10 -Confirm:$false',
-        parameters: '-IPAddress, -InterfaceAlias, -AddressFamily, -Confirm',
-      },
-      'set-netipaddress': {
-        synopsis: 'Modifies the configuration of an IP address.',
-        description: 'The Set-NetIPAddress cmdlet modifies the configuration of an IP address.',
-        syntax: 'Set-NetIPAddress [[-IPAddress] <String[]>] [-PrefixLength <Byte>] [-PrefixOrigin <PrefixOrigin>] [-SkipAsSource <Boolean>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Set-NetIPAddress -IPAddress 192.168.1.10 -PrefixLength 16',
-        parameters: '-IPAddress, -PrefixLength, -PrefixOrigin, -SuffixOrigin, -SkipAsSource',
-      },
-      'get-netipconfiguration': {
-        synopsis: 'Gets IP network configuration.',
-        description: 'The Get-NetIPConfiguration cmdlet gets network configuration including adapter, IP address, and DNS server information.',
-        syntax: 'Get-NetIPConfiguration [[-InterfaceAlias] <String>] [-All] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-NetIPConfiguration',
-        parameters: '-InterfaceAlias, -InterfaceIndex, -All',
-      },
-      'get-netroute': {
-        synopsis: 'Gets the IP route information from the IP routing table.',
-        description: 'The Get-NetRoute cmdlet gets the IP route information from the IP routing table.',
-        syntax: 'Get-NetRoute [[-DestinationPrefix] <String[]>] [-InterfaceAlias <String[]>] [-NextHop <String[]>] [-RouteMetric <UInt16>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-NetRoute\n    (Lists routing table)',
-        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -RouteMetric, -AddressFamily',
-      },
-      'new-netroute': {
-        synopsis: 'Creates a route in the IP routing table.',
-        description: 'The New-NetRoute cmdlet creates a route in the IP routing table.',
-        syntax: 'New-NetRoute -DestinationPrefix <String> -InterfaceAlias <String> [-NextHop <String>] [-RouteMetric <UInt16>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> New-NetRoute -DestinationPrefix "10.0.0.0/8" -InterfaceAlias "Ethernet" -NextHop 192.168.1.1',
-        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -RouteMetric, -PolicyStore',
-      },
-      'remove-netroute': {
-        synopsis: 'Removes IP routes from the IP routing table.',
-        description: 'The Remove-NetRoute cmdlet removes IP routes from the IP routing table.',
-        syntax: 'Remove-NetRoute [[-DestinationPrefix] <String[]>] [-InterfaceAlias <String[]>] [-NextHop <String[]>] [-Confirm:$false] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Remove-NetRoute -DestinationPrefix "10.0.0.0/8" -Confirm:$false',
-        parameters: '-DestinationPrefix, -InterfaceAlias, -NextHop, -Confirm',
-      },
-      'get-dnsclientserveraddress': {
-        synopsis: 'Gets the DNS server IP addresses from the TCP/IP properties on an interface.',
-        description: 'The Get-DnsClientServerAddress cmdlet gets the DNS server IP addresses from the TCP/IP properties on an interface.',
-        syntax: 'Get-DnsClientServerAddress [[-InterfaceAlias] <String[]>] [-AddressFamily <AddressFamily>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-DnsClientServerAddress -InterfaceAlias "Ethernet"',
-        parameters: '-InterfaceAlias, -InterfaceIndex, -AddressFamily',
-      },
-      'set-dnsclientserveraddress': {
-        synopsis: 'Sets the DNS server IP addresses for a network interface.',
-        description: 'The Set-DnsClientServerAddress cmdlet sets one or more IP addresses for DNS servers associated with the specified interface.',
-        syntax: 'Set-DnsClientServerAddress -InterfaceAlias <String> -ServerAddresses <String[]> [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ServerAddresses "8.8.8.8","8.8.4.4"',
-        parameters: '-InterfaceAlias, -InterfaceIndex, -ServerAddresses, -ResetServerAddresses',
-      },
-      'get-process': {
-        synopsis: 'Gets the processes that are running on the local computer.',
-        description: 'The Get-Process cmdlet gets the processes that are running on the local computer.',
-        syntax: 'Get-Process [[-Name] <String[]>] [-Id <Int32[]>] [-ComputerName <String[]>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Process\n    (Lists all processes)',
-        parameters: '-Name, -Id, -ComputerName, -IncludeUserName, -Module, -FileVersionInfo',
-      },
-      'stop-process': {
-        synopsis: 'Stops one or more running processes.',
-        description: 'The Stop-Process cmdlet stops one or more running processes.',
-        syntax: 'Stop-Process [-Id] <Int32[]> [-Force] [<CommonParameters>]\nStop-Process -Name <String[]> [-Force] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Stop-Process -Name "notepad"',
-        parameters: '-Id, -Name, -Force, -PassThru, -WhatIf',
-      },
-      'get-service': {
-        synopsis: 'Gets the services on a local or remote computer.',
-        description: 'The Get-Service cmdlet gets objects that represent the services on a local computer.',
-        syntax: 'Get-Service [[-Name] <String[]>] [-DisplayName <String[]>] [-DependentServices] [-RequiredServices] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Service\n    (Lists all services)',
-        parameters: '-Name, -DisplayName, -Include, -Exclude, -DependentServices, -RequiredServices',
-      },
-      'move-item': {
-        synopsis: 'Moves an item from one location to another.',
-        description: 'The Move-Item cmdlet moves an item from one location to another.',
-        syntax: 'Move-Item [-Path] <String[]> [[-Destination] <String>] [-Force] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Move-Item C:\\source.txt C:\\dest.txt',
-        parameters: '-Path, -Destination, -Force, -Filter, -Include, -Exclude, -LiteralPath, -PassThru',
-      },
-      'new-item': {
-        synopsis: 'Creates a new item.',
-        description: 'The New-Item cmdlet creates a new item. The type of item that is created depends on the location.',
-        syntax: 'New-Item [-Path] <String[]> [-ItemType <String>] [-Value <Object>] [-Force] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> New-Item -Path C:\\newdir -ItemType Directory',
-        parameters: '-Path, -Name, -ItemType, -Value, -Force',
-      },
-      'remove-item': {
-        synopsis: 'Deletes the specified items.',
-        description: 'The Remove-Item cmdlet deletes one or more items.',
-        syntax: 'Remove-Item [-Path] <String[]> [-Recurse] [-Force] [-Filter <String>] [-Include <String[]>] [-Exclude <String[]>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Remove-Item C:\\oldfile.txt',
-        parameters: '-Path, -Recurse, -Force, -Filter, -Include, -Exclude, -WhatIf',
-      },
-      'rename-item': {
-        synopsis: 'Renames an item in a PowerShell provider namespace.',
-        description: 'The Rename-Item cmdlet changes the name of a specified item.',
-        syntax: 'Rename-Item [-Path] <String> [-NewName] <String> [-Force] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Rename-Item -Path C:\\old.txt -NewName new.txt',
-        parameters: '-Path, -LiteralPath, -NewName, -Force, -PassThru',
-      },
-      'set-content': {
-        synopsis: 'Writes new content or replaces existing content in a file.',
-        description: 'The Set-Content cmdlet is a string-processing cmdlet that writes new content or replaces existing content in a file.',
-        syntax: 'Set-Content [-Path] <String[]> [-Value] <Object[]> [-Force] [-NoNewline] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Set-Content -Path C:\\file.txt -Value "Hello World"',
-        parameters: '-Path, -LiteralPath, -Value, -Force, -NoNewline, -Encoding',
-      },
-      'set-location': {
-        synopsis: 'Sets the current working location to a specified location.',
-        description: 'The Set-Location cmdlet sets the working location to a specified location.',
-        syntax: 'Set-Location [[-Path] <String>] [-LiteralPath <String>] [-PassThru] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Set-Location C:\\Windows',
-        parameters: '-Path, -LiteralPath, -PassThru, -Stack, -StackName',
-      },
-      'test-connection': {
-        synopsis: 'Sends ICMP echo request packets (pings) to one or more computers.',
-        description: 'The Test-Connection cmdlet sends Internet Control Message Protocol (ICMP) echo request packets to one or more remote computers.',
-        syntax: 'Test-Connection [-ComputerName] <String[]> [-Count <Int32>] [-Delay <Int32>] [-Quiet] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Test-Connection -ComputerName 8.8.8.8',
-        parameters: '-ComputerName, -Count, -Delay, -BufferSize, -Quiet, -TTL, -DontFragment',
-      },
-      'write-host': {
-        synopsis: 'Writes customized output to a host.',
-        description: 'The Write-Host cmdlet writes output to the host. It bypasses the output stream.',
-        syntax: 'Write-Host [[-Object] <Object>] [-NoNewline] [-Separator <Object>] [-ForegroundColor <ConsoleColor>] [-BackgroundColor <ConsoleColor>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Write-Host "Hello World" -ForegroundColor Green',
-        parameters: '-Object, -NoNewline, -Separator, -ForegroundColor, -BackgroundColor',
-      },
-      'write-output': {
-        synopsis: 'Sends the specified objects to the next command in the pipeline.',
-        description: 'The Write-Output cmdlet sends the specified objects to the next command in the pipeline.',
-        syntax: 'Write-Output [-InputObject] <PSObject[]> [-NoEnumerate] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Write-Output "Hello"',
-        parameters: '-InputObject, -NoEnumerate',
-      },
-      'get-disk': {
-        synopsis: 'Gets one or more disks visible to the operating system.',
-        description: 'The Get-Disk cmdlet gets one or more disks visible to the operating system.',
-        syntax: 'Get-Disk [[-Number] <UInt32[]>] [-FriendlyName <String[]>] [-SerialNumber <String[]>] [-UniqueId <String[]>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Disk\n    (Lists all disks)',
-        parameters: '-Number, -FriendlyName, -SerialNumber, -UniqueId',
-      },
-      'get-volume': {
-        synopsis: 'Gets the specified Volume object, or all Volume objects if no filter is specified.',
-        description: 'The Get-Volume cmdlet returns a list of all available volumes.',
-        syntax: 'Get-Volume [[-DriveLetter] <Char[]>] [-FriendlyName <String[]>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-Volume\n    (Lists all volumes)',
-        parameters: '-DriveLetter, -FriendlyName, -FileSystemLabel',
-      },
-      'get-localuser': {
-        synopsis: 'Gets local user accounts.',
-        description: 'The Get-LocalUser cmdlet gets local user accounts.',
-        syntax: 'Get-LocalUser [[-Name] <String[]>] [-SID <SecurityIdentifier[]>] [<CommonParameters>]',
-        examples: 'EXAMPLE 1\n    PS> Get-LocalUser\n    (Lists all local users)',
-        parameters: '-Name, -SID',
-      },
-    };
-
-    if (!topic) {
-      return [
-        'TOPIC',
-        '    Windows PowerShell Help System',
-        '',
-        'SHORT DESCRIPTION',
-        '    Displays help about Windows PowerShell cmdlets and concepts.',
-        '',
-        'LONG DESCRIPTION',
-        '    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.',
-        '',
-        '    To get help for a cmdlet, type: Get-Help <cmdlet-name>',
-      ].join('\n');
-    }
-
-    const key = topic.toLowerCase().replace(/^["']|["']$/g, '');
-    const entry = helpDb[key];
-
-    if (!entry) {
-      return [
-        'TOPIC',
-        '    Windows PowerShell Help System',
-        '',
-        'SHORT DESCRIPTION',
-        '    Displays help about Windows PowerShell cmdlets and concepts.',
-        '',
-        'LONG DESCRIPTION',
-        '    Windows PowerShell Help describes cmdlets, functions, scripts, and modules.',
-        '',
-        `    To get help for a cmdlet, type: Get-Help <cmdlet-name>`,
-        '',
-        `Get-Help : No help topic was not found for '${topic}'. Verify that the topic is correct and try the command again.`,
-      ].join('\n');
-    }
-
-    if (opts?.showWindow) {
-      return `Get-Help : The -ShowWindow parameter is not supported in this simulator.\n    Use Get-Help ${topic} to view help in the terminal.`;
-    }
-    if (opts?.online) {
-      return `Opening online help for ${topic}... (simulated: no browser in simulator)`;
-    }
-    if (opts?.parameter) {
-      return `PARAMETER: -${opts.parameter}\n\nName: -${opts.parameter}\n    ${entry.parameters ?? '(no parameter info)'}`;
-    }
-
-    const lines: string[] = [
-      `NAME`,
-      `    ${topic}`,
-      ``,
-      `SYNOPSIS`,
-      `    ${entry.synopsis}`,
-      ``,
-      `SYNTAX`,
-      `    ${entry.syntax}`,
-      ``,
-      `DESCRIPTION`,
-      `    ${entry.description}`,
-    ];
-
-    if (opts?.examples || opts?.detailed || opts?.full) {
-      if (entry.examples) {
-        lines.push('', 'EXAMPLES', `    ${entry.examples}`);
-      }
-    }
-    if (opts?.detailed || opts?.full) {
-      if (entry.parameters) {
-        lines.push('', 'PARAMETERS', `    ${entry.parameters}`);
-      }
-    }
-    if (opts?.full) {
-      lines.push('', 'INPUTS', `    None. You cannot pipe objects to ${topic}.`);
-      lines.push('', 'OUTPUTS', `    System.Object`);
-      lines.push('', 'NOTES', `    This is a simulated cmdlet.`);
-    }
-    lines.push('', 'RELATED LINKS', `    Get-Help ${topic} -Online`);
-    lines.push('', 'REMARKS', `    To see the examples, type: "Get-Help ${topic} -Examples"`, `    For more information, type: "Get-Help ${topic} -Detailed"`, `    For technical information, type: "Get-Help ${topic} -Full"`);
-
-    return lines.join('\n');
-  }
 
   private static readonly ALL_COMMANDS: Array<{ type: string; name: string; version: string; source: string; noun: string }> = [
     { type: 'Cmdlet', name: 'Clear-Host',                    version: '3.1.0.0', source: 'Microsoft.PowerShell.Core',       noun: 'Host' },
@@ -4227,440 +3787,31 @@ export class PowerShellExecutor {
     return `${m}/${d}/${y}  ${String(h).padStart(2)}:${min} ${ampm}`;
   }
 
-  private handleGetNetIPConfiguration(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const detailed = params.has('detailed');
-    const all = params.has('all');
 
-    return this.formatGetNetIPConfiguration(ifFilter, detailed, all);
+
+
+
+
+
+
+
+
+
+
+
+
+
+  private buildPSNetCtx(): PSNetContext {
+    return { device: this.device };
   }
 
-  private formatGetNetIPConfiguration(ifFilter = '', detailed = false, all = false): string {
-    const ports = this.device.getPortsMap();
-    const lines: string[] = [];
-    let idx = 0;
-    let found = false;
-
-    const addEntry = (displayName: string, ip: string, mask: string, gw: string, dns: string[]) => {
-      if (idx > 0) lines.push('');
-      lines.push(`InterfaceAlias       : ${displayName}`);
-      lines.push(`InterfaceIndex       : ${idx + 1}`);
-      lines.push(`IPv4Address          : ${ip || 'Not configured'}`);
-      if (mask) lines.push(`IPv4SubnetMask       : ${mask}`);
-      lines.push(`IPv4DefaultGateway   : ${gw}`);
-      lines.push(`DNSServer            : ${dns.length > 0 ? dns.join(', ') : ''}`);
-      if (detailed) {
-        lines.push(`ComputerName         : ${this.device.getHostname?.() ?? 'DESKTOP'}`);
-      }
-      idx++;
-      found = true;
+  private buildPSNetConfigCtx(): PSNetConfigContext {
+    return {
+      ports: this.device.getPortsMap(),
+      getDnsServers: (n: string) => this.device.getDnsServers(n),
+      setDnsServers: (n: string, s: string[]) => this.device.setDnsServers?.(n, s),
+      networkProfiles: this.networkProfiles,
     };
-
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const gw = this.device.getDefaultGateway() ?? '';
-      const dns = this.device.getDnsServers(name);
-      addEntry(displayName, ip, mask, gw, dns);
-    }
-
-    // Loopback (shown with -All or when specifically requested)
-    if (all && (!ifFilter || 'loopback'.includes(ifFilter))) {
-      addEntry('Loopback Pseudo-Interface 1', '127.0.0.1', '255.0.0.0', '', []);
-    }
-
-    if (!found && ifFilter) {
-      return `Get-NetIPConfiguration : Interface '${ifFilter}' not found. No MSFT_NetIPConfiguration objects found.`;
-    }
-
-    return lines.join('\n');
-  }
-
-  private buildAllIPEntries(): Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> {
-    const entries: Array<{ ip: string; ifAlias: string; ifIndex: number; addressFamily: string; prefixLength: number; prefixOrigin: string; suffixOrigin: string; addressState: string; skipAsSource: boolean }> = [];
-    const ports = this.device.getPortsMap();
-    let idx = 2;
-    let ethIdx = 0;
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      const prefixLength = mask ? this.maskToPrefixLength(mask) : 0;
-      const isDhcp = this.device.isDHCPConfigured(name);
-      if (ip) {
-        entries.push({ ip, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength, prefixOrigin: isDhcp ? 'Dhcp' : 'Manual', suffixOrigin: isDhcp ? 'Dhcp' : 'Manual', addressState: 'Preferred', skipAsSource: false });
-      } else if (!this.extraIPs.has(displayName.toLowerCase())) {
-        // Simulated default private IP for unconfigured adapters (192.168.1.100+offset/24)
-        const simIp = `192.168.1.${100 + ethIdx}`;
-        entries.push({ ip: simIp, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv4', prefixLength: 24, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-      }
-      // Link-local IPv6
-      const macStr = port.getMAC()?.toString() ?? '00:00:00:00:00:00';
-      const macParts = macStr.split(':');
-      if (macParts.length === 6) {
-        const fe80 = `fe80::${macParts[0]}${macParts[1]}:${macParts[2]}ff:fe${macParts[3]}:${macParts[4]}${macParts[5]}`;
-        entries.push({ ip: fe80, ifAlias: displayName, ifIndex: idx, addressFamily: 'IPv6', prefixLength: 64, prefixOrigin: 'WellKnown', suffixOrigin: 'Link', addressState: 'Preferred', skipAsSource: false });
-      }
-      idx++;
-      ethIdx++;
-    }
-    // Extra IPs (added via New-NetIPAddress)
-    for (const [ip, info] of this.extraIPs) {
-      entries.push({ ip, ifAlias: info.ifAlias, ifIndex: idx++, addressFamily: info.addressFamily, prefixLength: info.prefixLength, prefixOrigin: info.prefixOrigin, suffixOrigin: info.suffixOrigin, addressState: 'Preferred', skipAsSource: info.skipAsSource });
-    }
-    // Loopback
-    entries.push({ ip: '127.0.0.1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv4', prefixLength: 8, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-    entries.push({ ip: '::1', ifAlias: 'Loopback Pseudo-Interface 1', ifIndex: 1, addressFamily: 'IPv6', prefixLength: 128, prefixOrigin: 'WellKnown', suffixOrigin: 'WellKnown', addressState: 'Preferred', skipAsSource: false });
-    return entries;
-  }
-
-  private formatIPEntry(e: ReturnType<typeof this.buildAllIPEntries>[0]): string {
-    return [
-      `IPAddress         : ${e.ip}`,
-      `InterfaceIndex    : ${e.ifIndex}`,
-      `InterfaceAlias    : ${e.ifAlias}`,
-      `AddressFamily     : ${e.addressFamily}`,
-      `Type              : Unicast`,
-      `PrefixLength      : ${e.prefixLength}`,
-      `PrefixOrigin      : ${e.prefixOrigin}`,
-      `SuffixOrigin      : ${e.suffixOrigin}`,
-      `AddressState      : ${e.addressState}`,
-      `SkipAsSource      : ${e.skipAsSource ? 'True' : 'False'}`,
-    ].join('\n');
-  }
-
-  private handleGetNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ipFilter = params.get('ipaddress') || params.get('_positional');
-    const ifFilter = (params.get('interfacealias') ?? '').toLowerCase().replace(/^["']|["']$/g, '');
-    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
-    const plFilter = params.has('prefixlength') ? parseInt(params.get('prefixlength')!, 10) : undefined;
-    const stateFilter = (params.get('addressstate') ?? '').toLowerCase();
-    const poFilter = (params.get('prefixorigin') ?? '').toLowerCase();
-    const soFilter = (params.get('suffixorigin') ?? '').toLowerCase();
-    // -IncludeAllCompartments: just ignore in sim
-    const errorAction = (params.get('erroraction') ?? '').toLowerCase();
-
-    // Validate explicit IP address filter
-    if (ipFilter && !this.isValidIP(ipFilter)) {
-      return `Get-NetIPAddress : Invalid IP address: '${ipFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    let entries = this.buildAllIPEntries();
-
-    if (ipFilter) entries = entries.filter(e => e.ip.toLowerCase() === ipFilter.toLowerCase());
-    if (ifFilter) entries = entries.filter(e => e.ifAlias.toLowerCase().includes(ifFilter) || e.ifAlias.toLowerCase() === ifFilter);
-    if (afFilter === 'ipv4') entries = entries.filter(e => e.addressFamily === 'IPv4');
-    if (afFilter === 'ipv6') entries = entries.filter(e => e.addressFamily === 'IPv6');
-    if (plFilter !== undefined) entries = entries.filter(e => e.prefixLength === plFilter);
-    if (stateFilter) entries = entries.filter(e => e.addressState.toLowerCase() === stateFilter);
-    if (poFilter) entries = entries.filter(e => e.prefixOrigin.toLowerCase() === poFilter);
-    if (soFilter) entries = entries.filter(e => e.suffixOrigin.toLowerCase() === soFilter);
-
-    if (entries.length === 0) {
-      if (ifFilter) {
-        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'InterfaceAlias' equal to '${ifFilter}'. Verify the value of the property and retry.`;
-      }
-      if (ipFilter) {
-        return `Get-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ipFilter}'. Verify the value of the property and retry.`;
-      }
-      return '';
-    }
-
-    return entries.map(e => this.formatIPEntry(e)).join('\n\n');
-  }
-
-  private isValidIP(ip: string): boolean {
-    return isValidIPv4(ip) || isValidIPv6(ip);
-  }
-
-  private handleNewNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const gateway = params.get('defaultgateway');
-    const afParam = (params.get('addressfamily') ?? '').toLowerCase();
-    const skipAsSource = (params.get('skipassource') ?? '').toLowerCase() === '$true' || params.get('skipassource') === 'true';
-
-    if (!ip) return `New-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetIPAddress : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!prefixStr) return `New-NetIPAddress : The -PrefixLength parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!this.isValidIP(ip)) return `New-NetIPAddress : Invalid IP address: '${ip}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const prefixLength = parseInt(prefixStr, 10);
-    const isIPv6 = ip.includes(':');
-    const maxPrefix = isIPv6 ? 128 : 32;
-    if (isNaN(prefixLength) || prefixLength < 0 || prefixLength > maxPrefix) {
-      return `New-NetIPAddress : PrefixLength '${prefixStr}' is not in the valid range 0-${maxPrefix}.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    // Check for duplicate
-    const existing = this.buildAllIPEntries();
-    if (existing.some(e => e.ip.toLowerCase() === ip.toLowerCase())) {
-      return `New-NetIPAddress : The IP address '${ip}' already exists on this system.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    const addressFamily = afParam === 'ipv6' || isIPv6 ? 'IPv6' : 'IPv4';
-    this.extraIPs.set(ip.toLowerCase(), { ifAlias, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource, gateway, addressFamily });
-
-    if (gateway) {
-      this.extraRoutes.set('0.0.0.0/0', { ifAlias, nextHop: gateway, metric: 0 });
-    }
-
-    return this.formatIPEntry({ ip, ifAlias, ifIndex: 99, addressFamily, prefixLength, prefixOrigin: 'Manual', suffixOrigin: 'Manual', addressState: 'Preferred', skipAsSource });
-  }
-
-  private handleRemoveNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = params.get('ipaddress') || params.get('_positional');
-    const whatif = params.has('whatif') || args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!ip) return `Remove-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    if (ip === '127.0.0.1' || ip === '::1') {
-      return `Remove-NetIPAddress : Cannot remove the loopback address '${ip}'. This address is required for network functionality.`;
-    }
-
-    const entries = this.buildAllIPEntries();
-    const found = entries.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-    if (!found) {
-      return `Remove-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetIPAddress" on target "IPAddress: ${ip}, InterfaceAlias: ${found.ifAlias}".`;
-    }
-
-    this.extraIPs.delete(ip.toLowerCase());
-    return '';
-  }
-
-  private handleSetNetIPAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ip = (params.get('ipaddress') || params.get('_positional'))?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-    const prefixStr = params.get('prefixlength');
-    const prefixLength = prefixStr ? parseInt(prefixStr, 10) : undefined;
-
-    // When -InterfaceAlias is given, replace the existing IPv4 for that adapter with the new IP
-    if (ifAlias && ip) {
-      if (!this.isValidIP(ip)) return `Set-NetIPAddress : Invalid IP address '${ip}'.`;
-      const all = this.buildAllIPEntries();
-      const existing = all.find(e => e.ifAlias.toLowerCase() === ifAlias.toLowerCase() && e.addressFamily === 'IPv4');
-      if (existing) this.extraIPs.delete(existing.ip.toLowerCase());
-      this.extraIPs.set(ip.toLowerCase(), {
-        ifAlias, prefixLength: prefixLength ?? existing?.prefixLength ?? 24,
-        prefixOrigin: 'Manual', suffixOrigin: 'Manual', skipAsSource: false, addressFamily: 'IPv4',
-      });
-      return '';
-    }
-
-    if (!ip) return `Set-NetIPAddress : The -IPAddress parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const entry = this.extraIPs.get(ip.toLowerCase());
-    if (!entry) {
-      const all = this.buildAllIPEntries();
-      const found = all.find(e => e.ip.toLowerCase() === ip.toLowerCase());
-      if (!found) {
-        return `Set-NetIPAddress : No MSFT_NetIPAddress objects found with property 'IPAddress' equal to '${ip}'. Verify the value of the property and retry.`;
-      }
-      this.extraIPs.set(ip.toLowerCase(), { ifAlias: found.ifAlias, prefixLength: found.prefixLength, prefixOrigin: found.prefixOrigin, suffixOrigin: found.suffixOrigin, skipAsSource: found.skipAsSource, addressFamily: found.addressFamily });
-    }
-
-    const e = this.extraIPs.get(ip.toLowerCase())!;
-    if (prefixLength !== undefined) e.prefixLength = prefixLength;
-    if (params.has('prefixorigin')) e.prefixOrigin = params.get('prefixorigin')!;
-    if (params.has('suffixorigin')) e.suffixOrigin = params.get('suffixorigin')!;
-    if (params.has('skipassource')) e.skipAsSource = (params.get('skipassource') ?? '').toLowerCase() !== 'false' && (params.get('skipassource') ?? '') !== '$false';
-    return '';
-  }
-
-  private buildDefaultRoutes(): Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> {
-    const routes: Array<{ dest: string; ifAlias: string; nextHop: string; metric: number }> = [];
-    const gw = this.device.getDefaultGateway();
-    const ports = this.device.getPortsMap();
-    let firstIF = '';
-    for (const [name] of ports) { firstIF = this.portToDisplayName(name); break; }
-    // Default route — skip built-in if extraRoutes already has a 0.0.0.0/0 (set by New-NetIPAddress -DefaultGateway)
-    if (!this.extraRoutes.has('0.0.0.0/0')) {
-      routes.push({ dest: '0.0.0.0/0', ifAlias: firstIF || 'Ethernet', nextHop: gw || '0.0.0.0', metric: 0 });
-    }
-    // Loopback
-    routes.push({ dest: '127.0.0.0/8', ifAlias: 'Loopback Pseudo-Interface 1', nextHop: '0.0.0.0', metric: 306 });
-    // Connected network routes
-    let idx = 2;
-    for (const [name, port] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const ip = port.getIPAddress()?.toString() ?? '';
-      const mask = port.getSubnetMask()?.toString() ?? '';
-      if (ip && mask) {
-        const prefix = this.maskToPrefixLength(mask);
-        const network = ip.split('.').map((o, i) => (parseInt(o) & parseInt(mask.split('.')[i])).toString()).join('.');
-        routes.push({ dest: `${network}/${prefix}`, ifAlias: displayName, nextHop: '0.0.0.0', metric: 256 });
-      }
-      idx++;
-    }
-    // Extra routes
-    for (const [dest, info] of this.extraRoutes) {
-      routes.push({ dest, ifAlias: info.ifAlias, nextHop: info.nextHop, metric: info.metric });
-    }
-    return routes;
-  }
-
-  private formatRouteEntry(r: { dest: string; ifAlias: string; nextHop: string; metric: number }): string {
-    return [
-      `ifIndex DestinationPrefix                                                         NextHop                                  RouteMetric ifMetric PolicyStore`,
-      `------- -----------------                                                         -------                                  ----------- -------- -----------`,
-      `      2 ${r.dest.padEnd(73)}${r.nextHop.padEnd(41)}${String(r.metric).padEnd(12)}256 ActiveStore`,
-    ].join('\n') + `\n\nDestinationPrefix : ${r.dest}\nNextHop           : ${r.nextHop}\nRouteMetric       : ${r.metric}\nInterfaceAlias    : ${r.ifAlias}\nInterfaceIndex    : 2\nAddressFamily     : IPv4\nPublish           : No\nPreferredLifetime : 10675199.02:48:05.4775807`;
-  }
-
-  private handleGetNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const destFilter = (params.get('destinationprefix') ?? '').replace(/^["']|["']$/g, '');
-    const ifFilter = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const nhFilter = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricFilter = params.has('routemetric') ? parseInt(params.get('routemetric')!, 10) : undefined;
-
-    // Validate destination prefix format — must be CIDR notation (ip/prefix or ipv6/prefix)
-    if (destFilter && !destFilter.match(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/) && !destFilter.match(/^[0-9a-f:]+\/\d+$/i)) {
-      return `Get-NetRoute : Invalid DestinationPrefix: '${destFilter}'.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    let routes = this.buildDefaultRoutes();
-    if (destFilter) routes = routes.filter(r => r.dest === destFilter);
-    if (ifFilter) routes = routes.filter(r => r.ifAlias.toLowerCase().includes(ifFilter));
-    if (nhFilter) routes = routes.filter(r => r.nextHop === nhFilter);
-    if (metricFilter !== undefined) routes = routes.filter(r => r.metric === metricFilter);
-
-    if (routes.length === 0) return '';
-
-    // Format as key-value blocks for pipeline compatibility (Select -ExpandProperty works on these)
-    return routes.map((r, i) => [
-      `DestinationPrefix : ${r.dest}`,
-      `NextHop           : ${r.nextHop}`,
-      `RouteMetric       : ${r.metric}`,
-      `InterfaceAlias    : ${r.ifAlias}`,
-      `InterfaceIndex    : ${i + 2}`,
-      `AddressFamily     : IPv4`,
-    ].join('\n')).join('\n\n');
-  }
-
-  private handleNewNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const ifAlias = (params.get('interfacealias') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = (params.get('nexthop') ?? '').replace(/^["']|["']$/g, '');
-    const metricStr = params.get('routemetric') ?? '0';
-    const metric = parseInt(metricStr, 10);
-
-    if (!dest) return `New-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!ifAlias) return `New-NetRoute : The -InterfaceAlias parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    if (!nextHop) return `New-NetRoute : The -NextHop parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    // Check for duplicates
-    if (this.extraRoutes.has(dest)) {
-      return `New-NetRoute : Route '${dest}' already exists.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    this.extraRoutes.set(dest, { ifAlias, nextHop, metric });
-    return [
-      `DestinationPrefix : ${dest}`,
-      `NextHop           : ${nextHop}`,
-      `RouteMetric       : ${metric}`,
-      `InterfaceAlias    : ${ifAlias}`,
-      `InterfaceIndex    : 2`,
-      `AddressFamily     : IPv4`,
-    ].join('\n');
-  }
-
-  private handleRemoveNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const whatif = args.some(a => a.toLowerCase() === '-whatif');
-
-    if (!dest) return `Remove-NetRoute : The -DestinationPrefix parameter is required.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-
-    const routes = this.buildDefaultRoutes();
-    const found = routes.find(r => r.dest === dest);
-    if (!found && !this.extraRoutes.has(dest)) {
-      return `Remove-NetRoute : No MSFT_NetRoute objects found with property 'DestinationPrefix' equal to '${dest}'.`;
-    }
-
-    if (whatif) {
-      return `What if: Performing the operation "Remove-NetRoute" on target "DestinationPrefix: ${dest}".`;
-    }
-
-    this.extraRoutes.delete(dest);
-    return '';
-  }
-
-  private handleGetDnsClientServerAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifFilter = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const afFilter = (params.get('addressfamily') ?? '').toLowerCase();
-
-    const ports = this.device.getPortsMap();
-    const lines: string[] = ['', 'InterfaceAlias               ServerAddresses', '--------------               ---------------'];
-    let found = false;
-
-    for (const [name] of ports) {
-      const displayName = this.portToDisplayName(name);
-      if (ifFilter && !displayName.toLowerCase().includes(ifFilter) && displayName.toLowerCase() !== ifFilter) continue;
-      if (afFilter === 'ipv6') continue; // Only show IPv4 DNS in sim
-      const servers = this.device.getDnsServers(name);
-      lines.push(`${displayName.padEnd(29)}${servers.join(', ')}`);
-      found = true;
-    }
-
-    if (!found && ifFilter) {
-      return `Get-DnsClientServerAddress : Interface '${ifFilter}' not found. No MSFT_DnsClientServerAddress objects found matching the specified interface.`;
-    }
-
-    return lines.join('\n');
-  }
-
-  private handleSetDnsClientServerAddress(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifAlias = (params.get('interfacealias') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const serversRaw = (params.get('serveraddresses') ?? '').replace(/^["']|["']$/g, '');
-    const reset = params.has('resetserveraddresses');
-
-    if (!ifAlias) {
-      return `Set-DnsClientServerAddress : The -InterfaceAlias parameter is mandatory.\nAt line:1 char:1\n    + CategoryInfo          : InvalidArgument`;
-    }
-
-    // Find matching port name
-    const ports = this.device.getPortsMap();
-    let matchedName = '';
-    for (const [name] of ports) {
-      const displayName = this.portToDisplayName(name);
-      const dn = displayName.toLowerCase();
-      const af = ifAlias.toLowerCase();
-      if (dn === af || name.toLowerCase() === af || dn.includes(af) || dn.startsWith(af)) {
-        matchedName = name;
-        break;
-      }
-    }
-
-    if (!matchedName) {
-      return `Set-DnsClientServerAddress : Interface '${ifAlias}' not found.`;
-    }
-
-    if (reset) {
-      this.device.setDnsServers?.(matchedName, []);
-      return '';
-    }
-
-    // Strip outer parens if present: ("8.8.8.8","1.1.1.1") → "8.8.8.8","1.1.1.1"
-    const cleanRaw = serversRaw.replace(/^\(|\)$/g, '');
-    const servers = cleanRaw.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    this.device.setDnsServers?.(matchedName, servers);
-    return '';
   }
 
   /**
@@ -4670,475 +3821,22 @@ export class PowerShellExecutor {
    * so a runtime-mounted drive shows up in Get-Disk too, with its
    * capacity sourced from the FS rather than a frozen "50 GB" string.
    */
-  private getDisks() {
-    const fs = this.device.getFileSystem();
-    const fmtGB = (b: number) => `${Math.round(b / 1_073_741_824)} GB`;
-    return fs.listDrives().map((d, i) => {
-      const letter = d.charAt(0);
-      const isC = letter === 'C';
-      return {
-        Number: i,
-        FriendlyName: isC
-          ? 'Microsoft Virtual Disk'
-          : `Virtual HD ${letter}:`,
-        UniqueId: `{00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}}`,
-        SerialNumber: fs.getVolumeSerialNumber(letter).replace('-', ''),
-        OperationalStatus: 'Online',
-        TotalSize: fmtGB(fs.getDriveCapacity(letter)),
-        PartitionStyle: 'MBR',
-        IsBoot: isC,
-        IsSystem: isC,
-      };
-    });
-  }
 
-  private handleGetDisk(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const numberFilter = params.get('number');
-    const friendlyName = (params.get('friendlyname') ?? '').replace(/^["']|["']$/g, '');
-    const uniqueId = (params.get('uniqueid') ?? '').replace(/^["']|["']$/g, '');
-    const serialNumber = (params.get('serialnumber') ?? '').replace(/^["']|["']$/g, '');
-
-    let disks = this.getDisks();
-
-    if (numberFilter !== undefined) {
-      const num = parseInt(numberFilter, 10);
-      disks = disks.filter(d => d.Number === num);
-      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with Number = ${num}.\n    + CategoryInfo          : ObjectNotFound: (${num}:UInt32) [Get-Disk], CimException`;
-    }
-    if (friendlyName) {
-      disks = disks.filter(d => d.FriendlyName.toLowerCase().includes(friendlyName.toLowerCase()));
-      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with FriendlyName = '${friendlyName}'.`;
-    }
-    if (uniqueId) {
-      disks = disks.filter(d => d.UniqueId === uniqueId);
-      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with UniqueId = '${uniqueId}'.`;
-    }
-    if (serialNumber) {
-      disks = disks.filter(d => d.SerialNumber === serialNumber);
-      if (disks.length === 0) return `Get-Disk : No MSFT_Disk objects found with SerialNumber = '${serialNumber}'.`;
-    }
-
-    if (disks.length === 1) {
-      const d = disks[0];
-      return [
-        '',
-        'Number FriendlyName                      OperationalStatus TotalSize PartitionStyle IsBoot IsSystem UniqueId',
-        '------ ------------                      ----------------- --------- -------------- ------ -------- --------',
-        `${String(d.Number).padEnd(7)}${d.FriendlyName.padEnd(34)}${d.OperationalStatus.padEnd(18)}${d.TotalSize.padEnd(10)}${d.PartitionStyle.padEnd(15)}${String(d.IsBoot).padEnd(7)}${String(d.IsSystem).padEnd(9)}${d.UniqueId}`,
-        '',
-        `Number            : ${d.Number}`,
-        `Friendly Name     : ${d.FriendlyName}`,
-        `UniqueId          : ${d.UniqueId}`,
-        `OperationalStatus : ${d.OperationalStatus}`,
-        `PartitionStyle    : ${d.PartitionStyle}`,
-        `TotalSize         : ${d.TotalSize}`,
-        `IsBoot            : ${d.IsBoot}`,
-        `IsSystem          : ${d.IsSystem}`,
-      ].join('\n');
-    }
-
-    const lines: string[] = [
-      '',
-      'Number FriendlyName                      OperationalStatus TotalSize PartitionStyle IsBoot IsSystem UniqueId',
-      '------ ------------                      ----------------- --------- -------------- ------ -------- --------',
-    ];
-    for (const d of disks) {
-      lines.push(`${String(d.Number).padEnd(7)}${d.FriendlyName.padEnd(34)}${d.OperationalStatus.padEnd(18)}${d.TotalSize.padEnd(10)}${d.PartitionStyle.padEnd(15)}${String(d.IsBoot).padEnd(7)}${String(d.IsSystem).padEnd(9)}${d.UniqueId}`);
-    }
-    return lines.join('\n');
-  }
-
-  private handleGetVolume(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const driveLetter = (params.get('driveletter') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toUpperCase();
-
-    // Derive the volume table from the filesystem's actual drives so a
-    // newly-seeded mount (e.g. `mkdirp('E:\\Media')`) shows up here in
-    // addition to `vol` / `dir` / Get-PSDrive. Hardcoded vendor labels
-    // are kept only for the well-known system + data drives; everything
-    // else gets a generic "Local Disk" friendly name like real Windows
-    // displays for an unlabeled volume. Size + SizeRemaining come from
-    // the FS so they actually shrink as files land on the drive.
-    const labels: Record<string, string> = { C: 'Windows', D: 'Data' };
-    const fs = this.device.getFileSystem();
-    const fmtGB = (bytes: number) => `${(bytes / 1_073_741_824).toFixed(2)} GB`;
-    const volumes = fs.listDrives()
-      .map((d) => d.charAt(0))
-      .map((letter) => ({
-        DriveLetter: letter,
-        FriendlyName: labels[letter] ?? 'Local Disk',
-        FileSystem: 'NTFS',
-        DriveType: 'Fixed',
-        HealthStatus: 'Healthy',
-        OperationalStatus: 'OK',
-        SizeRemaining: fmtGB(fs.getFreeDiskSpace(letter)),
-        Size: fmtGB(fs.getDriveCapacity(letter)),
-      }));
-
-    let filtered = driveLetter ? volumes.filter(v => v.DriveLetter === driveLetter) : volumes;
-    if (driveLetter && filtered.length === 0) return `Get-Volume : No MSFT_Volume objects found with DriveLetter = ${driveLetter}.`;
-
-    if (filtered.length === 1) {
-      const v = filtered[0];
-      return [
-        '',
-        'DriveLetter FriendlyName FileSystem DriveType HealthStatus OperationalStatus SizeRemaining  Size',
-        '----------- ------------ ---------- --------- ------------ ----------------- -------------  ----',
-        `${v.DriveLetter.padEnd(12)}${v.FriendlyName.padEnd(13)}${v.FileSystem.padEnd(11)}${v.DriveType.padEnd(10)}${v.HealthStatus.padEnd(13)}${v.OperationalStatus.padEnd(18)}${v.SizeRemaining.padEnd(15)}${v.Size}`,
-        '',
-        `DriveLetter       : ${v.DriveLetter}`,
-        `FriendlyName      : ${v.FriendlyName}`,
-        `FileSystem        : ${v.FileSystem}`,
-        `DriveType         : ${v.DriveType}`,
-        `HealthStatus      : ${v.HealthStatus}`,
-        `OperationalStatus : ${v.OperationalStatus}`,
-        `SizeRemaining     : ${v.SizeRemaining}`,
-        `Size              : ${v.Size}`,
-      ].join('\n');
-    }
-
-    const lines: string[] = [
-      '',
-      'DriveLetter FriendlyName FileSystem DriveType HealthStatus OperationalStatus SizeRemaining  Size',
-      '----------- ------------ ---------- --------- ------------ ----------------- -------------  ----',
-    ];
-    for (const v of filtered) {
-      lines.push(`${v.DriveLetter.padEnd(12)}${v.FriendlyName.padEnd(13)}${v.FileSystem.padEnd(11)}${v.DriveType.padEnd(10)}${v.HealthStatus.padEnd(13)}${v.OperationalStatus.padEnd(18)}${v.SizeRemaining.padEnd(15)}${v.Size}`);
-    }
-    return lines.join('\n');
-  }
-
-  private handleGetNetAdapter(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const nameFilter = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const includeHidden = params.has('includehidden');
-    const physical = params.has('physical');
-    const cimSession = params.get('cimsession');
-
-    if (cimSession) {
-      return `Get-NetAdapter : Remote CIM sessions are not supported in this simulator.\n    + CategoryInfo          : NotImplemented: (:) [Get-NetAdapter], NotSupportedException`;
-    }
-
-    const ports = this.device.getPortsMap();
-    const lines: string[] = ['Name                      InterfaceDescription                    ifIndex Status       MacAddress         LinkSpeed',
-                              '----                      --------------------                    ------- ------       ----------         ---------'];
-
-    // Collect all adapter entries (Ethernet ports + virtual Wi-Fi)
-    type AdapterEntry = { displayName: string; desc: string; ifIndex: number; status: string; mac: string; speed: string };
-    const adapterEntries: AdapterEntry[] = [];
-
-    let idx = 0;
-    for (const [name, port] of ports) {
-      let displayName = this.portToDisplayName(name);
-      // Apply rename override
-      const overrideKey = displayName.toLowerCase();
-      const override = this.adapterOverrides.get(overrideKey);
-      if (override?.displayName) displayName = override.displayName;
-
-      const mac = port.getMAC()?.toString()?.replace(/:/g, '-').toUpperCase() ?? '00-00-00-00-00-00';
-      let status = port.getIsUp() ? 'Up' : 'Disconnected';
-      // Apply disable/enable override
-      if (override?.status) status = override.status;
-
-      adapterEntries.push({ displayName, desc: 'Intel(R) Ethernet Connection', ifIndex: idx + 2, status, mac, speed: '1 Gbps' });
-      idx++;
-    }
-
-    // Add virtual Wi-Fi adapter (always present on a Windows PC)
-    const wifiOverride = this.adapterOverrides.get('wi-fi');
-    const wifiDisplayName = wifiOverride?.displayName ?? 'Wi-Fi';
-    const wifiStatus = wifiOverride?.status ?? 'Up';
-    adapterEntries.push({ displayName: wifiDisplayName, desc: 'Intel(R) Wireless-AC 9560 160MHz', ifIndex: idx + 2, status: wifiStatus, mac: '02-00-00-FF-FF-01', speed: '54 Mbps' });
-
-    // Filter by name — exact match unless wildcard '*' or '?' is present
-    const filteredEntries = nameFilter
-      ? adapterEntries.filter(e => {
-          const dn = e.displayName.toLowerCase();
-          if (nameFilter.includes('*') || nameFilter.includes('?')) {
-            const regex = new RegExp('^' + nameFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
-            return regex.test(dn);
-          }
-          return dn === nameFilter;
-        })
-      : adapterEntries;
-
-    // Apply -IncludeHidden (show Loopback)
-    if (includeHidden && (!nameFilter || 'loopback'.includes(nameFilter))) {
-      lines.push(`${'Loopback Pseudo-Interface 1'.padEnd(26)}${'Software Loopback Interface 1'.padEnd(40)}${String(1).padStart(7)} ${'Up'.padEnd(13)}${'00-00-00-00-00-00'.padEnd(19)}10 Gbps`);
-    }
-
-    if (filteredEntries.length === 0 && !includeHidden) {
-      return `Get-NetAdapter : No MSFT_NetAdapter objects found with property 'Name' equal to '${nameFilter}'.`;
-    }
-
-    for (const e of filteredEntries) {
-      lines.push(`${e.displayName.padEnd(26)}${e.desc.padEnd(40)}${String(e.ifIndex).padStart(7)} ${e.status.padEnd(13)}${e.mac.padEnd(19)}${e.speed}`);
-    }
-
-    return lines.join('\n');
-  }
-
-  private formatGetNetIPAddress(): string {
-    return this.handleGetNetIPAddress([]);
-  }
 
   // ─── Adapter State Management ─────────────────────────────────────
 
-  private handleDisableEnableNetAdapter(args: string[], newStatus: string): string {
-    const params = this.parsePSArgs(args);
-    const name = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    if (!name) return '';
-    const key = name.toLowerCase();
-    // WhatIf support
-    if (params.has('whatif')) {
-      return `What if: Performing the operation "${newStatus === 'Disabled' ? 'Disable' : 'Enable'}-NetAdapter" on target "${name}".`;
-    }
-    const override = this.adapterOverrides.get(key) ?? {};
-    override.status = newStatus;
-    this.adapterOverrides.set(key, override);
-    return '';
-  }
 
-  private handleRenameNetAdapter(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const oldName = (params.get('name') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const newName = (params.get('newname') ?? '').replace(/^["']|["']$/g, '');
-    if (!oldName || !newName) return '';
-    const oldKey = oldName.toLowerCase();
-    const existing = this.adapterOverrides.get(oldKey) ?? {};
-    // Move entry to new name key
-    existing.displayName = newName;
-    this.adapterOverrides.set(oldKey, existing);
-    // Also register under new name key pointing to same override
-    this.adapterOverrides.set(newName.toLowerCase(), existing);
-    return '';
-  }
+
 
   // ─── Set-NetRoute ──────────────────────────────────────────────────
 
-  private handleSetNetRoute(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const dest = (params.get('destinationprefix') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const nextHop = params.get('nexthop')?.replace(/^["']|["']$/g, '');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-
-    if (!dest) return `Set-NetRoute : The -DestinationPrefix parameter is required.`;
-
-    const existing = this.extraRoutes.get(dest);
-    if (existing) {
-      if (nextHop) existing.nextHop = nextHop;
-      if (ifAlias) existing.ifAlias = ifAlias;
-    } else {
-      // Create if not exists
-      this.extraRoutes.set(dest, { ifAlias: ifAlias ?? '', nextHop: nextHop ?? '0.0.0.0', metric: 256 });
-    }
-    return '';
-  }
 
   // ─── Set-NetIPAddress (upsert) ─────────────────────────────────────
 
   // ─── Firewall Rules ────────────────────────────────────────────────
 
-  private handleNewNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? displayName.replace(/\s+/g, '-');
-    const direction = params.get('direction')?.replace(/^["']|["']$/g, '') ?? 'Inbound';
-    const protocol = params.get('protocol')?.replace(/^["']|["']$/g, '') ?? 'Any';
-    const localPort = params.get('localport')?.replace(/^["']|["']$/g, '') ?? '';
-    const remotePort = params.get('remoteport')?.replace(/^["']|["']$/g, '') ?? '';
-    const action = params.get('action')?.replace(/^["']|["']$/g, '') ?? 'Allow';
-    const description = params.get('description')?.replace(/^["']|["']$/g, '') ?? '';
-
-    if (!displayName && !name) return `New-NetFirewallRule : -DisplayName or -Name is required.`;
-
-    const key = displayName.toLowerCase() || name.toLowerCase();
-    this.dynamicFirewallRules.set(key, {
-      name, displayName, enabled: true, action, direction, protocol, localPort, remotePort, description
-    });
-
-    return [
-      `Name                  : ${name}`,
-      `DisplayName           : ${displayName}`,
-      `Description           : ${description}`,
-      `Direction             : ${direction}`,
-      `Action                : ${action}`,
-      `Enabled               : True`,
-      `Protocol              : ${protocol}`,
-      `LocalPort             : ${localPort}`,
-      `RemotePort            : ${remotePort}`,
-    ].join('\n');
-  }
-
-  private handleSetNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) return `Set-NetFirewallRule : No MSFT_NetFirewallRule objects found with property 'DisplayName' equal to '${displayName || name}'.`;
-
-    if (params.has('action')) rule.action = params.get('action')!.replace(/^["']|["']$/g, '');
-    if (params.has('direction')) rule.direction = params.get('direction')!.replace(/^["']|["']$/g, '');
-    if (params.has('enabled')) rule.enabled = (params.get('enabled') ?? '').toLowerCase() !== 'false';
-    return '';
-  }
-
-  private handleToggleNetFirewallRule(args: string[], enable: boolean): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-
-    const rule = this.dynamicFirewallRules.get(key);
-    if (!rule) {
-      // Check if it's a built-in static rule — simulate graceful no-op
-      return '';
-    }
-    rule.enabled = enable;
-    return '';
-  }
-
-  private handleRemoveNetFirewallRule(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const displayName = params.get('displayname')?.replace(/^["']|["']$/g, '') ?? '';
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const key = (displayName || name).toLowerCase();
-    this.dynamicFirewallRules.delete(key);
-    return '';
-  }
-
-  // ─── Test-NetConnection ────────────────────────────────────────────
-
-  private handleTestNetConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const target = (params.get('computername') ?? params.get('_positional') ?? '').replace(/^["']|["']$/g, '');
-    const port = params.has('port') ? parseInt(params.get('port')!, 10) : undefined;
-
-    const isLocal = target === 'localhost' || target === '127.0.0.1' || !target;
-
-    // Check if port is in the set of listening ports
-    const listeningPorts = new Set([80, 135, 443, 445, 5985, 49152]);
-    let tcpSucceeded = false;
-    if (port !== undefined) {
-      tcpSucceeded = isLocal && listeningPorts.has(port);
-    }
-
-    const destIp = isLocal ? '127.0.0.1' : '192.168.1.1';
-    return [
-      `\nComputerName           : ${target || 'localhost'}`,
-      `RemoteAddress          : ${destIp}`,
-      port !== undefined ? `RemotePort             : ${port}` : '',
-      `InterfaceAlias         : Ethernet`,
-      `SourceAddress          : 127.0.0.1`,
-      `PingSucceeded          : True`,
-      `PingReplyDetails (RTT) : 0 ms`,
-      port !== undefined ? `TcpTestSucceeded       : ${tcpSucceeded ? 'True' : 'False'}` : '',
-    ].filter(l => l !== '').join('\n');
-  }
 
   // ─── Network Connection Profile ────────────────────────────────────
-
-  private handleGetNetConnectionProfile(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifIndexParam = params.get('interfaceindex');
-    const ifAlias = params.get('interfacealias')?.replace(/^["']|["']$/g, '');
-
-    // Default profile for first adapter
-    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
-    const category = this.networkProfiles.get(ifIndex) ?? 'DomainAuthenticated';
-
-    const ports = this.device.getPortsMap();
-    let adapterName = 'Ethernet';
-    let portIdx = 2;
-    for (const [name] of ports) {
-      if (portIdx === ifIndex) { adapterName = this.portToDisplayName(name); break; }
-      portIdx++;
-    }
-    if (ifAlias) adapterName = ifAlias;
-
-    return [
-      `Name             : ${adapterName}`,
-      `InterfaceAlias   : ${adapterName}`,
-      `InterfaceIndex   : ${ifIndex}`,
-      `NetworkCategory  : ${category}`,
-      `IPv4Connectivity : Internet`,
-      `IPv6Connectivity : LocalNetwork`,
-    ].join('\n');
-  }
-
-  private handleSetNetConnectionProfile(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const ifIndexParam = params.get('interfaceindex');
-    const category = params.get('networkcategory')?.replace(/^["']|["']$/g, '');
-    if (!category) return '';
-    const ifIndex = ifIndexParam ? parseInt(ifIndexParam, 10) : 2;
-    this.networkProfiles.set(ifIndex, category);
-    return '';
-  }
-
-  // ─── VPN Connection Management ──────────────────────────────────────
-
-  private handleAddVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    const serverAddress = params.get('serveraddress')?.replace(/^["']|["']$/g, '') ?? '';
-    const tunnelType = params.get('tunneltype')?.replace(/^["']|["']$/g, '') ?? 'Automatic';
-    const encryptionLevel = params.get('encryptionlevel')?.replace(/^["']|["']$/g, '') ?? 'Optional';
-    const authMethod = params.get('authenticationmethod')?.replace(/^["']|["']$/g, '') ?? 'MSChapv2';
-
-    if (!name) return `Add-VpnConnection : -Name is required.`;
-
-    this.vpnConnections.set(name.toLowerCase(), { name, serverAddress, tunnelType, encryptionLevel, authMethod });
-    return '';
-  }
-
-  private handleGetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const nameFilter = params.get('name')?.replace(/^["']|["']$/g, '').toLowerCase();
-
-    const results = nameFilter
-      ? Array.from(this.vpnConnections.values()).filter(v => v.name.toLowerCase() === nameFilter)
-      : Array.from(this.vpnConnections.values());
-
-    if (results.length === 0) {
-      if (nameFilter) return '';  // -ErrorAction SilentlyContinue
-      return '';
-    }
-
-    return results.map(v => [
-      `Name                  : ${v.name}`,
-      `ServerAddress         : ${v.serverAddress}`,
-      `TunnelType            : ${v.tunnelType}`,
-      `EncryptionLevel       : ${v.encryptionLevel}`,
-      `AuthenticationMethod  : ${v.authMethod}`,
-      `ConnectionStatus      : Disconnected`,
-    ].join('\n')).join('\n\n');
-  }
-
-  private handleSetVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    if (!name) return '';
-
-    const key = name.toLowerCase();
-    const existing = this.vpnConnections.get(key) ?? { name, serverAddress: '', tunnelType: 'Automatic', encryptionLevel: 'Optional', authMethod: 'MSChapv2' };
-
-    if (params.has('serveraddress')) existing.serverAddress = params.get('serveraddress')!.replace(/^["']|["']$/g, '');
-    if (params.has('tunneltype')) existing.tunnelType = params.get('tunneltype')!.replace(/^["']|["']$/g, '');
-    if (params.has('encryptionlevel')) existing.encryptionLevel = params.get('encryptionlevel')!.replace(/^["']|["']$/g, '');
-    this.vpnConnections.set(key, existing);
-    return '';
-  }
-
-  private handleRemoveVpnConnection(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name')?.replace(/^["']|["']$/g, '') ?? '';
-    this.vpnConnections.delete(name.toLowerCase());
-    return '';
-  }
 
   // ─── netsh winhttp ────────────────────────────────────────────────
   private handleNetshWinhttp(args: string[]): string {
@@ -5247,158 +3945,10 @@ export class PowerShellExecutor {
     return `The following commands are available:\n\nCommands in this context:\n?              - Displays a list of commands.\ndump           - Displays a configuration script.\nhelp           - Displays a list of commands.\n\nTo view help for a command, type the command, followed by a space, and then\n type ?.`;
   }
 
-  private formatGetNetTCPConnection(args: string[]): string {
-    const ports = this.device.getPortsMap();
-    // Simulate standard TCP connections for a Windows PC
-    const lines: string[] = [
-      '',
-      'LocalAddress           LocalPort RemoteAddress          RemotePort State       AppliedSetting',
-      '------------           --------- -------------          ---------- -----       --------------',
-    ];
 
-    // Listening ports based on running services
-    const serviceMgr = this.device.getServiceManager();
-    const runningServices = serviceMgr.getAllServices().filter(s => s.status === 'Running');
-    const listeningPorts: Array<{ port: number; name: string }> = [
-      { port: 135, name: 'RpcSs' },
-      { port: 445, name: 'LanmanServer' },
-      { port: 49152, name: 'Services' },
-    ];
-    for (const svc of runningServices) {
-      if (svc.name === 'WinRM') listeningPorts.push({ port: 5985, name: 'WinRM' });
-    }
 
-    let localIp = '0.0.0.0';
-    for (const port of ports.values()) {
-      const ip = port.getIPAddress();
-      if (ip) { localIp = ip; break; }
-    }
 
-    const params = this.parsePSArgs(args);
-    const stateFilter = params.get('state')?.toLowerCase();
 
-    for (const lp of listeningPorts) {
-      if (!stateFilter || stateFilter === 'listen') {
-        lines.push(`${('0.0.0.0').padEnd(23)}${String(lp.port).padEnd(10)}${'0.0.0.0'.padEnd(23)}${'0'.padEnd(11)}Listen`);
-      }
-    }
-
-    // Simulate established connection to DNS server
-    if (!stateFilter || stateFilter === 'established') {
-      lines.push(`${localIp.padEnd(23)}${String(49153 + Math.floor(Math.random() * 100)).padEnd(10)}${'8.8.8.8'.padEnd(23)}${'53'.padEnd(11)}Established`);
-    }
-
-    if (lines.length <= 3) return '';
-    return lines.join('\n');
-  }
-
-  private formatGetNetFirewallRule(args: string[]): string {
-    type FwRule = { name: string; displayName: string; enabled: boolean; action: string; direction: string };
-    const staticRules: FwRule[] = [
-      { name: 'CoreNet-DHCP-In',       displayName: 'DHCP (UDP-In)',               enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'CoreNet-DHCP-Out',      displayName: 'DHCP (UDP-Out)',              enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'CoreNet-DNS-Out',       displayName: 'DNS (UDP-Out)',               enabled: true,  action: 'Allow', direction: 'Outbound' },
-      { name: 'FPS-ICMP4-ERQ-In',      displayName: 'File and Printer Sharing...', enabled: true,  action: 'Allow', direction: 'Inbound'  },
-      { name: 'RemoteDesktop-In-TCP',  displayName: 'Remote Desktop - User Mode',  enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'WinRM-HTTP-In-TCP',     displayName: 'Windows Remote Management',   enabled: false, action: 'Allow', direction: 'Inbound'  },
-      { name: 'BlockTelemetry',        displayName: 'Block Windows Telemetry',     enabled: true,  action: 'Block', direction: 'Outbound' },
-    ];
-
-    // Merge in dynamic rules (override static if same key)
-    const allRules: FwRule[] = [...staticRules];
-    for (const [, r] of this.dynamicFirewallRules) {
-      allRules.push({ name: r.name, displayName: r.displayName, enabled: r.enabled, action: r.action, direction: r.direction });
-    }
-
-    const params = this.parsePSArgs(args);
-    const nameFilter    = (params.get('name')        ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const dnFilter      = (params.get('displayname') ?? '').replace(/^["']|["']$/g, '').toLowerCase();
-    const errorAction   = (params.get('erroraction') ?? '').toLowerCase();
-
-    let filtered = allRules;
-    if (nameFilter) filtered = filtered.filter(r => r.name.toLowerCase() === nameFilter || r.name.toLowerCase().includes(nameFilter));
-    if (dnFilter)   filtered = filtered.filter(r => r.displayName.toLowerCase() === dnFilter || r.displayName.toLowerCase().includes(dnFilter));
-
-    if (filtered.length === 0) {
-      // Return empty string — callers use -ErrorAction SilentlyContinue for "not found" checks
-      // (ErrorAction is stripped by stripCommonParams before reaching this handler)
-      return '';
-    }
-
-    const header = [
-      '',
-      'Name                  DisplayName                  Enabled Action Direction',
-      '----                  -----------                  ------- ------ ---------',
-    ];
-    const rows = filtered.map(r =>
-      `${r.name.padEnd(22)}${r.displayName.substring(0, 29).padEnd(29)}${(r.enabled ? 'True' : 'False').padEnd(8)}${r.action.padEnd(7)}${r.direction}`
-    );
-    return [...header, ...rows].join('\n');
-  }
-
-  /** Converts port name (eth0, eth1…) to Windows display name (Ethernet, Ethernet 2…) */
-  private portToDisplayName(portName: string): string {
-    const m = portName.match(/^eth(\d+)$/i);
-    if (!m) return portName;
-    const idx = parseInt(m[1], 10);
-    return idx === 0 ? 'Ethernet' : `Ethernet ${idx + 1}`;
-  }
-
-  private maskToPrefixLength(mask: string): number {
-    const parts = mask.split('.').map(Number);
-    let bits = 0;
-    for (const p of parts) {
-      bits += (p >>> 0).toString(2).split('').filter(b => b === '1').length;
-    }
-    return bits;
-  }
-
-  private formatGetProcess(): string {
-    const lines: string[] = [];
-    lines.push('');
-    lines.push('Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName');
-    lines.push('-------  ------    -----      -----     ------     --  -- -----------');
-
-    const processes: Array<[string, number, number, number, number, number, number, number]> = [
-      // [name, handles, npm, pm, ws, cpu, pid, si]
-      ['cmd',              52,   5,   2036,    3556,   0.02,  5120, 1],
-      ['conhost',         186,  12,   7032,   13568,   0.08,  5132, 1],
-      ['csrss',           596,  18,   3256,    6144,   3.45,   472, 0],
-      ['dwm',            1258,  35,  78320,   98816,  24.56,  1024, 1],
-      ['explorer',       2456,  89, 112640,  165888,  45.23,  2848, 1],
-      ['lsass',           856,  23,  12288,   15360,   1.23,   636, 0],
-      ['services',        416,  14,   6144,    9216,   0.98,   620, 0],
-      ['smss',             53,   3,    512,    1280,   0.05,   340, 0],
-      ['svchost',         648,  22,  18432,   24576,   2.34,   784, 0],
-      ['svchost',         423,  15,  10240,   14336,   1.56,   836, 0],
-      ['System',          188,   0,    144,    1024,   0.00,     4, 0],
-      ['wininit',         108,   5,   2560,    4608,   0.12,   548, 0],
-    ];
-
-    for (const [name, handles, npm, pm, ws, cpu, pid, si] of processes) {
-      lines.push(
-        `${String(handles).padStart(7)}  ${String(npm).padStart(6)}    ${String(pm).padStart(5)}      ${String(ws).padStart(5)}     ${cpu.toFixed(2).padStart(6)}  ${String(pid).padStart(4)}   ${si} ${name}`
-      );
-    }
-    return lines.join('\n');
-  }
-
-  private formatGetService(): string {
-    return [
-      'Status   Name               DisplayName',
-      '------   ----               -----------',
-      'Running  Dhcp               DHCP Client',
-      'Running  Dnscache           DNS Client',
-      'Running  EventLog           Windows Event Log',
-      'Running  LanmanServer       Server',
-      'Running  LanmanWorkstation  Workstation',
-      'Running  mpssvc             Windows Defender Firewall',
-      'Running  RpcSs              Remote Procedure Call (RPC)',
-      'Running  Spooler            Print Spooler',
-      'Running  W32Time            Windows Time',
-      'Running  WinRM              Windows Remote Management (WS-Manag...',
-    ].join('\n');
-  }
 
   private formatGetCimInstance(args: string[]): string {
     const className = args.find(a => !a.startsWith('-')) || '';
@@ -5406,20 +3956,16 @@ export class PowerShellExecutor {
       return `SystemDirectory : C:\\Windows\\system32\nOrganization    : \nBuildNumber     : 22631\nRegisteredUser  : User\nSerialNumber    : 00000-00000-00000-AA000\nVersion         : 10.0.22631`;
     }
     if (className.toLowerCase() === 'win32_computersystem') {
-      return `Domain              : WORKGROUP\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
+      const domain = this.device.getDomainMembership?.()?.dnsName ?? 'WORKGROUP';
+      return `Domain              : ${domain}\nManufacturer        : Microsoft Corporation\nModel               : Virtual Machine\nName                : ${this.device.getHostname()}\nPrimaryOwnerName    : User\nTotalPhysicalMemory : 8589934592`;
     }
     return `Get-CimInstance : Invalid class "${className}"`;
   }
 
   // ─── File management cmdlets ────────────────────────────────────
 
-  private handleTestPath(args: string[]): string {
-    const target = args.filter(a => !a.startsWith('-')).join(' ');
-    if (!target) return 'False';
-    if (isRegistryPath(target)) return this.registry.testPath(target) ? 'True' : 'False';
-    const fs = this.device.getFileSystem();
-    const absPath = fs.normalizePath(target, this.cwd);
-    return fs.exists(absPath) ? 'True' : 'False';
+  private buildPSPathCtx(): PSPathContext {
+    return { fs: this.device.getFileSystem(), cwd: this.cwd, registry: this.registry };
   }
 
   private async handleOutFile(args: string[]): Promise<string> {
@@ -5506,51 +4052,6 @@ export class PowerShellExecutor {
     return lines.join('\n');
   }
 
-  private handleResolvePath(args: string[]): string {
-    const fs = this.device.getFileSystem();
-    const target = args.filter(a => !a.startsWith('-')).join(' ');
-    if (!target) return "Resolve-Path : Cannot bind argument to parameter 'Path' because it is an empty string.";
-    const absPath = fs.normalizePath(target, this.cwd);
-    if (!fs.exists(absPath)) return `Resolve-Path : Cannot find path '${target}' because it does not exist.`;
-    return `\nPath\n----\n${absPath}\n`;
-  }
-
-  private handleSplitPath(args: string[]): string {
-    let target = '';
-    let leaf = false;
-    let parent = false;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Leaf') { leaf = true; continue; }
-      if (args[i] === '-Parent') { parent = true; continue; }
-      if (args[i] === '-Path' && args[i + 1]) { target = args[++i]; continue; }
-      if (!args[i].startsWith('-') && !target) { target = args[i]; }
-    }
-    if (!target) return '';
-    if (leaf) {
-      const lastSep = target.lastIndexOf('\\');
-      return lastSep >= 0 ? target.substring(lastSep + 1) : target;
-    }
-    // Default: parent
-    const lastSep = target.lastIndexOf('\\');
-    return lastSep >= 0 ? target.substring(0, lastSep) : '';
-  }
-
-  private handleJoinPath(args: string[]): string {
-    let parentPath = '', childPath = '';
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === '-Path' && args[i + 1]) { parentPath = args[++i]; continue; }
-      if (args[i] === '-ChildPath' && args[i + 1]) { childPath = args[++i]; continue; }
-      if (!args[i].startsWith('-')) {
-        if (!parentPath) { parentPath = args[i]; }
-        else if (!childPath) { childPath = args[i]; }
-      }
-    }
-    if (!parentPath) return '';
-    if (!childPath) return parentPath;
-    const sep = parentPath.endsWith('\\') ? '' : '\\';
-    return `${parentPath}${sep}${childPath}`;
-  }
-
   // ─── User/Group/ACL Management Cmdlet Handlers ─────────────────
 
   /**
@@ -5585,304 +4086,7 @@ export class PowerShellExecutor {
    * e.g. ['-Description', '"Updated', 'desc"'] → {description: 'Updated desc'}
    */
   private parsePSArgs(args: string[]): Map<string, string> {
-    // First: reassemble quoted tokens
-    const merged: string[] = [];
-    let buf = '';
-    let inQuote = false;
-    for (const tok of args) {
-      if (inQuote) {
-        buf += ' ' + tok;
-        if (tok.endsWith('"') || tok.endsWith("'")) {
-          inQuote = false;
-          merged.push(buf);
-          buf = '';
-        }
-      } else if ((tok.startsWith('"') && !tok.endsWith('"')) || (tok.startsWith("'") && !tok.endsWith("'"))) {
-        inQuote = true;
-        buf = tok;
-      } else {
-        merged.push(tok);
-      }
-    }
-    if (buf) merged.push(buf);
-
-    const result = new Map<string, string>();
-    const positional: string[] = [];
-    for (let i = 0; i < merged.length; i++) {
-      if (merged[i].startsWith('-') && i + 1 < merged.length && !merged[i + 1].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), merged[i + 1].replace(/^["']|["']$/g, ''));
-        i++;
-      } else if (merged[i].startsWith('-')) {
-        result.set(merged[i].substring(1).toLowerCase(), 'true');
-      } else {
-        positional.push(merged[i].replace(/^["']|["']$/g, ''));
-      }
-    }
-    if (positional.length > 0) result.set('_positional', positional[0]);
-    return result;
-  }
-
-  private handleGetLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional');
-
-    if (name) {
-      const user = mgr.getUser(name);
-      if (!user) return `Get-LocalUser : User not found. '${name}' was not found.`;
-      const lines: string[] = [''];
-      lines.push('Name'.padEnd(24) + 'Enabled'.padEnd(10) + 'Description');
-      lines.push('----'.padEnd(24) + '-------'.padEnd(10) + '-----------');
-      lines.push(
-        user.name.padEnd(24) +
-        (user.enabled ? 'True' : 'False').padEnd(10) +
-        user.description
-      );
-      if (user.fullName) lines.push(`\nFullName: ${user.fullName}`);
-      return lines.join('\n');
-    }
-
-    const users = mgr.getAllUsers();
-    const lines: string[] = [''];
-    lines.push('Name'.padEnd(24) + 'Enabled'.padEnd(10) + 'Description');
-    lines.push('----'.padEnd(24) + '-------'.padEnd(10) + '-----------');
-    for (const u of users) {
-      lines.push(
-        u.name.padEnd(24) +
-        (u.enabled ? 'True' : 'False').padEnd(10) +
-        u.description
-      );
-    }
-    return lines.join('\n');
-  }
-
-  private handleNewLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'New-LocalUser : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    const password = params.get('password') || '';
-    const description = params.get('description') || '';
-    const noPassword = params.has('nopassword');
-
-    if (!name) return "New-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
-
-    const err = mgr.createUser(name, password, { description, noPassword });
-    if (err) {
-      if (err.includes('already exists')) return `New-LocalUser : User '${name}' already exists.`;
-      return `New-LocalUser : ${err}`;
-    }
-    mgr.addGroupMember('Users', name);
-    // Return user summary
-    return this.handleGetLocalUser(['-Name', name]);
-  }
-
-  private handleSetLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Set-LocalUser : Access is denied.';
-    // Re-merge args, accounting for AccountDisabled:$false (colon-style switch)
-    const expanded: string[] = [];
-    for (const a of args) {
-      // -AccountDisabled:$false → treat as -AccountDisabled false
-      if (/^-AccountDisabled:/i.test(a)) {
-        const val = a.split(':')[1];
-        expanded.push('-AccountDisabled', val);
-      } else {
-        expanded.push(a);
-      }
-    }
-    const params = this.parsePSArgs(expanded);
-    const name = params.get('name') || params.get('_positional') || '';
-    if (!name) return "Set-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
-
-    const user = mgr.getUser(name);
-    if (!user) return `Set-LocalUser : User not found. No user named '${name}' exists on this computer.`;
-
-    if (params.has('description')) {
-      const err = mgr.setUserProperty(name, 'description', params.get('description')!);
-      if (err) return `Set-LocalUser : ${err}`;
-    }
-    if (params.has('password')) {
-      const err = mgr.setUserProperty(name, 'password', params.get('password')!);
-      if (err) return `Set-LocalUser : ${err}`;
-    }
-    if (params.has('fullname')) {
-      const err = mgr.setUserProperty(name, 'fullname', params.get('fullname')!);
-      if (err) return `Set-LocalUser : ${err}`;
-    }
-    if (params.has('accountdisabled')) {
-      const val = params.get('accountdisabled');
-      // "true" or flag-only → disable; "$false" / "false" → enable
-      const disable = val !== '$false' && val !== 'false';
-      const err = disable ? mgr.disableUser(name) : mgr.enableUser(name);
-      if (err) return `Set-LocalUser : ${err}`;
-    }
-    return '';
-  }
-
-  private handleRemoveLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalUser : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    if (!name) return "Remove-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
-
-    const err = mgr.deleteUser(name);
-    if (err) {
-      if (err.includes('could not be found')) return `Remove-LocalUser : User '${name}' was not found.`;
-      if (err.includes('Cannot delete')) return `Remove-LocalUser : ${err}`;
-      return `Remove-LocalUser : ${err}`;
-    }
-    return '';
-  }
-
-  private handleEnableLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Enable-LocalUser : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    if (!name) return "Enable-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
-    const err = mgr.enableUser(name);
-    if (err) return `Enable-LocalUser : ${err}`;
-    return '';
-  }
-
-  private handleDisableLocalUser(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Disable-LocalUser : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    if (!name) return "Disable-LocalUser : Cannot bind argument to parameter 'Name' because it is an empty string.";
-    const err = mgr.disableUser(name);
-    if (err) return `Disable-LocalUser : ${err}`;
-    return '';
-  }
-
-  private handleGetLocalGroup(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional');
-
-    if (name) {
-      const group = mgr.getGroup(name);
-      if (!group) return `Get-LocalGroup : Group not found. '${name}' was not found.`;
-      const lines: string[] = [''];
-      lines.push('Name'.padEnd(36) + 'Description');
-      lines.push('----'.padEnd(36) + '-----------');
-      lines.push(group.name.padEnd(36) + group.description);
-      return lines.join('\n');
-    }
-
-    const groups = mgr.getAllGroups();
-    const lines: string[] = [''];
-    lines.push('Name'.padEnd(36) + 'Description');
-    lines.push('----'.padEnd(36) + '-----------');
-    for (const g of groups) {
-      lines.push(g.name.padEnd(36) + g.description);
-    }
-    return lines.join('\n');
-  }
-
-  private handleNewLocalGroup(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'New-LocalGroup : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    const description = params.get('description') || '';
-    if (!name) return "New-LocalGroup : Cannot bind argument to parameter 'Name' because it is an empty string.";
-
-    const err = mgr.createGroup(name, description);
-    if (err) return `New-LocalGroup : ${err}`;
-    return this.handleGetLocalGroup(['-Name', name]);
-  }
-
-  private handleRemoveLocalGroup(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalGroup : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    if (!name) return "Remove-LocalGroup : Cannot bind argument to parameter 'Name' because it is an empty string.";
-
-    const err = mgr.deleteGroup(name);
-    if (err) {
-      if (err.includes('Cannot delete')) return `Remove-LocalGroup : ${err}`;
-      return `Remove-LocalGroup : ${err}`;
-    }
-    return '';
-  }
-
-  private handleAddLocalGroupMember(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Add-LocalGroupMember : Access is denied.';
-
-    // Collect group name and ALL tokens after -Member (PS array syntax: "UserA, UserB" or "UserA","UserB")
-    let group = '';
-    const memberTokens: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const lower = args[i].toLowerCase();
-      if (lower === '-group' && args[i + 1]) { group = args[++i].replace(/^["']|["']$/g, ''); }
-      else if (lower === '-member') {
-        i++;
-        while (i < args.length && !args[i].startsWith('-')) {
-          memberTokens.push(args[i]);
-          i++;
-        }
-        i--;
-      } else if (!args[i].startsWith('-') && !group) {
-        group = args[i].replace(/^["']|["']$/g, '');
-      }
-    }
-    const memberRaw = memberTokens.join(' ');
-    if (!group || !memberRaw) return "Add-LocalGroupMember : Cannot bind required parameter.";
-
-    // Support comma-separated member list: "UserA, UserB"
-    const members = memberRaw.split(',').map(m => m.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
-    const errors: string[] = [];
-    for (const member of members) {
-      const err = mgr.addGroupMember(group, member);
-      if (err) {
-        if (err.includes('was not found') || err.includes('could not be found')) {
-          errors.push(`Add-LocalGroupMember : Cannot find user '${member}'. The specified user was not found.`);
-        } else if (err.includes('already a member')) {
-          errors.push(`Add-LocalGroupMember : The specified account '${member}' is already a member of the group.`);
-        } else {
-          errors.push(`Add-LocalGroupMember : ${err}`);
-        }
-      }
-    }
-    return errors.join('\n');
-
-  }
-
-  private handleRemoveLocalGroupMember(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    if (!mgr.isCurrentUserAdmin()) return 'Remove-LocalGroupMember : Access is denied.';
-    const params = this.parsePSArgs(args);
-    const group = params.get('group') || '';
-    const member = params.get('member') || '';
-    if (!group || !member) return "Remove-LocalGroupMember : Cannot bind required parameter.";
-
-    const err = mgr.removeGroupMember(group, member);
-    if (err) return `Remove-LocalGroupMember : ${err}`;
-    return '';
-  }
-
-  private handleGetLocalGroupMember(args: string[]): string {
-    const mgr = this.device.getUserManager();
-    const params = this.parsePSArgs(args);
-    const groupName = params.get('group') || '';
-    if (!groupName) return "Get-LocalGroupMember : Cannot bind required parameter 'Group'.";
-
-    const { members, error } = mgr.getGroupMembers(groupName);
-    if (error) return `Get-LocalGroupMember : ${error}`;
-
-    const lines: string[] = [''];
-    lines.push('ObjectClass'.padEnd(16) + 'Name'.padEnd(30) + 'PrincipalSource');
-    lines.push('-----------'.padEnd(16) + '----'.padEnd(30) + '---------------');
-    for (const m of members) {
-      lines.push('User'.padEnd(16) + m.padEnd(30) + 'Local');
-    }
-    return lines.join('\n');
+    return parsePSArgs(args);
   }
 
   private handleGetAcl(args: string[]): string {
@@ -5962,27 +4166,19 @@ export class PowerShellExecutor {
         });
       }
     }
+
+    const lastRule = aclObj.rules[aclObj.rules.length - 1];
+    this.device.getBus().publish({
+      topic: 'windows.filesystem.acl-changed',
+      payload: {
+        deviceId: this.device.id,
+        path: absPath,
+        identity: lastRule?.principal ?? '',
+        permissions: lastRule?.permission ?? '',
+        changedBy: this.device.getUserManager().currentUser,
+      },
+    });
     return '';
-  }
-
-  private handleRenameLocalUser(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    const newName = params.get('newname') || '';
-    if (!name) return "Rename-LocalUser : The -Name parameter is required.";
-    if (!newName) return "Rename-LocalUser : The -NewName parameter is required.";
-    const error = this.device.getUserManager().renameUser(name, newName);
-    return error || '';
-  }
-
-  private handleRenameLocalGroup(args: string[]): string {
-    const params = this.parsePSArgs(args);
-    const name = params.get('name') || params.get('_positional') || '';
-    const newName = params.get('newname') || '';
-    if (!name) return "Rename-LocalGroup : The -Name parameter is required.";
-    if (!newName) return "Rename-LocalGroup : The -NewName parameter is required.";
-    const error = this.device.getUserManager().renameGroup(name, newName);
-    return error || '';
   }
 
   /**
@@ -5991,33 +4187,6 @@ export class PowerShellExecutor {
    * answered with a forward (`A`) record pointing at a stable fake
    * address (mirrors what previous releases of the simulator did).
    */
-  private renderResolveDnsName(target: string): string {
-    const isIPv4 = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(target);
-    const header =
-      'Name                                           Type   TTL   Section    IPAddress\n' +
-      '----                                           ----   ---   -------    ---------';
-    let row: string;
-    if (isIPv4) {
-      const reversed = target.split('.').reverse().join('.');
-      const ptrName = `${reversed}.in-addr.arpa`;
-      const hostName = target === '127.0.0.1' ? 'localhost' : `host-${target.replace(/\./g, '-')}`;
-      row =
-        ptrName.padEnd(47) +
-        'PTR    ' +
-        '3600  ' +
-        'Answer     ' +
-        hostName;
-    } else {
-      const ip = target.toLowerCase() === 'localhost' ? '127.0.0.1' : '192.168.1.1';
-      row =
-        target.padEnd(47) +
-        'A      ' +
-        (target.toLowerCase() === 'localhost' ? '86400' : '3600 ') +
-        ' Answer     ' +
-        ip;
-    }
-    return `\n${header}\n${row}\n`;
-  }
 
   /**
    * Execute a `.ps1` file from the simulated filesystem.

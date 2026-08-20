@@ -36,7 +36,7 @@ describe('Phase 7 — OracleInstance reactive emissions', () => {
   afterEach(() => { __setDefaultEventBus(null); });
 
   it('startup emits state-changed transitions and background-process-started events', () => {
-    inst.startup('OPEN');
+    inst.startup();
     const states = trace
       .filter((e) => e.topic === 'oracle.instance.state-changed')
       .map((e) => (e.payload as { newState: string }).newState);
@@ -47,7 +47,7 @@ describe('Phase 7 — OracleInstance reactive emissions', () => {
   });
 
   it('logAlert publishes oracle.instance.alert-log-entry-added', () => {
-    inst.startup('OPEN');
+    inst.startup();
     const alerts = trace.filter((e) => e.topic === 'oracle.instance.alert-log-entry-added');
     // startup logs at least: 'Starting…', 'Database mounted', 'Database opened'
     expect(alerts.length).toBeGreaterThanOrEqual(3);
@@ -69,7 +69,7 @@ describe('Phase 7 — OracleInstance reactive emissions', () => {
   it('switchLogfile publishes redo-log-switched and (in archivelog mode) archive-log.created', () => {
     inst.startup('MOUNT');
     inst.setArchiveLogMode(true);
-    inst.startup('OPEN'); // not allowed twice; this exercises the error path but we still need OPEN to switch
+    inst.startup(); // not allowed twice; this exercises the error path but we still need OPEN to switch
     // Force open by going through startup chain
     // (The previous startup left us at MOUNT; we need OPEN. Use FORCE.)
     inst.startup('FORCE');
@@ -83,7 +83,7 @@ describe('Phase 7 — OracleInstance reactive emissions', () => {
   });
 
   it('shutdown emits background-process-stopped for every running process and SHUTDOWN transition', () => {
-    inst.startup('OPEN');
+    inst.startup();
     trace.length = 0;
     inst.shutdown('NORMAL');
     const stops = trace.filter((e) => e.topic === 'oracle.instance.background-process-stopped');
@@ -153,7 +153,7 @@ describe('Phase 7 — OracleFilesystemSync adapter', () => {
   });
 
   it('alert-log entries flush the in-memory log to the trace path', () => {
-    inst.startup('OPEN');
+    inst.startup();
     const alertPath = Array.from(fs.keys()).find((p) => p.endsWith('/alert_ORCL.log'));
     expect(alertPath).toBeDefined();
     const content = fs.get(alertPath!)!;
@@ -172,7 +172,7 @@ describe('Phase 7 — OracleFilesystemSync adapter', () => {
   });
 
   it('background processes register on startup and unregister on shutdown', () => {
-    inst.startup('OPEN');
+    inst.startup();
     expect(processes.length).toBeGreaterThanOrEqual(8);
     expect(processes.some((p) => p.cmd.startsWith('ora_pmon_'))).toBe(true);
 

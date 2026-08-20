@@ -20,6 +20,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -167,7 +168,12 @@ describe('Batch 3: display current-configuration interface', () => {
     r.configureInterface('GE0/0/0', new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
 
     const output = await r.executeCommand('display current-configuration interface GE0/0/0');
-    expect(output).toContain('interface GE0/0/0');
+    // Lot V15 : `GE0/0/0` est le nom court INTERNE, que ces deux cas
+    // fixaient dans un bloc de configuration. VRP rend le nom canonique
+    // (lots V3/V11), et la configuration complete de la meme machine le
+    // faisait deja — c'est cette vue-ci qui divergeait. L'abreviation
+    // reste acceptee en ENTREE, ce que la commande ci-dessus verifie.
+    expect(output).toContain('interface GigabitEthernet0/0/0');
     expect(output).toContain('192.168.1.1');
     expect(output).toContain('255.255.255.0');
   });
@@ -175,7 +181,7 @@ describe('Batch 3: display current-configuration interface', () => {
   it('should show unconfigured interface', async () => {
     const r = new HuaweiRouter('R1');
     const output = await r.executeCommand('display current-configuration interface GE0/0/1');
-    expect(output).toContain('interface GE0/0/1');
+    expect(output).toContain('interface GigabitEthernet0/0/1');
     expect(output).toContain('shutdown');
   });
 
@@ -218,7 +224,7 @@ describe('Batch 4: Ping with Source IP', () => {
     const c = new Cable('c1');
     c.connect(r.getPort('GE0/0/0')!, pc.getPort('eth0')!);
 
-    const output = await r.executeCommand('ping -a 10.0.2.1 10.0.1.2');
+    const output = await pingOnSimulatedClock(r, 'ping -a 10.0.2.1 10.0.1.2');
     expect(output).toContain('PING 10.0.1.2');
     expect(output).not.toContain('Error');
   });
@@ -233,7 +239,7 @@ describe('Batch 4: Ping with Source IP', () => {
     const c = new Cable('c1');
     c.connect(r.getPort('GE0/0/0')!, pc.getPort('eth0')!);
 
-    const output = await r.executeCommand('ping -c 3 10.0.1.2');
+    const output = await pingOnSimulatedClock(r, 'ping -c 3 10.0.1.2');
     expect(output).toContain('3 packet(s) transmitted');
   });
 });
@@ -255,7 +261,7 @@ describe('Batch 5: ARP Clear (reset arp)', () => {
     c.connect(r.getPort('GE0/0/0')!, pc.getPort('eth0')!);
 
     // Trigger ARP learning via ping
-    await r.executeCommand('ping 10.0.1.2');
+    await pingOnSimulatedClock(r, 'ping 10.0.1.2');
 
     // Verify ARP entry exists
     let arp = await r.executeCommand('display arp');
@@ -306,7 +312,7 @@ describe('Batch 6: Counters Reset', () => {
     c2.connect(r.getPort('GE0/0/1')!, pc2.getPort('eth0')!);
 
     // Generate some traffic
-    await pc.executeCommand('ping -c 1 10.0.2.2');
+    await pingOnSimulatedClock(pc, 'ping -c 1 10.0.2.2');
 
     // Verify counters non-zero
     let traffic = await r.executeCommand('display ip traffic');

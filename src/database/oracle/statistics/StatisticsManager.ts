@@ -116,7 +116,7 @@ export class StatisticsManager {
       const low = sorted[0] ?? '';
       const high = sorted[sorted.length - 1] ?? '';
       const avgColLen = non.length === 0 ? (c.dataType.precision ?? 4)
-        : Math.max(1, Math.round(non.reduce((s, v) => s + String(v).length, 0) / non.length));
+        : Math.max(1, Math.round(non.reduce<number>((s, v) => s + String(v).length, 0) / non.length));
       this.columnStats.set(
         `${owner}.${tableName}.${c.name}`,
         new ColumnStatistics(

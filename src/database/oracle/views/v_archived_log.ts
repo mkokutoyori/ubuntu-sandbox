@@ -30,7 +30,10 @@ registerView({
         'YES',
         'NO',
         'A',
-        Math.round(l.sizeBytes / 512),
+        // RuntimeArchivedLogRecord doesn't track a real file size — use the
+        // simulator's fixed default redo log size (50MB), matching a
+        // typical Oracle deployment's `size 50m` redo log clause.
+        Math.round(52_428_800 / 512),
         512,
       ])
     );

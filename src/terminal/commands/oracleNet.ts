@@ -27,6 +27,7 @@ import type { HostCapableDevice } from '@/network';
 import type { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { findEquipmentByIp, findEquipmentByHostname } from '@/shell/hostResolution';
+import { isPathReachable } from '@/network/devices/linux/network/HostLookup';
 
 export interface TnsDescriptor {
   host: string;
@@ -34,6 +35,16 @@ export interface TnsDescriptor {
   service: string;
   /** The alias the descriptor came from, when not EZConnect. */
   alias?: string;
+  /**
+   * A full `(DESCRIPTION=...(ADDRESS_LIST=(ADDRESS=...)(ADDRESS=...))...)`
+   * carries more than one address to try in order (TAF's ADDRESS_LIST
+   * failover) — `host`/`port` above are always the FIRST address, kept
+   * for every caller that only cares about a single target. `resolveOracleConnectTarget`
+   * walks the full list when present.
+   */
+  addressList?: { host: string; port: number }[];
+  /** `(FAILOVER=ON)` and/or a `FAILOVER_MODE` clause under CONNECT_DATA. */
+  failoverEnabled?: boolean;
 }
 
 export type TnsResolution =
@@ -50,6 +61,11 @@ export function parseConnectIdentifier(
   identifier: string,
 ): TnsDescriptor | null {
   const id = identifier.trim();
+  // Full TNS descriptor: (DESCRIPTION=(ADDRESS_LIST=...)(CONNECT_DATA=...)),
+  // the form ADDRESS_LIST/TAF connect strings use.
+  if (id.startsWith('(')) {
+    return parseTnsDescription(id);
+  }
   // EZConnect: //host[:port]/service  or  host[:port]/service
   const ez = id.replace(/^\/\//, '');
   if (ez.includes('/') || ez.includes(':')) {
@@ -63,6 +79,71 @@ export function parseConnectIdentifier(
     };
   }
   return lookupTnsAlias(localDevice, id);
+}
+
+/**
+ * Parses the classic Oracle Net `(DESCRIPTION=(...)...)` keyword-value
+ * grammar — the nested-parens format used both in tnsnames.ora entries
+ * (see `lookupTnsAlias` below, which extracts HOST/PORT/SERVICE_NAME/SID
+ * the same textual way) and in a literal connect-string like
+ * `sqlplus user/pass@(DESCRIPTION=(FAILOVER=ON)(ADDRESS_LIST=...))`.
+ * Only the keys this client acts on are extracted (ADDRESS HOST/PORT in
+ * order, CONNECT_DATA SERVICE_NAME/SID, FAILOVER/FAILOVER_MODE presence)
+ * — every other real TNS keyword (SDU, RECV_BUF_SIZE, LOAD_BALANCE, …) is
+ * silently ignored rather than rejected, matching this module's existing
+ * EZConnect parser's own scope.
+ */
+function parseTnsDescription(text: string): TnsDescriptor | null {
+  const addresses: { host: string; port: number }[] = [];
+  for (const body of findBalancedGroups(text, 'ADDRESS')) {
+    const host = /\(\s*HOST\s*=\s*([^)\s]+)\s*\)/i.exec(body)?.[1];
+    const port = /\(\s*PORT\s*=\s*(\d+)\s*\)/i.exec(body)?.[1];
+    if (host) addresses.push({ host, port: port ? Number.parseInt(port, 10) : ORACLE_CONFIG.PORT });
+  }
+  if (addresses.length === 0) return null;
+
+  const connectDataBody = findBalancedGroups(text, 'CONNECT_DATA')[0] ?? text;
+  const service = /\(\s*SERVICE_NAME\s*=\s*([^)\s]+)\s*\)/i.exec(connectDataBody)?.[1]
+    ?? /\(\s*SID\s*=\s*([^)\s]+)\s*\)/i.exec(connectDataBody)?.[1];
+
+  const failoverEnabled = /\(\s*FAILOVER\s*=\s*ON\s*\)/i.test(text) || /FAILOVER_MODE/i.test(text);
+
+  return {
+    host: addresses[0].host,
+    port: addresses[0].port,
+    service: (service ?? '').toUpperCase() || ORACLE_CONFIG.SID,
+    addressList: addresses,
+    failoverEnabled,
+  };
+}
+
+/**
+ * Finds every `(KEY=...)` group in `text` at any nesting depth and returns
+ * each one's body (the text between the outer parens, `KEY=...` included),
+ * using real paren-depth counting instead of regex — a plain
+ * `[^)]*`-style regex can't skip past sibling groups like
+ * `(ADDRESS=(PROTOCOL=TCP)(HOST=x)(PORT=y))`, since the first inner `)`
+ * ends the character class before the next sibling `(...)` is reached.
+ */
+function findBalancedGroups(text: string, key: string): string[] {
+  const results: string[] = [];
+  const startRe = new RegExp(`\\(\\s*${key}\\s*=`, 'gi');
+  let m: RegExpExecArray | null;
+  while ((m = startRe.exec(text)) !== null) {
+    const start = m.index;
+    let depth = 0;
+    let i = start;
+    for (; i < text.length; i++) {
+      if (text[i] === '(') depth++;
+      else if (text[i] === ')') {
+        depth--;
+        if (depth === 0) { i++; break; }
+      }
+    }
+    results.push(text.slice(start + 1, i - 1));
+    startRe.lastIndex = i;
+  }
+  return results;
 }
 
 function splitOnce(s: string, sep: string): [string, string] {
@@ -105,7 +186,7 @@ function escapeRe(s: string): string {
 }
 
 /** First configured IPv4 of a device, as a dotted string, if any. */
-function primaryIpv4(dev: unknown): string | undefined {
+export function primaryIpv4(dev: unknown): string | undefined {
   const ports = (dev as { getPorts?: () => Array<{ getIPAddress: () => { toString(): string } | null }> }).getPorts?.();
   if (!ports) return undefined;
   for (const p of ports) {
@@ -132,25 +213,20 @@ function isLocalAddress(localDevice: HostCapableDevice, host: string): boolean {
   return false;
 }
 
-/**
- * Resolve a connect identifier all the way to a target OracleDatabase,
- * walking the client-visible Oracle Net error ladder.
- */
-export function resolveOracleConnectTarget(
+/** Resolve exactly one host/port/service against the topology — the
+ *  single-address body `resolveOracleConnectTarget` used to run inline;
+ *  factored out so an ADDRESS_LIST can retry it per address. */
+function resolveOneAddress(
   localDevice: HostCapableDevice,
-  identifier: string,
-  /** Injected to avoid a database.ts ⇄ oracleNet import cycle. */
+  host: string,
+  port: number,
+  service: string,
   getDb: (deviceId: string) => OracleDatabase,
-): TnsResolution {
-  const desc = parseConnectIdentifier(localDevice, identifier);
-  if (!desc) {
-    return { ok: false, error: 'ORA-12154: TNS:could not resolve the connect identifier specified' };
-  }
-
+): { ok: true; db: OracleDatabase; remote: boolean } | { ok: false; error: string } {
   let target: Equipment | HostCapableDevice = localDevice;
   let remote = false;
-  if (!isLocalAddress(localDevice, desc.host)) {
-    const found = findEquipmentByIp(desc.host) ?? findEquipmentByHostname(desc.host);
+  if (!isLocalAddress(localDevice, host)) {
+    const found = findEquipmentByIp(host) ?? findEquipmentByHostname(host);
     if (!found) {
       return { ok: false, error: 'ORA-12545: Connect failed because target host or object does not exist' };
     }
@@ -175,13 +251,22 @@ export function resolveOracleConnectTarget(
   // (indistinguishable from no listener → ORA-12541). Local bequest
   // connections never traverse the network, so they are exempt.
   if (remote) {
+    const dstIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ? host : (primaryIpv4(target) ?? host);
+    const srcIP = primaryIpv4(localDevice) ?? '0.0.0.0';
+
+    // A cabled path that stops answering (an interface taken down, a
+    // cable pulled) must fail the same way a real client's SYN would
+    // time out — this is what lets a RAC client actually notice node1
+    // disappearing instead of the connect identifier resolving forever.
+    if (!isPathReachable(srcIP, dstIP, localDevice)) {
+      return { ok: false, error: 'ORA-12170: TNS:Connect timeout occurred' };
+    }
+
     const fwHost = target as unknown as {
       firewallAcceptsInboundTcp?: (srcIP: string, dstIP: string, dstPort: number) => 'accept' | 'drop' | 'reject';
     };
     if (typeof fwHost.firewallAcceptsInboundTcp === 'function') {
-      const dstIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(desc.host) ? desc.host : (primaryIpv4(target) ?? desc.host);
-      const srcIP = primaryIpv4(localDevice) ?? '0.0.0.0';
-      const verdict = fwHost.firewallAcceptsInboundTcp(srcIP, dstIP, desc.port);
+      const verdict = fwHost.firewallAcceptsInboundTcp(srcIP, dstIP, port);
       if (verdict === 'drop') {
         return { ok: false, error: 'ORA-12170: TNS:Connect timeout occurred' };
       }
@@ -192,12 +277,41 @@ export function resolveOracleConnectTarget(
   }
 
   const db = getDb(target.getId());
-  if (desc.port !== db.instance.listener.port) {
+  if (port !== db.instance.listener.port) {
     return { ok: false, error: 'ORA-12541: TNS:no listener' };
   }
-  const outcome = db.instance.listener.attemptConnect(desc.service);
-  if (!outcome.ok) {
+  const sourceIp = remote ? (primaryIpv4(localDevice) ?? '0.0.0.0') : '127.0.0.1';
+  const outcome = db.instance.listener.attemptConnect(service, sourceIp);
+  if (outcome.ok === false) {
     return { ok: false, error: outcome.error };
   }
-  return { ok: true, db, remote, descriptor: desc };
+  return { ok: true, db, remote };
+}
+
+/**
+ * Resolve a connect identifier all the way to a target OracleDatabase,
+ * walking the client-visible Oracle Net error ladder. An ADDRESS_LIST
+ * descriptor tries every address in order and returns the first that
+ * succeeds — real Oracle Net client failover behaviour — reporting the
+ * LAST address's error only if every one of them fails.
+ */
+export function resolveOracleConnectTarget(
+  localDevice: HostCapableDevice,
+  identifier: string,
+  /** Injected to avoid a database.ts ⇄ oracleNet import cycle. */
+  getDb: (deviceId: string) => OracleDatabase,
+): TnsResolution {
+  const desc = parseConnectIdentifier(localDevice, identifier);
+  if (!desc) {
+    return { ok: false, error: 'ORA-12154: TNS:could not resolve the connect identifier specified' };
+  }
+
+  const addresses = desc.addressList ?? [{ host: desc.host, port: desc.port }];
+  let lastError = 'ORA-12154: TNS:could not resolve the connect identifier specified';
+  for (const addr of addresses) {
+    const res = resolveOneAddress(localDevice, addr.host, addr.port, desc.service, getDb);
+    if (res.ok) return { ok: true, db: res.db, remote: res.remote, descriptor: { ...desc, host: addr.host, port: addr.port } };
+    lastError = res.error;
+  }
+  return { ok: false, error: lastError };
 }

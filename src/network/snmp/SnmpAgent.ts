@@ -27,6 +27,8 @@ export interface SnmpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   getSysDescr(): string;
   getSysObjectId(): string;
+  /** ARP-aware send (queues on a cold cache instead of broadcasting) — falls back to broadcast when absent (mirrors `TcpHost`). */
+  sendIpv4FrameArpAware?(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void;
 }
 
 interface PendingRequest {
@@ -71,6 +73,20 @@ export class SnmpAgent {
 
   setContact(s: string): void { this.config.contact = s; }
   setLocation(s: string): void { this.config.location = s; }
+  setTrapSourceInterface(iface: string | null): void { this.config.trapSourceInterface = iface; }
+
+  /**
+   * The source address a trap carries. Routing picks the egress
+   * interface; `snmp-server trap-source` picks this, and it was read by
+   * nobody — every trap went out with the egress interface's address,
+   * so a collector filtering on a loopback saw none of them.
+   */
+  private trapSourceIp(egressPort: import('../hardware/Port').Port): IPAddress | null {
+    const named = this.config.trapSourceInterface
+      ? this.host.getPort(this.config.trapSourceInterface)?.getIPAddress() ?? null
+      : null;
+    return named ?? egressPort.getIPAddress();
+  }
 
   addCommunity(community: string, access: 'ro' | 'rw'): void {
     const existing = this.config.communities.find((c) => c.community === community);
@@ -136,7 +152,7 @@ export class SnmpAgent {
     for (const t of this.config.trapHosts) {
       const egress = this.resolveEgress(t.ip);
       if (!egress) continue;
-      const srcIp = egress.port.getIPAddress();
+      const srcIp = this.trapSourceIp(egress.port);
       if (!srcIp) continue;
       const standard: SnmpVarBinding[] = [
         vb('1.3.6.1.2.1.1.3.0', v('timeticks', this.uptimeTicks())),
@@ -339,12 +355,16 @@ export class SnmpAgent {
       payload: udp,
     };
     ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
-    const eth: EthernetFrame = {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_IPV4, payload: ipPkt,
-    };
-    this.host.sendFrame(portName, eth);
+    if (this.host.sendIpv4FrameArpAware) {
+      this.host.sendIpv4FrameArpAware(portName, ipPkt, dstIp);
+    } else {
+      const eth: EthernetFrame = {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      };
+      this.host.sendFrame(portName, eth);
+    }
     this.getBus().publish({
       topic: 'snmp.packet.sent',
       payload: {

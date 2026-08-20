@@ -9,6 +9,8 @@
 import type { WinCommandContext } from './WinCommandExecutor';
 import { requireWindowsService } from './WinFeatureGate';
 
+export type PrintJobStatus = 'Spooling' | 'Printing' | 'Completed' | 'Error';
+
 export interface PrintJob {
   id: number;
   document: string;
@@ -16,6 +18,8 @@ export interface PrintJob {
   submittedAt: Date;
   /** Approximate byte count. */
   size: number;
+  /** Queue progression (PRD-Windows-Server-Advanced.md §5 P20) — no real document rendering, only acknowledgement/queue state. */
+  status: PrintJobStatus;
 }
 
 const QUEUES = new Map<string, PrintJob[]>();
@@ -50,6 +54,7 @@ export function cmdPrint(ctx: WinCommandContext, args: string[]): string {
       owner: 'Administrator',
       submittedAt: new Date(),
       size: 1024,
+      status: 'Printing',
     });
     lines.push(`${f} is currently being printed on ${printer}.`);
   }

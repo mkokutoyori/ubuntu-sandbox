@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-users-perms
-Generated: 2026-06-12T11:48:04.366Z
+Generated: 2026-08-13T16:28:39.147Z
 Engine: linux
 host=L-SRV-USR-DBG (linux-server) — focus: utilisateurs, groupes & permissions
 Total commands: 301
@@ -36,7 +36,7 @@ $ [9/301]> groups
   root
 
 $ [10/301]> logname
-  logname: command not found
+  root
 
 $ [11/301]> echo $USER
   root
@@ -48,28 +48,34 @@ $ [13/301]> echo $UID
   0
 
 $ [14/301]> who
-  root     tty1     2026-06-12 11:48 (:0)
+  root     tty1         2026-08-13 16:28 (:0)
 
 $ [15/301]> who am i
-  root     tty1     2026-06-12 11:48 (:0)
+  root     tty1         2026-08-13 16:28 (:0)
 
 $ [16/301]> w
-   12 Jun 2026 11:4  up 0 min,  1 users,  load average: 0.00, 0.00, 0.00
-  USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
-  root      tty1      :0               11:48    0.00s   0.00s 0.00s -bash
+   16:28:39 up 0 min,  1 user,  load average: 0.00, 0.01, 0.05
+  USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU   WHAT
+  root     tty1     :0               16:28    0.00s  0.00s  0.00s  -bash
 
 $ [17/301]> users
-  users: command not found
+  root
 
 $ [18/301]> last
-  root     tty1         :0               Fri, 12 Jun 2026 11:4  still logged in
+  root     tty1         :0               Thu Aug 13 16:28   still logged in
+  reboot   system boot  5.15.0-91-generic Thu Aug 13 16:28   still running
+  
+  wtmp begins Thu Aug 13 16:28:39 2026
 
 $ [19/301]> lastb
   
-  btmp begins Fri, Jun 12
+  btmp begins Thu Aug 13 16:28:39 2026
 
 $ [20/301]> last -n 5
-  root     tty1         :0               Fri, 12 Jun 2026 11:4  still logged in
+  root     tty1         :0               Thu Aug 13 16:28   still logged in
+  reboot   system boot  5.15.0-91-generic Thu Aug 13 16:28   still running
+  
+  wtmp begins Thu Aug 13 16:28:39 2026
 
 
 --- [21] § bases de comptes — inventaire ---
@@ -91,6 +97,7 @@ $ [22/301]> cat /etc/group
   plugdev:x:46:
   users:x:100:
   nogroup:x:65534:
+  nobody:x:65534:
   alice:x:1000:
   bob:x:1001:
   carl:x:1002:
@@ -121,6 +128,7 @@ $ [25/301]> getent group
   plugdev:x:46:
   users:x:100:
   nogroup:x:65534:
+  nobody:x:65534:
   alice:x:1000:
   bob:x:1001:
   carl:x:1002:
@@ -148,6 +156,7 @@ $ [29/301]> cut -d: -f1 /etc/group | sort
   carl
   daemon
   dave
+  nobody
   nogroup
   plugdev
   root
@@ -207,7 +216,7 @@ $ [44/301]> useradd -r service1
 <empty>
 
 $ [45/301]> getent passwd service1
-  service1:x:100:100::/home/service1:/bin/sh
+  service1:x:999:999::/home/service1:/bin/sh
 
 $ [46/301]> useradd -m -s /bin/zsh eve
 <empty>
@@ -261,13 +270,13 @@ $ [60/301]> usermod -L bob
 <empty>
 
 $ [61/301]> passwd -S bob
-  bob L 06/12/2026 0 99999 7 -1
+  bob L 08/13/2026 0 99999 7 -1
 
 $ [62/301]> usermod -U bob
 <empty>
 
 $ [63/301]> passwd -S bob
-  bob P 06/12/2026 0 99999 7 -1
+  bob P 08/13/2026 0 99999 7 -1
 
 $ [64/301]> usermod -u 1600 carol
 <empty>
@@ -290,37 +299,37 @@ $ [69/301]> passwd -S alicia
   passwd: user 'alicia' does not exist
 
 $ [70/301]> passwd -S bob
-  bob P 06/12/2026 0 99999 7 -1
+  bob P 08/13/2026 0 99999 7 -1
 
 $ [71/301]> passwd -S root
-  root P 06/12/2026 0 99999 7 -1
+  root P 08/13/2026 0 99999 7 -1
 
 $ [72/301]> echo "bob:NouveauPass123" | chpasswd
 <empty>
 
 $ [73/301]> passwd -S bob
-  bob P 06/12/2026 0 99999 7 -1
+  bob P 08/13/2026 0 99999 7 -1
 
 $ [74/301]> passwd -l dan
   passwd: password expiry information changed.
 
 $ [75/301]> passwd -S dan
-  dan L 06/12/2026 0 99999 7 -1
+  dan L 08/13/2026 0 99999 7 -1
 
 $ [76/301]> passwd -u dan
   passwd: password expiry information changed.
 
 $ [77/301]> passwd -S dan
-  dan NP 06/12/2026 0 99999 7 -1
+  dan NP 08/13/2026 0 99999 7 -1
 
 $ [78/301]> passwd -d eve
   passwd: password expiry information changed.
 
 $ [79/301]> passwd -S eve
-  eve NP 06/12/2026 0 99999 7 -1
+  eve NP 08/13/2026 0 99999 7 -1
 
 $ [80/301]> chage -l bob
-  Last password change					: Jun 12, 2026
+  Last password change					: Aug 13, 2026
   Password expires					: never
   Password inactive					: never
   Account expires						: never
@@ -332,8 +341,8 @@ $ [81/301]> chage -M 90 bob
 <empty>
 
 $ [82/301]> chage -l bob
-  Last password change					: Jun 12, 2026
-  Password expires					: Sep 10, 2026
+  Last password change					: Aug 13, 2026
+  Password expires					: Nov 11, 2026
   Password inactive					: never
   Account expires						: never
   Minimum number of days between password change		: 0
@@ -344,8 +353,8 @@ $ [83/301]> chage -m 7 bob
 <empty>
 
 $ [84/301]> chage -l bob
-  Last password change					: Jun 12, 2026
-  Password expires					: Sep 10, 2026
+  Last password change					: Aug 13, 2026
+  Password expires					: Nov 11, 2026
   Password inactive					: never
   Account expires						: never
   Minimum number of days between password change		: 7
@@ -356,8 +365,8 @@ $ [85/301]> chage -E 2026-12-31 bob
 <empty>
 
 $ [86/301]> chage -l bob
-  Last password change					: Jun 12, 2026
-  Password expires					: Sep 10, 2026
+  Last password change					: Aug 13, 2026
+  Password expires					: Nov 11, 2026
   Password inactive					: never
   Account expires						: Dec 31, 2026
   Minimum number of days between password change		: 7
@@ -368,8 +377,8 @@ $ [87/301]> chage -W 14 bob
 <empty>
 
 $ [88/301]> chage -l bob
-  Last password change					: Jun 12, 2026
-  Password expires					: Sep 10, 2026
+  Last password change					: Aug 13, 2026
+  Password expires					: Nov 11, 2026
   Password inactive					: never
   Account expires						: Dec 31, 2026
   Minimum number of days between password change		: 7
@@ -486,10 +495,10 @@ $ [122/301]> cut -d: -f1 /etc/passwd | grep -E "alicia|bob|carol"
 
 --- [123] § escalade — su / sudo ---
 $ [123/301]> sudo -l
-  Matching Defaults entries for root on linux-pc:
+  Matching Defaults entries for root on linux-server:
       env_reset, mail_badpass, secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
   
-  User root may run the following commands on linux-pc:
+  User root may run the following commands on linux-server:
       (ALL : ALL) ALL
 
 $ [124/301]> sudo whoami
@@ -502,15 +511,15 @@ $ [126/301]> sudo -n true
 <empty>
 
 $ [127/301]> sudo cat /etc/shadow
-  root:x:20616:0:99999:7:::
-  daemon:!*:20616:0:99999:7:::
-  nobody:!*:20616:0:99999:7:::
-  alice:$6$simulated$alice:20616:0:99999:7:::
-  bob:$6$simulated$NouveauPass123:20616:7:90:14::20818:
-  carl:$6$simulated$carl:20616:0:99999:7:::
-  dave:$6$simulated$dave:20616:0:99999:7:::
-  carol:!:20616:0:99999:7:::
-  service1:!:20616:0:99999:7:::
+  root:$6$simulated$admin:20678:0:99999:7:::
+  daemon:!*:20678:0:99999:7:::
+  nobody:!*:20678:0:99999:7:::
+  alice:$6$simulated$alice:20678:0:99999:7:::
+  bob:$6$simulated$NouveauPass123:20678:7:90:14::20818:
+  carl:$6$simulated$carl:20678:0:99999:7:::
+  dave:$6$simulated$dave:20678:0:99999:7:::
+  carol:!:20678:0:99999:7:::
+  service1:!:20678:0:99999:7:::
 
 $ [128/301]> sudo -u bob whoami
   bob
@@ -527,7 +536,7 @@ $ [131/301]> su --help
 <empty>
 
 $ [132/301]> su -c whoami root
-<empty>
+  root
 
 $ [133/301]> whoami
   root
@@ -544,55 +553,55 @@ $ [136/301]> touch p_chmod.txt
 <empty>
 
 $ [137/301]> ls -l p_chmod.txt
-  -rw-r--r-- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rw-r--r-- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [138/301]> chmod u+x p_chmod.txt
 <empty>
 
 $ [139/301]> ls -l p_chmod.txt
-  -rwxr--r-- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwxr--r-- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [140/301]> chmod g+w p_chmod.txt
 <empty>
 
 $ [141/301]> ls -l p_chmod.txt
-  -rwxrw-r-- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwxrw-r-- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [142/301]> chmod o-r p_chmod.txt
 <empty>
 
 $ [143/301]> ls -l p_chmod.txt
-  -rwxrw---- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwxrw---- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [144/301]> chmod a+r p_chmod.txt
 <empty>
 
 $ [145/301]> ls -l p_chmod.txt
-  -rwxrw-r-- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwxrw-r-- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [146/301]> chmod u=rwx,g=rx,o= p_chmod.txt
 <empty>
 
 $ [147/301]> ls -l p_chmod.txt
-  -rwxr-x--- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwxr-x--- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [148/301]> chmod ug+s p_chmod.txt
 <empty>
 
 $ [149/301]> ls -l p_chmod.txt
-  -rwsr-s--- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwsr-s--- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [150/301]> chmod +t p_chmod.txt
 <empty>
 
 $ [151/301]> ls -l p_chmod.txt
-  -rwsr-s--T 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwsr-s--T 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [152/301]> chmod -t p_chmod.txt
 <empty>
 
 $ [153/301]> ls -l p_chmod.txt
-  -rwsr-s--- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  -rwsr-s--- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 
 --- [154] § permissions octales — chmod ---
@@ -662,37 +671,37 @@ $ [174/301]> chown root p_chmod.txt
 <empty>
 
 $ [175/301]> ls -l p_chmod.txt
-  ---------- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [176/301]> chown root:root p_chmod.txt
 <empty>
 
 $ [177/301]> ls -l p_chmod.txt
-  ---------- 1 root root 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 root root 0 Aug 13 16:28 p_chmod.txt
 
 $ [178/301]> chgrp devs p_chmod.txt
 <empty>
 
 $ [179/301]> ls -l p_chmod.txt
-  ---------- 1 root devs 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 root devs 0 Aug 13 16:28 p_chmod.txt
 
 $ [180/301]> chown :devs p_chmod.txt
 <empty>
 
 $ [181/301]> ls -l p_chmod.txt
-  ---------- 1 root devs 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 root devs 0 Aug 13 16:28 p_chmod.txt
 
 $ [182/301]> chown bob p_chmod.txt
 <empty>
 
 $ [183/301]> ls -l p_chmod.txt
-  ---------- 1 bob devs 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 bob devs 0 Aug 13 16:28 p_chmod.txt
 
 $ [184/301]> chown -R root:root p_chmoddir
 <empty>
 
 $ [185/301]> ls -ld p_chmoddir
-  drwx------ 2 root root 0 Jun 12 11:48 p_chmoddir
+  drwx------ 2 root root 0 Aug 13 16:28 p_chmoddir
 
 $ [186/301]> chown --reference=p_chmod.txt p_chmoddir
   chown: missing operand
@@ -721,13 +730,13 @@ $ [193/301]> touch sous_022.txt
 <empty>
 
 $ [194/301]> ls -l sous_022.txt
-  -rw-r--r-- 1 root root 0 Jun 12 11:48 sous_022.txt
+  -rw-r--r-- 1 root root 0 Aug 13 16:28 sous_022.txt
 
 $ [195/301]> mkdir sous_022dir
 <empty>
 
 $ [196/301]> ls -ld sous_022dir
-  drwxr-xr-x 2 root root 0 Jun 12 11:48 sous_022dir
+  drwxr-xr-x 2 root root 0 Aug 13 16:28 sous_022dir
 
 $ [197/301]> umask 077
 <empty>
@@ -739,7 +748,7 @@ $ [199/301]> touch sous_077.txt
 <empty>
 
 $ [200/301]> ls -l sous_077.txt
-  -rw------- 1 root root 0 Jun 12 11:48 sous_077.txt
+  -rw------- 1 root root 0 Aug 13 16:28 sous_077.txt
 
 $ [201/301]> umask 0022
 <empty>
@@ -782,17 +791,16 @@ $ [206/301]> getfacl p_chmod.txt
   other::---
 
 $ [207/301]> ls -l p_chmod.txt
-  ---------- 1 -1 devs 0 Jun 12 11:48 p_chmod.txt
+  ---------- 1 -1 devs 0 Aug 13 16:28 p_chmod.txt
 
 $ [208/301]> setfacl -x u:bob p_chmod.txt
-  setfacl: Option -m: Invalid argument near character u:bob
+<empty>
 
 $ [209/301]> getfacl p_chmod.txt
   # file: p_chmod.txt
   # owner: -1
   # group: devs
   user::---
-  user:bob:rwx
   group::---
   group:devs:r-x
   mask::rwx
@@ -806,7 +814,6 @@ $ [211/301]> getfacl p_chmod.txt
   # owner: -1
   # group: devs
   user::---
-  user:bob:rwx
   group::---
   group:devs:r-x
   mask::rwx
@@ -840,7 +847,7 @@ $ [217/301]> useradd -m -G projetX membre2
 <empty>
 
 $ [218/301]> getent group projetX
-  projetX:x:2002:membre1,membre2
+  projetX:x:1008:membre1,membre2
 
 $ [219/301]> mkdir -p /srv/projetX
 <empty>
@@ -852,19 +859,19 @@ $ [221/301]> chmod 2770 /srv/projetX
 <empty>
 
 $ [222/301]> ls -ld /srv/projetX
-  drwxrws--- 2 root projetX 0 Jun 12 11:48 /srv/projetX
+  drwxrws--- 2 root projetX 0 Aug 13 16:28 /srv/projetX
 
 $ [223/301]> id membre1
-  uid=1503(membre1) gid=2003(membre1) groups=2002(projetX),2003(membre1)
+  uid=1501(membre1) gid=1009(membre1) groups=1008(projetX),1009(membre1)
 
 $ [224/301]> id membre2
-  uid=1504(membre2) gid=2004(membre2) groups=2002(projetX),2004(membre2)
+  uid=1502(membre2) gid=1010(membre2) groups=1008(projetX),1010(membre2)
 
 $ [225/301]> gpasswd -a membre1 projetX
 <empty>
 
 $ [226/301]> getent group projetX
-  projetX:x:2002:membre1,membre2
+  projetX:x:1008:membre1,membre2
 
 $ [227/301]> userdel membre2
 <empty>
@@ -925,11 +932,11 @@ $ [232/301]> cat /etc/default/useradd
 
 $ [233/301]> ls -la /etc/skel
   total 40
-  drwxr-xr-x  2 root root   0 Jun 12 11:48 .
-  drwxr-xr-x 15 root root   0 Jun 12 11:48 ..
-  -rw-r--r--  1 root root 220 Jun 12 11:48 .bash_logout
-  -rw-r--r--  1 root root 282 Jun 12 11:48 .bashrc
-  -rw-r--r--  1 root root 337 Jun 12 11:48 .profile
+  drwxr-xr-x  2 root root   0 Aug 13 16:28 .
+  drwxr-xr-x 28 root root   0 Aug 13 16:28 ..
+  -rw-r--r--  1 root root 220 Aug 13 16:28 .bash_logout
+  -rw-r--r--  1 root root 282 Aug 13 16:28 .bashrc
+  -rw-r--r--  1 root root 337 Aug 13 16:28 .profile
 
 $ [234/301]> cat /etc/shells
   /bin/bash
@@ -938,6 +945,8 @@ $ [234/301]> cat /etc/shells
 $ [235/301]> cat /etc/sudoers
   root ALL=(ALL:ALL) ALL
   %sudo ALL=(ALL:ALL) ALL
+  
+  #includedir /etc/sudoers.d
 
 $ [236/301]> ls -l /etc/sudoers.d
   total 0
@@ -959,10 +968,10 @@ $ [238/301]> cat /etc/subgid
   membre1:427680:65536
 
 $ [239/301]> ls -l /etc/passwd /etc/shadow /etc/group /etc/gshadow
-  -rw-r--r-- 1 root root 431 Jun 12 11:48 /etc/passwd
-  -rw-r----- 1 root root 352 Jun 12 11:48 /etc/shadow
-  -rw-r--r-- 1 root root 228 Jun 12 11:48 /etc/group
-  -rw-r----- 1 root root 180 Jun 12 11:48 /etc/gshadow
+  -rw-r--r-- 1 root root 431 Aug 13 16:28 /etc/passwd
+  -rw-r----- 1 root root 369 Aug 13 16:28 /etc/shadow
+  -rw-r--r-- 1 root root 244 Aug 13 16:28 /etc/group
+  -rw-r----- 1 root root 191 Aug 13 16:28 /etc/gshadow
 
 $ [240/301]> stat -c "%a %n" /etc/passwd
   644 /etc/passwd
@@ -974,24 +983,24 @@ $ [241/301]> stat -c "%a %n" /etc/shadow
 --- [242] § home & profil utilisateur ---
 $ [242/301]> ls -la /home
   total 80
-  drwxr-xr-x 10 root    root    0 Jun 12 11:48 .
-  drwxr-xr-x 17 root    root    0 Jun 12 11:48 ..
-  drwxr-xr-x  2 alice   alice   0 Jun 12 11:48 alice
-  drwxr-xr-x  2 bob     bob     0 Jun 12 11:48 bob
-  drwxr-xr-x  2 carl    carl    0 Jun 12 11:48 carl
-  drwxr-xr-x  2 1501    1005    0 Jun 12 11:48 dan
-  drwxr-xr-x  2 dave    dave    0 Jun 12 11:48 dave
-  drwxr-xr-x  2 membre1 membre1 0 Jun 12 11:48 membre1
-  drwxr-xr-x  2 1504    2004    0 Jun 12 11:48 membre2
-  drwxr-xr-x  2 root    root    0 Jun 12 11:48 scripts
+  drwxr-xr-x 10 root    root    0 Aug 13 16:28 .
+  drwxr-xr-x 17 root    root    0 Aug 13 16:28 ..
+  drwxr-xr-x  2 alice   alice   0 Aug 13 16:28 alice
+  drwxr-xr-x  2 bob     bob     0 Aug 13 16:28 bob
+  drwxr-xr-x  2 carl    carl    0 Aug 13 16:28 carl
+  drwxr-xr-x  2 membre1 1005    0 Aug 13 16:28 dan
+  drwxr-xr-x  2 dave    dave    0 Aug 13 16:28 dave
+  drwxr-xr-x  2 membre1 membre1 0 Aug 13 16:28 membre1
+  drwxr-xr-x  2 1502    1010    0 Aug 13 16:28 membre2
+  drwxr-xr-x  2 root    root    0 Aug 13 16:28 scripts
 
 $ [243/301]> ls -la /root
   total 16
-  drwx------  2 root root 0 Jun 12 11:48 .
-  drwxr-xr-x 17 root root 0 Jun 12 11:48 ..
+  drwx------  2 root root 0 Aug 13 16:28 .
+  drwxr-xr-x 17 root root 0 Aug 13 16:28 ..
 
 $ [244/301]> ls -ld /home/bob
-  drwxr-xr-x 2 bob bob 0 Jun 12 11:48 /home/bob
+  drwxr-xr-x 2 bob bob 0 Aug 13 16:28 /home/bob
 
 $ [245/301]> echo $HOME
   /root
@@ -1003,10 +1012,21 @@ $ [247/301]> echo ~root
   /root
 
 $ [248/301]> cat /etc/profile | head
-  cat: /etc/profile: No such file or directory
+  # /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+  # and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).
+  
+  if [ "$(id -u)" -eq 0 ]; then
+    PS1='# '
+  else
+    PS1='$ '
+  fi
+  
+  if [ -d /etc/profile.d ]; then
 
 $ [249/301]> ls -la /etc/profile.d
-  ls: cannot access '/etc/profile.d': No such file or directory
+  total 16
+  drwxr-xr-x  2 root root 0 Aug 13 16:28 .
+  drwxr-xr-x 28 root root 0 Aug 13 16:28 ..
 
 $ [250/301]> getent passwd bob | cut -d: -f6
   /home/bob
@@ -1020,7 +1040,7 @@ $ [252/301]> getent passwd | wc -l
   10
 
 $ [253/301]> getent group | wc -l
-  16
+  17
 
 $ [254/301]> getent passwd root
   root:x:0:0:root:/root:/bin/bash
@@ -1035,7 +1055,7 @@ $ [257/301]> getent group 0
   root:x:0:
 
 $ [258/301]> getent shadow root
-  root:x:20616:0:99999:7:::
+  root:$6$simulated$admin:20678:0:99999:7:::
 
 $ [259/301]> getent passwd alicia bob carol
   bob:x:1001:1001::/home/bob:/bin/bash
@@ -1048,26 +1068,26 @@ $ [261/301]> getent initgroups bob
   bob             1001 27
 
 $ [262/301]> getent ahosts localhost
-  127.0.0.1                               STREAM localhost
-  127.0.0.1                               DGRAM 
-  127.0.0.1                               RAW   
-  ::1                                     STREAM localhost
-  ::1                                     DGRAM 
-  ::1                                     RAW   
+  127.0.0.1       STREAM localhost
+  127.0.0.1       DGRAM
+  127.0.0.1       RAW
+  ::1             STREAM localhost
+  ::1             DGRAM
+  ::1             RAW
 
 $ [263/301]> getent services ssh
-  ssh             22/tcp
+  ssh                   22/tcp
 
 $ [264/301]> getent protocols tcp
-  tcp             6  TCP
+  tcp                   6 TCP
 
 
 --- [265] § verrouillage & sécurité — faillock/chage ---
 $ [265/301]> passwd -S root
-  root P 06/12/2026 0 99999 7 -1
+  root P 08/13/2026 0 99999 7 -1
 
 $ [266/301]> chage -l root
-  Last password change					: Jun 12, 2026
+  Last password change					: Aug 13, 2026
   Password expires					: never
   Password inactive					: never
   Account expires						: never
@@ -1089,13 +1109,13 @@ $ [270/301]> usermod -L carol
 <empty>
 
 $ [271/301]> passwd -S carol
-  carol L 06/12/2026 0 99999 7 -1
+  carol L 08/13/2026 0 99999 7 -1
 
 $ [272/301]> usermod -U carol
 <empty>
 
 $ [273/301]> passwd -S carol
-  carol NP 06/12/2026 0 99999 7 -1
+  carol NP 08/13/2026 0 99999 7 -1
 
 $ [274/301]> chage -d 0 carol
 <empty>
@@ -1142,10 +1162,11 @@ $ [283/301]> id -nG carol
   carol
 
 $ [284/301]> lid bob
-  lid: command not found
+   sudo(27)
+   bob(1001)
 
 $ [285/301]> members devs
-  members: command not found
+<empty>
 
 $ [286/301]> getent group devs | cut -d: -f4
 <empty>
@@ -1163,7 +1184,7 @@ $ [290/301]> id carol
   uid=1500(carol) gid=1004(carol) groups=1004(carol)
 
 $ [291/301]> newgrp devs
-  newgrp: command not found
+<empty>
 
 
 --- [292] § mal formées — fin de transcript ---

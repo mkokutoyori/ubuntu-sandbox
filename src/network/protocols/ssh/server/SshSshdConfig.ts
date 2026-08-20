@@ -43,6 +43,8 @@ export interface SshdConfig extends SshServerConfig {
   readonly clientAliveCountMax: number;
   /** Max simultaneous sessions per network connection. */
   readonly maxSessions: number;
+  /** MaxStartups start:rate:full — pre-auth concurrency cap. */
+  readonly maxStartups: { readonly start: number; readonly rate: number; readonly full: number };
   readonly logLevel: SshLogLevel;
   readonly syslogFacility: string;
   readonly kbdInteractiveAuthentication: boolean;
@@ -52,6 +54,8 @@ export interface SshdConfig extends SshServerConfig {
   readonly permitUserEnvironment: boolean;
   readonly forceCommand: string | null;
   readonly chrootDirectory: string | null;
+  /** StrictModes yes (default) — refuse a pubkey login when $HOME/~/.ssh/authorized_keys have unsafe ownership or permissions. */
+  readonly strictModes: boolean;
   readonly matches: readonly SshdMatchBlock[];
 }
 
@@ -124,6 +128,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   clientAliveInterval: 0,
   clientAliveCountMax: 3,
   maxSessions: 10,
+  maxStartups: { start: 10, rate: 30, full: 100 },
   logLevel: 'INFO' as SshLogLevel,
   syslogFacility: 'AUTH',
   kbdInteractiveAuthentication: false,
@@ -132,6 +137,7 @@ export const DEFAULT_SSHD_CONFIG: SshdConfig = Object.freeze({
   permitUserEnvironment: false,
   forceCommand: null,
   chrootDirectory: null,
+  strictModes: true,
   matches: Object.freeze([]),
 });
 
@@ -159,6 +165,17 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   clientaliveinterval: (v) => ({ clientAliveInterval: parseSeconds(v) }),
   clientalivecountmax: (v) => ({ clientAliveCountMax: Number.parseInt(v, 10) }),
   maxsessions: (v) => ({ maxSessions: Number.parseInt(v, 10) }),
+  maxstartups: (v) => {
+    const parts = v.trim().split(':').map((s) => Number.parseInt(s, 10));
+    const [start, rate, full] = parts;
+    return {
+      maxStartups: {
+        start: Number.isFinite(start) ? start : 10,
+        rate:  Number.isFinite(rate)  ? rate  : 30,
+        full:  Number.isFinite(full)  ? full  : (Number.isFinite(start) ? start : 100),
+      },
+    };
+  },
   loglevel: (v) => {
     const upper = v.trim().toUpperCase();
     if (LOG_LEVELS.includes(upper as SshLogLevel)) {
@@ -169,6 +186,7 @@ const DIRECTIVE_PARSERS: Record<string, (value: string) => Partial<SshdConfig>> 
   syslogfacility: (v) => ({ syslogFacility: v.trim().toUpperCase() }),
   forcecommand: (v) => ({ forceCommand: v.trim() }),
   chrootdirectory: (v) => ({ chrootDirectory: v.trim() }),
+  strictmodes: (v) => ({ strictModes: parseBool(v) }),
   kbdinteractiveauthentication: (v) => ({ kbdInteractiveAuthentication: parseBool(v) }),
   x11forwarding: (v) => ({ x11Forwarding: parseBool(v) }),
   allowtcpforwarding: (v) => {
@@ -291,6 +309,7 @@ export function serializeSshdConfig(cfg: SshdConfig): string {
     `X11Forwarding ${cfg.x11Forwarding ? 'yes' : 'no'}`,
     `AllowTcpForwarding ${cfg.allowTcpForwarding}`,
     `PermitUserEnvironment ${cfg.permitUserEnvironment ? 'yes' : 'no'}`,
+    `StrictModes ${cfg.strictModes ? 'yes' : 'no'}`,
     `MaxStartups 10:30:100`,
   ];
   if (cfg.allowUsers.length > 0) lines.push(`AllowUsers ${cfg.allowUsers.join(' ')}`);

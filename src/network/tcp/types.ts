@@ -1,3 +1,5 @@
+import { IPv6Address } from '@/network/core/types';
+
 export type TcpState =
   | 'closed'
   | 'listen'
@@ -45,14 +47,75 @@ export type TcpOption =
   | { kind: 'mss'; value: number }
   | { kind: 'window-scale'; shift: number }
   | { kind: 'sack-permitted' }
+  | { kind: 'sack'; blocks: ReadonlyArray<{ start: number; end: number }> }
   | { kind: 'timestamp'; tsVal: number; tsEcr: number }
   | { kind: 'nop' }
   | { kind: 'end' };
 
 export type TcpCloseReason = 'fin' | 'rst' | 'timeout' | 'shutdown';
 
+/**
+ * Minimal bidirectional-stream shape SSH/SFTP/SMB/WinRM code depends on —
+ * migrated here from the now-deleted `core/TcpConnection.ts` ghost class
+ * (PRD-TCP.md P9): that class was never instantiated in production (real
+ * traffic goes through `TcpSocket` in `TcpStack.ts`), only these two type
+ * definitions were actually used outside test doubles.
+ */
+export interface TcpStream {
+  readonly localIp: string;
+  readonly localPort: number;
+  readonly remoteIp: string;
+  readonly remotePort: number;
+  write(data: string): void;
+  close(): void;
+  onData(handler: (data: string) => void): () => void;
+  onClose?(handler: (reason: string) => void): () => void;
+}
+
+export interface TcpDialFailure {
+  readonly dialFailed: 'refused' | 'timeout';
+}
+
+export function isDialFailure(outcome: unknown): outcome is TcpDialFailure {
+  return typeof outcome === 'object' && outcome !== null && 'dialFailed' in outcome;
+}
+
+export type TcpConnector =
+  (host: string, port: number) => Promise<TcpStream | TcpDialFailure | null>;
+
+/**
+ * A sent segment that consumed sequence space (SYN, FIN, or data) and is
+ * awaiting an ACK that covers it — PRD-TCP.md P1. Pure ACKs/RSTs never
+ * enter this queue: real TCP never retransmits a bare ACK on its own.
+ */
+export interface UnackedSegment {
+  sequence: number;
+  length: number;
+  flags: TcpFlags;
+  payload: unknown;
+  /** SYN-specific options (mss/window-scale/sack-permitted/timestamp offer) that must be re-sent identically on every retransmission of this segment (PRD-TCP.md P6) — a retransmitted SYN missing them would silently break negotiation. */
+  extraOptions?: TcpOption[];
+  /** When this segment was first sent — Karn's algorithm (P4) only clock-samples RTT off a segment with `retransmitCount === 0`. */
+  firstSentAtMs: number;
+  retransmitCount: number;
+  /**
+   * PRD-TCP.md P6 (RFC 7323 §4.3, RTTM) — the timestamp value/send time of
+   * the *most recent* (re)transmission of this segment. When timestamps
+   * are negotiated, an ACK echoing `lastSentTsVal` unambiguously identifies
+   * which attempt it acknowledges, so RTT can be sampled even off a
+   * retransmitted segment — bypassing Karn's algorithm's restriction,
+   * which exists only because a plain cumulative ACK can't tell attempts
+   * apart.
+   */
+  lastSentTsVal?: number;
+  lastSentAtMs?: number;
+}
+
 export const TCP_DEFAULT_MSS = 1460;
 export const TCP_DEFAULT_WINDOW = 65535;
+
+/** Floor for Path MTU Discovery's MSS shrinkage (PRD-TCP.md P7) — real stacks never let a reported Next-Hop MTU drive MSS to something absurdly tiny. */
+export const TCP_MIN_MSS = 8;
 
 /** Maximum Segment Lifetime; TIME-WAIT lasts 2×MSL (RFC 9293 §3.4.1). */
 export const TCP_MSL_MS = 30_000;
@@ -63,28 +126,62 @@ export function seqLt(a: number, b: number): boolean {
   return ((a - b) >>> 0) > 0x7fffffff;
 }
 
-function pushIpWords(words: number[], ip: string): void {
-  const o = ip.split('.').map(Number);
-  words.push(((o[0] ?? 0) << 8) | (o[1] ?? 0), ((o[2] ?? 0) << 8) | (o[3] ?? 0));
+const IP_PROTO_TCP_NUMBER = 6;
+const IP_PROTO_UDP_NUMBER = 17;
+
+function pushPseudoHeader(
+  words: number[], srcIp: string, dstIp: string, protocol: number, l4Length: number,
+): void {
+  if (srcIp.includes(':') || dstIp.includes(':')) {
+    for (const ip of [srcIp, dstIp]) {
+      for (const hextet of new IPv6Address(ip).getHextets()) words.push(hextet & 0xffff);
+    }
+    words.push((l4Length >>> 16) & 0xffff, l4Length & 0xffff);
+    words.push(0x0000, protocol & 0xffff);
+    return;
+  }
+  for (const ip of [srcIp, dstIp]) {
+    const o = ip.split('.').map(Number);
+    words.push(((o[0] ?? 0) << 8) | (o[1] ?? 0), ((o[2] ?? 0) << 8) | (o[3] ?? 0));
+  }
+  words.push(protocol & 0xffff, l4Length & 0xffff);
 }
 
-/**
- * One's-complement checksum over the IPv4 pseudo-header + TCP header
- * + payload (RFC 9293 §3.1). The checksum field itself counts as 0.
- * Non-string payloads (structured sim objects) count as one byte.
- */
+export function payloadBytes(payload: unknown): number[] {
+  if (typeof payload === 'string') {
+    const bytes: number[] = [];
+    for (let i = 0; i < payload.length; i++) bytes.push(payload.charCodeAt(i) & 0xff);
+    return bytes;
+  }
+  if (payload instanceof Uint8Array) return Array.from(payload);
+  return [];
+}
+
+function pushBytesAsWords(words: number[], bytes: number[]): void {
+  for (let i = 0; i < bytes.length; i += 2) {
+    const hi = bytes[i] & 0xff;
+    const lo = i + 1 < bytes.length ? bytes[i + 1] & 0xff : 0;
+    words.push((hi << 8) | lo);
+  }
+}
+
+function onesComplement(words: number[]): number {
+  let sum = 0;
+  for (const w of words) {
+    sum += w;
+    sum = (sum & 0xffff) + (sum >>> 16);
+  }
+  return (~sum) & 0xffff;
+}
+
 export function computeTcpChecksum(
   seg: TcpSegment, srcIp: string, dstIp: string,
 ): number {
-  const payloadStr = typeof seg.payload === 'string'
-    ? seg.payload
-    : seg.payload === undefined ? '' : '';
-  const tcpLen = 20 + payloadStr.length;
+  const bytes = payloadBytes(seg.payload);
+  const tcpLen = 20 + bytes.length;
 
   const words: number[] = [];
-  pushIpWords(words, srcIp);
-  pushIpWords(words, dstIp);
-  words.push(0x0006, tcpLen & 0xffff);          // zero|proto, TCP length
+  pushPseudoHeader(words, srcIp, dstIp, IP_PROTO_TCP_NUMBER, tcpLen);
   words.push(seg.sourcePort & 0xffff, seg.destinationPort & 0xffff);
   words.push((seg.sequence >>> 16) & 0xffff, seg.sequence & 0xffff);
   words.push((seg.acknowledgement >>> 16) & 0xffff, seg.acknowledgement & 0xffff);
@@ -93,19 +190,31 @@ export function computeTcpChecksum(
     | (f.psh ? 8 : 0) | (f.ack ? 16 : 0) | (f.urg ? 32 : 0)
     | (f.ece ? 64 : 0) | (f.cwr ? 128 : 0);
   words.push(((seg.dataOffset & 0xf) << 12) | flagBits, seg.window & 0xffff);
-  words.push(0 /* checksum slot */, seg.urgentPointer & 0xffff);
-  for (let i = 0; i < payloadStr.length; i += 2) {
-    const hi = payloadStr.charCodeAt(i) & 0xff;
-    const lo = i + 1 < payloadStr.length ? payloadStr.charCodeAt(i + 1) & 0xff : 0;
-    words.push((hi << 8) | lo);
-  }
+  words.push(0, seg.urgentPointer & 0xffff);
+  pushBytesAsWords(words, bytes);
 
-  let sum = 0;
-  for (const w of words) {
-    sum += w;
-    sum = (sum & 0xffff) + (sum >>> 16);
-  }
-  return (~sum) & 0xffff;
+  return onesComplement(words);
+}
+
+export interface UdpChecksumInput {
+  sourcePort: number;
+  destinationPort: number;
+  payload: unknown;
+}
+
+export function computeUdpChecksum(
+  udp: UdpChecksumInput, srcIp: string, dstIp: string,
+): number {
+  const bytes = payloadBytes(udp.payload);
+  const udpLen = 8 + bytes.length;
+
+  const words: number[] = [];
+  pushPseudoHeader(words, srcIp, dstIp, IP_PROTO_UDP_NUMBER, udpLen);
+  words.push(udp.sourcePort & 0xffff, udp.destinationPort & 0xffff);
+  words.push(udpLen & 0xffff, 0);
+  pushBytesAsWords(words, bytes);
+
+  return onesComplement(words);
 }
 
 /**
@@ -118,6 +227,20 @@ export function verifyTcpChecksum(
 ): boolean {
   if (seg.checksum === 0) return true;
   return computeTcpChecksum(seg, srcIp, dstIp) === seg.checksum;
+}
+
+/**
+ * Verify a received datagram's checksum. A checksum of 0 is treated as
+ * "not computed" (RFC 768's IPv4 opt-out) and accepted — the many internal
+ * protocol agents (RIP, DHCP, IKE, SNMP, …) that build `UDPPacket`s with
+ * structured (non-byte) payloads still stamp `checksum: 0` and are
+ * unaffected by this check.
+ */
+export function verifyUdpChecksum(
+  udp: UdpChecksumInput & { checksum: number }, srcIp: string, dstIp: string,
+): boolean {
+  if (udp.checksum === 0) return true;
+  return computeUdpChecksum(udp, srcIp, dstIp) === udp.checksum;
 }
 
 export function flagsString(f: TcpFlags): string {

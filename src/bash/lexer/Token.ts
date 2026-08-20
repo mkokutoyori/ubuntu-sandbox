@@ -27,6 +27,8 @@ export enum TokenType {
   CMD_SUB = 'CMD_SUB',                   // $(command)
   CMD_SUB_BACKTICK = 'CMD_SUB_BACKTICK', // `command`
   ARITH_SUB = 'ARITH_SUB',              // $((expression))
+  PROC_SUB_IN = 'PROC_SUB_IN',           // <(command)
+  PROC_SUB_OUT = 'PROC_SUB_OUT',         // >(command)
 
   // Operators
   PIPE = 'PIPE',                         // |
@@ -34,6 +36,8 @@ export enum TokenType {
   OR_IF = 'OR_IF',                       // ||
   SEMI = 'SEMI',                         // ;
   DSEMI = 'DSEMI',                       // ;;
+  SEMI_AMP = 'SEMI_AMP',                 // ;&
+  DSEMI_AMP = 'DSEMI_AMP',               // ;;&
   AMP = 'AMP',                           // &
   NEWLINE = 'NEWLINE',                   // \n
 

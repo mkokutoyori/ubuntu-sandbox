@@ -85,16 +85,16 @@ describe('LinuxCommand — argument completion', () => {
 
   describe('arp host completion', () => {
     it('completes arp -d <TAB> with ARP cache entries', () => {
-      pc.addStaticARP('192.168.1.50', new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP('192.168.1.51', new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.50'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.51'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
       const c = pc.getCompletions('arp -d ');
       expect(c).toContain('192.168.1.50');
       expect(c).toContain('192.168.1.51');
     });
 
     it('filters arp -d 192.168.1.5<TAB>', () => {
-      pc.addStaticARP('192.168.1.50', new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
-      pc.addStaticARP('10.0.0.1', new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
+      pc.addStaticARP(new IPAddress('192.168.1.50'), new MACAddress('aa:bb:cc:dd:ee:01'), 'eth0');
+      pc.addStaticARP(new IPAddress('10.0.0.1'), new MACAddress('aa:bb:cc:dd:ee:02'), 'eth0');
       const c = pc.getCompletions('arp -d 192.168.1.5');
       expect(c).toContain('192.168.1.50');
       expect(c).not.toContain('10.0.0.1');
@@ -165,5 +165,65 @@ describe('LinuxCommand — argument completion on LinuxServer', () => {
   it('completes dhclient <TAB> with interface names on a server', () => {
     const c = server.getCompletions('dhclient ');
     expect(c).toContain('eth0');
+  });
+});
+
+describe('LinuxCommand — batch 1 argument completion (PRD item 5)', () => {
+  let pc: LinuxPC;
+
+  beforeEach(() => {
+    pc = new LinuxPC('linux-pc', 'PC1');
+  });
+
+  it('traceroute completes flags and -i completes interfaces', () => {
+    expect(pc.getCompletions('traceroute -n')).toContain('-n');
+    expect(pc.getCompletions('traceroute -i eth')).toContain('eth0');
+  });
+
+  it('ss completes its flags', () => {
+    const c = pc.getCompletions('ss -t');
+    expect(c).toContain('-t');
+    expect(pc.getCompletions('ss -')).toContain('-l');
+  });
+
+  it('tcpdump completes flags and -i completes interfaces', () => {
+    expect(pc.getCompletions('tcpdump -')).toContain('-i');
+    expect(pc.getCompletions('tcpdump -i et')).toContain('eth0');
+  });
+
+  it('nc completes its flags', () => {
+    const c = pc.getCompletions('nc -');
+    expect(c).toContain('-z');
+    expect(c).toContain('-l');
+  });
+
+  it('nmap completes scan-type flags', () => {
+    const c = pc.getCompletions('nmap -s');
+    expect(c).toContain('-sS');
+    expect(c).toContain('-sV');
+  });
+
+  it('curl completes its flags', () => {
+    expect(pc.getCompletions('curl -')).toContain('-I');
+    expect(pc.getCompletions('curl --he')).toContain('--head');
+  });
+
+  it('ip completes subcommands and verbs', () => {
+    const first = pc.getCompletions('ip a');
+    expect(first).toContain('addr');
+    expect(first).toContain('address');
+    expect(pc.getCompletions('ip route s')).toContain('show');
+    expect(pc.getCompletions('ip addr ')).toContain('show');
+  });
+
+  it('ip <obj> ... dev completes interface names', () => {
+    expect(pc.getCompletions('ip addr add 10.0.0.1/24 dev et')).toContain('eth0');
+  });
+
+  it('dig completes DNS record types in type position', () => {
+    const c = pc.getCompletions('dig example.com A');
+    expect(c).toContain('A');
+    expect(c).toContain('AAAA');
+    expect(pc.getCompletions('dig example.com M')).toContain('MX');
   });
 });

@@ -43,7 +43,7 @@ describe('CATALOG DATAFILECOPY — DEF-RMAN-16', () => {
     s.connect();
     const r = s.processLine("CATALOG DATAFILECOPY '/missing/file.dbf'");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_06004');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06004');
   });
 
   it('records an existing copy and emits CATALOG_UPDATED', () => {
@@ -67,7 +67,7 @@ describe('CATALOG BACKUPPIECE — DEF-RMAN-16', () => {
     s.connect();
     const r = s.processLine("CATALOG BACKUPPIECE '/missing/df.bkp'");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_06004');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_06004');
   });
 
   it('appends the piece to the catalog so LIST BACKUP sees it', () => {

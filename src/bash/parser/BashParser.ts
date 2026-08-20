@@ -38,7 +38,7 @@ import { ParserError } from './ParserError';
 import type {
   Program, CommandList, AndOrList, AndOrPart, Pipeline, Command,
   SimpleCommand, IfClause, ElifClause, ForClause, WhileClause, UntilClause,
-  CaseClause, CaseItem, FunctionDef, BraceGroup, Subshell,
+  CaseClause, CaseItem, CaseTerminator, FunctionDef, BraceGroup, Subshell,
   DoubleBracket, DBExpr, ArithmeticCommand, CStyleForClause,
   Word, Assignment, Redirection, RedirectionOp,
 } from './ASTNode';
@@ -94,6 +94,7 @@ export class BashParser {
     }
 
     commands.push(this.parseAndOrList());
+    this.markBackgroundIfAmp(commands);
 
     while (this.matchSeparator()) {
       this.skipNewlines();
@@ -103,9 +104,16 @@ export class BashParser {
         throw new Error(`bash: syntax error near unexpected token '${t.value}'`);
       }
       commands.push(this.parseAndOrList());
+      this.markBackgroundIfAmp(commands);
     }
 
     return makeCommandList(commands, pos);
+  }
+
+  private markBackgroundIfAmp(commands: AndOrList[]): void {
+    if (this.check(TokenType.AMP)) {
+      commands[commands.length - 1].background = true;
+    }
   }
 
   // ─── And/Or List (Grammar Rules 7-9) ──────────────────────────
@@ -128,6 +136,12 @@ export class BashParser {
 
   private parsePipeline(): Pipeline {
     const pos = this.peek().position;
+    let negated = false;
+    while (this.peek().type === TokenType.WORD && this.peek().value === '!'
+           && this.canStartCommand(this.peekAt(1))) {
+      negated = !negated;
+      this.advance();
+    }
     const commands: Command[] = [this.parseCommand()];
 
     while (this.check(TokenType.PIPE)) {
@@ -136,7 +150,20 @@ export class BashParser {
       commands.push(this.parseCommand());
     }
 
-    return makePipeline(commands, pos);
+    const pipeline = makePipeline(commands, pos);
+    if (negated) pipeline.negated = true;
+    return pipeline;
+  }
+
+  private canStartCommand(tok: Token | undefined): boolean {
+    if (!tok) return false;
+    return tok.type !== TokenType.NEWLINE
+      && tok.type !== TokenType.EOF
+      && tok.type !== TokenType.SEMI
+      && tok.type !== TokenType.AMP
+      && tok.type !== TokenType.PIPE
+      && tok.type !== TokenType.AND_IF
+      && tok.type !== TokenType.OR_IF;
   }
 
   // ─── Command (Grammar Rules 12-15) ────────────────────────────
@@ -369,15 +396,23 @@ export class BashParser {
     this.skipNewlines();
 
     let body: CommandList | null = null;
-    if (!this.check(TokenType.DSEMI) && !this.checkWord('esac')) {
+    if (!this.isCaseTerminator() && !this.checkWord('esac')) {
       body = this.parseCommandList();
     }
 
-    // Consume ;; if present
-    if (this.check(TokenType.DSEMI)) this.advance();
+    let terminator: CaseTerminator = ';;';
+    if (this.isCaseTerminator()) {
+      terminator = this.advance().value as CaseTerminator;
+    }
     this.skipNewlines();
 
-    return { patterns, body };
+    return { patterns, body, terminator };
+  }
+
+  private isCaseTerminator(): boolean {
+    return this.check(TokenType.DSEMI)
+      || this.check(TokenType.SEMI_AMP)
+      || this.check(TokenType.DSEMI_AMP);
   }
 
   // ─── Function Definition (Grammar Rules 59-62) ────────────────
@@ -504,11 +539,39 @@ export class BashParser {
     const opTok = this.peek();
     if (opTok && DB_BINARY_OPS.has(opTok.value)) {
       this.advance();
-      const rhs = this.parseWord();
+      const rhs = opTok.value === '=~' ? this.parseRegexOperand() : this.parseWord();
       return { kind: 'binary', op: opTok.value, lhs, rhs };
     }
     // Lone operand — truthy iff the expanded string is non-empty.
     return { kind: 'lit', word: lhs };
+  }
+
+  private static readonly REGEX_STOP_TOKENS = new Set([
+    TokenType.DRBRACKET, TokenType.AND_IF, TokenType.OR_IF,
+    TokenType.NEWLINE, TokenType.EOF,
+  ]);
+
+  private parseRegexOperand(): Word {
+    const pos = this.peek().position;
+    const parts: Word[] = [];
+    let first = true;
+    while (!this.isAtEnd()) {
+      const tok = this.peek();
+      if (BashParser.REGEX_STOP_TOKENS.has(tok.type)) break;
+      if (!first && !tok.adjacent) break;
+      first = false;
+      if (this.isWordToken()) {
+        parts.push(this.parseWordAtom());
+      } else {
+        parts.push(makeLiteralWord(tok.value, tok.position));
+        this.advance();
+      }
+    }
+    if (parts.length === 0) {
+      throw new ParserError('Expected a pattern after =~', pos);
+    }
+    if (parts.length === 1) return parts[0];
+    return { type: 'CompoundWord', parts, position: pos };
   }
 
   // ─── (( arithmetic command )) ────────────────────────────────
@@ -631,6 +694,10 @@ export class BashParser {
         return { type: 'CommandSubstitution', command: tok.value, backtick: true, position: pos };
       case TokenType.ARITH_SUB:
         return { type: 'ArithmeticSubstitution', expression: tok.value, position: pos };
+      case TokenType.PROC_SUB_IN:
+        return { type: 'ProcessSubstitution', direction: 'in', command: tok.value, position: pos };
+      case TokenType.PROC_SUB_OUT:
+        return { type: 'ProcessSubstitution', direction: 'out', command: tok.value, position: pos };
       case TokenType.NUMBER:
         return makeLiteralWord(tok.value, pos);
       case TokenType.ASSIGNMENT_WORD:
@@ -647,6 +714,13 @@ export class BashParser {
   }
 
   private parseBracedVar(content: string, pos: SourcePosition | undefined): Word {
+    const transform = content.match(/^(\w+)(@[a-zA-Z]+)$/);
+    if (transform) {
+      return {
+        type: 'VariableRef', name: transform[1], braced: true,
+        modifier: transform[2], position: pos,
+      };
+    }
     // ${VAR}, ${VAR:-default}, ${VAR:+alt}, ${VAR:=val}, ${#VAR}
     const modifierMatch = content.match(/^(\w+)(:-|:=|:\+|:|\+|-|=)(.*)$/);
     if (modifierMatch) {
@@ -659,6 +733,23 @@ export class BashParser {
       return {
         type: 'VariableRef', name: content.slice(1), braced: true,
         modifier: '#', position: pos,
+      };
+    }
+    const opMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*|[0-9]+)([#%/^,].*)$/s);
+    if (opMatch) {
+      return {
+        type: 'VariableRef', name: opMatch[1], braced: true,
+        modifier: opMatch[2], position: pos,
+      };
+    }
+    // `${arr[expr]}` and trailing-modifier chains (`[0]:-def`, `[@]:1:2`):
+    // carry the whole subscript-plus-tail as the modifier so the runtime's
+    // expandArrayAccess serves the unquoted path exactly like the quoted one.
+    const arrayMatch = content.match(/^([A-Za-z_][A-Za-z_0-9]*)(\[.+)$/s);
+    if (arrayMatch) {
+      return {
+        type: 'VariableRef', name: arrayMatch[1], braced: true,
+        modifier: arrayMatch[2], position: pos,
       };
     }
     return { type: 'VariableRef', name: content, braced: true, position: pos };
@@ -704,11 +795,6 @@ export class BashParser {
     if (rawValue) parts.push(makeLiteralWord(rawValue, pos));
     while (!this.isAtEnd() && this.peek().adjacent && this.isWordToken() && !this.isCompoundEnd()) {
       parts.push(this.parseWordAtom());
-    }
-    // Empty form `X=` followed by whitespace: also support `X=$VAR` where
-    // the value starts at the next (separated) word.
-    if (parts.length === 0 && this.isWordToken() && !this.isCompoundEnd()) {
-      parts.push(this.parseWord());
     }
     let value: Word | null = null;
     if (parts.length === 1) value = parts[0];
@@ -838,6 +924,7 @@ export class BashParser {
     return t === TokenType.WORD || t === TokenType.SINGLE_QUOTED || t === TokenType.DOUBLE_QUOTED
       || t === TokenType.VAR_SIMPLE || t === TokenType.VAR_BRACED || t === TokenType.VAR_SPECIAL
       || t === TokenType.CMD_SUB || t === TokenType.CMD_SUB_BACKTICK || t === TokenType.ARITH_SUB
+      || t === TokenType.PROC_SUB_IN || t === TokenType.PROC_SUB_OUT
       || t === TokenType.NUMBER || t === TokenType.ASSIGNMENT_WORD
       || t === TokenType.LBRACKET || t === TokenType.RBRACKET
       || t === TokenType.DLBRACKET || t === TokenType.DRBRACKET;
@@ -856,7 +943,8 @@ export class BashParser {
   private isCompoundEnd(): boolean {
     if (this.isAtEnd()) return false;
     const tok = this.peek();
-    if (tok.type === TokenType.RBRACE || tok.type === TokenType.RPAREN || tok.type === TokenType.DSEMI) {
+    if (tok.type === TokenType.RBRACE || tok.type === TokenType.RPAREN || tok.type === TokenType.DSEMI
+        || tok.type === TokenType.SEMI_AMP || tok.type === TokenType.DSEMI_AMP) {
       return true;
     }
     if (tok.type !== TokenType.WORD) return false;

@@ -111,12 +111,12 @@ describe('OracleDatabase — Centralized error codes', () => {
   });
 
   it('throws ORA-01017 on invalid credentials', () => {
-    db.instance.startup('OPEN');
+    db.instance.startup();
     expect(() => db.connect('SYS', 'wrong_password')).toThrow(ORACLE_ERRORS.ORA_01017);
   });
 
   it('connects successfully with valid credentials', () => {
-    db.instance.startup('OPEN');
+    db.instance.startup();
     const result = db.connect('SYS', 'oracle');
     expect(result.sid).toBeGreaterThanOrEqual(0);
     expect(result.executor).toBeDefined();
@@ -133,7 +133,7 @@ describe('OracleInstance — Centralized error codes', () => {
   });
 
   it('returns ORA-01081 when starting an already-running instance', () => {
-    instance.startup('OPEN');
+    instance.startup();
     const output = instance.startup();
     expect(output).toContain(ORACLE_ERRORS.ORA_01081);
   });
@@ -144,7 +144,7 @@ describe('OracleInstance — Centralized error codes', () => {
   });
 
   it('listener status contains ORACLE_CONFIG.PORT when running', () => {
-    instance.startup('OPEN');
+    instance.startup();
     instance.startListener();
     const status = instance.getListenerStatus();
     expect(status).toContain(String(ORACLE_CONFIG.PORT));
@@ -152,20 +152,20 @@ describe('OracleInstance — Centralized error codes', () => {
   });
 
   it('listener status contains TNS errors when stopped', () => {
-    instance.startup('OPEN');
+    instance.startup();
     const status = instance.getListenerStatus();
     expect(status).toContain(TNS_ERRORS.TNS_12541);
   });
 
   it('startListener returns TNS-01106 when already running', () => {
-    instance.startup('OPEN');
+    instance.startup();
     instance.startListener();
     const result = instance.startListener();
     expect(result).toContain(TNS_ERRORS.TNS_01106);
   });
 
   it('stopListener returns TNS-12541 when already stopped', () => {
-    instance.startup('OPEN');
+    instance.startup();
     const result = instance.stopListener();
     expect(result).toContain(TNS_ERRORS.TNS_12541);
   });
@@ -232,7 +232,7 @@ describe('OracleDatabase — PL/SQL error handling uses centralized codes', () =
 
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
   });
 
   it('division by zero error message matches ORA-01476 text', () => {
@@ -258,7 +258,7 @@ describe('OracleInstance — Paths reference ORACLE_CONFIG', () => {
 
   beforeEach(() => {
     instance = new OracleInstance();
-    instance.startup('OPEN');
+    instance.startup();
   });
 
   it('initOra content references SID from config', () => {

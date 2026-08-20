@@ -7,7 +7,7 @@ import type { Equipment } from '@/network/equipment/Equipment';
 import type { NATEngine } from '@/network/devices/router/NATEngine';
 import type { NatSessionVM, NatStatsVM } from '@/network/devices/router/nat/observables';
 
-const EMPTY_ARRAY: ReadonlyArray<never> = [];
+const EMPTY_ARRAY: ReadonlyArray<never> = [] as const;
 const EMPTY_STATS: NatStatsVM = {
   sessionCount: 0, hits: 0, misses: 0, expired: 0,
   inboundTranslations: 0, outboundTranslations: 0,

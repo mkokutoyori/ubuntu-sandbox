@@ -51,7 +51,7 @@ export class ValidateCommand implements IRmanCommand<void> {
         }
         // Confirm the set exists in the catalog before launching a job.
         const snap = catalog.listAll();
-        if (!snap.ok) return snap;
+        if (snap.ok === false) return snap;
         const found = snap.value.sets.find(s => s.bsKey === n);
         if (!found) {
           return err({ code: 'RMAN_06004', message: `RMAN-06004: backupset ${n} not found in catalog` });

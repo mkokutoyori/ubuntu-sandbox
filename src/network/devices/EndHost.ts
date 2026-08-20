@@ -20,9 +20,15 @@
 
 import { Equipment } from '../equipment/Equipment';
 import { Port } from '../hardware/Port';
+import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
+import type { TcpSegment, TcpDialFailure, UdpChecksumInput } from '../tcp/types';
+import { computeTcpChecksum, computeUdpChecksum, isDialFailure, verifyUdpChecksum } from '../tcp/types';
+import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
+import { PortNumber } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
+import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
@@ -58,19 +64,28 @@ import {
   buildICMPError,
   mayGenerateICMPError,
   ICMP_UNREACH_NET,
+  ICMP_UNREACH_HOST,
+  ICMP_UNREACH_PROTO,
   ICMP_UNREACH_PORT,
+  ICMP_UNREACH_NET_PROHIBITED,
+  ICMP_UNREACH_HOST_PROHIBITED,
   ICMP_UNREACH_ADMIN_PROHIBITED,
+  ICMP_UNREACH_FRAG_NEEDED,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   type ICMPErrorType,
 } from '../core/IcmpErrors';
+import { fragmentIPv4, IPv4Reassembler, IPV4_FLAG_DF } from '../core/Ipv4Fragmentation';
+import { isMulticastIpv4, ipv4MulticastToMac } from '../core/ip';
+import { DNS_PORT } from '../dns/transport/DnsUdpTransport';
+import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
+import type { DnsMessage } from '../dns/wire/DnsMessage';
 import {
-  UDP_PORT_DNS,
-  isDnsWireResponse,
   nextDnsTransactionId,
-  estimateDnsMessageSize,
-  type DnsWireQuery,
-  type DnsWireResponse,
-} from '../dns/DnsWire';
+  buildLegacyQueryMessage,
+} from '../dns/compat/DnsWireCompat';
+import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
+import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
+import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { HardwareProfile } from './host/hardware';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
@@ -78,18 +93,22 @@ import { DHCPClient } from '../dhcp/DHCPClient';
 import { DHCPPacket } from '../dhcp/DHCPPacket';
 import { WireDhcpChannel } from '../dhcp/DhcpServerChannel';
 import type { DHCPClientIfaceState } from '../dhcp/types';
-import type { DHCPServer } from '../dhcp/DHCPServer';
+import { DHCPv6Packet } from '../dhcpv6/DHCPv6Packet';
+import { IP_PROTO_GRE } from '../gre/types';
+import { IP_PROTO_IGMP } from '../igmp/types';
+import { IgmpHostAgent } from '../igmp/IgmpHostAgent';
+import { LldpAgent } from '../lldp/LldpAgent';
+import { ETHERTYPE_LLDP, LLDP_MULTICAST_MAC } from '../lldp/types';
+import type { LldpNeighbor } from '../lldp/LldpAgent';
+import { parseNatAddress, rewriteNatAddress } from '../nat/rewrite';
+
+export interface GreDecapsulator {
+  handleIp(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null;
+}
 
 // ─── Internal Types ────────────────────────────────────────────────
 
-export interface ARPEntry {
-  mac: MACAddress;
-  /** Interface on which this entry was learned */
-  iface: string;
-  timestamp: number;
-  /** Whether this entry was learned dynamically or added manually */
-  type: 'dynamic' | 'static';
-}
+export type { ARPEntry } from '../core/types';
 
 /** Linux reachable time default (RFC 4861 §10): 30 seconds */
 export const ARP_REACHABLE_TIME_MS = 30_000;
@@ -99,6 +118,7 @@ export const ARP_AGING_INTERVAL_MS = 5_000;
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
+  if (entry.type === 'failed') return 'FAILED';
   return Date.now() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
@@ -113,21 +133,44 @@ export interface PingResult {
   fromIP: string;
 }
 
+export interface TracerouteProbeResult {
+  responded: boolean;
+  rttMs?: number;
+  ip?: string;
+  unreachable?: boolean;
+  icmpCode?: number;
+}
+
+export interface TracerouteHopResult {
+  hop: number;
+  ip?: string;
+  rttMs?: number;
+  timeout: boolean;
+  unreachable?: boolean;
+  icmpCode?: number;
+  probes: TracerouteProbeResult[];
+}
+
 // ─── UDP socket layer (RFC 768) ──────────────────────────────────────
 
 /** A UDP datagram as delivered to a bound listener. */
 export interface UdpDelivery {
   /** Interface the datagram arrived on ('lo' for local delivery). */
   inPort: string;
-  sourceIP: IPAddress;
-  destinationIP: IPAddress;
+  sourceIP: IPAddress | IPv6Address;
+  destinationIP: IPAddress | IPv6Address;
   udp: UDPPacket;
+  /** Ethernet source MAC of the frame; undefined for loopback delivery. */
+  sourceMAC?: string;
 }
 
 /** Callback invoked for every datagram delivered to a bound UDP port. */
 export type UdpListener = (delivery: UdpDelivery) => void;
 
 // ─── IPv6 Neighbor Cache (RFC 4861) ─────────────────────────────────
+
+const ICMPV6_UNREACH_ADMIN_PROHIBITED = 1;
+const ICMPV6_UNREACH_PORT = 4;
 
 export type { NeighborState, NeighborCacheEntry } from './host/NeighborCache';
 
@@ -163,14 +206,69 @@ export interface HostRouteEntry {
   type: 'connected' | 'static' | 'default';
   /** Metric (lower = preferred when prefix lengths are equal) */
   metric: number;
+  /** Routing table this route belongs to; omitted/254 = main. */
+  table?: number;
+  /**
+   * The route's interface has no carrier. Linux keeps such a route in the
+   * table and flags it rather than withdrawing it — withdrawal is what
+   * taking the interface administratively down does. `ip route` renders
+   * the flag as a trailing `linkdown`.
+   */
+  linkdown?: boolean;
 }
 
+/** A policy-routing rule (`ip rule`): selects which table a lookup uses. */
+export interface HostPolicyRule {
+  priority: number;
+  fromNetwork?: IPAddress;
+  fromMask?: SubnetMask;
+  toNetwork?: IPAddress;
+  toMask?: SubnetMask;
+  fwmark?: number;
+  table: number;
+}
+
+/**
+ * Interfaces with no wire behind them. They never lose carrier, so the
+ * link-derived route rules must not touch their routes.
+ */
+function isVirtualHostInterface(name: string): boolean {
+  return /^(lo|dummy|tun|tap|gre|sit|br|bond|virbr|docker|veth)/i.test(name);
+}
+
+function pickBestRouteInTable(destInt: number, table: HostRouteEntry[]): HostRouteEntry | null {
+  let bestRoute: HostRouteEntry | null = null;
+  let bestPrefix = -1;
+  for (const route of table) {
+    const netInt = route.network.toUint32();
+    const maskInt = route.mask.toUint32();
+    const prefix = route.mask.toCIDR();
+    if ((destInt & maskInt) === (netInt & maskInt)) {
+      if (prefix > bestPrefix
+        || (prefix === bestPrefix && bestRoute && route.metric < bestRoute.metric)) {
+        bestPrefix = prefix;
+        bestRoute = route;
+      }
+    }
+  }
+  return bestRoute;
+}
+
+/** `--to-destination`/`--to-source` as iptables/ip6tables accept them: a bare "ip" or "ip:port". */
 // ─── EndHost ───────────────────────────────────────────────────────
 
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
   protected readonly socketTable: SocketTable = new SocketTable();
+
+  /**
+   * Les entrées `LISTEN` que le sink de `TcpStack` a posées lui-même.
+   * Il ne retire que celles-là : les `socketTable.bind()` manuels qui
+   * subsistent gardent exactement leur cycle de vie, si bien que cette
+   * passe ne peut faire disparaître aucune ligne de `ss`.
+   */
+  private readonly sinkOwnedListeners = new Set<string>();
 
   /** Bound UDP ports → datagram listeners (RFC 768 socket layer). */
   private readonly udpListeners: Map<number, UdpListener> = new Map();
@@ -206,12 +304,22 @@ export abstract class EndHost extends Equipment {
   /** In-flight ARP solicitations for forwarding — dedup signal for
    *  fwdQueueAndResolve (replaces the pendingARPs map after Phase 5.5). */
   private inFlightFwdARPs: Set<string> = new Set();
+  /** Reassembles fragments of datagrams addressed to this host (RFC 791 §3.2). */
+  private readonly ipv4Reassembler = new IPv4Reassembler();
   /** Monotonically increasing ICMP echo identifier */
   protected pingIdCounter: number = 0;
   /** Default gateway IP (set via `ip route add default via ...` or `route add`) */
   protected defaultGateway: IPAddress | null = null;
   /** Full routing table (connected + static + default) with LPM support */
   protected routingTable: HostRouteEntry[] = [];
+  /** Non-main routing tables (`ip route add ... table <ID>`), keyed by table ID. */
+  protected policyRoutingTables: Map<number, HostRouteEntry[]> = new Map();
+  /** Policy-routing rules (`ip rule`), sorted ascending by priority. */
+  protected policyRules: HostPolicyRule[] = [
+    { priority: 0, table: 255 },
+    { priority: 32766, table: 254 },
+    { priority: 32767, table: 253 },
+  ];
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
   protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
@@ -238,6 +346,16 @@ export abstract class EndHost extends Equipment {
   /** Whether IPv4 forwarding is enabled (sysctl net.ipv4.ip_forward=1) */
   protected ipForwardEnabled: boolean = false;
 
+  /** Set by subclasses that own a real GreAgent, to decapsulate inbound GRE. */
+  protected greAgent: GreDecapsulator | null = null;
+
+  /**
+   * Receiver-side IGMP (RFC 2236 §3). Lazily built so a host that never
+   * joins a group carries no multicast state at all.
+   */
+  private _igmpHostAgent: IgmpHostAgent | null = null;
+  private _lldpAgent: LldpAgent | null = null;
+
   /**
    * IPv4 host model (RFC 1122 §3.3.4.2).
    * - 'weak': accept packets destined to ANY local address, whatever the
@@ -251,6 +369,16 @@ export abstract class EndHost extends Equipment {
 
   /** Default TTL for outgoing packets (Linux=64, Windows=128) */
   protected abstract readonly defaultTTL: number;
+  protected abstract resolveHostForCommand(targetStr: string): Promise<IPAddress | null>;
+  /**
+   * IPv6 counterpart of `resolveHostForCommand` — default is a literal-only
+   * parse (matches the historical `ping6`/`ping -6` behavior). Overridden
+   * by `LinuxMachine` to also consult `/etc/hosts`/DNS via NSS, the same
+   * way the IPv4 path already does.
+   */
+  protected async resolveHost6ForCommand(targetStr: string): Promise<IPv6Address | null> {
+    try { return new IPv6Address(targetStr); } catch { return null; }
+  }
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
 
@@ -280,8 +408,179 @@ export abstract class EndHost extends Equipment {
   }
 
   /** Common host identity stamped on every `host.*` event. */
-  private hostRef() {
+  protected hostRef() {
     return { deviceId: this.id, hostname: this.hostname };
+  }
+
+  override setEventBus(bus: IEventBus | null): void {
+    super.setEventBus(bus);
+    if (this.hostSignalRefreshActor) this.attachHostActors();
+  }
+
+  // ─── IGMP (receiver side, RFC 2236 §3) ───────────────────────────
+
+  getIgmpHostAgent(): IgmpHostAgent {
+    if (!this._igmpHostAgent) {
+      this._igmpHostAgent = new IgmpHostAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.ports.get(n),
+        sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      }, () => this.getBus());
+    }
+    return this._igmpHostAgent;
+  }
+
+  // ─── LLDP (IEEE 802.1AB) ─────────────────────────────────────────
+
+  /**
+   * Un poste Linux parle LLDP comme n'importe quel équipement du LAN :
+   * c'est ce qui lui permet de découvrir le commutateur auquel il est
+   * câblé, et c'est ce que `networkctl lldp` affiche. Le moteur est le
+   * même que celui des switches et des routeurs, seul l'hôte change
+   * (`docs/PRD-networkctl.md` §7).
+   */
+  getLldpAgent(): LldpAgent {
+    if (!this._lldpAgent) {
+      this._lldpAgent = new LldpAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getType: () => this.getType(),
+        getPort: (n: string) => this.ports.get(n),
+        getPorts: () => [...this.ports.values()],
+        sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
+      } as never, () => this.getBus());
+      // networkd écoute par défaut (`LLDP=yes`) mais n'émet pas
+      // (`EmitLLDP=no`) : un poste voit le commutateur auquel il est
+      // câblé sans rien configurer, et n'encombre pas le LAN pour autant.
+      // C'est l'inverse du défaut Cisco, où `lldp run` ouvre les deux.
+      // L'émission se coupe AVANT l'activation : `setEnabled(true)` annonce
+      // immédiatement, et une annonce partie ne se rattrape pas.
+      for (const port of this.ports.values()) {
+        this._lldpAgent.setPortTransmit(port.getName(), false);
+      }
+      this._lldpAgent.setEnabled(true);
+      this._lldpAgent.start();
+    }
+    return this._lldpAgent;
+  }
+
+  /** `EmitLLDP=` de systemd.network(5) — l'hôte annonce sa présence. */
+  setLldpEmission(on: boolean): void {
+    const agent = this.getLldpAgent();
+    for (const port of this.ports.values()) agent.setPortTransmit(port.getName(), on);
+    if (on) agent.advertiseAll('config-change');
+  }
+
+  /** Voisins LLDP, tous ports confondus ou sur un seul. */
+  getLldpNeighbors(iface?: string): LldpNeighbor[] {
+    const agent = this.getLldpAgent();
+    return iface ? agent.getNeighborsOnPort(iface) : agent.getNeighbors();
+  }
+
+  /**
+   * Join an IPv4 multicast group on an interface — the real receiver-side
+   * action, emitting a genuine Membership Report on the wire.
+   */
+  joinMulticastGroup(iface: string, group: string): boolean {
+    return this.getIgmpHostAgent().join(iface, group);
+  }
+
+  leaveMulticastGroup(iface: string, group: string): boolean {
+    return this.getIgmpHostAgent().leave(iface, group);
+  }
+
+  listMulticastGroups(iface?: string): Array<{ iface: string; group: string }> {
+    const all = this.getIgmpHostAgent().listMemberships();
+    return (iface ? all.filter(m => m.iface === iface) : all)
+      .map(({ iface: i, group }) => ({ iface: i, group }));
+  }
+
+  /**
+   * Les groupes IPv6 auxquels chaque interface est abonnée.
+   *
+   * IPv6 n'a pas d'IGMP : l'équivalent est MLD (RFC 2710/3810), qui
+   * n'existe pas ici. L'appartenance est donc tenue localement — ce qui
+   * suffit à la RÉCEPTION, seul rôle qu'elle joue tant qu'aucun
+   * commutateur ne fait de MLD snooping. Un routeur qui parle OSPFv3
+   * s'abonne ainsi à `ff02::5`, exactement comme un vrai.
+   */
+  private ipv6Groups = new Map<string, Set<string>>();
+
+  joinIPv6Group(iface: string, group: string): boolean {
+    let g: IPv6Address;
+    try { g = new IPv6Address(group); } catch { return false; }
+    if (!g.isMulticast()) return false;
+    if (!this.ports.has(iface)) return false;
+    const cle = g.toString();
+    const set = this.ipv6Groups.get(iface) ?? new Set<string>();
+    set.add(cle);
+    this.ipv6Groups.set(iface, set);
+    return true;
+  }
+
+  leaveIPv6Group(iface: string, group: string): boolean {
+    let g: IPv6Address;
+    try { g = new IPv6Address(group); } catch { return false; }
+    return this.ipv6Groups.get(iface)?.delete(g.toString()) ?? false;
+  }
+
+  listIPv6Groups(iface?: string): Array<{ iface: string; group: string }> {
+    const out: Array<{ iface: string; group: string }> = [];
+    for (const [i, set] of this.ipv6Groups) {
+      if (iface && i !== iface) continue;
+      for (const group of set) out.push({ iface: i, group });
+    }
+    return out;
+  }
+
+  protected isJoinedIPv6Group(iface: string, group: IPv6Address): boolean {
+    return this.ipv6Groups.get(iface)?.has(group.toString()) ?? false;
+  }
+
+  /**
+   * Send to an IPv6 group — what this stack was missing.
+   *
+   * `sendUdpDatagram6` resolved the next hop by NDP, which can never
+   * succeed for `ff02::5`: a group has no neighbour to solicit. The
+   * Ethernet destination DERIVES from the address (RFC 2464 §7), as on
+   * the IPv4 side.
+   *
+   * The send happens on EVERY operational link carrying an address — a
+   * group has no route — and the hop limit is 1 for link scope.
+   */
+  public sendIPv6ToGroup(
+    group: IPv6Address,
+    protocol: number,
+    payload: unknown,
+    payloadLength: number,
+    iface?: string,
+  ): boolean {
+    if (!group.isMulticast()) return false;
+    const dstMAC = group.toMulticastMAC();
+    // A GROUP's scope is its second nibble (RFC 4291 §2.7), not the
+    // `fe80::/10` prefix: `isLinkLocal()` is false for `ff02::5`.
+    const onLink = group.isLinkLocalScopeMulticast();
+    const hopLimit = onLink ? 1 : this.defaultHopLimit;
+    let sent = false;
+    for (const [name, port] of this.ports) {
+      if (name === 'lo') continue;
+      if (iface && name !== iface) continue;
+      if (!port.isOperationallyUp() || !port.isIPv6Enabled()) continue;
+      // A packet to a link-scoped group sources from the interface's
+      // link-local address: that is what the neighbour replies to.
+      const srcIP = onLink
+        ? (port.getLinkLocalIPv6() ?? port.getGlobalIPv6())
+        : (port.getGlobalIPv6() ?? port.getLinkLocalIPv6());
+      if (!srcIP) continue;
+      const ipPkt = createIPv6Packet(srcIP, group, protocol, hopLimit, payload, payloadLength);
+      if (this.firewallFilter6(name, ipPkt, 'out') !== 'accept') continue;
+      this.sendFrame(name, {
+        srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+      sent = true;
+    }
+    return sent;
   }
 
   /** Attach (or rebind) the host signal-refresh actor to the current bus. */
@@ -319,7 +618,7 @@ export abstract class EndHost extends Equipment {
     const now = Date.now();
     let purged = false;
     for (const [ip, entry] of this.arpTable) {
-      if (entry.type === 'static') continue;
+      if (entry.type !== 'failed') continue;
       if (now - entry.timestamp > ARP_GC_STALE_TIME_MS) {
         this.arpTable.delete(ip);
         purged = true;
@@ -496,16 +795,42 @@ export abstract class EndHost extends Equipment {
       getPorts: () => this.getPorts(),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveMac: (nextHopIp: string) => this.arpTable.get(nextHopIp)?.mac ?? null,
+      resolveRoute: (targetIp: string) => {
+        const addr = IPAddress.tryParse(targetIp);
+        if (!addr) return null;
+        const r = this.resolveRoute(addr);
+        if (!r) return null;
+        return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
+      },
+      resolveMac6: (nextHopIp: string) => this.neighborCache.get(nextHopIp)?.mac ?? null,
+      resolveRoute6: (targetIp: string) => {
+        const r = this.resolveIPv6Route(new IPv6Address(targetIp));
+        if (!r) return null;
+        return { iface: r.port.getName(), nextHopIp: r.nextHopIP.toString() };
+      },
+      localAddress6: (iface: string, remoteIp: string) => {
+        const port = this.getPort(iface);
+        if (!port) return null;
+        const src = new IPv6Address(remoteIp).isLinkLocal()
+          ? port.getLinkLocalIPv6()
+          : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+        return src ? src.toString() : null;
+      },
+      sendIpv4FrameArpAware: (outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) =>
+        this.sendIpv4FrameArpAware(outPortName, ipPkt, nextHopIP),
+      sendIpv6FrameNdpAware: (outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address) =>
+        this.sendIpv6FrameNdpAware(outPortName, ipPkt, nextHopIP),
     };
-    this.tcpv2 = new TcpStack(hostBase, () => this.getBus());
+    this.tcpv2 = new TcpStack(hostBase, () => this.getBus(), () => this.getScheduler());
     this.tcpv2.start();
+    this.attachListenerProjection();
     this.hardware = HardwareProfile.defaultFor(
       String(type).includes('server') ? 'server' : 'workstation',
     );
     this.lifecycle = new HostLifecycle();
     this.lifecycle.attachBus(this.getBus(), this.id, name);
     this.identity = String(type).includes('windows')
-      ? SystemIdentity.windows()
+      ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())
       : SystemIdentity.ubuntu();
     this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
@@ -514,9 +839,14 @@ export abstract class EndHost extends Equipment {
         const port = this.ports.get(iface);
         return port ? port.getMAC().toString() : '00:00:00:00:00:00';
       },
-      (iface: string, ip: string, mask: string, gateway: string | null) => {
-        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask));
-        if (gateway) this.setDefaultGateway(new IPAddress(gateway));
+      (iface: string, ip: string, mask: string, gateway: string | null, origin: IPv4AddressOrigin = 'dhcp') => {
+        this.configureInterface(iface, new IPAddress(ip), new SubnetMask(mask), origin);
+        // A configuration that carries no router option — APIPA, or a pool
+        // without `default-router` — takes the DHCP-installed gateway away
+        // with it. A gateway the operator set by hand is not the client's
+        // to remove.
+        if (gateway) this.setDefaultGateway(new IPAddress(gateway), 'dhcp');
+        else if (this.defaultGatewayOrigin === 'dhcp') this.clearDefaultGateway();
         this.dhcpInterfaces.add(iface);
         this.onDhcpLeaseConfigured(iface);
       },
@@ -528,12 +858,25 @@ export abstract class EndHost extends Equipment {
           r => !(r.type === 'connected' && r.iface === iface)
         );
         this.defaultGateway = null;
+        this.defaultGatewayOrigin = null;
         this.routingTable = this.routingTable.filter(r => r.type !== 'default');
         this.dhcpInterfaces.delete(iface);
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setEventBus(this.getBus());
     this.dhcpClient.setWireChannelFactory((iface) => this.getDhcpWireChannel(iface));
+    this.dhcpClient.setServerObservationRecorder((iface, serverIp, serverMac) => {
+      if (!serverMac || serverIp === '0.0.0.0') return;
+      try {
+        this.arpTable.set(serverIp, {
+          mac: new MACAddress(serverMac),
+          iface,
+          timestamp: Date.now(),
+          type: 'dynamic',
+        });
+      } catch { /* malformed MAC */ }
+    });
   }
 
   private dhcpWireChannels = new Map<string, WireDhcpChannel>();
@@ -560,12 +903,21 @@ export abstract class EndHost extends Equipment {
     this.udpListeners.set(68, (dgram) => {
       const pkt = dgram.udp.payload;
       if (pkt instanceof DHCPPacket) {
-        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt);
+        this.dhcpWireChannels.get(dgram.inPort)?.deliver(pkt, dgram.sourceMAC);
       }
     });
   }
 
   protected onDhcpLeaseConfigured(_iface: string): void {}
+
+  /**
+   * The v6 counterpart of the hook above. The DHCPv6 client read only
+   * the address from its REPLY, so the name servers and domain it
+   * carried were dropped on arrival.
+   */
+  protected onDhcpv6LeaseConfigured(
+    _iface: string, _dnsServers: readonly string[], _domainName: string | null,
+  ): void {}
 
   private sendWireDhcpFrame(iface: string, pkt: DHCPPacket): void {
     const port = this.ports.get(iface);
@@ -586,6 +938,132 @@ export abstract class EndHost extends Equipment {
   }
 
   protected onDhcpLeaseReleased(_iface: string): void {}
+
+  // ─── DHCPv6 client (RFC 8415) ─────────────────────────────────
+  // A one-shot SOLICIT->ADVERTISE->REQUEST->REPLY exchange rather than a
+  // full stateful FSM (no RENEW/REBIND background timers) — enough for a
+  // client to obtain a real, wire-negotiated address from a DHCPv6Server.
+  private dhcpv6Inbox: Map<string, DHCPv6Packet[]> = new Map();
+  private dhcpv6XidCounter = 1;
+
+  private ensureDhcpv6Udp546Listener(): void {
+    if (this.udpListeners.has(546)) return;
+    this.udpListeners.set(546, (dgram) => {
+      const pkt = dgram.udp.payload;
+      if (pkt instanceof DHCPv6Packet) {
+        const box = this.dhcpv6Inbox.get(dgram.inPort) ?? [];
+        box.push(pkt);
+        this.dhcpv6Inbox.set(dgram.inPort, box);
+      }
+    });
+  }
+
+  private buildDhcpv6ClientDuid(iface: string): string {
+    return `00:03:00:01:${this.ports.get(iface)!.getMAC().toString()}`;
+  }
+
+  private sendDhcpv6Frame(iface: string, pkt: DHCPv6Packet): void {
+    const port = this.ports.get(iface);
+    const srcIp = port?.getLinkLocalIPv6();
+    if (!port || !srcIp) return;
+    const dst = new IPv6Address('ff02::1:2');
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort: 546, destinationPort: 547, length: 8 + 300, checksum: 0, payload: pkt,
+    };
+    const ipPkt = createIPv6Packet(srcIp, dst, IP_PROTO_UDP, 1, udp, 8 + 300);
+    this.sendFrame(iface, {
+      srcMAC: port.getMAC(), dstMAC: dst.toMulticastMAC(), etherType: ETHERTYPE_IPV6, payload: ipPkt,
+    });
+  }
+
+  /**
+   * Fetch a DHCPv6 lease because an advertisement asked for one. Skipped
+   * when the interface already holds one: an advertisement arrives on
+   * every solicitation and every link-up.
+   */
+  private requestDhcpv6LeaseIfNeeded(iface: string): void {
+    const port = this.ports.get(iface);
+    if (!port) return;
+    if (port.getIPv6Addresses().some((e) => e.origin === 'dhcpv6')) return;
+    try { this.requestDhcpv6Lease(iface); } catch { /* pas de serveur : on reste sans bail */ }
+  }
+
+  /** Fetch the other configuration once per interface, for the O flag. */
+  private requestDhcpv6InfoIfNeeded(iface: string): void {
+    if (this.dhcpv6InfoRequested.has(iface)) return;
+    this.dhcpv6InfoRequested.add(iface);
+    try { this.requestDhcpv6Information(iface); } catch { this.dhcpv6InfoRequested.delete(iface); }
+  }
+
+  private dhcpv6InfoRequested = new Set<string>();
+
+  /**
+   * Stateless DHCPv6: INFORMATION-REQUEST → REPLY (RFC 8415 §18.2.6).
+   * No IA and no lease — the client asks for no address and the server
+   * retains nothing.
+   */
+  requestDhcpv6Information(iface: string, verbose = false): string {
+    const port = this.ports.get(iface);
+    if (!port) return verbose ? `${iface}: no such interface` : '';
+    if (!port.isIPv6Enabled()) port.enableIPv6();
+    this.ensureDhcpv6Udp546Listener();
+
+    const clientDuid = this.buildDhcpv6ClientDuid(iface);
+    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+    const lines: string[] = [];
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createInformationRequest(clientDuid, xid));
+    if (verbose) lines.push('DHCPv6 INFORMATION-REQUEST');
+
+    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === xid);
+    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+
+    if (verbose) {
+      lines.push(reply.dnsServers.length > 0
+        ? `DHCPv6 REPLY with nameserver ${reply.dnsServers.join(', ')}`
+        : 'DHCPv6 REPLY with no configuration');
+    }
+    this.onDhcpv6LeaseConfigured(iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
+    return lines.join('\n');
+  }
+
+  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY. Returns a verbose transcript, or '' on failure/no verbose. */
+  requestDhcpv6Lease(iface: string, verbose = false): string {
+    const port = this.ports.get(iface);
+    if (!port) return verbose ? `${iface}: no such interface` : '';
+    if (!port.isIPv6Enabled()) port.enableIPv6();
+    this.ensureDhcpv6Udp546Listener();
+
+    const clientDuid = this.buildDhcpv6ClientDuid(iface);
+    const iaid = 1;
+    const xid = (this.dhcpv6XidCounter = (this.dhcpv6XidCounter + 1) & 0xffffff);
+    const lines: string[] = [];
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createSolicit(clientDuid, iaid, xid));
+    if (verbose) lines.push('DHCPv6 SOLICIT');
+    const advertise = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'ADVERTISE' && p.transactionId === xid && p.ia?.addresses[0]);
+    if (!advertise) return verbose ? [...lines, 'No DHCPv6 ADVERTISE received'].join('\n') : '';
+    if (verbose) lines.push(`DHCPv6 ADVERTISE of ${advertise.ia!.addresses[0].address}`);
+
+    this.dhcpv6Inbox.set(iface, []);
+    this.sendDhcpv6Frame(iface, DHCPv6Packet.createRequest(
+      clientDuid, advertise.serverDuid!, iaid, advertise.ia!.addresses[0].address, xid));
+    if (verbose) lines.push('DHCPv6 REQUEST');
+    const reply = (this.dhcpv6Inbox.get(iface) ?? [])
+      .find(p => p.msgType === 'REPLY' && p.transactionId === xid && p.ia?.addresses[0]);
+    if (!reply) return verbose ? [...lines, 'No DHCPv6 REPLY received'].join('\n') : '';
+
+    const lease = reply.ia!.addresses[0];
+    port.addDHCPv6Address(new IPv6Address(lease.address), 64);
+    if (verbose) lines.push(`DHCPv6 REPLY of ${lease.address}`);
+    this.onDhcpv6LeaseConfigured(
+      iface, reply.dnsServers ?? [], reply.domainList?.[0] ?? null);
+    return lines.join('\n');
+  }
 
   // ─── Hardware inventory ─────────────────────────────────────────
 
@@ -637,11 +1115,11 @@ export abstract class EndHost extends Equipment {
   /**
    * Configure an IP on an interface. Automatically adds a connected route.
    */
-  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask): boolean {
+  configureInterface(ifName: string, ip: IPAddress, mask: SubnetMask, origin: IPv4AddressOrigin = 'manual'): boolean {
     const port = this.ports.get(ifName);
     if (!port) return false;
 
-    port.configureIP(ip, mask);
+    port.configureIP(ip, mask, origin);
 
     // Remove old connected route for this interface
     this.routingTable = this.routingTable.filter(
@@ -662,24 +1140,79 @@ export abstract class EndHost extends Equipment {
     Logger.info(this.id, 'host:interface-config',
       `${this.name}: ${ifName} configured ${ip}/${mask.toCIDR()}`);
 
+    this.getBus().publish({
+      topic: 'host.address.changed',
+      payload: { ...this.hostRef(), iface: ifName, ip: ip.toString(), cidr: mask.toCIDR(), added: true },
+    });
+
     // Send gratuitous ARP (RFC 5227) to announce new IP and update neighbors' caches
-    if (port.isConnected()) {
-      const gratuitousARP: ARPPacket = {
-        type: 'arp',
-        operation: 'request',
-        senderMAC: port.getMAC(),
-        senderIP: ip,
-        targetMAC: MACAddress.broadcast(),
-        targetIP: ip,
-      };
-      this.sendFrame(ifName, {
-        srcMAC: port.getMAC(),
-        dstMAC: MACAddress.broadcast(),
-        etherType: ETHERTYPE_ARP,
-        payload: gratuitousARP,
+    this.sendGratuitousArp(ifName, ip, 'request');
+
+    return true;
+  }
+
+  /**
+   * Broadcast an unsolicited ARP announcement for `ip` on `ifName` — RFC 5227
+   * gratuitous ARP. `mode` picks the wire opcode: 'request' is the common
+   * convention (used automatically by {@link configureInterface}); 'reply'
+   * matches real `arping -A`, which announces via an unsolicited ARP REPLY
+   * instead. Returns false if the interface has no cable attached.
+   */
+  sendGratuitousArp(ifName: string, ip: IPAddress, mode: 'request' | 'reply' = 'request'): boolean {
+    const port = this.ports.get(ifName);
+    if (!port || !port.isConnected()) return false;
+    const gratuitousARP: ARPPacket = {
+      type: 'arp',
+      operation: mode,
+      senderMAC: port.getMAC(),
+      senderIP: ip,
+      targetMAC: MACAddress.broadcast(),
+      targetIP: ip,
+    };
+    this.sendFrame(ifName, {
+      srcMAC: port.getMAC(),
+      dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP,
+      payload: gratuitousARP,
+    });
+    Logger.info(this.id, 'arp:gratuitous',
+      `${this.name}: gratuitous ARP ${mode} for ${ip} on ${ifName}`);
+    return true;
+  }
+
+  /**
+   * Remove the IPv4 configuration from an interface: clears the address
+   * AND drops the connected route {@link configureInterface} added, so the
+   * routing table stops advertising a network the interface no longer owns.
+   *
+   * Mirror of {@link configureInterface}. Every "remove address" path —
+   * `netsh interface ip delete address` (cmd) and `Remove-NetIPAddress`
+   * (PowerShell) — must funnel through here so both shells observe the same
+   * routing table (single source of truth). Previously these paths only
+   * called `port.clearIP()`, leaving a stale `connected` route behind that
+   * `route print` and `Get-NetRoute` both kept showing after the IP was gone.
+   */
+  unconfigureInterface(ifName: string): boolean {
+    const port = this.ports.get(ifName);
+    if (!port) return false;
+
+    const oldIP = port.getIPAddress();
+    const oldMask = port.getSubnetMask();
+    port.clearIP();
+
+    // Drop the connected route this interface contributed.
+    this.routingTable = this.routingTable.filter(
+      r => !(r.type === 'connected' && r.iface === ifName)
+    );
+
+    if (oldIP) {
+      Logger.info(this.id, 'host:interface-config',
+        `${this.name}: ${ifName} address cleared`);
+      this.getBus().publish({
+        topic: 'host.address.changed',
+        payload: { ...this.hostRef(), iface: ifName, ip: oldIP.toString(),
+                   cidr: oldMask?.toCIDR() ?? 0, added: false },
       });
-      Logger.info(this.id, 'arp:gratuitous',
-        `${this.name}: gratuitous ARP for ${ip} on ${ifName}`);
     }
 
     return true;
@@ -689,10 +1222,18 @@ export abstract class EndHost extends Equipment {
 
   getDefaultGateway(): IPAddress | null { return this.defaultGateway; }
 
-  setDefaultGateway(gw: IPAddress): void {
-    this.defaultGateway = gw;
+  /**
+   * Who installed the current default gateway. The DHCP client owns the one
+   * it installed and takes it back when the lease stops carrying a router
+   * option; everything else is the operator's and survives.
+   */
+  protected defaultGatewayOrigin: 'static' | 'dhcp' | null = null;
 
-    // Remove old default route and add new one
+  setDefaultGateway(gw: IPAddress, origin: 'static' | 'dhcp' = 'static'): void {
+    this.defaultGateway = gw;
+    this.defaultGatewayOrigin = origin;
+
+    const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
 
     // Find the interface the gateway is reachable through
@@ -716,17 +1257,72 @@ export abstract class EndHost extends Equipment {
     });
 
     Logger.info(this.id, 'host:gateway', `${this.name}: default gateway set to ${gw}`);
+
+    const unchanged = previousDefault !== undefined
+      && previousDefault.nextHop?.equals(gw) === true
+      && previousDefault.iface === gwIface;
+    if (unchanged) return;
+    if (previousDefault) {
+      this.emitRouteRemoved({
+        destination: '0.0.0.0', mask: '0.0.0.0', iface: previousDefault.iface,
+      });
+    }
+    this.emitRouteAdded({
+      destination: '0.0.0.0', mask: '0.0.0.0',
+      gateway: gw.toString(), iface: gwIface, metric: 0, type: 'default',
+    });
   }
 
   clearDefaultGateway(): void {
     this.defaultGateway = null;
+    this.defaultGatewayOrigin = null;
+    const previousDefault = this.routingTable.find(r => r.type === 'default');
     this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+    if (previousDefault) {
+      this.emitRouteRemoved({
+        destination: '0.0.0.0', mask: '0.0.0.0', iface: previousDefault.iface,
+      });
+    }
   }
 
   // ─── DHCP Client API ──────────────────────────────────────────
 
   /** Expose the per-device socket table (used by netstat/ss commands). */
   getSocketTable(): SocketTable { return this.socketTable; }
+
+  /** `TftpEndpoint` — the one member the port needs that reaching through `getSocketTable()` would have made a two-step. */
+  allocateEphemeralPort(): number { return this.socketTable.allocateEphemeralPort(); }
+
+  /**
+   * docs/PRD-Sockets-Une-Seule-Verite.md §P1 — une écoute réelle
+   * s'inscrit d'elle-même dans la table que lisent `ss`, `netstat`,
+   * `lsof`, `/proc/net/tcp` et `nmap`.
+   *
+   * Deux tables, deux clés : `TcpStack` clave par `ip:port`,
+   * `SocketTable` par `protocole:famille:port` — l'adresse n'entre pas
+   * dans la sienne. Deux écoutes sur le même port et des adresses
+   * différentes sont donc légales pour l'une et `EADDRINUSE` pour
+   * l'autre ; on consulte avant de lier, et on se tait plutôt que de
+   * lever.
+   */
+  private attachListenerProjection(): void {
+    this.tcpv2.attachSocketSink({
+      announce: (localIp, localPort, identity) => {
+        const family = localIp.includes(':') ? 'v6' : 'v4';
+        if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
+        try {
+          this.socketTable.bind(
+            'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
+          );
+          this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
+        } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
+      },
+      withdraw: (localIp, localPort) => {
+        if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
+        this.socketTable.unbind('tcp', localIp, localPort);
+      },
+    });
+  }
 
   getDHCPClient(): DHCPClient { return this.dhcpClient; }
 
@@ -756,71 +1352,22 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * Auto-discover DHCP servers reachable through the network topology.
-   * Traverses cables and switches to find Routers with DHCP servers,
-   * and falls back to scanning all Equipment instances (simulator convenience).
+   * Kept as the entry point `dhclient` / `ipconfig /renew` call before a
+   * lease request, but it no longer discovers anything: a client finds
+   * its server by the broadcast DISCOVER it puts on the wire, and a
+   * server several L3 hops away by the relay agent that unicasts that
+   * DISCOVER to its `ip helper-address`. Both are real frame paths.
+   *
+   * It used to walk the global equipment registry instead — resolving
+   * the cabled neighbour, then every helper address, then (for an
+   * uncabled host) every device in the simulation — and hand the client
+   * a direct object handle to the server. That let a client hold a lease
+   * from a server it had no physical path to.
+   *
+   * docs/PRD-Frame-Only-Refactor.md P5.
    */
   autoDiscoverDHCPServers(): void {
     this.dhcpClient.clearServers();
-    const visited = new Set<string>();
-
-    // Helper: check if an Equipment is a Router with a DHCP server
-    const tryRegisterRouter = (equip: Equipment) => {
-      if (visited.has(equip.getId())) return;
-      visited.add(equip.getId());
-      // Use duck-typing to check for getDHCPServer method (avoids circular import of Router)
-      const router = equip as any;
-      if (typeof router.getDHCPServer === 'function') {
-        const dhcpServer: DHCPServer = router.getDHCPServer();
-        if (dhcpServer && dhcpServer.isEnabled()) {
-          // Find a configured IP on the router to use as server identifier
-          const routerPorts = equip.getPorts();
-          let serverIP = '0.0.0.0';
-          for (const rPort of routerPorts) {
-            const ip = rPort.getIPAddress();
-            if (ip) { serverIP = ip.toString(); break; }
-          }
-          this.dhcpClient.registerServer(dhcpServer, serverIP);
-        }
-      }
-    };
-
-    // Strategy 1: Traverse physical topology from our ports
-    for (const [, port] of this.ports) {
-      const cable = port.getCable();
-      if (!cable) continue;
-      const remotePort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
-      if (!remotePort) continue;
-      const remoteId = remotePort.getEquipmentId();
-      const remoteEquip = Equipment.getById(remoteId);
-      if (!remoteEquip) continue;
-
-      // Direct connection to a Router
-      tryRegisterRouter(remoteEquip);
-
-      // If connected to a Switch, traverse through the switch's other ports
-      const remoteType = remoteEquip.getDeviceType();
-      if (remoteType.includes('switch')) {
-        for (const swPort of remoteEquip.getPorts()) {
-          if (swPort === remotePort) continue; // Skip the port we came from
-          const swCable = swPort.getCable();
-          if (!swCable) continue;
-          const farPort = swCable.getPortA() === swPort ? swCable.getPortB() : swCable.getPortA();
-          if (!farPort) continue;
-          const farId = farPort.getEquipmentId();
-          const farEquip = Equipment.getById(farId);
-          if (farEquip) tryRegisterRouter(farEquip);
-        }
-      }
-    }
-
-    // Strategy 2: Fallback — scan all Equipment instances (for tests without cables)
-    if (this.dhcpClient['connectedServers'].length === 0) {
-      for (const equip of Equipment.getAllEquipment()) {
-        if (equip === this) continue;
-        tryRegisterRouter(equip);
-      }
-    }
   }
 
   // ─── Routing Table Management ──────────────────────────────────
@@ -859,6 +1406,23 @@ export abstract class EndHost extends Equipment {
 
     Logger.info(this.id, 'host:route-add',
       `${this.name}: static route ${network}/${mask.toCIDR()} via ${nextHop} metric ${metric}`);
+    this.emitRouteAdded({
+      destination: network.toString(), mask: mask.toString(),
+      gateway: nextHop.toString(), iface: gwIface, metric, type: 'static',
+    });
+    return true;
+  }
+
+  /** Add an on-link (directly-connected) static route via an interface, no gateway. */
+  addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0): boolean {
+    if (!this.ports.has(iface)) return false;
+    this.routingTable.push({ network, mask, nextHop: null, iface, type: 'static', metric });
+    Logger.info(this.id, 'host:route-add',
+      `${this.name}: on-link route ${network}/${mask.toCIDR()} dev ${iface} metric ${metric}`);
+    this.emitRouteAdded({
+      destination: network.toString(), mask: mask.toString(),
+      gateway: null, iface, metric, type: 'static',
+    });
     return true;
   }
 
@@ -866,12 +1430,170 @@ export abstract class EndHost extends Equipment {
    * Remove a route by network/mask match.
    * Returns true if a route was removed.
    */
-  removeRoute(network: IPAddress, mask: SubnetMask): boolean {
+  removeRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    filter: { nextHop?: IPAddress | null; metric?: number } = {},
+  ): boolean {
+    const matches = (r: HostRouteEntry): boolean => {
+      if (!(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')) {
+        return false;
+      }
+      if (filter.nextHop !== undefined) {
+        if (filter.nextHop === null) {
+          if (r.nextHop !== null) return false;
+        } else {
+          if (!r.nextHop || !r.nextHop.equals(filter.nextHop)) return false;
+        }
+      }
+      if (filter.metric !== undefined && r.metric !== filter.metric) return false;
+      return true;
+    };
+    const removed = this.routingTable.find(matches);
+    this.routingTable = this.routingTable.filter(r => !matches(r));
+    if (removed) {
+      this.emitRouteRemoved({
+        destination: network.toString(), mask: mask.toString(), iface: removed.iface,
+      });
+    }
+    return removed !== undefined;
+  }
+
+  // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
+
+  /** All routes visible in a given table; 254 (or main's real ID) is the existing main table. */
+  getRoutingTableFor(tableId: number): HostRouteEntry[] {
+    if (tableId === 254) return this.getRoutingTable();
+    return [...(this.policyRoutingTables.get(tableId) ?? [])];
+  }
+
+  private tableArray(tableId: number): HostRouteEntry[] {
+    let arr = this.policyRoutingTables.get(tableId);
+    if (!arr) { arr = []; this.policyRoutingTables.set(tableId, arr); }
+    return arr;
+  }
+
+  addStaticRouteToTable(
+    tableId: number, network: IPAddress, mask: SubnetMask, nextHop: IPAddress, metric: number = 100,
+  ): boolean {
+    if (tableId === 254) return this.addStaticRoute(network, mask, nextHop, metric);
+    let gwIface = '';
+    for (const [, port] of this.ports) {
+      const ip = port.getIPAddress();
+      const pmask = port.getSubnetMask();
+      if (ip && pmask && ip.isInSameSubnet(nextHop, pmask)) { gwIface = port.getName(); break; }
+    }
+    if (!gwIface) return false;
+    this.tableArray(tableId).push({
+      network, mask, nextHop, iface: gwIface, type: 'static', metric, table: tableId,
+    });
+    return true;
+  }
+
+  addDeviceRouteToTable(
+    tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric: number = 0,
+  ): boolean {
+    if (tableId === 254) return this.addDeviceRoute(network, mask, iface, metric);
+    if (!this.ports.has(iface)) return false;
+    this.tableArray(tableId).push({
+      network, mask, nextHop: null, iface, type: 'static', metric, table: tableId,
+    });
+    return true;
+  }
+
+  removeRouteFromTable(
+    tableId: number, network: IPAddress, mask: SubnetMask,
+    filter: { nextHop?: IPAddress | null; metric?: number } = {},
+  ): boolean {
+    if (tableId === 254) return this.removeRoute(network, mask, filter);
+    const arr = this.policyRoutingTables.get(tableId);
+    if (!arr) return false;
+    const matches = (r: HostRouteEntry): boolean => {
+      if (!(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR())) return false;
+      if (filter.nextHop !== undefined) {
+        if (filter.nextHop === null) { if (r.nextHop !== null) return false; }
+        else if (!r.nextHop || !r.nextHop.equals(filter.nextHop)) return false;
+      }
+      if (filter.metric !== undefined && r.metric !== filter.metric) return false;
+      return true;
+    };
+    const removed = arr.some(matches);
+    this.policyRoutingTables.set(tableId, arr.filter(r => !matches(r)));
+    return removed;
+  }
+
+  addPolicyRule(rule: HostPolicyRule): void {
+    this.policyRules.push(rule);
+    this.policyRules.sort((a, b) => a.priority - b.priority);
+  }
+
+  removePolicyRule(priority: number): boolean {
+    const before = this.policyRules.length;
+    this.policyRules = this.policyRules.filter(r => r.priority !== priority);
+    return this.policyRules.length !== before;
+  }
+
+  getPolicyRules(): HostPolicyRule[] {
+    return [...this.policyRules];
+  }
+
+  /** Resolve a route consulting `ip rule` policy: first matching rule's table wins. */
+  resolveRouteFromTable(
+    targetIP: IPAddress, fromIP: IPAddress | null,
+  ): { port: Port; nextHopIP: IPAddress; table: number } | null {
+    const destInt = targetIP.toUint32();
+    for (const rule of this.policyRules) {
+      if (rule.fromNetwork && rule.fromMask) {
+        if (!fromIP || !fromIP.networkAddress(rule.fromMask).equals(rule.fromNetwork.networkAddress(rule.fromMask))) {
+          continue;
+        }
+      }
+      if (rule.toNetwork && rule.toMask) {
+        if (!targetIP.networkAddress(rule.toMask).equals(rule.toNetwork.networkAddress(rule.toMask))) continue;
+      }
+      const best = pickBestRouteInTable(destInt, this.getRoutingTableFor(rule.table));
+      if (!best) continue;
+      const port = this.ports.get(best.iface);
+      if (!port) continue;
+      return { port, nextHopIP: best.nextHop || targetIP, table: rule.table };
+    }
+    return null;
+  }
+
+  installTunnelRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    nextHop: IPAddress | null,
+    iface: string,
+    type: 'static' | 'default',
+    metric: number = 100,
+  ): void {
+    if (type === 'default') {
+      this.routingTable = this.routingTable.filter(r => r.type !== 'default');
+      this.defaultGateway = nextHop;
+      this.routingTable.push({
+        network: new IPAddress('0.0.0.0'),
+        mask: new SubnetMask('0.0.0.0'),
+        nextHop,
+        iface,
+        type: 'default',
+        metric,
+      });
+    } else {
+      this.routingTable.push({ network, mask, nextHop, iface, type: 'static', metric });
+    }
+  }
+
+  removeTunnelRoute(network: IPAddress, mask: SubnetMask, iface: string): boolean {
     const before = this.routingTable.length;
-    this.routingTable = this.routingTable.filter(
-      r => !(r.network.equals(network) && r.mask.toCIDR() === mask.toCIDR() && r.type === 'static')
-    );
-    return this.routingTable.length < before;
+    const matches = (r: HostRouteEntry): boolean =>
+      r.iface === iface
+      && r.network.equals(network)
+      && r.mask.toCIDR() === mask.toCIDR();
+    const removed = this.routingTable.find(matches);
+    this.routingTable = this.routingTable.filter(r => !matches(r));
+    if (removed?.type === 'default') this.defaultGateway = null;
+    return this.routingTable.length !== before;
   }
 
   // ─── ARP Table ─────────────────────────────────────────────────
@@ -894,19 +1616,20 @@ export abstract class EndHost extends Equipment {
   }
 
   /** Add a static ARP entry. Overwrites any existing entry for the same IP. */
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void {
-    this.arpTable.set(ip, {
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void {
+    const key = ip.toString();
+    this.arpTable.set(key, {
       mac,
       iface,
       timestamp: Date.now(),
       type: 'static',
     });
-    this.emitArpLearned({ ip, mac: mac.toString(), iface, source: 'static' });
+    this.emitArpLearned({ ip: key, mac: mac.toString(), iface, source: 'static' });
   }
 
   /** Delete a single ARP entry by IP. Returns true if an entry was removed. */
-  deleteARP(ip: string): boolean {
-    return this.arpTable.delete(ip);
+  deleteARP(ip: IPAddress): boolean {
+    return this.arpTable.delete(ip.toString());
   }
 
   /** Clear all ARP entries (both static and dynamic). */
@@ -920,15 +1643,36 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
+    // LLDP voyage vers 01:80:c2:00:00:0e, qui n'est ni broadcast ni l'un
+    // des deux préfixes multicast IP reconnus plus bas : sans cette sortie
+    // anticipée le filtre L2 jetterait la trame et l'hôte ne découvrirait
+    // jamais son voisin.
+    if (frame.etherType === ETHERTYPE_LLDP
+      && frame.dstMAC.toString().toLowerCase() === LLDP_MULTICAST_MAC.toLowerCase()) {
+      this.getLldpAgent().handleFrame(portName, frame);
+      return;
+    }
+
     // L2 filter: accept frames addressed to us, broadcast, or multicast
     const isForUs = frame.dstMAC.equals(port.getMAC());
     const isBroadcast = frame.dstMAC.isBroadcast();
     // IPv6 multicast MAC: 33:33:XX:XX:XX:XX
+    // IPv4 multicast MAC (RFC 1112 §6.4): 01:00:5E:XX:XX:XX
     const octets = frame.dstMAC.getOctets();
     const isMulticast = octets[0] === 0x33 && octets[1] === 0x33;
+    const isIpv4Multicast = octets[0] === 0x01 && octets[1] === 0x00 && octets[2] === 0x5e;
 
-    if (!isForUs && !isBroadcast && !isMulticast) {
+    if (!isForUs && !isBroadcast && !isMulticast && !isIpv4Multicast) {
       return;
+    }
+
+    // A NIC only passes up the IPv4 groups this host actually joined —
+    // plus the always-joined link-local range (all-systems, IGMP Queries).
+    if (isIpv4Multicast && frame.etherType === ETHERTYPE_IPV4) {
+      const ipv4 = frame.payload as IPv4Packet;
+      if (!this.getIgmpHostAgent().acceptsGroup(portName, ipv4.destinationIP.toString())) {
+        return;
+      }
     }
 
     // For multicast, verify we're actually subscribed (have matching IPv6 address)
@@ -943,7 +1687,7 @@ export abstract class EndHost extends Equipment {
     if (frame.etherType === ETHERTYPE_ARP) {
       this.handleARP(portName, frame.payload as ARPPacket);
     } else if (frame.etherType === ETHERTYPE_IPV4) {
-      this.handleIPv4(portName, frame.payload as IPv4Packet);
+      this.handleIPv4(portName, frame.payload as IPv4Packet, frame.srcMAC.toString());
     } else if (frame.etherType === ETHERTYPE_IPV6) {
       this.handleIPv6(portName, frame.payload as IPv6Packet);
     }
@@ -957,6 +1701,12 @@ export abstract class EndHost extends Equipment {
   private shouldAcceptIPv6Multicast(port: Port, destIP: IPv6Address): boolean {
     // All-nodes multicast (ff02::1)
     if (destIP.isAllNodesMulticast()) return true;
+
+    // Un groupe auquel CETTE interface s'est abonnée. Sans cela, un
+    // routeur qui rejoint `ff02::5` recevait bien la trame — le filtre
+    // L2 la laisse monter, la MAC étant celle du groupe — et la jetait
+    // ici faute d'être « pour lui ».
+    if (this.isJoinedIPv6Group(port.getName(), destIP)) return true;
 
     // Solicited-node multicast — check if any of our addresses match
     if (destIP.isSolicitedNodeMulticast()) {
@@ -981,9 +1731,8 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port) return;
 
-    // Always learn sender's MAC→IP mapping — real Linux does this even when
-    // the interface has no IP configured yet (e.g. during bootstrap).
     const existing = this.arpTable.get(arp.senderIP.toString());
+    const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
     if (!existing || existing.type !== 'static') {
       this.arpTable.set(arp.senderIP.toString(), {
         mac: arp.senderMAC,
@@ -995,12 +1744,25 @@ export abstract class EndHost extends Equipment {
         ip: arp.senderIP.toString(),
         mac: arp.senderMAC.toString(),
         iface: portName,
-        source: arp.operation === 'request' ? 'request' : 'reply',
+        source: isGratuitous ? 'gratuitous' : (arp.operation === 'request' ? 'request' : 'reply'),
       });
     }
 
     const myIP = port.getIPAddress();
     if (!myIP) return;
+
+    if (arp.senderIP.equals(myIP) && !arp.senderMAC.equals(port.getMAC())) {
+      this.getBus().publish({
+        topic: 'host.arp.ip-conflict',
+        payload: {
+          ...this.hostRef(),
+          iface: portName,
+          ip: myIP.toString(),
+          foreignMac: arp.senderMAC.toString(),
+          localMac: port.getMAC().toString(),
+        },
+      });
+    }
 
     if (arp.operation === 'request' && arp.targetIP.equals(myIP)) {
       // ARP request for our IP → reply with our MAC
@@ -1051,6 +1813,15 @@ export abstract class EndHost extends Equipment {
   // ─── Firewall Hook ─────────────────────────────────────────────
 
   /**
+   * `--reject-with` of the rule that produced the most recent 'reject'
+   * verdict, if the subclass's firewall engine tracks one (iptables does).
+   * Set by the subclass override of `firewallFilter`/`firewallFilter6`
+   * right before returning 'reject', consumed and cleared by
+   * `sendICMPReject`. `null` means "use the default" (admin-prohibited).
+   */
+  protected lastRejectWith: string | null = null;
+
+  /**
    * Firewall hook for incoming packets. Override in subclasses to implement
    * real packet filtering (e.g. Linux UFW, Windows Firewall).
    * Return 'accept' to allow, 'drop' to silently discard, 'reject' to drop + ICMP error.
@@ -1058,6 +1829,13 @@ export abstract class EndHost extends Equipment {
    */
   protected firewallFilter(
     _portName: string, _ipPkt: IPv4Packet, _direction: 'in' | 'out' | 'forward',
+    _outPortName?: string,
+  ): 'accept' | 'drop' | 'reject' {
+    return 'accept';
+  }
+
+  protected firewallFilter6(
+    _portName: string, _ipv6Pkt: IPv6Packet, _direction: 'in' | 'out' | 'forward',
     _outPortName?: string,
   ): 'accept' | 'drop' | 'reject' {
     return 'accept';
@@ -1086,6 +1864,35 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Evaluate nat OUTPUT-chain DNAT/REDIRECT rules against this host's own
+   * locally-generated traffic, before it picks an egress route — real on
+   * Linux exactly like PREROUTING is for network-arriving traffic.
+   * Subclasses override to implement iptables nat OUTPUT chain.
+   * Returns null (no NAT) by default.
+   */
+  protected evaluateNatOutput(
+    _srcIP: string, _dstIP: IPAddress, _dstPort: number, _srcPort: number,
+    _protocol: number, _tentativeOutIface: string,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
+   * Evaluate ip6tables PREROUTING DNAT rules for a packet destined to this
+   * host itself, before local delivery. There is no IPv6 counterpart to
+   * `evaluateNat`/POSTROUTING here: end hosts don't forward IPv6 packets
+   * (see `handleIPv6`), so a SNAT/MASQUERADE hook would have no call site —
+   * NAT66 in this simulator is scoped to locally-destined DNAT only.
+   * Subclasses override to implement ip6tables nat PREROUTING chain.
+   * Returns null (no DNAT) by default.
+   */
+  protected evaluatePreRouting6(
+    _inPort: string, _ipv6Pkt: IPv6Packet,
+  ): { action: string; address?: string } | null {
+    return null;
+  }
+
+  /**
    * Extract port info from an IPv4 packet for firewall evaluation.
    */
   protected extractPorts(ipPkt: IPv4Packet): { srcPort: number; dstPort: number } {
@@ -1099,10 +1906,26 @@ export abstract class EndHost extends Equipment {
   // ─── IPv4 Handling (RFC 791) ──────────────────────────────────
 
   /** Return the port that owns the given unicast IPv4 address, if any. */
+  /**
+   * Le port qui porte cette adresse — la primaire OU une secondaire.
+   *
+   * Seule la primaire était consultée, si bien qu'une machine ne se
+   * reconnaissait pas dans ses propres adresses ajoutées par
+   * `ip addr add` : un ping vers l'une d'elles partait résoudre une MAC
+   * sur le lien et échouait, au lieu de boucler dans le noyau. `Port`
+   * portait déjà le prédicat exact (`ownsIPv4`), consulté par le plan de
+   * données ; c'est ici qu'il manquait.
+   */
   protected getPortOwningIP(ip: IPAddress): Port | null {
     for (const [, port] of this.ports) {
-      const portIP = port.getIPAddress();
-      if (portIP && portIP.equals(ip)) return port;
+      if (port.ownsIPv4(ip)) return port;
+    }
+    return null;
+  }
+
+  protected getPortOwningIPv6(ip: IPv6Address): Port | null {
+    for (const [, port] of this.ports) {
+      if (port.isIPv6Enabled() && port.hasIPv6Address(ip)) return port;
     }
     return null;
   }
@@ -1122,7 +1945,7 @@ export abstract class EndHost extends Equipment {
     return false;
   }
 
-  private handleIPv4(portName: string, ipPkt: IPv4Packet): void {
+  private handleIPv4(portName: string, ipPkt: IPv4Packet, srcMac?: string): void {
     if (!ipPkt || ipPkt.type !== 'ipv4') return;
 
     // Verify checksum
@@ -1132,20 +1955,31 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
+    // IGMP is addressed to a multicast group, never to this host's own
+    // address, so it has to be picked off before the local/forward split.
+    if (ipPkt.protocol === IP_PROTO_IGMP) {
+      this.getIgmpHostAgent().handleIp(portName, ipPkt);
+      return;
+    }
+
     // ── PREROUTING: evaluate DNAT rules before routing decision ──
     // This allows NAT devices to redirect packets addressed to themselves
     // to a different destination (e.g. port forwarding / DNAT).
     const preNat = this.evaluatePreRouting(portName, ipPkt);
     if (preNat && preNat.action === 'DNAT' && preNat.address) {
       try {
-        const newDst = new IPAddress(preNat.address.split(':')[0]);
-        ipPkt = {
-          ...ipPkt,
-          destinationIP: newDst,
-          headerChecksum: 0,
-        };
-        ipPkt.headerChecksum = computeIPv4Checksum(ipPkt);
+        const { ip, port } = parseNatAddress(preNat.address);
+        ipPkt = rewriteNatAddress(ipPkt, 'dst', ip, port);
       } catch { /* keep original */ }
+    } else if (preNat && preNat.action === 'REDIRECT') {
+      // REDIRECT has no --to-destination to read: real Linux maps the
+      // destination to this box's own address on the interface that
+      // received the packet (`--to-ports` optionally changes the port).
+      const localIP = this.ports.get(portName)?.getIPAddress();
+      if (localIP) {
+        const portNum = preNat.address ? parseInt(preNat.address, 10) : NaN;
+        ipPkt = rewriteNatAddress(ipPkt, 'dst', localIP.toString(), Number.isNaN(portNum) ? undefined : portNum);
+      }
     }
 
     // Check if packet is for us
@@ -1160,8 +1994,20 @@ export abstract class EndHost extends Equipment {
     const mask = port.getSubnetMask();
     const isBroadcast = ipPkt.destinationIP.toString() === '255.255.255.255'
       || (myIP && mask && ipPkt.destinationIP.isBroadcastFor(mask));
+    // Un datagramme multicast n'est adressé à personne en particulier :
+    // sans cette branche il tombait dans le « pas pour nous » et l'hôte
+    // le jetait, alors que le filtre L2 l'avait justement laissé monter
+    // parce que la carte est abonnée au groupe.
+    const isMulticast = isMulticastIpv4(ipPkt.destinationIP.toString());
 
-    if (isForUs || isBroadcast) {
+    if (isForUs || isBroadcast || isMulticast) {
+      // RFC 791 §3.2: reassemble before filtering/dispatch — a non-first
+      // fragment carries no L4 header for the firewall or upper layer to
+      // inspect, so hold it here until the full datagram is back together.
+      const reassembled = this.ipv4Reassembler.add(ipPkt);
+      if (!reassembled) return;
+      ipPkt = reassembled;
+
       // ── Firewall: filter incoming packets ──
       const verdict = this.firewallFilter(portName, ipPkt, 'in');
       if (verdict === 'drop' || verdict === 'reject') {
@@ -1179,7 +2025,13 @@ export abstract class EndHost extends Equipment {
       } else if (ipPkt.protocol === IP_PROTO_TCP) {
         this.tcpv2.handleIp(portName, ipPkt.sourceIP, ipPkt);
       } else if (ipPkt.protocol === IP_PROTO_UDP) {
-        this.deliverUDP(portName, ipPkt, !!isBroadcast);
+        // Un multicast sans écouteur se jette en silence, comme un
+        // broadcast : répondre « port injoignable » à un groupe
+        // désignerait un coupable qui n'a rien demandé.
+        this.deliverUDP(portName, ipPkt, !!isBroadcast || isMulticast, srcMac);
+      } else if (ipPkt.protocol === IP_PROTO_GRE && this.greAgent) {
+        const inner = this.greAgent.handleIp(portName, ipPkt.sourceIP, ipPkt);
+        if (inner) this.handleIPv4(portName, inner, srcMac);
       }
       return;
     }
@@ -1225,45 +2077,61 @@ export abstract class EndHost extends Equipment {
       return;
     }
 
-    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT)
-    let srcIP = ipPkt.sourceIP;
-    let dstIP = ipPkt.destinationIP;
+    // NAT: apply POSTROUTING rules (MASQUERADE/SNAT/DNAT)
+    let fwdPkt: IPv4Packet = { ...ipPkt, ttl: newTTL, headerChecksum: 0 };
+    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+
     const natResult = this.evaluateNat(ipPkt, inPort, outPortName);
     if (natResult) {
       if (natResult.action === 'MASQUERADE') {
         const outPortIP = route.port.getIPAddress();
-        if (outPortIP) srcIP = outPortIP;
+        if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
       } else if (natResult.action === 'SNAT' && natResult.address) {
-        try { srcIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+        try {
+          const { ip, port } = parseNatAddress(natResult.address);
+          fwdPkt = rewriteNatAddress(fwdPkt, 'src', ip, port);
+        } catch { /* keep original */ }
       } else if (natResult.action === 'DNAT' && natResult.address) {
-        try { dstIP = new IPAddress(natResult.address.split(':')[0]); } catch { /* keep original */ }
+        try {
+          const { ip, port } = parseNatAddress(natResult.address);
+          fwdPkt = rewriteNatAddress(fwdPkt, 'dst', ip, port);
+        } catch { /* keep original */ }
       }
     } else if (this.masqueradeOnInterfaces.has(outPortName)) {
       // Fallback: legacy masquerade support
       const outPortIP = route.port.getIPAddress();
-      if (outPortIP) srcIP = outPortIP;
+      if (outPortIP) fwdPkt = rewriteNatAddress(fwdPkt, 'src', outPortIP.toString());
     }
 
-    const fwdPkt: IPv4Packet = {
-      ...ipPkt,
-      sourceIP: srcIP,
-      destinationIP: dstIP,
-      ttl: newTTL,
-      headerChecksum: 0,
-    };
-    fwdPkt.headerChecksum = computeIPv4Checksum(fwdPkt);
+    // RFC 791 §3.2 / RFC 1191: this NAT-gateway forward can cross an MTU
+    // boundary just like a real router forward can. DF=1 gets an ICMP
+    // frag-needed instead of going out oversized; DF=0 gets fragmented.
+    const effectiveMtu = route.port.getMTU();
+    let outgoingFragments: IPv4Packet[] = [fwdPkt];
+    if (fwdPkt.totalLength > effectiveMtu) {
+      const dfSet = (fwdPkt.flags & IPV4_FLAG_DF) !== 0;
+      if (dfSet) {
+        Logger.info(this.id, 'ipv4:mtu-exceeded',
+          `${this.name}: packet ${fwdPkt.totalLength} > MTU ${effectiveMtu}, DF=1`);
+        this.sendICMPError(inPort, ipPkt, 'destination-unreachable', ICMP_UNREACH_FRAG_NEEDED, effectiveMtu);
+        return;
+      }
+      outgoingFragments = fragmentIPv4(fwdPkt, effectiveMtu);
+    }
 
     const nextHopMAC = this.arpTable.get(route.nextHopIP.toString());
     if (nextHopMAC) {
-      this.sendFrame(outPortName, {
-        srcMAC: route.port.getMAC(),
-        dstMAC: nextHopMAC.mac,
-        etherType: ETHERTYPE_IPV4,
-        payload: fwdPkt,
-      });
+      for (const frag of outgoingFragments) {
+        this.sendFrame(outPortName, {
+          srcMAC: route.port.getMAC(),
+          dstMAC: nextHopMAC.mac,
+          etherType: ETHERTYPE_IPV4,
+          payload: frag,
+        });
+      }
     } else {
-      // Queue packet and send ARP request (async resolution for forwarded packets)
-      this.fwdQueueAndResolve(fwdPkt, outPortName, route.nextHopIP, route.port);
+      // Queue packets and send ARP request (async resolution for forwarded packets)
+      for (const frag of outgoingFragments) this.fwdQueueAndResolve(frag, outPortName, route.nextHopIP, route.port);
     }
   }
 
@@ -1292,6 +2160,51 @@ export abstract class EndHost extends Equipment {
         etherType: ETHERTYPE_ARP, payload: arpReq,
       });
     }
+  }
+
+  /**
+   * ARP-aware IPv4 frame send — the same "cached? send now : queue +
+   * resolve" model `sendUdpDatagram`/router forwarding already use,
+   * instead of blasting straight to the broadcast MAC on a cold ARP
+   * cache (audit 03, MAJEUR: transversal ARP shortcut). `nextHopIP` is
+   * the on-link address whose MAC actually needs resolving — the
+   * destination itself for a directly-connected peer, or the gateway
+   * for anything a caller has already resolved a route for.
+   */
+  public sendIpv4FrameArpAware(outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress): void {
+    const port = this.getPort(outPortName);
+    if (!port) return;
+    const cached = this.arpTable.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+    } else {
+      this.fwdQueueAndResolve(ipPkt, outPortName, nextHopIP, port);
+    }
+  }
+
+  /**
+   * NDP-aware IPv6 frame send — same rationale as {@link sendIpv4FrameArpAware}.
+   */
+  public sendIpv6FrameNdpAware(outPortName: string, ipPkt: IPv6Packet, nextHopIP: IPv6Address): void {
+    const port = this.getPort(outPortName);
+    if (!port) return;
+    const cached = this.neighborCache.get(nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+      return;
+    }
+    void this.resolveNDP(outPortName, nextHopIP).then((mac) => {
+      this.sendFrame(outPortName, {
+        srcMAC: port.getMAC(), dstMAC: mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    }).catch(() => {});
   }
 
   /**
@@ -1331,7 +2244,38 @@ export abstract class EndHost extends Equipment {
     } else if (icmp.icmpType === 'time-exceeded' || icmp.icmpType === 'destination-unreachable') {
       const reason = icmp.icmpType === 'time-exceeded'
         ? `Time to live exceeded (from ${ipPkt.sourceIP})`
-        : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`;
+        : `Destination unreachable (from ${ipPkt.sourceIP}) code ${icmp.code}`
+          + (icmp.mtu !== undefined ? ` mtu ${icmp.mtu}` : '');
+
+      const isHardTcpError = icmp.icmpType === 'destination-unreachable'
+        && (icmp.code === ICMP_UNREACH_PORT || icmp.code === ICMP_UNREACH_ADMIN_PROHIBITED);
+      // PRD-TCP.md P7 (RFC 1191/1981) — Fragmentation Needed/Packet Too Big
+      // is not a hard error like the codes above: the path works, our
+      // segment was just too big for it, so this shrinks MSS and
+      // retransmits instead of aborting the connection.
+      const isFragNeeded = icmp.icmpType === 'destination-unreachable'
+        && icmp.code === ICMP_UNREACH_FRAG_NEEDED;
+      if (isHardTcpError && icmp.originalPacket) {
+        const origSeg = icmp.originalPacket.payload as TCPPacket | undefined;
+        if (origSeg && origSeg.type === 'tcp') {
+          this.tcpv2.onIcmpUnreachable(
+            origSeg.sourcePort, origSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(),
+          );
+        }
+      } else if (isFragNeeded && icmp.originalPacket && icmp.mtu !== undefined) {
+        // Real TCP traffic in this stack is a `TcpSegment` (`sequence`),
+        // not the legacy `TCPPacket` PDU (`sequenceNumber`) used above —
+        // PMTUD needs the real sequence number to identify the bounced
+        // segment in `unackedQueue`.
+        const origSeg = icmp.originalPacket.payload as TcpSegment | undefined;
+        if (origSeg && origSeg.type === 'tcp') {
+          this.tcpv2.onIcmpFragNeeded(
+            origSeg.sourcePort, origSeg.destinationPort,
+            icmp.originalPacket.destinationIP.toString(), origSeg.sequence, icmp.mtu,
+          );
+        }
+      }
 
       // Phase 5.6: emit host.icmp.echo-failed so awaiting `sendPing` promises
       // can settle through `waitForEvent`. Carries the original id/seq so the
@@ -1407,6 +2351,10 @@ export abstract class EndHost extends Equipment {
     };
 
     const icmpSize = 8 + requestICMP.dataSize; // ICMP header + data
+    // Mirror the request's DF bit: an echo request that made it here
+    // unfragmented (DF unset) took a path whose MTU allows that size, so the
+    // reply — same size, reverse direction — should be free to do the same
+    // rather than picking up this stack's DF-by-default and bouncing.
     const replyIP = createIPv4Packet(
       myIP,
       requestIP.sourceIP,
@@ -1414,6 +2362,7 @@ export abstract class EndHost extends Equipment {
       this.defaultTTL,
       replyICMP,
       icmpSize,
+      { flags: requestIP.flags },
     );
 
     // Route the reply — source may be on a different subnet (via default gateway)
@@ -1441,11 +2390,43 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
-   * Send ICMP destination-unreachable (admin prohibited) back to the sender.
-   * Used when firewall verdict is 'reject' (as opposed to silent 'drop').
+   * Send the ICMP error (or TCP RST) that a firewall REJECT verdict implies.
+   * Honors `--reject-with` when the firewall engine set `lastRejectWith`
+   * (iptables does); falls back to the historical default
+   * (destination-unreachable/admin-prohibited) when unset, exactly as
+   * before this existed. `tcp-reset` only applies to TCP packets — a
+   * mismatched combination (e.g. configured on a UDP rule) falls back to
+   * the default ICMP error rather than silently doing nothing.
    */
   private sendICMPReject(portName: string, offendingPkt: IPv4Packet): void {
-    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', ICMP_UNREACH_ADMIN_PROHIBITED);
+    const rejectWith = this.lastRejectWith;
+    this.lastRejectWith = null;
+
+    if (rejectWith === 'tcp-reset' && offendingPkt.protocol === IP_PROTO_TCP && offendingPkt.payload) {
+      this.tcpv2.sendResetForSegment(
+        offendingPkt.destinationIP.toString(), offendingPkt.sourceIP.toString(),
+        offendingPkt.payload as TcpSegment,
+      );
+      return;
+    }
+
+    this.sendICMPError(portName, offendingPkt, 'destination-unreachable', this.resolveRejectCode(rejectWith));
+  }
+
+  /** Map `--reject-with` to the ICMP Destination Unreachable code it selects. */
+  private resolveRejectCode(rejectWith: string | null): number {
+    switch (rejectWith) {
+      case 'icmp-net-unreachable': return ICMP_UNREACH_NET;
+      case 'icmp-host-unreachable': return ICMP_UNREACH_HOST;
+      case 'icmp-port-unreachable': return ICMP_UNREACH_PORT;
+      case 'icmp-proto-unreachable': return ICMP_UNREACH_PROTO;
+      case 'icmp-net-prohibited': return ICMP_UNREACH_NET_PROHIBITED;
+      case 'icmp-host-prohibited': return ICMP_UNREACH_HOST_PROHIBITED;
+      case 'icmp-admin-prohibited': return ICMP_UNREACH_ADMIN_PROHIBITED;
+      // Real iptables: a bare `-j REJECT` with no `--reject-with` defaults
+      // to icmp-port-unreachable, not admin-prohibited.
+      default: return ICMP_UNREACH_PORT;
+    }
   }
 
   /**
@@ -1463,6 +2444,7 @@ export abstract class EndHost extends Equipment {
     offendingPkt: IPv4Packet,
     icmpType: ICMPErrorType,
     code: number,
+    nextHopMTU?: number,
   ): void {
     if (!mayGenerateICMPError(offendingPkt)) return;
 
@@ -1472,7 +2454,7 @@ export abstract class EndHost extends Equipment {
     const srcIP = this.ports.get(inPort)?.getIPAddress() ?? route.port.getIPAddress();
     if (!srcIP) return;
 
-    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL);
+    const errorIP = buildICMPError(srcIP, offendingPkt, icmpType, code, this.defaultTTL, { nextHopMTU });
 
     const outPortName = route.port.getName();
     const verdict = this.firewallFilter(outPortName, errorIP, 'out');
@@ -1502,11 +2484,77 @@ export abstract class EndHost extends Equipment {
    */
   public getTcpStack(): TcpStack { return this.tcpv2; }
 
+  protected addPort(port: Port): void {
+    super.addPort(port);
+    port.onLinkChange((state) => {
+      if (state === 'down') { this.abortSessionsBrokenByLinkLoss(); return; }
+      this.solicitRouters(port);
+    });
+  }
+
+  /**
+   * RFC 4861 §6.3.7: an interface coming up solicits the link's routers
+   * rather than waiting for the next unsolicited advertisement, which
+   * may be hundreds of seconds away.
+   */
+  private solicitRouters(port: Port): void {
+    if (!port.isIPv6Enabled() || !port.getLinkLocalIPv6()) return;
+    this.sendRouterSolicitation(port.getName());
+  }
+
+  /** True when a peer address still has a usable egress interface. */
+  private canReachPeer(remoteIp: string): boolean {
+    if (remoteIp === '' || remoteIp.includes(':')) return true;
+    let addr: IPAddress;
+    try {
+      addr = new IPAddress(remoteIp);
+    } catch {
+      return true;
+    }
+    if (addr.isLoopback() || this.getPortOwningIP(addr)) return true;
+    const route = this.resolveRoute(addr);
+    return route !== null && this.isInterfaceOperationallyUp(route.iface, route.port);
+  }
+
+  /**
+   * A link went down: every established connection that can no longer
+   * reach its peer is torn down, the way a real stack drops sessions
+   * whose path disappeared. Listeners keep their bound ports
+   * (docs/PRD-Link-State.md §2.1 P5).
+   */
+  protected abortSessionsBrokenByLinkLoss(): number {
+    return this.tcpv2.abortUnreachableSockets((ip) => this.canReachPeer(ip));
+  }
+
+  /**
+   * PRD-TCP.md P2 — genuinely waits for the handshake to resolve instead
+   * of judging it in the same synchronous tick. A SYN lost on a lossy
+   * link now gets a real chance to succeed via P1's RTO retransmission
+   * (the caller's `await` simply takes longer); the promise only settles
+   * once the socket actually opens or actually closes (RST/timeout).
+   * Already-resolved cases (instant established/refused, the common
+   * loss-free path every existing caller exercises) still resolve on the
+   * same tick — this is additive latency for the failure path only.
+   */
   public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
-    const socket = this.tcpv2.connect(dstIp, dstPort);
-    if (!socket) return null;
-    if (socket.state !== 'established') return null;
-    return socket;
+    const destination = parseDialAddress(dstIp);
+    const port = PortNumber.isValid(dstPort) ? PortNumber.of(dstPort) : null;
+    if (!destination || !port) return null;
+    const outcome = await this.tcpDial(destination, port);
+    return isDialFailure(outcome) ? null : outcome;
+  }
+
+  /**
+   * Le meme appel que `tcpConnect`, qui NOMME l'echec au lieu de rendre un
+   * `null` muet. Un RST et un paquet jete ne se diagnostiquent pas de la
+   * meme facon — la distinction est celle que `connectOutcome` tire deja,
+   * et `refused`/`timeout` sont lus au meme endroit pour que les deux ne
+   * puissent pas se contredire.
+   */
+  public tcpDial(
+    destination: DialAddress, port: PortNumber,
+  ): Promise<import('../tcp/TcpStack').TcpSocket | TcpDialFailure> {
+    return dialTcp(this.tcpv2, destination, port);
   }
 
   // ─── UDP Transport (RFC 768) ───────────────────────────────────
@@ -1519,6 +2567,25 @@ export abstract class EndHost extends Equipment {
   public udpBind(port: number, listener: UdpListener, processName?: string): void {
     this.socketTable.bind('udp', '0.0.0.0', port, undefined, processName);
     this.udpListeners.set(port, listener);
+  }
+
+  private readonly udpAddressListeners = new Map<string, UdpListener>();
+
+  /**
+   * Lie un service à UNE adresse plutôt qu'à tout le port. Le port reste
+   * disponible pour un service lié à `0.0.0.0`, ce qui est la cohabitation
+   * réelle entre systemd-resolved (127.0.0.53:53) et un serveur DNS local.
+   */
+  public udpBindAddress(
+    address: string, port: number, listener: UdpListener, processName?: string,
+  ): void {
+    this.socketTable.bind('udp', address, port, undefined, processName);
+    this.udpAddressListeners.set(`${address}:${port}`, listener);
+  }
+
+  public udpCloseAddress(address: string, port: number): void {
+    this.udpAddressListeners.delete(`${address}:${port}`);
+    this.socketTable.unbind('udp', address, port);
   }
 
   /** Close a UDP port: remove the listener and the socket-table entry. */
@@ -1540,24 +2607,60 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
+    options: { df?: boolean; iface?: string } = {},
   ): boolean {
-    const udp: UDPPacket = {
-      type: 'udp',
-      sourcePort,
-      destinationPort,
-      length: 8 + payloadBytes,
-      checksum: 0,
-      payload,
-    };
+    // OUTPUT: nat OUTPUT-chain DNAT/REDIRECT applies to this host's own
+    // outbound traffic before the loopback/local-delivery decision below,
+    // mirroring real Linux's early routing decision + LOCAL_OUT hook
+    // ordering. Skipped for multicast/broadcast/loopback — none is a
+    // realistic DNAT/REDIRECT target and no rule ever matches them.
+    if (!destinationIP.isLoopback()
+      && !isMulticastIpv4(destinationIP.toString())
+      && destinationIP.toString() !== '255.255.255.255') {
+      const tentativeRoute = this.resolveRoute(destinationIP);
+      const outputNat = this.evaluateNatOutput(
+        tentativeRoute?.port.getIPAddress()?.toString() ?? '0.0.0.0',
+        destinationIP, destinationPort, sourcePort, IP_PROTO_UDP, tentativeRoute?.port.getName() ?? '',
+      );
+      if (outputNat?.action === 'REDIRECT') {
+        // No --to-destination to read: real Linux maps a locally-generated
+        // packet's destination to loopback (there is no "incoming
+        // interface" for traffic this host originates itself).
+        const portNum = outputNat.address ? parseInt(outputNat.address, 10) : NaN;
+        destinationIP = new IPAddress('127.0.0.1');
+        if (!Number.isNaN(portNum)) destinationPort = portNum;
+      } else if (outputNat?.action === 'DNAT' && outputNat.address) {
+        const { ip, port } = parseNatAddress(outputNat.address);
+        destinationIP = new IPAddress(ip);
+        if (port !== undefined) destinationPort = port;
+      }
+    }
+
+    const udpBase = { type: 'udp' as const, sourcePort, destinationPort, length: 8 + payloadBytes, payload };
+    // Preserve the existing DF=1 default (every prior caller relied on
+    // it); pass { df: false } to originate fragmentable UDP traffic that
+    // a smaller-MTU hop can split instead of bouncing (RFC 791 §3.2).
+    const flags = options.df === false ? 0 : IPV4_FLAG_DF;
 
     // Local delivery (loopback or own address) — like a real kernel, this
     // never reaches the wire.
     if (destinationIP.isLoopback() || this.getPortOwningIP(destinationIP)) {
+      const srcStr = destinationIP.toString();
+      const udp: UDPPacket = { ...udpBase, checksum: computeUdpChecksum(udpBase, srcStr, srcStr) };
       const localPkt = createIPv4Packet(
-        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
       );
       this.deliverUDP('lo', localPkt, false);
       return true;
+    }
+
+    // Multicast et broadcast limité n'ont ni route ni voisin à résoudre :
+    // la MAC se déduit du groupe (RFC 1112 §6.4), et la trame part sur le
+    // lien. Sans cette branche, `resolveRoute` échouait et l'hôte ne
+    // pouvait rien émettre vers un groupe — pas même un groupe rejoint.
+    if (isMulticastIpv4(destinationIP.toString())
+      || destinationIP.toString() === '255.255.255.255') {
+      return this.sendUdpToGroup(destinationIP, udpBase, flags, options.iface);
     }
 
     const route = this.resolveRoute(destinationIP);
@@ -1565,8 +2668,12 @@ export abstract class EndHost extends Equipment {
     const srcIP = route.port.getIPAddress();
     if (!srcIP) return false;
 
+    const udp: UDPPacket = {
+      ...udpBase,
+      checksum: computeUdpChecksum(udpBase, srcIP.toString(), destinationIP.toString()),
+    };
     const ipPkt = createIPv4Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length,
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultTTL, udp, udp.length, { flags },
     );
 
     const outPortName = route.port.getName();
@@ -1589,24 +2696,168 @@ export abstract class EndHost extends Equipment {
   }
 
   /**
+   * Émission vers un groupe (ou le broadcast limité). Sans interface
+   * nommée, la trame part sur chaque lien monté qui porte une adresse —
+   * c'est le comportement d'un démon qui a rejoint le groupe sur tous ses
+   * liens, et c'est ce dont LLMNR et mDNS ont besoin.
+   */
+  private sendUdpToGroup(
+    group: IPAddress,
+    udpBase: Omit<UDPPacket, 'checksum'>,
+    flags: number,
+    iface?: string,
+  ): boolean {
+    const isLimitedBroadcast = group.toString() === '255.255.255.255';
+    const dstMAC = isLimitedBroadcast
+      ? MACAddress.broadcast()
+      : new MACAddress(ipv4MulticastToMac(group.toString()));
+
+    let sent = false;
+    for (const [name, port] of this.ports) {
+      if (name === 'lo') continue;
+      if (iface && name !== iface) continue;
+      if (!port.isOperationallyUp()) continue;
+      const srcIP = port.getIPAddress();
+      if (!srcIP) continue;
+
+      const udp: UDPPacket = {
+        ...udpBase,
+        checksum: computeUdpChecksum(udpBase, srcIP.toString(), group.toString()),
+      };
+      // TTL 1 : un groupe en 224.0.0.0/24 ne franchit jamais le lien
+      // (RFC 1112 §6.1), et c'est exactement ce que LLMNR et mDNS
+      // attendent.
+      const ttl = isLimitedBroadcast || group.toString().startsWith('224.0.0.')
+        ? 1 : this.defaultTTL;
+      const ipPkt = createIPv4Packet(
+        srcIP, group, IP_PROTO_UDP, ttl, udp, udp.length, { flags },
+      );
+      if (this.firewallFilter(name, ipPkt, 'out') !== 'accept') continue;
+      this.sendFrame(name, {
+        srcMAC: port.getMAC(), dstMAC, etherType: ETHERTYPE_IPV4, payload: ipPkt,
+      });
+      sent = true;
+    }
+    return sent;
+  }
+
+  public sendUdpDatagramTo(
+    destinationIP: IPAddress | IPv6Address,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    return destinationIP instanceof IPv6Address
+      ? this.sendUdpDatagram6(destinationIP, destinationPort, sourcePort, payload, payloadBytes)
+      : this.sendUdpDatagram(destinationIP, destinationPort, sourcePort, payload, payloadBytes);
+  }
+
+  public sendUdpDatagram6(
+    destinationIP: IPv6Address,
+    destinationPort: number,
+    sourcePort: number,
+    payload: unknown,
+    payloadBytes: number = 0,
+  ): boolean {
+    const udp: UDPPacket = {
+      type: 'udp', sourcePort, destinationPort,
+      length: 8 + payloadBytes, checksum: 0, payload,
+    };
+
+    if (destinationIP.isLoopback() || this.getPortOwningIPv6(destinationIP)) {
+      const localPkt = createIPv6Packet(
+        destinationIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+      );
+      this.deliverUDP6('lo', localPkt);
+      return true;
+    }
+
+    // A group has neither route nor neighbour, so resolving it by NDP
+    // could never succeed and every multicast send failed silently.
+    if (destinationIP.isMulticast()) {
+      return this.sendIPv6ToGroup(destinationIP, IP_PROTO_UDP, udp, udp.length);
+    }
+
+    const route = this.resolveIPv6Route(destinationIP);
+    if (!route) return false;
+    const srcIP = destinationIP.isLinkLocal()
+      ? route.port.getLinkLocalIPv6()
+      : (route.port.getGlobalIPv6() || route.port.getLinkLocalIPv6());
+    if (!srcIP) return false;
+
+    const ipPkt = createIPv6Packet(
+      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit, udp, udp.length,
+    );
+
+    const outPortName = route.port.getName();
+    if (this.firewallFilter6(outPortName, ipPkt, 'out') !== 'accept') return false;
+
+    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(outPortName, {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: ipPkt,
+      });
+    } else {
+      void this.resolveNDP(outPortName, route.nextHopIP).then((mac) => {
+        this.sendFrame(outPortName, {
+          srcMAC: route.port.getMAC(), dstMAC: mac,
+          etherType: ETHERTYPE_IPV6, payload: ipPkt,
+        });
+      }).catch(() => {});
+    }
+    return true;
+  }
+
+  /**
    * Deliver a locally-addressed UDP datagram to its bound listener.
    * RFC 1122 §4.1.3.1: a datagram for a port with no listener elicits
    * ICMP Destination Unreachable Code 3 (port unreachable) — never for
    * broadcast-directed datagrams.
    */
-  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean): void {
+  private dispatchUdpToListener(
+    portName: string, udp: UDPPacket,
+    sourceIP: IPAddress | IPv6Address, destinationIP: IPAddress | IPv6Address,
+    sourceMAC?: string,
+  ): boolean {
+    // Un service lié à UNE adresse est consulté avant le port générique :
+    // c'est ce qui permet à systemd-resolved de tenir 127.0.0.53:53 sans
+    // interdire à dnsmasq ou bind9 de prendre 0.0.0.0:53, exactement comme
+    // sur un Ubuntu réel.
+    const bound = this.udpAddressListeners.get(`${destinationIP.toString()}:${udp.destinationPort}`);
+    if (bound) {
+      bound({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC });
+      return true;
+    }
+    const listener = this.udpListeners.get(udp.destinationPort);
+    if (!listener) return false;
+    listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC });
+    return true;
+  }
+
+  private deliverUDP(portName: string, ipPkt: IPv4Packet, wasBroadcast: boolean, srcMac?: string): void {
     const udp = ipPkt.payload as UDPPacket;
     if (!udp || udp.type !== 'udp') return;
 
-    const listener = this.udpListeners.get(udp.destinationPort);
-    if (listener) {
-      listener({
-        inPort: portName,
-        sourceIP: ipPkt.sourceIP,
-        destinationIP: ipPkt.destinationIP,
-        udp,
-      });
+    // RFC 768: a non-zero checksum that doesn't match is corruption — a
+    // real kernel silently discards it (UdpInErrors), no ICMP reply.
+    if (!verifyUdpChecksum(udp, ipPkt.sourceIP.toString(), ipPkt.destinationIP.toString())) {
+      Logger.warn(this.id, 'udp:checksum-fail',
+        `${this.name}: invalid UDP checksum from ${ipPkt.sourceIP}:${udp.sourcePort}, dropping`);
       return;
+    }
+
+    if (this.dispatchUdpToListener(portName, udp, ipPkt.sourceIP, ipPkt.destinationIP, srcMac)) return;
+
+    // NTP (`docs/PRD-NTP-Tutoriel.md` §4). Un hote qui interroge un
+    // serveur doit pouvoir entendre sa REPONSE : sans ce point de
+    // remise, chronyd emettait ses paquets et rien ne revenait jamais,
+    // donc aucune machine Linux ne pouvait se synchroniser.
+    if (udp.destinationPort === 123) {
+      const ntp = (this as unknown as { getNtpAgent?: () => import('../ntp/NtpAgent').NtpAgent })
+        .getNtpAgent?.();
+      if (ntp) { ntp.handleUdp(portName, ipPkt.sourceIP, udp); return; }
     }
 
     if (!wasBroadcast) {
@@ -1617,21 +2868,78 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  // ─── DNS client (RFC 1035 over the UDP socket layer) ────────────
+  private deliverUDP6(portName: string, ipv6: IPv6Packet): void {
+    const udp = ipv6.payload as UDPPacket;
+    if (!udp || udp.type !== 'udp') return;
 
-  /**
-   * Send a DNS query to `serverIP` over UDP 53 and await the response.
-   * Resolves to null on timeout — which genuinely happens when the server
-   * is unreachable (unplugged cable, no route, firewall on UDP 53),
-   * exactly like a real stub resolver. Shared by Linux and Windows hosts.
-   */
+    if (this.dispatchUdpToListener(portName, udp, ipv6.sourceIP, ipv6.destinationIP)) return;
+
+    if (!ipv6.destinationIP.isMulticast()) {
+      this.sendICMPv6Unreachable(portName, ipv6);
+    }
+  }
+
+  private sendICMPv6Unreachable(portName: string, offendingPkt: IPv6Packet, code: number = ICMPV6_UNREACH_PORT): void {
+    const port = this.ports.get(portName);
+    if (!port || !port.isIPv6Enabled()) return;
+    const srcIP = offendingPkt.destinationIP.isMulticast()
+      ? (port.getGlobalIPv6() || port.getLinkLocalIPv6())
+      : offendingPkt.destinationIP;
+    if (!srcIP) return;
+
+    const icmpError: ICMPv6Packet = {
+      type: 'icmpv6', icmpType: 'destination-unreachable', code,
+    };
+    const errorPkt = createIPv6Packet(
+      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,
+    );
+
+    const route = this.resolveIPv6Route(offendingPkt.sourceIP);
+    if (!route) return;
+    if (this.firewallFilter6(route.port.getName(), errorPkt, 'out') !== 'accept') return;
+
+    const cached = this.neighborCache.get(route.nextHopIP.toString());
+    if (cached) {
+      this.sendFrame(route.port.getName(), {
+        srcMAC: route.port.getMAC(), dstMAC: cached.mac,
+        etherType: ETHERTYPE_IPV6, payload: errorPkt,
+      });
+      return;
+    }
+    void this.resolveNDP(route.port.getName(), route.nextHopIP).then((mac) => {
+      this.sendFrame(route.port.getName(), {
+        srcMAC: route.port.getMAC(), dstMAC: mac,
+        etherType: ETHERTYPE_IPV6, payload: errorPkt,
+      });
+    }).catch(() => {});
+  }
+
   public async queryDnsServer(
-    serverIP: IPAddress,
+    serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
     timeoutMs: number = 2000,
-  ): Promise<DnsWireResponse | null> {
-    const id = nextDnsTransactionId();
+    options: DnsQueryOptions = {},
+  ): Promise<DnsMessage | null> {
+    const port = options.port ?? DNS_PORT;
+    if (options.tls) {
+      // RFC 7858 : port propre, poignée de main TLS 1.3 réelle. Le port 53
+      // par défaut ne vaut pas ici — c'est 853 tant que l'appelant n'en
+      // impose pas un autre.
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+      if (!query) return null;
+      if (!(serverIP instanceof IPAddress)) return null;
+      return queryDnsOverTls(this, serverIP, query, {
+        port: options.port ?? DOT_PORT, timeoutMs,
+      });
+    }
+    if (options.tcp) {
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+      if (!query) return null;
+      return queryDnsOverTcp(this, serverIP, query, port, timeoutMs);
+    }
+    const wire = this.encodeDnsQuery(name, qtype, options);
+    if (!wire) return null;
     let sourcePort: number;
     try {
       sourcePort = this.socketTable.allocateEphemeralPort();
@@ -1639,10 +2947,10 @@ export abstract class EndHost extends Equipment {
       return null;
     }
 
-    return new Promise<DnsWireResponse | null>((resolve) => {
+    return new Promise<DnsMessage | null>((resolve) => {
       let timer: symbol | null = null;
       let settled = false;
-      const finish = (result: DnsWireResponse | null) => {
+      const finish = (result: DnsMessage | null) => {
         if (settled) return;
         settled = true;
         this.hostTimers.clear(timer);
@@ -1652,19 +2960,16 @@ export abstract class EndHost extends Equipment {
 
       try {
         this.udpBind(sourcePort, ({ udp }) => {
-          const msg = udp.payload;
-          if (isDnsWireResponse(msg) && msg.id === id) finish(msg);
+          const response = this.decodeDnsReply(udp.payload, wire.id);
+          if (response) finish(response);
         }, 'resolver');
       } catch {
         resolve(null);
         return;
       }
 
-      const query: DnsWireQuery = {
-        kind: 'dns-query', id, name, qtype, recursionDesired: true,
-      };
-      const sent = this.sendUdpDatagram(
-        serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+      const sent = this.sendUdpDatagramTo(
+        serverIP, port, sourcePort, wire.bytes, wire.bytes.length,
       );
       if (!sent) {
         finish(null);
@@ -1674,40 +2979,58 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  /**
-   * Synchronous variant for callers bound to a sync contract (the NSS
-   * `dns` source). Cable delivery is synchronous, so a live server's
-   * response has been captured when the send returns; null = timeout.
-   */
   public queryDnsServerSync(
-    serverIP: IPAddress,
+    serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
-  ): DnsWireResponse | null {
+  ): DnsMessage | null {
+    const wire = this.encodeDnsQuery(name, qtype);
+    if (!wire) return null;
     let sourcePort: number;
     try {
       sourcePort = this.socketTable.allocateEphemeralPort();
     } catch {
       return null;
     }
-    const id = nextDnsTransactionId();
-    let reply: DnsWireResponse | null = null;
+    let reply: DnsMessage | null = null;
     try {
       this.udpBind(sourcePort, ({ udp }) => {
-        const msg = udp.payload;
-        if (isDnsWireResponse(msg) && msg.id === id) reply = msg;
+        const response = this.decodeDnsReply(udp.payload, wire.id);
+        if (response) reply = response;
       }, 'resolver');
     } catch {
       return null;
     }
-    const query: DnsWireQuery = {
-      kind: 'dns-query', id, name, qtype, recursionDesired: true,
-    };
-    this.sendUdpDatagram(
-      serverIP, UDP_PORT_DNS, sourcePort, query, estimateDnsMessageSize(name),
+    this.sendUdpDatagramTo(
+      serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
     );
     this.udpClose(sourcePort);
     return reply;
+  }
+
+  private encodeDnsQuery(
+    name: string,
+    qtype: string,
+    options: DnsQueryOptions = {},
+  ): { id: number; bytes: Uint8Array } | null {
+    const id = nextDnsTransactionId();
+    const query = buildLegacyQueryMessage(id, name, qtype, options);
+    if (!query) return null;
+    try {
+      return { id, bytes: encodeDnsMessage(query) };
+    } catch {
+      return null;
+    }
+  }
+
+  private decodeDnsReply(payload: unknown, id: number): DnsMessage | null {
+    if (!(payload instanceof Uint8Array)) return null;
+    try {
+      const message = decodeDnsMessage(payload);
+      return message.id === id && message.flags.qr ? message : null;
+    } catch {
+      return null;
+    }
   }
 
   // ─── ARP Resolution ────────────────────────────────────────────
@@ -1718,7 +3041,7 @@ export abstract class EndHost extends Equipment {
    */
   protected async resolveARP(portName: string, targetIP: IPAddress, timeoutMs: number = 2000): Promise<MACAddress> {
     const cached = this.arpTable.get(targetIP.toString());
-    if (cached) return cached.mac;
+    if (cached && cached.type !== 'failed') return cached.mac;
 
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
@@ -1756,7 +3079,18 @@ export abstract class EndHost extends Equipment {
       const learned = await waitPromise;
       return new MACAddress(learned.mac);
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) throw new Error('ARP timeout');
+      if (err instanceof WaitForEventTimeoutError) {
+        const prev = this.arpTable.get(targetIpStr);
+        if (!prev || prev.type !== 'static') {
+          this.arpTable.set(targetIpStr, {
+            mac: MACAddress.broadcast(),
+            iface: portName,
+            timestamp: Date.now(),
+            type: 'failed',
+          });
+        }
+        throw new Error('ARP timeout');
+      }
       throw err;
     }
   }
@@ -1774,11 +3108,21 @@ export abstract class EndHost extends Equipment {
     seq: number = 1,
     timeoutMs: number = 2000,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult> {
     const port = this.ports.get(portName);
     if (!port) throw new Error('Port not found');
     const myIP = port.getIPAddress();
     if (!myIP) throw new Error('No IP configured');
+
+    // No carrier means the kernel fails the send outright with EHOSTUNREACH
+    // rather than waiting for a reply that can never come — real ping then
+    // prints "From <src> icmp_seq=N Destination Host Unreachable" for every
+    // probe, which is the visible failure a plain timeout never produces
+    // (docs/PRD-Link-State.md §2.1 P3).
+    if (!this.isInterfaceOperationallyUp(portName, port)) {
+      throw new Error(`Destination unreachable from ${myIP}`);
+    }
 
     this.pingIdCounter++;
     const id = this.pingIdCounter;
@@ -1808,12 +3152,16 @@ export abstract class EndHost extends Equipment {
     replyPromise.catch(() => {});
     failedPromise.catch(() => {});
 
+    const dataSize = opts?.dataSize ?? 56;
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
-      id, sequence: seq, dataSize: 56,
+      id, sequence: seq, dataSize,
     };
-    const icmpSize = 8 + 56;
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize);
+    const icmpSize = 8 + dataSize;
+    const ipPkt = createIPv4Packet(
+      myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, icmpSize,
+      opts?.df === undefined ? {} : { flags: opts.df ? 0b010 : 0b000 },
+    );
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
@@ -1840,7 +3188,12 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
-      const rtt = performance.now() - sentAt;
+      // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
+      // added to the reported RTT, not a real injected delay on the
+      // (synchronous, hot) frame-delivery path — same treatment as
+      // getPropagationDelay()'s own physical-distance figure.
+      const artificialDelayMs = port.getCable()?.getArtificialDelayMs() ?? 0;
+      const rtt = performance.now() - sentAt + artificialDelayMs;
       return {
         success: true,
         rttMs: rtt,
@@ -1865,13 +3218,36 @@ export abstract class EndHost extends Equipment {
    * from ports that were configured directly (backward compatibility).
    */
   private buildFullRoutingTable(): HostRouteEntry[] {
-    const table = [...this.routingTable];
+    // Connected routes are stored when the address is configured, so the
+    // stored copy predates any later link change: the two link-derived
+    // effects are applied here, on the way out, rather than left to a
+    // snapshot taken before the cable moved. Loopback and virtual
+    // interfaces are exempt — they have no wire to lose.
+    const table: HostRouteEntry[] = [];
+    for (const route of this.routingTable) {
+      const port = this.ports.get(route.iface);
+      if (!port || isVirtualHostInterface(route.iface)) { table.push(route); continue; }
+      if (route.type === 'connected' && (!port.getIsUp() || port.isAdminDown())) continue;
+      table.push(port.hasCarrier() ? route : { ...route, linkdown: true });
+    }
 
-    // Auto-detect connected routes from ports not already in the table
+    // Auto-detect connected routes from ports not already in the table.
+    // An interface taken administratively down loses its connected route
+    // outright, the way `ip link set dev eth0 down` flushes it; losing
+    // carrier only flags the route (see HostRouteEntry.linkdown).
     for (const [, port] of this.ports) {
       const ip = port.getIPAddress();
       const mask = port.getSubnetMask();
       if (!ip || !mask) continue;
+      if (!port.getIsUp() || port.isAdminDown()) continue;
+      // Une interface de bouclage ne produit AUCUNE route dans la table
+      // principale : sur un vrai Linux, `ip route` ne montre pas
+      // 127.0.0.0/8 — cette route vit dans la table `local`, que
+      // `ip route show table local` affiche seule. La joignabilité des
+      // adresses portées par la boucle ne passe pas par une route mais
+      // par `getPortOwningIP()`, qui court-circuite avant toute
+      // résolution, exactement comme le noyau.
+      if (port.isLoopback()) continue;
 
       const portName = port.getName();
       const alreadyExists = table.some(
@@ -1886,6 +3262,32 @@ export abstract class EndHost extends Equipment {
           iface: portName,
           type: 'connected',
           metric: 0,
+          linkdown: !port.hasCarrier(),
+        });
+      }
+
+      // Seule l'adresse PRIMAIRE d'un port donnait une route, alors que
+      // le noyau en pose une par adresse : `ip addr add 10.0.0.1/32 dev
+      // lo` était accepté, l'adresse s'affichait, et un ping vers elle
+      // répondait « Network is unreachable » — l'adresse existait sans
+      // être joignable. Ce n'est pas propre à la boucle : toute adresse
+      // secondaire, sur n'importe quelle interface, était dans ce cas.
+      for (const sec of port.getSecondaryIPs()) {
+        const secNet = new IPAddress(
+          sec.ip.getOctets().map((o, i) => o & sec.mask.getOctets()[i]));
+        const deja = table.some((r) => r.type === 'connected'
+          && r.iface === portName
+          && r.network.equals(secNet)
+          && r.mask.toCIDR() === sec.mask.toCIDR());
+        if (deja) continue;
+        table.push({
+          network: secNet,
+          mask: sec.mask,
+          nextHop: null,
+          iface: portName,
+          type: 'connected',
+          metric: 0,
+          linkdown: !port.hasCarrier(),
         });
       }
     }
@@ -1901,6 +3303,7 @@ export abstract class EndHost extends Equipment {
           break;
         }
       }
+      const gwPort = gwIface ? this.ports.get(gwIface) : undefined;
       table.push({
         network: new IPAddress('0.0.0.0'),
         mask: new SubnetMask('0.0.0.0'),
@@ -1908,6 +3311,7 @@ export abstract class EndHost extends Equipment {
         iface: gwIface,
         type: 'default',
         metric: 0,
+        linkdown: gwPort ? !gwPort.hasCarrier() : undefined,
       });
     }
 
@@ -1925,7 +3329,7 @@ export abstract class EndHost extends Equipment {
    *
    * Returns: { port, nextHopIP } or null if unreachable.
    */
-  protected resolveRoute(targetIP: IPAddress): { port: Port; nextHopIP: IPAddress } | null {
+  protected resolveRoute(targetIP: IPAddress): { port: Port; iface: string; nextHopIP: IPAddress } | null {
     const table = this.buildFullRoutingTable();
     const destInt = targetIP.toUint32();
 
@@ -1954,7 +3358,18 @@ export abstract class EndHost extends Equipment {
     // For connected routes (nextHop is null), the next-hop is the destination itself
     const nextHopIP = bestRoute.nextHop || targetIP;
 
-    return { port, nextHopIP };
+    return { port, iface: bestRoute.iface, nextHopIP };
+  }
+
+  /**
+   * True when `portName` can actually carry traffic. Delegates to
+   * `Port.isOperationallyUp()` by default; overridden by `LinuxMachine`
+   * so a VLAN sub-interface (which is a real Linux construct but has no
+   * `Cable` of its own — see `addVlanSubInterface`) correctly reflects
+   * its parent interface's carrier instead of always reporting down.
+   */
+  protected isInterfaceOperationallyUp(portName: string, port: Port): boolean {
+    return port.isOperationallyUp();
   }
 
   // ─── High-level Ping (used by terminal commands) ──────────────
@@ -1966,14 +3381,19 @@ export abstract class EndHost extends Equipment {
   /** Fabricate successful echo results for traffic that never leaves the host. */
   private localEchoResults(targetIP: IPAddress, count: number): PingResult[] {
     const results: PingResult[] = [];
+    const ip = targetIP.toString();
     for (let seq = 1; seq <= count; seq++) {
+      this.pingIdCounter++;
+      const id = this.pingIdCounter;
+      this.emitIcmpEchoSent({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, size: 64 });
+      this.emitIcmpEchoReply({ fromIp: ip, toIp: ip, id, seq, ttl: this.defaultTTL, rttMs: 0.01 });
       results.push({
         success: true,
         rttMs: 0.01,
         ttl: this.defaultTTL,
         seq,
         bytes: 64,
-        fromIP: targetIP.toString(),
+        fromIP: ip,
       });
     }
     return results;
@@ -1984,6 +3404,7 @@ export abstract class EndHost extends Equipment {
     count: number = 4,
     timeoutMs: number = 2000,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult[]> {
     // Local delivery without touching the wire: loopback (127/8) and any
     // address owned by one of our interfaces (self-ping), like a real kernel.
@@ -2011,7 +3432,7 @@ export abstract class EndHost extends Equipment {
     const results: PingResult[] = [];
     for (let seq = 1; seq <= count; seq++) {
       try {
-        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl);
+        const result = await this.sendPing(portName, targetIP, nextHopMAC, seq, timeoutMs, ttl, opts);
         results.push(result);
       } catch (err: any) {
         const errorMsg = typeof err === 'string'
@@ -2029,6 +3450,232 @@ export abstract class EndHost extends Equipment {
       }
     }
     return results;
+  }
+
+  async pingStreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      ttl?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHostForCommand(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    const outcome = await this.executePingStream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
+  getEgressIPFor(targetIP: IPAddress): IPAddress | null {
+    return this.getEgressFor(targetIP)?.sourceIp ?? null;
+  }
+
+  /** True if `targetIP` is locally delivered (loopback/self) or a route exists to reach it. */
+  hasRouteOrLocal(targetIP: IPAddress): boolean {
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) return true;
+    return this.resolveRoute(targetIP) !== null;
+  }
+
+  getEgressFor(targetIP: IPAddress): { sourceIp: IPAddress; interfaceName: string; nextHopIP: IPAddress } | null {
+    const route = this.resolveRoute(targetIP);
+    if (!route) return null;
+    const sourceIp = route.port.getIPAddress();
+    if (!sourceIp) return null;
+    return { sourceIp, interfaceName: route.port.getName(), nextHopIP: route.nextHopIP };
+  }
+
+  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number } {
+    if (targetIP.isLoopback() || this.getPortOwningIP(targetIP)) {
+      return { success: true, rttMs: 0.02, ttl: this.defaultTTL };
+    }
+    const route = this.resolveRoute(targetIP);
+    if (!route) return { success: false, rttMs: 0, ttl: 0 };
+    const port = route.port;
+    const portName = port.getName();
+    const myIP = port.getIPAddress();
+    if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
+
+    const nextHopIpStr = route.nextHopIP.toString();
+    this.resolveArpSync(targetIP);
+    const arpEntry = this.arpTable.get(nextHopIpStr);
+    if (!arpEntry) return { success: false, rttMs: 0, ttl: 0 };
+
+    this.pingIdCounter++;
+    const id = this.pingIdCounter;
+    const targetIpStr = targetIP.toString();
+    const seq = 1;
+    const useTtl = opts?.ttl ?? this.defaultTTL;
+
+    let reply: { rttMs: number; ttl: number } | null = null;
+    let failed = false;
+    const unsubReply = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
+      const p = e.payload;
+      if (p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq) {
+        reply = { rttMs: performance.now() - sentAt, ttl: p.ttl };
+      }
+    });
+    const unsubFailed = this.getBus().subscribe('host.icmp.echo-failed', (e) => {
+      const p = e.payload;
+      if (p.deviceId === this.id && (p.id === -1 || (p.id === id && p.seq === seq))
+          && (p.toIp === targetIpStr || p.toIp === '')) {
+        failed = true;
+      }
+    });
+
+    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize: 56 };
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, 64);
+    const sentAt = performance.now();
+
+    this.emitIcmpEchoSent({
+      fromIp: myIP.toString(), toIp: targetIpStr,
+      id, seq, ttl: useTtl, size: 64,
+    });
+
+    const verdict = this.firewallFilter(portName, ipPkt, 'out');
+    if (verdict === 'drop' || verdict === 'reject') {
+      unsubReply(); unsubFailed();
+      return { success: false, rttMs: 0, ttl: 0 };
+    }
+
+    this.sendFrame(portName, {
+      srcMAC: port.getMAC(), dstMAC: arpEntry.mac,
+      etherType: ETHERTYPE_IPV4, payload: ipPkt,
+    });
+
+    unsubReply(); unsubFailed();
+    if (reply) return { success: true, rttMs: (reply as { rttMs: number }).rttMs, ttl: (reply as { ttl: number }).ttl };
+    if (failed) return { success: false, rttMs: 0, ttl: 0 };
+    return { success: false, rttMs: 0, ttl: 0 };
+  }
+
+  private resolveArpSync(targetIP: IPAddress): void {
+    const route = this.resolveRoute(targetIP);
+    if (!route) return;
+    const nextHopIpStr = route.nextHopIP.toString();
+    if (this.arpTable.get(nextHopIpStr)) return;
+    const myIP = route.port.getIPAddress();
+    if (!myIP) return;
+    const arpReq: ARPPacket = {
+      type: 'arp', operation: 'request',
+      senderMAC: route.port.getMAC(), senderIP: myIP,
+      targetMAC: MACAddress.broadcast(), targetIP: route.nextHopIP,
+    };
+    this.emitArpRequestSent(route.port.getName(), nextHopIpStr);
+    this.sendFrame(route.port.getName(), {
+      srcMAC: route.port.getMAC(), dstMAC: MACAddress.broadcast(),
+      etherType: ETHERTYPE_ARP, payload: arpReq,
+    });
+  }
+
+  /**
+   * IPv6/NDP equivalent of `resolveArpSync()` — needed for the same reason:
+   * `tcpConnectOutcome6()`/`tcpProbeSyncIPv6()` check `socket.state`
+   * synchronously right after `connect()` returns, with no `await` anywhere
+   * in between. `resolveNDP()` is `async` (its `.then()` continuation can
+   * only run on a later microtask), so on a cold neighbor cache the SYN
+   * itself wouldn't even be on the wire yet at the point those callers
+   * inspect the socket — this sends the NS (and, since frame delivery in
+   * this simulator is synchronous end-to-end, absorbs the NA reply) before
+   * that check ever happens, exactly like the ARP warm-up already does.
+   */
+  private resolveNdpSync(targetIP: IPv6Address): void {
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return;
+    const nextHopIpStr = route.nextHopIP.toString();
+    if (this.neighborCache.get(nextHopIpStr)) return;
+    const port = route.port;
+    const srcIP = route.nextHopIP.isLinkLocal()
+      ? port.getLinkLocalIPv6()
+      : (port.getGlobalIPv6() || port.getLinkLocalIPv6());
+    if (!srcIP) return;
+    const ns = createNeighborSolicitation(route.nextHopIP, port.getMAC());
+    const nsPkt = createIPv6Packet(
+      srcIP, route.nextHopIP.toSolicitedNodeMulticast(), IP_PROTO_ICMPV6, 255, ns, 24,
+    );
+    this.sendFrame(port.getName(), {
+      srcMAC: port.getMAC(), dstMAC: route.nextHopIP.toSolicitedNodeMulticast().toMulticastMAC(),
+      etherType: ETHERTYPE_IPV6, payload: nsPkt,
+    });
+  }
+
+  tcpProbeSync(targetIP: IPAddress, port: number): boolean {
+    const socket = this.tcpv2.connect(targetIP.toString(), port);
+    if (!socket) return false;
+    const established = socket.everEstablished;
+    socket.close();
+    return established;
+  }
+
+  /**
+   * Connect probe whose verdict is read from the wire: 'open',
+   * 'refused' (RST or ICMP unreachable), or 'timeout' (silent drop / no
+   * route). Lets clients (nc, telnet, ssh) distinguish a filtered port
+   * from a closed one without inspecting the peer's firewall state.
+   */
+  tcpConnectOutcome(targetIP: IPAddress, port: number): 'open' | 'refused' | 'timeout' {
+    this.resolveArpSync(targetIP);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+  }
+
+  tcpConnectOutcome6(targetIP: IPv6Address, port: number): 'open' | 'refused' | 'timeout' {
+    this.resolveNdpSync(targetIP);
+    return this.tcpv2.connectOutcome(targetIP.toString(), port);
+  }
+
+  tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {
+    const bareTarget = targetAddr.split('%')[0];
+    this.resolveNdpSync(new IPv6Address(bareTarget));
+    return this.tcpv2.connectOutcome(bareTarget, port) === 'open';
+  }
+
+  async tracerouteStreamInSession(
+    targetStr: string,
+    opts: {
+      maxHops?: number;
+      probesPerHop?: number;
+      firstTtl?: number;
+      timeoutMs?: number;
+      onResolved?: (ip: IPAddress, hostname?: string) => void;
+      onHop: (hop: TracerouteHopResult) => void;
+      shouldStop: () => boolean;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const ip = await this.resolveHostForCommand(targetStr);
+    if (!ip) return { resolved: false };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+
+    // Loopback / one of the host's own addresses never goes through
+    // `resolveRoute()` — there's no next hop to ARP for, exactly like
+    // `executePingStream()` already special-cases this below. Without this,
+    // `executeTraceroute()` finds no route and returns zero hops, which the
+    // terminal layer reports as a bogus "Unable to resolve target system
+    // name" instead of the single, instant self-hop real tracert/traceroute
+    // print for 127.0.0.1/localhost.
+    if (ip.isLoopback() || this.getPortOwningIP(ip)) {
+      opts.onHop({
+        hop: opts.firstTtl ?? 1,
+        ip: ip.toString(),
+        timeout: false,
+        probes: [
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+          { responded: true, rttMs: 0.02, ip: ip.toString() },
+        ],
+      });
+      return { resolved: true };
+    }
+
+    await this.executeTraceroute(
+      ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
+      { onHop: opts.onHop, shouldStop: opts.shouldStop },
+    );
+    return { resolved: true };
   }
 
   protected async executePingStream(
@@ -2095,7 +3742,8 @@ export abstract class EndHost extends Equipment {
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
     firstTtl: number = 1,
-  ): Promise<Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }>> {
+    hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean },
+  ): Promise<TracerouteHopResult[]> {
     const route = this.resolveRoute(targetIP);
     if (!route) return [];
 
@@ -2107,12 +3755,15 @@ export abstract class EndHost extends Equipment {
     try {
       nextHopMAC = await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
-      return [{ hop: firstTtl, timeout: true, probes: [{ responded: false }] }];
+      const unresolved: TracerouteHopResult = { hop: firstTtl, timeout: true, probes: [{ responded: false }] };
+      hooks?.onHop?.(unresolved);
+      return [unresolved];
     }
 
-    const hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; icmpCode?: number; probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> }> = [];
+    const hops: TracerouteHopResult[] = [];
 
     for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
+      if (hooks?.shouldStop?.()) break;
       const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number }> = [];
       let destinationReached = false;
 
@@ -2197,7 +3848,7 @@ export abstract class EndHost extends Equipment {
       const firstUnreachable = probes.find(p => p.unreachable);
       const allTimeout = probes.every(p => !p.responded);
 
-      const hop = {
+      const hop: TracerouteHopResult = {
         hop: ttl,
         ip: firstResponded?.ip,
         rttMs: firstResponded?.rttMs,
@@ -2208,6 +3859,7 @@ export abstract class EndHost extends Equipment {
       };
 
       hops.push(hop);
+      hooks?.onHop?.(hop);
 
       if (destinationReached) break;
       if (firstUnreachable) break;
@@ -2229,21 +3881,31 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(ifName);
     if (!port) return false;
     port.enableIPv6();
-
-    // Add connected route for link-local
-    const linkLocal = port.getLinkLocalIPv6();
-    if (linkLocal) {
-      this.ipv6RoutingTable.push({
-        prefix: new IPv6Address('fe80::'),
-        prefixLength: 10,
-        nextHop: null,
-        iface: ifName,
-        type: 'connected',
-        metric: 0,
-      });
-    }
-
+    this.ensureLinkLocalRoute(ifName);
     return true;
+  }
+
+  /**
+   * The interface's `fe80::/10` connected route.
+   *
+   * It was installed only by `enableIPv6()`, never by
+   * `configureIPv6Interface()` — the path `ip -6 addr add` takes — so a
+   * normally configured host could reach NO link-local address at all.
+   * It was also pushed without a check, leaving duplicates.
+   */
+  private ensureLinkLocalRoute(ifName: string): void {
+    const port = this.ports.get(ifName);
+    if (!port?.getLinkLocalIPv6()) return;
+    const prefix = new IPv6Address('fe80::');
+    const deja = this.ipv6RoutingTable.some(
+      (r) => r.type === 'connected' && r.iface === ifName
+        && r.prefixLength === 10 && r.prefix.equals(prefix),
+    );
+    if (deja) return;
+    this.ipv6RoutingTable.push({
+      prefix, prefixLength: 10, nextHop: null,
+      iface: ifName, type: 'connected', metric: 0,
+    });
   }
 
   /**
@@ -2254,6 +3916,7 @@ export abstract class EndHost extends Equipment {
     if (!port) return false;
 
     port.configureIPv6(address, prefixLength);
+    this.ensureLinkLocalRoute(ifName);
 
     // Add connected route for this prefix
     const networkPrefix = address.getNetworkPrefix(prefixLength);
@@ -2338,6 +4001,16 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
 
+    // ── PREROUTING: evaluate ip6tables DNAT rules before the local-
+    // destination check, symmetrically to handleIPv4's evaluatePreRouting.
+    const preNat6 = this.evaluatePreRouting6(portName, ipv6);
+    if (preNat6 && preNat6.action === 'DNAT' && preNat6.address) {
+      try {
+        const newDst = new IPv6Address(preNat6.address.split(']:')[0].replace(/^\[/, ''));
+        ipv6 = { ...ipv6, destinationIP: newDst };
+      } catch { /* keep original */ }
+    }
+
     // Check if packet is for us
     const isForUs = port.hasIPv6Address(ipv6.destinationIP);
     const isMulticast = ipv6.destinationIP.isMulticast();
@@ -2345,11 +4018,48 @@ export abstract class EndHost extends Equipment {
 
     if (isForUs || isMulticast || isLoopback) {
       if (ipv6.nextHeader === IP_PROTO_ICMPV6) {
+        // Neighbor Discovery (RFC 4861) must never be filtered — blocking it
+        // would break address resolution itself, taking the whole interface
+        // down rather than just the traffic an administrator meant to
+        // block. Everything else (ping, destination-unreachable relayed
+        // from elsewhere, etc.) goes through ip6tables INPUT like TCP/UDP.
+        const icmpv6 = ipv6.payload as ICMPv6Packet | undefined;
+        const isNeighborDiscovery = !!icmpv6 && (
+          icmpv6.icmpType === 'neighbor-solicitation' || icmpv6.icmpType === 'neighbor-advertisement'
+          || icmpv6.icmpType === 'router-solicitation' || icmpv6.icmpType === 'router-advertisement'
+        );
+        if (!isNeighborDiscovery) {
+          const icmpVerdict = this.firewallFilter6(portName, ipv6, 'in');
+          if (icmpVerdict === 'drop') return;
+          if (icmpVerdict === 'reject') {
+            this.sendICMPv6Unreachable(portName, ipv6, ICMPV6_UNREACH_ADMIN_PROHIBITED);
+            return;
+          }
+        }
         this.handleICMPv6(portName, ipv6);
+        return;
       }
-      // Future: TCP, UDP dispatch here
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP) return;
+
+      const verdict = this.firewallFilter6(portName, ipv6, 'in');
+      if (verdict === 'drop') return;
+      if (verdict === 'reject') {
+        if (ipv6.nextHeader === IP_PROTO_TCP) {
+          this.tcpv2.sendResetForSegment(
+            ipv6.destinationIP.toString(), ipv6.sourceIP.toString(), ipv6.payload as TcpSegment,
+          );
+        } else {
+          this.sendICMPv6Unreachable(portName, ipv6);
+        }
+        return;
+      }
+
+      if (ipv6.nextHeader === IP_PROTO_UDP) {
+        this.deliverUDP6(portName, ipv6);
+      } else {
+        this.tcpv2.handleIp6(portName, ipv6.sourceIP, ipv6);
+      }
     }
-    // End hosts don't forward IPv6 packets
   }
 
   // ─── ICMPv6 Handling (RFC 4443, RFC 4861) ──────────────────────
@@ -2563,7 +4273,11 @@ export abstract class EndHost extends Equipment {
 
     // If router lifetime > 0, consider as default router
     if (ra.routerLifetime > 0 && !this.defaultGateway6) {
-      this.setDefaultGateway6(ipv6.sourceIP);
+      // The zone index never travels: it is not part of the 128 bits
+      // and means nothing to a peer. A real receiver records the
+      // interface it heard the advertisement on.
+      this.setDefaultGateway6(
+        new IPv6Address(ipv6.sourceIP.getHextets(), portName));
     }
 
     // Process prefix information for SLAAC
@@ -2598,6 +4312,14 @@ export abstract class EndHost extends Equipment {
         }
       }
     }
+
+    // RFC 4861 §4.2 / RFC 8415 §5: the M flag tells the host to fetch an
+    // address by DHCPv6. The prefix's A flag stays independent
+    // (RFC 4862 §5.5.3), so both addresses may legitimately coexist.
+    if (ra.managedFlag) this.requestDhcpv6LeaseIfNeeded(portName);
+    // The O flag alone (RFC 4861 §4.2): no address wanted, only the
+    // other configuration. Under M the full lease already carries it.
+    else if (ra.otherConfigFlag) this.requestDhcpv6InfoIfNeeded(portName);
   }
 
   // ─── NDP Resolution (IPv6 equivalent of ARP) ────────────────────
@@ -2729,6 +4451,10 @@ export abstract class EndHost extends Equipment {
 
     if (!srcIP) throw new Error('No IPv6 address');
 
+    if (!this.isInterfaceOperationallyUp(portName, port)) {
+      throw new Error(`Destination unreachable from ${srcIP}`);
+    }
+
     this.ping6IdCounter++;
     const id = this.ping6IdCounter;
 
@@ -2770,7 +4496,12 @@ export abstract class EndHost extends Equipment {
     try {
       const winner = await Promise.race([replyOutcome, failedOutcome]);
       if (winner.kind === 'failed') throw new Error(winner.r.reason);
-      const rtt = performance.now() - sentAt;
+      // `tc qdisc ... netem delay` (Cable.artificialDelayMs) is metadata
+      // added to the reported RTT, not a real injected delay on the
+      // (synchronous, hot) frame-delivery path — same treatment as
+      // getPropagationDelay()'s own physical-distance figure.
+      const artificialDelayMs = port.getCable()?.getArtificialDelayMs() ?? 0;
+      const rtt = performance.now() - sentAt + artificialDelayMs;
       return {
         success: true,
         rttMs: rtt,
@@ -2850,7 +4581,10 @@ export abstract class EndHost extends Equipment {
       try {
         const result = await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs);
         results.push(result);
-      } catch {
+      } catch (err: unknown) {
+        const errorMsg = typeof err === 'string'
+          ? err
+          : (err instanceof Error ? err.message : String(err));
         results.push({
           success: false,
           rttMs: 0,
@@ -2858,18 +4592,108 @@ export abstract class EndHost extends Equipment {
           seq,
           bytes: 0,
           fromIP: '',
+          error: errorMsg,
         });
       }
     }
     return results;
   }
 
+  /**
+   * Real-time streaming IPv6 ping — the `ping6`/`ping -6` counterpart of
+   * `executePingStream()`, with the same `count<=0` = unbounded convention
+   * so the interactive terminal can offer genuine "continuous until
+   * Ctrl+C" behavior for IPv6 too, not just IPv4.
+   */
+  protected async executePing6Stream(
+    targetIP: IPv6Address,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean }> {
+    const { count, timeoutMs = 2000, intervalMs = 1000, onResult, shouldStop, sleep } = opts;
+    const infinite = count <= 0;
+    const isLast = (seq: number) => !infinite && seq >= count;
+
+    if (targetIP.isLoopback()) {
+      for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+        onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: '::1' });
+        if (isLast(seq)) break;
+        await sleep(intervalMs);
+      }
+      return { resolved: true };
+    }
+
+    for (const [, port] of this.ports) {
+      if (port.getIPv6Addresses().some((e) => e.address.equals(targetIP))) {
+        for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+          onResult({ success: true, rttMs: 0.01, ttl: this.defaultHopLimit, seq, bytes: 64, fromIP: targetIP.toString() });
+          if (isLast(seq)) break;
+          await sleep(intervalMs);
+        }
+        return { resolved: true };
+      }
+    }
+
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return { resolved: false };
+
+    const portName = route.port.getName();
+    let nextHopMAC: MACAddress;
+    try {
+      nextHopMAC = await this.resolveNDP(portName, route.nextHopIP, timeoutMs);
+    } catch {
+      return { resolved: false };
+    }
+
+    for (let seq = 1; (infinite || seq <= count) && !shouldStop(); seq++) {
+      let result: PingResult;
+      try {
+        result = await this.sendPing6(portName, targetIP, nextHopMAC, seq, timeoutMs);
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        result = { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '', error: errorMsg };
+      }
+      onResult(result);
+      if (isLast(seq) || shouldStop()) break;
+      await sleep(intervalMs);
+    }
+    return { resolved: true };
+  }
+
+  async ping6StreamInSession(
+    targetStr: string,
+    opts: {
+      count: number;
+      timeoutMs?: number;
+      intervalMs?: number;
+      onResolved?: (ip: IPv6Address) => void;
+      onResult: (result: PingResult) => void;
+      shouldStop: () => boolean;
+      sleep: (ms: number) => Promise<void>;
+    },
+  ): Promise<{ resolved: boolean; reason?: 'name' | 'unreachable' }> {
+    const ip = await this.resolveHost6ForCommand(targetStr);
+    if (!ip) return { resolved: false, reason: 'name' };
+    opts.onResolved?.(ip);
+    const outcome = await this.executePing6Stream(ip, opts);
+    return outcome.resolved ? { resolved: true } : { resolved: false, reason: 'unreachable' };
+  }
+
   // ─── Router Solicitation ────────────────────────────────────────
 
   /**
    * Send Router Solicitation to discover routers and obtain prefix info.
+   * Public: used directly by `ipconfig /renew6` (Windows) and the
+   * Linux equivalent — a SLAAC-only network has no DHCPv6 lease to
+   * renew, so a real renew there re-solicits the on-link router(s).
    */
-  protected sendRouterSolicitation(portName: string): void {
+  sendRouterSolicitation(portName: string): void {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
 

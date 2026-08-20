@@ -19,7 +19,10 @@ export function cdpToNeighborDTO(rows: readonly CdpNeighbor[]): NeighborDTO[] {
     remotePort: n.remotePort,
     remoteType: n.remoteType,
     remotePlatform: n.remotePlatform,
-    remoteCapability: n.remoteCapability,
+    // NeighborDTO only distinguishes Router/Switch/Host; CDP's IGMP/Repeater
+    // capabilities collapse to Host, same fallback LLDP's converter uses.
+    remoteCapability: n.remoteCapability === 'Router' ? 'Router'
+      : n.remoteCapability === 'Switch' ? 'Switch' : 'Host',
   }));
 }
 

@@ -2,7 +2,7 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ToolbarProps {
@@ -18,12 +18,16 @@ interface ToolbarProps {
   onHelp?: () => void;
   logsOpen?: boolean;
   onToggleLogs?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 export function Toolbar({
   projectName, onProjectNameChange, onClearAll, hasDevices,
   onExport, onImport, onSave, onOpen, onReset, onHelp,
-  logsOpen, onToggleLogs,
+  logsOpen, onToggleLogs, onUndo, onRedo, canUndo, canRedo,
 }: ToolbarProps) {
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
@@ -36,7 +40,11 @@ export function Toolbar({
             </svg>
           </div>
           <input
+            id="project-name"
+            name="projectName"
             type="text"
+            autoComplete="off"
+            aria-label="Project name"
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
             className="bg-transparent text-lg font-semibold text-foreground border-none focus:outline-none focus:ring-0 w-48"
@@ -61,6 +69,9 @@ export function Toolbar({
 
       {/* Center section - Actions */}
       <div className="flex items-center gap-1">
+        <ToolbarButton icon={Undo2} label="Undo" onClick={onUndo} disabled={!canUndo} />
+        <ToolbarButton icon={Redo2} label="Redo" onClick={onRedo} disabled={!canRedo} />
+        <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolbarButton icon={Save} label="Save" onClick={onSave} />
         <ToolbarButton icon={FolderOpen} label="Open" onClick={onOpen} />
         <div className="w-px h-6 bg-white/10 mx-2" />
@@ -91,16 +102,19 @@ interface ToolbarButtonProps {
   label: string;
   variant?: 'default' | 'primary';
   onClick?: () => void;
+  disabled?: boolean;
 }
 
-function ToolbarButton({ icon: Icon, label, variant = 'default', onClick }: ToolbarButtonProps) {
+function ToolbarButton({ icon: Icon, label, variant = 'default', onClick, disabled }: ToolbarButtonProps) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
         variant === 'default' && "text-foreground/70 hover:text-foreground hover:bg-white/10",
-        variant === 'primary' && "bg-primary/20 text-primary hover:bg-primary/30"
+        variant === 'primary' && "bg-primary/20 text-primary hover:bg-primary/30",
+        disabled && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-foreground/70"
       )}
       title={label}
     >

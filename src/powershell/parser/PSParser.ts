@@ -12,7 +12,7 @@
  *   Expression → unary, binary, member, index, cast, range, ...
  */
 
-import { PSTokenType, PS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
+import { PSTokenType, PS_OPERATOR_PARAMS, PS_AMBIGUOUS_OPERATOR_PARAMS } from '@/powershell/lexer/PSToken';
 // PSTokenType.INCREMENT and PSTokenType.DECREMENT are used below
 import type { PSToken, SourcePosition } from '@/powershell/lexer/PSToken';
 import { PSParserError } from './PSParserError';
@@ -30,7 +30,7 @@ import type {
   PSIfStatement, PSElseifClause, PSWhileStatement, PSDoWhileStatement,
   PSDoUntilStatement, PSForStatement, PSForeachStatement,
   PSSwitchStatement, PSSwitchClause, PSTryStatement, PSCatchClause,
-  PSFunctionDefinition, PSReturnStatement, PSBreakStatement,
+  PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSBreakStatement,
   PSContinueStatement, PSThrowStatement, PSTrapStatement,
   PSScriptBlock, PSParamBlock, PSParamDeclaration, PSAttribute,
   PSExpression, PSLiteralExpression, PSVariableExpression,
@@ -159,6 +159,7 @@ export class PSParser {
         case 'class':     return this.parseClassDef();
         case 'enum':      return this.parseEnumDef();
         case 'return':    return this.parseReturnStatement();
+        case 'exit':      return this.parseExitStatement();
         case 'break':     return this.parseBreakStatement();
         case 'continue':  return this.parseContinueStatement();
         case 'throw':     return this.parseThrowStatement();
@@ -375,10 +376,10 @@ export class PSParser {
       if (this.check(PSTokenType.PARAMETER)) {
         parameters.push(this.parseCommandParameter());
       } else if (this.canStartExpression() || this.check(PSTokenType.MODULO)
-                 || this.check(PSTokenType.MULTIPLY)) {
-        // A `%`- or `*`-led token here is a bareword argument (`echo
-        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`); `%`/`*` are
-        // only operators in expression position.
+                 || this.check(PSTokenType.MULTIPLY) || this.check(PSTokenType.DIVIDE)) {
+        // A `%`-, `*`- or `/`-led token here is a bareword argument (`echo
+        // %PATH%`, `Select-Object *`, `Get-Service *Tcp*`, `ipconfig /all`);
+        // those symbols are only operators in expression position.
         args.push(this.parseCommandArgument());
       } else {
         break;
@@ -405,6 +406,12 @@ export class PSParser {
       const expr = this.parsePrimaryExpression();
       if (expr.type === 'ScriptBlock')
         (expr as unknown as Record<string, unknown>).__invoke__ = true;
+      // The `&` itself must survive parsing. Without this mark the head
+      // is just an expression again, so `& 'Get-Date'` and `& $path`
+      // evaluated to their own text and printed it instead of running
+      // anything — only the bare `& Get-Date` form ever worked, because
+      // a WORD head is not a value.
+      (expr as unknown as Record<string, unknown>).__callop__ = true;
       return expr;
     }
 
@@ -477,15 +484,23 @@ export class PSParser {
     const name = paramTok.value;    // already lowercased
 
     // If next token can be a value (not another param, not a terminator, not a pipe)
-    // and the param name is NOT a known operator used standalone
+    // and the param name is NOT a comparison/logical operator used standalone
+    // (see PS_AMBIGUOUS_OPERATOR_PARAMS — Where-Object's bare chained-
+    // comparison syntax needs `-eq`/`-and`/etc. to stay valueless here;
+    // string/bitwise-operator-named params like `-Replace` are real cmdlet
+    // parameters and DO need their value consumed).
     let value: PSExpression | null = null;
-    if (!PS_OPERATOR_PARAMS.has(name)
+    if (!PS_AMBIGUOUS_OPERATOR_PARAMS.has(name)
         && (this.canStartExpression()
             || this.check(PSTokenType.MULTIPLY)
-            || this.check(PSTokenType.MODULO))
+            || this.check(PSTokenType.MODULO)
+            || this.check(PSTokenType.DIVIDE))
         && !this.isTerminator() && !this.check(PSTokenType.PIPE)) {
-      // A `*`/`%`-led value is a wildcard/bareword (`-Filter *.jpg`,
-      // `-Path %TEMP%`), not an operator.
+      // A `*`/`%`/`/`-led value is a wildcard/bareword (`-Filter *.jpg`,
+      // `-Path %TEMP%`, `-Argument /silent`), not an operator. `/` était
+      // absent de cette liste : la valeur n'était pas consommée du tout,
+      // et le paramètre devenait un commutateur — `-Argument /silent`
+      // rendait `Argument: True`, la valeur perdue sans un mot.
       value = this.parseCommandArgument();
     }
 
@@ -583,6 +598,62 @@ export class PSParser {
       }
       return makeLiteral(value, value, 'string', pos);
     }
+    // A command argument that begins with `/` is a native-command switch
+    // bareword (`ipconfig /release`, `/all`, `/flushdns`, `netsh /?`), NOT
+    // division — that only applies in expression position. Glue the adjacent
+    // run so `/release`, `/release6`, `/setclassid` stay a single token.
+    if (tok.type === PSTokenType.DIVIDE) {
+      const pos = this.pos_();
+      this.advance();
+      let value = '/';
+      let prevEnd = tok.position.offset + 1;
+      for (;;) {
+        const nxt = this.peek();
+        if (nxt.position.offset !== prevEnd) break;
+        if (nxt.type === PSTokenType.DIVIDE) value += '/';
+        else if (nxt.type === PSTokenType.DOT) value += '.';
+        else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+        else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+        else break;
+        this.advance();
+        prevEnd = nxt.position.offset + (
+          nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+            ? nxt.value.length : 1
+        );
+      }
+      return makeLiteral(value, value, 'string', pos);
+    }
+    // Un nombre suivi **sans espace** de `%` ou `/` est un mot nu, pas un
+    // calcul : `50%`, `8/tcp`. Seuls ces deux signes sont recollés ici —
+    // ni le point ni `*`, qui appartiennent aux décimaux (`2.5`) et aux
+    // intervalles (`1..10`) et n'ont rien à faire dans un mot.
+    if (tok.type === PSTokenType.NUMBER) {
+      const suite = this.peekAt(1);
+      const colle = suite !== undefined
+        && suite.position.offset === tok.position.offset + tok.value.length
+        && (suite.type === PSTokenType.MODULO || suite.type === PSTokenType.DIVIDE);
+      if (colle) {
+        const pos = this.pos_();
+        const startTok = this.advance();
+        let value = startTok.value;
+        let prevEnd = startTok.position.offset + startTok.value.length;
+        for (;;) {
+          const nxt = this.peek();
+          if (nxt.position.offset !== prevEnd) break;
+          if (nxt.type === PSTokenType.MODULO) value += '%';
+          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
+          else if (nxt.type === PSTokenType.WORD) value += nxt.value;
+          else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
+          else break;
+          this.advance();
+          prevEnd = nxt.position.offset + (
+            nxt.type === PSTokenType.WORD || nxt.type === PSTokenType.NUMBER
+              ? nxt.value.length : 1
+          );
+        }
+        return makeLiteral(value, value, 'string', pos);
+      }
+    }
     if (tok.type === PSTokenType.WORD) {
       const next = this.peekAt(1);
       const nt   = next?.type;
@@ -604,8 +675,24 @@ export class PSParser {
         for (;;) {
           const nxt = this.peek();
           if (nxt.position.offset !== prevEnd) break;
+          // `key=value` / `key= value` — sc.exe/netsh-style native switches
+          // (`binPath=`, `start=`, `obj=`, `reset=`, …). The "=" is part of
+          // the switch bareword; whatever follows (possibly after a space)
+          // is a separate argument, parsed normally so it can be any
+          // expression — a variable, a member-access chain, a sub-expression
+          // — not just a literal.
+          if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
           if (nxt.type === PSTokenType.MULTIPLY) value += '*';
           else if (nxt.type === PSTokenType.DOT) value += '.';
+          // `/` et `%` collés à un mot en font partie : un nom de canal
+          // (`Microsoft-Windows-TaskScheduler/Operational`), un chemin
+          // (`etc/passwd`), un pourcentage (`50%`). Les branches
+          // ci-dessus recollaient déjà un argument qui *commence* par
+          // `/` ou `%` ; celui qui en contient un plus loin ressortait
+          // coupé en deux, et l'appelant ne recevait que la moitié
+          // gauche — silencieusement.
+          else if (nxt.type === PSTokenType.DIVIDE) value += '/';
+          else if (nxt.type === PSTokenType.MODULO) value += '%';
           else if (nxt.type === PSTokenType.WORD) value += nxt.value;
           else if (nxt.type === PSTokenType.NUMBER) value += nxt.value;
           else break;
@@ -671,7 +758,7 @@ export class PSParser {
     // named parameter OR by a positional expression argument when the head was a
     // bare command name.
     const hasNamedParam = this.check(PSTokenType.PARAMETER)
-      && !PS_OPERATOR_PARAMS.has(this.peek().value);
+      && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value);
     const hasPositionalArg = first.type === 'CommandExpression'
       && !this.isAtEnd() && !this.isTerminator()
       && !this.check(PSTokenType.PIPE)
@@ -680,14 +767,14 @@ export class PSParser {
     if (hasNamedParam || hasPositionalArg) {
       const params: PSCommandParameter[] = [];
       const args:   PSExpression[]       = [];
-      while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+      while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
         params.push(this.parseCommandParameter());
       }
       while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE)
              && !this.isRedirection()
              && this.canStartExpression()) {
         args.push(this.parseCommandArgument());
-        while (this.check(PSTokenType.PARAMETER) && !PS_OPERATOR_PARAMS.has(this.peek().value)) {
+        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
           params.push(this.parseCommandParameter());
         }
       }
@@ -780,11 +867,24 @@ export class PSParser {
 
   // ─── if / elseif / else ────────────────────────────────────────────────────
 
+  /**
+   * A parenthesized condition (if/elseif/while/do-until, switch subject) is a
+   * pipeline in PowerShell grammar, not a restricted expression — it must
+   * accept a bare command invocation with arguments, e.g. `if (Test-Path $p)`
+   * or `while (Get-Random -Maximum 1)`, and not just a zero-arg bareword.
+   */
+  private parseParenthesizedCondition(): PSExpression {
+    this.skipTerminators();
+    const condition = this.parseAssignmentRHS();
+    this.skipTerminators();
+    return condition;
+  }
+
   private parseIfStatement(): PSIfStatement {
     const pos = this.pos_();
     this.expectWord('if');
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     const thenBody = this.parseScriptBlock();
 
@@ -797,7 +897,7 @@ export class PSParser {
     while (this.checkValue(PSTokenType.WORD, 'elseif')) {
       this.advance(); // elseif
       this.expect(PSTokenType.LPAREN);
-      const eic = this.parseExpression();
+      const eic = this.parseParenthesizedCondition();
       this.expect(PSTokenType.RPAREN);
       const eib = this.parseScriptBlock();
       elseifClauses.push({ condition: eic, body: eib });
@@ -818,7 +918,7 @@ export class PSParser {
     const pos = this.pos_();
     this.expectWord('while');
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     const body = this.parseScriptBlock();
     return { type: 'WhileStatement', condition, body, position: pos };
@@ -834,7 +934,7 @@ export class PSParser {
     const keyword = this.peek().value; // 'while' or 'until'
     this.advance();
     this.expect(PSTokenType.LPAREN);
-    const condition = this.parseExpression();
+    const condition = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     if (keyword === 'until') {
       return { type: 'DoUntilStatement', body, condition, position: pos };
@@ -904,7 +1004,7 @@ export class PSParser {
     }
 
     this.expect(PSTokenType.LPAREN);
-    const subject = this.parseExpression();
+    const subject = this.parseParenthesizedCondition();
     this.expect(PSTokenType.RPAREN);
     this.skipTerminators();
     this.expect(PSTokenType.LBRACE);
@@ -973,7 +1073,29 @@ export class PSParser {
     const nameTok = this.advance();
     const name = nameTok.value;
 
+    // Optional C-style inline parameter list — real PowerShell allows
+    // `function Name([type]$a, [type]$b = default) { ... }` as an
+    // alternative to a `param(...)` block inside the braces (common in
+    // nested helper functions). Equivalent to the function's own
+    // param(...) block when neither the caller nor the body supplies one.
+    let inlineParams: PSParamDeclaration[] | null = null;
+    if (this.check(PSTokenType.LPAREN)) {
+      this.advance(); // (
+      inlineParams = [];
+      while (!this.check(PSTokenType.RPAREN) && !this.isAtEnd()) {
+        this.skipTerminators();
+        if (this.check(PSTokenType.RPAREN)) break;
+        inlineParams.push(this.parseParamDeclaration());
+        this.skipTerminators();
+        if (this.check(PSTokenType.COMMA)) { this.advance(); this.skipTerminators(); }
+      }
+      this.expect(PSTokenType.RPAREN);
+    }
+
     const body = this.parseScriptBlock();
+    if (inlineParams && !body.paramBlock) {
+      body.paramBlock = { type: 'ParamBlock', attributes: [], parameters: inlineParams, position: pos };
+    }
     return makeFunctionDef(kind, name, body, pos);
   }
 
@@ -1006,7 +1128,6 @@ export class PSParser {
     const pos = this.pos_();
 
     // Skip/collect attribute decorators like [ValidateRange(1,100)] before modifiers/type
-    const { PSValidateAttribute: _v, ..._ } = {} as never; void _v; void _;
     type AttrInfo = { name: string; args: Array<string|number> };
     const attributes: AttrInfo[] = [];
     while (this.check(PSTokenType.LBRACKET)) {
@@ -1098,9 +1219,26 @@ export class PSParser {
   private parseReturnStatement(): PSReturnStatement {
     const pos = this.pos_();
     this.expectWord('return');
+    // `return`'s operand is a pipeline in PowerShell grammar, not a
+    // restricted expression — `return Get-Something 5` must invoke
+    // Get-Something with a positional arg, same as `$x = Get-Something 5`
+    // already does via parseAssignmentRHS().
     const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
-      ? this.parseExpression() : null;
+      ? this.parseAssignmentRHS() : null;
     return { type: 'ReturnStatement', value, position: pos };
+  }
+
+  /**
+   * `exit [<code>]`. A keyword, not a command — without this the word
+   * fell through to command lookup and every script ending in `exit 0`
+   * closed on "the term 'exit' is not recognized".
+   */
+  private parseExitStatement(): PSExitStatement {
+    const pos = this.pos_();
+    this.expectWord('exit');
+    const value = !this.isTerminator() && !this.isAtEnd() && this.canStartExpression()
+      ? this.parseAssignmentRHS() : null;
+    return { type: 'ExitStatement', value, position: pos };
   }
 
   private parseBreakStatement(): PSBreakStatement {
@@ -1478,6 +1616,25 @@ export class PSParser {
       if (this.check(PSTokenType.DOT)) {
         const pos = this.pos_();
         this.advance();
+        // `$obj.'nom de propriété'` — la forme entre guillemets, seule
+        // façon de nommer une propriété qui n'est pas un identifiant
+        // simple. Sans elle, `$xml.Event.EventData.Data[0].'#text'` — la
+        // manière canonique de lire un champ d'EventData — laissait le
+        // point sans effet et rendait l'objet entier au lieu de la
+        // valeur. Le nom n'est pas développé : à ce stade seule la forme
+        // littérale est acceptée, la forme `."$var"` reste à faire.
+        if (this.check(PSTokenType.STRING_SINGLE) || this.check(PSTokenType.STRING_DOUBLE)) {
+          const member = this.advance().value;
+          if (this.check(PSTokenType.LPAREN)) {
+            this.advance();
+            const args = this.parseArgumentList();
+            this.expect(PSTokenType.RPAREN);
+            expr = { type: 'InvocationExpression', callee: makeMember(expr, member, false, pos), arguments: args, position: pos };
+          } else {
+            expr = makeMember(expr, member, false, pos);
+          }
+          continue;
+        }
         if (this.check(PSTokenType.WORD) || this.check(PSTokenType.NUMBER)) {
           // The lexer may bundle "Name.ToUpper" as a single WORD token (it
           // doesn't stop at '.').  Split on '.' so we get proper chained
@@ -1557,6 +1714,22 @@ export class PSParser {
     const pos = this.pos_();
     const tok = this.peek();
 
+    // ── `if`/`switch` as a value-yielding expression (real PowerShell:
+    // these aren't limited to a top-level `$x = if (...) {...}` assignment
+    // RHS — they're valid anywhere a value is expected, e.g. a hashtable
+    // literal's value position (`@{ K = if ($c) {1} else {2} }`), a
+    // function argument, etc. `parseAssignmentRHS()` already had this
+    // special-case for the assignment position; mirrored here so every
+    // other expression context gets it too. ──
+    if (tok.type === PSTokenType.WORD && tok.value === 'switch') {
+      const stmt = this.parseSwitchStatement();
+      return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
+    }
+    if (tok.type === PSTokenType.WORD && tok.value === 'if') {
+      const stmt = this.parseIfStatement();
+      return { type: 'StatementExpression', stmt, position: pos } as unknown as PSExpression;
+    }
+
     // ── Parenthesized expression or pipeline (expr | cmd ...) ──
     if (tok.type === PSTokenType.LPAREN) {
       this.advance();
@@ -1619,7 +1792,12 @@ export class PSParser {
         // In hashtable key position, barewords are string literals
         const key = this.parseHashtableKey();
         this.expect(PSTokenType.ASSIGN);
-        const value = this.parseExpression();
+        const valuePos = this.pos_();
+        let value = this.parseExpression();
+        // A hashtable value may itself be a pipeline (`@{ X = $coll | Where-Object {...} }`,
+        // matching real PowerShell) — parseExpression() stops before `|`, so continue into
+        // a PipelineExpression here, same as parseAssignmentRHS() does for `$x = a | b`.
+        if (this.check(PSTokenType.PIPE)) value = this.continuePipeline(value, valuePos);
         pairs.push({ key, value });
         this.skipTerminators();
         if (this.check(PSTokenType.SEMICOLON)) { this.advance(); this.skipTerminators(); }

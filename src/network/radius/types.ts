@@ -4,6 +4,8 @@ import type { NetworkPdu } from '@/network/core/NetworkPdu';
 
 export const UDP_PORT_RADIUS_AUTH = 1812;
 export const UDP_PORT_RADIUS_ACCT = 1813;
+/** RFC 5176 §3: Dynamic Authorization (CoA/Disconnect) default port. */
+export const UDP_PORT_RADIUS_COA = 3799;
 
 export type RadiusCode =
   | 'access-request'
@@ -11,7 +13,13 @@ export type RadiusCode =
   | 'access-reject'
   | 'access-challenge'
   | 'accounting-request'
-  | 'accounting-response';
+  | 'accounting-response'
+  | 'disconnect-request'
+  | 'disconnect-ack'
+  | 'disconnect-nak'
+  | 'coa-request'
+  | 'coa-ack'
+  | 'coa-nak';
 
 export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-request': 1,
@@ -20,6 +28,12 @@ export const RADIUS_CODE: Record<RadiusCode, number> = {
   'access-challenge': 11,
   'accounting-request': 4,
   'accounting-response': 5,
+  'disconnect-request': 40,
+  'disconnect-ack': 41,
+  'disconnect-nak': 42,
+  'coa-request': 43,
+  'coa-ack': 44,
+  'coa-nak': 45,
 };
 
 export type RadiusAttrType =
@@ -30,16 +44,52 @@ export type RadiusAttrType =
   | 'nas-port'
   | 'service-type'
   | 'framed-protocol'
+  | 'framed-ip-address'
+  | 'framed-ip-netmask'
+  | 'framed-mtu'
+  | 'filter-id'
+  | 'login-ip-host'
   | 'reply-message'
+  | 'callback-number'
   | 'state'
   | 'class'
   | 'vendor-specific'
+  | 'session-timeout'
+  | 'idle-timeout'
+  | 'termination-action'
   | 'called-station-id'
   | 'calling-station-id'
   | 'nas-identifier'
+  | 'proxy-state'
   | 'acct-status-type'
+  | 'acct-delay-time'
+  | 'acct-input-octets'
+  | 'acct-output-octets'
   | 'acct-session-id'
-  | 'message-authenticator';
+  | 'acct-authentic'
+  | 'acct-session-time'
+  | 'acct-input-packets'
+  | 'acct-output-packets'
+  | 'acct-terminate-cause'
+  | 'acct-input-gigawords'
+  | 'acct-output-gigawords'
+  | 'event-timestamp'
+  | 'chap-challenge'
+  | 'nas-port-type'
+  | 'tunnel-type'
+  | 'tunnel-medium-type'
+  | 'eap-message'
+  | 'message-authenticator'
+  | 'tunnel-private-group-id'
+  | 'nas-port-id'
+  | 'framed-pool'
+  | 'error-cause'
+  | 'nas-ipv6-address'
+  | 'framed-interface-id'
+  | 'framed-ipv6-prefix'
+  | 'login-ipv6-host'
+  | 'framed-ipv6-route'
+  | 'framed-ipv6-pool';
 
 export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'user-name': 1,
@@ -49,21 +99,60 @@ export const RADIUS_ATTR: Record<RadiusAttrType, number> = {
   'nas-port': 5,
   'service-type': 6,
   'framed-protocol': 7,
+  'framed-ip-address': 8,
+  'framed-ip-netmask': 9,
+  'framed-mtu': 12,
+  'filter-id': 11,
+  'login-ip-host': 14,
   'reply-message': 18,
+  'callback-number': 19,
   'state': 24,
   'class': 25,
   'vendor-specific': 26,
+  'session-timeout': 27,
+  'idle-timeout': 28,
+  'termination-action': 29,
   'called-station-id': 30,
   'calling-station-id': 31,
   'nas-identifier': 32,
+  'proxy-state': 33,
   'acct-status-type': 40,
+  'acct-delay-time': 41,
+  'acct-input-octets': 42,
+  'acct-output-octets': 43,
   'acct-session-id': 44,
+  'acct-authentic': 45,
+  'acct-session-time': 46,
+  'acct-input-packets': 47,
+  'acct-output-packets': 48,
+  'acct-terminate-cause': 49,
+  'acct-input-gigawords': 52,
+  'acct-output-gigawords': 53,
+  'event-timestamp': 55,
+  'chap-challenge': 60,
+  'nas-port-type': 61,
+  'tunnel-type': 64,
+  'tunnel-medium-type': 65,
+  'eap-message': 79,
   'message-authenticator': 80,
+  'tunnel-private-group-id': 81,
+  'nas-port-id': 87,
+  'framed-pool': 88,
+  'error-cause': 101,
+  // RFC 3162 §2 — RADIUS extensions for IPv6.
+  'nas-ipv6-address': 95,
+  'framed-interface-id': 96,
+  'framed-ipv6-prefix': 97,
+  'login-ipv6-host': 98,
+  'framed-ipv6-route': 99,
+  'framed-ipv6-pool': 100,
 };
 
 export interface RadiusAttribute {
   type: RadiusAttrType;
   value: string | number;
+  /** Present only on 'vendor-specific' (26): Vendor-Id + sub-attribute Vendor-Type (RFC 2865 §5.26). */
+  vendor?: { id: number; type: number };
 }
 
 export interface RadiusPacket extends NetworkPdu {
@@ -72,6 +161,8 @@ export interface RadiusPacket extends NetworkPdu {
   identifier: number;
   authenticator: string;
   attributes: RadiusAttribute[];
+  /** Wire-format bytes, when produced by/decoded through `codec.ts` — optional, transport doesn't require it. */
+  raw?: Uint8Array;
 }
 
 export interface RadiusServerConfig {
@@ -88,6 +179,8 @@ export interface RadiusUser {
   password: string;
   serviceType?: number;
   replyAttributes?: RadiusAttribute[];
+  /** When set, a first Access-Request is always answered Access-Challenge with this prompt before the real accept/reject (RFC 2865 §4.4). */
+  challenge?: { prompt: string };
 }
 
 export interface RadiusClientConfig {
@@ -100,6 +193,7 @@ export interface RadiusClientConfig {
 export interface RadiusServerAgentConfig {
   enabled: boolean;
   port: number;
+  acctPort: number;
   sharedSecret: string;
   users: Map<string, RadiusUser>;
   clients: Set<string>;
@@ -113,6 +207,7 @@ export function createDefaultServerConfig(secret = 'shared'): RadiusServerAgentC
   return {
     enabled: true,
     port: UDP_PORT_RADIUS_AUTH,
+    acctPort: UDP_PORT_RADIUS_ACCT,
     sharedSecret: secret,
     users: new Map(),
     clients: new Set(),
@@ -126,22 +221,21 @@ export function defaultServerEntry(ip: string, sharedSecret: string): RadiusServ
   };
 }
 
-export function attr(type: RadiusAttrType, value: string | number): RadiusAttribute {
-  return { type, value };
+export function attr(
+  type: RadiusAttrType, value: string | number, vendor?: { id: number; type: number },
+): RadiusAttribute {
+  return vendor ? { type, value, vendor } : { type, value };
+}
+
+/** Find a Vendor-Specific (26) attribute by Vendor-Id + sub-attribute Vendor-Type. */
+export function getVsa(pkt: RadiusPacket, vendorId: number, vendorType: number): RadiusAttribute | undefined {
+  return pkt.attributes.find(
+    (a) => a.type === 'vendor-specific' && a.vendor?.id === vendorId && a.vendor?.type === vendorType,
+  );
 }
 
 export function getAttr(pkt: RadiusPacket, type: RadiusAttrType): RadiusAttribute | undefined {
   return pkt.attributes.find((a) => a.type === type);
-}
-
-export function makeAuthenticator(seed: number): string {
-  const out: string[] = [];
-  let s = seed >>> 0;
-  for (let i = 0; i < 16; i++) {
-    s = (s * 1103515245 + 12345 + i * 7) >>> 0;
-    out.push(((s >>> 16) & 0xff).toString(16).padStart(2, '0'));
-  }
-  return out.join('');
 }
 
 export function encryptUserPassword(plain: string, secret: string, authenticatorHex: string): string {

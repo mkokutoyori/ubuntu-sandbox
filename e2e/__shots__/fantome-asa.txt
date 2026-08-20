@@ -1,0 +1,141 @@
+ASA pendant "show ver" SANS Tab:
+Clear All
+Undo
+Redo
+Save
+Open
+Export
+Import
+Reset
+Logs
+Help
+Equipment
+
+Drag to canvas
+
+Computers
+L
+
+Linux PC
+
+Ubuntu/Debian workstation
+
+W
+
+Windows PC
+
+Windows 10/11 workstation
+
+M
+
+Mac
+
+macOS workstation
+
+LIMITED
+Servers
+L
+
+Linux Server
+
+Ubuntu/CentOS server
+
+W
+
+Windows Server
+
+Windows Server 2019/2022
+
+Switches
+C
+
+Cisco Switch
+
+Layer 2 switching device
+
+H
+
+Huawei Switch
+
+Layer 2 switching device
+
+Hub
+
+Layer 1 repeater
+
+Routers
+C
+
+Cisco Router
+
+Layer 3 routing device
+
+H
+
+Huawei Router
+
+Layer 3 routing device
+
+Firewalls
+ASA
+
+Cisco ASA
+
+Cisco Adaptive Security Appliance
+
+LIMITED
+FG
+
+FortiGate
+
+Fortinet firewall
+
+LIMITED
+PA
+
+Palo Alto
+
+Palo Alto firewall
+
+LIMITED
+FW1 added to canvas
+ASA
+FW1
+100%
+ASA
+FW1
+This device type is not fully implemented yet
+GENERAL
+Name
+Hostname
+Power
+On
+INTERFACES (8)
+GigabitEthernet0/0
+02:00:00:00:00:01
+GigabitEthernet0/1
+02:00:00:00:00:02
+GigabitEthernet0/2
+02:00:00:00:00:03
+GigabitEthernet0/3
+02:00:00:00:00:04
+GigabitEthernet0/4
+02:00:00:00:00:05
+GigabitEthernet0/5
+02:00:00:00:00:06
+GigabitEthernet0/6
+02:00:00:00:00:07
+GigabitEthernet0/7
+02:00:00:00:00:08
+LIVE STATE
+FW1 — Cisco ASA
+FW1 — Cisco ASA 5506-X
+? = help | Tab = complete
+Booting system, please wait...
+Cisco Adaptive Security Appliance Software Version 9.16(1)
+Type help or '?' for a list of available commands.
+FW1>enable
+FW1#
+Desktop
+FW1
+1/1

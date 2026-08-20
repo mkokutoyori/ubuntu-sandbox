@@ -10,8 +10,44 @@
  */
 
 import { Equipment, type HostCapableDevice } from '@/network';
+import { IPAddress } from '@/network/core/types';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
+import { HostsFile } from '@/network/devices/HostsFile';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
-import { formatPingHeader, formatPingReplyLine, formatPingStats } from '@/network/devices/linux/LinuxFormatHelpers';
+import { parseTracerouteArgs } from '@/network/devices/linux/commands/net/Traceroute';
+import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
+import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
+import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
+import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
+import {
+  parseMpstatArgs,
+  mpstatColumnHeader,
+  formatMpstatRow,
+  formatMpstatAverageRow,
+  MpstatAccumulator,
+} from '@/network/devices/linux/system/Mpstat';
+import {
+  parsePidstatArgs,
+  pidstatColumnHeader,
+  formatPidstatCpuRow,
+  formatPidstatMemRow,
+  formatPidstatAverageCpuRow,
+  formatPidstatAverageMemRow,
+  PidstatAccumulator,
+  type PidstatCpuRow,
+  type PidstatMemRow,
+} from '@/network/devices/linux/system/Pidstat';
+import { parseIostatArgs, renderIostatReport } from '@/network/devices/linux/system/Iostat';
+import {
+  parseDstatArgs, formatDstatHeader, formatDstatRow, newDstatRateState,
+  DSTAT_USAGE, DSTAT_VERSION, DSTAT_LISTING,
+} from '@/network/devices/linux/system/Dstat';
+import { parseInvocation } from '@/network/devices/linux/network/tcpdump/TcpdumpCli';
+import { compileFilter } from '@/network/devices/linux/network/tcpdump/TcpdumpFilter';
+import { banner as tcpdumpBanner, footer as tcpdumpFooterLines, formatFrame as formatCaptureFrame } from '@/network/devices/linux/network/tcpdump/TcpdumpFormat';
+import { formatPingHeader, formatPing6Header, formatPingReplyLine, formatPingStats, formatTracerouteHeader, formatTracerouteHopLine } from '@/network/devices/linux/LinuxFormatHelpers';
 import type { PingResult } from '@/network/devices/EndHost';
 import type { AsyncJobContext } from '@/terminal/async';
 import { primaryShellKindFor } from '@/shell/shellKind';
@@ -19,11 +55,15 @@ import {
   TerminalSession, TerminalTheme, SessionType,
   KeyEvent, InputMode, withTimeout, DeviceOfflineError,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { validateSudoersContent } from '@/network/devices/linux/iam/PwGrCheck';
+import { validateCrontabContent } from '@/network/devices/linux/cron/CrontabParser';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { AnsiOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { completeInput } from '@/terminal/core/TabCompletionHelper';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
+import { toInteractiveSteps } from '@/terminal/flows/planAdapter';
+import { analyzeBashInput } from '@/bash/incompleteInput';
 import {
   parseReadInvocation as parseReadInvocationLib,
   performInteractiveRead as performInteractiveReadLib,
@@ -32,28 +72,27 @@ import {
 import { SqlPlusSubShell } from '@/terminal/subshells/SqlPlusSubShell';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
+import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
+import { FtpClientSession } from '@/network/ftp/FtpClientSession';
+import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
+import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
+import { SshInteractiveSubShell } from '@/terminal/subshells/SshInteractiveSubShell';
+import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
+import type { EditorView } from '@/network/devices/linux/editors/EditorView';
+import { parseEditorLaunch, isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
+import {
+  createRemoteEditorController,
+  type RemoteEditorTransport,
+} from '@/terminal/editors/RemoteEditorController';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { ShellFactory } from '@/shell/ShellFactory';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import { LinuxBashShell } from '@/shell/adapters/LinuxBashShell';
 import { ShellContext } from '@/shell/ShellContext';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { SqlPlusShell } from '@/shell/adapters/SqlPlusShell';
 import { RmanShell } from '@/shell/adapters/RmanShell';
-import {
-  LinuxPromptStrategy as LinuxStrategyRef,
-  CiscoPromptStrategy as CiscoStrategyRef,
-  HuaweiPromptStrategy as HuaweiStrategyRef,
-  WindowsPromptStrategy as WindowsStrategyRef,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
-import {
-  RemoteDeviceSubShell,
-  CiscoPromptStrategy, HuaweiPromptStrategy, WindowsPromptStrategy,
-  strategyForShellKind,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
-import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
 import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SshSession } from '@/network/protocols/ssh/session/SshSession';
 import { SshConnectOptionsBuilder } from '@/network/protocols/ssh/SshConnectOptions';
@@ -81,10 +120,11 @@ import {
   type ProxyHop,
   type RemoteForward,
 } from './sshArgs';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 import type { ISubShell } from '@/terminal/subshells/ISubShell';
 import { handleLsnrctl, handleTnsping, handleDbca, handleOrapwd, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import type { FlowContext, InteractiveStep } from '@/terminal/core/types';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 // ─── Theme ────────────────────────────────────────────────────────
 
@@ -108,8 +148,29 @@ export class LinuxTerminalSession extends TerminalSession {
   private readonly _flowFormatter = new AnsiOutputFormatter();
   /** Tab suggestions currently shown (null = hidden) */
   tabSuggestions: string[] | null = null;
+  private readonly rootCompletion =
+    new CompletionController(new ReadlinePolicy({ caseInsensitive: false }));
+  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
   /** Active sub-shell (SQL*Plus, or any future REPL). Null when in normal bash mode. */
   private activeSubShell: ISubShell | null = null;
+
+  /**
+   * Accumulated physical lines of a not-yet-complete command (open quote,
+   * trailing `\`, dangling connector, open block, or here-document). Null
+   * when no continuation is in progress. Drives the PS2 `>` prompt.
+   */
+  private _continuationBuffer: string | null = null;
+  /**
+   * The delimiter the accumulation is waiting for, when the reason for the
+   * continuation is a here-document specifically. Null for every other
+   * reason. Ctrl+D and Tab behave differently inside a here-document body
+   * than inside an open quote or block, and this is what tells them apart.
+   */
+  private _pendingHeredocDelimiter: string | null = null;
+  /** Line number the current here-document body started on, for the EOF warning. */
+  private _heredocStartLine = 0;
+  /** PS2 continuation prompt — real bash default. */
+  private readonly ps2Prompt = '> ';
 
   /**
    * Top of the active shell stack — for IShellBase introspection. When
@@ -152,7 +213,6 @@ export class LinuxTerminalSession extends TerminalSession {
    * connection layer (host-key prompts, password prompts) to the terminal's
    * key-handling pipeline. Non-null only while an SSH connection is in progress.
    */
-  private pendingSshIO: QueuedTerminalIO | null = null;
 
   /**
    * Per-terminal shell session (allocated on Linux machines). Holds the
@@ -323,6 +383,34 @@ export class LinuxTerminalSession extends TerminalSession {
 
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? this.currentUser;
+  }
+
+  protected override applyRemoteEnv(env: Record<string, string>): void {
+    const shellEnv = (this.shell as unknown as { env?: { set(k: string, v: string): void } } | null)?.env;
+    if (!shellEnv) return;
+    for (const [k, v] of Object.entries(env)) shellEnv.set(k, v);
+  }
+
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) {
+      this.currentUser = user;
+      this.currentPath = `/home/${user}`;
+      return;
+    }
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user });
+    this.currentUser = user;
+    this.currentPath = this.shell.cwd;
+    if (this.rootBash) {
+      this.rootBash.deactivate();
+      this.rootBash.dispose();
+      this.rootBash = null;
+    }
+  }
+
   /**
    * Route every command through the per-terminal shell session so that
    * cwd / env / su stack mutations stay local to this terminal. Falls back
@@ -348,7 +436,11 @@ export class LinuxTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return LINUX_THEME; }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) return this.activeSubShell.getPrompt();
+    // PS2 continuation prompt while accumulating an incomplete command
+    // (open quote, trailing `\`, dangling connector, open block, heredoc).
+    if (this._continuationBuffer !== null) return this.ps2Prompt;
     const hostname = this.device.getHostname() || 'localhost';
     const user = this.currentUser;
     const homeDir = user === 'root' ? '/root' : `/home/${user}`;
@@ -371,6 +463,36 @@ export class LinuxTerminalSession extends TerminalSession {
     user: string; hostname: string; path: string; promptChar: string;
     foreign?: boolean;
   } {
+    // PS2 has no user@host:path shape to decompose. Marking it foreign is
+    // what makes the renderer print `getPrompt()` verbatim — without this
+    // the canvas terminal kept showing PS1 through a whole here-document,
+    // even though the session was collecting a body.
+    if (this._continuationBuffer !== null && !this.hasActiveChild && !this.activeSubShell) {
+      return {
+        user: this.currentUser,
+        hostname: this.device.getHostname() || 'localhost',
+        path: this.currentPath,
+        promptChar: '$',
+        foreign: true,
+      };
+    }
+    if (this.hasActiveChild) {
+      if (this.foreground.getSessionType() !== 'linux') {
+        return {
+          user: this.currentUser,
+          hostname: this.device.getHostname() || 'localhost',
+          path: this.currentPath,
+          promptChar: '$',
+          foreign: true,
+        };
+      }
+      // The foreground child is itself a Linux session (SSH'd into
+      // another Linux box) — its own currentUser/device/currentPath are
+      // the ones that must render, not this (parent) session's. Delegate
+      // recursively so multi-hop Linux→Linux→Linux chains each show
+      // their own remote hostname in turn.
+      return (this.foreground as LinuxTerminalSession).getPromptParts();
+    }
     if (this.activeSubShell) {
       const kind = (this.activeSubShell as { kind?: string; inner?: { kind?: string } }).kind
         ?? (this.activeSubShell as { inner?: { kind?: string } }).inner?.kind
@@ -459,6 +581,7 @@ export class LinuxTerminalSession extends TerminalSession {
   // ── Input mode ──────────────────────────────────────────────────
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
       return this.inputMode;
@@ -468,6 +591,12 @@ export class LinuxTerminalSession extends TerminalSession {
     // beginPrompt(), so just returning it is enough — but we gate here first so
     // handleKey() can route to handleSshIOKey() before any flow/sub-shell check.
     if (this.pendingSshIO?.isWaitingForInput) {
+      return this.inputMode;
+    }
+    // An editor opened on the remote owns the screen the same way a
+    // local one does — the SSH sub-shell underneath is suspended until
+    // the engine exits (docs/PRD-SSH-Unification.md §4bis B3).
+    if (this.inputMode.type === 'remote-editor') {
       return this.inputMode;
     }
     // Pending password / text driven by a sub-shell or by the root bash:
@@ -498,6 +627,8 @@ export class LinuxTerminalSession extends TerminalSession {
 
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
+
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
 
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
@@ -582,80 +713,65 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
-    if (this.inputMode.type === 'editor') return false;
+    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor') return false;
+
+    if (e.key === 'd' && e.ctrlKey && this.input === '') {
+      // Ctrl+D inside an open here-document ends the document, it does not
+      // end the shell: bash warns and runs the command with the body it
+      // has. Nothing here may close the session or the SSH connection.
+      if (this._pendingHeredocDelimiter !== null) { void this.endHeredocAtEof(); return true; }
+      if (this.endRemoteSession()) return true;
+      if (this.sshStack.length > 0) { this.popRemoteDevice(); return true; }
+      this._onRequestClose?.();
+      return true;
+    }
 
     return super.handleKey(e);
+  }
+
+  protected override pendingHeredocDelimiter(): string | null {
+    return this._pendingHeredocDelimiter;
+  }
+
+  /**
+   * Ctrl+C at a PS2 prompt abandons the whole accumulated command, whatever
+   * kept it open — an open quote, a block, or a here-document body. Without
+   * this the buffer survived the interrupt and the next line typed was
+   * silently appended to a command the user believed cancelled.
+   */
+  protected override onCtrlC(): void {
+    // Cleared before the base class echoes `^C`, so the line it prints
+    // carries PS1 rather than the PS2 being abandoned.
+    this._continuationBuffer = null;
+    this._pendingHeredocDelimiter = null;
+    super.onCtrlC();
+  }
+
+  /**
+   * `bash: warning: here-document at line N delimited by end-of-file
+   * (wanted 'DELIM')` — then the command runs with the partial body. The
+   * lexer already accepts a here-document left open at EOF, so the text is
+   * handed over exactly as accumulated, with no delimiter line.
+   */
+  private endHeredocAtEof(): void | Promise<void> {
+    const accumulated = this._continuationBuffer ?? '';
+    const delimiter = this._pendingHeredocDelimiter;
+    this._continuationBuffer = null;
+    this._pendingHeredocDelimiter = null;
+    this.addLine(this.getPrompt());
+    this.addLine(
+      `bash: warning: here-document at line ${this._heredocStartLine} `
+      + `delimited by end-of-file (wanted \`${delimiter}')`,
+    );
+    const done = this.executeCommand(accumulated, { echo: false });
+    this.notify();
+    return done;
   }
 
   /**
    * Key handler used while a reactive SSH IO prompt is active.
    * Submits input on Enter, cancels on Ctrl+C, suppresses history navigation.
    */
-  private handleSshIOKey(e: KeyEvent): boolean {
-    if (!this.pendingSshIO?.isWaitingForInput) return false;
-
-    if (e.key === 'Enter') {
-      const isPassword = this.inputMode.type === 'password';
-      const val = isPassword ? this._passwordBuf : this._inputBuf;
-      if (isPassword) this._passwordBuf = '';
-      else this._inputBuf = '';
-      // Echo the prompt (+ the non-secret answer) into scrollback so the
-      // SSH host-key / password dialogs leave a trace in history once
-      // submitted. Without this the prompt vanishes the moment the user
-      // hits Enter, which doesn't match OpenSSH's terminal-style flow.
-      // Passwords are intentionally not echoed.
-      if (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text') {
-        const promptText = (this.inputMode as { promptText: string }).promptText;
-        if (promptText) {
-          this.addLine(isPassword ? promptText : `${promptText}${val}`);
-        }
-      }
-      // endPrompt() is called inside submitInput → resets inputMode + notify
-      this.pendingSshIO.submitInput(val);
-      return true;
-    }
-
-    // Suppress history navigation during SSH prompts
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') return true;
-
-    if (e.key === 'c' && e.ctrlKey) {
-      this._passwordBuf = '';
-      this._inputBuf = '';
-      // cancel() resolves readInput with '' → SSH layer treats it as abort
-      this.pendingSshIO.cancel();
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Build a QueuedTerminalIO wired to this session's addLine / inputMode.
-   * The SSH layer calls readInput() which suspends on a Promise; the terminal
-   * resolves it via handleSshIOKey → submitInput().
-   */
-  private createSshTerminalIO(): QueuedTerminalIO {
-    const io = new QueuedTerminalIO({
-      writeLine: (text, type) => this.addLine(text, type),
-      beginPrompt: (prompt, secret) => {
-        if (secret) {
-          this._passwordBuf = '';
-          this.inputMode = { type: 'password', promptText: prompt };
-        } else {
-          this._inputBuf = '';
-          this.inputMode = { type: 'interactive-text', promptText: prompt };
-        }
-        this.notify();
-      },
-      endPrompt: () => {
-        this.inputMode = { type: 'normal' };
-        this.notify();
-      },
-    });
-    this.pendingSshIO = io;
-    return io;
-  }
-
   protected handleModeKey(_e: KeyEvent): boolean {
     // All mode handling is done in the overridden handleKey above
     return false;
@@ -669,6 +785,13 @@ export class LinuxTerminalSession extends TerminalSession {
 
     // Tab
     if (e.key === 'Tab') {
+      // A here-document body is free text, not a command line: readline
+      // does not complete there, it just takes the tab. `<<-` even relies
+      // on leading tabs being typeable.
+      if (this._pendingHeredocDelimiter !== null) {
+        this.setInput(this.input + '\t');
+        return true;
+      }
       this.onTab();
       return true;
     }
@@ -684,7 +807,7 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Command execution ───────────────────────────────────────────
 
-  protected onEnter(): void {
+  protected onEnter(): void | Promise<void> {
     // While a `tail -f` stream is active, Enter just emits a blank line
     // (matching real bash behaviour); the only way out is Ctrl+C.
     if (this.hasForegroundAsyncJob) {
@@ -703,11 +826,47 @@ export class LinuxTerminalSession extends TerminalSession {
     this.input = '';
     this._inputBuf = '';
     this.tabSuggestions = null;
+
+    // Interactive line continuation (PS2): only on the local root bash,
+    // never inside a sub-shell / SSH device shell / active flow. Accumulate
+    // physical lines until the command is lexically complete, echoing each
+    // at the current prompt exactly like real bash.
+    if (!this.activeSubShell && !this.isFlowActive) {
+      const accumulated = this._continuationBuffer !== null
+        ? `${this._continuationBuffer}\n${cmd}`
+        : cmd;
+      const analysis = analyzeBashInput(accumulated);
+      if (!analysis.complete) {
+        this.addEchoLine(this.getPrompt(), cmd);
+        if (this._continuationBuffer === null && analysis.heredocDelimiter) {
+          this._heredocStartLine = accumulated.split('\n').length;
+        }
+        this._continuationBuffer = accumulated;
+        this._pendingHeredocDelimiter = analysis.heredocDelimiter ?? null;
+        this.updatePrompt?.();
+        this.notify();
+        return;
+      }
+      if (this._continuationBuffer !== null) {
+        // Final line of a multi-line command: echo it, then run the whole
+        // accumulated text without re-echoing (executeCommand echoes the
+        // first line; the continuation lines were already echoed live).
+        this.addEchoLine(this.getPrompt(), cmd);
+        this._continuationBuffer = null;
+        this._pendingHeredocDelimiter = null;
+        this.updatePrompt?.();
+        const doneMulti = this.executeCommand(accumulated, { echo: false });
+        this.notify();
+        return doneMulti;
+      }
+    }
+
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
-    this.executeCommand(cmd);
+    const done = this.executeCommand(cmd);
     this.notify();
+    return done;
   }
 
   /**
@@ -754,13 +913,54 @@ export class LinuxTerminalSession extends TerminalSession {
     if (toks[0] !== 'ping') return false;
     if (/[|<>&]/.test(commandLine)) return false;
     const parsed = parsePingArgs(toks.slice(1), 'ping');
-    if (!parsed.targetStr || parsed.v6) return false;
+    if (!parsed.targetStr) return false;
+
+    // Real Linux ping has no Windows-style "-t" — it's continuous by
+    // default and only stops on `-c`, `-w`, or Ctrl+C. `parsePingArgs`
+    // defaults `count` to a finite number for the non-interactive
+    // `runPing()` path (which can't support a real Ctrl+C), but here — the
+    // real interactive terminal — an omitted `-c` means unbounded. Applies
+    // to `ping -6` too, not just IPv4.
+    const streamCount = parsed.countGiven ? parsed.count : 0;
+    const deadlineAtMs = parsed.deadlineMs !== undefined ? Date.now() + parsed.deadlineMs : null;
+    const deadlineHit = () => deadlineAtMs !== null && Date.now() >= deadlineAtMs;
 
     let targetLabel = parsed.targetStr;
     const results: PingResult[] = [];
+    // Real ping reports the wall time of the whole run in its summary.
+    const pingStartedAt = Date.now();
     const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatPingStats(targetLabel, results.length, results)) ctx.sink.line(line);
+      for (const line of formatPingStats(targetLabel, results.length, results, Date.now() - pingStartedAt)) ctx.sink.line(line);
     };
+
+    if (parsed.v6) {
+      const job = this.startAsyncCommand({
+        mode: 'foreground',
+        kind: 'streaming',
+        command: commandLine,
+        run: async (ctx) => {
+          const outcome = await dev.ping6StreamInSession(parsed.targetStr, {
+            count: streamCount,
+            timeoutMs: parsed.timeoutMs,
+            intervalMs: parsed.intervalMs,
+            onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPing6Header(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
+            onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
+            shouldStop: () => ctx.cancelled() || deadlineHit(),
+            sleep: (ms) => ctx.delay(ms),
+          });
+          if (ctx.cancelled()) return;
+          if (!outcome.resolved && results.length === 0) {
+            ctx.sink.error(outcome.reason === 'name'
+              ? `ping6: ${parsed.targetStr}: Name or service not known`
+              : 'connect: Network is unreachable');
+            return;
+          }
+          emitStats(ctx);
+        },
+        onInterrupt: (ctx) => emitStats(ctx),
+      });
+      return job !== null;
+    }
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
@@ -768,13 +968,13 @@ export class LinuxTerminalSession extends TerminalSession {
       command: commandLine,
       run: async (ctx) => {
         const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count: parsed.count,
+          count: streamCount,
           timeoutMs: parsed.timeoutMs,
           ttl: parsed.ttl,
           intervalMs: parsed.intervalMs,
           onResolved: (ip) => { targetLabel = ip.toString(); ctx.sink.line(formatPingHeader(ip, parsed.size, parsed.targetStr !== ip.toString() ? parsed.targetStr : undefined)); },
           onResult: (r) => { results.push(r); const line = formatPingReplyLine(r, parsed.size); if (line !== null) ctx.sink.line(line); },
-          shouldStop: () => ctx.cancelled(),
+          shouldStop: () => ctx.cancelled() || deadlineHit(),
           sleep: (ms) => ctx.delay(ms),
         });
         if (ctx.cancelled()) return;
@@ -789,6 +989,515 @@ export class LinuxTerminalSession extends TerminalSession {
       onInterrupt: (ctx) => emitStats(ctx),
     });
     return job !== null;
+  }
+
+  private tryStartTracerouteStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'traceroute') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const parsed = parseTracerouteArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        let hopCount = 0;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: parsed.probesPerHop,
+          firstTtl: parsed.firstTtl,
+          onResolved: (ip, hostname) => ctx.sink.line(formatTracerouteHeader(ip, parsed.maxHops, hostname)),
+          onHop: (hop) => { hopCount++; ctx.sink.line(formatTracerouteHopLine(hop)); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved) { ctx.sink.error(`traceroute: unknown host ${parsed.targetStr}`); return; }
+        if (hopCount === 0) ctx.sink.line(' * * * Network is unreachable');
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartMtrStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mtr') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+
+    const parsed = parseMtrArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(MTR_USAGE); this.notify(); return true; }
+    if (parsed.showVersion) { this.addLine(MTR_VERSION); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+    if (!parsed.target) { this.addLine('mtr: no host specified'); this.notify(); return true; }
+
+    const intervalMs = Math.max(100, parsed.intervalSec * 1000);
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        const hopIps: (string | null)[] = [];
+        let resolved = false;
+        const discovery = await dev.tracerouteStreamInSession(parsed.target, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          onResolved: () => { resolved = true; },
+          onHop: (hop) => { hopIps.push(hop.ip ?? null); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!discovery.resolved) {
+          ctx.sink.error(`mtr: Failed to resolve host: ${parsed.target}`);
+          return;
+        }
+        if (!resolved || hopIps.length === 0) {
+          ctx.sink.error('mtr: no hops discovered');
+          return;
+        }
+
+        const stats = hopIps.map(() => new MtrHopStats());
+        const startedAt = new Date();
+        const hostname = dev.getHostname();
+        const targetIpStr = hopIps[hopIps.length - 1] ?? parsed.target;
+
+        const paint = () => {
+          this.lines = this.lines.slice(0, baseLen);
+          const frame = formatMtrFrame({ hostname, target: targetIpStr, startedAt, hops: stats },
+            parsed.reportMode ? 'report' : 'live');
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+        };
+        paint();
+
+        for (let cycle = 0; ; cycle++) {
+          if (ctx.cancelled()) return;
+          if (parsed.reportMode && cycle >= parsed.cycles) break;
+          for (let i = 0; i < hopIps.length; i++) {
+            const ip = hopIps[i];
+            let probe: MtrHopProbe;
+            if (!ip) {
+              probe = { lost: true };
+            } else {
+              try {
+                const result = dev.sendPingProbeSync(new IPAddress(ip));
+                probe = result.success
+                  ? { ip, rttMs: result.rttMs, lost: false }
+                  : { ip, lost: true };
+              } catch {
+                probe = { ip, lost: true };
+              }
+            }
+            stats[i].record(probe);
+          }
+          paint();
+          if (parsed.reportMode && cycle + 1 >= parsed.cycles) break;
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private startRepaintingMonitor(commandLine: string, intervalMs: number): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const shell = this.shell;
+    let baseLen = this.lines.length;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: () => { baseLen = this.lines.length; return true; },
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const frame = dev.runCommandFrameInSession(commandLine, shell);
+          this.lines = this.lines.slice(0, baseLen);
+          for (const line of frame.split('\n')) this.addLine(line);
+          this.notify();
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartWatchStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'watch') return false;
+    let parsed: ReturnType<typeof parseWatchArgs>;
+    try { parsed = parseWatchArgs(toks.slice(1)); } catch { return false; }
+    if (parsed.command.length === 0) return false;
+    return this.startRepaintingMonitor(commandLine, Math.max(100, parsed.intervalSeconds * 1000));
+  }
+
+  private tryStartTopStream(commandLine: string): boolean {
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'top') return false;
+    if (toks.includes('-n') || toks.includes('-b')) return false;
+    const dIdx = toks.indexOf('-d');
+    const delay = dIdx >= 0 ? parseFloat(toks[dIdx + 1]) : 3;
+    const intervalMs = Math.max(100, (Number.isFinite(delay) && delay > 0 ? delay : 3) * 1000);
+    return this.startRepaintingMonitor(commandLine, intervalMs);
+  }
+
+  private tryStartTcpdump(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'tcpdump') return false;
+    if (/[|<>]/.test(commandLine)) return false;
+
+    const inv = parseInvocation(toks.slice(1));
+    if (inv.kind !== 'capture' || inv.options.readFile || inv.options.writeFile) {
+      const job = this.startAsyncCommand({
+        mode: 'foreground',
+        kind: 'streaming',
+        command: commandLine,
+        prepare: () => true,
+        run: async (ctx) => {
+          const out = await dev.executeCommand(commandLine);
+          if (out) for (const l of out.split('\n')) ctx.sink.line(l);
+        },
+      });
+      return job !== null;
+    }
+
+    const opts = inv.options;
+    const filter = compileFilter(opts.filterTokens);
+    let captured = 0;
+    let prev: Date | null = null;
+    let unsubscribe: (() => void) | null = null;
+    const footer = (ctx: AsyncJobContext) => { for (const l of tcpdumpFooterLines(captured, captured)) ctx.sink.line(l); };
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      prepare: (ctx) => {
+        if (filter.ok === false) { ctx.sink.line(filter.message); return false; }
+        for (const h of tcpdumpBanner(opts)) ctx.sink.line(h);
+        return true;
+      },
+      run: async (ctx) => {
+        if (filter.ok === false) return;
+        if (opts.count === 0) { footer(ctx); return; }
+        await new Promise<void>((resolve) => {
+          const finish = () => { unsubscribe?.(); unsubscribe = null; resolve(); };
+          if (ctx.cancelled()) { resolve(); return; }
+          unsubscribe = dev.openTcpdumpCapture(opts.iface, (frame) => {
+            if (filter.ok && !filter.predicate(frame)) return;
+            ctx.sink.line(formatCaptureFrame(frame, opts, prev));
+            prev = frame.at;
+            captured++;
+            if (opts.count !== null && captured >= opts.count) finish();
+          });
+          ctx.onCancel(finish);
+        });
+        if (!ctx.cancelled()) footer(ctx);
+      },
+      onInterrupt: (ctx) => footer(ctx),
+    });
+    return job !== null;
+  }
+
+  private tryStartJournalFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'journalctl') return false;
+    if (!toks.includes('-f') && !toks.includes('--follow')) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const shell = this.shell;
+
+    const uIdx = Math.max(toks.indexOf('-u'), toks.indexOf('--unit'));
+    const unit = uIdx >= 0 ? toks[uIdx + 1] : undefined;
+    const nIdx = Math.max(toks.indexOf('-n'), toks.indexOf('--lines'));
+    const initialArgs = toks.slice(1).filter((t) => t !== '-f' && t !== '--follow');
+    if (nIdx < 0) { initialArgs.unshift('10'); initialArgs.unshift('-n'); }
+    const initialCommand = ['journalctl', ...initialArgs].join(' ');
+
+    return this.startFollowStream({
+      commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('No journal files')) { ctx.sink.line(initial); return false; }
+        for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      subscribe: (sink) => dev.followJournal({ unit }, sink),
+    });
+  }
+
+  private tryStartIpMonitor(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'ip') return false;
+    let i = 1;
+    while (i < toks.length && toks[i].startsWith('-')) i++;
+    if (toks[i] !== 'monitor') return false;
+
+    const spec = parseIpMonitorSpec(toks.slice(i + 1));
+    if ('error' in spec) { this.addLine(spec.error); return true; }
+
+    return this.startFollowStream({
+      commandLine,
+      kind: 'subscription',
+      subscribe: (sink) => dev.monitorNetlink(
+        { objects: spec.objects, labelled: spec.labelled },
+        (block) => { for (const line of block.split('\n')) sink(line); },
+      ),
+    });
+  }
+
+  private tryStartDmesgFollow(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'dmesg') return false;
+    if (!toks.includes('-w') && !toks.includes('--follow')) return false;
+    const shell = this.shell;
+
+    let raw = false;
+    let humanTime = false;
+    let levelFilter: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if (a === '-T' || a === '--ctime' || a === '-H' || a === '--human') humanTime = true;
+      else if (a === '-r' || a === '--raw') raw = true;
+      else if (a === '-l' || a === '--level') {
+        levelFilter = (toks[++i] || '').split(',').map((l) => l.trim()).filter(Boolean);
+      } else if (a.startsWith('--level=')) {
+        levelFilter = a.slice(8).split(',').map((l) => l.trim()).filter(Boolean);
+      }
+    }
+
+    const initialArgs = toks.slice(1).filter((t) => t !== '-w' && t !== '--follow');
+    const initialCommand = ['dmesg', ...initialArgs].join(' ');
+
+    return this.startFollowStream({
+      commandLine,
+      prepare: (ctx) => {
+        const initial = dev.runCommandFrameInSession(initialCommand, shell);
+        if (initial.startsWith('dmesg:') && !initial.includes('\n')) {
+          ctx.sink.line(initial);
+          return false;
+        }
+        if (initial) for (const line of initial.split('\n')) ctx.sink.line(line);
+        return true;
+      },
+      subscribe: (sink) => dev.followDmesg({ raw, humanTime, levelFilter }, sink),
+    });
+  }
+
+  private tryStartNetstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'netstat') return false;
+    const continuous = toks.some(
+      (t) => t.startsWith('-') && !t.startsWith('--') && t.includes('c'),
+    ) || toks.includes('--continuous');
+    if (!continuous) return false;
+    const shell = this.shell;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: 1000,
+      frame: () => dev.runCommandFrameInSession(commandLine, shell),
+    });
+  }
+
+  private tryStartFreeStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'free') return false;
+    let intervalSeconds: number | null = null;
+    let count: number | null = null;
+    const rest: string[] = [];
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      if ((a === '-s' || a === '--seconds') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        intervalSeconds = v;
+      } else if ((a === '-c' || a === '--count') && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (!Number.isFinite(v) || v <= 0) return false;
+        count = v;
+      } else {
+        rest.push(a);
+      }
+    }
+    if (intervalSeconds === null) return false;
+    const shell = this.shell;
+    const rendered = ['free', ...rest].join(' ').trim();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, intervalSeconds * 1000),
+      maxFrames: count ?? undefined,
+      frame: () => dev.runCommandFrameInSession(rendered, shell),
+    });
+  }
+
+  private tryStartVmstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'vmstat') return false;
+    const parsed = parseVmstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => vmstatHeader(parsed),
+      frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
+    });
+  }
+
+  private tryStartMpstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'mpstat') return false;
+    const parsed = parseMpstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    const accumulator = new MpstatAccumulator();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(new Date())}`,
+      frame: () => {
+        const rows = dev.sampleMpstatSnapshot(parsed);
+        accumulator.add(rows);
+        const now = new Date();
+        return rows.map((r) => formatMpstatRow(now, r)).join('\n');
+      },
+      trailer: () => {
+        if (accumulator.sampleCount() === 0) return '';
+        const lines = ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))];
+        return lines.join('\n');
+      },
+    });
+  }
+
+  private tryStartPidstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'pidstat') return false;
+    const parsed = parsePidstatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    if (parsed.report === 'cpu') {
+      const accumulator = new PidstatAccumulator<PidstatCpuRow>('cpu');
+      return this.startScrollingMonitor({
+        commandLine,
+        intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+        maxFrames: parsed.count ?? undefined,
+        header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+        frame: () => {
+          const rows = dev.samplePidstatCpu(parsed);
+          accumulator.add(rows);
+          const now = new Date();
+          return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
+        },
+        trailer: () => {
+          if (accumulator.sampleCount() === 0) return '';
+          return ['', ...accumulator.averages().map((r) => formatPidstatAverageCpuRow(r))].join('\n');
+        },
+      });
+    }
+    const accumulator = new PidstatAccumulator<PidstatMemRow>('memory');
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, new Date())}`,
+      frame: () => {
+        const rows = dev.samplePidstatMemory(parsed);
+        accumulator.add(rows);
+        const now = new Date();
+        return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
+      },
+      trailer: () => {
+        if (accumulator.sampleCount() === 0) return '';
+        return ['', ...accumulator.averages().map((r) => formatPidstatAverageMemRow(r))].join('\n');
+      },
+    });
+  }
+
+  private tryStartIostatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'iostat') return false;
+    const parsed = parseIostatArgs(toks.slice(1));
+    if ('error' in parsed) return false;
+    if (parsed.intervalSeconds === null) return false;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => dev.iostatBannerLine(),
+      frame: () => `\n${renderIostatReport(
+        parsed,
+        dev.sampleIostatCpuSnapshot(),
+        dev.sampleIostatDevicesSnapshot(parsed),
+        new Date(),
+      )}`,
+    });
+  }
+
+  private tryStartDstatStream(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0] !== 'dstat') return false;
+
+    const parsed = parseDstatArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(DSTAT_USAGE); this.notify(); return true; }
+    if (parsed.showVersion) { this.addLine(DSTAT_VERSION); this.notify(); return true; }
+    if (parsed.listStats) { this.addLine(DSTAT_LISTING); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+
+    const rate = newDstatRateState();
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs: Math.max(100, parsed.intervalSeconds * 1000),
+      maxFrames: parsed.count ?? undefined,
+      header: () => formatDstatHeader(parsed.groups),
+      frame: () => formatDstatRow(dev.sampleDstatSnapshot(rate), parsed.groups),
+    });
   }
 
   private async tryInteractiveRead(line: string): Promise<boolean> {
@@ -811,11 +1520,18 @@ export class LinuxTerminalSession extends TerminalSession {
     return true;
   }
 
-  private async executeCommand(cmd: string): Promise<void> {
+  private async executeCommand(cmd: string, opts?: { echo?: boolean }): Promise<void> {
     const typed = cmd.trim();
     const trimmed = this.resolveActionLine(typed);
 
-    this.addEchoLine(this.getPrompt(), cmd);
+    // Multi-line commands assembled by the PS2 continuation loop already
+    // echoed each physical line live; re-echoing here would duplicate them.
+    if (opts?.echo !== false) this.addEchoLine(this.getPrompt(), cmd);
+
+    // A pending visudo "What now?" recovery prompt consumes the very next
+    // line typed (e/x/Q) before anything else is interpreted as a command.
+    if (this.tryVisudoPromptResponse(typed)) return;
+    if (this.tryCrontabPromptResponse(typed)) return;
 
     // Handle exit/logout
     if (trimmed === 'exit' || trimmed === 'logout') {
@@ -846,6 +1562,7 @@ export class LinuxTerminalSession extends TerminalSession {
         this.popRemoteDevice();
         return;
       }
+      if (this.endRemoteSession()) return;
       // Signal close — the view/manager will handle it
       this._onRequestClose?.();
       return;
@@ -858,6 +1575,23 @@ export class LinuxTerminalSession extends TerminalSession {
     // terminal until Ctrl+C cancels the foreground job.
     if (this.tryStartTailStream(trimmed)) return;
     if (this.tryStartPingStream(trimmed)) return;
+    if (this.tryStartTracerouteStream(trimmed)) return;
+    if (this.tryStartMtrStream(trimmed)) return;
+    if (this.tryStartWatchStream(trimmed)) return;
+    if (this.tryStartTopStream(trimmed)) return;
+    if (this.tryStartJournalFollow(trimmed)) return;
+    if (this.tryStartIpMonitor(trimmed)) return;
+    if (this.tryStartDmesgFollow(trimmed)) return;
+    if (this.tryStartNetstatStream(trimmed)) return;
+    if (this.tryStartVmstatStream(trimmed)) return;
+    if (this.tryStartFreeStream(trimmed)) return;
+    if (this.tryStartMpstatStream(trimmed)) return;
+    if (this.tryStartPidstatStream(trimmed)) return;
+    if (this.tryStartIostatStream(trimmed)) return;
+    if (this.tryStartDstatStream(trimmed)) return;
+    if (this.tryStartTcpdump(trimmed)) return;
+    if (this.tryCrontabEdit(trimmed)) return;
+    if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
@@ -898,8 +1632,20 @@ export class LinuxTerminalSession extends TerminalSession {
         this.enterSftp(parts.slice(1));
         return;
       }
+      if (parts[0] === 'ftp') {
+        this.enterFtp(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'nslookup' && parts.length === 1) {
+        this.enterNslookup();
+        return;
+      }
       if (parts[0] === 'ssh') {
         await this.enterSsh(parts.slice(1));
+        return;
+      }
+      if (parts[0] === 'telnet') {
+        await this.enterTelnet(parts.slice(1));
         return;
       }
       if (parts[0] === 'ssh-keygen') {
@@ -1033,19 +1779,29 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Tab completion ──────────────────────────────────────────────
 
+  private rootCompletionSource(): LastWordSource {
+    const dev = this.device;
+    return new LastWordSource(
+      (line) => (this.shell && dev instanceof LinuxMachine)
+        ? dev.getCompletionsForSession(line, this.shell)
+        : this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+  }
+
   protected onTab(): void {
     // Tab completion must run in *this* terminal's session context so that
     // path completion sees the per-session cwd, not the device-wide shared one.
-    const dev = this.device;
-    const completions = (this.shell && dev instanceof LinuxMachine)
-      ? dev.getCompletionsForSession(this.input, this.shell)
-      : this.device.getCompletions(this.input);
-    if (completions.length === 0) return;
-
-    const result = completeInput(this.input, completions);
-    this.input = result.input;
-    this.tabSuggestions = result.suggestions;
+    const out = this.rootCompletion.handleTab(this.input, this.rootCompletionSource(), false);
+    if (!out.changed && out.suggestions === null) return;
+    this.input = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
+  }
+
+  protected override computeGhostSuggestion(): string | null {
+    if (this.activeSubShell || this.inputMode.type !== 'normal') return null;
+    return ghostRemainder(this.input, this.rootCompletionSource());
   }
 
   // ── Editor integration ──────────────────────────────────────────
@@ -1143,12 +1899,268 @@ export class LinuxTerminalSession extends TerminalSession {
     this.syncDeviceState();
   }
 
+  private _pendingCrontabEdit: { user: string; tmpPath: string } | null = null;
+
+  private tryCrontabEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    let toks = commandLine.trim().split(/\s+/);
+    if (toks[0] === 'sudo') toks = toks.slice(1);
+    if (toks[0] !== 'crontab' || !toks.includes('-e')) return false;
+
+    const current = dev.getCurrentUser();
+    const uIdx = toks.indexOf('-u');
+    const user = uIdx >= 0 ? (toks[uIdx + 1] ?? current) : current;
+    if (user !== current && current !== 'root') {
+      this.addLine('crontab: must be privileged to use -u');
+      return true;
+    }
+
+    if (!dev.hasCrontab(user)) this.addLine(`no crontab for ${user} - using an empty one`);
+    const template = dev.crontabEditTemplate(user);
+    const tmpPath = `/tmp/crontab.${Math.floor(Math.random() * 1e6)}/crontab`;
+    dev.writeFileFromEditorInSession(tmpPath, template, this.shell);
+    this._pendingCrontabEdit = { user, tmpPath };
+    this.openEditor(this.preferredEditor(), [tmpPath]);
+    return true;
+  }
+
+  /** L'éditeur que `sensible-editor` choisirait : `$VISUAL`, puis `$EDITOR`. */
+  private preferredEditor(): 'nano' | 'vi' | 'vim' {
+    const v = (this.shell?.env.get('VISUAL') || this.shell?.env.get('EDITOR') || 'nano').toLowerCase();
+    return v.includes('nano') ? 'nano' : v.includes('vim') ? 'vim' : v.includes('vi') ? 'vi' : 'nano';
+  }
+
+  /**
+   * Le refus de `crontab -e`, et sa question. Le vrai ne jette pas une
+   * édition fautive : il la garde et demande s'il faut la reprendre.
+   */
+  private _pendingCrontabPrompt: { user: string; tmpPath: string } | null = null;
+
+  private tryCrontabPromptResponse(commandLine: string): boolean {
+    const pending = this._pendingCrontabPrompt;
+    if (!pending) return false;
+    const answer = commandLine.trim().toLowerCase();
+    if (answer === 'y') {
+      this._pendingCrontabPrompt = null;
+      this._pendingCrontabEdit = pending;
+      this.openEditor(this.preferredEditor(), [pending.tmpPath]);
+      return true;
+    }
+    if (answer === 'n') {
+      this._pendingCrontabPrompt = null;
+      this.addLine(`crontab: edits left in ${pending.tmpPath}`);
+      this.notify();
+      return true;
+    }
+    this.addLine('Do you want to retry the same edit? (y/n) ');
+    this.notify();
+    return true;
+  }
+
+  private finishCrontabEdit(saved: boolean): void {
+    const pending = this._pendingCrontabEdit;
+    this._pendingCrontabEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (!saved || !(dev instanceof LinuxMachine) || !this.shell) {
+      this.addLine('No modification made');
+      this.notify();
+      return;
+    }
+    const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+    // Le vrai annonce l'installation avant de valider, puis se dédit si
+    // le fichier ne passe pas. L'ordre est celui du relevé, pas une
+    // approximation : les deux lignes sortent dans cet ordre-là.
+    this.addLine('crontab: installing new crontab');
+    const refus = validateCrontabContent(content, pending!.tmpPath);
+    if (refus.length > 0) {
+      for (const l of refus) this.addLine(l);
+      this._pendingCrontabPrompt = pending;
+      this.addLine('Do you want to retry the same edit? (y/n) ');
+      this.notify();
+      return;
+    }
+    dev.installCrontabContent(content, pending!.user);
+    this.notify();
+  }
+
+  private _pendingVisudoEdit: { targetPath: string; tmpPath: string } | null = null;
+  /** Set when a save was rejected for a syntax error — the exact real
+   *  visudo "What now?" recovery prompt, awaiting e/x/Q on the next line. */
+  private _pendingVisudoPrompt: { targetPath: string; tmpPath: string } | null = null;
+
+  /** Print real visudo's "What now?" recovery menu after a rejected save. */
+  private printVisudoWhatNow(errorLines: readonly string[]): void {
+    for (const line of errorLines) this.addLine(line);
+    this.addLine('What now?');
+    this.addLine('Options are:');
+    this.addLine("  (e)dit sudoers file again");
+    this.addLine('  e(x)it without saving changes to sudoers file');
+    this.addLine('  (Q)uit and save changes to sudoers file (DANGER!)');
+    this.addLine('');
+    this.addLine('What now? ');
+  }
+
+  /** Consumes the next typed line as the response to printVisudoWhatNow(). */
+  private tryVisudoPromptResponse(commandLine: string): boolean {
+    const pending = this._pendingVisudoPrompt;
+    if (!pending) return false;
+    const answer = commandLine.trim();
+    const dev = this.device;
+
+    if (answer === 'e') {
+      this._pendingVisudoPrompt = null;
+      this._pendingVisudoEdit = pending;
+      const content = (dev instanceof LinuxMachine && this.shell)
+        ? dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? ''
+        : '';
+      const editorVar = (this.shell?.env.get('VISUAL') || this.shell?.env.get('EDITOR') || 'vi').toLowerCase();
+      const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+      this.openEditor(editorCmd, [pending.tmpPath]);
+      void content; // buffer already lives at tmpPath — openEditor re-reads it
+      return true;
+    }
+    if (answer === 'x') {
+      this._pendingVisudoPrompt = null;
+      this.addLine(`visudo: ${pending.targetPath} unchanged`);
+      this.notify();
+      return true;
+    }
+    if (answer === 'Q') {
+      this._pendingVisudoPrompt = null;
+      if (dev instanceof LinuxMachine && this.shell) {
+        const content = dev.readFileForEditorInSession(pending.tmpPath, this.shell) ?? '';
+        dev.writeFileFromEditorInSession(pending.targetPath, content, this.shell);
+      }
+      this.addLine(`visudo: ${pending.targetPath}: saved with a known syntax error (DANGER!)`);
+      this.notify();
+      return true;
+    }
+    // Any other input: invalid choice — real visudo re-prompts.
+    this.printVisudoWhatNow([]);
+    this.notify();
+    return true;
+  }
+
+  /**
+   * `visudo` (no `-c`) — real visudo edits a *temp copy* of the target
+   * file and only installs it if the saved content parses cleanly,
+   * guaranteeing /etc/sudoers is never left syntactically broken (which
+   * would lock every admin out of sudo). `-c`/`-c -f` stay on the normal
+   * LinuxCommand dispatch path (Visudo.ts) since they never touch the
+   * editor at all.
+   */
+  private tryVisudoEdit(commandLine: string): boolean {
+    const dev = this.device;
+    if (!(dev instanceof LinuxMachine) || !this.shell) return false;
+    const trimmedCmd = commandLine.trim();
+    const isSudo = trimmedCmd.startsWith('sudo ');
+    let toks = trimmedCmd.split(/\s+/);
+    if (isSudo) toks = toks.slice(1);
+    if (toks[0] !== 'visudo' || toks.includes('-c')) return false;
+
+    // Session-scoped, not device-global: after `sudo su -` in THIS
+    // terminal, `this.shell.user` is 'root' even though the device's
+    // legacy executor-wide current user (dev.getCurrentUser()) never
+    // changes — the same distinction every other check in this method
+    // already respects via the `InSession` VFS calls below.
+    const isRoot = this.shell.user === 'root';
+    if (!isRoot && !(isSudo && dev.canSudo())) {
+      this.addLine('visudo: you must be root to run visudo');
+      return true;
+    }
+
+    const fIdx = toks.indexOf('-f');
+    const targetArg = fIdx !== -1 && toks[fIdx + 1] ? toks[fIdx + 1] : '/etc/sudoers';
+    const targetPath = dev.resolveAbsolutePathInSession(targetArg, this.shell);
+    const existing = dev.readFileForEditorInSession(targetPath, this.shell) ?? '';
+
+    const tmpPath = `/tmp/visudo.${Math.floor(Math.random() * 1e6)}`;
+    dev.writeFileFromEditorInSession(tmpPath, existing, this.shell);
+    this._pendingVisudoEdit = { targetPath, tmpPath };
+
+    const editorVar = (this.shell.env.get('VISUAL') || this.shell.env.get('EDITOR') || 'vi').toLowerCase();
+    const editorCmd: 'nano' | 'vi' | 'vim' = editorVar.includes('nano') ? 'nano' : editorVar.includes('vim') ? 'vim' : 'vi';
+    this.openEditor(editorCmd, [tmpPath]);
+    return true;
+  }
+
+  private finishVisudoEdit(saved: boolean): void {
+    const pending = this._pendingVisudoEdit;
+    this._pendingVisudoEdit = null;
+    this.inputMode = { type: 'normal' };
+    const dev = this.device;
+    if (!saved || !(dev instanceof LinuxMachine) || !this.shell) {
+      this.addLine('visudo: no changes made');
+      this.notify();
+      return;
+    }
+    const content = dev.readFileForEditorInSession(pending!.tmpPath, this.shell) ?? '';
+    const result = validateSudoersContent(content, pending!.targetPath);
+    if (result.exitCode !== 0) {
+      // Real visudo never silently discards a rejected save — it asks
+      // what to do next (re-edit / discard / force-save anyway).
+      this._pendingVisudoPrompt = pending!;
+      this.printVisudoWhatNow(result.lines);
+    } else {
+      dev.writeFileFromEditorInSession(pending!.targetPath, content, this.shell);
+      // Real visudo always leaves sudoers-family files root-owned 0440,
+      // regardless of the editing session's umask — a world/group-writable
+      // (or non-root-owned) sudoers file is a privilege-escalation hole.
+      dev.setSudoersFilePermissions(pending!.targetPath);
+    }
+    this.notify();
+  }
+
   private openEditor(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): void {
     let filePath = '';
     for (const arg of args) {
       if (!arg.startsWith('-') && !arg.startsWith('+')) { filePath = arg; break; }
     }
-    if (!filePath) filePath = editorCmd === 'nano' ? 'New Buffer' : '';
+    // nano -v/--view: open read-only, no Write Out. nano -c/--constantshow:
+    // title bar shows the live cursor position. Both no-ops for vi/vim
+    // (which use their own :view / :set ruler commands for the same idea).
+    const readOnly = editorCmd === 'nano' && args.some((a) => a === '-v' || a === '--view');
+    const showPosition = editorCmd === 'nano' && args.some((a) => a === '-c' || a === '--constantshow');
+    const showLineNumbers = editorCmd === 'nano' && args.some((a) => a === '-l' || a === '--linenumbers');
+    // `+LINE[,COLUMN]` (nano) / `+LINE` (vim/vi, no column form) opens the
+    // buffer with the cursor already positioned there. Real nano/vim take
+    // the LAST such argument if more than one is given.
+    let initialCursorLine: number | undefined;
+    let initialCursorCol: number | undefined;
+    for (const arg of args) {
+      const m = /^\+(\d+)(?:,(\d+))?$/.exec(arg);
+      if (m) {
+        initialCursorLine = parseInt(m[1], 10);
+        initialCursorCol = m[2] !== undefined ? parseInt(m[2], 10) : undefined;
+      }
+    }
+
+    // No filename given: a genuinely unnamed buffer. Resolving '' against
+    // the cwd would collapse to the cwd's OWN directory path (VFS
+    // normalizePath treats '' as "no extra segment"), so `^O`/`:w` would
+    // silently target the directory itself — skip resolution entirely and
+    // leave both paths empty; the engines already handle an empty
+    // filePath correctly (nano's Write Out prompt starts blank, vim's :w
+    // reports E32 until a real name is typed).
+    if (!filePath) {
+      this.inputMode = {
+        type: 'editor',
+        editorType: editorCmd,
+        filePath: '',
+        absolutePath: '',
+        content: '',
+        isNewFile: true,
+        readOnly,
+        showPosition,
+        showLineNumbers,
+        initialCursorLine,
+        initialCursorCol,
+      };
+      this.notify();
+      return;
+    }
 
     // Resolve against the per-terminal cwd when a shell session is owned
     // (terminal_gap.md §10.1) — falls back to the device's shared cwd for
@@ -1169,12 +2181,17 @@ export class LinuxTerminalSession extends TerminalSession {
       absolutePath,
       content: existingContent ?? '',
       isNewFile,
+      readOnly,
+      showPosition,
+      showLineNumbers,
+      initialCursorLine,
+      initialCursorCol,
     };
     this.notify();
   }
 
-  /** Called by the view when editor saves a file. */
-  editorSave(content: string, filePath: string): void {
+  override editorSave(content: string, filePath: string): void {
+    if (this.hasActiveChild) { super.editorSave(content, filePath); return; }
     const dev = this.device;
     if (this.shell && dev instanceof LinuxMachine) {
       dev.writeFileFromEditorInSession(filePath, content, this.shell);
@@ -1191,7 +2208,10 @@ export class LinuxTerminalSession extends TerminalSession {
    * making the editor "succeed" for chain semantics; `saved=false`
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
-  editorExit(saved: boolean = true): void {
+  override editorExit(saved: boolean = true): void {
+    if (this.hasActiveChild) { super.editorExit(saved); return; }
+    if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
+    if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
     const tail = this._pendingChainAfterEditor;
     this._pendingChainAfterEditor = null;
@@ -1265,6 +2285,28 @@ export class LinuxTerminalSession extends TerminalSession {
     return head + rest;
   }
 
+  /**
+   * Command-owned interactive flows (IoC): the DEVICE declares the
+   * sudo/su/passwd/adduser dialogue via `interactionPlanFor`; this session
+   * renders it. The session's only contributions are its per-terminal
+   * identity and the subshell-entry patches (rman/sqlplus) below.
+   */
+  private buildDeviceFlowSteps(
+    command: string,
+    currentUser: string,
+    currentUid: number,
+  ): InteractiveStep[] | null {
+    const device = this.device as unknown as {
+      interactionPlanFor?: (
+        line: string,
+        ctx?: { currentUser?: string; currentUid?: number },
+      ) => import('@/shell/interaction/CommandInteraction').CommandInteractionPlan | null;
+    };
+    if (typeof device.interactionPlanFor !== 'function') return null;
+    const plan = device.interactionPlanFor(command, { currentUser, currentUid });
+    return plan ? toInteractiveSteps(plan) : null;
+  }
+
   private startInteractiveFlow(command: string): boolean {
     // Use the per-terminal shell session's identity, not the device-wide
     // executor's: `su`/`sudo -s` push a frame onto *this* terminal's shell
@@ -1277,7 +2319,7 @@ export class LinuxTerminalSession extends TerminalSession {
     const noSudo = command.startsWith('sudo ') ? command.slice(5).trim() : command;
     const cmdParts = noSudo.split(/\s+/);
     if (cmdParts[0] === 'rman' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         const rmanArgs = cmdParts.slice(1);
         const patchedSteps: InteractiveStep[] = steps.map(step => {
@@ -1296,7 +2338,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
     if (cmdParts[0] === 'sqlplus' && command.startsWith('sudo ')) {
-      const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+      const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
       if (steps) {
         // Replace the generic execute step with sqlplus entry
         const sqlplusArgs = cmdParts.slice(1);
@@ -1316,7 +2358,7 @@ export class LinuxTerminalSession extends TerminalSession {
       }
     }
 
-    const steps = LinuxFlowBuilder.build(command, currentUser, currentUid, this.device);
+    const steps = this.buildDeviceFlowSteps(command, currentUser, currentUid);
     if (!steps) return false;
 
     this.startFlowFromSteps(steps, command);
@@ -1325,15 +2367,6 @@ export class LinuxTerminalSession extends TerminalSession {
 
   /** Post-flow hook: sync device state and handle special actions (e.g. enter sqlplus). */
   protected override onFlowComplete(ctx: FlowContext): void {
-    const xvendor = ctx.metadata.get('xvendor_push') as string | undefined;
-    if (xvendor && this.crossVendorPushTarget) {
-      const { host, user } = JSON.parse(xvendor) as { host: string; user: string };
-      const target = this.crossVendorPushTarget;
-      this.crossVendorPushTarget = null;
-      this.pushRemoteDeviceWithStrategy(target.device, user, host, target.strategy);
-      return;
-    }
-    this.crossVendorPushTarget = null;
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;
     if (rmanArgs) {
       this.enterRman(JSON.parse(rmanArgs));
@@ -1352,6 +2385,13 @@ export class LinuxTerminalSession extends TerminalSession {
       };
       const password = ctx.values.get('sftp_password') ?? '';
       this.connectAndEnterSftp(userAtHost, password, batchFile ?? null);
+      return;
+    }
+    const ftpMeta = ctx.metadata.get('enter_ftp') as string | undefined;
+    if (ftpMeta) {
+      const { host, port, user } = JSON.parse(ftpMeta) as { host: string; port?: number; user: string };
+      const password = ctx.values.get('ftp_password') ?? '';
+      this.connectAndEnterFtp(host, port, user, password);
       return;
     }
     // enter_ssh is no longer set — enterSsh() now calls connectAndEnterSsh()
@@ -1525,8 +2565,7 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
 
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
@@ -1570,6 +2609,111 @@ export class LinuxTerminalSession extends TerminalSession {
     });
     this.activeSubShell = new ShellSubShellAdapter(shell);
     shell.activate();
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  /** `ftp [user@]host [port]` (PRD-FTP-SFTP.md §2.1.11) — like `enterSftp()`, but for the plain FTP engine (`FtpClientSession`). */
+  private enterFtp(args: string[]): void {
+    const positional = args.filter((a) => !a.startsWith('-'));
+    const target = positional[0] ?? '';
+    if (!target) {
+      this.addLine('usage: ftp [user@]host [port]', 'error');
+      this.notify();
+      return;
+    }
+    const user = target.includes('@') ? target.split('@')[0] : this.currentUser;
+    const host = target.includes('@') ? target.split('@')[1] : target;
+    const port = positional[1] ? parseInt(positional[1], 10) : undefined;
+
+    const steps: InteractiveStep[] = [
+      {
+        type: 'password',
+        prompt: 'Password: ',
+        mask: 'hidden',
+        storeAs: 'ftp_password',
+      },
+      {
+        type: 'execute',
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set('enter_ftp', JSON.stringify({ host, port, user }));
+        },
+      },
+    ];
+    this.startFlowFromSteps(steps, `ftp ${target}`);
+  }
+
+  private connectAndEnterFtp(host: string, port: number | undefined, user: string, password: string): void {
+    const dev = this.device as unknown as {
+      executor?: {
+        vfs?: import('@/network/devices/linux/VirtualFileSystem').VirtualFileSystem;
+        userMgr?: { getUser(name: string): { uid?: number; gid?: number; home?: string } | undefined };
+      };
+      getTcpStack?: () => import('@/network/tcp/TcpStack').TcpStack;
+    };
+    const localVfs = dev.executor?.vfs;
+    if (!localVfs || !dev.getTcpStack) {
+      this.addLine('ftp: this device does not support FTP', 'error');
+      this.notify();
+      return;
+    }
+
+    const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
+    const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
+    const localIp = this.lookupSourceIp();
+    const client = new FtpClientSession(dev.getTcpStack(), host, localIp, port);
+
+    const banner = client.connect();
+    if (!banner || banner.code !== 220) {
+      this.addLine(`ftp: connect: Connection refused`, 'error');
+      this.notify();
+      return;
+    }
+    this.addLine(banner.lines.join('\n'));
+
+    const userReply = client.sendCommand({ verb: 'USER', argument: user });
+    const passReply = client.sendCommand({ verb: 'PASS', argument: password });
+    if (!passReply || passReply.code !== 230) {
+      this.addLine(passReply?.lines.join('\n') ?? 'Login failed.', 'error');
+      client.close();
+      this.notify();
+      return;
+    }
+    if (userReply) this.addLine(userReply.lines.join('\n'));
+    this.addLine(passReply.lines.join('\n'));
+
+    const shell = new FtpSubShell({
+      client,
+      localVfs,
+      localUid: userEntry?.uid ?? 1000,
+      localGid: userEntry?.gid ?? 1000,
+      localHome: homeDir,
+      localCwd: this.currentPath,
+    });
+    this.activeSubShell = shell;
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  /** `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) — real `nslookup(1)`'s interactive `>` REPL. */
+  private enterNslookup(): void {
+    const dev = this.device as unknown as {
+      net?: import('@/network/devices/linux/LinuxNetKernel').LinuxNetKernel;
+      executor?: import('@/network/devices/linux/LinuxCommandExecutor').LinuxCommandExecutor;
+    };
+    if (!dev.net || !dev.executor) {
+      this.addLine('nslookup: this device does not support DNS lookups', 'error');
+      this.notify();
+      return;
+    }
+    const initialServer = readResolverIP(dev.executor);
+    const net = dev.net;
+    const shell = new NslookupSubShell({
+      query: (s, n, t, ms) => net.queryDns(s, n, t, ms),
+      initialServer,
+    });
+    for (const line of shell.bannerLines()) this.addLine(line);
+    this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();
   }
@@ -1644,77 +2788,46 @@ export class LinuxTerminalSession extends TerminalSession {
     // only when the SSH layer actually needs them (e.g. public-key auth succeeds
     // silently without ever asking for a password). `merged` carries
     // `hashKnownHosts` from CLI `-o` / ~/.ssh/config (analysis doc §1.6).
-    if (!merged.command) {
-      const handled = await this.tryEnterCrossVendorSsh(merged);
-      if (handled) return;
-    }
+    //
+    // Audit 03, constat CRITIQUE §1.b: non-Linux targets (Cisco/Huawei/
+    // Windows) used to go through `tryEnterCrossVendorSsh()`, which
+    // verified the password with a direct `sshHost.evaluate()` method
+    // call — zero bytes on the wire — even though these devices already
+    // run a real SshServerHandler on a real TcpStack.listen(22, ...)
+    // (Router.ts, WindowsPC.ts). Every target now goes through the same
+    // real SshSession/TcpStack pipeline Linux targets always used; the
+    // security policy that pre-check enforced (login block-for,
+    // quiet-mode ACL) is preserved via RouterSshServerContext's
+    // isClientBlocked/recordAuthFailure hooks, now reachable from a real
+    // auth exchange instead of a local call.
     await this.connectAndEnterSsh(merged);
   }
 
   /**
-   * Cross-vendor SSH push (BRD SSH-04 extended): when the target IP belongs
-   * to a non-Linux device that exposes a {@link CrossVendorSshHost}, bypass
-   * the TCP/SshSession machinery (no TCP listener on routers / Windows in
-   * the simulator) and validate the password directly against the host's
-   * auth gate. On accept, push a {@link RemoteDeviceSubShell} configured
-   * with the vendor's prompt strategy so the user genuinely lands in
-   * `Router#`, `<HW>` or `C:\Users\…>`.
+   * `telnet host [port]` — one real TCP connection to the remote VTY,
+   * then a sub-shell over it. Every line printed afterwards is the
+   * remote device's own text: the login dialog, the prompt and the
+   * command output all come off the wire
+   * (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
-  private async tryEnterCrossVendorSsh(
-    meta: { userAtHost: string; port: number },
-  ): Promise<boolean> {
-    const user = meta.userAtHost.includes('@')
-      ? meta.userAtHost.split('@')[0]
-      : this.currentUser;
-    const host = meta.userAtHost.includes('@')
-      ? meta.userAtHost.split('@')[1]
-      : meta.userAtHost;
-    const target = findEquipmentByIp(host);
-    if (!target || target instanceof LinuxMachine) return false;
-    const sshHost = (target as unknown as { getSshHost?: () => unknown }).getSshHost?.() as
-      | { evaluate: (req: SshConnectionRequest) => { outcome: string } }
-      | undefined;
-    if (!sshHost) return false;
+  private async enterTelnet(args: string[]): Promise<void> {
+    const vfs = (this.device as unknown as {
+      executor?: { vfs?: { readFile(p: string): string | null } };
+    }).executor?.vfs;
+    const sub = await launchTelnet(args, {
+      device: this.device,
+      resolverVfs: vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
+      emit: (text, type) => this.addLine(text, type),
+    });
+    if (!sub) { this.notify(); return; }
 
-    const strategy = pickVendorPromptStrategy(target);
-    if (!strategy) return false;
-
-    const steps: InteractiveStep[] = [
-      {
-        type: 'password',
-        prompt: `${user}@${host}'s password:`,
-        storeAs: 'ssh_password',
-      },
-      {
-        type: 'execute',
-        action: async (ctx: FlowContext) => {
-          const password = ctx.values.get('ssh_password') ?? '';
-          const request = SshConnectionRequest.create({
-            requestedUser: user,
-            requestedHost: host,
-            requestedPort: meta.port,
-            sourceIp: this.lookupSourceIp(),
-            sourceHostname: this.device.getHostname() || '',
-            command: null,
-            offeredAuthMethods: ['password'],
-            credentials: { password },
-          });
-          const decision = sshHost.evaluate(request);
-          if (decision.outcome !== 'accepted') {
-            this.addLine(`${user}@${host}: Permission denied (password).`, 'error');
-            return;
-          }
-          ctx.metadata.set('xvendor_push', JSON.stringify({ host, user }));
-        },
-      },
-    ];
-
-    this.crossVendorPushTarget = { device: target, strategy };
-    this.startFlowFromSteps(steps, `ssh ${user}@${host}`);
-    return true;
+    this.activeSubShell = sub;
+    this._inputBuf = '';
+    const opening = await sub.begin();
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) { this.exitSubShell(); return; }
+    this.notify();
   }
-
-  private crossVendorPushTarget: { device: Equipment; strategy: RemotePromptStrategy } | null = null;
 
   private lookupSourceIp(): string {
     const portsObj = (this.device as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
@@ -1757,16 +2870,29 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = meta.userAtHost.includes('@')
       ? meta.userAtHost.split('@')[0]
       : this.currentUser;
-    const host = meta.userAtHost.includes('@')
+    const typedHost = meta.userAtHost.includes('@')
       ? meta.userAtHost.split('@')[1]
       : meta.userAtHost;
+
+    // Un vrai client résout le nom AVANT d'ouvrir la moindre socket, et
+    // s'arrête là s'il n'y arrive pas. Sans cette étape, `ssh localhost`
+    // descendait jusqu'à la pile TCP avec le mot « localhost » pour
+    // adresse, où il levait une exception non rattrapée.
+    const host = this.resolveSshHost(typedHost);
+    if (!host) {
+      this.addLine(
+        `ssh: Could not resolve hostname ${typedHost}: Name or service not known`,
+        'error',
+      );
+      this.notify();
+      return;
+    }
 
     // Reactive IO: password and host-key prompts are shown on demand by
     // TerminalSshInteractionHandler → QueuedTerminalIO → handleSshIOKey().
@@ -1791,6 +2917,17 @@ export class LinuxTerminalSession extends TerminalSession {
     if (meta.hashKnownHosts) builder.hashKnownHosts(true);
     for (const id of this.autoDiscoverIdentityFiles(meta.identityFiles)) {
       builder.addIdentityFile(id);
+    }
+
+    // No usable path to the host — a real client fails here, before any
+    // key exchange or password prompt (docs/PRD-Link-State.md §2.1 P6).
+    const reachable = this.remoteLivenessProbe(host);
+    if (reachable && !reachable()) {
+      this.addLine(`ssh: connect to host ${host} port ${meta.port}: No route to host`, 'error');
+      session.disconnect();
+      this.pendingSshIO = null;
+      this.notify();
+      return;
     }
 
     let result: Awaited<ReturnType<typeof session.connect>> | null = null;
@@ -1828,13 +2965,27 @@ export class LinuxTerminalSession extends TerminalSession {
       // do not duplicate it. Other errors have no prior warning, so display them here.
       if (errKind !== 'AUTH_FAILED') {
         const msg =
+          // A refused connection is `Connection refused`, not `No route to
+          // host` — the unreachable case was already decided above, by the
+          // liveness probe, before any session was opened, so reaching
+          // here means the path was fine and the far end said no. That is
+          // what a router in quiet-mode, a `transport input none`, or a
+          // stopped daemon look like from the client, and calling it a
+          // routing failure sends the operator to check cables instead.
           errKind === 'CONNECTION_REFUSED'
-            ? `ssh: connect to host ${host} port ${meta.port}: No route to host`
+            ? `ssh: connect to host ${host} port ${meta.port}: Connection refused`
+            : errKind === 'CONNECTION_TIMEOUT'
+            ? `ssh: connect to host ${host} port ${meta.port}: Connection timed out`
             : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
             ? 'Host key verification failed.'
             : `${user}@${host}: Permission denied (publickey,password).`;
         this.addLine(msg, 'error');
       }
+      // A failed connection attempt (bad auth, rejected host key, refused
+      // admission, …) must not linger: a real ssh client tears down its
+      // TCP connection on failure rather than leaving the vty/pty line it
+      // occupied on the server dangling until some other timeout fires.
+      session.disconnect();
       this.notify();
       return;
     }
@@ -1878,26 +3029,22 @@ export class LinuxTerminalSession extends TerminalSession {
     // resolved (e.g. tests using a synthetic SshServerHandler), fall
     // back to RemoteShellSubShell which forwards each line as an exec.
     //
-    // Banner composition: prefer the in-process LinuxMachine path because
-    // it gives us the canonical OpenSSH ordering (Welcome → motd → blank
-    // → Last login). Falls back to the exec-channel reads when the remote
-    // is a synthetic handler that doesn't materialise a LinuxMachine.
-    const remoteForBanner = findLinuxMachineByIp(host);
-    const bannerLines = remoteForBanner
-      ? composeLoginBanner(remoteForBanner, user)
-      : await this.composeLoginBannerViaExec(session, user);
-    for (const line of bannerLines) this.addLine(line);
-
+    // Every forwarder needs the tunnel's OTHER end, so the peer is
+    // resolved first: `-L`/`-D` are dialled by the server, `-R` by us.
+    // Any peer holding a TCP stack can dial — a router and a Windows
+    // machine both have one — so the dialler is not narrowed to a
+    // LinuxMachine the way `-R`'s listener below is.
+    const linuxRemoteDevice = findLinuxMachineByIp(host);
+    const dialPeer = linuxRemoteDevice ?? findEquipmentByIp(host);
     // OpenSSH `-L`: register local-port forwarders on the local device,
     // each tunnelling new connections through this SSH session.
-    const forwarders = this.installLocalForwards(session, host, meta);
+    const forwarders = this.installLocalForwards(session, host, meta, dialPeer);
     // OpenSSH `-D`: SOCKS proxy on a local port — symmetric placement to
     // `-L` (always on the local device).
-    const dynamicForwarders = this.installDynamicForwards(session, host, meta);
+    const dynamicForwarders = this.installDynamicForwards(session, host, meta, dialPeer);
     // OpenSSH `-R`: needs the remote device — registered only when the
     // SSH peer resolves to a local Equipment instance (the common case
     // for the tutorial LAN).
-    const linuxRemoteDevice = findLinuxMachineByIp(host);
     const remoteForwarders = linuxRemoteDevice
       ? this.installRemoteForwards(session, host, linuxRemoteDevice, meta)
       : [];
@@ -1912,24 +3059,55 @@ export class LinuxTerminalSession extends TerminalSession {
       session.disconnect();
     };
 
+    // Every vendor is driven over the real, authenticated SSH channel.
+    // The server shells became stateful (A2/A3), publish their prompt
+    // and completion (A1/B1), stack their own sub-shells (B2), host
+    // their own editors (B3) and raise their own challenges (B4), so
+    // one client driver is left (docs/PRD-SSH-Unification.md §4bis).
+    const wireRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
+    if (wireRemoteDevice) {
+      const channelResult = session.openShellChannel();
+      if (isOk(channelResult)) {
+        const sourceIp = this.firstLocalIp() ?? '0.0.0.0';
+        const sourceHost = this.device.getHostname?.() ?? '';
+        const banner = this.composeLoginBanner(wireRemoteDevice, user, sourceIp, sourceHost, false);
+        for (const line of banner) this.addLine(line);
+        const promptHost = (wireRemoteDevice as unknown as { getSshHostname?: () => string })
+          .getSshHostname?.() ?? host;
+        this.activeSubShell = new SshInteractiveSubShell(
+          session, channelResult.value, user, host, `/home/${user}`, onSessionEnd,
+          promptHost, linuxRemoteDevice ?? undefined,
+          // Liveness of an OPEN session is read, never provoked with a
+          // fresh handshake — otherwise every command would make the
+          // remote log an accept/close pair. Two facts are read: this
+          // side's own socket, which knows when THIS link drops, and the
+          // path, which is the only thing that notices a cable pulled at
+          // the far end, a switch losing power in between, or the peer
+          // being switched off (docs/PRD-Pannes.md §F1, §F5).
+          establishedSessionLiveness(session, this.device, host),
+          (footer) => this.onRemoteHangup(footer),
+          (line) => this.addLine(line),
+        );
+        this._inputBuf = '';
+        this.notify();
+        return;
+      }
+    }
+
     const anyRemoteDevice = linuxRemoteDevice ?? findEquipmentByIp(host);
     if (anyRemoteDevice) {
-      // Non-Linux peers (Windows / Cisco / Huawei) need their vendor
-      // shell on the stack — otherwise the terminal renders the bash
-      // prompt for a Windows cwd and routes commands to the bare
-      // device.executeCommand, so `powershell` / mode-switches never
-      // engage. Linux peers keep the generic push (no foreign shell).
-      const vendorStrategy = anyRemoteDevice instanceof LinuxMachine
-        ? null
-        : pickVendorPromptStrategy(anyRemoteDevice);
-      if (vendorStrategy) {
-        this.pushRemoteDeviceWithStrategy(
-          anyRemoteDevice, user, host, vendorStrategy, onSessionEnd,
-        );
-      } else {
-        this.pushRemoteDevice(anyRemoteDevice, user, host, onSessionEnd);
+      const child = createSessionForDevice(anyRemoteDevice, `${this.id}>ssh`);
+      if (child) {
+        const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+        const serverIp = host;
+        const clientPort = 50_000 + (user.length * 7 % 10_000);
+        this.adoptRemoteChild(child, user, host, {
+          SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} 22`,
+          SSH_CLIENT: `${clientIp} ${clientPort} 22`,
+        });
+        child.registerTearDown(onSessionEnd);
+        return;
       }
-      return;
     }
     this.activeSubShell = new RemoteShellSubShell(session, user, host, `/home/${user}`);
     this._inputBuf = '';
@@ -2309,8 +3487,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
 
     const sftp = new SftpSession({
       tcpConnector,
@@ -2363,8 +3540,7 @@ export class LinuxTerminalSession extends TerminalSession {
     };
     const localVfs = dev.executor?.vfs;
     if (!localVfs) return null;
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = userAtHost.split('@')[0];
@@ -2458,6 +3634,13 @@ export class LinuxTerminalSession extends TerminalSession {
   }
 
   /**
+   * Open `line` as an editor on the remote when the active sub-shell is
+   * an SSH session and the remote accepts it. The engine stays on the
+   * remote; the overlay drives it through a proxy over the same channel.
+   * Returns false when the line is not an editor invocation at all, so
+   * the caller runs it as a normal command.
+   */
+  /**
    * Generic sub-shell key handler.
    * Works for SQL*Plus and any future ISubShell implementations.
    */
@@ -2476,7 +3659,13 @@ export class LinuxTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
-      const maybePromise = this.activeSubShell.processLine(line);
+      // An editor typed in a remote session opens on the remote, where
+      // the file is. Only once the remote declines does the line run as
+      // an ordinary command (docs/PRD-SSH-Unification.md §4bis B3).
+      if (this.tryOpenRemoteEditor(line)) return true;
+
+      const onProgress = (text: string) => { this.addLine(text); this.notify(); };
+      const maybePromise = this.activeSubShell.processLine(line, onProgress);
 
       const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
         if (result.clearScreen) this.clear();
@@ -2556,6 +3745,10 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.activeSubShell.interruptForeground?.()) {
+        this.notify();
+        return true;
+      }
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
@@ -2574,8 +3767,101 @@ export class LinuxTerminalSession extends TerminalSession {
       return true;
     }
 
+    // Tab is ALWAYS consumed while a sub-shell is active — even when the
+    // sub-shell offers no completions — so it never leaks to the browser's
+    // native focus navigation.
+    if (e.key === 'Tab') {
+      this.onSubShellTab(e.shiftKey ?? false);
+      return true;
+    }
+
+    // `?` is a help key on a network CLI and an ordinary character on a
+    // POSIX shell, so only a remote that advertises inline help gets the
+    // interception — `ls ?.txt` over SSH to Linux still types a `?`.
+    if (e.key === '?' && !e.ctrlKey && !e.altKey && !e.metaKey
+        && this.subShellOffersInlineHelp()) {
+      void this.showSubShellInlineHelp();
+      return true;
+    }
+
+    // Any other key ends a completion cycle and clears the suggestions.
+    this.subShellCompletion.reset();
+    if (this.tabSuggestions) {
+      this.tabSuggestions = null;
+      this.notify();
+    }
+
     // Let the view handle other keys (typing into the interactive-text input)
     return false;
+  }
+
+  private subShellOffersInlineHelp(): boolean {
+    const sub = this.activeSubShell as { supportsInlineHelp?: () => boolean } | null;
+    return sub?.supportsInlineHelp?.() === true;
+  }
+
+  /**
+   * Echo the composed line with `?`, print the device's help, then hand
+   * the line back for editing — what a real console does when `?` is
+   * pressed mid-command (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  private async showSubShellInlineHelp(): Promise<void> {
+    const sub = this.activeSubShell as
+      { inlineHelpAsync?: (line: string) => Promise<string[]>; getPrompt(): string } | null;
+    if (!sub?.inlineHelpAsync) return;
+    const line = this._inputBuf;
+    this.addEchoLine(sub.getPrompt(), `${line}?`);
+    for (const helpLine of await sub.inlineHelpAsync(line)) this.addLine(helpLine);
+    this.notify();
+  }
+
+  private onSubShellTab(reverse: boolean): void {
+    const sub = this.activeSubShell;
+    if (!sub) return;
+    if (typeof sub.getCompletionsAsync === 'function') {
+      void this.onSubShellTabAsync(sub, reverse);
+      return;
+    }
+    if (typeof sub.getCompletions !== 'function') return;
+    this.applySubShellTab((line) => sub.getCompletions?.(line) ?? [], reverse);
+  }
+
+  /**
+   * Tab against a sub-shell that can only answer asynchronously (a remote
+   * shell over an SSH channel). The candidates are fetched first, then fed
+   * to the same synchronous completion controller; a keystroke landing
+   * while the request is in flight abandons the stale answer
+   * (docs/PRD-SSH-Unification.md §4bis B1).
+   */
+  private async onSubShellTabAsync(sub: ISubShell, reverse: boolean): Promise<void> {
+    const asked = this._inputBuf;
+    const candidates = await sub.getCompletionsAsync!(asked);
+    if (this._inputBuf !== asked) return;
+    this.applySubShellTab(() => candidates, reverse);
+  }
+
+  private applySubShellTab(fetch: (line: string) => readonly string[], reverse: boolean): void {
+    const source = new LastWordSource(fetch, { uniqueSpace: 'never' });
+    const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions =
+      out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
+    this.notify();
+  }
+
+  /**
+   * The remote hung the line up with nothing typed here — an IOS VTY
+   * `exec-timeout` firing server-side. Real ssh prints its footer the
+   * moment the socket dies and hands the shell back, so the footer and
+   * the local prompt land without waiting for the next keypress.
+   */
+  private onRemoteHangup(footer: string): void {
+    if (!this.activeSubShell) return;
+    this.addLine(footer);
+    this.exitSubShell();
+    this.addLine(this.getPrompt());
+    this.notify();
   }
 
   private exitSubShell(): void {
@@ -2608,6 +3894,56 @@ export class LinuxTerminalSession extends TerminalSession {
    * is dispatched against the remote `LinuxMachine.executeCommand`,
    * editors open on the remote, tab completion uses the remote VFS.
    */
+  /**
+   * Is there a usable path to `host` from THIS device, before `ssh`
+   * connects. Read off the cabled topology rather than dialled: the
+   * connection `ssh` is about to open is the one that settles the
+   * question, and a throwaway handshake before it made the server log an
+   * accept/close pair for a connection no client ever had
+   * (docs/PRD-Link-State.md §2.1 P6).
+   */
+  private remoteLivenessProbe(host: string): (() => boolean) | undefined {
+    if (!IPAddress.tryParse(host)) return undefined;
+    return peerLiveness(this.device, host);
+  }
+
+  /**
+   * Le nom que l'opérateur a tapé, ramené à une adresse — ce qu'un vrai
+   * client ssh fait AVANT d'ouvrir quoi que ce soit.
+   *
+   * Rien ne le faisait : `ssh localhost` descendait jusqu'à
+   * `TcpStack.resolveEgress`, qui construisait `new IPAddress('localhost')`
+   * et levait. L'exception remontait par une promesse non rattrapée, donc
+   * l'utilisateur voyait une trace de pile au lieu d'une session ou d'un
+   * refus.
+   *
+   * L'ordre est celui du résolveur réel : une adresse littérale passe
+   * telle quelle, puis `/etc/hosts` de la machine locale — c'est lui qui
+   * porte `localhost` —, puis les noms d'équipements du réseau simulé.
+   * `null` signifie « nom inconnu », et l'appelant rend alors le message
+   * d'OpenSSH plutôt que d'appeler une adresse qui n'existe pas.
+   */
+  private resolveSshHost(host: string): string | null {
+    if (IPAddress.tryParse(host)) return host;
+    const vfs = (this.device as unknown as {
+      executor?: { vfs?: { readFile(p: string): string | null } };
+    }).executor?.vfs;
+    if (vfs) {
+      const needle = host.toLowerCase();
+      const short = needle.split('.')[0];
+      const raw = vfs.readFile('/etc/hosts');
+      for (const entry of HostsFile.parse(raw).entries) {
+        if (entry.hasName(needle) || entry.hasName(short)) return entry.ip;
+      }
+    }
+    const found = findHostByAddress(
+      host,
+      vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
+      this.device as never,
+    );
+    return found?.ip ?? null;
+  }
+
   pushRemoteDevice(
     remote: HostCapableDevice,
     user: string,
@@ -2643,44 +3979,6 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  pushRemoteDeviceWithStrategy(
-    remote: Equipment,
-    user: string,
-    label: string,
-    strategy: RemotePromptStrategy,
-    onPop: () => void = () => undefined,
-  ): void {
-    const pausedShell = this.shell;
-    this.sshStack.push({
-      device: this.device,
-      user: this.currentUser,
-      path: this.currentPath,
-      pausedShell,
-      onPop: () => { try { onPop(); } catch { /* swallow */ } },
-      label,
-    });
-    this.device = remote;
-    this.shell = null;
-    this.currentUser = user;
-    this.currentPath = `~`;
-
-    installDefaultShells();
-    const primaryKind = pickPrimaryKindFromStrategy(strategy);
-    if (primaryKind && ShellFactory.has(primaryKind)) {
-      const xshell = new CrossVendorRemoteShell({
-        device: remote, user, remoteHost: label, primaryKind,
-      });
-      this.activeSubShell = new ShellSubShellAdapter(xshell);
-    } else {
-      this.activeSubShell = new RemoteDeviceSubShell(remote, user, label, strategy);
-    }
-    this.notify();
-  }
-
-  /**
-   * Restore the previous device. Prints "logout / Connection to <host>
-   * closed." and runs the saved `onPop` (e.g. SshSession.disconnect).
-   */
   popRemoteDevice(): void {
     const frame = this.sshStack.pop();
     if (!frame) return;
@@ -2698,9 +3996,9 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  /** True while the terminal is operating on a remote device. */
   get isInsideSshSession(): boolean {
-    return this.sshStack.length > 0;
+    return this.sshStack.length > 0 || this.hasActiveChild
+      || this.activeSubShell?.connection === 'ssh';
   }
 
   /**
@@ -2724,6 +4022,7 @@ export class LinuxTerminalSession extends TerminalSession {
     session: SshSession,
     sshHost: string,
     meta: { localForwards?: readonly LocalForward[] },
+    peerDevice: unknown,
   ): SshLocalForwarder[] {
     const forwards = meta.localForwards ?? [];
     if (forwards.length === 0) return [];
@@ -2732,6 +4031,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
+    const dialDevice = asDialDevice(peerDevice);
     const out: SshLocalForwarder[] = [];
     for (const fwd of forwards) {
       const forwarder = new SshLocalForwarder(localDevice, session, {
@@ -2739,7 +4039,7 @@ export class LinuxTerminalSession extends TerminalSession {
         remoteHost: fwd.remoteHost,
         remotePort: fwd.remotePort,
         sshHost,
-      });
+      }, dialDevice);
       forwarder.register();
       this.addLine(
         `Forwarding TCP ${fwd.localPort} → ${fwd.remoteHost}:${fwd.remotePort} via ${sshHost}`,
@@ -2757,6 +4057,7 @@ export class LinuxTerminalSession extends TerminalSession {
     session: SshSession,
     sshHost: string,
     meta: { dynamicForwards?: readonly DynamicForward[] },
+    peerDevice: unknown,
   ): SshDynamicForwarder[] {
     const forwards = meta.dynamicForwards ?? [];
     if (forwards.length === 0) return [];
@@ -2765,13 +4066,14 @@ export class LinuxTerminalSession extends TerminalSession {
     if (typeof (localDevice as { getTcpStack?: unknown }).getTcpStack !== 'function') {
       return [];
     }
+    const dialDevice = asDialDevice(peerDevice);
     const out: SshDynamicForwarder[] = [];
     for (const fwd of forwards) {
       const forwarder = new SshDynamicForwarder(localDevice, session, {
         socksPort: fwd.socksPort,
         bindAddress: fwd.bindAddress,
         sshHost,
-      });
+      }, dialDevice);
       forwarder.register();
       this.addLine(
         `SOCKS proxy listening on ${fwd.bindAddress ?? '*'}:${fwd.socksPort} via ${sshHost}`,
@@ -2807,7 +4109,7 @@ export class LinuxTerminalSession extends TerminalSession {
         localHost: fwd.localHost,
         localPort: fwd.localPort,
         sshHost,
-      });
+      }, asDialDevice(this.getLocalDevice()));
       forwarder.register();
       this.addLine(
         `Forwarding ${sshHost}:${fwd.remotePort} → ${fwd.localHost}:${fwd.localPort} (reverse)`,
@@ -2895,22 +4197,8 @@ export class LinuxTerminalSession extends TerminalSession {
  * remote machine without touching the simulated SSH transport. Returns
  * null when the target is not a Linux device managed by the sandbox.
  */
-function pickPrimaryKindFromStrategy(s: RemotePromptStrategy): string | null {
-  if (s === CiscoStrategyRef) return 'cisco-ios';
-  if (s === HuaweiStrategyRef) return 'huawei-vrp';
-  if (s === WindowsStrategyRef) return 'cmd';
-  if (s === LinuxStrategyRef) return 'bash';
-  return null;
-}
-
-function pickVendorPromptStrategy(eq: Equipment): RemotePromptStrategy | null {
-  const kind = primaryShellKindFor(eq);
-  return kind === 'bash' ? null : strategyForShellKind(kind);
-}
-
 function findEquipmentByIp(targetIp: string): Equipment | null {
-  const all = (Equipment as unknown as { getAllEquipment: () => Equipment[] })
-    .getAllEquipment();
+  const all = EquipmentRegistry.getInstance().getAll();
   for (const eq of all) {
     const portsObj = (eq as unknown as { ports?: Map<string, { getIPAddress: () => { toString(): string } | null }> }).ports;
     if (!portsObj) continue;
@@ -2926,10 +4214,26 @@ function findEquipmentByIp(targetIp: string): Equipment | null {
   return null;
 }
 
-function findLinuxMachineByIp(targetIp: string): Equipment | null {
+function findLinuxMachineByIp(targetIp: string): LinuxMachine | null {
   const eq = findEquipmentByIp(targetIp);
   if (eq && eq instanceof LinuxMachine) return eq;
   return null;
+}
+
+/**
+ * The tunnel's far end must be able to open a socket for the forwarder to
+ * relay anything. A peer that resolves to nothing — or to an Equipment
+ * with no TCP stack — leaves the listener refusing connections, which is
+ * what the user sees when the forward cannot be served.
+ */
+function asDialDevice(
+  candidate: unknown,
+): import('@/network/devices/EndHost').EndHost | null {
+  if (!candidate) return null;
+  if (typeof (candidate as { getTcpStack?: unknown }).getTcpStack !== 'function') {
+    return null;
+  }
+  return candidate as import('@/network/devices/EndHost').EndHost;
 }
 
 /**
@@ -3066,12 +4370,7 @@ export function parseShellChain(
   return segments;
 }
 
-/** Is this segment a `nano`/`vi`/`vim` invocation (with or without sudo)? */
-export function isEditorSegment(segment: string): boolean {
-  const noSudo = segment.startsWith('sudo ') ? segment.slice(5).trimStart() : segment;
-  const head = noSudo.split(/\s+/, 1)[0];
-  return head === 'nano' || head === 'vi' || head === 'vim';
-}
+export { isEditorSegment } from '@/network/devices/linux/editors/editorLaunch';
 
 /** Connector gating: should this segment run given the previous exit code? */
 export function shouldExecuteSegment(
@@ -3089,4 +4388,19 @@ function hasSftpError(output: readonly string[]): boolean {
       line,
     ),
   );
+}
+
+function dialConnector(device: unknown): TcpConnector {
+  const dev = device as {
+    tcpDial?(destination: DialAddress, port: PortNumber): Promise<unknown>;
+    tcpConnect?(host: string, port: number): Promise<unknown>;
+  };
+  return (host, port) => {
+    const destination = parseDialAddress(host);
+    const dialled = PortNumber.isValid(port) ? PortNumber.of(port) : null;
+    if (destination && dialled && dev.tcpDial) {
+      return dev.tcpDial(destination, dialled) as ReturnType<TcpConnector>;
+    }
+    return (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+  };
 }

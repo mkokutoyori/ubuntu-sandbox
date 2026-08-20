@@ -12,6 +12,15 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { IOS_ACL_NUMBERING } from '../../router/ACLEngine';
+
+/** Les quatre plages de numéros qu'IOS accepte pour une liste IP. */
+export function isValidIosAclNumber(num: number): boolean {
+  return (num >= 1 && num <= 99) || (num >= 100 && num <= 199)
+    || (num >= 1300 && num <= 1999) || (num >= 2000 && num <= 2699);
+}
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 
 // ─── Extended Shell Context for ACL modes ────────────────────────────
@@ -43,15 +52,6 @@ function parseAddressWildcard(args: string[], offset: number): { ip: IPAddress; 
   // IP + wildcard
   if (offset + 1 >= args.length) return null;
   return { ip: new IPAddress(args[offset]), wildcard: new SubnetMask(args[offset + 1]), consumed: 2 };
-}
-
-function parsePort(args: string[], offset: number): { port: number; consumed: number } | null {
-  if (offset >= args.length) return null;
-  if (args[offset].toLowerCase() !== 'eq') return null;
-  if (offset + 1 >= args.length) return null;
-  const port = resolvePortName(args[offset + 1]);
-  if (port === null) return null;
-  return { port, consumed: 2 };
 }
 
 const PORT_NAME_MAP: Record<string, number> = {
@@ -105,6 +105,7 @@ interface ExtendedOptions {
   icmpCode?: number;
   tcpEstablished?: boolean;
   tcpFlags?: string[];
+  tcpFlagsMatch?: 'any' | 'all';
   dscp?: string;
   precedence?: string;
   tos?: string;
@@ -117,8 +118,26 @@ interface ExtendedOptions {
   optionName?: string;
 }
 
-function parseTrailingOptions(args: string[], startOffset: number, protocol: string): ExtendedOptions {
-  const opts: ExtendedOptions = {};
+/** `% Invalid input detected at '^' marker.`, tel qu'IOS le rend. */
+export const CISCO_INVALID_INPUT = "% Invalid input detected at '^' marker.";
+
+/**
+ * Les mots-clés de queue d'ACE.
+ *
+ * La boucle terminait auparavant par un `i++` nu : **tout jeton non
+ * reconnu était ignoré sans un mot**. `permit tcp any any eq 80
+ * estalbished` était accepté et produisait une ACE SANS `established` —
+ * l'opérateur croyait avoir écrit un filtre d'état, il avait écrit un
+ * `permit` sec. C'était le multiplicateur de tous les autres défauts :
+ * chaque faute de frappe devenait un trou silencieux.
+ *
+ * `rejected` porte désormais le premier jeton fautif ; l'appelant rend
+ * `% Invalid input detected` et n'enregistre RIEN.
+ */
+function parseTrailingOptions(
+  args: string[], startOffset: number, protocol: string,
+): ExtendedOptions & { rejected?: string } {
+  const opts: ExtendedOptions & { rejected?: string } = {};
   let i = startOffset;
   while (i < args.length) {
     const tok = args[i].toLowerCase();
@@ -138,6 +157,9 @@ function parseTrailingOptions(args: string[], startOffset: number, protocol: str
       continue;
     }
     if (protocol === 'tcp' && (tok === 'match-any' || tok === 'match-all')) {
+      // Le mode était perdu : `match-all` était stocké comme `match-any`,
+      // et le moteur n'évaluait de toute façon aucun des deux.
+      opts.tcpFlagsMatch = tok === 'match-all' ? 'all' : 'any';
       const flags: string[] = [];
       i++;
       while (i < args.length && !isTerminatorKeyword(args[i].toLowerCase())) {
@@ -199,7 +221,8 @@ function parseTrailingOptions(args: string[], startOffset: number, protocol: str
       i += 2;
       continue;
     }
-    i++;
+    opts.rejected = args[i];
+    return opts;
   }
   return opts;
 }
@@ -208,6 +231,108 @@ function isTerminatorKeyword(tok: string): boolean {
   return tok === 'log' || tok === 'log-input' || tok === 'dscp' || tok === 'precedence'
     || tok === 'tos' || tok === 'time-range' || tok === 'reflect' || tok === 'fragments'
     || tok === 'option' || tok === 'established';
+}
+
+/** Le resultat d'une analyse d'ACE : les options, ou le message d'erreur. */
+export type AceParse =
+  | { opts: import('../../router/ACLEngine').ACLEntryOptions }
+  | { error: string };
+
+/**
+ * L'analyse d'une ACE IOS, pour les DEUX plateformes.
+ *
+ * Le commutateur en avait un troisieme exemplaire (`parseSwitchAclLine`)
+ * qui ne lisait que protocole + source + destination : tout le reste --
+ * ports, `established`, `icmp-type`, `log`, `dscp`, `time-range` -- etait
+ * jete en silence, de sorte que `deny tcp any any eq 22` refusait TOUT le
+ * TCP. Il n'y en a plus qu'une.
+ */
+export function parseCiscoAce(
+  args: string[], type: 'standard' | 'extended', sequence?: number,
+): AceParse {
+  return type === 'standard'
+    ? parseStandardAce(args, sequence)
+    : parseExtendedAce(args, sequence);
+}
+
+function parseStandardAce(args: string[], sequence?: number): AceParse {
+  const src = parseStandardSource(args);
+  if (!src) return { error: '% Incomplete command.' };
+  const tail = parseTrailingOptions(args, src.consumed, 'ip');
+  if (tail.rejected) return { error: CISCO_INVALID_INPUT };
+  return {
+    opts: {
+      sequence,
+      srcIP: src.ip,
+      srcWildcard: src.wildcard,
+      log: tail.log,
+      logInput: tail.logInput,
+      timeRange: tail.timeRange,
+    },
+  };
+}
+
+function parseExtendedAce(args: string[], sequence?: number): AceParse {
+  if (args.length < 1) return { error: '% Incomplete command.' };
+  const protocol = args[0].toLowerCase();
+  let offset = 1;
+
+  const src = parseAddressWildcard(args, offset);
+  if (!src) return { error: '% Incomplete command.' };
+  offset += src.consumed;
+
+  const srcPortSpec = parsePortSpec(args, offset);
+  if (srcPortSpec) offset += srcPortSpec.consumed;
+
+  const dst = parseAddressWildcard(args, offset);
+  if (!dst) return { error: '% Incomplete command.' };
+  offset += dst.consumed;
+
+  const dstPortSpec = parsePortSpec(args, offset);
+  if (dstPortSpec) offset += dstPortSpec.consumed;
+
+  const tail = parseTrailingOptions(args, offset, protocol);
+  if (tail.rejected) return { error: CISCO_INVALID_INPUT };
+  const { rejected: _r, ...tailOpts } = tail;
+
+  return {
+    opts: {
+      sequence,
+      protocol,
+      srcIP: src.ip,
+      srcWildcard: src.wildcard,
+      dstIP: dst.ip,
+      dstWildcard: dst.wildcard,
+      srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
+      dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
+      srcPortSpec: srcPortSpec?.spec,
+      dstPortSpec: dstPortSpec?.spec,
+      ...tailOpts,
+    },
+  };
+}
+
+/** Le texte canonique d'une ACE deja enregistree. */
+export function formatCiscoAclEntry(
+  type: 'standard' | 'extended', entry: import('../../Router').ACLEntry,
+): string {
+  return formatACLEntry(type, entry);
+}
+
+/** Le texte canonique d'une ACE, pour la comparer ou la rendre. */
+export function renderCiscoAce(
+  action: 'permit' | 'deny', type: 'standard' | 'extended',
+  opts: import('../../router/ACLEngine').ACLEntryOptions,
+): string {
+  return formatACLEntry(type, asEntry(action, opts));
+}
+
+/** Une ACE detachee, juste pour la rendre en texte canonique. */
+function asEntry(
+  action: 'permit' | 'deny',
+  opts: import('../../router/ACLEngine').ACLEntryOptions,
+): import('../../Router').ACLEntry {
+  return { action, ...opts, matchCount: 0 };
 }
 
 // ─── Standard ACL Source Parsing ──────────────────────────────────────
@@ -228,10 +353,6 @@ function parseStandardSource(args: string[]): { ip: IPAddress; wildcard: SubnetM
   return { ip: new IPAddress(args[0]), wildcard: new SubnetMask(args[1]), consumed: 2 };
 }
 
-function consumedAfterSource(_args: string[]): number {
-  return 0;
-}
-
 // ─── Global Config Mode: access-list commands ─────────────────────────
 
 export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
@@ -241,18 +362,24 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
     const num = parseInt(args[0], 10);
     if (isNaN(num)) return '% Invalid access-list number.';
 
-    // Validate range: 1-99 standard, 100-199 extended
-    if (num < 1 || num > 199) return '% Invalid access-list number. Valid range: 1-199.';
+    // IOS : 1-99 et 1300-1999 standard ; 100-199 et 2000-2699 étendues.
+    // L'ancienne garde refusait les deux plages étendues (« Valid range:
+    // 1-199 »), un message par ailleurs faux : il énonçait une règle qui
+    // n'est pas celle d'IOS.
+    if (!isValidIosAclNumber(num)) {
+      return '% Invalid access-list number. Valid range: 1-99, 100-199, 1300-1999, 2000-2699.';
+    }
 
     const action = args[1].toLowerCase();
     if (action !== 'permit' && action !== 'deny') return `% Invalid action "${args[1]}"`;
 
-    if (num <= 99) {
+    if (IOS_ACL_NUMBERING(num) === 'standard') {
       const rest = args.slice(2);
       const src = parseStandardSource(rest);
       if (!src) return '% Incomplete command.';
-      const tailOffset = src.consumed ?? consumedAfterSource(rest);
+      const tailOffset = src.consumed;
       const tail = parseTrailingOptions(rest, tailOffset, 'ip');
+      if (tail.rejected) return CISCO_INVALID_INPUT;
       ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', {
         srcIP: src.ip,
         srcWildcard: src.wildcard,
@@ -281,6 +408,8 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
       if (dstPortSpec) offset += dstPortSpec.consumed;
 
       const tail = parseTrailingOptions(args, offset, protocol);
+      if (tail.rejected) return CISCO_INVALID_INPUT;
+      const { rejected: _r, ...tailOpts } = tail;
 
       ctx.r().addAccessListEntry(num, action as 'permit' | 'deny', {
         protocol,
@@ -292,7 +421,7 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
         dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
         srcPortSpec: srcPortSpec?.spec,
         dstPortSpec: dstPortSpec?.spec,
-        ...tail,
+        ...tailOpts,
       });
       return '';
     }
@@ -311,6 +440,10 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
   trie.registerGreedy('ip access-list standard', 'Create a named standard access list', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
+    // La liste existe des sa creation, meme vide : sur IOS elle figure
+    // aussitot dans `running-config`. Elle n'etait materialisee qu'au
+    // premier ACE, de sorte qu'une liste vide etait invisible.
+    ctx.r()._ensureNamedAccessList(name, 'standard');
     ctx.setSelectedACL(name);
     ctx.setSelectedACLType('standard');
     ctx.setMode('config-std-nacl' as CiscoShellMode);
@@ -321,6 +454,10 @@ export function buildACLConfigCommands(trie: CommandTrie, ctx: CiscoACLShellCont
   trie.registerGreedy('ip access-list extended', 'Create a named extended access list', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     const name = args[0];
+    // La liste existe des sa creation, meme vide : sur IOS elle figure
+    // aussitot dans `running-config`. Elle n'etait materialisee qu'au
+    // premier ACE, de sorte qu'une liste vide etait invisible.
+    ctx.r()._ensureNamedAccessList(name, 'extended');
     ctx.setSelectedACL(name);
     ctx.setSelectedACLType('extended');
     ctx.setMode('config-ext-nacl' as CiscoShellMode);
@@ -386,25 +523,23 @@ export function buildACLInterfaceCommands(trie: CommandTrie, ctx: CiscoACLShellC
 // ─── Named Standard ACL Config Mode ──────────────────────────────────
 
 export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
+  const parseStd = (args: string[], sequence?: number): AceParse =>
+    parseCiscoAce(args, 'standard', sequence);
   const handle = (action: 'permit' | 'deny', args: string[], sequence?: number): string => {
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
-    const src = parseStandardSource(args);
-    if (!src) return '% Incomplete command.';
-    const tail = parseTrailingOptions(args, src.consumed, 'ip');
-    ctx.r().addNamedAccessListEntry(aclName, 'standard', action, {
-      sequence,
-      srcIP: src.ip,
-      srcWildcard: src.wildcard,
-      log: tail.log,
-      logInput: tail.logInput,
-      timeRange: tail.timeRange,
-    });
+    const parsed = parseStd(args, sequence);
+    if ('error' in parsed) return parsed.error;
+    ctx.r().addNamedAccessListEntry(aclName, 'standard', action, parsed.opts);
     return '';
+  };
+  const renderStd = (action: 'permit' | 'deny', args: string[]): string | null => {
+    const parsed = parseStd(args);
+    return 'error' in parsed ? null : formatACLEntry('standard', asEntry(action, parsed.opts));
   };
   trie.registerGreedy('permit', 'Specify packets to permit', (args) => handle('permit', args));
   trie.registerGreedy('deny', 'Specify packets to reject', (args) => handle('deny', args));
-  registerSequenceEdits(trie, ctx, 'standard', handle);
+  registerSequenceEdits(trie, ctx, 'standard', handle, renderStd);
   trie.registerGreedy('remark', 'ACL remark', (args) => {
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
@@ -420,29 +555,48 @@ export function buildNamedStdACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
 function registerSequenceEdits(
   trie: CommandTrie,
   ctx: CiscoACLShellContext,
-  _aclType: 'standard' | 'extended',
+  aclType: 'standard' | 'extended',
   handle: (action: 'permit' | 'deny', args: string[], sequence?: number) => string,
+  /** Rend le texte canonique de l'ACE decrite par `args`, ou `null`. */
+  renderAce: (action: 'permit' | 'deny', args: string[]) => string | null,
 ): void {
   trie.registerGreedy('no', 'Remove an entry', (args) => {
     if (args.length === 0) return '% Incomplete command.';
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
+
     const seq = parseInt(args[0], 10);
     if (!isNaN(seq) && args.length === 1) {
       const ok = ctx.r()._removeNamedACLEntryBySequence(aclName, seq);
       return ok ? '' : '% Sequence number not found';
     }
+
+    // `no permit tcp any any eq 80` — suppression par TEXTE. IOS accepte
+    // les deux formes ; seule celle par numero de sequence existait ici,
+    // et la forme textuelle rendait « % Incomplete command. », un message
+    // qui designait la mauvaise cause.
+    const action = args[0].toLowerCase();
+    if (action === 'permit' || action === 'deny') {
+      const cible = renderAce(action, args.slice(1));
+      if (cible === null) return '% Incomplete command.';
+      const acl = ctx.r()._getAccessListsInternal().find(a => a.name === aclName);
+      const idx = acl
+        ? acl.entries.findIndex(e => formatACLEntry(aclType, e) === cible)
+        : -1;
+      if (idx === -1) return '% Access list entry does not exist.';
+      acl!.entries.splice(idx, 1);
+      return '';
+    }
     return '% Incomplete command.';
   });
-  for (let n = 1; n <= 99; n++) {
-    void n;
-  }
   trie.registerGreedy('sequence', 'Sequence number', (args) => {
     if (args.length < 3) return '% Incomplete command.';
     const seq = parseInt(args[0], 10);
     if (isNaN(seq)) return '% Invalid sequence number.';
     const action = args[1].toLowerCase();
     if (action !== 'permit' && action !== 'deny') return '% Invalid action.';
+    const aclName = ctx.getSelectedACL();
+    if (aclName && ctx.r()._aclHasSequence(aclName, seq)) return '% Duplicate sequence number.';
     return handle(action as 'permit' | 'deny', args.slice(2), seq);
   });
 }
@@ -450,44 +604,19 @@ function registerSequenceEdits(
 // ─── Named Extended ACL Config Mode ──────────────────────────────────
 
 export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellContext): void {
+  const parseExt = (args: string[], sequence?: number): AceParse =>
+    parseCiscoAce(args, 'extended', sequence);
   const addEntry = (action: 'permit' | 'deny', args: string[], sequence?: number): string => {
     const aclName = ctx.getSelectedACL();
     if (!aclName) return '% No ACL selected';
-    if (args.length < 1) return '% Incomplete command.';
-
-    const protocol = args[0].toLowerCase();
-    let offset = 1;
-
-    const src = parseAddressWildcard(args, offset);
-    if (!src) return '% Incomplete command.';
-    offset += src.consumed;
-
-    const srcPortSpec = parsePortSpec(args, offset);
-    if (srcPortSpec) offset += srcPortSpec.consumed;
-
-    const dst = parseAddressWildcard(args, offset);
-    if (!dst) return '% Incomplete command.';
-    offset += dst.consumed;
-
-    const dstPortSpec = parsePortSpec(args, offset);
-    if (dstPortSpec) offset += dstPortSpec.consumed;
-
-    const tail = parseTrailingOptions(args, offset, protocol);
-
-    ctx.r().addNamedAccessListEntry(aclName, 'extended', action, {
-      sequence,
-      protocol,
-      srcIP: src.ip,
-      srcWildcard: src.wildcard,
-      dstIP: dst.ip,
-      dstWildcard: dst.wildcard,
-      srcPort: srcPortSpec?.spec.op === 'eq' ? srcPortSpec.spec.port : undefined,
-      dstPort: dstPortSpec?.spec.op === 'eq' ? dstPortSpec.spec.port : undefined,
-      srcPortSpec: srcPortSpec?.spec,
-      dstPortSpec: dstPortSpec?.spec,
-      ...tail,
-    });
+    const parsed = parseExt(args, sequence);
+    if ('error' in parsed) return parsed.error;
+    ctx.r().addNamedAccessListEntry(aclName, 'extended', action, parsed.opts);
     return '';
+  };
+  const renderExt = (action: 'permit' | 'deny', args: string[]): string | null => {
+    const parsed = parseExt(args);
+    return 'error' in parsed ? null : formatACLEntry('extended', asEntry(action, parsed.opts));
   };
 
   trie.registerGreedy('permit', 'Specify packets to permit', (args) => addEntry('permit', args));
@@ -518,13 +647,26 @@ export function buildNamedExtACLCommands(trie: CommandTrie, ctx: CiscoACLShellCo
     });
     return '';
   });
-  registerSequenceEdits(trie, ctx, 'extended', addEntry);
+  registerSequenceEdits(trie, ctx, 'extended', addEntry, renderExt);
 }
 
 // ─── Show Commands ────────────────────────────────────────────────────
 
 export function showAccessLists(router: Router, ref?: string): string {
-  const all = router._getAccessListsInternal();
+  return showAccessListsFrom(router._getAccessListsInternal(), ref);
+}
+
+/**
+ * `show access-lists`, rendu depuis les listes elles-memes.
+ *
+ * Le commutateur avait son propre rendu, qui echoait le TEXTE tape et
+ * deduisait le type de « est-ce un nombre ? » : `access-list 100` s'y
+ * annoncait « Standard IP access list 100 » alors que 100 est etendue.
+ * Un seul rendu, qui lit le type de la liste.
+ */
+export function showAccessListsFrom(
+  all: import('../../router/ACLEngine').AccessList[], ref?: string,
+): string {
   let acls = all;
   if (ref) {
     const num = parseInt(ref, 10);
@@ -540,7 +682,11 @@ export function showAccessLists(router: Router, ref?: string): string {
     lines.push(`${typeStr} IP access list ${label}`);
     for (const entry of acl.entries) {
       const seq = entry.sequence !== undefined ? `${entry.sequence} ` : '';
-      lines.push(`    ${seq}${formatACLEntry(acl.type, entry)} (${entry.matchCount} match${entry.matchCount !== 1 ? 'es' : ''})`);
+      // IOS n'écrit le compteur que s'il a compté quelque chose.
+      const matches = entry.matchCount > 0
+        ? ` (${entry.matchCount} match${entry.matchCount !== 1 ? 'es' : ''})`
+        : '';
+      lines.push(`    ${seq}${formatACLEntry(acl.type, entry, true)}${matches}`);
     }
   }
   return lines.join('\n');
@@ -555,13 +701,20 @@ function formatPortSpec(spec: import('../../router/ACLEngine').PortSpec | undefi
   return '';
 }
 
-function formatACLEntry(aclType: 'standard' | 'extended', entry: import('../../Router').ACLEntry): string {
+function formatACLEntry(
+  aclType: 'standard' | 'extended',
+  entry: import('../../Router').ACLEntry,
+  pourAffichage = false,
+): string {
   if (entry.remark) return `remark ${entry.remark}`;
   if (entry.evaluate) return `evaluate ${entry.evaluate}`;
   const action = entry.action;
   if (aclType === 'standard') {
     const tail = formatTrailing(entry);
-    return `${action} ${formatSrcAddr(entry.srcIP, entry.srcWildcard)}${tail}`;
+    const addr = pourAffichage
+      ? formatStandardAddr(entry.srcIP, entry.srcWildcard)
+      : formatSrcAddr(entry.srcIP, entry.srcWildcard);
+    return `${action} ${addr}${tail}`;
   }
   const proto = entry.protocol || 'ip';
   const src = formatSrcAddr(entry.srcIP, entry.srcWildcard);
@@ -577,7 +730,9 @@ function formatACLEntry(aclType: 'standard' | 'extended', entry: import('../../R
     if (entry.icmpCode !== undefined) result += ` ${entry.icmpCode}`;
   }
   if (entry.tcpEstablished) result += ' established';
-  if (entry.tcpFlags && entry.tcpFlags.length) result += ' match-any ' + entry.tcpFlags.join(' ');
+  if (entry.tcpFlags && entry.tcpFlags.length) {
+    result += ` match-${entry.tcpFlagsMatch === 'all' ? 'all' : 'any'} ` + entry.tcpFlags.join(' ');
+  }
   result += formatTrailing(entry);
   return result;
 }
@@ -606,11 +761,23 @@ function formatSrcAddr(ip: IPAddress, wildcard: SubnetMask): string {
   return `${ip} ${wStr}`;
 }
 
+/**
+ * Une liste STANDARD s'affiche autrement qu'elle ne s'écrit : IOS y
+ * nomme le masque générique (`, wildcard bits 0.0.0.255`) là où la
+ * configuration le juxtapose. La configuration garde donc `formatSrcAddr`.
+ */
+function formatStandardAddr(ip: IPAddress, wildcard: SubnetMask): string {
+  const wStr = wildcard.toString();
+  if (wStr === '255.255.255.255') return 'any';
+  // IOS ecrit l'adresse NUE pour un hote : `10 permit 10.0.0.1`.
+  if (wStr === '0.0.0.0') return `${ip}`;
+  return `${ip}, wildcard bits ${wStr}`;
+}
+
 // ─── Show ACL entries in running-config ───────────────────────────────
 
 export function runningConfigACL(router: Router): string[] {
   const acls = router._getAccessListsInternal();
-  const bindings = router._getInterfaceACLBindingsInternal();
   const lines: string[] = [];
 
   // Numbered ACLs
@@ -622,12 +789,17 @@ export function runningConfigACL(router: Router): string[] {
     }
   }
 
-  // Named ACLs
+  // Named ACLs. IOS ne rend le numéro de séquence que si l'opérateur
+  // l'a ÉCRIT : celui qu'il attribue lui-même reste implicite, et le
+  // faire apparaître ferait revenir une configuration que personne n'a
+  // tapée.
   for (const acl of acls) {
     if (acl.name) {
       lines.push(`ip access-list ${acl.type} ${acl.name}`);
       for (const entry of acl.entries) {
-        lines.push(` ${formatACLEntry(acl.type, entry).replace(/ \(\d+ match(es)?\)/, '')}`);
+        const seq = entry.sequenceConfigured && entry.sequence !== undefined
+          ? `${entry.sequence} ` : '';
+        lines.push(` ${seq}${formatACLEntry(acl.type, entry).replace(/ \(\d+ match(es)?\)/, '')}`);
       }
     }
   }
@@ -653,8 +825,25 @@ export function runningConfigInterfaceACL(router: Router, ifName: string): strin
 export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show access-lists', 'Display all access lists', (args) => showAccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ip access-lists', 'Display IP access lists', (args) => showAccessLists(getRouter(), args[0]));
-  trie.registerGreedy('show ipv6 access-list', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
   trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
+}
+
+const ACL_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
+  'show access-lists': ['WORD', 'Access list name or number'],
+  'show ip access-lists': ['WORD', 'Access list name or number'],
+  'show ipv6 access-lists': ['WORD', 'Access list name'],
+};
+
+export function aclShowSpecs(getRouter: () => Router): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerACLShowCommands(collector as unknown as CommandTrie, getRouter),
+    {
+      modes: ['user', 'privileged'],
+      minPrivilege: 1,
+      restDescriptionFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[1],
+      restLiteralFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[0],
+    },
+  );
 }
 
 export function showIPv6AccessLists(router: Router, name?: string): string {
@@ -681,23 +870,6 @@ export function showIPv6AccessLists(router: Router, name?: string): string {
 
 // ─── IPv6 Named ACL Commands ──────────────────────────────────────────
 
-function addIPv6ACLEntry(router: Router, name: string, action: 'permit' | 'deny', prefixStr: string | null): void {
-  const acls = router.getIpv6AccessLists();
-  let acl = acls.find((a) => a.name === name);
-  if (!acl) {
-    acl = { name, entries: [] };
-    acls.push(acl);
-  }
-  if (prefixStr) {
-    const slash = prefixStr.indexOf('/');
-    const prefix = slash !== -1 ? prefixStr.substring(0, slash) : prefixStr;
-    const prefixLength = slash !== -1 ? parseInt(prefixStr.substring(slash + 1), 10) : 128;
-    acl.entries.push({ action, prefix, prefixLength });
-  } else {
-    acl.entries.push({ action });
-  }
-}
-
 /**
  * Register 'ipv6 access-list <name>' in the global config trie.
  * Entering this command creates/selects the ACL and enters config-ipv6-nacl mode.
@@ -706,10 +878,12 @@ export function buildIPv6ACLGlobalCommands(configTrie: CommandTrie, ctx: CiscoAC
   configTrie.registerGreedy('ipv6 access-list', 'Define IPv6 named access list', (args) => {
     const name = args[0];
     if (!name) return '% Incomplete command.';
-    // Ensure the ACL exists
-    addIPv6ACLEntry(ctx.r(), name, 'permit', null);
-    const acl = ctx.r().getIpv6AccessLists().find((a) => a.name === name);
-    if (acl) acl.entries = [];
+    // Ré-entrer dans une liste existante l'OUVRE en ajout, comme sur IOS.
+    // L'ancienne version la vidait : rééditer une ACL liée à une interface
+    // la faisait passer, sans un mot, de filtre à liste vide — donc à
+    // `permit` inconditionnel.
+    const acls = ctx.r().getIpv6AccessLists();
+    if (!acls.some((a) => a.name === name)) acls.push({ name, entries: [] });
     ctx.setSelectedACL(name);
     ctx.setMode('config-ipv6-nacl');
     return '';

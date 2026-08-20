@@ -71,4 +71,25 @@ export class AliasRepository {
   reset(): void {
     this.user.clear();
   }
+
+  snapshot(): Array<[AliasMode, Array<[string, string]>]> {
+    const out: Array<[AliasMode, Array<[string, string]>]> = [];
+    for (const [m, kv] of this.user) out.push([m, [...kv]]);
+    return out;
+  }
+
+  restore(snap: Array<[AliasMode, Array<[string, string]>]>): void {
+    this.user.clear();
+    for (const [m, kv] of snap) this.user.set(m, new Map(kv));
+  }
+
+  toRunningConfig(): string[] {
+    const lines: string[] = [];
+    for (const mode of ['exec', 'configure', 'interface', 'router'] as AliasMode[]) {
+      const m = this.user.get(mode);
+      if (!m) continue;
+      for (const [name, cmd] of m) lines.push(`alias ${mode} ${name} ${cmd}`);
+    }
+    return lines;
+  }
 }

@@ -24,7 +24,7 @@ registerView({
         col.str('AUTHORIZATION_CONSTRAINT', 32),
         col.str('ROLE', 30),
       ],
-      rows.map(r => [r.proxy, r.client, 'YES', r.role ? 'PROXY MAY ACTIVATE ROLE' : 'NO CLIENT ROLES MAY BE ACTIVATED', r.role ?? null])
+      rows.map(r => [r.proxy, r.client, 'YES', r.role ? 'PROXY MAY ACTIVATE ROLE' : 'PROXY MAY ACTIVATE ALL CLIENT ROLES', r.role ?? null])
     );
   },
 });

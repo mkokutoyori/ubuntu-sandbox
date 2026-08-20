@@ -17,7 +17,10 @@
 
 import type { IEventBus } from '@/events/EventBus';
 import type { LinuxProcessServiceDomainEvent } from './events';
+import type { OSProcess } from '../os/OSProcess';
 import { LinuxProcess } from './process/LinuxProcess';
+import { UninterruptibleSleepTable } from './process/UninterruptibleSleep';
+import { descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 
 /** Linux process states as reported by ps. */
 export type ProcessState =
@@ -60,45 +63,19 @@ export const SIGNAL_NUMBERS: Record<Signal, number> = {
 };
 
 /** Snapshot of a single process in the simulated table. */
-export interface ProcessInfo {
-  pid: number;
-  ppid: number;
-  pgid: number;
-  sid: number;
-  uid: number;
-  gid: number;
-  user: string;
-  /** Full command line as it would appear in /proc/<pid>/cmdline. */
-  command: string;
-  /** Short command name (basename of argv[0]), as in /proc/<pid>/comm. */
-  comm: string;
-  args: string[];
-  state: ProcessState;
-  startTime: Date;
-  /** CPU time consumed in milliseconds. */
-  cpuTime: number;
-  /** Virtual memory size in KB. */
-  vsize: number;
-  /** Resident set size in KB. */
-  rss: number;
-  tty: string;
-  nice: number;
-  priority: number;
-  cwd: string;
-  exe: string;
-  /** Service unit that owns this process, if any. */
-  serviceName?: string;
-  /** Scheduling policy (chrt). Defaults to SCHED_OTHER. */
-  schedPolicy?: string;
-  /** Real-time scheduling priority (chrt). 0 for SCHED_OTHER. */
-  rtPriority?: number;
-  /** I/O scheduling class (ionice). Defaults to best-effort. */
-  ioClass?: string;
-  /** I/O scheduling class data 0..7 (ionice). */
-  ioClassData?: number;
-  /** CPU affinity mask as a list of CPU indices (taskset). */
-  cpuAffinity?: number[];
-}
+type ProcessInfoRequired =
+  | 'pid' | 'ppid' | 'pgid' | 'sid' | 'uid' | 'gid' | 'user'
+  | 'command' | 'comm' | 'args' | 'startTime' | 'cpuTime'
+  | 'vsize' | 'rss' | 'tty' | 'nice' | 'priority' | 'cwd' | 'exe';
+
+type ProcessInfoOptional =
+  | 'serviceName' | 'schedPolicy' | 'rtPriority' | 'ioClass' | 'ioClassData' | 'cpuAffinity'
+  | 'numThreads';
+
+export type ProcessInfo =
+  & Pick<OSProcess, ProcessInfoRequired>
+  & Partial<Pick<OSProcess, ProcessInfoOptional>>
+  & { state: ProcessState };
 
 /** Options for spawning a new process. */
 export interface SpawnOptions {
@@ -134,8 +111,33 @@ export interface ProcessFilter {
 /** PID 1 — init/systemd is special and cannot be killed. */
 const INIT_PID = 1;
 
+/** PID 2 — kthreadd. Special-cased like init: cannot be killed. */
+const KTHREADD_PID = 2;
+
 /** Linux PID_MAX_DEFAULT (32768) — wraparound boundary for PID allocation. */
 const PID_MAX = 32768;
+
+const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
+  { comm: '[rcu_gp]', state: 'S' },
+  { comm: '[rcu_par_gp]', state: 'S' },
+  { comm: '[slub_flushwq]', state: 'I' },
+  { comm: '[netns]', state: 'S' },
+  { comm: '[kworker/0:0-events]', state: 'I' },
+  { comm: '[kworker/0:1-events]', state: 'I' },
+  { comm: '[kworker/1:0-events]', state: 'I' },
+  { comm: '[mm_percpu_wq]', state: 'I' },
+  { comm: '[ksoftirqd/0]', state: 'S' },
+  { comm: '[migration/0]', state: 'S' },
+  { comm: '[cpuhp/0]', state: 'S' },
+  { comm: '[kdevtmpfs]', state: 'S' },
+  { comm: '[kauditd]', state: 'S' },
+  { comm: '[khungtaskd]', state: 'S' },
+  { comm: '[oom_reaper]', state: 'S' },
+  { comm: '[writeback]', state: 'I' },
+  { comm: '[kcompactd0]', state: 'S' },
+  { comm: '[kswapd0]', state: 'S' },
+  { comm: '[jbd2/sda1-8]', state: 'S' },
+];
 
 export class LinuxProcessManager {
   private processes = new Map<number, ProcessInfo>();
@@ -233,6 +235,176 @@ export class LinuxProcessManager {
     return out.sort((a, b) => a.pid - b.pid);
   }
 
+  /**
+   * Qui dort en `D`, et les signaux que le noyau a acceptés pour eux sans
+   * pouvoir les appliquer (docs/PRD-Pannes.md §F5.7).
+   */
+  private readonly uninterruptible = new UninterruptibleSleepTable();
+
+  /**
+   * Le processus entre en attente ininterruptible sur `resource`. À partir
+   * de là, plus aucun signal ne l'atteint — `SIGKILL` compris.
+   */
+  enterUninterruptibleSleep(pid: number, resource: string): boolean {
+    const p = this.processes.get(pid);
+    if (!p) return false;
+    this.uninterruptible.enter(pid, resource);
+    this.transition(p, 'D');
+    return true;
+  }
+
+  /**
+   * La ressource est revenue (ou `umount -l` l'a détachée) : le processus
+   * quitte `D` et **encaisse alors tous les signaux mis en attente**, dans
+   * l'ordre d'arrivée. C'est le moment où un `kill -9` envoyé dix minutes
+   * plus tôt tue enfin le processus — le jeter aurait donné un processus
+   * qui survit à sa libération, ce qui n'arrive jamais.
+   */
+  wakeFromUninterruptibleSleep(pid: number): boolean {
+    const p = this.processes.get(pid);
+    const queued = this.uninterruptible.wake(pid);
+    if (!p) return false;
+    this.transition(p, 'S');
+    for (const signal of queued) {
+      if (!this.processes.has(pid)) break; // un signal précédent l'a tué
+      this.kill(pid, signal);
+    }
+    return true;
+  }
+
+  /** Réveille tout ce que cette ressource retenait. */
+  wakeAllBlockedOn(resource: string): number[] {
+    const pids = this.uninterruptible.pidsBlockedOn(resource);
+    for (const pid of pids) this.wakeFromUninterruptibleSleep(pid);
+    return pids;
+  }
+
+  /** Ce processus est-il hors de portée des signaux ? */
+  isUninterruptible(pid: number): boolean {
+    return this.uninterruptible.isBlocked(pid);
+  }
+
+  /** La ressource qui retient ce processus, pour un diagnostic. */
+  uninterruptibleResource(pid: number): string | undefined {
+    return this.uninterruptible.resourceFor(pid);
+  }
+
+  /** Les signaux acceptés mais pas encore délivrables. */
+  pendingSignals(pid: number): readonly Signal[] {
+    return this.uninterruptible.pendingFor(pid);
+  }
+
+  /**
+   * `RLIMIT_NPROC` — le nombre de processus qu'un UID peut avoir en vie
+   * SUR TOUTE LA MACHINE (docs/PRD-Pannes.md §F5.8).
+   *
+   * Le comptage est par utilisateur réel, pas par shell : c'est ce qui fait
+   * qu'une fork bomb d'un utilisateur laisse root travailler, et donc ce
+   * qui rend la panne réparable depuis une autre session. Compter par shell
+   * donnerait une machine qu'on ne peut plus sauver.
+   *
+   * La valeur par défaut est celle que `ulimit -u` affichait déjà, donc une
+   * machine intacte ne voit jamais la limite.
+   */
+  static readonly DEFAULT_NPROC = 15730;
+  private readonly nprocLimits = new Map<number, number>();
+
+  /** La limite en vigueur pour cet UID. */
+  nprocLimit(uid: number): number {
+    return this.nprocLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NPROC;
+  }
+
+  /**
+   * La limite DURE : le plafond que la souple ne peut pas dépasser. Seul
+   * root la change, et c'est elle qui décide si un utilisateur peut se
+   * sortir tout seul de la panne.
+   */
+  private readonly nprocHardLimits = new Map<number, number>();
+
+  nprocHardLimit(uid: number): number {
+    return this.nprocHardLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NPROC;
+  }
+
+  setNprocHardLimit(uid: number, limit: number): void {
+    this.nprocHardLimits.set(uid, limit);
+    // Une dure abaissée sous la souple emporte la souple avec elle.
+    if (this.nprocLimit(uid) > limit) this.nprocLimits.set(uid, limit);
+  }
+
+  /**
+   * `RLIMIT_NOFILE` — combien de descripteurs un processus peut tenir
+   * ouverts (§F9.3). 1024 est la valeur que `ulimit -n` affichait déjà,
+   * donc une machine intacte ne voit jamais la limite.
+   *
+   * Modélisée par UID comme `RLIMIT_NPROC`, et c'est une simplification
+   * assumée : la vraie limite est PAR PROCESSUS et s'hérite au fork, or ce
+   * simulateur n'a pas d'héritage de rlimits. Par UID, `ulimit -n` reste
+   * la commande qui la règle et le plafond reste opposable — ce qui change
+   * est qu'un second shell du même utilisateur voit la même valeur au lieu
+   * de sa propre copie.
+   */
+  static readonly DEFAULT_NOFILE = 1024;
+  private readonly nofileLimits = new Map<number, number>();
+  private readonly nofileHardLimits = new Map<number, number>();
+
+  nofileLimit(uid: number): number {
+    return this.nofileLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NOFILE;
+  }
+
+  nofileHardLimit(uid: number): number {
+    return this.nofileHardLimits.get(uid) ?? LinuxProcessManager.DEFAULT_NOFILE;
+  }
+
+  setNofileLimit(uid: number, limit: number): void {
+    this.nofileLimits.set(uid, limit);
+  }
+
+  /**
+   * Ce processus peut-il ouvrir un descripteur de plus (§F9.3) ?
+   *
+   * Le compte vient de `descriptorCount`, la MÊME fonction qui numérote
+   * `/proc/<pid>/fd` : compter autrement préparerait une machine où le
+   * plafond et la liste ne parlent pas du même processus.
+   *
+   * root n'est PAS exempt, contrairement à `RLIMIT_NPROC` : le noyau ne
+   * fait pas d'exception de capacité pour `RLIMIT_NOFILE`, un démon root
+   * qui atteint son plafond se prend `EMFILE` comme tout le monde.
+   */
+  canOpenDescriptor(pid: number, sources: DescriptorSources): boolean {
+    const p = this.processes.get(pid);
+    // Processus inconnu : sa rlimit est illisible, donc il n'y a pas de
+    // plafond à opposer. Refuser ici transformerait « le processus a
+    // disparu » en `EMFILE` — et le noyau qui reprend le port d'un
+    // processus mort n'aurait plus le droit de le rendre.
+    if (!p) return true;
+    return descriptorCount(sources) < this.nofileLimit(p.uid);
+  }
+
+  /** `ulimit -u N` — la limite souple, celle que `fork()` consulte. */
+  setNprocLimit(uid: number, limit: number): void {
+    this.nprocLimits.set(uid, limit);
+  }
+
+  /** Combien de processus vivants appartiennent à cet UID. */
+  countForUid(uid: number): number {
+    let n = 0;
+    for (const p of this.processes.values()) if (p.uid === uid) n++;
+    return n;
+  }
+
+  /**
+   * Un `fork()` de cet UID peut-il aboutir ?
+   *
+   * root en est exempt, et ce n'est pas une facilité : le noyau saute le
+   * contrôle pour qui détient `CAP_SYS_RESOURCE`/`CAP_SYS_ADMIN`
+   * (`kernel/fork.c`), ce qui est précisément ce qui laisse un
+   * administrateur reprendre la main sur une machine saturée.
+   */
+  canFork(uid: number): boolean {
+    if (uid === 0) return true;
+    return this.countForUid(uid) < this.nprocLimit(uid);
+  }
+
   /** Manually transition a process to a new state. */
   setState(pid: number, state: ProcessState): boolean {
     const p = this.processes.get(pid);
@@ -246,6 +418,13 @@ export class LinuxProcessManager {
       });
     }
     return true;
+  }
+
+  accrueCpu(deltaMs: number): void {
+    if (deltaMs <= 0) return;
+    for (const p of this.processes.values()) {
+      if (p.state === 'R') p.cpuTime += deltaMs;
+    }
   }
 
   /**
@@ -267,15 +446,25 @@ export class LinuxProcessManager {
     return true;
   }
 
+  /** Signal-disposition check attached by the owning executor — lets a
+   *  trapped signal run its handler instead of the default action. */
+  private trapHandlerHook: ((pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap') | null = null;
+
+  attachSignalTrapHandler(fn: (pid: number, signal: Signal) => 'terminated' | 'handled' | 'no-trap'): void {
+    this.trapHandlerHook = fn;
+  }
+
   /**
    * Send a signal to a process. Returns true on success.
    *
-   * Termination signals (TERM, KILL, INT, QUIT, HUP) remove the process.
-   * STOP transitions to T; CONT resumes to S. PID 1 is protected.
+   * Termination signals (TERM, KILL, INT, QUIT, HUP) remove the process —
+   * unless trapped (see {@link trapHandlerHook}), in which case the process
+   * only dies if the handler itself calls `exit`. SIGKILL is always fatal.
+   * STOP transitions to T; CONT resumes to S. PID 1/2 are protected.
    */
   kill(pid: number, signal: Signal, opts?: { silent?: boolean }): boolean {
     const p = this.processes.get(pid);
-    const delivered = !!p && pid !== INIT_PID;
+    const delivered = !!p && pid !== INIT_PID && pid !== KTHREADD_PID;
     // `silent` removals (the simulator reaping a process-table overlay entry,
     // e.g. Oracle un-registering a background process) are bookkeeping, not a
     // signal a user or the OS actually delivered — so they don't publish
@@ -288,7 +477,17 @@ export class LinuxProcessManager {
       });
     }
     if (!p) return false;
-    if (pid === INIT_PID) return false;
+    if (pid === INIT_PID || pid === KTHREADD_PID) return false;
+
+    // §F5.7 — un processus en attente ininterruptible est hors de portée
+    // des signaux, `SIGKILL` compris. Le noyau ACCEPTE le signal (d'où le
+    // `true` : `kill` sort avec 0 et l'opérateur n'a aucun message
+    // d'erreur, ce qui est précisément ce qui rend la panne déroutante) et
+    // l'empile jusqu'à la sortie de `D`.
+    if (this.uninterruptible.isBlocked(pid)) {
+      this.uninterruptible.queue(pid, signal);
+      return true;
+    }
 
     switch (signal) {
       case 'SIGSTOP':
@@ -301,15 +500,28 @@ export class LinuxProcessManager {
       case 'SIGUSR1':
       case 'SIGUSR2':
       case 'SIGALRM':
-      case 'SIGPIPE':
-        // Default disposition for these is ignore or core, but our simulator
-        // simply delivers them and lets the process keep running.
+      case 'SIGPIPE': {
+        // Default disposition for these is ignore or core, but a process
+        // may have trapped one — give the hook a chance to actually react.
+        this.trapHandlerHook?.(pid, signal);
         return true;
+      }
       case 'SIGHUP':
       case 'SIGINT':
       case 'SIGQUIT':
-      case 'SIGTERM':
+      case 'SIGTERM': {
+        const outcome = this.trapHandlerHook?.(pid, signal) ?? 'no-trap';
+        if (outcome === 'handled') return true; // trap ran, didn't exit — process lives on
+        this.lastKill.set(pid, signal);
+        const reparented = this.terminate(pid);
+        this.publish({
+          topic: 'linux.process.exited',
+          payload: { deviceId: this.deviceId, pid, comm: p.comm, signal, reparented },
+        });
+        return true;
+      }
       case 'SIGKILL': {
+        this.lastKill.set(pid, signal);
         const reparented = this.terminate(pid);
         this.publish({
           topic: 'linux.process.exited',
@@ -318,6 +530,34 @@ export class LinuxProcessManager {
         return true;
       }
     }
+  }
+
+  private readonly lastKill = new Map<number, Signal>();
+
+  lastKillSignal(pid: number): Signal | undefined {
+    return this.lastKill.get(pid);
+  }
+
+  /** Deliver a non-lethal signal (a daemon trapping SIGHUP for reload). */
+  deliverSignal(pid: number, signal: Signal): boolean {
+    const p = this.processes.get(pid);
+    this.publish({
+      topic: 'linux.process.signalled',
+      payload: { deviceId: this.deviceId, pid, comm: p?.comm ?? '', signal, delivered: !!p },
+    });
+    return !!p;
+  }
+
+  /** The process terminates by itself with an exit status. */
+  exit(pid: number, exitCode: number): boolean {
+    const p = this.processes.get(pid);
+    if (!p || pid === INIT_PID || pid === KTHREADD_PID) return false;
+    const reparented = this.terminate(pid);
+    this.publish({
+      topic: 'linux.process.exited',
+      payload: { deviceId: this.deviceId, pid, comm: p.comm, exitCode, reparented },
+    });
+    return true;
   }
 
   /** Apply a state transition and publish the state-changed event. */
@@ -353,18 +593,21 @@ export class LinuxProcessManager {
   }
 
   /** Return PIDs of processes whose comm contains `pattern`. */
-  pgrep(pattern: string): number[] {
+  /** `exact` mirrors `pgrep -x`/`pkill -x`: match the whole `comm` field
+   *  (real `basename(argv[0])`, ≤15 chars in the kernel), not a substring. */
+  pgrep(pattern: string, exact = false): number[] {
     const out: number[] = [];
     for (const p of this.processes.values()) {
-      if (p.comm.includes(pattern) || p.command.includes(pattern)) out.push(p.pid);
+      const matches = exact ? p.comm === pattern : (p.comm.includes(pattern) || p.command.includes(pattern));
+      if (matches) out.push(p.pid);
     }
     return out;
   }
 
   /** Send `signal` to all processes whose comm contains `pattern`.
    *  Returns the number of processes signalled. */
-  pkill(pattern: string, signal: Signal = 'SIGTERM'): number {
-    const pids = this.pgrep(pattern);
+  pkill(pattern: string, signal: Signal = 'SIGTERM', exact = false): number {
+    const pids = this.pgrep(pattern, exact);
     let count = 0;
     for (const pid of pids) {
       if (this.kill(pid, signal)) count++;
@@ -396,8 +639,62 @@ export class LinuxProcessManager {
       priority: 20,
       cwd: '/',
       exe: '/lib/systemd/systemd',
+      numThreads: 1,
     });
     this.processes.set(INIT_PID, init);
+
+    const kthreadd = new LinuxProcess({
+      pid: KTHREADD_PID,
+      ppid: 0,
+      pgid: 0,
+      sid: 0,
+      uid: 0,
+      gid: 0,
+      user: 'root',
+      command: '[kthreadd]',
+      comm: '[kthreadd]',
+      args: [],
+      state: 'S',
+      startTime: new Date(),
+      cpuTime: 0,
+      vsize: 0,
+      rss: 0,
+      tty: '?',
+      nice: 0,
+      priority: 20,
+      cwd: '/',
+      exe: '',
+      numThreads: 1,
+    });
+    this.processes.set(KTHREADD_PID, kthreadd);
+
+    for (const kt of KERNEL_THREADS) {
+      const pid = this.allocPid();
+      const proc = new LinuxProcess({
+        pid,
+        ppid: KTHREADD_PID,
+        pgid: 0,
+        sid: 0,
+        uid: 0,
+        gid: 0,
+        user: 'root',
+        command: kt.comm,
+        comm: kt.comm,
+        args: [],
+        state: kt.state,
+        startTime: new Date(),
+        cpuTime: 0,
+        vsize: 0,
+        rss: 0,
+        tty: '?',
+        nice: 0,
+        priority: 20,
+        cwd: '/',
+        exe: '',
+        numThreads: 1,
+      });
+      this.processes.set(pid, proc);
+    }
   }
 
   /** Allocate the next free PID, wrapping at PID_MAX. */
@@ -420,6 +717,9 @@ export class LinuxProcessManager {
    * Returns the number of children reparented.
    */
   private terminate(pid: number): number {
+    // Le pid est recyclable : sans cet oubli, un futur processus héritant
+    // du même numéro recevrait le `SIGKILL` destiné à son prédécesseur.
+    this.uninterruptible.forget(pid);
     let reparented = 0;
     for (const child of this.processes.values()) {
       if (child.ppid === pid) {

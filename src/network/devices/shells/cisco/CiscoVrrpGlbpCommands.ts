@@ -8,6 +8,7 @@ import type { Router } from '../../Router';
 import type {
   FhrpRepository, VrrpGroup, GlbpGroup,
 } from '../../inspection/config/FhrpRepository';
+import { getVrrpAgent, getGlbpAgent } from '../../../equipment/RouterServiceCapabilities';
 
 interface Ctx {
   r(): Router;
@@ -21,9 +22,11 @@ function isUp(router: Router, iface: string): boolean {
 }
 
 function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const group = parseInt(args[0], 10);
-  if (Number.isNaN(group)) return '% Invalid VRRP group';
+  // RFC 5798 : le VRID tient sur un octet et 0 n'en est pas un. La borne
+  // est celle du protocole, pas d'une plateforme.
+  if (Number.isNaN(group) || group < 1 || group > 255) return '% Invalid VRRP group';
   const g = repo.ensureVrrp(iface, group);
   agent?.ensureGroup(iface, group);
   const rest = args.slice(2);
@@ -36,21 +39,35 @@ function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: 
       g.priority = parseInt(rest[0], 10) || g.priority;
       agent?.setPriority(iface, group, g.priority);
       return '';
-    case 'preempt':
+    case 'preempt': {
       g.preempt = true;
+      // Le delai etait range sur cette facade et lu par le SEUL
+      // affichage : `preempt delay minimum` etait accepte, rendu, et
+      // n'a jamais retarde une prise de role. Il atteint desormais
+      // l'agent, qui est la seule chose qui decide.
+      let delai: number | undefined;
       if (rest[0] === 'delay' && rest[1] === 'minimum') {
-        g.preemptDelay = parseInt(rest[2], 10) || undefined;
+        const n = parseInt(rest[2], 10);
+        delai = Number.isFinite(n) && n > 0 ? n : undefined;
+        g.preemptDelay = delai;
       }
-      agent?.setPreempt(iface, group, true);
+      agent?.setPreempt(iface, group, true, delai);
       return '';
+    }
     case 'timers': {
       const n = rest.filter((t) => /^\d+$/.test(t)).map(Number);
       if (n.length) { g.advertiseSec = n[0]; agent?.setAdvertiseSec(iface, group, n[0]); }
       return '';
     }
     case 'authentication': {
+      // `vrrp <n> authentication md5 key-string <cle>` ou la forme en
+      // texte simple. La cle etait rangee sur cette facade et lue par
+      // personne : l'authentification VRRP etait donc inerte sur IOS
+      // alors qu'elle fonctionne sur VRP depuis le lot V16.
       const i = rest.indexOf('key-string');
       g.authMd5 = i >= 0 ? rest[i + 1] : rest[rest.length - 1];
+      const mode = rest.includes('md5') ? 'md5' : 'simple';
+      agent?.setAuth(iface, group, mode, g.authMd5);
       return '';
     }
     case 'track':
@@ -67,7 +84,7 @@ function applyVrrp(repo: FhrpRepository, iface: string, args: string[], router: 
 }
 
 function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const group = parseInt(args[0], 10);
   if (Number.isNaN(group)) return '% Invalid GLBP group';
   const g = repo.ensureGlbp(iface, group);
@@ -82,10 +99,20 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
       g.priority = parseInt(rest[0], 10) || g.priority;
       agent?.setPriority(iface, group, g.priority);
       return '';
-    case 'preempt':
+    case 'preempt': {
       g.preempt = true;
-      agent?.setPreempt(iface, group, true);
+      // Le delai n'etait meme pas ANALYSE cote GLBP : `glbp <n> preempt
+      // delay minimum 30` etait avale par le mot-cle et la valeur
+      // disparaissait sans laisser de trace, pas meme sur la facade.
+      let delai: number | undefined;
+      if (rest[0] === 'delay' && rest[1] === 'minimum') {
+        const n = parseInt(rest[2], 10);
+        delai = Number.isFinite(n) && n > 0 ? n : undefined;
+        g.preemptDelay = delai;
+      }
+      agent?.setPreempt(iface, group, true, delai);
       return '';
+    }
     case 'load-balancing': {
       const mode = rest[0] || g.loadBalancing;
       g.loadBalancing = mode;
@@ -113,20 +140,31 @@ function applyGlbp(repo: FhrpRepository, iface: string, args: string[], router: 
       if (n.length >= 2) agent?.setTimers(iface, group, n[0], n[1]);
       return '';
     }
-    case 'forwarder': case 'authentication': return '';
+    case 'authentication': {
+      // Elle etait acceptee et JETEE — pas meme rangee sur la facade —
+      // donc `glbp <n> authentication md5 key-string …` n'avait aucune
+      // trace nulle part : ni effet, ni configuration rendue.
+      const iKey = rest.indexOf('key-string');
+      const md5 = rest[0] === 'md5';
+      const cle = iKey >= 0 ? rest[iKey + 1] : rest[rest.length - 1];
+      g.authMd5 = cle;
+      agent?.setAuth(iface, group, md5 ? 'md5' : 'text', cle);
+      return '';
+    }
+    case 'forwarder': return '';
     default: return '';
   }
 }
 
 function vrrpState(router: Router, g: VrrpGroup): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) return live.state.charAt(0).toUpperCase() + live.state.slice(1);
   return isUp(router, g.iface) ? 'Master' : 'Init';
 }
 
 function vrrpMasterIp(router: Router, g: VrrpGroup): string {
-  const agent = (router as unknown as { getVrrpAgent?: () => import('../../../vrrp/VrrpAgent').VrrpAgent }).getVrrpAgent?.();
+  const agent = getVrrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'master') return 'local';
   return live?.masterIp ?? 'unknown';
@@ -147,14 +185,14 @@ function vrrpDetail(router: Router, g: VrrpGroup): string {
 }
 
 function glbpState(router: Router, g: GlbpGroup): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) return live.avgState.charAt(0).toUpperCase() + live.avgState.slice(1);
   return isUp(router, g.iface) ? 'Active' : 'Disabled';
 }
 
 function glbpActiveIp(router: Router, g: GlbpGroup): string {
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.avgState === 'active') return 'local';
   return live?.avgIp ?? 'unknown';
@@ -162,7 +200,7 @@ function glbpActiveIp(router: Router, g: GlbpGroup): string {
 
 function glbpDetail(router: Router, g: GlbpGroup): string {
   const state = glbpState(router, g);
-  const agent = (router as unknown as { getGlbpAgent?: () => import('../../../glbp/GlbpAgent').GlbpAgent }).getGlbpAgent?.();
+  const agent = getGlbpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   const forwarders = live ? [...live.forwarders.values()].sort((a, b) => a.forwarderNumber - b.forwarderNumber) : [];
   const lines = [

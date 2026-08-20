@@ -1,0 +1,1027 @@
+<title>Le Filtre Ouvert</title>
+<style>
+  /* ── Tokens : clair par défaut, sur :root nu ────────────────────── */
+  :root {
+    --ground:      #E9EDF1;
+    --surface:     #FFFFFF;
+    --surface-2:   #F4F6F8;
+    --panel:       #1B2530;
+    --panel-ink:   #C9D6E0;
+    --rule:        #C8D2DB;
+    --rule-soft:   #DFE5EA;
+
+    --ink:         #16202B;
+    --ink-soft:    #55636F;
+    --ink-faint:   #7C8895;
+
+    --accent:      #2F6E8F;
+    --accent-soft: #DCE9F0;
+
+    --critical:    #A8241C;
+    --critical-bg: #F7DEDC;
+    --high:        #A65614;
+    --high-bg:     #F8E6D5;
+    --medium:      #7A5C0D;
+    --medium-bg:   #F5EBCE;
+    --low:         #55636F;
+    --low-bg:      #E4E9ED;
+    --ok:          #2A6249;
+    --ok-bg:       #DCEBE3;
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Source Serif Pro", "Georgia Pro", Georgia, serif;
+
+    --col: 68ch;
+    --wide: 1080px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0E141A;
+      --surface:     #161F27;
+      --surface-2:   #1C262F;
+      --panel:       #0A1015;
+      --panel-ink:   #B7C7D3;
+      --rule:        #2C3A46;
+      --rule-soft:   #232F39;
+
+      --ink:         #DEE7ED;
+      --ink-soft:    #9BABB8;
+      --ink-faint:   #6F808D;
+
+      --accent:      #6FAECB;
+      --accent-soft: #1B2E39;
+
+      --critical:    #F08379;
+      --critical-bg: #3A1A17;
+      --high:        #E5A059;
+      --high-bg:     #38240F;
+      --medium:      #D6B65A;
+      --medium-bg:   #33290E;
+      --low:         #9BABB8;
+      --low-bg:      #232F39;
+      --ok:          #6FC49B;
+      --ok-bg:       #142E23;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0E141A;
+    --surface:     #161F27;
+    --surface-2:   #1C262F;
+    --panel:       #0A1015;
+    --panel-ink:   #B7C7D3;
+    --rule:        #2C3A46;
+    --rule-soft:   #232F39;
+
+    --ink:         #DEE7ED;
+    --ink-soft:    #9BABB8;
+    --ink-faint:   #6F808D;
+
+    --accent:      #6FAECB;
+    --accent-soft: #1B2E39;
+
+    --critical:    #F08379;
+    --critical-bg: #3A1A17;
+    --high:        #E5A059;
+    --high-bg:     #38240F;
+    --medium:      #D6B65A;
+    --medium-bg:   #33290E;
+    --low:         #9BABB8;
+    --low-bg:      #232F39;
+    --ok:          #6FC49B;
+    --ok-bg:       #142E23;
+  }
+
+  /* ── Base ────────────────────────────────────────────────────────── */
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: var(--wide); margin: 0 auto; }
+  .col  { max-width: var(--col); }
+
+  p { margin: 0 0 1.05em; }
+  strong { font-weight: 700; }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible,
+  th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  h1, h2, h3 { font-family: var(--mono); text-wrap: balance; margin: 0; }
+
+  /* ── En-tête ─────────────────────────────────────────────────────── */
+  header.masthead {
+    border-bottom: 2px solid var(--ink);
+    padding: 56px 0 26px;
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 20px;
+  }
+  h1 {
+    font-size: clamp(34px, 6.2vw, 62px);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+    margin: 0 0 18px;
+  }
+  .standfirst {
+    font-size: clamp(18px, 2.3vw, 21px);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 0 0 30px;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 30px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .meta b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ── Bandeau de chiffres ─────────────────────────────────────────── */
+  .scoreboard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin: 0 0 52px;
+  }
+  .score.is-ok .n { color: var(--ok); }
+
+  /* ── Bandeau d'état ──────────────────────────────────────────────── */
+  .status {
+    background: var(--ok-bg);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--ok);
+    padding: 20px 24px;
+    margin: 0 0 34px;
+  }
+  .status .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    background: var(--ok);
+    color: var(--surface);
+    padding: 3px 9px;
+    border-radius: 2px;
+    margin-bottom: 12px;
+  }
+  .status p { margin: 0 0 0.7em; max-width: 74ch; }
+  .status p:last-child { margin-bottom: 0; }
+
+  .done { color: var(--ok); font-weight: 700; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; white-space: nowrap; }
+  .open { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; white-space: nowrap; }
+  tr.fixed td.desc { color: var(--ink-soft); }
+  tr.fixed td.id { color: var(--ok) !important; }
+  .score { background: var(--surface); padding: 22px 20px; }
+  .score .n {
+    font-family: var(--mono);
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    margin-bottom: 10px;
+  }
+  .score .l {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--ink-soft);
+    display: block;
+  }
+  .score.is-crit .n { color: var(--critical); }
+  .score.is-high .n { color: var(--high); }
+  .score.is-flat .n { color: var(--ink); }
+
+  /* ── Sections ────────────────────────────────────────────────────── */
+  section { margin: 0 0 60px; }
+  h2 {
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--ink-faint);
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+    margin: 0 0 28px;
+  }
+  h3 {
+    font-size: 20px;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    margin: 0 0 12px;
+  }
+  h3 .fid {
+    color: var(--accent);
+    font-weight: 500;
+    margin-right: 6px;
+  }
+
+  .lede {
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+
+  /* ── Panneau terminal ────────────────────────────────────────────── */
+  .term {
+    background: var(--panel);
+    color: var(--panel-ink);
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.75;
+    padding: 20px 22px;
+    overflow-x: auto;
+    margin: 0 0 4px;
+    border: 1px solid var(--rule);
+  }
+  .term .cmt  { color: #E2857A; }
+  .term .kw   { color: #E8C46A; }
+  .term .dim  { color: #6B7B88; }
+  .caption {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+    margin: 0 0 26px;
+  }
+
+  /* ── Verdict ─────────────────────────────────────────────────────── */
+  .verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--critical);
+    padding: 18px 22px;
+    margin: 0 0 26px;
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+  .verdict .lbl { color: var(--ink-faint); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .verdict .arrow { color: var(--ink-faint); }
+  .tok {
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.02em;
+  }
+  .tok.deny   { background: var(--low-bg);      color: var(--ink); }
+  .tok.permit { background: var(--critical-bg); color: var(--critical); }
+
+  /* ── Tableau des constats ────────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; }
+  caption { text-align: left; font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); padding: 0 0 10px; letter-spacing: 0.05em; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  thead th {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-2);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.id { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.desc { font-size: 15px; line-height: 1.45; }
+  td.nat  { font-size: 13px; color: var(--ink-soft); white-space: nowrap; }
+
+  .sev {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .sev.crit { background: var(--critical-bg); color: var(--critical); }
+  .sev.high { background: var(--high-bg);     color: var(--high); }
+  .sev.med  { background: var(--medium-bg);   color: var(--medium); }
+  .sev.low  { background: var(--low-bg);      color: var(--low); }
+
+  tr.row-crit td.id { color: var(--critical); }
+
+  /* ── Blocs de constat ────────────────────────────────────────────── */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--rule);
+    padding: 24px 26px;
+    margin: 0 0 20px;
+  }
+  .finding.crit { border-left-color: var(--critical); }
+  .finding.high { border-left-color: var(--high); }
+  .finding p:last-child { margin-bottom: 0; }
+  .finding .term { margin-top: 4px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.87em;
+    background: var(--surface-2);
+    padding: 1px 5px;
+    border-radius: 2px;
+    border: 1px solid var(--rule-soft);
+  }
+  .finding code, td code { background: var(--surface-2); }
+
+  /* ── Comparatif v4 / v6 ──────────────────────────────────────────── */
+  .cmp td.v4 { color: var(--critical); font-family: var(--mono); font-size: 13px; }
+  .cmp td.v6 { color: var(--ok);       font-family: var(--mono); font-size: 13px; }
+
+  /* ── Bloc «ce qui est juste» ─────────────────────────────────────── */
+  .good {
+    background: var(--ok-bg);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--ok);
+    padding: 24px 26px;
+  }
+  .good h3 { color: var(--ok); }
+  .good ul { margin: 0; padding-left: 20px; }
+  .good li { margin-bottom: 9px; }
+  .good li:last-child { margin-bottom: 0; }
+
+  /* ── Paliers de remédiation ──────────────────────────────────────── */
+  .tier {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 22px 26px;
+    margin-bottom: 14px;
+  }
+  .tier > .h {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .tier .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--surface);
+    background: var(--ink);
+    padding: 3px 9px;
+    border-radius: 2px;
+  }
+  .tier .when { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .tier h3 { font-size: 17px; }
+  .tier ol { margin: 0; padding-left: 22px; }
+  .tier li { margin-bottom: 8px; }
+  .tier li:last-child { margin-bottom: 0; }
+
+  /* ── Chute ───────────────────────────────────────────────────────── */
+  .kicker {
+    border-top: 2px solid var(--ink);
+    padding-top: 30px;
+    margin-top: 8px;
+  }
+  .kicker p { font-size: 19px; line-height: 1.55; }
+  .kicker .final {
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.6;
+    background: var(--critical-bg);
+    color: var(--critical);
+    border-left: 4px solid var(--critical);
+    padding: 20px 24px;
+    margin-top: 26px;
+  }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--ink-faint);
+  }
+  footer a { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 0 16px 64px; font-size: 16px; }
+    .term { font-size: 12px; padding: 16px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Audit de sécurité · Ubuntu Sandbox · corrigé</p>
+    <h1>Le filtre ouvert</h1>
+    <p class="standfirst">
+      L'implémentation des listes de contrôle d'accès Cisco de ce simulateur
+      affiche <em>deny</em> et rend <em>permit</em>. Dix-neuf constats mesurés,
+      dont sept qui inversent la règle écrite par l'opérateur.
+    </p>
+    <div class="meta">
+      <span><b>Branche</b> mandeng @ 57695df7</span>
+      <span><b>Date</b> 16 août 2026</span>
+      <span><b>Périmètre</b> ACL IPv4/IPv6, routeur + commutateur</span>
+      <span><b>Méthode</b> lecture, banc de preuves, doc Cisco</span>
+    </div>
+  </header>
+
+  <div class="status">
+    <span class="tag">Les dix-neuf constats corrigés · 16 août 2026</span>
+    <p>
+      Paliers 0 à 3 traités. Pas dix-neuf rustines&nbsp;: <strong>une règle</strong> —
+      <em>un critère que le moteur ne sait pas trancher fait échouer la correspondance</em>,
+      jamais réussir, jamais «&nbsp;sauter le critère&nbsp;». Les sept défauts d'ouverture en
+      découlaient tous. Elle est désormais écrite dans <code>CLAUDE.md</code>, et non plus
+      seulement dans un commentaire — c'est ce qui empêche le prochain critère d'ACE de
+      rouvrir la liste.
+    </p>
+    <p>
+      Le corps du rapport ci-dessous décrit l'état <strong>au moment de l'audit</strong>&nbsp;;
+      il est conservé tel quel comme constat daté, parce qu'un audit réécrit après coup ne
+      vaut plus rien. Le banc de preuves, lui, a changé de nature avec le code&nbsp;: il
+      assoyait le comportement fautif, il assoit désormais le comportement juste —
+      <strong>33 tests de non-régression</strong>, plus aucune sonde de défaut ouvert.
+    </p>
+  </div>
+
+  <div class="scoreboard">
+    <div class="score is-ok">
+      <span class="n">19</span>
+      <span class="l">constats — tous corrigés, paliers 0 à 3</span>
+    </div>
+    <div class="score is-ok">
+      <span class="n">7</span>
+      <span class="l">chemins qui inversaient la règle écrite, refermés</span>
+    </div>
+    <div class="score is-flat">
+      <span class="n">33</span>
+      <span class="l">tests de non-régression, là où il n'y en avait aucun</span>
+    </div>
+    <div class="score is-flat">
+      <span class="n">1</span>
+      <span class="l">règle d'échec, écrite — la racine des sept</span>
+    </div>
+  </div>
+
+  <!-- ── Verdict ──────────────────────────────────────────────────── -->
+  <section>
+    <h2>Verdict</h2>
+    <div class="col">
+      <p class="lede">
+        Ce n'est pas une formule&nbsp;: sur les dix-neuf défauts mesurés,
+        <strong>sept inversent le sens de la règle écrite</strong>. Et l'inversion
+        ne demande aucune manipulation exotique — il suffit d'écrire un commentaire.
+      </p>
+    </div>
+
+    <div class="term" role="img" aria-label="Configuration IOS où un remark précède un deny">
+<span class="dim">R1(config)#</span> ip access-list extended BLOCK
+<span class="dim">R1(config-ext-nacl)#</span> <span class="kw">remark</span> bloque le VLAN invité   <span class="cmt">← ce commentaire annule les deux lignes suivantes</span>
+<span class="dim">R1(config-ext-nacl)#</span> deny ip 10.0.0.0 0.0.0.255 any
+<span class="dim">R1(config-ext-nacl)#</span> permit ip any any</div>
+    <p class="caption">Paquet source 10.0.0.5 — la première règle de la liste dit explicitement « refuser ».</p>
+
+    <div class="verdict">
+      <span class="lbl">Écrit</span>
+      <span class="tok deny">deny</span>
+      <span class="arrow">→</span>
+      <span class="lbl">Rendu par le moteur</span>
+      <span class="tok permit">permit</span>
+    </div>
+
+    <div class="col">
+      <p>
+        Le <code>remark</code> est enregistré comme une entrée <code>permit</code> de source
+        <code>0.0.0.0/255.255.255.255</code>, et la fonction de correspondance ne teste jamais
+        le champ <code>remark</code>. Le commentaire est donc la première règle, il correspond
+        à tout, et il rend un <code>permit</code>.
+        <strong>Toute ACL de ce simulateur contenant un commentaire est une ACL ouverte.</strong>
+        Elle s'affiche correctement sous <code>show access-lists</code>, elle se relit correctement
+        dans <code>show running-config</code>, et elle ne bloque rien.
+      </p>
+      <p>
+        C'est la pire catégorie de défaut qu'un dispositif de sécurité puisse avoir&nbsp;:
+        il n'échoue pas, il ment. Un pare-feu absent est un risque connu&nbsp;; un pare-feu
+        qui affiche <code>deny</code> et rend <code>permit</code> est un risque que personne ne cherche.
+      </p>
+      <p>
+        Sur un simulateur pédagogique, la conséquence est directe&nbsp;:
+        <strong>l'outil enseigne activement le contraire de ce qu'il prétend enseigner.</strong>
+        Un étudiant qui écrit une ACL correcte, la commente comme on lui a appris à le faire,
+        et observe que le trafic passe, en conclura que sa règle est fausse. Elle ne l'est pas.
+        C'est le simulateur qui l'est.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Aggravant ────────────────────────────────────────────────── -->
+  <section>
+    <h2>Ce qui aggrave le jugement</h2>
+    <div class="col">
+      <p>
+        Le moteur IPv6 du même dépôt, <code>Ipv6AclEngine.ts</code>, traite
+        <strong>exactement les deux mêmes concepts</strong> — <code>remark</code> et
+        <code>evaluate</code> — et les traite <strong>correctement</strong>&nbsp;:
+      </p>
+    </div>
+
+    <div class="term">
+<span class="dim">// Ipv6AclEngine.ts:67-71</span>
+<span class="kw">if</span> (entry.remark !== undefined) <span class="kw">return</span> false;
+<span class="dim">// A reflexive-list reference has no session table behind it here, so it</span>
+<span class="dim">// matches nothing rather than everything — failing an unbacked clause</span>
+<span class="dim">// CLOSED is the rule this repo already applies to `RoutePolicy`.</span>
+<span class="kw">if</span> (entry.evaluate !== undefined) <span class="kw">return</span> false;</div>
+    <p class="caption">Le commentaire énonce la règle. Le fichier v4, à cent lignes de là, la viole.</p>
+
+    <div class="col">
+      <p>
+        Le commentaire dit explicitement&nbsp;: <em>«&nbsp;faire échouer une clause non étayée
+        en mode FERMÉ est la règle que ce dépôt applique déjà&nbsp;»</em>. Cette règle est
+        énoncée, justifiée, et appliquée dans le fichier IPv6 — <strong>et violée dans le
+        fichier IPv4 d'à côté</strong>, celui qui porte la quasi-totalité du trafic.
+      </p>
+      <p>
+        Ce n'est donc pas une lacune de compétence. C'est une <strong>lacune de rigueur</strong>&nbsp;:
+        la bonne réponse existait dans le dépôt, et n'a pas été propagée.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table class="cmp">
+        <caption>Posture d'échec, moteur par moteur — même dépôt, choix opposés</caption>
+        <thead>
+          <tr><th>Situation</th><th>ACLEngine (v4)</th><th>Ipv6AclEngine (v6)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="desc"><code>remark</code> rencontré</td><td class="v4">correspond → permit</td><td class="v6">ne correspond pas ✓</td></tr>
+          <tr><td class="desc"><code>evaluate</code> sans table de sessions</td><td class="v4">correspond → permit</td><td class="v6">ne correspond pas ✓</td></tr>
+          <tr><td class="desc">Protocole inconnu</td><td class="v4">critère sauté</td><td class="v6">refus ✓</td></tr>
+          <tr><td class="desc">Mot-clé inconnu</td><td class="v4">critère sauté</td><td class="v6">sans objet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Tableau de synthèse ──────────────────────────────────────── -->
+  <section>
+    <h2>Les dix-neuf constats</h2>
+    <div class="tablewrap">
+      <table>
+        <caption>Rayon de souffle — Switch.ts instancie le même ACLEngine : les sept défauts d'ouverture frappent aussi les VACL et les ACL de port.</caption>
+        <thead>
+          <tr><th>Id</th><th>Constat</th><th>Gravité</th><th>Nature</th><th>État</th></tr>
+        </thead>
+        <tbody>
+          <tr class="fixed"><td class="id">F-01</td><td class="desc"><code>remark</code> = <code>permit any</code> → neutralise toute ACL commentée</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-02</td><td class="desc"><code>evaluate &lt;nom&gt;</code> = <code>permit any</code> → ACL réflexive grande ouverte</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-03</td><td class="desc"><code>match-any/match-all</code> analysé, stocké, affiché, jamais évalué</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-09</td><td class="desc">ACL 2000–2699 typées <code>standard</code> → destination et ports ignorés</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-04</td><td class="desc">Mot-clé ICMP inconnu → critère abandonné en silence</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-06</td><td class="desc">Mot-clé DSCP / precedence inconnu → critère abandonné</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-10</td><td class="desc">Charge utile L4 absente → critères de port ignorés</td><td><span class="sev crit">Bloquant</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-07</td><td class="desc">ACL étendue + sonde source seule → <code>TypeError</code>, routeur planté</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-15</td><td class="desc">Re-entrer <code>ipv6 access-list NOM</code> efface toutes les règles</td><td><span class="sev high">Haut</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-05</td><td class="desc"><code>icmpCode</code> jamais évalué → tous les <em>unreachable</em> confondus</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-08</td><td class="desc">CLI refuse 1300–1999 et 2000–2699, pourtant valides sur IOS</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-11</td><td class="desc">Séquence auto = <code>floor(max/10)*10+10</code> au lieu de <code>max+10</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-12</td><td class="desc">Numéros de séquence dupliqués acceptés en silence</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-13</td><td class="desc">ACL nommée vide absente de <code>running-config</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-14</td><td class="desc"><code>no permit &lt;ace&gt;</code> non géré, erreur trompeuse</td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-16</td><td class="desc">Jetons inconnus avalés en silence — aucun <code>% Invalid input</code></td><td><span class="sev med">Moyen</span></td><td class="nat">Fidélité</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-17</td><td class="desc"><code>log</code> / <code>log-input</code> analysés, affichés, n'émettent jamais rien</td><td><span class="sev med">Moyen</span></td><td class="nat">Fond</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-18</td><td class="desc"><code>remark</code> porte un compteur et affiche <code>(N matches)</code></td><td><span class="sev low">Faible</span></td><td class="nat">Forme</td><td><span class="done">✅ corrigé</span></td></tr>
+          <tr class="fixed"><td class="id">F-19</td><td class="desc">Affichage ACL standard&nbsp;: <code>host X</code> au lieu de l'IP nue</td><td><span class="sev low">Faible</span></td><td class="nat">Forme</td><td><span class="done">✅ corrigé</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Détail des bloquants ─────────────────────────────────────── -->
+  <section>
+    <h2>Le détail des bloquants</h2>
+
+    <div class="finding crit">
+      <h3><span class="fid">F-03</span>Les drapeaux TCP sont décoratifs</h3>
+      <p>
+        Le CLI analyse <code>match-any</code> / <code>match-all</code> et remplit
+        <code>opts.tcpFlags</code>. L'affichage le réaffiche fidèlement.
+        <code>aclEntryMatches</code> ne le lit <strong>jamais</strong>.
+      </p>
+      <p>
+        Conséquence mesurée&nbsp;: <code>deny tcp any any match-any rst</code>
+        <strong>refuse un paquet SYN</strong>. Le critère disparaît, la règle dégénère
+        en <code>deny tcp any any</code>.
+      </p>
+      <p>
+        Le défaut est bidirectionnel&nbsp;: sur un <code>deny</code> il sur-bloque
+        (déni de service silencieux), sur un <code>permit</code> il sur-autorise. L'ACE
+        fait toujours autre chose que ce qui est écrit — et <code>show access-lists</code>
+        réaffiche le texte d'origine, ce qui rend le diagnostic impossible depuis
+        l'intérieur du simulateur.
+      </p>
+    </div>
+
+    <div class="finding crit">
+      <h3><span class="fid">F-09</span>La numérotation Huawei contamine le routeur Cisco</h3>
+      <div class="term">
+<span class="dim">// ACLEngine.ts:151</span>
+<span class="kw">const</span> type = (id &lt; 100 || (id &gt;= <span class="cmt">2000</span> &amp;&amp; id &lt;= <span class="cmt">2999</span>)) ? 'standard' : 'extended';</div>
+      <p class="caption">2000–2999 est la plage des ACL <em>de base Huawei</em>. Sur IOS, 2000–2699 sont <em>étendues</em>.</p>
+      <p>
+        Les deux conventions sont inversées. Une ACL 2500 est typée <code>standard</code>,
+        donc la correspondance <strong>retourne <code>true</code> dès que la source
+        correspond</strong>&nbsp;: destination, protocole et ports sont abandonnés sans un mot.
+      </p>
+      <p>
+        Mesuré&nbsp;: <code>access-list 2500 permit tcp 10.0.0.0 0.0.0.255 host 192.168.1.1 eq 22</code>
+        rend <strong><code>permit</code></strong> pour un paquet vers <code>8.8.8.8:443</code>.
+      </p>
+      <p>
+        C'est le symptôme d'un <strong>défaut d'architecture</strong>&nbsp;: un moteur unique
+        sert deux vendeurs aux conventions incompatibles, sans porter la moindre notion de
+        vendeur. Le fichier trahit le mélange — <code>ACLEngine.ts</code> exporte
+        <code>formatHuaweiAclEntry()</code>, une fonction de rendu VRP, depuis le module de moteur.
+      </p>
+    </div>
+
+    <div class="finding crit">
+      <h3><span class="fid">F-04 · F-06</span>Le typo est une ouverture</h3>
+      <div class="term">
+<span class="dim">// ACLEngine.ts:357-358 (ICMP) — DSCP et precedence suivent le même patron</span>
+<span class="kw">const</span> expected = ACL_ICMP_KEYWORD_TO_TYPE[entry.icmpType];
+<span class="kw">if</span> (expected !== undefined &amp;&amp; expected !== pktType) <span class="kw">return</span> false;</div>
+      <p class="caption">Mot-clé absent de la table → <code>undefined</code> → le critère est purement sauté.</p>
+      <p>
+        L'écart est large. Le validateur CLI accepte <strong>23 mots-clés ICMP</strong>&nbsp;;
+        la table d'évaluation en connaît <strong>11</strong>. Treize mots-clés parfaitement
+        valides passent la validation puis sont abandonnés à l'évaluation&nbsp;:
+        <code>administratively-prohibited</code>, <code>source-quench</code>,
+        <code>packet-too-big</code>, <code>parameter-problem</code>, <code>traceroute</code>,
+        <code>router-advertisement</code>, <code>router-solicitation</code>,
+        <code>mask-request</code>, <code>mask-reply</code>, <code>timestamp-request</code>,
+        <code>timestamp-reply</code>, <code>information-request</code>, <code>information-reply</code>.
+      </p>
+      <p>
+        Le CLI dit oui, le moteur oublie. Pire&nbsp;: les 11 mots-clés connus ne se projettent
+        que sur <strong>5 types distincts</strong> — la table écrase quatre variantes
+        d'<em>unreachable</em> sur une seule valeur.
+      </p>
+      <p>
+        Mesuré&nbsp;: <code>deny icmp any any administratively-prohibited</code>
+        <strong>refuse un echo-request</strong>. Le sens correct est l'inverse&nbsp;: un critère
+        qu'on ne sait pas évaluer doit faire <strong>échouer</strong> la correspondance.
+      </p>
+    </div>
+
+    <div class="finding high">
+      <h3><span class="fid">F-07</span>Une ACL étendue sur VTY plante le routeur</h3>
+      <div class="term">
+<span class="dim">// Router.ts:4461 — le `as never` supprime la seule protection qui aurait alerté</span>
+evaluateAclPermit(acl: string, srcIp: string): boolean {
+  <span class="kw">return</span> this.aclEngine.evaluateACLByName(
+    acl, { type: 'ipv4', sourceIP: <span class="kw">new</span> IPAddress(srcIp) } <span class="cmt">as never</span>) === 'permit';
+}</div>
+      <p class="caption">Sonde sans <code>destinationIP</code> — sur une ACL étendue, la correspondance appelle <code>.getOctets()</code> sur <code>undefined</code>.</p>
+      <p>
+        Mesuré&nbsp;: <code>TypeError: Cannot read properties of undefined (reading 'getOctets')</code>.
+      </p>
+      <p>
+        Ce point d'évaluation est, d'après son propre commentaire, <strong>partagé par NAT, VTY
+        et <code>ntp access-group</code></strong> — la mutualisation est vantée comme une garantie
+        de cohérence. L'exécution mutualise <strong>un défaut</strong> au lieu d'une réponse&nbsp;:
+        les trois chemins plantent ensemble. Or une ACL NAT étendue
+        (<code>access-list 101 permit ip 10.0.0.0 0.0.0.255 any</code>) est <em>la</em> forme canonique.
+      </p>
+    </div>
+
+    <div class="finding high">
+      <h3><span class="fid">F-15</span>Rentrer dans une ACL IPv6 l'efface</h3>
+      <p>
+        Mesuré&nbsp;: une ACL de 2 règles retombe à <strong>0 règle</strong> au simple fait de
+        retaper <code>ipv6 access-list V6</code> pour l'éditer. Sur IOS, ré-entrer dans une ACL
+        nommée <strong>ouvre la liste existante en ajout</strong> — c'est le geste le plus banal
+        de l'édition d'ACL.
+      </p>
+      <p>
+        Comme l'ACL reste liée à l'interface, elle passe silencieusement de «&nbsp;filtre&nbsp;»
+        à «&nbsp;liste vide&nbsp;», c'est-à-dire à <strong><code>permit</code> inconditionnel</strong>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Forme ────────────────────────────────────────────────────── -->
+  <section>
+    <h2>La forme — comment on en est arrivé là</h2>
+    <div class="col">
+      <p>Le fond est grave&nbsp;; la forme indique <strong>comment</strong> il l'est devenu.</p>
+    </div>
+
+    <div class="term">
+<span class="dim">// CiscoAclCommands.ts:437-439, au milieu d'une fonction d'enregistrement</span>
+<span class="kw">for</span> (<span class="kw">let</span> n = 1; n &lt;= 99; n++) {
+  <span class="kw">void</span> n;
+}</div>
+    <p class="caption">Une boucle de 99 tours qui ne fait rien. Elle a survécu à la revue, au lint, et à tous les commits suivants.</p>
+
+    <div class="col">
+      <p>
+        Autres résidus dans le même fichier&nbsp;: <code>parsePort()</code> jamais appelée,
+        <code>consumedAfterSource()</code> qui rend toujours <code>0</code> derrière un
+        <code>??</code> dont l'opérande gauche n'est jamais nul, une variable
+        <code>bindings</code> déclarée et jamais lue, un paramètre <code>_aclType</code> ignoré.
+      </p>
+      <p>
+        <strong>Le lint parle, personne n'écoute.</strong>
+        <code>CLAUDE.md</code> affirme que <code>no-unused-vars</code> est
+        «&nbsp;disabled project-wide&nbsp;». <strong>C'est faux&nbsp;:</strong>
+        <code>eslint.config.js</code> le règle sur <code>warn</code>, la règle tourne, et
+        elle trouve exactement le code mort de cet audit — <code>parsePort</code> et
+        <code>bindings</code> sont signalés nommément sur les seuls fichiers ACL.
+      </p>
+      <p>
+        Le constat est donc pire qu'un outil éteint, et différent&nbsp;: <strong>le signal
+        existe, il est juste, et il est ignoré.</strong> Éteindre une règle est une
+        décision&nbsp;; laisser une règle crier dans le vide en est une aussi, moins avouée.
+        S'y ajoute une <strong>documentation fausse</strong>&nbsp;: qui lit
+        <code>CLAUDE.md</code> conclut que ce détecteur n'existe pas, et n'ira jamais voir ce
+        qu'il dit.
+      </p>
+      <p>
+        Ce n'est pas un détail de style&nbsp;: dans un moteur de sécurité, <strong>un champ
+        déclaré et jamais lu est la signature exacte de F-03, F-17, F-02 et F-05</strong> —
+        <code>tcpFlags</code>, <code>log</code>, <code>evaluate</code>, <code>icmpCode</code>.
+        L'outil qui pointe vers la classe de bug dominante du projet tourne déjà&nbsp;; il
+        suffisait de le lire. <em>(La boucle vide ci-dessus lui échappe légitimement&nbsp;:
+        <code>void n</code> compte comme une utilisation. Celle-là, seul un relecteur humain
+        pouvait l'arrêter.)</em>
+      </p>
+      <p>
+        <strong>Neuf champs sur vingt-neuf sont des façades.</strong> Acceptés par le CLI,
+        stockés, réaffichés par <code>show</code> et <code>running-config</code>, sans aucun
+        effet&nbsp;: <code>icmpCode</code>, <code>tcpFlags</code>, <code>reflect</code>,
+        <code>reflectTimeout</code>, <code>evaluate</code>, <code>optionName</code>,
+        <code>remark</code>, <code>log</code>, <code>logInput</code>. Un tiers de la surface
+        déclarée est décoratif — et comme le rendu est fidèle, rien dans le simulateur ne
+        permet de distinguer un champ qui agit d'un champ qui décore.
+      </p>
+      <p>
+        <strong>Les compteurs sont pollués.</strong> <code>evaluateACL</code> incrémente
+        <code>matchCount</code> à chaque appel, quel que soit l'appelant — IPSec, NAT, VTY,
+        HTTP, et le filtre d'affichage de <code>debug ip packet</code>. Taper
+        <code>debug ip packet 101</code> fait donc monter les compteurs de l'ACL 101&nbsp;:
+        <code>show access-lists</code> cesse de mesurer le trafic pour mesurer l'activité de
+        l'observateur. C'est exactement l'outil qu'un étudiant utilise pour vérifier si sa
+        règle est atteinte, et il est faussé par l'acte de regarder.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Tests ────────────────────────────────────────────────────── -->
+  <section>
+    <h2>Le dispositif de test</h2>
+    <div class="col">
+      <p class="lede">
+        Quatre suites ACL, 83 tests, tous au vert. Elles détectent
+        <strong>0 des 19 défauts</strong>.
+      </p>
+      <p>
+        Ces 83 tests ne sont pas mauvais&nbsp;: ils vérifient consciencieusement que
+        <code>permit</code> autorise et que <code>deny</code> refuse sur des ACL nominales.
+        Ils partagent tous le même angle mort — <strong>ils n'écrivent que des ACL correctes
+        et simples.</strong> Aucun n'ajoute de commentaire, aucun ne teste une clause non
+        étayée, aucun ne fait une faute de frappe, aucun ne passe un paquet incomplet,
+        aucun n'utilise 2500 comme numéro.
+      </p>
+      <p>
+        Or c'est <strong>exactement là</strong> que vit la totalité des défauts. Le banc de
+        preuves joint établit qu'un contre-test coûte une dizaine de lignes. Le coût n'était
+        pas l'obstacle. L'obstacle est méthodologique&nbsp;: la suite valide que la
+        fonctionnalité <em>marche</em>, jamais qu'elle <em>ne cède pas</em>. Pour du filtrage,
+        c'est la moitié du travail — et la moins importante.
+      </p>
+      <p>
+        Enfin, la couverture est configurée pour ne mesurer que
+        <code>src/network/protocols/ssh/**</code>. Le moteur ACL — le composant de sécurité
+        central de ce simulateur — n'est sous <strong>aucun seuil de couverture</strong>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── Ce qui est juste ─────────────────────────────────────────── -->
+  <section>
+    <h2>Ce qui est juste</h2>
+    <div class="good">
+      <h3>Vérifié et correct</h3>
+      <ul>
+        <li>
+          <strong>L'ordre des opérations ACL/NAT est exact, dans les deux sens.</strong>
+          ACL entrante avant traduction entrante, ACL sortante après traduction sortante —
+          précisément l'ordre documenté par Cisco, et un point que beaucoup d'implémentations manquent.
+        </li>
+        <li><strong>La correspondance par masque générique</strong> est correcte, y compris sur les masques non contigus.</li>
+        <li><strong><code>established</code></strong> teste bien ACK ou RST — conforme.</li>
+        <li>
+          <strong>Le refus produit un ICMP <em>administratively-prohibited</em> (code 13)</strong>,
+          correctement conditionné par <code>no ip unreachables</code>. Un raffinement que peu de simulateurs implémentent.
+        </li>
+        <li><strong>Le résolveur de plages horaires</strong> est correctement branché et applique la sémantique «&nbsp;ACE inactive → règle suivante&nbsp;».</li>
+        <li>
+          <strong><code>Ipv6AclEngine.ts</code> est un bon fichier</strong>&nbsp;: la permission
+          implicite des messages de découverte de voisins est correctement placée <em>après</em>
+          la boucle de règles, la posture d'échec est fermée, et l'exposé du piège en tête de
+          fichier est de qualité professionnelle.
+        </li>
+      </ul>
+      <p style="margin-top:16px;margin-bottom:0"><strong>La compétence n'est pas en cause. La discipline l'est.</strong></p>
+    </div>
+  </section>
+
+  <!-- ── Remédiation ──────────────────────────────────────────────── -->
+  <section>
+    <h2>Remédiation</h2>
+
+    <div class="tier" style="border-left:4px solid var(--ok)">
+      <div class="h">
+        <span class="num" style="background:var(--ok)">Palier 0 · fait</span>
+        <span class="when">16 août 2026</span>
+      </div>
+      <p style="margin:0 0 14px">
+        Une <strong>règle d'échec</strong> unique a été posée et documentée en tête de
+        <code>aclEntryMatches</code>&nbsp;: <em>un critère que le moteur ne sait pas trancher
+        fait échouer la correspondance — jamais réussir, jamais «&nbsp;sauter le critère&nbsp;».</em>
+        Les cinq points en découlent.
+      </p>
+      <ol>
+        <li><strong>F-01, F-02</strong> — <code>remark</code> et <code>evaluate</code> ne correspondent plus à rien. Un commentaire redevient un commentaire&nbsp;; une référence réflexive non étayée échoue fermé, comme dans <code>Ipv6AclEngine</code>.</li>
+        <li><strong>F-04, F-06</strong> — mot-clé ICMP, DSCP, precedence ou ToS non résolu ⇒ pas de correspondance. La table ICMP porte désormais un commentaire expliquant que <code>ICMPType</code> ne modélise que cinq types, et pourquoi les autres échouent fermé plutôt que d'être inventés.</li>
+        <li><strong>F-03</strong> — <code>match-any</code> / <code>match-all</code> sont évalués, préfixes <code>+</code> / <code>-</code> compris. Le <strong>mode</strong> est conservé (il était perdu&nbsp;: <code>match-all</code> était stocké comme <code>match-any</code>) et rendu correctement par <code>show</code>. Un nom de drapeau inconnu échoue fermé.</li>
+        <li><strong>F-09</strong> — la numérotation devient une <strong>politique injectée</strong> (<code>AclNumbering</code>), IOS par défaut&nbsp;; <code>HuaweiRouter</code> et <code>HuaweiSwitch</code> posent <code>VRP_ACL_NUMBERING</code>. Le moteur ne devine plus la convention d'un vendeur.</li>
+        <li><strong>F-10</strong> — un critère de port sans couche 4 échoue fermé, tandis qu'une ACE <em>sans</em> critère de port continue de correspondre. La distinction est testée dans les deux sens.</li>
+      </ol>
+      <p style="margin:14px 0 0">
+        <strong>Effet de bord&nbsp;:</strong> F-18 tombe avec F-01 — un <code>remark</code>
+        n'accumule plus de compteur.<br>
+        <strong>Vérification&nbsp;:</strong> 17 tests de non-régression, plus 134 fichiers /
+        2200 tests des suites ACL, NAT, IPSec, VTY, sécurité et pare-feu — tous verts.
+        Aucune erreur de typage nouvelle.
+      </p>
+    </div>
+
+    <div class="tier" style="border-left:4px solid var(--ok)">
+      <div class="h">
+        <span class="num" style="background:var(--ok)">Palier 1 · fait</span>
+        <span class="when">plantage, perte de données, silence</span>
+      </div>
+      <ol start="6">
+        <li><strong>F-07</strong> — une sonde COMPLÈTE (<code>sourceProbePacket</code>) remplace l'objet source-seul de VTY / NTP / NAT, et les <code>as never</code> / <code>as any</code> qui faisaient taire le vérificateur sont retirés. Le moteur traite en outre un champ manquant comme un critère intranchable&nbsp;: il échoue, il ne plante plus.</li>
+        <li><strong>F-15</strong> — ré-entrer dans une ACL IPv6 l'ouvre en ajout. Le détour par une entrée bidon suivie d'un effacement a disparu avec la fonction qui le portait.</li>
+        <li><strong>F-16</strong> — tout jeton inconnu rend <code>% Invalid input detected at '^' marker.</code> et <strong>rien n'est enregistré</strong>.</li>
+        <li><strong>F-17</strong> — <code>log</code> émet un vrai <code>%SEC-4-IPACCESSLOGP: list 100 denied tcp …</code>. Le mappage syslog est corrigé au passage&nbsp;: IOS ne journalise <em>que</em> les ACE marquées, là où toute ACE refusée produisait la ligne — ce qui privait précisément <code>log</code> de tout effet observable.</li>
+      </ol>
+    </div>
+
+    <div class="tier" style="border-left:4px solid var(--ok)">
+      <div class="h">
+        <span class="num" style="background:var(--ok)">Palier 2 · fait</span>
+        <span class="when">fidélité IOS</span>
+      </div>
+      <ol start="10">
+        <li><strong>F-05</strong> — le code ICMP discrimine enfin les variantes&nbsp;: <code>host-unreachable</code> ne bloque plus les <code>port-unreachable</code>.</li>
+        <li><strong>F-08</strong> — les quatre plages IOS acceptées, et le message d'erreur les énonce exactement au lieu d'affirmer une règle fausse.</li>
+        <li><strong>F-11, F-12, F-13, F-14, F-19</strong> — séquence auto en «&nbsp;dernier + 10&nbsp;», doublon refusé, liste vide visible dans <code>running-config</code>, <code>no permit &lt;ace&gt;</code> par texte, IP nue à l'affichage.</li>
+      </ol>
+    </div>
+
+    <div class="tier" style="border-left:4px solid var(--ok)">
+      <div class="h">
+        <span class="num" style="background:var(--ok)">Palier 3 · fait</span>
+        <span class="when">la racine — ce qui empêche la récidive</span>
+      </div>
+      <ol start="13">
+        <li><strong>La règle d'échec est écrite dans <code>CLAUDE.md</code></strong>, pas seulement dans un commentaire — avec sa conséquence&nbsp;: <em>ne jamais stocker un critère qu'on n'évalue pas ; l'appliquer, ou le refuser à l'analyse.</em></li>
+        <li><strong>Moteur et présentation vendeur séparés</strong>&nbsp;: <code>formatHuaweiAclEntry</code> quitte le moteur, et la numérotation devient une politique injectée.</li>
+        <li><strong>Code mort supprimé</strong> — dont la boucle de 99 tours — et l'affirmation fausse de <code>CLAUDE.md</code> sur <code>no-unused-vars</code> rectifiée.</li>
+        <li><strong>Le moteur ACL passe sous seuil de couverture</strong>, lui qui n'y était soumis par aucun.</li>
+        <li><strong>Compteurs dépollués</strong>&nbsp;: <code>debug ip packet</code> observe sans compter. <code>show access-lists</code> remesure le trafic, pas l'observateur.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ── Conclusion ───────────────────────────────────────────────── -->
+  <section class="kicker">
+    <div class="col">
+      <p>
+        Le simulateur reproduit correctement la <strong>plomberie</strong> des ACL — l'ordre
+        par rapport au NAT, les masques génériques, les ICMP de refus, les plages horaires.
+        Ce sont les parties difficiles, et elles sont faites.
+      </p>
+      <p>
+        Il échoue sur la <strong>sémantique de sécurité</strong>, et il y échoue systématiquement
+        dans la même direction&nbsp;: <strong>vers l'ouverture</strong>. Neuf champs déclarés
+        sans effet, sept chemins qui inversent la règle écrite, un <code>remark</code> qui annule
+        une liste, et 83 tests verts qui n'en voient aucun.
+      </p>
+      <p>
+        Le défaut racine n'est aucun des dix-neuf. C'est <strong>l'absence d'une règle écrite
+        sur la posture d'échec</strong> — une règle que ce dépôt connaît, puisqu'elle est énoncée
+        et justifiée dans <code>Ipv6AclEngine.ts</code>, et qu'il n'a jamais promue au rang de
+        convention. Les dix-neuf constats sont les feuilles&nbsp;; celle-là est la racine.
+        Corriger les feuilles sans la racine garantit la repousse.
+      </p>
+    </div>
+    <div class="final">
+      <strong>Recommandation initiale.</strong> Traiter le palier 0 comme un correctif bloquant.
+      En l'état, l'implémentation ACL Cisco de ce simulateur n'est pas pédagogiquement
+      utilisable&nbsp;: un étudiant qui suit les bonnes pratiques enseignées — commenter
+      ses ACL — obtient une liste ouverte, sans le moindre signal.
+    </div>
+
+    <h3 style="margin:38px 0 14px">Suite donnée — 16 août 2026</h3>
+    <div class="col">
+      <p>
+        Les dix-neuf constats sont corrigés, paliers 0 à 3 compris.
+      </p>
+      <p>
+        <strong>Ce qui a réellement changé.</strong> Pas dix-neuf rustines&nbsp;: une règle.
+        <em>Un critère que le moteur ne sait pas trancher fait échouer la correspondance</em> —
+        jamais réussir, jamais «&nbsp;sauter le critère&nbsp;». Les sept défauts d'ouverture en
+        découlaient tous, et c'est cette règle, désormais écrite dans <code>CLAUDE.md</code>
+        et non plus seulement dans un commentaire, qui empêche le prochain critère d'ACE de
+        rouvrir la liste. Sa conséquence est écrite avec elle&nbsp;: <strong>ne jamais stocker
+        un critère qu'on n'évalue pas</strong> — l'appliquer, ou le refuser à l'analyse.
+      </p>
+      <p>
+        <strong>Ce que l'audit a corrigé de lui-même.</strong> Deux affirmations du rapport
+        initial étaient fausses, et ont été rectifiées en place plutôt qu'effacées.
+        <code>no-unused-vars</code> n'est <em>pas</em> désactivé&nbsp;: la règle tourne, elle
+        signalait nommément le code mort trouvé ici, et elle était ignorée — un constat plus
+        dur que celui d'un outil éteint. Et la correction des doublons de séquence a cassé un
+        scénario de test qui supposait qu'un numéro réutilisé <em>remplace</em> l'entrée&nbsp;;
+        vérification faite, IOS refuse en IPv4 et n'accepte le remplacement qu'en IPv6 — le
+        scénario a été aligné sur IOS, pas l'inverse.
+      </p>
+      <p>
+        <strong>Ce qui reste vrai.</strong> Le dispositif de test garde son angle mort
+        d'origine&nbsp;: 83 tests ACL verts n'avaient vu aucun des dix-neuf défauts, faute de
+        sonder les cas dégradés. Les 33 tests du banc ne le comblent que pour les défauts
+        connus. La discipline qui manquait n'était pas l'écriture de tests, mais l'habitude
+        de tester <strong>ce qui cède</strong> plutôt que ce qui marche.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <p style="margin:0 0 10px">
+      <strong>Reproduction —</strong> <code>npx vitest run src/__tests__/audit/</code><br>
+      33 tests. Le fichier a commencé comme un banc de preuves — chaque test y assoyait le
+      comportement <strong>fautif</strong>, pour que le rapport repose sur une mesure et non
+      sur une lecture. Les dix-neuf constats corrigés, il a changé de nature&nbsp;: chaque
+      test assoit désormais le comportement <strong>juste</strong>, et un échec est une
+      régression.
+    </p>
+    <p style="margin:0">
+      Comportement IOS de référence vérifié sur la documentation Cisco&nbsp;:
+      <a href="https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/sec_data_acl/configuration/15-mt/sec-data-acl-15-mt-book/sec-access-list-ov.html">plages de numérotation</a> ·
+      <a href="https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/sec_data_acl/configuration/xe-3s/sec-data-acl-xe-3s-book/sec-acl-seq-num.html">numérotation de séquence</a> ·
+      <a href="https://www.cisco.com/c/en/us/support/docs/security/ios-firewall/23602-confaccesslists.html">format d'affichage</a> ·
+      <a href="https://www.cisco.com/c/en/us/support/docs/ip/network-address-translation-nat/6209-5.html">ordre des opérations NAT</a>
+    </p>
+  </footer>
+
+</div>

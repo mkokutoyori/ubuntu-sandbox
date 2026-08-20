@@ -382,10 +382,20 @@ describe('Interpreter — External Commands', () => {
     const execCmd = vi.fn(() => '');
     run('ls -la /tmp', { execCmd });
     // The interpreter also passes an environment snapshot as a second
-    // argument so env-aware commands (ssh forwarding) can read it.
+    // argument so env-aware commands (ssh forwarding) can read it, a
+    // background flag as a third (undefined for foreground commands),
+    // a fourth "stdout is piped/redirected" flag (false here — a bare
+    // `ls -la /tmp` at a real terminal, no pipe or `>`), and a fifth
+    // holding this command's standard input — undefined here, since
+    // nothing is piped into it. That last one is what lets a driver tell
+    // `cmd file` from `printf x | cmd`, which the trailing word the
+    // interpreter also appends cannot express on its own.
     expect(execCmd).toHaveBeenCalledWith(
       ['ls', '-la', '/tmp'],
       expect.any(Object),
+      undefined,
+      false,
+      undefined,
     );
   });
 });

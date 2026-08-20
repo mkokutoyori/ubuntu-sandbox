@@ -177,6 +177,16 @@ export interface NssNetgroupEntry {
   triples: NssNetgroupTriple[];
 }
 
+/**
+ * One `/etc/aliases` line: `name: dest1, dest2`. A destination may be a
+ * local user, a full address, or another alias — expansion is recursive
+ * at delivery time, as with a real Postfix/Sendmail.
+ */
+export interface NssAliasEntry {
+  name: string;
+  members: string[];
+}
+
 // ─── Source action codes (per nsswitch.conf) ───────────────────────────
 
 /**

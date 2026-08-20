@@ -16,6 +16,16 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import type { LinuxProcessManager } from './LinuxProcessManager';
 import type { IEventBus } from '@/events/EventBus';
 import { LinuxService } from './service/LinuxService';
+import { DependencyGraph, fullUnitName, unitSuffix, type UnitNode } from './systemd/DependencyGraph';
+import { SystemdJobEngine } from './systemd/SystemdJobEngine';
+import { TimerScheduler, type TimerEntry } from './systemd/TimerScheduler';
+import { parseTimeSpan } from './systemd/TimeSpan';
+import { EXIT_EXEC } from './systemd/ExitStatus';
+import { canonicalBinPath } from './service/CriticalFiles';
+import {
+  runtimeArtifactsFor, runtimeDirectoryFor, UNIT_PIDFILE_DIRECTIVE, UNIT_RUNTIME_DIRECTORY,
+} from './service/RuntimeArtifacts';
+import type { DynamicUserTable } from './nss/DynamicUserTable';
 import type { PortSpec } from '../../core/ports/PortNumber';
 
 /** systemd-equivalent activation state for a unit. */
@@ -45,10 +55,26 @@ export interface ServiceUnit {
   execReload?: string;
   user: string;
   group: string;
+  dynamicUser?: boolean;
   wantedBy: string[];
+  wants: string[];
   after: string[];
+  before: string[];
   requires: string[];
+  bindsTo: string[];
+  partOf: string[];
+  conflicts: string[];
+  allowIsolate?: boolean;
   restart: RestartPolicy;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
   /** Source file the unit was loaded from. */
   loadedFrom: string;
   // ── Runtime state (mutated by start/stop/etc.) ────────────────
@@ -56,8 +82,15 @@ export interface ServiceUnit {
   enabled: EnabledState;
   mainPid?: number;
   activeSince?: Date;
+  lastExit?: { code?: number; signal?: string };
+  failedReason?: string;
+  startLimitHit?: boolean;
+  autoRestartPending?: boolean;
+  restartEpochs?: number[];
   /** Runtime resource-control overrides set via `systemctl set-property`. */
   props?: Record<string, string>;
+  readinessDelayMs?: number;
+  portOverride?: { port: number; source: 'cli' | 'env' | 'config-reload'; cliArg?: string };
 }
 
 export interface ServiceManagerOptions {
@@ -67,6 +100,14 @@ export interface ServiceManagerOptions {
 export interface OperationResult {
   ok: boolean;
   error?: string;
+  /**
+   * `error` is already a complete systemctl message and must be printed
+   * as-is. systemd has two shapes — `Failed to start X: <reason>` when the
+   * job could not even be queued, and `Job for X failed because …` when the
+   * job ran and the process died — and `systemctl` prints the second one
+   * alone. Without this flag the caller's prefix produced both at once.
+   */
+  verbatim?: boolean;
 }
 
 export interface ListFilter {
@@ -82,6 +123,91 @@ const SYSTEM_UNIT_DIR = '/usr/lib/systemd/system';
 const ETC_UNIT_DIR = '/etc/systemd/system';
 /** multi-user.target.wants — Wants symlinks for the default boot target. */
 const WANTS_DIR = '/etc/systemd/system/multi-user.target.wants';
+
+interface DefaultTarget {
+  name: string;
+  description: string;
+  unitLines?: string[];
+}
+
+const DEFAULT_TARGETS: readonly DefaultTarget[] = [
+  { name: 'graphical.target', description: 'Graphical Interface', unitLines: ['Requires=multi-user.target', 'After=multi-user.target', 'AllowIsolate=yes'] },
+  { name: 'multi-user.target', description: 'Multi-User System', unitLines: ['Requires=basic.target', 'After=basic.target', 'AllowIsolate=yes'] },
+  { name: 'basic.target', description: 'Basic System', unitLines: ['Requires=sysinit.target', 'After=sysinit.target'] },
+  { name: 'sysinit.target', description: 'System Initialization', unitLines: ['Requires=local-fs.target', 'After=local-fs.target'] },
+  { name: 'local-fs.target', description: 'Local File Systems' },
+  { name: 'remote-fs.target', description: 'Remote File Systems' },
+  { name: 'network-pre.target', description: 'Preparation for Network' },
+  { name: 'network.target', description: 'Network', unitLines: ['After=network-pre.target'] },
+  { name: 'timers.target', description: 'Timer Units', unitLines: ['After=basic.target'] },
+];
+
+/**
+ * Les unités `.timer` livrées par Ubuntu, avec leur service associé.
+ *
+ * `systemctl list-timers` annonçait « 0 timers listed » sur une machine
+ * neuve : le mécanisme fonctionnait, mais aucun timer n'était fourni, et
+ * la fonction paraissait absente. Un Ubuntu réel en expose six d'emblée.
+ *
+ * Le contenu est recopié des fichiers de `/lib/systemd/system` d'une
+ * machine Ubuntu — d'où les `OnCalendar=` inhabituels : `*-*-* 6,18:00`
+ * pour apt, `Sun *-*-* 03:10:00` pour e2scrub, et un
+ * `systemd-tmpfiles-clean` qui n'a pas de calendrier du tout mais un
+ * `OnBootSec=`/`OnUnitActiveSec=`. Ils ne sont pas inventés, et c'est ce
+ * qui en fait un banc d'essai honnête pour l'analyseur calendaire.
+ */
+interface DefaultTimer {
+  name: string;
+  description: string;
+  timerLines: string[];
+  serviceDescription: string;
+  execStart: string;
+}
+
+const DEFAULT_TIMERS: readonly DefaultTimer[] = [
+  {
+    name: 'apt-daily',
+    description: 'Daily apt download activities',
+    timerLines: ['OnCalendar=*-*-* 6,18:00', 'RandomizedDelaySec=12h', 'Persistent=true'],
+    serviceDescription: 'Daily apt download activities',
+    execStart: '/usr/lib/apt/apt.systemd.daily update',
+  },
+  {
+    name: 'apt-daily-upgrade',
+    description: 'Daily apt upgrade and clean activities',
+    timerLines: ['OnCalendar=*-*-* 6:00', 'RandomizedDelaySec=60m', 'Persistent=true'],
+    serviceDescription: 'Daily apt upgrade and clean activities',
+    execStart: '/usr/lib/apt/apt.systemd.daily install',
+  },
+  {
+    name: 'fstrim',
+    description: 'Discard unused filesystem blocks once a week',
+    timerLines: ['OnCalendar=weekly', 'AccuracySec=1h', 'Persistent=true', 'RandomizedDelaySec=100min'],
+    serviceDescription: 'Discard unused filesystem blocks on all mounted filesystems',
+    execStart: '/usr/sbin/fstrim --listed-in /etc/fstab:/proc/self/mountinfo --verbose --quiet-unsupported',
+  },
+  {
+    name: 'motd-news',
+    description: 'Message of the Day',
+    timerLines: ['OnCalendar=00,12:00:00', 'RandomizedDelaySec=12h', 'Persistent=true', 'OnStartupSec=1min'],
+    serviceDescription: 'Message of the Day',
+    execStart: '/usr/bin/env python3 /usr/lib/ubuntu-motd/motd-news --force',
+  },
+  {
+    name: 'e2scrub_all',
+    description: 'Periodic ext4 Online Metadata Check for All Filesystems',
+    timerLines: ['OnCalendar=Sun *-*-* 03:10:00', 'RandomizedDelaySec=60', 'Persistent=true'],
+    serviceDescription: 'Online ext4 Metadata Check for All Filesystems',
+    execStart: '/usr/sbin/e2scrub_all -A -r',
+  },
+  {
+    name: 'systemd-tmpfiles-clean',
+    description: 'Daily Cleanup of Temporary Directories',
+    timerLines: ['OnBootSec=15min', 'OnUnitActiveSec=1d'],
+    serviceDescription: 'Cleanup of Temporary Directories',
+    execStart: '/usr/bin/systemd-tmpfiles --clean',
+  },
+];
 
 // ─── Default unit definitions ─────────────────────────────────────────
 
@@ -112,6 +238,30 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'fail2ban',
+    description: 'Fail2Ban Service',
+    type: 'forking',
+    execStart: '/usr/bin/fail2ban-server -xf start',
+    after: ['network.target', 'iptables.service'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
+    // chrony (`docs/PRD-NTP-Tutoriel.md` §4). L'unite s'appelle `chrony`
+    // sur Debian et `chronyd` sur RHEL ; le tutoriel montre les deux, et
+    // un lecteur qui suit la colonne RHEL ne doit pas tomber sur un
+    // `Unit could not be found` qui ne lui apprendrait rien — l'alias
+    // est resolu par le gestionnaire.
+    name: 'chrony',
+    description: 'chrony, an NTP client/server',
+    type: 'forking',
+    execStart: '/usr/sbin/chronyd -F 1',
+    execReload: '/bin/kill -HUP $MAINPID',
+    after: ['network.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
     name: 'cron',
     description: 'Regular background program processing daemon',
     type: 'forking',
@@ -134,6 +284,7 @@ const BASE_UNITS: DefaultUnit[] = [
     description: 'Security Auditing Service',
     type: 'forking',
     execStart: '/sbin/auditd',
+    execReload: '/sbin/auditctl -R /etc/audit/audit.rules',
     after: ['local-fs.target'],
     enabledByDefault: true,
     startByDefault: true,
@@ -182,6 +333,17 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'named',
+    description: 'BIND Domain Name Server',
+    type: 'forking',
+    execStart: '/usr/sbin/named -u bind',
+    execReload: '/usr/sbin/rndc reload',
+    user: 'bind',
+    after: ['network.target'],
+    enabledByDefault: false,
+    startByDefault: false,
+  },
+  {
     name: 'networking',
     description: 'Raise network interfaces',
     type: 'oneshot',
@@ -191,10 +353,38 @@ const BASE_UNITS: DefaultUnit[] = [
     startByDefault: true,
   },
   {
+    name: 'systemd-networkd',
+    description: 'Network Configuration',
+    type: 'notify',
+    execStart: '/lib/systemd/systemd-networkd',
+    execReload: '/bin/kill -HUP $MAINPID',
+    after: ['network-pre.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
+    name: 'NetworkManager',
+    description: 'Network Manager',
+    type: 'dbus',
+    execStart: '/usr/sbin/NetworkManager --no-daemon',
+    after: ['dbus.service', 'network-pre.target'],
+    enabledByDefault: false,
+    startByDefault: false,
+  },
+  {
     name: 'ufw',
     description: 'Uncomplicated firewall',
     type: 'oneshot',
     execStart: '/lib/ufw/ufw-init start quiet',
+    after: ['local-fs.target'],
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
+    name: 'netfilter-persistent',
+    description: 'netfilter persistent configuration',
+    type: 'oneshot',
+    execStart: '/usr/share/netfilter-persistent/netfilter-persistent start',
     after: ['local-fs.target'],
     enabledByDefault: true,
     startByDefault: true,
@@ -259,6 +449,22 @@ const SERVER_UNITS: DefaultUnit[] = [
     type: 'simple',
     execStart: '/etc/init.d/init.ohasd run',
     user: 'oracle',
+    enabledByDefault: true,
+    startByDefault: true,
+  },
+  {
+    name: 'freeradius',
+    description: 'FreeRADIUS multi-protocol policy server',
+    type: 'forking',
+    execStart: '/usr/sbin/freeradius',
+    execReload: '/usr/sbin/freeradius -c',
+    user: 'freerad',
+    after: ['network.target'],
+    // Active out of the box, like oracle-ohasd — the RADIUS engine has
+    // been reachable unconditionally on LinuxServer since PRD-RADIUS
+    // Phase 8; this unit adds real `systemctl stop/start/restart/reload`
+    // control (and clients.conf/users-driven config) on top of that,
+    // without changing the default-on behaviour existing labs rely on.
     enabledByDefault: true,
     startByDefault: true,
   },
@@ -349,6 +555,7 @@ export class LinuxServiceManager {
     private readonly vfs: VirtualFileSystem,
     private readonly processMgr: LinuxProcessManager,
     private readonly opts: ServiceManagerOptions,
+    private readonly dynamicUsers?: DynamicUserTable,
   ) {
     this.bootstrapDefaultUnits();
     this.daemonReload();
@@ -422,19 +629,264 @@ export class LinuxServiceManager {
 
   // ─── Public API ───────────────────────────────────────────────────
 
-  /** Start a service. Spawns its main process if not already active. */
+  /**
+   * Start a service and its dependencies. Resolves the Requires/Wants/
+   * BindsTo activation closure, orders it by After/Before, and activates
+   * each unit in turn (systemd's job transaction). A unit with no
+   * dependencies yields a single-job transaction — same result as before.
+   */
   start(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    return this.jobEngine().start(unit.unit.name);
+  }
+
+  private jobEngine(): SystemdJobEngine {
+    return new SystemdJobEngine({
+      graph: () => this.dependencyGraph(),
+      isActive: (n) => this.isActive(n),
+      exists: (n) => this.units.has(n),
+      activate: (n) => this.startOne(n),
+      deactivate: (n) => this.stopOne(n),
+    });
+  }
+
+  dependencyGraph(): DependencyGraph {
+    return new DependencyGraph(this.list().map((u) => this.graphNode(u)));
+  }
+
+  private graphNode(u: LinuxService): UnitNode {
+    if (!u.name.endsWith('.target')) return u;
+    const dir = `${ETC_UNIT_DIR}/${u.name}.wants`;
+    const entries = this.vfs.exists(dir) ? this.vfs.listDirectory(dir) ?? [] : [];
+    const linked = entries
+      .filter((e) => e.name.endsWith('.service'))
+      .map((e) => e.name.replace(/\.service$/, ''));
+    const wants = [...new Set([...u.wants, ...linked])];
+    return {
+      name: u.name,
+      requires: u.requires,
+      wants,
+      bindsTo: u.bindsTo,
+      partOf: u.partOf,
+      conflicts: u.conflicts,
+      after: [...new Set([...u.after, ...u.requires, ...wants, ...u.bindsTo])],
+      before: u.before,
+    };
+  }
+
+  isolate(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    if (!unit.unit.allowIsolate) {
+      return {
+        ok: false,
+        error: `Operation refused, unit ${fullUnitName(unit.unit.name)} may be requested by dependency only (it is configured to refuse manual start/stop).`,
+      };
+    }
+    return this.jobEngine().isolate(unit.unit.name);
+  }
+
+  private readonly timerScheduler = new TimerScheduler();
+
+  timerTick(now: Date = new Date()): void {
+    for (const service of this.timerScheduler.due(now)) this.start(service);
+  }
+
+  timerEntries(): TimerEntry[] {
+    return this.timerScheduler.entries();
+  }
+
+  socketEntries(): Array<{ unit: string; port: number; service: string }> {
+    return this.list()
+      .filter((u) => unitSuffix(u.name) === 'socket' && u.state === 'active' && u.listenStream !== undefined)
+      .map((u) => ({ unit: u.name, port: u.listenStream!, service: this.activatedUnit(u) }));
+  }
+
+  triggerSocket(name: string): OperationResult {
+    const unit = this.units.get(name);
+    if (!unit || unit.state !== 'active') {
+      return { ok: false, error: `Socket unit ${fullUnitName(name)} is not listening.` };
+    }
+    return this.start(this.activatedUnit(unit));
+  }
+
+  private activatedUnit(u: LinuxService): string {
+    const raw = u.activates ?? u.name.replace(/\.(socket|timer)$/, '');
+    return raw.replace(/\.service$/, '');
+  }
+
+  private startOne(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
     if (u.state === 'active') return { ok: true };
+    if (u.startLimitHit) {
+      return { ok: false, error: `Unit ${u.name}.service has a start-limit-hit.` };
+    }
+    // systemd execs the binary; if it is gone the child dies before it
+    // ever runs and the unit fails with 203/EXEC. This is what makes
+    // `rm /usr/sbin/sshd` bite at the NEXT start while the already-running
+    // process carries on (docs/PRD-Pannes.md §F5.10).
+    const exe = unitSuffix(u.name) === 'service'
+      ? canonicalBinPath(executablePathOf(u.execStart) ?? '')
+      : '';
+    if (exe && !this.vfs.exists(exe)) {
+      // The forked child IS the main process for Type=simple, so its failure
+      // to exec is a main-process exit — that event is what puts the
+      // `status=203/EXEC` line in the journal, next to the same string
+      // `systemctl status` shows. The unit's own result stays `exit-code`,
+      // systemd's keyword for "the process exited non-zero".
+      this.noteMainExited(u.name, {
+        code: EXIT_EXEC,
+        diagnostic: `Failed to locate executable ${exe}: No such file or directory`,
+      });
+      this.markFailed(u.name, 'exit-code');
+      // The unit file itself is fine — it is the exec that failed — so
+      // this is systemd's control-process wording, not the "bad unit file
+      // setting" it reserves for a unit it could not even load.
+      return {
+        ok: false,
+        verbatim: true,
+        error: `Job for ${fullUnitName(u.name)} failed because the control `
+          + 'process exited with error code.\n'
+          + `See "systemctl status ${fullUnitName(u.name)}" and `
+          + `"journalctl -xeu ${fullUnitName(u.name)}" for details.`,
+      };
+    }
+    const check = this.configChecks.get(u.name);
+    if (check) {
+      const verdict = check();
+      if (!verdict.ok) {
+        this.markFailed(u.name, verdict.error ?? 'configuration check failed');
+        return verdict;
+      }
+    }
+    if (u.readinessDelayMs && u.readinessDelayMs > 0) {
+      const r = this.beginActivation(u);
+      if (!r.ok) return r;
+      const pending = { name: u.name, complete: () => this.completeDelayedActivation(u.name) };
+      this.pendingReadiness.set(u.name, pending);
+      const timer = setTimeout(() => {
+        if (this.pendingReadiness.get(u.name) === pending) pending.complete();
+      }, u.readinessDelayMs);
+      if (typeof (timer as unknown as { unref?: () => void }).unref === 'function') {
+        (timer as unknown as { unref: () => void }).unref();
+      }
+      return { ok: true };
+    }
     const r = this.activate(u);
-    if (r.ok) this.emitLifecycle('start', u.name);
+    if (r.ok) {
+      this.emitLifecycle('start', u.name);
+      this.logPortSource(u);
+    }
     return r;
   }
 
-  /** Stop a service. Kills its main process if running. */
+  private logPortSource(u: LinuxService): void {
+    const binding = this.getPortBinding(u.name);
+    if (!binding || binding.sockets.length === 0) return;
+    const port = binding.sockets[0].port;
+    const source = u.portOverride ? u.portOverride.source : 'config';
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const line = `${now} systemd[1]: ${u.name}.service: bound port ${port} (source: ${source})\n`;
+    const path = '/var/log/messages';
+    if (!this.vfs.exists('/var/log')) this.vfs.mkdirp('/var/log', 0o755, 0, 0);
+    const existing = this.vfs.readFile(path) ?? '';
+    this.vfs.writeFile(path, existing + line, 0, 0, 0o022);
+  }
+
+  setReadinessDelay(name: string, delayMs: number): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    unit.unit.readinessDelayMs = delayMs;
+    return { ok: true };
+  }
+
+  setPortOverride(
+    name: string,
+    port: number,
+    source: 'cli' | 'env' | 'config-reload',
+    cliArg?: string,
+  ): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    const u = unit.unit;
+    u.portOverride = { port, source, cliArg };
+    return { ok: true };
+  }
+
+  getPortOverride(name: string): { port: number; source: string; cliArg?: string } | undefined {
+    return this.units.get(name)?.portOverride;
+  }
+
+  flushReadiness(name?: string): void {
+    if (name) {
+      const p = this.pendingReadiness.get(name);
+      if (p) p.complete();
+      return;
+    }
+    for (const p of Array.from(this.pendingReadiness.values())) p.complete();
+  }
+
+  private readonly pendingReadiness = new Map<string, { name: string; complete: () => void }>();
+
+  private beginActivation(u: LinuxService): OperationResult {
+    const prev = u.state;
+    u.state = 'activating';
+    const userEntry = u.user || 'root';
+    let uid = userEntry === 'root' ? 0 : 1;
+    let gid = userEntry === 'root' ? 0 : 1;
+    if (u.dynamicUser && this.dynamicUsers) {
+      const allocated = this.dynamicUsers.allocate(userEntry);
+      uid = allocated.uid;
+      gid = allocated.gid;
+    }
+    const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
+    let expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    if (u.portOverride?.cliArg) expanded = `${expanded} ${u.portOverride.cliArg}`;
+    const profile = serviceMemoryProfile(u.name);
+    const proc = this.processMgr.spawn({
+      command: expanded,
+      user: userEntry,
+      uid,
+      gid,
+      serviceName: u.name,
+      vsize: profile.vsize,
+      rss: profile.rss,
+    });
+    u.mainPid = proc.pid;
+    this.emitStateChanged(u.name, prev, 'activating');
+    return { ok: true };
+  }
+
+  private completeDelayedActivation(name: string): void {
+    const u = this.units.get(name);
+    if (!u || u.state !== 'activating') { this.pendingReadiness.delete(name); return; }
+    u.activeSince = new Date();
+    u.state = 'active';
+    this.pendingReadiness.delete(name);
+    this.emitStateChanged(u.name, 'activating', 'active');
+    this.emitLifecycle('start', u.name);
+    // Un `Type=notify` passe par ici et non par `activate()` : le contrôle
+    // mémoire doit être aux DEUX endroits où une unité devient active,
+    // sinon la panne dépend du type de l'unité (§F5.9).
+    this.oomKillIfOverMemoryMax(u, serviceMemoryProfile(u.name).rss);
+  }
+
+  /**
+   * Stop a service and the units that depend on it. Propagates through
+   * the reverse Requires/BindsTo/PartOf edges (systemd's stop job),
+   * deactivating dependents before the target. A unit nothing depends on
+   * yields a single-job transaction — same result as before.
+   */
   stop(name: string): OperationResult {
+    const unit = this.requireUnit(name);
+    if (!unit.ok) return unit;
+    return this.jobEngine().stop(unit.unit.name);
+  }
+
+  private stopOne(name: string): OperationResult {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
@@ -464,14 +916,14 @@ export class LinuxServiceManager {
       return { ok: false, error: `Job for ${name}.service failed because the unit is not active.` };
     }
     if (!u.execReload) {
-      return { ok: false, error: `${name}.service: Refusing to reload: ExecReload= is not set.` };
+      return { ok: false, error: `Job type reload is not applicable for unit ${name}.service.` };
     }
     const check = this.configChecks.get(u.name);
     if (check) {
       const verdict = check();
       if (!verdict.ok) return verdict;
     }
-    this.processMgr.kill(u.mainPid, 'SIGHUP');
+    this.processMgr.deliverSignal(u.mainPid, 'SIGHUP');
     this.emitLifecycle('reload', u.name);
     return { ok: true };
   }
@@ -483,7 +935,7 @@ export class LinuxServiceManager {
     const u = unit.unit;
     if (u.enabled === 'enabled') return { ok: true };
     this.vfs.mkdirp(WANTS_DIR, 0o755, 0, 0);
-    const linkPath = `${WANTS_DIR}/${name}.service`;
+    const linkPath = `${WANTS_DIR}/${fullUnitName(u.name)}`;
     if (!this.vfs.existsNoFollow(linkPath)) {
       const target = `${u.loadedFrom}`;
       this.vfs.createSymlink(linkPath, target, 0, 0);
@@ -498,7 +950,7 @@ export class LinuxServiceManager {
     const unit = this.requireUnit(name);
     if (!unit.ok) return unit;
     const u = unit.unit;
-    const linkPath = `${WANTS_DIR}/${name}.service`;
+    const linkPath = `${WANTS_DIR}/${fullUnitName(u.name)}`;
     if (this.vfs.existsNoFollow(linkPath)) {
       this.vfs.deleteFile(linkPath);
     }
@@ -537,12 +989,102 @@ export class LinuxServiceManager {
     const units = name ? [this.units.get(name)].filter(Boolean) as LinuxService[]
       : [...this.units.values()];
     for (const u of units) {
+      u.startLimitHit = false;
+      u.restartEpochs = [];
+      u.failedReason = undefined;
       if (u.state === 'failed') {
         const from = u.state;
         u.state = 'inactive';
         this.emitStateChanged(u.name, from, 'inactive');
       }
     }
+  }
+
+  noteMainExited(
+    name: string,
+    exit: { code?: number; signal?: string; diagnostic?: string },
+  ): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    u.lastExit = { code: exit.code, signal: exit.signal };
+    u.mainPid = undefined;
+    // The single point that records "the main process is gone", whatever
+    // killed it — so it is the single place systemd's own cleanup belongs.
+    // Spreading it over `markFailed`/`scheduleAutoRestart`/… would let the
+    // paths drift, and one of them forgetting is a residue that outlives
+    // what a real box would have wiped.
+    this.clearRuntimeDirectory(u);
+    this.bus?.publish({
+      topic: 'linux.service.main-exited',
+      payload: {
+        deviceId: this.deviceId, name,
+        exitCode: exit.code, signal: exit.signal, diagnostic: exit.diagnostic,
+      },
+    });
+  }
+
+  deactivateAfterExit(name: string): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    const from = u.state;
+    u.state = 'inactive';
+    u.activeSince = undefined;
+    // Only reached for a CLEAN exit — the daemon ran its own cleanup on the
+    // way out, so its runtime files go with it. A death by signal never
+    // comes here, and that is what leaves the residue behind (§F5.2).
+    this.clearRuntimeArtifacts(u);
+    this.emitStateChanged(name, from, 'inactive');
+  }
+
+  scheduleAutoRestart(name: string, counter: number, delayMs: number): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    const from = u.state;
+    u.state = 'activating';
+    u.autoRestartPending = true;
+    this.emitStateChanged(name, from, 'activating');
+    this.bus?.publish({
+      topic: 'linux.service.restart-scheduled',
+      payload: { deviceId: this.deviceId, name, counter, delayMs },
+    });
+  }
+
+  completeAutoRestart(name: string): void {
+    const u = this.units.get(name);
+    if (!u || !u.autoRestartPending || u.state !== 'activating') return;
+    u.autoRestartPending = false;
+    u.state = 'inactive';
+    const r = this.start(name);
+    if (r.ok) this.emitLifecycle('restart', name);
+  }
+
+  hitStartLimit(name: string): void {
+    const u = this.units.get(name);
+    if (!u) return;
+    u.startLimitHit = true;
+    u.autoRestartPending = false;
+    this.bus?.publish({
+      topic: 'linux.service.start-limited',
+      payload: { deviceId: this.deviceId, name },
+    });
+    this.markFailed(name, 'start-limit-hit');
+  }
+
+  rebootCycle(): void {
+    for (const u of [...this.units.values()]) {
+      u.autoRestartPending = false;
+      u.startLimitHit = false;
+      u.restartEpochs = [];
+      u.failedReason = undefined;
+      u.lastExit = undefined;
+      if (u.state === 'active' || u.state === 'activating') {
+        this.stopOne(u.name);
+      } else if (u.state === 'failed') {
+        u.state = 'inactive';
+      }
+    }
+    this.daemonReload();
+    this.startEnabledServices();
   }
 
   /** Return the unit, or null if not loaded. */
@@ -564,6 +1106,7 @@ export class LinuxServiceManager {
     if (!u) return;
     const from = u.state;
     u.state = 'failed';
+    u.failedReason = reason;
     u.mainPid = undefined;
     u.activeSince = undefined;
     this.emitStateChanged(name, from, 'failed');
@@ -571,6 +1114,7 @@ export class LinuxServiceManager {
       topic: 'linux.service.failed',
       payload: { deviceId: this.deviceId, name, reason },
     });
+    this.jobEngine().stop(name);
   }
 
   /** True if the service is currently active. */
@@ -617,12 +1161,28 @@ export class LinuxServiceManager {
         execStart: parsed.execStart ?? '/bin/true',
         execStop: parsed.execStop,
         execReload: parsed.execReload,
-        user: parsed.user ?? 'root',
-        group: parsed.group ?? 'root',
+        user: parsed.user ?? (parsed.dynamicUser ? name : 'root'),
+        group: parsed.group ?? (parsed.dynamicUser ? name : 'root'),
+        dynamicUser: parsed.dynamicUser ?? false,
         wantedBy: parsed.wantedBy ?? [],
+        wants: parsed.wants ?? [],
         after: parsed.after ?? [],
+        before: parsed.before ?? [],
         requires: parsed.requires ?? [],
+        bindsTo: parsed.bindsTo ?? [],
+        partOf: parsed.partOf ?? [],
+        conflicts: parsed.conflicts ?? [],
+        allowIsolate: parsed.allowIsolate ?? false,
         restart: parsed.restart ?? 'no',
+        restartSec: parsed.restartSec,
+        startLimitBurst: parsed.startLimitBurst,
+        startLimitIntervalSec: parsed.startLimitIntervalSec,
+        listenStream: parsed.listenStream,
+        onActiveSec: parsed.onActiveSec,
+        onBootSec: parsed.onBootSec,
+        onUnitActiveSec: parsed.onUnitActiveSec,
+        onCalendar: parsed.onCalendar,
+        activates: parsed.activates,
         loadedFrom: src.path,
         // Preserve previous runtime state if the unit already existed.
         state: previous?.state ?? 'inactive',
@@ -634,6 +1194,14 @@ export class LinuxServiceManager {
       // model carries them and the port projection can keep them coherent.
       unit.listenSockets = (this.listenerSpecFor(name)?.sockets ?? []).map((s) => ({ ...s }));
       this.units.set(name, unit);
+      // Lay the executable down as the unit appears, not once at boot for
+      // the vendor set. Seeding only at bootstrap meant an operator's own
+      // `.service` file — or any unit a lab writes later — named a binary
+      // the image had never provisioned, and §F5.10's check then failed
+      // its very first start with 203/EXEC. Same guard-rail as
+      // CriticalFiles.ts: only a binary the image actually laid down can
+      // ever be judged missing, so absence can only mean deletion.
+      this.seedUnitBinaries([unit]);
     }
 
     // Drop units that no longer have a backing file (and stop them).
@@ -641,6 +1209,7 @@ export class LinuxServiceManager {
       if (!merged.has(name)) {
         const u = this.units.get(name)!;
         if (u.mainPid !== undefined) this.processMgr.kill(u.mainPid, 'SIGKILL');
+        this.timerScheduler.disarm(name);
         this.units.delete(name);
       }
     }
@@ -673,13 +1242,25 @@ export class LinuxServiceManager {
 
   getPortBinding(name: string): ServicePortBinding | undefined {
     const unit = this.units.get(name);
+    if (unit && unitSuffix(unit.name) === 'socket' && unit.listenStream !== undefined) {
+      return {
+        name,
+        mainPid: 1,
+        processName: 'systemd',
+        sockets: [{ port: unit.listenStream, protocol: 'tcp' }],
+      };
+    }
     const listener = this.listenerSpecFor(name);
     if (!unit || !listener || listener.sockets.length === 0) return undefined;
+    const override = unit.portOverride;
+    const sockets = override
+      ? [{ port: override.port, protocol: listener.sockets[0].protocol }]
+      : listener.sockets.map((s) => ({ ...s }));
     return {
       name,
       mainPid: unit.mainPid,
       processName: listener.processName,
-      sockets: listener.sockets.map((s) => ({ ...s })),
+      sockets,
     };
   }
 
@@ -702,21 +1283,43 @@ export class LinuxServiceManager {
     const short = name.replace(/\.service$/, '');
     const u = this.units.get(short);
     if (!u) {
-      return { ok: false, error: `Unit ${short}.service not found.` };
+      return { ok: false, error: `Unit ${fullUnitName(short)} not found.` };
     }
     return { ok: true, unit: u };
   }
 
   private activate(u: LinuxService): OperationResult {
     const prev = u.state;
+    if (unitSuffix(u.name) !== 'service') {
+      u.activeSince = new Date();
+      u.state = 'active';
+      if (unitSuffix(u.name) === 'timer') {
+        this.timerScheduler.arm({
+          unit: u.name,
+          activates: this.activatedUnit(u),
+          onActiveSec: u.onActiveSec,
+          onBootSec: u.onBootSec,
+          onUnitActiveSec: u.onUnitActiveSec,
+          onCalendar: u.onCalendar,
+        }, u.activeSince);
+      }
+      this.emitStateChanged(u.name, prev, 'active');
+      return { ok: true };
+    }
     u.state = 'activating';
     const userEntry = u.user || 'root';
-    const uid = userEntry === 'root' ? 0 : 1;
-    const gid = userEntry === 'root' ? 0 : 1;
+    let uid = userEntry === 'root' ? 0 : 1;
+    let gid = userEntry === 'root' ? 0 : 1;
+    if (u.dynamicUser && this.dynamicUsers) {
+      const allocated = this.dynamicUsers.allocate(userEntry);
+      uid = allocated.uid;
+      gid = allocated.gid;
+    }
     // The process the unit leaves behind: the daemon it forks when the
     // listener spec declares one (lsnrctl start → tnslsnr), else ExecStart.
     const daemon = this.listenerSpecFor(u.name)?.daemonCommand;
-    const expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    let expanded = (daemon ?? u.execStart).replace(/\$MAINPID/g, '');
+    if (u.portOverride?.cliArg) expanded = `${expanded} ${u.portOverride.cliArg}`;
     const profile = serviceMemoryProfile(u.name);
     const proc = this.processMgr.spawn({
       command: expanded,
@@ -730,16 +1333,103 @@ export class LinuxServiceManager {
     u.mainPid = proc.pid;
     u.activeSince = new Date();
     u.state = 'active';
+    this.writeRuntimeArtifacts(u);
     this.emitStateChanged(u.name, prev, 'active');
+    // §F5.9 — le service démarre, puis le noyau constate qu'il dépasse son
+    // plafond mémoire et le tue. L'ordre compte : sur un vrai système le
+    // processus EXISTE avant d'être tué, ce n'est pas un démarrage refusé.
+    this.oomKillIfOverMemoryMax(u, profile.rss);
     return { ok: true };
+  }
+
+  /**
+   * `MemoryMax=` dépassé ⇒ le OOM killer emporte le processus
+   * (docs/PRD-Pannes.md §F5.9).
+   *
+   * Le PRD borne lui-même le modèle : « pas de comptabilité mémoire
+   * réelle ». Ce qui est comparé est donc le RSS que le service déclare
+   * déjà — celui que `systemctl status` affiche et que `ps` montre — au
+   * plafond qu'un opérateur a posé avec `systemctl set-property`. Aucune
+   * allocation n'est simulée : on abaisse le plafond sous la taille connue
+   * du démon, et la panne se produit.
+   *
+   * Le résultat systemd est `oom-kill`, pas `exit-code` : c'est un
+   * mot-clé distinct parce que la cause est distincte, et c'est lui qui
+   * dit à l'opérateur de regarder la mémoire plutôt que la configuration.
+   */
+  private oomKillIfOverMemoryMax(u: LinuxService, rssKib: number): void {
+    // Lu sur le champ, pas via un accesseur optionnel : `u.getProperty?.()`
+    // n'existait pas et l'appel se réduisait silencieusement à `undefined`,
+    // donc le contrôle ne s'exécutait jamais.
+    const max = parseMemoryMax(u.memoryMax);
+    if (max === null || rssKib <= max) return;
+    const pid = u.mainPid;
+    if (pid === undefined) return;
+    // Le noyau tue par SIGKILL — le processus n'a aucun mot à dire, et
+    // c'est pour ça qu'il ne range rien derrière lui (§F5.2).
+    this.processMgr.kill(pid, 'SIGKILL');
+    this.noteMainExited(u.name, {
+      signal: 'SIGKILL',
+      diagnostic: `Out of memory: Killed process ${pid} (${u.name}) `
+        + `total-vm:${rssKib * 3}kB, anon-rss:${rssKib}kB, file-rss:0kB, `
+        + 'shmem-rss:0kB, UID:0 pgtables:64kB oom_score_adj:0',
+    });
+    this.markFailed(u.name, 'oom-kill');
+  }
+
+  /**
+   * Create the files the daemon creates while it runs (§F5.2). Written here
+   * and removed in `deactivate` only — never on the exit path — because
+   * that IS the panne: a clean stop lets the daemon clean up, a `kill -9`
+   * gives it no chance and the files outlive it.
+   */
+  private writeRuntimeArtifacts(u: LinuxService): void {
+    const runtimeDir = runtimeDirectoryFor(u.name);
+    if (runtimeDir) this.vfs.mkdirp(runtimeDir, 0o755, 0, 0);
+    for (const a of runtimeArtifactsFor(u.name)) {
+      const dir = a.path.slice(0, a.path.lastIndexOf('/'));
+      if (dir) this.vfs.mkdirp(dir, 0o755, 0, 0);
+      // A pid file holds the main pid and a newline; a socket holds
+      // nothing readable — what matters about it is that it exists.
+      this.vfs.writeFile(a.path, a.kind === 'pidfile' ? `${u.mainPid}\n` : '', 0, 0, 0o022);
+    }
+  }
+
+  /** Remove them — the cleanup a daemon runs when it is asked to stop. */
+  private clearRuntimeArtifacts(u: LinuxService): void {
+    for (const a of runtimeArtifactsFor(u.name)) this.vfs.deleteFile(a.path);
+  }
+
+  /**
+   * systemd's own cleanup, not the daemon's: `RuntimeDirectory=` is
+   * removed as soon as the unit leaves the active state, **failure
+   * included**, because `RuntimeDirectoryPreserve=` defaults to `no`.
+   *
+   * This is why two daemons on one machine survive the same `kill -9`
+   * differently: sshd writes straight into `/run` and its pid file is
+   * still there afterwards, fail2ban writes into a directory systemd owns
+   * and nothing of its remains. Skipping this would make every residue
+   * look permanent, which is the opposite of what a real box does.
+   */
+  private clearRuntimeDirectory(u: LinuxService): void {
+    const dir = runtimeDirectoryFor(u.name);
+    if (dir) this.vfs.rmrf(dir);
   }
 
   private deactivate(u: LinuxService): OperationResult {
     const prev = u.state;
     u.state = 'deactivating';
+    if (unitSuffix(u.name) === 'timer') this.timerScheduler.disarm(u.name);
     if (u.mainPid !== undefined) {
+      // SIGTERM: the daemon gets to run its handler, and that is what
+      // removes the pid file. A SIGKILL never reaches this path.
       this.processMgr.kill(u.mainPid, 'SIGTERM');
+      this.clearRuntimeArtifacts(u);
       u.mainPid = undefined;
+    }
+    this.clearRuntimeDirectory(u);
+    if (u.dynamicUser && this.dynamicUsers) {
+      this.dynamicUsers.release(u.user || u.name);
     }
     u.activeSince = undefined;
     u.state = 'inactive';
@@ -748,7 +1438,8 @@ export class LinuxServiceManager {
   }
 
   private computeEnabledState(name: string): EnabledState {
-    return this.vfs.existsNoFollow(`${WANTS_DIR}/${name}.service`) ? 'enabled' : 'disabled';
+    if (name.endsWith('.target')) return 'static';
+    return this.vfs.existsNoFollow(`${WANTS_DIR}/${fullUnitName(name)}`) ? 'enabled' : 'disabled';
   }
 
   private scanDir(dir: string): Array<{ name: string; path: string; content: string }> {
@@ -757,8 +1448,7 @@ export class LinuxServiceManager {
     const out: Array<{ name: string; path: string; content: string }> = [];
     for (const entry of entries) {
       if (entry.name === '.' || entry.name === '..') continue;
-      if (!entry.name.endsWith('.service')) continue;
-      // Skip the wants directory entries (they live in a subdir, not here).
+      if (!/\.(service|target|socket|timer)$/.test(entry.name)) continue;
       const path = `${dir}/${entry.name}`;
       const content = this.vfs.readFile(path);
       if (content === null) continue;
@@ -766,6 +1456,40 @@ export class LinuxServiceManager {
       out.push({ name, path, content });
     }
     return out;
+  }
+
+  /**
+   * Lay down the executable each unit's `ExecStart=` names.
+   *
+   * Nothing put daemon binaries on disk: `/usr/sbin/sshd` simply did not
+   * exist, so `rm /usr/sbin/sshd` answered "No such file or directory"
+   * and docs/PRD-Pannes.md §F5.10 — the process keeps running, the
+   * restart fails — could not even be staged.
+   *
+   * They are seeded from the units themselves rather than from a second
+   * list, so the file that exists is exactly the one the unit will try to
+   * exec; a list kept alongside could name a path no unit uses, or miss
+   * one a unit does. Called from `daemonReload` for EVERY unit as it is
+   * loaded — a unit an operator writes later has an `ExecStart=` too, and
+   * seeding only the vendor set at boot made §F5.10's check condemn it.
+   */
+  private seedUnitBinaries(units: readonly { name: string; execStart: string }[]): void {
+    for (const u of units) {
+      // A `.timer` or `.socket` has no `ExecStart=` — the default stamped
+      // in at load time is a placeholder, not a binary anybody execs.
+      if (unitSuffix(u.name) !== 'service') continue;
+      const declared = executablePathOf(u.execStart);
+      if (!declared) continue;
+      // The image ships the real merged-/usr layout, so `/bin/x` and
+      // `/usr/bin/x` are one file; writing to the un-normalised spelling
+      // would leave the path the unit actually execs still missing.
+      const exe = canonicalBinPath(declared);
+      if (this.vfs.exists(exe)) continue;
+      const dir = exe.slice(0, exe.lastIndexOf('/'));
+      if (dir) this.vfs.mkdirp(dir, 0o755, 0, 0);
+      this.vfs.writeFile(exe, '#!/bin/sh\n', 0, 0, 0o022);
+      this.vfs.chmod(exe, 0o755);
+    }
   }
 
   /** Install the vendor unit file set in /lib/systemd/system. */
@@ -787,17 +1511,60 @@ export class LinuxServiceManager {
         }
       }
     }
+
+    for (const t of DEFAULT_TARGETS) {
+      const path = `${SYSTEM_UNIT_DIR}/${t.name}`;
+      if (!this.vfs.exists(path)) {
+        this.vfs.writeFile(path, renderTargetFile(t), 0, 0, 0o022);
+      }
+    }
+
+    for (const t of DEFAULT_TIMERS) {
+      const timerPath = `${SYSTEM_UNIT_DIR}/${t.name}.timer`;
+      if (!this.vfs.exists(timerPath)) {
+        this.vfs.writeFile(timerPath, [
+          '[Unit]',
+          `Description=${t.description}`,
+          '',
+          '[Timer]',
+          ...t.timerLines,
+          '',
+          '[Install]',
+          'WantedBy=timers.target',
+          '',
+        ].join('\n'), 0, 0, 0o022);
+      }
+      // Le service que le timer déclenche. Sans lui, `list-timers`
+      // afficherait une colonne ACTIVATES qui ne désigne rien.
+      const servicePath = `${SYSTEM_UNIT_DIR}/${t.name}.service`;
+      if (!this.vfs.exists(servicePath)) {
+        this.vfs.writeFile(servicePath, [
+          '[Unit]',
+          `Description=${t.serviceDescription}`,
+          '',
+          '[Service]',
+          'Type=oneshot',
+          `ExecStart=${t.execStart}`,
+          '',
+        ].join('\n'), 0, 0, 0o022);
+      }
+      const linkPath = `${WANTS_DIR}/${t.name}.timer`;
+      if (!this.vfs.existsNoFollow(linkPath)) {
+        this.vfs.createSymlink(linkPath, timerPath, 0, 0);
+      }
+    }
   }
 
-  /** Start every unit that has startByDefault and is enabled. */
+  /** Start every enabled unit — the boot-time multi-user.target job. */
   private startEnabledServices(): void {
-    const startByDefault = new Set(
-      [...BASE_UNITS, ...(this.opts.isServer ? SERVER_UNITS : [])]
-        .filter(u => u.startByDefault)
-        .map(u => u.name),
-    );
-    for (const u of this.units.values()) {
-      if (startByDefault.has(u.name) && u.enabled === 'enabled') {
+    for (const u of [...this.units.values()]) {
+      if (u.enabled === 'enabled' && u.state !== 'active') {
+        this.startOne(u.name);
+      }
+    }
+    for (const name of this.dependencyGraph().activationClosure(this.defaultTarget())) {
+      const u = this.units.get(name);
+      if (u && u.name.endsWith('.target') && u.state !== 'active') {
         this.activate(u);
       }
     }
@@ -805,6 +1572,35 @@ export class LinuxServiceManager {
 }
 
 // ─── Unit file rendering and parsing ──────────────────────────────────
+
+/**
+ * `MemoryMax=` en kibioctets. `infinity` (le défaut systemd) et une valeur
+ * absente rendent null : aucun plafond, donc rien à faire respecter.
+ */
+export function parseMemoryMax(value: string | undefined): number | null {
+  if (!value || value === 'infinity') return null;
+  const m = value.trim().match(/^(\d+)([KMG]?)$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const mult = m[2] === 'G' ? 1024 * 1024 : m[2] === 'M' ? 1024 : 1;
+  return n * mult;
+}
+
+/**
+ * The executable an `ExecStart=` line runs — its first word, with
+ * systemd's own prefix characters (`-` ignore failure, `@` argv[0]
+ * override, `+`/`!` privilege modifiers) stripped. A relative or empty
+ * first word yields null: there is no file to talk about.
+ */
+export function executablePathOf(execStart: string | undefined): string | null {
+  const first = (execStart ?? '').trim().split(/\s+/)[0] ?? '';
+  const path = first.replace(/^[-@+!]+/, '');
+  return path.startsWith('/') ? path : null;
+}
+
+function renderTargetFile(t: DefaultTarget): string {
+  return ['[Unit]', `Description=${t.description}`, ...(t.unitLines ?? []), ''].join('\n');
+}
 
 /** Serialize a default unit definition into ini-format unit file content. */
 function renderUnitFile(u: DefaultUnit): string {
@@ -816,6 +1612,17 @@ function renderUnitFile(u: DefaultUnit): string {
   lines.push('[Service]');
   lines.push(`Type=${u.type}`);
   lines.push(`ExecStart=${u.execStart}`);
+  // Only the units Debian really gives the directive to. systemd is told
+  // where the pid lives when it cannot follow the fork itself; a
+  // `Type=simple` unit like cron never says, even though cron does write
+  // one (see service/RuntimeArtifacts.ts).
+  const pidFile = UNIT_PIDFILE_DIRECTIVE[u.name];
+  if (pidFile) lines.push(`PIDFile=${pidFile}`);
+  // The directive that decides whether this unit's residue survives a
+  // `kill -9` — systemd removes the directory the moment the unit stops
+  // OR fails (see service/RuntimeArtifacts.ts).
+  const runtimeDir = UNIT_RUNTIME_DIRECTORY[u.name];
+  if (runtimeDir) lines.push(`RuntimeDirectory=${runtimeDir}`);
   if (u.execReload) lines.push(`ExecReload=${u.execReload}`);
   if (u.user) lines.push(`User=${u.user}`);
   lines.push('Restart=on-failure');
@@ -835,22 +1642,39 @@ interface ParsedUnit {
   execReload?: string;
   user?: string;
   group?: string;
+  dynamicUser?: boolean;
   wantedBy?: string[];
+  wants?: string[];
   after?: string[];
+  before?: string[];
   requires?: string[];
+  bindsTo?: string[];
+  partOf?: string[];
+  conflicts?: string[];
+  allowIsolate?: boolean;
   restart?: RestartPolicy;
+  restartSec?: number;
+  startLimitBurst?: number;
+  startLimitIntervalSec?: number;
+  listenStream?: number;
+  onActiveSec?: number;
+  onBootSec?: number;
+  onUnitActiveSec?: number;
+  onCalendar?: string;
+  activates?: string;
 }
 
 /** Minimal ini-style parser for systemd unit files. */
 export function parseUnitFile(content: string): ParsedUnit {
   const out: ParsedUnit = {};
-  let section: 'Unit' | 'Service' | 'Install' | null = null;
+  const sections = ['Unit', 'Service', 'Install', 'Socket', 'Timer'] as const;
+  let section: typeof sections[number] | null = null;
   for (const rawLine of content.split('\n')) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
     if (line.startsWith('[') && line.endsWith(']')) {
       const name = line.slice(1, -1);
-      section = name === 'Unit' || name === 'Service' || name === 'Install' ? name : null;
+      section = (sections as readonly string[]).includes(name) ? name as typeof sections[number] : null;
       continue;
     }
     const eq = line.indexOf('=');
@@ -860,7 +1684,15 @@ export function parseUnitFile(content: string): ParsedUnit {
     if (section === 'Unit') {
       if (key === 'Description') out.description = val;
       else if (key === 'After') out.after = val.split(/\s+/);
+      else if (key === 'Before') out.before = val.split(/\s+/);
       else if (key === 'Requires') out.requires = val.split(/\s+/);
+      else if (key === 'Wants') out.wants = val.split(/\s+/);
+      else if (key === 'BindsTo') out.bindsTo = val.split(/\s+/);
+      else if (key === 'PartOf') out.partOf = val.split(/\s+/);
+      else if (key === 'Conflicts') out.conflicts = val.split(/\s+/);
+      else if (key === 'AllowIsolate') out.allowIsolate = /^(yes|true|1|on)$/i.test(val);
+      else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
+      else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
     } else if (section === 'Service') {
       if (key === 'Type') out.type = val as ServiceType;
       else if (key === 'ExecStart') out.execStart = val;
@@ -868,7 +1700,20 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'ExecReload') out.execReload = val;
       else if (key === 'User') out.user = val;
       else if (key === 'Group') out.group = val;
+      else if (key === 'DynamicUser') out.dynamicUser = /^(yes|true|1|on)$/i.test(val);
       else if (key === 'Restart') out.restart = val as RestartPolicy;
+      else if (key === 'RestartSec') out.restartSec = parseFloat(val);
+      else if (key === 'StartLimitBurst') out.startLimitBurst = parseInt(val, 10);
+      else if (key === 'StartLimitIntervalSec') out.startLimitIntervalSec = parseFloat(val);
+    } else if (section === 'Socket') {
+      if (key === 'ListenStream' && /^\d+$/.test(val)) out.listenStream = parseInt(val, 10);
+      else if (key === 'Service') out.activates = val;
+    } else if (section === 'Timer') {
+      if (key === 'OnActiveSec') out.onActiveSec = parseTimeSpan(val);
+      else if (key === 'OnBootSec') out.onBootSec = parseTimeSpan(val);
+      else if (key === 'OnUnitActiveSec') out.onUnitActiveSec = parseTimeSpan(val);
+      else if (key === 'OnCalendar') out.onCalendar = val;
+      else if (key === 'Unit') out.activates = val;
     } else if (section === 'Install') {
       if (key === 'WantedBy') out.wantedBy = val.split(/\s+/);
     }

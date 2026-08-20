@@ -25,6 +25,12 @@ export interface ViewContext {
   readonly runtime: OracleRuntimeState;
   readonly catalog: OracleCatalog;
   readonly currentUser: string;
+  /**
+   * Roles the querying session has enabled, or `null` when every granted
+   * role counts. `SESSION_ROLES` is the one view whose answer depends on
+   * it — the administration views deliberately ignore it.
+   */
+  readonly enabledRoles?: ReadonlySet<string> | null;
 }
 
 export interface ViewDefinition {

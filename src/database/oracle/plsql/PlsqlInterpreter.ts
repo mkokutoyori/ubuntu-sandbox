@@ -54,6 +54,9 @@ export class PlsqlInterpreter {
   private execBlock(block: Block, parent: Scope): void {
     const scope = parent.child();
     for (const d of block.declarations) this.declare(d, scope);
+    const autonomous = block.declarations.some(
+      d => d.kind === 'pragma' && d.name.toUpperCase() === 'AUTONOMOUS_TRANSACTION');
+    if (autonomous) this.host.beginAutonomousScope?.();
     try {
       this.execStmts(block.body, scope);
     } catch (e) {
@@ -71,6 +74,8 @@ export class PlsqlInterpreter {
         this.sqlcode = prevCode;
         this.sqlerrm = prevErr;
       }
+    } finally {
+      if (autonomous) this.host.endAutonomousScope?.();
     }
   }
 
@@ -1217,14 +1222,18 @@ export class PlsqlInterpreter {
       const l = this.evalExpr(leftE, scope);
       if (l === false) return false;
       const r = this.evalExpr(rightE, scope);
-      if (l === null || r === null) return r === false || l === false ? false : null;
+      // l can't be false here (handled above), so only r can force FALSE
+      // to dominate NULL under three-valued AND.
+      if (l === null || r === null) return r === false ? false : null;
       return this.truth(l) && this.truth(r);
     }
     if (op === 'OR') {
       const l = this.evalExpr(leftE, scope);
       if (l === true) return true;
       const r = this.evalExpr(rightE, scope);
-      if (l === null || r === null) return r === true || l === true ? true : null;
+      // l can't be true here (handled above), so only r can force TRUE
+      // to dominate NULL under three-valued OR.
+      if (l === null || r === null) return r === true ? true : null;
       return this.truth(l) || this.truth(r);
     }
     const l = this.evalExpr(leftE, scope);

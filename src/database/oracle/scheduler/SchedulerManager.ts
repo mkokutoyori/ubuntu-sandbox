@@ -78,8 +78,29 @@ export class SchedulerManager {
       } else {
         const { executor } = this.db.connectAsSysdba();
         try {
-          const result = this.db.executeSql(executor, j.jobAction);
+          // A scheduler job runs in its owner's schema with the owner's
+          // privileges (real Oracle), so unqualified object names resolve
+          // there — not in SYS. The slave still connects internally as
+          // SYSDBA; we only retarget the execution context.
+          const ctx = (executor as unknown as { context?: { currentUser: string; currentSchema: string } }).context;
+          if (ctx) { ctx.currentUser = j.owner; ctx.currentSchema = j.owner; }
+          // STORED_PROCEDURE jobs carry a bare procedure/package name in
+          // job_action — Oracle invokes it as a call. PLSQL_BLOCK jobs
+          // already carry an executable statement / anonymous block.
+          const action = j.jobType === 'STORED_PROCEDURE'
+            ? `BEGIN ${j.jobAction.replace(/;\s*$/, '')}; END;`
+            : j.jobAction;
+          const result = this.db.executeSql(executor, action);
           output = result.message ?? '';
+          // PL/SQL / SQL errors surface in the result message (ORA-/PLS-),
+          // not as thrown exceptions, so the slave must inspect it: a job
+          // whose action raised an error is FAILED, not SUCCEEDED.
+          const oraErr = /\b(?:ORA|PLS)-(\d{4,5})\b/.exec(output);
+          if (oraErr) {
+            status = 'FAILED';
+            errorCode = parseInt(oraErr[1], 10);
+            errorMessage = output;
+          }
         } finally {
           const sid = (executor as unknown as { _sessionId?: string })._sessionId;
           if (sid) this.db.disconnect(parseInt(sid, 10));

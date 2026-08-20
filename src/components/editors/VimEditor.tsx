@@ -1,527 +1,176 @@
 /**
- * VimEditor - Realistic Vim 8.2 terminal editor
- *
- * Faithful reproduction of the real vim/vi editor:
- * - Normal mode: navigate, delete, yank, paste
- * - Insert mode: free text editing (i, a, o, O, A, I)
- * - Command-line mode: :w, :q, :wq, :q!, :set, etc.
- * - Visual mode indicator
- * - Tilde (~) lines for empty buffer space
- * - Status line: filename, [+] modified, line/col count
- * - Command/message line at the very bottom
- * - Line numbers (like :set number)
- * - Proper VIM splash screen for empty new files
- * - dd to delete line, yy to yank, p to paste
- * - / for forward search
- * - gg, G for top/bottom navigation
- * - x to delete char, r to replace char
+ * VimEditor - vim/vi terminal editor, rendered from a headless VimEngine
+ * (src/network/devices/linux/editors/VimEngine.ts). The engine owns the
+ * buffer/cursor/mode state machine (NORMAL/INSERT/COMMAND-LINE/SEARCH)
+ * and all filesystem/shell side effects (main file, swap file, `:!cmd`);
+ * this component is a thin keystroke-forwarding renderer over it.
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useReducer } from 'react';
+import { scrollCaretIntoView } from './caretScroll';
+import { VimEngine, type VimVariant } from '@/network/devices/linux/editors/VimEngine';
+import type { EditorFsContext } from '@/network/devices/linux/editors/EditorFsContext';
+
+/**
+ * What the renderer needs from whatever holds the buffer. A local
+ * VimEngine satisfies it directly; a RemoteVimController satisfies it
+ * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
+ */
+export type VimEditorDriver = Pick<VimEngine,
+  | 'applyKey' | 'renderListLine' | 'lines' | 'content' | 'mode' | 'message'
+  | 'commandLineText' | 'searchText' | 'cursorLine' | 'cursorCol' | 'modified'
+  | 'exited' | 'savedOnExit' | 'isReadOnly' | 'lineNumbersShown'
+  | 'relativeNumbersShown' | 'listMode' | 'colorColumn' | 'fileFormat'
+  | 'variant' | 'isRecordingMacro' | 'recordingMacroName'
+  | 'pendingBinaryWarning' | 'pendingSubstMatch' | 'pendingSwapRecovery'>;
 
 interface VimEditorProps {
   filePath: string;
   initialContent: string;
   isNewFile: boolean;
-  editorName: 'vim' | 'vi';
-  onSave: (content: string, filePath: string) => void;
-  onExit: () => void;
+  editorName: VimVariant;
+  fsContext?: EditorFsContext;
+  /** Drive an already-open buffer instead of constructing a local one. */
+  driver?: VimEditorDriver;
+  owner?: string;
+  onExit: (saved: boolean) => void;
+  /** `vim +LINE file`: initial cursor line (1-indexed). */
+  initialCursorLine?: number;
 }
 
-type VimMode = 'normal' | 'insert' | 'command' | 'search';
+function flatOffset(lines: readonly string[], line: number, col: number): number {
+  return lines.slice(0, line).join('\n').length + (line > 0 ? 1 : 0) + col;
+}
+
+/** Real vim's ruler position label: "All" when the whole file fits on
+ *  screen, "Top"/"Bot" at either edge, otherwise a percentage. */
+export function vimPositionLabel(cursorLine: number, totalLines: number, visibleLineCount: number): string {
+  if (totalLines <= visibleLineCount) return 'All';
+  if (cursorLine === 0) return 'Top';
+  if (cursorLine === totalLines - 1) return 'Bot';
+  return `${Math.round(((cursorLine + 1) / totalLines) * 100)}%`;
+}
 
 export const VimEditor: React.FC<VimEditorProps> = ({
   filePath,
   initialContent,
   isNewFile,
   editorName,
-  onSave,
+  fsContext,
+  driver,
+  owner,
   onExit,
+  initialCursorLine,
 }) => {
-  const [content, setContent] = useState(initialContent);
-  const [mode, setMode] = useState<VimMode>('normal');
-  const [command, setCommand] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [modified, setModified] = useState(false);
-  const [message, setMessage] = useState(
-    isNewFile ? `"${filePath}" [New File]` : `"${filePath}" ${initialContent.split('\n').length}L, ${initialContent.length}C`
-  );
-  const [cursorLine, setCursorLine] = useState(0);
-  const [cursorCol, setCursorCol] = useState(0);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [yankBuffer, setYankBuffer] = useState<string[]>([]);
-  const [pendingKey, setPendingKey] = useState('');
-  const [insertSubMode, setInsertSubMode] = useState<'i' | 'a' | 'o' | 'O' | 'A' | 'I'>('i');
+  const engineRef = useRef<VimEditorDriver>();
+  if (!engineRef.current) {
+    engineRef.current = driver ?? new VimEngine(
+      fsContext!, filePath, initialContent, isNewFile, editorName, owner ?? 'user',
+      initialCursorLine !== undefined ? { line: initialCursorLine } : undefined,
+    );
+  }
+  const engine = engineRef.current;
+  const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const commandRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const swapPromptRef = useRef<HTMLInputElement>(null);
 
-  const lines = content.split('\n');
+  const lines = engine.lines;
   const totalLines = lines.length;
   const fileName = filePath.split('/').pop() || '[No Name]';
+  const visibleLineCount = 30;
 
-  // Calculate visible lines based on container height
-  const visibleLineCount = 30; // Approximate
-
-  // Focus management
   useEffect(() => {
-    if (mode === 'command') {
+    if (engine.mode === 'command') {
       commandRef.current?.focus();
-    } else if (mode === 'search') {
+    } else if (engine.mode === 'search') {
       searchRef.current?.focus();
+    } else if (engine.mode === 'swap-recovery') {
+      swapPromptRef.current?.focus();
     } else {
       textareaRef.current?.focus();
-    }
-  }, [mode]);
-
-  // Update cursor tracking
-  const updateCursorFromTextarea = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const pos = ta.selectionStart;
-    const textBefore = content.slice(0, pos);
-    const beforeLines = textBefore.split('\n');
-    setCursorLine(beforeLines.length - 1);
-    setCursorCol(beforeLines[beforeLines.length - 1].length);
-  }, [content]);
-
-  // Execute vim command-line commands
-  const executeVimCommand = useCallback((cmd: string) => {
-    const trimmed = cmd.trim();
-
-    // :w - write
-    if (trimmed === 'w' || trimmed === 'write') {
-      onSave(content, filePath);
-      setModified(false);
-      setMessage(`"${filePath}" ${totalLines}L, ${content.length}C written`);
-      setMode('normal');
-      return;
-    }
-
-    // :w filename - write to specific file
-    if (trimmed.startsWith('w ')) {
-      const newFile = trimmed.slice(2).trim();
-      onSave(content, newFile);
-      setModified(false);
-      setMessage(`"${newFile}" ${totalLines}L, ${content.length}C written`);
-      setMode('normal');
-      return;
-    }
-
-    // :q - quit
-    if (trimmed === 'q' || trimmed === 'quit') {
-      if (modified) {
-        setMessage('E37: No write since last change (add ! to override)');
-        setMode('normal');
-      } else {
-        onExit();
-      }
-      return;
-    }
-
-    // :q! - force quit
-    if (trimmed === 'q!' || trimmed === 'quit!') {
-      onExit();
-      return;
-    }
-
-    // :wq or :x - write and quit
-    if (trimmed === 'wq' || trimmed === 'x' || trimmed === 'wq!') {
-      onSave(content, filePath);
-      onExit();
-      return;
-    }
-
-    // :set number / :set nonumber
-    if (trimmed === 'set number' || trimmed === 'set nu') {
-      setMessage('');
-      setMode('normal');
-      return;
-    }
-
-    // :N - go to line N
-    const lineNum = parseInt(trimmed, 10);
-    if (!isNaN(lineNum) && lineNum > 0) {
-      const targetLine = Math.min(lineNum - 1, totalLines - 1);
-      setCursorLine(targetLine);
-      setCursorCol(0);
-      // Move textarea cursor
-      const pos = lines.slice(0, targetLine).join('\n').length + (targetLine > 0 ? 1 : 0);
+      const pos = flatOffset(engine.lines, engine.cursorLine, engine.cursorCol);
       textareaRef.current?.setSelectionRange(pos, pos);
-      setMessage('');
-      setMode('normal');
-      return;
+      if (textareaRef.current) {
+        scrollCaretIntoView(textareaRef.current, engine.cursorLine, engine.lines.length);
+      }
     }
+  });
 
-    // :$ - go to last line
-    if (trimmed === '$') {
-      const lastLine = totalLines - 1;
-      setCursorLine(lastLine);
-      setCursorCol(0);
-      setMessage('');
-      setMode('normal');
-      return;
-    }
-
-    setMessage(`E492: Not an editor command: ${trimmed}`);
-    setMode('normal');
-  }, [content, filePath, modified, totalLines, lines, onSave, onExit]);
-
-  // Handle normal mode keys
-  const handleNormalKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const dispatch = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault();
+    engine.applyKey({ key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+    if (engine.exited) {
+      onExit(engine.savedOnExit);
+      return;
+    }
+    bump();
+  }, [engine, onExit, bump]);
 
-    const key = e.key;
+  const showSplash = isNewFile && engine.content === '' && engine.mode === 'normal';
 
-    // Handle pending keys (like dd, yy, gg)
-    if (pendingKey) {
-      if (pendingKey === 'd' && key === 'd') {
-        // dd - delete entire line
-        const newLines = [...lines];
-        const deleted = newLines.splice(cursorLine, 1);
-        if (newLines.length === 0) newLines.push('');
-        setYankBuffer(deleted);
-        setContent(newLines.join('\n'));
-        setModified(true);
-        setCursorLine(Math.min(cursorLine, newLines.length - 1));
-        setMessage(`1 line yanked`);
-        setPendingKey('');
-        return;
-      }
-      if (pendingKey === 'y' && key === 'y') {
-        // yy - yank line
-        setYankBuffer([lines[cursorLine]]);
-        setMessage('1 line yanked');
-        setPendingKey('');
-        return;
-      }
-      if (pendingKey === 'g' && key === 'g') {
-        // gg - go to top
-        setCursorLine(0);
-        setCursorCol(0);
-        const ta = textareaRef.current;
-        if (ta) ta.setSelectionRange(0, 0);
-        setPendingKey('');
-        return;
-      }
-      // Unknown combo, cancel
-      setPendingKey('');
-      return;
-    }
+  if (engine.mode === 'swap-recovery' && engine.pendingSwapRecovery) {
+    const info = engine.pendingSwapRecovery;
+    return (
+      <div
+        className="h-full w-full flex flex-col items-center justify-center p-4"
+        style={{
+          backgroundColor: '#1e1e2e',
+          color: '#cdd6f4',
+          fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontSize: '14px',
+        }}
+      >
+        <div style={{ color: '#f9e2af', fontWeight: 'bold' }}>E325: ATTENTION</div>
+        <div className="mt-2">Found a swap file by the name &quot;{info.swapPath}&quot;</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;owned by: {info.swapOwner}</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;file name: {info.filePath}</div>
+        <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;modified: YES</div>
+        <div className="mt-2">Swap file &quot;{info.swapPath}&quot; already exists!</div>
+        <div className="mt-2">
+          {info.ownedBySameUser
+            ? '[O]pen Read-Only, (E)dit anyway, (R)ecover, (Q)uit, (A)bort: '
+            : '[O]pen Read-Only, (Q)uit, (A)bort: '}
+        </div>
+        <input
+          name="vimSwapPrompt"
+          autoComplete="off"
+          ref={swapPromptRef}
+          onKeyDown={dispatch}
+          className="absolute opacity-0 w-0 h-0"
+          autoFocus
+        />
+      </div>
+    );
+  }
 
-    // i - insert mode (before cursor)
-    if (key === 'i') {
-      setMode('insert');
-      setInsertSubMode('i');
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // I - insert at beginning of line
-    if (key === 'I') {
-      setMode('insert');
-      setInsertSubMode('I');
-      setCursorCol(0);
-      const lineStart = lines.slice(0, cursorLine).join('\n').length + (cursorLine > 0 ? 1 : 0);
-      textareaRef.current?.setSelectionRange(lineStart, lineStart);
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // a - insert mode (after cursor)
-    if (key === 'a') {
-      setMode('insert');
-      setInsertSubMode('a');
-      const pos = textareaRef.current?.selectionStart ?? 0;
-      textareaRef.current?.setSelectionRange(pos + 1, pos + 1);
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // A - insert at end of line
-    if (key === 'A') {
-      setMode('insert');
-      setInsertSubMode('A');
-      const lineEnd = lines.slice(0, cursorLine).join('\n').length + (cursorLine > 0 ? 1 : 0) + lines[cursorLine].length;
-      textareaRef.current?.setSelectionRange(lineEnd, lineEnd);
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // o - open new line below
-    if (key === 'o') {
-      const newLines = [...lines];
-      newLines.splice(cursorLine + 1, 0, '');
-      setContent(newLines.join('\n'));
-      setCursorLine(cursorLine + 1);
-      setCursorCol(0);
-      setModified(true);
-      setMode('insert');
-      setInsertSubMode('o');
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // O - open new line above
-    if (key === 'O') {
-      const newLines = [...lines];
-      newLines.splice(cursorLine, 0, '');
-      setContent(newLines.join('\n'));
-      setCursorCol(0);
-      setModified(true);
-      setMode('insert');
-      setInsertSubMode('O');
-      setMessage('-- INSERT --');
-      return;
-    }
-
-    // : - command mode
-    if (key === ':') {
-      setCommand('');
-      setMode('command');
-      return;
-    }
-
-    // / - search forward
-    if (key === '/') {
-      setSearchQuery('');
-      setMode('search');
-      return;
-    }
-
-    // x - delete character
-    if (key === 'x') {
-      const pos = textareaRef.current?.selectionStart ?? 0;
-      if (pos < content.length) {
-        const newContent = content.slice(0, pos) + content.slice(pos + 1);
-        setContent(newContent);
-        setModified(true);
-      }
-      return;
-    }
-
-    // p - paste after cursor
-    if (key === 'p') {
-      if (yankBuffer.length > 0) {
-        const newLines = [...lines];
-        newLines.splice(cursorLine + 1, 0, ...yankBuffer);
-        setContent(newLines.join('\n'));
-        setCursorLine(cursorLine + 1);
-        setModified(true);
-        setMessage(`${yankBuffer.length} line(s) pasted`);
-      }
-      return;
-    }
-
-    // P - paste before cursor
-    if (key === 'P') {
-      if (yankBuffer.length > 0) {
-        const newLines = [...lines];
-        newLines.splice(cursorLine, 0, ...yankBuffer);
-        setContent(newLines.join('\n'));
-        setModified(true);
-        setMessage(`${yankBuffer.length} line(s) pasted`);
-      }
-      return;
-    }
-
-    // d - start delete sequence (wait for d)
-    if (key === 'd') {
-      setPendingKey('d');
-      return;
-    }
-
-    // y - start yank sequence (wait for y)
-    if (key === 'y') {
-      setPendingKey('y');
-      return;
-    }
-
-    // g - start gg sequence
-    if (key === 'g') {
-      setPendingKey('g');
-      return;
-    }
-
-    // G - go to last line
-    if (key === 'G') {
-      const lastLine = totalLines - 1;
-      setCursorLine(lastLine);
-      setCursorCol(0);
-      return;
-    }
-
-    // u - undo (limited)
-    if (key === 'u') {
-      setMessage('Already at oldest change');
-      return;
-    }
-
-    // Navigation
-    if (key === 'h' || key === 'ArrowLeft') {
-      setCursorCol(Math.max(0, cursorCol - 1));
-      const pos = textareaRef.current?.selectionStart ?? 0;
-      if (pos > 0) textareaRef.current?.setSelectionRange(pos - 1, pos - 1);
-      return;
-    }
-    if (key === 'l' || key === 'ArrowRight') {
-      const maxCol = (lines[cursorLine]?.length || 1) - 1;
-      setCursorCol(Math.min(maxCol, cursorCol + 1));
-      const pos = textareaRef.current?.selectionStart ?? 0;
-      textareaRef.current?.setSelectionRange(pos + 1, pos + 1);
-      return;
-    }
-    if (key === 'j' || key === 'ArrowDown') {
-      if (cursorLine < totalLines - 1) {
-        setCursorLine(cursorLine + 1);
-        // Move textarea cursor
-        const lineStart = lines.slice(0, cursorLine + 1).join('\n').length + 1;
-        const col = Math.min(cursorCol, (lines[cursorLine + 1]?.length || 1) - 1);
-        textareaRef.current?.setSelectionRange(lineStart + col, lineStart + col);
-      }
-      return;
-    }
-    if (key === 'k' || key === 'ArrowUp') {
-      if (cursorLine > 0) {
-        setCursorLine(cursorLine - 1);
-        const lineStart = lines.slice(0, cursorLine - 1).join('\n').length + (cursorLine > 1 ? 1 : 0);
-        const col = Math.min(cursorCol, (lines[cursorLine - 1]?.length || 1) - 1);
-        textareaRef.current?.setSelectionRange(lineStart + col, lineStart + col);
-      }
-      return;
-    }
-
-    // 0 - go to beginning of line
-    if (key === '0') {
-      setCursorCol(0);
-      const lineStart = lines.slice(0, cursorLine).join('\n').length + (cursorLine > 0 ? 1 : 0);
-      textareaRef.current?.setSelectionRange(lineStart, lineStart);
-      return;
-    }
-
-    // $ - go to end of line
-    if (key === '$') {
-      const lineLen = lines[cursorLine]?.length || 0;
-      setCursorCol(Math.max(0, lineLen - 1));
-      const lineStart = lines.slice(0, cursorLine).join('\n').length + (cursorLine > 0 ? 1 : 0);
-      textareaRef.current?.setSelectionRange(lineStart + lineLen, lineStart + lineLen);
-      return;
-    }
-
-    // w - jump to next word
-    if (key === 'w') {
-      const line = lines[cursorLine] || '';
-      const rest = line.slice(cursorCol);
-      const match = rest.match(/^\S*\s+/);
-      if (match) {
-        setCursorCol(cursorCol + match[0].length);
-      } else if (cursorLine < totalLines - 1) {
-        setCursorLine(cursorLine + 1);
-        setCursorCol(0);
-      }
-      return;
-    }
-
-    // b - jump to previous word
-    if (key === 'b') {
-      const line = lines[cursorLine] || '';
-      const before = line.slice(0, cursorCol);
-      const match = before.match(/\s+\S*$/);
-      if (match) {
-        setCursorCol(cursorCol - match[0].length);
-      } else if (cursorLine > 0) {
-        setCursorLine(cursorLine - 1);
-        setCursorCol(Math.max(0, (lines[cursorLine - 1]?.length || 1) - 1));
-      }
-      return;
-    }
-
-    // Escape
-    if (key === 'Escape') {
-      setMessage('');
-      setPendingKey('');
-      return;
-    }
-  }, [content, lines, cursorLine, cursorCol, totalLines, pendingKey, yankBuffer]);
-
-  // Handle insert mode keys
-  const handleInsertKey = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      setMode('normal');
-      setMessage('');
-      setPendingKey('');
-      // Move cursor back one in normal mode (vim behavior)
-      const pos = textareaRef.current?.selectionStart ?? 0;
-      if (pos > 0) {
-        textareaRef.current?.setSelectionRange(pos - 1, pos - 1);
-      }
-      updateCursorFromTextarea();
-      return;
-    }
-    // Let the textarea handle all other keys naturally
-    setTimeout(updateCursorFromTextarea, 0);
-  }, [updateCursorFromTextarea]);
-
-  // Handle command-line keys
-  const handleCommandKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      executeVimCommand(command);
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      setMode('normal');
-      setCommand('');
-      setMessage('');
-    }
-  }, [command, executeVimCommand]);
-
-  // Handle search keys
-  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (searchQuery) {
-        const startPos = lines.slice(0, cursorLine).join('\n').length + (cursorLine > 0 ? 1 : 0) + cursorCol;
-        const idx = content.indexOf(searchQuery, startPos + 1);
-        if (idx >= 0) {
-          // Find line and col of match
-          const beforeMatch = content.slice(0, idx);
-          const matchLines = beforeMatch.split('\n');
-          setCursorLine(matchLines.length - 1);
-          setCursorCol(matchLines[matchLines.length - 1].length);
-          textareaRef.current?.setSelectionRange(idx, idx + searchQuery.length);
-          setMessage(`/${searchQuery}`);
-        } else {
-          // Wrap around
-          const wrapIdx = content.indexOf(searchQuery);
-          if (wrapIdx >= 0) {
-            const beforeMatch = content.slice(0, wrapIdx);
-            const matchLines = beforeMatch.split('\n');
-            setCursorLine(matchLines.length - 1);
-            setCursorCol(matchLines[matchLines.length - 1].length);
-            textareaRef.current?.setSelectionRange(wrapIdx, wrapIdx + searchQuery.length);
-            setMessage('search hit BOTTOM, continuing at TOP');
-          } else {
-            setMessage(`E486: Pattern not found: ${searchQuery}`);
-          }
-        }
-      }
-      setMode('normal');
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      setMode('normal');
-      setMessage('');
-    }
-  }, [searchQuery, content, lines, cursorLine, cursorCol]);
-
-  // Show VIM splash screen for empty new files
-  const showSplash = isNewFile && content === '' && mode === 'normal';
+  if (engine.mode === 'binary-warning' && engine.pendingBinaryWarning) {
+    return (
+      <div
+        data-testid="vim-binary-warning"
+        className="h-full w-full flex flex-col items-center justify-center p-4"
+        style={{
+          backgroundColor: '#1e1e2e',
+          color: '#cdd6f4',
+          fontFamily: "'Ubuntu Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+          fontSize: '14px',
+        }}
+      >
+        <div>{engine.pendingBinaryWarning}</div>
+        <input
+          name="vimSwapPrompt"
+          autoComplete="off"
+          ref={swapPromptRef}
+          onKeyDown={dispatch}
+          className="absolute opacity-0 w-0 h-0"
+          autoFocus
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -537,34 +186,48 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     >
       {/* ── Editor area with line numbers ── */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Line numbers gutter */}
+        {/* Left gutter: always present (real vim always reserves this
+            column for `~` on lines past EOF) — line numbers are an
+            independent overlay within it, off by default like real vim. */}
         <div
+          data-testid="vim-gutter"
           className="select-none overflow-hidden shrink-0 text-right pr-1"
           style={{
             backgroundColor: '#181825',
             color: '#585b70',
-            minWidth: '3.5em',
+            minWidth: (engine.lineNumbersShown || engine.relativeNumbersShown) ? '3.5em' : '1em',
             paddingTop: '2px',
             lineHeight: '1.4',
             fontSize: 'inherit',
             fontFamily: 'inherit',
           }}
         >
-          {lines.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                minHeight: '1.4em',
-                color: i === cursorLine ? '#cdd6f4' : '#585b70',
-              }}
-            >
-              {i + 1}
-            </div>
-          ))}
-          {/* Tilde lines for empty space below content */}
+          {lines.map((_, i) => {
+            const isCursor = i === engine.cursorLine;
+            let label = '';
+            if (engine.relativeNumbersShown) {
+              label = isCursor
+                ? (engine.lineNumbersShown ? String(i + 1) : '0')
+                : String(Math.abs(i - engine.cursorLine));
+            } else if (engine.lineNumbersShown) {
+              label = String(i + 1);
+            }
+            return (
+              <div
+                key={i}
+                style={{
+                  minHeight: '1.4em',
+                  color: isCursor ? '#cdd6f4' : '#585b70',
+                }}
+              >
+                {label}
+              </div>
+            );
+          })}
           {Array.from({ length: Math.max(0, visibleLineCount - totalLines) }).map((_, i) => (
             <div
               key={`tilde-${i}`}
+              data-testid="vim-tilde"
               style={{
                 minHeight: '1.4em',
                 color: '#45475a',
@@ -579,19 +242,25 @@ export const VimEditor: React.FC<VimEditorProps> = ({
 
         {/* Content area */}
         <div className="flex-1 relative">
+          {engine.colorColumn !== null && (
+            <div
+              data-testid="vim-colorcolumn"
+              className="absolute top-0 bottom-0 pointer-events-none"
+              style={{
+                left: `calc(0.5rem + ${engine.colorColumn}ch)`,
+                width: '1px',
+                backgroundColor: '#45475a',
+              }}
+            />
+          )}
           <textarea
+            name="vimBuffer"
+            autoComplete="off"
             ref={textareaRef}
-            value={content}
-            onChange={(e) => {
-              if (mode === 'insert') {
-                setContent(e.target.value);
-                setModified(true);
-                setTimeout(updateCursorFromTextarea, 0);
-              }
-            }}
-            onKeyDown={mode === 'normal' ? handleNormalKey : handleInsertKey}
-            onMouseUp={updateCursorFromTextarea}
-            readOnly={mode !== 'insert'}
+            value={engine.listMode ? engine.lines.map((l) => engine.renderListLine(l)).join('\n') : engine.content}
+            onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
+            onKeyDown={dispatch}
+            readOnly
             className="absolute inset-0 w-full h-full outline-none resize-none pl-2 pt-0.5"
             style={{
               backgroundColor: '#1e1e2e',
@@ -599,15 +268,13 @@ export const VimEditor: React.FC<VimEditorProps> = ({
               fontFamily: 'inherit',
               fontSize: 'inherit',
               lineHeight: '1.4',
-              caretColor: mode === 'insert' ? '#f5e0dc' : 'transparent',
+              caretColor: engine.mode === 'insert' ? '#f5e0dc' : 'transparent',
               border: 'none',
               tabSize: 8,
             }}
             spellCheck={false}
-            autoComplete="off"
           />
 
-          {/* VIM Splash screen overlay */}
           {showSplash && (
             <div
               className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
@@ -631,8 +298,12 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         </div>
       </div>
 
-      {/* ── Status line (penultimate line) ── */}
+      {/* ── Status line (penultimate line) ──
+          Real classic vi shows only the filename here — no live ruler, no
+          [+] modified marker, no percentage. vim's full ruler (position +
+          Top/Bot/All/N%) is a vim extension vi never had. */}
       <div
+        data-testid="vim-statusline"
         className="flex items-center justify-between px-2 shrink-0"
         style={{
           backgroundColor: '#313244',
@@ -642,18 +313,22 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         }}
       >
         <span>
-          {mode === 'insert' && (
-            <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- INSERT -- </span>
-          )}
-          {modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
+          {engine.variant === 'vim' && engine.modified && <span style={{ color: '#f38ba8' }}>[+] </span>}
+          {engine.isReadOnly && <span style={{ color: '#f9e2af' }}>[RO] </span>}
           <span>{fileName}</span>
+          {engine.variant === 'vim' && engine.fileFormat === 'dos' && <span style={{ color: '#a6adc8' }}> [dos]</span>}
         </span>
-        <span style={{ color: '#a6adc8' }}>
-          {cursorLine + 1},{cursorCol + 1}
-          <span className="ml-4">
-            {totalLines > 0 ? Math.round(((cursorLine + 1) / totalLines) * 100) : 100}%
+        {engine.variant === 'vim' && (
+          <span style={{ color: '#a6adc8' }}>
+            {engine.isRecordingMacro && (
+              <span style={{ color: '#f38ba8' }} className="mr-4">recording @{engine.recordingMacroName}</span>
+            )}
+            {engine.cursorLine + 1},{engine.cursorCol + 1}
+            <span className="ml-4">
+              {vimPositionLabel(engine.cursorLine, totalLines, visibleLineCount)}
+            </span>
           </span>
-        </span>
+        )}
       </div>
 
       {/* ── Command/message line (last line) ── */}
@@ -665,14 +340,16 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           fontSize: '13px',
         }}
       >
-        {mode === 'command' ? (
+        {engine.mode === 'command' ? (
           <div className="flex items-center">
             <span style={{ color: '#cdd6f4' }}>:</span>
             <input
+              name="vimCommand"
+              autoComplete="off"
               ref={commandRef}
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              onKeyDown={handleCommandKeyDown}
+              value={engine.commandLineText}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={dispatch}
               className="flex-1 bg-transparent outline-none border-none"
               style={{
                 color: '#cdd6f4',
@@ -683,14 +360,16 @@ export const VimEditor: React.FC<VimEditorProps> = ({
               autoFocus
             />
           </div>
-        ) : mode === 'search' ? (
+        ) : engine.mode === 'search' ? (
           <div className="flex items-center">
             <span style={{ color: '#cdd6f4' }}>/</span>
             <input
+              name="vimSearch"
+              autoComplete="off"
               ref={searchRef}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
+              value={engine.searchText}
+              onChange={() => { /* engine-authoritative */ }}
+              onKeyDown={dispatch}
               className="flex-1 bg-transparent outline-none border-none"
               style={{
                 color: '#cdd6f4',
@@ -701,12 +380,22 @@ export const VimEditor: React.FC<VimEditorProps> = ({
               autoFocus
             />
           </div>
+        ) : engine.mode === 'confirm-substitute' && engine.pendingSubstMatch ? (
+          <span style={{ color: '#cdd6f4' }}>
+            replace with {engine.pendingSubstMatch.replacementPreview} (y/n/a/q/l)?
+          </span>
+        ) : engine.mode === 'visual' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL --</span>
+        ) : engine.mode === 'visual-line' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL LINE --</span>
+        ) : engine.mode === 'visual-block' ? (
+          <span style={{ color: '#a6e3a1', fontWeight: 'bold' }}>-- VISUAL BLOCK --</span>
         ) : (
           <span style={{
-            color: message.startsWith('E') ? '#f38ba8' :
-              message.includes('INSERT') ? '#a6e3a1' : '#a6adc8',
+            color: engine.message.startsWith('E') ? '#f38ba8' :
+              engine.message.includes('INSERT') ? '#a6e3a1' : '#a6adc8',
           }}>
-            {pendingKey ? pendingKey : message}
+            {engine.message}
           </span>
         )}
       </div>

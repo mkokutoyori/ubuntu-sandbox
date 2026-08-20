@@ -8,6 +8,11 @@ import type { RmanOperation } from '../core/types';
 
 let _jobCounter = 1;
 
+interface RestoreOpts {
+  tag?: string; preview?: boolean; validate?: boolean;
+  untilScn?: number; untilTime?: string;
+}
+
 export const JobBuilder = {
   backupDatabase(opts: {
     tag?: string; format?: string; compressed?: boolean;
@@ -50,11 +55,12 @@ export const JobBuilder = {
   },
 
   /** Incremental level 0 (full baseline) or level 1 (changes since 0). */
-  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean } = {}): RmanJob {
+  backupIncremental(level: 0 | 1, opts: { tag?: string; format?: string; cumulative?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
     const params: Record<string, string> = { incrementalLevel: String(level) };
     if (opts.tag) params.tag = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.cumulative) params.cumulative = 'true';
+    if (opts.notBackedUpNTimes !== undefined) params.notBackedUpNTimes = String(opts.notBackedUpNTimes);
     const cumLabel = opts.cumulative ? ' cumulative' : '';
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting${cumLabel} incremental level ${level} datafile backup set` },
@@ -102,13 +108,14 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean } = {}): RmanJob {
+  backupDatafile(fileNos: number | ReadonlyArray<number>, opts: { tag?: string; format?: string; compressed?: boolean; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
     const list = Array.isArray(fileNos) ? fileNos : [fileNos as number];
     const params: Record<string, string> = { fileNo: list.join(',') };
     if (opts.tag)        params.tag        = opts.tag;
     if (opts.format)     params.format     = opts.format;
     if (opts.compressed) params.compressed = 'true';
     if (opts.asCopy)     params.asCopy     = 'true';
+    if (opts.notBackedUpNTimes !== undefined) params.notBackedUpNTimes = String(opts.notBackedUpNTimes);
     const label = list.length === 1 ? `datafile ${list[0]}` : `datafiles ${list.join(', ')}`;
     return _make('BACKUP_DATABASE', [
       { name: 'start_backup',  pct: 10, message: `channel ORA_DISK_1: starting full ${label} backup set` },
@@ -126,12 +133,13 @@ export const JobBuilder = {
     ], params);
   },
 
-  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean } = {}): RmanJob {
+  backupTablespace(tsName: string | ReadonlyArray<string>, opts: { tag?: string; format?: string; asCopy?: boolean; notBackedUpNTimes?: number } = {}): RmanJob {
     const list = (Array.isArray(tsName) ? tsName : [tsName as string]).map(s => s.toUpperCase());
     const params: Record<string, string> = { tablespace: list.join(',') };
     if (opts.tag)    params.tag    = opts.tag;
     if (opts.format) params.format = opts.format;
     if (opts.asCopy) params.asCopy = 'true';
+    if (opts.notBackedUpNTimes !== undefined) params.notBackedUpNTimes = String(opts.notBackedUpNTimes);
     const label = list.length === 1 ? `tablespace ${list[0]}` : `tablespaces ${list.join(', ')}`;
     return _make('BACKUP_TABLESPACE', [
       { name: 'start_backup', pct: 10, message: 'channel ORA_DISK_1: starting full datafile backup set' },
@@ -151,31 +159,37 @@ export const JobBuilder = {
     ], params);
   },
 
-  restoreDatabase(opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreDatabase(opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = {};
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: 'channel ORA_DISK_1: starting datafile backup set restore' },
     ], Object.keys(params).length ? params : undefined);
   },
 
-  restoreTablespace(ts: string, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreTablespace(ts: string, opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = { tablespace: ts.toUpperCase() };
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting tablespace ${ts.toUpperCase()} restore` },
     ], params);
   },
 
-  restoreDatafile(fileNo: number, opts: { tag?: string; preview?: boolean; validate?: boolean } = {}): RmanJob {
+  restoreDatafile(fileNo: number, opts: RestoreOpts = {}): RmanJob {
     const params: Record<string, string> = { fileNo: String(fileNo) };
     if (opts.tag)      params.tag      = opts.tag;
     if (opts.preview)  params.preview  = 'true';
     if (opts.validate) params.validate = 'true';
+    if (opts.untilScn !== undefined)  params.untilScn  = String(opts.untilScn);
+    if (opts.untilTime !== undefined) params.untilTime = opts.untilTime;
     return _make('RESTORE_DATABASE', [
       { name: 'start_restore', pct: 10, message: `channel ORA_DISK_1: starting datafile ${fileNo} restore` },
     ], params);

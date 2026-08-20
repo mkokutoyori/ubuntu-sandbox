@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-06-12T11:48:16.702Z
+Generated: 2026-08-19T07:03:03.976Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -167,7 +167,7 @@ Total steps: 370
 <empty>
 
 [53/370] r1 R1(config)# crypto isakmp key MyPreShared2 hostname peer.lab.local
-  % Incomplete command. Usage: crypto isakmp key KEY address IP
+<empty>
 
 [54/370] r1 R1(config)# crypto isakmp keepalive 10 3
 <empty>
@@ -251,6 +251,7 @@ Total steps: 370
   Keychain  Hostname / Address   Preshared Key
   default   10.0.0.2             ************
   default   10.0.0.0             ************
+  default   peer.lab.local       ************
 
 [69/370] r1 R1# show crypto isakmp sa
   IPv4 Crypto ISAKMP SA
@@ -901,26 +902,20 @@ Total steps: 370
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 1, Phase: 3
+  Type: Hub, NHRP Peers: 0, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
-        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
 
 [235/370] r1 R1# show dmvpn detail
   Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
           N - NATed, L - Local, X - No Socket
   
   Interface: Tunnel100, IPv4 NHRP Details
-  Type: Hub, NHRP Peers: 1, Phase: 3
+  Type: Hub, NHRP Peers: 0, Phase: 3
   
    # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
    ----- --------------- --------------- ----- -------- -----
-        1 10.0.0.2        172.20.0.2      UP    00:00:00  S
-     Type: Hub, NHS Status: E --> 1
-     IKE: established
-     IPSEC: up
-     pkts: snt: 0 rcv: 0  bytes: snt: 0 rcv: 0
 
 
 --- [236] § PKI / trustpoint ---
@@ -951,6 +946,7 @@ Total steps: 370
 [244/370] r1 R1(config)# crypto pki enroll CA1
   % Start certificate enrollment for trustpoint CA1
   % Certificate request sent to Certificate Authority
+  % Certificate successfully received and installed
 
 [245/370] r1 R1(config)# end
 <empty>
@@ -964,7 +960,15 @@ Total steps: 370
 
 [247/370] r1 R1# show crypto pki certificates
   Certificate (Trustpoint CA1):
-    Status: Pending enrollment
+    Status: Available
+    Certificate Serial Number: 0000000000001002
+    Subject: CN=R1.lab.local
+    Issuer: CN=http://10.0.0.5:80
+    Validity: 2026-08-19T07:03:04.269Z to 2027-08-19T07:03:04.269Z
+  CA Certificate (Trustpoint CA1):
+    Status: Available
+    Certificate Serial Number: 0000000000001001
+    Subject: CN=http://10.0.0.5:80
 
 [248/370] r1 R1# show crypto pki certificates verbose
   Trustpoint CA1 (verbose):
@@ -1000,10 +1004,10 @@ Total steps: 370
   Crypto IPSEC debugging is on
 
 [256/370] r1 R1# debug crypto ikev2
-  Crypto IKEv2 debugging is on
+  % IKEv2 has no trace point on this platform: the IPSec engine emits its exchange on the ISAKMP channel
 
 [257/370] r1 R1# debug crypto pki transactions
-  PKI Transactions debugging is on
+  % Crypto PKI has no trace point on this platform: the certificate engine publishes no enrolment or validation event
 
 [258/370] r1 R1# undebug all
   All possible debugging has been turned off
@@ -1017,10 +1021,15 @@ Total steps: 370
   Number of IKEv2 SAs: 0
 
 [260/370] r1 R1# show crypto eli
-  Hardware Encryption Layer: not available (software-only sim)
-  Cryptographic API library: software (Node crypto fallback)
-  Active IKE/IKEv2 SAs: 0
-  Active IPSec SAs: 0
+  Hardware Encryption Layer : ACTIVE
+  
+  Number of crypto engines = 1.
+  
+  CryptoEngine Onboard VPN details: state = Active
+   Capability     : IPPCP, DES, 3DES, AES, RSA
+    IKE Sessions   : 0 active, 100 max
+    IPSec Sessions : 0 active, 200 max
+    DH Groups      : 1, 2, 5, 14, 19, 20
 
 
 --- [261] § regression: show family ---
@@ -1036,62 +1045,191 @@ Total steps: 370
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
-  Processor board ID FTX1234567A
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
+  Processor board ID FTX49949ZH2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
 
 [263/370] r1 R1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 4125 bytes
+  !
+  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  crypto pki trustpoint CA1
+   enrollment url http://10.0.0.5:80
+   subject-name CN=R1.lab.local
+   revocation-check crl
+   rsakeypair SSH-KEY
+  !
+  crypto isakmp policy 10
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 2
+   lifetime 3600
+  !
+  crypto isakmp policy 20
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 5
+   lifetime 7200
+  !
+  crypto isakmp policy 30
+   encryption aes 128
+   hash sha256
+   authentication pre-share
+   group 14
+   lifetime 10800
+  !
+  crypto isakmp policy 40
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 19
+   lifetime 14400
+  !
+  crypto isakmp policy 50
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 24
+   lifetime 18000
+  !
+  crypto isakmp key MyPreShared0 address 10.0.0.2
+  crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
+  crypto isakmp keepalive 20 3
+  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+  !
+  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS-GCM esp-gcm 256
+  crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
+  !
+  crypto ipsec profile IPSEC-PROF
+   set transform-set TS1
+   set security-association lifetime seconds 1800
+  !
+  crypto map CMAP 10 ipsec-isakmp
+   set peer 10.0.0.2
+   set transform-set TS1
+   match address 110
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 20 ipsec-isakmp
+   set peer 10.0.0.3
+   set transform-set TS2
+   match address 111
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 30 ipsec-isakmp
+   set peer 10.0.0.4
+   set transform-set TS3
+   match address 112
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+  crypto map DMAP 10 ipsec-isakmp
+  !
+  crypto dynamic-map DMAP 10
+   set transform-set TS1
+  !
+  crypto ikev2 proposal IKEV2-PROP
+   encryption aes-cbc-256 aes-gcm-256
+   integrity sha256 sha512
+   group 14 19 21
+  !
+  crypto ikev2 policy IKEV2-POL
+   proposal IKEV2-PROP
+   match address local 10.0.0.1
+  !
+  crypto ikev2 keyring IKEV2-KR
+   peer PEER1
+    address 10.0.0.2
+    pre-shared-key remote
+  !
+  crypto ikev2 profile IKEV2-PROF
+   match identity remote address 10.0.0.2
+   authentication local pre-share
+   authentication remote pre-share
+   keyring local IKEV2-KR
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
+   no ip address
   !
   interface GigabitEthernet0/3
-   no shutdown
+   no ip address
   !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
-   no shutdown
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Virtual-Template1
-   no shutdown
+   no ip address
    tunnel mode ipsec ipv4
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
-   no shutdown
    ip nhrp network-id 100
    ip nhrp authentication NHRPKEY
    ip nhrp holdtime 600
@@ -1107,99 +1245,6 @@ Total steps: 370
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
-  !
-  crypto pki trustpoint CA1
-   enrollment url http://10.0.0.5:80
-   subject-name CN=R1.lab.local
-   revocation-check crl
-   rsakeypair SSH-KEY
-  !
-  crypto isakmp policy 10
-   encryption aes 192
-   hash sha256
-   authentication pre-share
-   group 2
-   lifetime 3600
-  crypto isakmp policy 20
-   encryption aes 256
-   hash sha256
-   authentication pre-share
-   group 5
-   lifetime 7200
-  crypto isakmp policy 30
-   encryption aes 128
-   hash sha256
-   authentication pre-share
-   group 14
-   lifetime 10800
-  crypto isakmp policy 40
-   encryption aes 192
-   hash sha256
-   authentication pre-share
-   group 19
-   lifetime 14400
-  crypto isakmp policy 50
-   encryption aes 256
-   hash sha256
-   authentication pre-share
-   group 24
-   lifetime 18000
-  crypto isakmp key MyPreShared0 address 10.0.0.2
-  crypto isakmp key MyPreShared1 address 10.0.0.0
-  crypto isakmp keepalive 20 3
-  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
-  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS-GCM esp-gcm 256
-  crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
-  crypto ipsec profile IPSEC-PROF
-   set transform-set TS1
-   set security-association lifetime seconds 1800
-  crypto map CMAP 10 ipsec-isakmp
-   set peer 10.0.0.2
-   set transform-set TS1
-   match address 110
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 20 ipsec-isakmp
-   set peer 10.0.0.3
-   set transform-set TS2
-   match address 111
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 30 ipsec-isakmp
-   set peer 10.0.0.4
-   set transform-set TS3
-   match address 112
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
-  crypto map DMAP 10 ipsec-isakmp
-  crypto dynamic-map DMAP 10
-   set transform-set TS1
-  crypto ikev2 proposal IKEV2-PROP
-   encryption aes-cbc-256 aes-gcm-256
-   integrity sha256 sha512
-   group 14 19 21
-  crypto ikev2 policy IKEV2-POL
-   proposal IKEV2-PROP
-   match address local 10.0.0.1
-  crypto ikev2 keyring IKEV2-KR
-   peer PEER1
-    address 10.0.0.2
-    pre-shared-key remote
-  crypto ikev2 profile IKEV2-PROF
-   match identity remote address 10.0.0.2
-   authentication local pre-share
-   authentication remote pre-share
-   keyring local IKEV2-KR
-  !
   end
 
 [264/370] r1 R1# show startup-config
@@ -1209,17 +1254,17 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Virtual-Template1          unassigned      YES manual down                  down
+  Virtual-Template1          unassigned      YES unset  up                    up
   Tunnel100                  172.20.0.1      YES manual up                    up
 
 [266/370] r1 R1# show interfaces
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1227,8 +1272,19 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 160 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1236,25 +1292,77 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 294 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
     Internet address is 1.1.1.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -1265,14 +1373,25 @@ Total steps: 370
     Internet address is 172.16.0.5/30
     tunnel protection ipsec profile IPSEC-PROF shared
     Tunnel protocol/transport GRE/IP
-  Virtual-Template1 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
+  Virtual-Template1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 0200.0000.0014 (bia 0200.0000.0014)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Tunnel100 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.20.0.1/24
@@ -1280,19 +1399,38 @@ Total steps: 370
     Tunnel protocol/transport GRE/IP
 
 [267/370] r1 R1# show ip route
-  Codes: C - connected, S - static, R - RIP, O - OSPF, O IA - OSPF inter area
-         O E1 - OSPF external type 1, O E2 - OSPF external type 2, D - EIGRP, B - BGP
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  C    1.1.1.1/32 is directly connected, Loopback0
-  C    172.16.0.0/30 is directly connected, Tunnel0
-  C    172.16.0.4/30 is directly connected, Tunnel1
-  C    172.20.0.0/24 is directly connected, Tunnel100
+  Gateway of last resort is not set
+  
+        1.0.0.0/8 is subnetted, 1 subnets
+  C        1.1.1.1/32 is directly connected, Loopback0
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        172.16.0.0/16 is variably subnetted, 4 subnets, 2 masks
+  C        172.16.0.0/30 is directly connected, Tunnel0
+  L        172.16.0.1/32 is directly connected, Tunnel0
+  C        172.16.0.4/30 is directly connected, Tunnel1
+  L        172.16.0.5/32 is directly connected, Tunnel1
+        172.20.0.0/16 is variably subnetted, 2 subnets, 2 masks
+  C        172.20.0.0/24 is directly connected, Tunnel100
+  L        172.20.0.1/32 is directly connected, Tunnel100
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
 
 [268/370] r1 R1# show ip route summary
   IP routing table name is Default-IP-Routing-Table(0)
-  IP routing table maximum-paths is 32
+  IP routing table maximum-paths is 4
   Route Source    Networks    Subnets     Replicates  Overhead    Memory (bytes)
   connected       6           6           0           912         2160
   static          0           0           0           0           0
@@ -1325,10 +1463,10 @@ Total steps: 370
   % OSPF is not configured
 
 [276/370] r1 R1# show ip eigrp neighbors
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [277/370] r1 R1# show ip eigrp topology
-  % EIGRP not running (no autonomous-system configured)
+<empty>
 
 [278/370] r1 R1# show ip bgp
   % BGP not active
@@ -1340,36 +1478,46 @@ Total steps: 370
 <empty>
 
 [281/370] r1 R1# show ip nat translations
+  Pro  Inside global          Inside local           Outside local          Outside global
   No NAT translations.
 
 [282/370] r1 R1# show ip nat statistics
   Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
   Outside interfaces:  none
   Inside interfaces:   none
   Hits: 0  Misses: 0
-  Expired translations: 0
   Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
   Dynamic mappings:
   -- No dynamic NAT rules configured --
+  Application Layer Gateways: none
 
 [283/370] r1 R1# show ip dhcp binding
-  IP address       Client-id/              Lease expiration        Type
-                   Hardware address
+  Bindings from all pools not associated with VRF:
+  IP address          Client-ID/              Lease expiration        Type
+                      Hardware address/
+                      User name
 
 [284/370] r1 R1# show ip dhcp pool
 <empty>
 
 [285/370] r1 R1# show access-lists
   Extended IP access list 110
-      10 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255 (0 matches)
+      10 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   Extended IP access list 111
-      10 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255 (0 matches)
+      10 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
 
 [286/370] r1 R1# show ip access-lists
   Extended IP access list 110
-      10 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255 (0 matches)
+      10 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   Extended IP access list 111
-      10 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255 (0 matches)
+      10 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
 
 [287/370] r1 R1# show crypto isakmp sa
   IPv4 Crypto ISAKMP SA
@@ -1436,53 +1584,83 @@ Total steps: 370
   Interface          Grp Pri Time  Own Pre State   Master addr     Group addr
 
 [293/370] r1 R1# show track
-  No tracked objects configured.
+  % No tracked objects configured.
 
 [294/370] r1 R1# show ip sla statistics
-  No IP SLA operations configured.
+  IPSLAs Latest Operation Statistics
+  
+  No IP SLAs operations configured.
 
 [295/370] r1 R1# show policy-map interface
 <empty>
 
 [296/370] r1 R1# show logging
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: disabled
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 12 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 19 07:03:03.971: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 19 07:03:03.972: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 19 07:03:03.973: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 19 07:03:03.973: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 19 07:03:04.014: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.053: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.091: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.123: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.162: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.199: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.234: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.291: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
+  Chassis: FTX1234567A
   SNMP agent not enabled
   0 SNMP packets input
   0 SNMP packets output
 
 [298/370] r1 R1# show ntp status
-  Clock is unsynchronized, stratum 16, reference is .INIT.
+  Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  reference time is EDD67080.BE353F7C (11:48:16.743 UTC Fri Jun 12 2026)
-  clock offset is 0.00 msec
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE2FD3A8.6872B020 (07:03:04.408 UTC Wed Aug 19 2026)
+  clock offset is 0.0000 msec, root delay is 0.00 msec
+  root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
+  loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
+  system poll interval is 64, never updated.
 
 [299/370] r1 R1# show ntp associations
     address         ref clock     st  when poll reach delay offset disp
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
-  No NTP associations configured.
 
 [300/370] r1 R1# show clock
-  *11:48:16.000 UTC Fri Jun 12 2026
+  *07:03:04.000 UTC Wed Aug 19 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  L1               Gig 0/0           180        H           Linux Host eth 0
-  R2               Gig 0/1           180        R           Cisco 2911 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
-  Total cdp entries displayed : 2
+  Total cdp entries displayed : 1
 
 [302/370] r1 R1# show lldp neighbors
   Capability codes:
@@ -1498,11 +1676,17 @@ Total steps: 370
    PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
      1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
      2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
 
 [304/370] r1 R1# show memory statistics
                   Head    Total(b)     Used(b)     Free(b)   Lowest(b)  Largest(b)
-  Processor    1A2B3C4    536870912    161061273    375809639    357019157    364535349
-  I/O          5D6E7F8     67108864     16777216    50331648    47815065    48821698
+  Processor    1A2B3C4    503316480    150994944    352321536    334705459    341751889
+  I/O          5D6E7F8     33554432     8388608    25165824    23907532    24410849
 
 [305/370] r1 R1# show flash
   Directory of flash:/
@@ -1510,15 +1694,15 @@ Total steps: 370
       1  -rwx     86234112   Mar 01 2024 00:00:00  c2900-universalk9-mz.SPA.157-3.M5.bin
       2  -rwx         2048   Mar 01 2024 00:00:00  cpconfig-29xx.cfg
   
-  256016384 bytes total (169782272 bytes free)
+  256016384 bytes total (169780224 bytes free)
 
 [306/370] r1 R1# show users
       Line       User       Host(s)              Idle       Location
-  *  0 con 0                idle                 00:00:00
   
     Interface    User               Mode         Idle     Peer Address
 
 [307/370] r1 R1# show history
+  show crypto isakmp sa
   show crypto ipsec sa
   show crypto session
   show crypto map
@@ -1538,7 +1722,6 @@ Total steps: 370
   show memory statistics
   show flash
   show users
-  show history
 
 [308/370] r1 R1# show ip cef
   Prefix               Next Hop             Interface
@@ -1552,7 +1735,7 @@ Total steps: 370
 
 [309/370] r1 R1# show interfaces GigabitEthernet0/0
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1560,10 +1743,21 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 160 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [310/370] r1 R1# show interfaces GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1571,17 +1765,36 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 294 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
 
 [311/370] r1 R1# show ip interface GigabitEthernet0/1
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
     Internet address is 10.0.0.1/30
-    MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
-       reliability 255/255, txload 1/255, rxload 1/255
-    Encapsulation ARPA, loopback not set
-    Full-duplex, 1000Mbps, media type is RJ45
-    output flow-control is unsupported, input flow-control is unsupported
-    ARP type: ARPA, ARP Timeout 04:00:00
+    Broadcast address is 255.255.255.255
+    Address determined by non-volatile memory
+    MTU is 1500 bytes
+    Helper address is not set
+    Directed broadcast forwarding is disabled
+    Outgoing access list is not set
+    Inbound  access list is not set
+    Proxy ARP is enabled
+    Local Proxy ARP is disabled
+    Security level is default
+    Split horizon is enabled
+    ICMP redirects are always sent
+    ICMP unreachables are always sent
+    IP fast switching is enabled
+    IP CEF switching is enabled
 
 [312/370] r1 R1# show controllers
   GigabitEthernet0/0 -
@@ -1600,26 +1813,6 @@ Total steps: 370
     Hardware is present, link is down
     Administrative state: up
     0 carrier transitions
-  Loopback0 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel0 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel1 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Virtual-Template1 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
-  Tunnel100 -
-    Hardware is present, link is down
-    Administrative state: up
-    0 carrier transitions
 
 [313/370] r1 R1# show tech-support
   ------------------ show version ------------------
@@ -1631,62 +1824,191 @@ Total steps: 370
   R1 uptime is 0 minutes
   System image file is "flash:c2900-universalk9-mz.SPA.157-3.M5.bin"
   
-  Cisco C2911 (revision 1.0) with 524288K/65536K bytes of memory.
-  Processor board ID FTX1234567A
+  Technology Package License Information for Module:'c2900'
+  
+  -----------------------------------------------------------------
+  Technology    Technology-package           Technology-package
+                Current       Type           Next reboot
+  -----------------------------------------------------------------
+  ipbase        ipbasek9      Permanent      ipbasek9
+  security      securityk9    Permanent      securityk9
+  uc            None          None           None
+  data          None          None           None
+  
+  Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
+  Processor board ID FTX49949ZH2
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
-  256K bytes of non-volatile configuration memory.
+  255K bytes of non-volatile configuration memory.
   
   Configuration register is 0x2102
   
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration:
+  Current configuration : 4125 bytes
+  !
+  ! Last configuration change at 07:03:04 UTC Wed Aug 19 2026 by console
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname R1
   !
-  service dhcp
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
+  !
+  crypto pki trustpoint CA1
+   enrollment url http://10.0.0.5:80
+   subject-name CN=R1.lab.local
+   revocation-check crl
+   rsakeypair SSH-KEY
+  !
+  crypto isakmp policy 10
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 2
+   lifetime 3600
+  !
+  crypto isakmp policy 20
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 5
+   lifetime 7200
+  !
+  crypto isakmp policy 30
+   encryption aes 128
+   hash sha256
+   authentication pre-share
+   group 14
+   lifetime 10800
+  !
+  crypto isakmp policy 40
+   encryption aes 192
+   hash sha256
+   authentication pre-share
+   group 19
+   lifetime 14400
+  !
+  crypto isakmp policy 50
+   encryption aes 256
+   hash sha256
+   authentication pre-share
+   group 24
+   lifetime 18000
+  !
+  crypto isakmp key MyPreShared0 address 10.0.0.2
+  crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
+  crypto isakmp keepalive 20 3
+  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
+  !
+  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
+   mode transport
+  !
+  crypto ipsec transform-set TS-GCM esp-gcm 256
+  crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
+  !
+  crypto ipsec profile IPSEC-PROF
+   set transform-set TS1
+   set security-association lifetime seconds 1800
+  !
+  crypto map CMAP 10 ipsec-isakmp
+   set peer 10.0.0.2
+   set transform-set TS1
+   match address 110
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 20 ipsec-isakmp
+   set peer 10.0.0.3
+   set transform-set TS2
+   match address 111
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 30 ipsec-isakmp
+   set peer 10.0.0.4
+   set transform-set TS3
+   match address 112
+   set pfs group14
+   set security-association lifetime seconds 3600
+  !
+  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
+  crypto map DMAP 10 ipsec-isakmp
+  !
+  crypto dynamic-map DMAP 10
+   set transform-set TS1
+  !
+  crypto ikev2 proposal IKEV2-PROP
+   encryption aes-cbc-256 aes-gcm-256
+   integrity sha256 sha512
+   group 14 19 21
+  !
+  crypto ikev2 policy IKEV2-POL
+   proposal IKEV2-PROP
+   match address local 10.0.0.1
+  !
+  crypto ikev2 keyring IKEV2-KR
+   peer PEER1
+    address 10.0.0.2
+    pre-shared-key remote
+  !
+  crypto ikev2 profile IKEV2-PROF
+   match identity remote address 10.0.0.2
+   authentication local pre-share
+   authentication remote pre-share
+   keyring local IKEV2-KR
   !
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
   !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
   !
   interface GigabitEthernet0/2
-   no shutdown
+   no ip address
   !
   interface GigabitEthernet0/3
-   no shutdown
+   no ip address
   !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
-   no shutdown
+   mtu 1514
+   bandwidth 8000000
+   delay 500
   !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
   !
   interface Virtual-Template1
-   no shutdown
+   no ip address
    tunnel mode ipsec ipv4
   !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
-   no shutdown
    ip nhrp network-id 100
    ip nhrp authentication NHRPKEY
    ip nhrp holdtime 600
@@ -1702,126 +2024,53 @@ Total steps: 370
   access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
   access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   !
-  !
-  crypto pki trustpoint CA1
-   enrollment url http://10.0.0.5:80
-   subject-name CN=R1.lab.local
-   revocation-check crl
-   rsakeypair SSH-KEY
-  !
-  crypto isakmp policy 10
-   encryption aes 192
-   hash sha256
-   authentication pre-share
-   group 2
-   lifetime 3600
-  crypto isakmp policy 20
-   encryption aes 256
-   hash sha256
-   authentication pre-share
-   group 5
-   lifetime 7200
-  crypto isakmp policy 30
-   encryption aes 128
-   hash sha256
-   authentication pre-share
-   group 14
-   lifetime 10800
-  crypto isakmp policy 40
-   encryption aes 192
-   hash sha256
-   authentication pre-share
-   group 19
-   lifetime 14400
-  crypto isakmp policy 50
-   encryption aes 256
-   hash sha256
-   authentication pre-share
-   group 24
-   lifetime 18000
-  crypto isakmp key MyPreShared0 address 10.0.0.2
-  crypto isakmp key MyPreShared1 address 10.0.0.0
-  crypto isakmp keepalive 20 3
-  crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
-  crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS3 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS4 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS5 esp-aes 256 esp-sha256-hmac
-   mode transport
-  crypto ipsec transform-set TS-GCM esp-gcm 256
-  crypto ipsec transform-set TS-AH ah-sha-hmac esp-aes
-  crypto ipsec profile IPSEC-PROF
-   set transform-set TS1
-   set security-association lifetime seconds 1800
-  crypto map CMAP 10 ipsec-isakmp
-   set peer 10.0.0.2
-   set transform-set TS1
-   match address 110
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 20 ipsec-isakmp
-   set peer 10.0.0.3
-   set transform-set TS2
-   match address 111
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 30 ipsec-isakmp
-   set peer 10.0.0.4
-   set transform-set TS3
-   match address 112
-   set pfs group14
-   set security-association lifetime seconds 3600
-  crypto map CMAP 100 ipsec-isakmp dynamic DMAP
-  crypto map DMAP 10 ipsec-isakmp
-  crypto dynamic-map DMAP 10
-   set transform-set TS1
-  crypto ikev2 proposal IKEV2-PROP
-   encryption aes-cbc-256 aes-gcm-256
-   integrity sha256 sha512
-   group 14 19 21
-  crypto ikev2 policy IKEV2-POL
-   proposal IKEV2-PROP
-   match address local 10.0.0.1
-  crypto ikev2 keyring IKEV2-KR
-   peer PEER1
-    address 10.0.0.2
-    pre-shared-key remote
-  crypto ikev2 profile IKEV2-PROF
-   match identity remote address 10.0.0.2
-   authentication local pre-share
-   authentication remote pre-share
-   keyring local IKEV2-KR
-  !
   end
   
   ------------------ show ip interface brief ------------------
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Virtual-Template1          unassigned      YES manual down                  down
+  Virtual-Template1          unassigned      YES unset  up                    up
   Tunnel100                  172.20.0.1      YES manual up                    up
   
   ------------------ show ip route ------------------
-  Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP, B - BGP, * - candidate default
+  Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+         D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+         N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+         E1 - OSPF external type 1, E2 - OSPF external type 2
+         i - IS-IS, su - IS-IS summary, L1 - IS-IS level-1, L2 - IS-IS level-2
+         ia - IS-IS inter area, * - candidate default, U - per-user static route
+         o - ODR, P - periodic downloaded static route, H - NHRP, l - LISP
+         a - application route
+         + - replicated route, % - next hop override, p - overrides from PfR
   
-  C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
-  C    10.0.0.0/30 is directly connected, GigabitEthernet0/1
-  C    1.1.1.1/32 is directly connected, Loopback0
-  C    172.16.0.0/30 is directly connected, Tunnel0
-  C    172.16.0.4/30 is directly connected, Tunnel1
-  C    172.20.0.0/24 is directly connected, Tunnel100
+  Gateway of last resort is not set
+  
+        1.0.0.0/8 is subnetted, 1 subnets
+  C        1.1.1.1/32 is directly connected, Loopback0
+        10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks
+  C        10.0.0.0/30 is directly connected, GigabitEthernet0/1
+  L        10.0.0.1/32 is directly connected, GigabitEthernet0/1
+        172.16.0.0/16 is variably subnetted, 4 subnets, 2 masks
+  C        172.16.0.0/30 is directly connected, Tunnel0
+  L        172.16.0.1/32 is directly connected, Tunnel0
+  C        172.16.0.4/30 is directly connected, Tunnel1
+  L        172.16.0.5/32 is directly connected, Tunnel1
+        172.20.0.0/16 is variably subnetted, 2 subnets, 2 masks
+  C        172.20.0.0/24 is directly connected, Tunnel100
+  L        172.20.0.1/32 is directly connected, Tunnel100
+        192.168.1.0/24 is variably subnetted, 2 subnets, 2 masks
+  C        192.168.1.0/24 is directly connected, GigabitEthernet0/0
+  L        192.168.1.1/32 is directly connected, GigabitEthernet0/0
   
   ------------------ show interfaces ------------------
   GigabitEthernet0/0 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:01 (bia 02:00:00:00:00:01)
+    Hardware is iGbE, address is 0200.0000.0001 (bia 0200.0000.0001)
     Internet address is 192.168.1.1/24
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1829,8 +2078,19 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 160 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       2 packets output, 128 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
-    Hardware is iGbE, address is 02:00:00:00:00:02 (bia 02:00:00:00:00:02)
+    Hardware is iGbE, address is 0200.0000.0002 (bia 0200.0000.0002)
     Internet address is 10.0.0.1/30
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
@@ -1838,25 +2098,77 @@ Total steps: 370
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       2 packets input, 128 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       4 packets output, 294 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/2 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:03 (bia 02:00:00:00:00:03)
+    Hardware is iGbE, address is 0200.0000.0003 (bia 0200.0000.0003)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   GigabitEthernet0/3 is down, line protocol is down
-    Hardware is iGbE, address is 02:00:00:00:00:04 (bia 02:00:00:00:00:04)
+    Hardware is iGbE, address is 0200.0000.0004 (bia 0200.0000.0004)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input never, output never, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Loopback0 is up, line protocol is up
     Hardware is Loopback
     Internet address is 1.1.1.1/32
+    MTU 1514 bytes, BW 8000000 Kbit/sec, DLY 5000 usec,
+       reliability 255/255, txload 1/255, rxload 1/255
+    Encapsulation LOOPBACK, loopback not set
+    Keepalive set (10 sec)
+    Last input never, output never, output hang never
+    Last clearing of "show interface" counters never
+    Input queue: 0/75/0/0 (size/max/drops/flushes); Total output drops: 0
+    Queueing strategy: fifo
+    Output queue: 0/0 (size/max)
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 IP multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored, 0 abort
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 unknown protocol drops
+       0 output buffer failures, 0 output buffers swapped out
   Tunnel0 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.16.0.1/30
@@ -1867,14 +2179,25 @@ Total steps: 370
     Internet address is 172.16.0.5/30
     tunnel protection ipsec profile IPSEC-PROF shared
     Tunnel protocol/transport GRE/IP
-  Virtual-Template1 is down, line protocol is down
-    Hardware is Fast Ethernet, address is 02:00:00:00:00:14 (bia 02:00:00:00:00:14)
+  Virtual-Template1 is up, line protocol is up
+    Hardware is Fast Ethernet, address is 0200.0000.0014 (bia 0200.0000.0014)
     MTU 1500 bytes, BW 1000000 Kbit/sec, DLY 10 usec,
        reliability 255/255, txload 1/255, rxload 1/255
     Encapsulation ARPA, loopback not set
     Full-duplex, 1000Mbps, media type is RJ45
     output flow-control is unsupported, input flow-control is unsupported
     ARP type: ARPA, ARP Timeout 04:00:00
+    Last input 00:00:00, output 00:00:00, output hang never
+    Queueing strategy: fifo
+    5 minute input rate 0 bits/sec, 0 packets/sec
+    5 minute output rate 0 bits/sec, 0 packets/sec
+       0 packets input, 0 bytes, 0 no buffer
+       Received 0 broadcasts (0 multicasts)
+       0 runts, 0 giants, 0 throttles
+       0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
+       0 packets output, 0 bytes, 0 underruns
+       0 output errors, 0 collisions, 0 interface resets
+       0 input drops, 0 output drops
   Tunnel100 is up, line protocol is up
     Hardware is Tunnel
     Internet address is 172.20.0.1/24
@@ -1884,30 +2207,94 @@ Total steps: 370
   ------------------ show ip protocols ------------------
   No routing protocol is configured.
   
+  ------------------ show processes cpu ------------------
+  CPU utilization for five seconds: 4%/0%; one minute: 5%; five minutes: 4%
+   PID Runtime(ms)   Invoked  uSecs   5Sec   1Min   5Min TTY Process
+     1           4        38    105  0.00%  0.00%  0.00%   0 Chunk Manager
+     2          12       210     57  0.00%  0.00%  0.00%   0 Load Meter
+     5           0         0      0  0.00%  0.00%  0.00%   0 IP Input
+    55           0         0      0  0.00%  0.00%  0.00%   0 ARP Input
+   130           0         0      0  0.00%  0.00%  0.00%   0 Crypto Engine
+   178           0         0      0  0.00%  0.00%  0.00%   0 DHCPD Receive
+   201           0         0      0  0.00%  0.00%  0.00%   0 OSPF Router
+   240           0         0      0  0.00%  0.00%  0.00%   0 Spanning Tree
+  
+  ------------------ show ip nat translations ------------------
+  Pro  Inside global          Inside local           Outside local          Outside global
+  No NAT translations.
+  
+  ------------------ show ip nat statistics ------------------
+  Total active translations: 0 (0 static, 0 dynamic; 0 extended)
+  Peak translations: 0
+  Total translations: 0
+  Static translations: 0
+  Dynamic translations: 0
+  Translation errors: 0
+  Outside interfaces:  none
+  Inside interfaces:   none
+  Hits: 0  Misses: 0
+  Session timeouts (seconds): tcp 86400  udp 300  icmp 60  syn 30
+  Static mappings:
+  -- No static NAT entries configured --
+  Dynamic mappings:
+  -- No dynamic NAT rules configured --
+  Application Layer Gateways: none
+  
+  ------------------ show ip ospf neighbor ------------------
+  % OSPF is not configured
+  
+  ------------------ show ip dhcp binding ------------------
+  IP address       Client-id/              Lease expiration        Type
+                   Hardware address
+  
   ------------------ show logging ------------------
-  Syslog logging: enabled (0 messages dropped, 0 flushes, 0 overruns)
-      Console logging: level debugging
-      Monitor logging: level debugging
-      Buffer logging: disabled
-      Trap logging: level informational
-      Facility: local7
-      Timestamp logging: disabled
+  Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
+  
+  No Active Message Discriminator.
+  
+      Console logging: level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Monitor logging: level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Buffer logging:  level debugging, 12 messages logged, xml disabled,
+                       filtering disabled
+      Exception Logging: size (4096 bytes)
+      Count and timestamp logging messages: disabled
+      Persistent logging: disabled
+      Timestamp logging: debug datetime msec, log datetime msec
       Sequence numbers: disabled
-      No active syslog hosts
+      Facility: local7
+  
+      Trap logging: level informational, 12 message lines logged
+          No active syslog hosts
+  
+  Log Buffer (4096 bytes):
+  
+  *Aug 19 07:03:03.971: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Aug 19 07:03:03.972: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Aug 19 07:03:03.973: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Aug 19 07:03:03.973: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Aug 19 07:03:04.014: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.053: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.091: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.123: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.162: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.199: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.234: %SYS-5-CONFIG_I: Configured from console by console
+  *Aug 19 07:03:04.291: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
-  NAME: "R1", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX1234567A
+  NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX49949ZH2
 
 [315/370] r1 R1# show environment
-  Environmental monitoring is not instrumented on this platform.
+  Number of Critical alarms:  0
+  Number of Major alarms:     0
+  Number of Minor alarms:     0
 
 [316/370] r1 R1# show redundancy
-  Redundant System Information :
-         Configured Redundancy Mode = Simplex
-  Current Processor Information :
-         Active Location = slot 0
-         Current Software state = ACTIVE
+          ^
+  % Invalid input detected at '^' marker.
 
 [317/370] r1 R1# show ip vrf
     Name                             Default RD            Protocols   Interfaces
@@ -1917,29 +2304,36 @@ Total steps: 370
 
 [319/370] r1 R1# show hosts
   Default domain is not set
+  Name/address lookup uses static mappings
   Name servers are 255.255.255.255
-  Name/address lookup uses static table only (recursive resolver not simulated)
+  
+  Codes: UN - unknown, EX - expired, OK - OK, ?? - revalidate
+         temp - temporary, perm - permanent
+         NA - Not Applicable None - Not defined
   
   Host                      Port  Flags      Age Type   Address(es)
 
 [320/370] r1 R1# show ip ssh
-  SSH Enabled - version 2.0
+  SSH Enabled - version 1.99
   Authentication timeout: 120 secs; Authentication retries: 3
+  Minimum expected Diffie Hellman key size : 1024 bits
 
 [321/370] r1 R1# show line
-     Tty Line Typ     Tx/Rx     A Roty Acc0 AccI  Uses  Noise Overruns  Int
-  *    0    0 CTY               -    -    -    -      0     0   0/0       -
-       1    1 VTY               -    -    -    -      0     0   0/0       -
-       2    2 VTY               -    -    -    -      0     0   0/0       -
-       3    3 VTY               -    -    -    -      0     0   0/0       -
-       4    4 VTY               -    -    -    -      0     0   0/0       -
-       5    5 VTY               -    -    -    -      0     0   0/0       -
+     Tty Typ     Tx/Rx A Modem Roty AccO AccI  Uses  Noise  Overruns  Int
+  *    0 CTY                 -    -    -    -     0      0       0/0    -
+       1 AUX                 -    -    -    -     0      0       0/0    -
+       2 VTY                 -    -    -    -     0      0       0/0    -
+       3 VTY                 -    -    -    -     0      0       0/0    -
+       4 VTY                 -    -    -    -     0      0       0/0    -
+       5 VTY                 -    -    -    -     0      0       0/0    -
+       6 VTY                 -    -    -    -     0      0       0/0    -
 
 [322/370] r1 R1# show terminal
   Line 0, Location: "", Type: ""
   Length: 24 lines, Width: 80 columns
   Editing is enabled.
   History is enabled, history size is 20.
+  Monitor parameter: disabled
 
 [323/370] r1 R1# show aliases
   Exec mode aliases:
@@ -1960,35 +2354,40 @@ Total steps: 370
 [325/370] r1 R1# show running-config | section interface
   interface GigabitEthernet0/0
    ip address 192.168.1.1 255.255.255.0
-   no shutdown
+  !
   interface GigabitEthernet0/1
    ip address 10.0.0.1 255.255.255.252
-   no shutdown
+  !
   interface GigabitEthernet0/2
-   no shutdown
+   no ip address
+  !
   interface GigabitEthernet0/3
-   no shutdown
+   no ip address
+  !
   interface Loopback0
    ip address 1.1.1.1 255.255.255.255
-   no shutdown
+   mtu 1514
+   bandwidth 8000000
+   delay 500
+  !
   interface Tunnel0
    ip address 172.16.0.1 255.255.255.252
-   no shutdown
    tunnel mode ipsec ipv4
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
+  !
   interface Tunnel1
    ip address 172.16.0.5 255.255.255.252
-   no shutdown
    tunnel mode gre ip
    tunnel source GigabitEthernet0/1
    tunnel destination 10.0.0.2
+  !
   interface Virtual-Template1
-   no shutdown
+   no ip address
    tunnel mode ipsec ipv4
+  !
   interface Tunnel100
    ip address 172.20.0.1 255.255.255.0
-   no shutdown
    ip nhrp network-id 100
    ip nhrp authentication NHRPKEY
    ip nhrp holdtime 600
@@ -2000,6 +2399,7 @@ Total steps: 370
    tunnel mode gre multipoint
    tunnel source GigabitEthernet0/1
    tunnel key 100
+  !
 
 [326/370] r1 R1# show running-config | begin line
 <empty>
@@ -2007,53 +2407,14 @@ Total steps: 370
 [327/370] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration:
+  Current configuration : 4125 bytes
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   hostname R1
-  service dhcp
-  interface GigabitEthernet0/0
-   ip address 192.168.1.1 255.255.255.0
-   no shutdown
-  interface GigabitEthernet0/1
-   ip address 10.0.0.1 255.255.255.252
-   no shutdown
-  interface GigabitEthernet0/2
-   no shutdown
-  interface GigabitEthernet0/3
-   no shutdown
-  interface Loopback0
-   ip address 1.1.1.1 255.255.255.255
-   no shutdown
-  interface Tunnel0
-   ip address 172.16.0.1 255.255.255.252
-   no shutdown
-   tunnel mode ipsec ipv4
-   tunnel source GigabitEthernet0/1
-   tunnel destination 10.0.0.2
-  interface Tunnel1
-   ip address 172.16.0.5 255.255.255.252
-   no shutdown
-   tunnel mode gre ip
-   tunnel source GigabitEthernet0/1
-   tunnel destination 10.0.0.2
-  interface Virtual-Template1
-   no shutdown
-   tunnel mode ipsec ipv4
-  interface Tunnel100
-   ip address 172.20.0.1 255.255.255.0
-   no shutdown
-   ip nhrp network-id 100
-   ip nhrp authentication NHRPKEY
-   ip nhrp holdtime 600
-   ip nhrp shortcut
-   ip nhrp redirect
-   ip nhrp map 172.20.0.2 10.0.0.2
-   ip nhrp map multicast 224.0.0.0 10.0.0.2
-   ip nhrp nhs 172.20.0.2
-   tunnel mode gre multipoint
-   tunnel source GigabitEthernet0/1
-   tunnel key 100
-  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
-  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
+  username alice privilege 1 secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1
+  username bob privilege 1 secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.
+  username carl privilege 1 secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/
+  username dave privilege 1 secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/
   crypto pki trustpoint CA1
    enrollment url http://10.0.0.5:80
    subject-name CN=R1.lab.local
@@ -2091,6 +2452,7 @@ Total steps: 370
    lifetime 18000
   crypto isakmp key MyPreShared0 address 10.0.0.2
   crypto isakmp key MyPreShared1 address 10.0.0.0
+  crypto isakmp key MyPreShared2 hostname peer.lab.local
   crypto isakmp keepalive 20 3
   crypto ipsec transform-set TS1 esp-aes 256 esp-sha256-hmac
   crypto ipsec transform-set TS2 esp-aes 256 esp-sha256-hmac
@@ -2144,6 +2506,47 @@ Total steps: 370
    authentication local pre-share
    authentication remote pre-share
    keyring local IKEV2-KR
+  interface GigabitEthernet0/0
+   ip address 192.168.1.1 255.255.255.0
+  interface GigabitEthernet0/1
+   ip address 10.0.0.1 255.255.255.252
+  interface GigabitEthernet0/2
+   no ip address
+  interface GigabitEthernet0/3
+   no ip address
+  interface Loopback0
+   ip address 1.1.1.1 255.255.255.255
+   mtu 1514
+   bandwidth 8000000
+   delay 500
+  interface Tunnel0
+   ip address 172.16.0.1 255.255.255.252
+   tunnel mode ipsec ipv4
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+  interface Tunnel1
+   ip address 172.16.0.5 255.255.255.252
+   tunnel mode gre ip
+   tunnel source GigabitEthernet0/1
+   tunnel destination 10.0.0.2
+  interface Virtual-Template1
+   no ip address
+   tunnel mode ipsec ipv4
+  interface Tunnel100
+   ip address 172.20.0.1 255.255.255.0
+   ip nhrp network-id 100
+   ip nhrp authentication NHRPKEY
+   ip nhrp holdtime 600
+   ip nhrp shortcut
+   ip nhrp redirect
+   ip nhrp map 172.20.0.2 10.0.0.2
+   ip nhrp map multicast 224.0.0.0 10.0.0.2
+   ip nhrp nhs 172.20.0.2
+   tunnel mode gre multipoint
+   tunnel source GigabitEthernet0/1
+   tunnel key 100
+  access-list 110 permit ip 192.168.1.0 0.0.0.255 192.168.2.0 0.0.0.255
+  access-list 111 permit ip 192.168.1.0 0.0.0.255 192.168.3.0 0.0.0.255
   end
 
 [328/370] r1 R1# show ip route | include via
@@ -2230,12 +2633,12 @@ Total steps: 370
   Interface                  IP-Address      OK? Method Status                Protocol
   GigabitEthernet0/0         192.168.1.1     YES manual up                    up
   GigabitEthernet0/1         10.0.0.1        YES manual up                    up
-  GigabitEthernet0/2         unassigned      YES manual down                  down
-  GigabitEthernet0/3         unassigned      YES manual down                  down
+  GigabitEthernet0/2         unassigned      YES unset  down                  down
+  GigabitEthernet0/3         unassigned      YES unset  down                  down
   Loopback0                  1.1.1.1         YES manual up                    up
   Tunnel0                    172.16.0.1      YES manual up                    up
   Tunnel1                    172.16.0.5      YES manual up                    up
-  Virtual-Template1          unassigned      YES manual down                  down
+  Virtual-Template1          unassigned      YES unset  up                    up
   Tunnel100                  172.20.0.1      YES manual up                    up
 
 [353/370] r1 R1(config-if)# shutdown
@@ -2251,7 +2654,17 @@ Total steps: 370
 <empty>
 
 [357/370] r1 R1(config-router)# do show ip protocols
-  No routing protocol is configured.
+  Routing Protocol is "ospf 1"
+    Outgoing update filter list for all interfaces is not set
+    Incoming update filter list for all interfaces is not set
+    Router ID 1.1.1.1
+    Number of areas in this router is 0. 0 normal 0 stub 0 nssa
+    Reference bandwidth unit is 100 mbps
+    Maximum path: 4
+    Routing for Networks:
+    Routing Information Sources:
+      Gateway         Distance      Last Update
+    Distance: (default is 110)
 
 [358/370] r1 R1(config-router)# exit
 <empty>
@@ -2271,81 +2684,107 @@ Total steps: 370
   Enter configuration commands, one per line.  End with CNTL/Z.
 
 [363/370] r1 R1(config)# interface ?
-    WORD  Select an interface to configure
-    <cr>  
+    BVI              Bridge-Group Virtual Interface
+    Ethernet         IEEE 802.3
+    FastEthernet     FastEthernet IEEE 802.3u
+    GigabitEthernet  GigabitEthernet IEEE 802.3z
+    Loopback         Loopback interface
+    Port-channel     Ethernet Channel of interfaces
+    Serial           Serial
+    Tunnel           Tunnel interface
 
 [364/370] r1 R1(config)# ip ?
-    cef              Enable CEF
-    http             http
-    source-route     IP source-route
-    domain-lookup    Enable DNS lookups
-    name-server      Configure DNS name servers
-    bootp            bootp
-    finger           Enable finger service
-    gratuitous-arps  Enable gratuitous ARP
-    community-list   Define BGP community list
-    as-path          as-path
-    domain-name      Set domain name
-    domain           IP domain configuration
-    host             Configure a static host entry
-    ssh              SSH config
-    dhcp             dhcp
-    route            Establish static routes
-    default-network  Configure default-network
-    local            local
-    pim              pim
-    prefix-list      Build a prefix list
-    sla              Configure an IP SLA operation
-    access-list      access-list
-    nat              nat
-    routing          Enable IP routing
-    flow-export      Legacy NetFlow export
-    flow-cache       NetFlow cache timeout
-    route-cache      route-cache
+    access-list        Add an access list entry
+    as-path            BGP autonomous-system path filter
+    bootp              Bootstrap Protocol
+    cef                Enable CEF
+    classless          Accepted, default behaviour on IOS 12.0 and later
+    community-list     Define BGP community list
+    default-network    Configure default-network
+    dhcp               Dynamic Host Configuration Protocol
+    dns                Domain Name System
+    domain             IP domain configuration
+    domain-list        Define a list of default domain names
+    domain-lookup      Enable IP Domain Name System hostname translation
+    domain-name        Define the default domain name
+    finger             Enable finger service
+    flow-cache         NetFlow cache timeout
+    flow-export        Legacy NetFlow export
+    gratuitous-arps    Enable gratuitous ARP
+    host               Add a host to the host table
+    http               Hypertext Transfer Protocol
+    local              Local settings
+    multicast-routing  Enable IP multicast routing
+    name-server        Specify address of name server to use
+    nat                Network Address Translation
+    pim                Protocol Independent Multicast
+    prefix-list        Build a prefix list
+    route              Establish static routes
+    route-cache        Route cache
+    routing            Enable IP routing
+    scp                SCP server config
+    sla                Configure an IP SLAs operation
+    source-route       IP source-route
+    ssh                SSH config
+    subnet-zero        Accepted, default behaviour on IOS 12.0 and later
+    vrf                Define a VRF instance
 
 [365/370] r1 R1(config)# router ?
-    rip    Enter RIP routing protocol configuration
-    eigrp  Enter EIGRP configuration
     bgp    Enter BGP configuration
+    eigrp  Enter EIGRP configuration
     ospf   Enter OSPF routing protocol configuration
+    rip    Enter RIP routing protocol configuration
 
 [366/370] r1 R1(config)# crypto ?
-    isakmp       isakmp
-    ipsec        ipsec
-    map          Define a crypto map entry
     dynamic-map  Define a dynamic crypto map
-    ikev2        ikev2
-    key          key
-    pki          pki
-    <cr>         
+    gdoi         Group Domain of Interpretation
+    ikev2        Internet Key Exchange version 2
+    ipsec        IP Security
+    isakmp       Internet Security Association and Key Management Protocol
+    key          Key management
+    keyring      Define an ISAKMP keyring
+    map          Define a crypto map entry
+    pki          Public Key Infrastructure
+    <cr>
 
 [367/370] r1 R1(config)# no ?
-    hostname     Reset hostname
-    alias        Remove a command alias
-    cdp          cdp
-    lldp         lldp
-    ip           ip
-    ipv6         ipv6
-    banner       banner
-    logging      Disable logging
-    ntp          Remove NTP config
-    service      Disable a service
-    username     Remove a local user
-    arp          Remove ARP entry
-    router       router
-    shutdown     Enable (no-op in global config)
-    route-map    Remove a route-map
-    track        Remove a tracked object
-    access-list  Remove an access list
-    key          key
-    crypto       crypto
-    event        event
+    aaa            Disable AAA
+    access-list    Remove an access list
+    alias          Remove a command alias
+    arp            Remove ARP entry
+    banner         Remove a banner
+    boot           Boot Commands
+    cdp            Enable CDP globally
+    clock          Set the system clock
+    crypto         Encryption and key management
+    enable         Modify enable password parameters
+    event          Embedded Event Manager
+    hostname       Reset hostname
+    interface      Remove a virtual interface
+    ip             Global IP configuration subcommands
+    ipv6           IPv6 interface subcommands
+    key            Key management
+    line           Remove line configuration
+    lldp           Enable LLDP globally
+    logging        Count every log message and timestamp last occurrence
+    login          Set the login blocking period
+    ntp            Authenticate time sources
+    parser         Negate a parser command
+    privilege      Remove privilege command rule
+    radius-server  Remove legacy radius host
+    route-map      Remove a route-map
+    router         Enable a routing protocol
+    service        Disable a network based service
+    sntp           Configure SNTP
+    tacacs-server  Remove legacy tacacs host
+    track          Remove a tracked object
+    username       Remove a local user
 
 [368/370] r1 R1(config)# end
 <empty>
 
 [369/370] r1 R1# show running-config | count !
-  18
+  41
 
 [370/370] r1 R1# write memory
   Building configuration...

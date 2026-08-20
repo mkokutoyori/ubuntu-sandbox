@@ -38,8 +38,10 @@ export interface DHCPPoolConfig {
   network: string | null;
   /** Subnet mask (e.g. 255.255.255.0) */
   mask: string | null;
-  /** Default gateway address(es) */
+  /** Primary gateway — first entry of `defaultRouters`, option 3 as offered */
   defaultRouter: string | null;
+  /** Every address given to `default-router`, in order (IOS takes up to 8) */
+  defaultRouters: string[];
   /** DNS server address(es) */
   dnsServers: string[];
   /** Domain name */
@@ -88,6 +90,9 @@ export interface DHCPDiscoverParams {
   requestedIP?: string;
   /** Relay agent IP (giaddr) — set by relay agent for remote subnet selection */
   giaddr?: string;
+  /** IP of the local (non-relayed) ingress interface — used for subnet-based
+   *  pool selection when giaddr is absent (directly-attached client). */
+  localGatewayIP?: string;
 }
 
 /** Result returned by server for DHCPOFFER */
@@ -96,12 +101,16 @@ export interface DHCPOfferResult {
   pool: DHCPPoolConfig;
   /** Option 54: Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this OFFER (wire channel only) */
+  serverMac?: string;
   /** XID echoed back from DISCOVER */
   xid: number;
   /** Option 58: T1 renewal time in seconds */
   renewalTime?: number;
   /** Option 59: T2 rebinding time in seconds */
   rebindingTime?: number;
+  /** Generic/vendor options (43, 150, …) decoded to display strings, keyed by code (wire channel only) */
+  vendorOptions?: Record<number, string>;
 }
 
 /** Parameters sent in DHCPREQUEST (client → server) */
@@ -121,6 +130,8 @@ export interface DHCPAckResult {
   binding: DHCPBinding;
   /** Option 54: Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this ACK — see DHCPOfferResult.serverMac. */
+  serverMac?: string;
   /** XID echoed back */
   xid: number;
   /** Option 58: T1 renewal time in seconds */
@@ -178,6 +189,8 @@ export interface DHCPRequestWithNakResult {
   binding?: DHCPBinding;
   /** Server Identifier */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame carrying this reply — see DHCPOfferResult.serverMac. */
+  serverMac?: string;
   xid: number;
   /** NAK message (only for NAK) */
   message?: string;
@@ -265,6 +278,8 @@ export interface DHCPClientLease {
   domainName: string | null;
   /** Server identifier (DHCP server IP) */
   serverIdentifier: string;
+  /** Ethernet source MAC of the frame that answered (physical NIC, not option 54) */
+  serverMac: string | null;
   /** Lease start timestamp (ms) */
   leaseStart: number;
   /** Lease duration in seconds */
@@ -277,6 +292,16 @@ export interface DHCPClientLease {
   expiration: number;
   /** Transaction ID */
   xid: number;
+  /** Option 66 — TFTP/next server */
+  nextServer: string | null;
+  /** Option 67 — boot filename */
+  bootfileName: string | null;
+  /** Option 44 — NetBIOS (WINS) name servers */
+  netbiosServers: string[];
+  /** Option 46 — NetBIOS node type, decoded to its RFC 2132 byte value */
+  netbiosNodeType: number | null;
+  /** Generic/vendor options (43, 150, …), keyed by code */
+  vendorOptions: Record<number, string>;
 }
 
 // ─── DHCP Client Interface State ─────────────────────────────────────
@@ -352,6 +377,7 @@ export function createDefaultPoolConfig(name: string): DHCPPoolConfig {
     network: null,
     mask: null,
     defaultRouter: null,
+    defaultRouters: [],
     dnsServers: [],
     domainName: null,
     leaseDuration: 86400, // 1 day default

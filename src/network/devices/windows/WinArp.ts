@@ -10,7 +10,7 @@
  */
 
 import type { WinCommandContext } from './WinCommandExecutor';
-import { MACAddress } from '../../core/types';
+import { IPAddress, MACAddress } from '../../core/types';
 
 const ARP_HELP = `
 Displays and modifies the IP-to-Physical address translation tables used by
@@ -52,6 +52,7 @@ interface WinArpFlags {
   filterIP: string | null;
   filterIfaceIP: string | null;  // -N value
   staticMAC: string | null;
+  staticIfAddr: string | null;   // -s inet_addr eth_addr [if_addr]
   verbose: boolean;
 }
 
@@ -61,6 +62,7 @@ function parseArgs(args: string[]): WinArpFlags {
     filterIP: null,
     filterIfaceIP: null,
     staticMAC: null,
+    staticIfAddr: null,
     verbose: false,
   };
 
@@ -104,7 +106,8 @@ function parseArgs(args: string[]): WinArpFlags {
       flags.mode = 'add';
       if (i + 1 < args.length) flags.filterIP = args[i + 1];
       if (i + 2 < args.length) flags.staticMAC = args[i + 2];
-      i += 3;
+      if (i + 3 < args.length && !args[i + 3].startsWith('-')) flags.staticIfAddr = args[i + 3];
+      i += 4;
     } else {
       i++;
     }
@@ -194,7 +197,10 @@ function handleDelete(ctx: WinCommandContext, flags: WinArpFlags): string {
     return '';
   }
 
-  ctx.deleteARP(flags.filterIP);
+  let ip: IPAddress;
+  try { ip = new IPAddress(flags.filterIP); }
+  catch { return ARP_HELP; }
+  ctx.deleteARP(ip);
   // Windows silently accepts even if entry didn't exist
   return '';
 }
@@ -211,18 +217,31 @@ function handleAdd(ctx: WinCommandContext, flags: WinArpFlags): string {
     return ARP_HELP;
   }
 
-  // Determine the interface: use the first port with an IP
+  // Determine the interface: an explicit if_addr wins, else the first port with an IP.
   let iface = '';
-  for (const [name, port] of ctx.ports) {
-    if (port.getIPAddress()) {
-      iface = name;
-      break;
+  if (flags.staticIfAddr) {
+    for (const [name, port] of ctx.ports) {
+      if (port.getIPAddress()?.toString() === flags.staticIfAddr) {
+        iface = name;
+        break;
+      }
+    }
+    if (!iface) return `The parameter is incorrect.`;
+  } else {
+    for (const [name, port] of ctx.ports) {
+      if (port.getIPAddress()) {
+        iface = name;
+        break;
+      }
+    }
+    if (!iface && ctx.ports.size > 0) {
+      iface = ctx.ports.keys().next().value!;
     }
   }
-  if (!iface && ctx.ports.size > 0) {
-    iface = ctx.ports.keys().next().value!;
-  }
 
-  ctx.addStaticARP(flags.filterIP, mac, iface);
+  let ip: IPAddress;
+  try { ip = new IPAddress(flags.filterIP); }
+  catch { return ARP_HELP; }
+  ctx.addStaticARP(ip, mac, iface);
   return '';
 }

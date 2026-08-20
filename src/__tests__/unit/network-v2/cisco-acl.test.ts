@@ -531,7 +531,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       ]);
       const output = await r.executeCommand('show access-lists');
       expect(output).toContain('Standard IP access list 10');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
       expect(output).toContain('deny any');
     });
 
@@ -575,7 +575,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       ]);
       const output = await r.executeCommand('show access-lists');
       expect(output).toContain('Standard IP access list MY_ACL');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
     });
 
     it('6.5 should display empty when no ACLs configured', async () => {
@@ -600,7 +600,7 @@ describe('Cisco ACL (Access Control Lists)', () => {
       const { pcA } = buildTopology();
       // After traffic, match counts should be shown
       const output = await r1.executeCommand('show access-lists');
-      expect(output).toContain('permit 10.0.1.0 0.0.0.255');
+      expect(output).toContain('permit 10.0.1.0, wildcard bits 0.0.0.255');
     });
   });
 
@@ -1056,9 +1056,9 @@ describe('Cisco ACL (Access Control Lists)', () => {
       expect(output).toContain('64 bytes from 10.0.3.2');
     });
 
-    it('11.5 should not affect router-destined traffic (control plane)', async () => {
+    it('11.5 should filter router-destined traffic too (no control-plane bypass)', async () => {
       const { pcA, r1 } = buildTopology();
-      // Block ALL forwarded traffic with ACL
+      // Block ALL traffic arriving on the interface
       await configureRouter(r1, [
         'enable',
         'configure terminal',
@@ -1066,9 +1066,10 @@ describe('Cisco ACL (Access Control Lists)', () => {
         'interface GigabitEthernet0/0',
         'ip access-group 100 in',
       ]);
-      // Ping to R1's own interface should still work (control plane bypass)
+      // IOS runs the input ACL before the local/forward split, so an echo
+      // aimed at R1's own interface is denied like any other packet.
       const output = await pcA.executeCommand('ping -c 1 10.0.1.1');
-      expect(output).toContain('64 bytes from 10.0.1.1');
+      expect(output).not.toContain('64 bytes from 10.0.1.1');
     });
 
     it('11.6 should handle ACL without any entries gracefully', async () => {

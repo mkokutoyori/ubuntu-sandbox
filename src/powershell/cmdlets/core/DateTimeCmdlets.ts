@@ -7,6 +7,102 @@ import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
+import { trouverTimezone } from '@/network/devices/linux/time/TimezoneDatabase';
+
+// ─── Get-TimeZone / Set-TimeZone ──────────────────────────────────────────
+
+/**
+ * `Get-TimeZone` / `Set-TimeZone` (`docs/PRD-NTP-Tutoriel.md` §5).
+ *
+ * Les deux applets n'existaient NI en cmd NI en PowerShell : le §6.3 du
+ * tutoriel ne pouvait pas se suivre. Elles lisent et ecrivent le meme
+ * fuseau que `timedatectl` cote Linux — le decalage vit dans une seule
+ * table (`TimezoneDatabase`), sans quoi une machine Windows et une
+ * machine Linux ne s'accorderaient pas sur ce qu'est `WAT`.
+ *
+ * Windows nomme ses fuseaux autrement que tzdata (`W. Central Africa
+ * Standard Time` contre `Africa/Douala`) : la correspondance est
+ * explicite plutot que devinee, et un nom inconnu est REFUSE comme le
+ * vrai applet le refuse.
+ */
+const ZONES_WINDOWS: ReadonlyArray<{ id: string; iana: string; nom: string }> = [
+  { id: 'UTC', iana: 'Etc/UTC', nom: 'Coordinated Universal Time' },
+  { id: 'W. Central Africa Standard Time', iana: 'Africa/Douala', nom: 'West Central Africa' },
+  { id: 'GMT Standard Time', iana: 'Europe/London', nom: 'Dublin, Edinburgh, Lisbon, London' },
+  { id: 'Greenwich Standard Time', iana: 'Africa/Abidjan', nom: 'Monrovia, Reykjavik' },
+  { id: 'W. Europe Standard Time', iana: 'Europe/Berlin', nom: 'Amsterdam, Berlin, Bern, Rome' },
+  { id: 'Romance Standard Time', iana: 'Europe/Paris', nom: 'Brussels, Copenhagen, Madrid, Paris' },
+  { id: 'South Africa Standard Time', iana: 'Africa/Johannesburg', nom: 'Harare, Pretoria' },
+  { id: 'E. Africa Standard Time', iana: 'Africa/Nairobi', nom: 'Nairobi' },
+  { id: 'Egypt Standard Time', iana: 'Africa/Cairo', nom: 'Cairo' },
+  { id: 'Eastern Standard Time', iana: 'America/New_York', nom: 'Eastern Time (US & Canada)' },
+  { id: 'Central Standard Time', iana: 'America/Chicago', nom: 'Central Time (US & Canada)' },
+  { id: 'Pacific Standard Time', iana: 'America/Los_Angeles', nom: 'Pacific Time (US & Canada)' },
+  { id: 'India Standard Time', iana: 'Asia/Kolkata', nom: 'Chennai, Kolkata, Mumbai, New Delhi' },
+  { id: 'China Standard Time', iana: 'Asia/Shanghai', nom: 'Beijing, Chongqing, Hong Kong' },
+  { id: 'Tokyo Standard Time', iana: 'Asia/Tokyo', nom: 'Osaka, Sapporo, Tokyo' },
+  { id: 'Russian Standard Time', iana: 'Europe/Moscow', nom: 'Moscow, St. Petersburg' },
+  { id: 'AUS Eastern Standard Time', iana: 'Australia/Sydney', nom: 'Canberra, Melbourne, Sydney' },
+];
+
+/** Le decalage d'un identifiant Windows, via la table partagee. */
+function decalageDe(iana: string): number {
+  return trouverTimezone(iana)?.offsetMin ?? 0;
+}
+
+function objetZone(z: { id: string; iana: string; nom: string }): PSValue {
+  const min = decalageDe(z.iana);
+  const signe = min < 0 ? '-' : '+';
+  const abs = Math.abs(min);
+  const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const mm = String(abs % 60).padStart(2, '0');
+  return {
+    Id: z.id,
+    DisplayName: `(UTC${signe}${hh}:${mm}) ${z.nom}`,
+    StandardName: z.id,
+    BaseUtcOffset: `${signe}${hh}:${mm}:00`,
+    SupportsDaylightSavingTime: false,
+  } as unknown as PSValue;
+}
+
+export class GetTimeZoneCmdlet implements ICmdlet {
+  readonly name = 'get-timezone';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    if (ctx.named['listavailable'] !== undefined) {
+      return ZONES_WINDOWS.map(objetZone) as unknown as PSValue;
+    }
+    const courante = ctx.providers.identity?.timezone ?? 'Etc/UTC';
+    const z = ZONES_WINDOWS.find((x) => x.iana === courante) ?? ZONES_WINDOWS[0];
+    return objetZone(z);
+  }
+}
+
+export class SetTimeZoneCmdlet implements ICmdlet {
+  readonly name = 'set-timezone';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const demande = ctx.named['id'] ?? ctx.named['name'] ?? ctx.positional[0];
+    if (demande === undefined || demande === null) {
+      throw new PSRuntimeError(
+        "Set-TimeZone: Cannot bind argument to parameter 'Id' because it is null.");
+    }
+    const voulu = psValueToString(demande);
+    const z = ZONES_WINDOWS.find((x) => x.id.toLowerCase() === voulu.toLowerCase());
+    // Un identifiant inconnu est REFUSE : l'accepter reviendrait a
+    // laisser croire que le fuseau a change.
+    if (!z) {
+      throw new PSRuntimeError(
+        `Set-TimeZone: Cannot find the time zone with identifier "${voulu}" on the local computer.`);
+    }
+    ctx.providers.identity?.setTimezone(z.iana);
+    return null;
+  }
+}
 
 // ─── Get-Date ─────────────────────────────────────────────────────────────
 
@@ -17,7 +113,7 @@ export class GetDateCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const fmt     = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;
     const dateArg = ctx.named['date'] ?? ctx.positional[0] ?? null;
-    const now = new Date();
+    const now = ctx.providers.scheduledTasks?.now?.() ?? new Date();
     let d: Date;
     if (dateArg !== null && dateArg !== undefined) {
       d = new Date(psValueToString(dateArg));
@@ -148,10 +244,37 @@ export function makeTimeSpan(ms: number): Record<string, PSValue> {
   } as Record<string, PSValue>;
 }
 
+// ─── Measure-Command ──────────────────────────────────────────────────────
+
+export class MeasureCommandCmdlet implements ICmdlet {
+  readonly name = 'measure-command';
+  readonly displayName = 'Measure-Command';
+  readonly aliases = [] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const raw = ctx.named['expression'] ?? ctx.positional[0] ?? null;
+    if (!raw || typeof raw !== 'object' || (raw as Record<string, unknown>).type !== 'ScriptBlock') {
+      ctx.emitError('Measure-Command requires a script block, e.g. Measure-Command { ... }');
+      return makeTimeSpan(0);
+    }
+    const start = Date.now();
+    ctx.invokeBlock(raw as PSScriptBlock);
+    return makeTimeSpan(Date.now() - start);
+  }
+}
+
 // ─── Start-Sleep ──────────────────────────────────────────────────────────
 
 export class StartSleepCmdlet implements ICmdlet {
   readonly name = 'start-sleep';
   readonly aliases = ['sleep'] as const;
-  execute(_ctx: CmdletContext): PSValue { return null; }
+  execute(ctx: CmdletContext): PSValue {
+    const seconds = ctx.named['seconds'] ?? ctx.positional[0];
+    const millis = ctx.named['milliseconds'];
+    let ms = 0;
+    if (millis != null) ms += Number(millis);
+    if (seconds != null) ms += Number(seconds) * 1000;
+    if (ms > 0) ctx.providers.jobs?.recordSleep(ms);
+    return null;
+  }
 }

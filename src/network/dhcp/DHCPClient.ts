@@ -22,6 +22,7 @@
  */
 
 import { DHCPServer } from './DHCPServer';
+import { encodeNetbiosNodeType } from './DHCPPacket';
 import {
   DHCPClientState, DHCPClientIfaceState, DHCPClientLease,
   DHCPOfferResult, DHCPAckResult,
@@ -101,10 +102,16 @@ export class DHCPClient implements IProtocolEngine {
   private getMACForIface: (iface: string) => string;
 
   /** Interface IP configuration callback */
-  private configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void;
+  private configureIP: (iface: string, ip: string, mask: string, gateway: string | null, origin?: 'dhcp' | 'link-local') => void;
 
   /** Interface IP clear callback */
   private clearIP: (iface: string) => void;
+
+  private recordServerObservation: ((iface: string, serverIp: string, serverMac: string | null) => void) | null = null;
+
+  setServerObservationRecorder(cb: (iface: string, serverIp: string, serverMac: string | null) => void): void {
+    this.recordServerObservation = cb;
+  }
 
   /** ARP probe callback: returns true if the IP is already in use (conflict detected) */
   private checkAddressConflict: ((iface: string, ip: string) => boolean) | null = null;
@@ -189,7 +196,7 @@ export class DHCPClient implements IProtocolEngine {
 
   constructor(
     getMACForIface: (iface: string) => string,
-    configureIP: (iface: string, ip: string, mask: string, gateway: string | null) => void,
+    configureIP: (iface: string, ip: string, mask: string, gateway: string | null, origin?: 'dhcp' | 'link-local') => void,
     clearIP: (iface: string) => void,
   ) {
     this.getMACForIface = getMACForIface;
@@ -285,6 +292,7 @@ export class DHCPClient implements IProtocolEngine {
     verbose?: boolean;
     timeout?: number;
     daemon?: boolean;
+    fromInitReboot?: boolean;
   } = {}): string {
     const mac = this.getMACForIface(iface);
     const state = this.getState(iface);
@@ -292,15 +300,16 @@ export class DHCPClient implements IProtocolEngine {
     const { verbose = false, timeout = 30 } = options;
     const clientIdentifier = this.buildClientIdentifier(mac);
 
-    // Check for INIT-REBOOT: do we have a lastKnownLease from a prior session?
-    if (state.state === 'INIT' && state.lastKnownLease && !state.lease) {
-      const lastLease = state.lastKnownLease;
-      // Only try INIT-REBOOT if the lease hasn't expired
-      if (lastLease.expiration > Date.now()) {
-        return this.initReboot(iface, state, lastLease, mac, clientIdentifier, verbose);
+    // INIT-REBOOT (RFC 2131 §3.2): a client that already knows an address —
+    // whether it is currently bound to it or read it back from the lease
+    // database — asks for that address again instead of starting over at
+    // DISCOVER. Only an expired record sends us back to INIT.
+    if (!options.fromInitReboot) {
+      const recorded = state.lease ?? state.lastKnownLease;
+      if (recorded && recorded.expiration > Date.now()) {
+        return this.initReboot(iface, state, recorded, mac, clientIdentifier, verbose);
       }
-      // Lease expired — clear it and proceed with normal INIT
-      state.lastKnownLease = null;
+      if (state.lastKnownLease) state.lastKnownLease = null;
     }
 
     // Reset state
@@ -311,9 +320,11 @@ export class DHCPClient implements IProtocolEngine {
     // Log INIT
     state.logs.push(`INIT state - starting DHCP on ${iface}`);
     if (verbose) {
-      lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
-      lines.push(`Listening on LPF/${iface}/${mac}`);
-      lines.push(`Sending on   LPF/${iface}/${mac}`);
+      if (!options.fromInitReboot) {
+        lines.push(`Internet Systems Consortium DHCP Client 4.4.1`);
+        lines.push(`Listening on LPF/${iface}/${mac}`);
+        lines.push(`Sending on   LPF/${iface}/${mac}`);
+      }
       lines.push(`DHCPDISCOVER on ${iface} to 255.255.255.255 port 67 interval 3`);
       lines.push(`INIT state`);
     }
@@ -324,12 +335,7 @@ export class DHCPClient implements IProtocolEngine {
     if (channels.length === 0) {
       // Verbose mode or explicit timeout: show failure
       if (verbose || options.timeout !== undefined) {
-        state.state = 'INIT';
-        state.logs.push('No DHCPOFFERS received');
-        if (verbose) {
-          lines.push(`No DHCPOFFERS received.`);
-          lines.push(`No working leases in persistent database - sleeping. expired.`);
-        }
+        this.noOffersFallback(iface, state, lines, verbose);
         return lines.join('\n');
       }
 
@@ -382,12 +388,7 @@ export class DHCPClient implements IProtocolEngine {
       if (this.connectedServers.length === 0 && !verbose && options.timeout === undefined) {
         return this.autoAssignLease(iface, state);
       }
-      state.state = 'INIT';
-      state.logs.push('No DHCPOFFERS received');
-      if (verbose) {
-        lines.push(`No DHCPOFFERS received.`);
-        lines.push(`No working leases in persistent database - sleeping. expired.`);
-      }
+      this.noOffersFallback(iface, state, lines, verbose);
       return lines.join('\n');
     }
 
@@ -418,7 +419,7 @@ export class DHCPClient implements IProtocolEngine {
       clientIdentifier,
     });
     const ackResult = replyResult && replyResult.type === 'ACK' && replyResult.binding
-      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime }
+      ? { binding: replyResult.binding, serverIdentifier: replyResult.serverIdentifier, xid: replyResult.xid, renewalTime: replyResult.renewalTime, rebindingTime: replyResult.rebindingTime, serverMac: replyResult.serverMac }
       : null;
 
     if (!ackResult) {
@@ -499,6 +500,7 @@ export class DHCPClient implements IProtocolEngine {
       rebindingTime = Math.floor(leaseDuration * 0.875);
     }
 
+    const serverMac = ackResult.serverMac ?? offer.serverMac ?? null;
     const lease: DHCPClientLease = {
       iface,
       ipAddress: ackResult.binding.ipAddress,
@@ -507,12 +509,18 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: pool.dnsServers || [],
       domainName: pool.domainName,
       serverIdentifier: ackResult.serverIdentifier,
+      serverMac,
       leaseStart: ackResult.binding.leaseStart,
       leaseDuration,
       renewalTime,
       rebindingTime,
       expiration: ackResult.binding.leaseExpiration,
       xid: state.xid,
+      nextServer: pool.nextServer ?? null,
+      bootfileName: pool.bootfile ?? null,
+      netbiosServers: pool.netbiosServers ?? [],
+      netbiosNodeType: pool.netbiosNodeType ? encodeNetbiosNodeType(pool.netbiosNodeType) ?? null : null,
+      vendorOptions: offer.vendorOptions ?? {},
     };
 
     state.lease = lease;
@@ -520,6 +528,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface}`);
     state.logs.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
     state.logs.push(`bound to ${ackResult.binding.ipAddress}`);
+    this.recordServerObservation?.(iface, ackResult.serverIdentifier, serverMac);
 
     if (verbose) {
       lines.push(`DHCPREQUEST of ${ackResult.binding.ipAddress} on ${iface} to 255.255.255.255 port 67`);
@@ -562,6 +571,46 @@ export class DHCPClient implements IProtocolEngine {
     this.setupLeaseTimers(iface, state);
 
     return lines.join('\n');
+  }
+
+  /**
+   * Nothing answered. ISC's client then reads its lease database back: a
+   * record that has not expired is put back into service ("Trying recorded
+   * lease"), and only when there is none does it give up. Either way the
+   * interface and the client end up telling the same story — an address the
+   * client has disowned does not stay configured.
+   */
+  private noOffersFallback(
+    iface: string,
+    state: DHCPClientIfaceState,
+    lines: string[],
+    verbose: boolean,
+  ): void {
+    state.state = 'INIT';
+    state.logs.push('No DHCPOFFERS received');
+    if (verbose) lines.push('No DHCPOFFERS received.');
+
+    const recorded = state.lease ?? state.lastKnownLease;
+    if (recorded && recorded.expiration > Date.now()) {
+      state.state = 'BOUND';
+      state.lease = recorded;
+      state.lastKnownLease = { ...recorded };
+      state.logs.push(`Trying recorded lease ${recorded.ipAddress}`);
+      state.logs.push(`bound to ${recorded.ipAddress} (recorded lease)`);
+      if (verbose) {
+        lines.push(`Trying recorded lease ${recorded.ipAddress}`);
+        lines.push(`bound: renewal in ${recorded.renewalTime} seconds.`);
+      }
+      this.configureIP(iface, recorded.ipAddress, recorded.subnetMask, recorded.defaultGateway);
+      this.setupLeaseTimers(iface, state);
+      return;
+    }
+
+    if (state.lease) this.clearIP(iface);
+    state.lease = null;
+    state.lastKnownLease = null;
+    state.logs.push('No working leases in persistent database');
+    if (verbose) lines.push('No working leases in persistent database - sleeping.');
   }
 
   /**
@@ -613,15 +662,16 @@ export class DHCPClient implements IProtocolEngine {
     }
 
     if (!ackResult || !respondingChannel) {
-      // NAK or no response — fall back to normal INIT
+      // NAK or no response — fall back to normal INIT. The record itself is
+      // kept: if DISCOVER finds nothing either, an unexpired lease is still
+      // the client's best answer (see noOffersFallback).
       state.state = 'INIT';
-      state.lastKnownLease = null;
       state.logs.push('INIT-REBOOT failed - reverting to INIT');
       if (verbose) {
         lines.push(`DHCPNAK or no response - reverting to DHCPDISCOVER`);
       }
-      // Retry as normal INIT
-      return this.requestLease(iface, { verbose });
+      const retry = this.requestLease(iface, { verbose, fromInitReboot: true });
+      return retry ? lines.join('\n') + '\n' + retry : lines.join('\n');
     }
 
     // ARP probe
@@ -644,6 +694,7 @@ export class DHCPClient implements IProtocolEngine {
     const rebindingTime = ackResult.rebindingTime ?? Math.floor(ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000 * 0.875;
     const leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
 
+    const serverMac = ackResult.serverMac ?? null;
     const lease: DHCPClientLease = {
       iface,
       ipAddress: ackResult.binding.ipAddress,
@@ -652,16 +703,23 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: lastLease.dnsServers,
       domainName: lastLease.domainName,
       serverIdentifier: ackResult.serverIdentifier,
+      serverMac,
       leaseStart: ackResult.binding.leaseStart,
       leaseDuration,
       renewalTime: Math.floor(renewalTime),
       rebindingTime: Math.floor(rebindingTime),
       expiration: ackResult.binding.leaseExpiration,
       xid: state.xid,
+      nextServer: lastLease.nextServer,
+      bootfileName: lastLease.bootfileName,
+      netbiosServers: lastLease.netbiosServers,
+      netbiosNodeType: lastLease.netbiosNodeType,
+      vendorOptions: lastLease.vendorOptions,
     };
 
     state.lease = lease;
     state.lastKnownLease = { ...lease };
+    this.recordServerObservation?.(iface, ackResult.serverIdentifier, serverMac);
     state.logs.push(`DHCPACK of ${ackResult.binding.ipAddress} from ${ackResult.serverIdentifier}`);
     state.logs.push(`bound to ${ackResult.binding.ipAddress} (INIT-REBOOT)`);
 
@@ -811,12 +869,18 @@ export class DHCPClient implements IProtocolEngine {
       dnsServers: [],
       domainName: null,
       serverIdentifier: '0.0.0.0',
+      serverMac: null,
       leaseStart: now,
       leaseDuration,
       renewalTime: Math.floor(leaseDuration * 0.5),
       rebindingTime: Math.floor(leaseDuration * 0.875),
       expiration: now + leaseDuration * 1000,
       xid: state.xid,
+      nextServer: null,
+      bootfileName: null,
+      netbiosServers: [],
+      netbiosNodeType: null,
+      vendorOptions: {},
     };
 
     state.lease = lease;
@@ -827,7 +891,7 @@ export class DHCPClient implements IProtocolEngine {
     state.logs.push(`No DHCP server available - using APIPA`);
     state.logs.push(`bound to ${ip} (link-local)`);
 
-    this.configureIP(iface, ip, mask, null);
+    this.configureIP(iface, ip, mask, null, 'link-local');
     this.setupLeaseTimers(iface, state);
 
     return ''; // Non-verbose: silent success
@@ -887,7 +951,9 @@ export class DHCPClient implements IProtocolEngine {
               lease.leaseDuration = Math.floor((ackResult.binding.leaseExpiration - ackResult.binding.leaseStart) / 1000);
               if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
               if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
+              lease.serverMac = ackResult.serverMac ?? lease.serverMac;
               state.logs.push(`DHCPACK - lease renewed`);
+              this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
               // BUG FIX: Restart timers after successful renewal
               this.setupLeaseTimers(iface, state);
               return;
@@ -926,7 +992,10 @@ export class DHCPClient implements IProtocolEngine {
             lease.expiration = ackResult.binding.leaseExpiration;
             if (ackResult.renewalTime !== undefined) lease.renewalTime = ackResult.renewalTime;
             if (ackResult.rebindingTime !== undefined) lease.rebindingTime = ackResult.rebindingTime;
+            lease.serverIdentifier = ackResult.serverIdentifier;
+            lease.serverMac = ackResult.serverMac ?? null;
             state.logs.push(`DHCPACK - lease rebound`);
+            this.recordServerObservation?.(iface, ackResult.serverIdentifier, lease.serverMac);
             this.setupLeaseTimers(iface, state);
             return;
           }

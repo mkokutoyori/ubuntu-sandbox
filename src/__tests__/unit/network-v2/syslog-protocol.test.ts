@@ -79,8 +79,12 @@ describe('Syslog — wire format', () => {
   it('forwarded logs ride UDP/514 with a syslog payload', async () => {
     const bus = new EventBus();
     const r = new CiscoRouter('R1');
+    // A real peer at .99 so the now ARP-aware SyslogAgent (PRD audit #26)
+    // can actually resolve a next-hop MAC instead of a fictitious address
+    // that would just queue on a cold ARP cache and never reach the wire.
+    const collector = new CiscoRouter('SYSLOG-SRV');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    r.setEventBus(bus); sw.setEventBus(bus);
+    r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
     const cable = new Cable('c');
     cable.setEventBus(bus);
 
@@ -98,16 +102,19 @@ describe('Syslog — wire format', () => {
         }
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('c2').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.99'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
-    Logger.info(r.id, 'sys:restart', 'Configuration changed by console');
+    r.getSyslogAgent().sendImmediate('notification', '%SYS-5-RESTART',
+      'Configuration changed by console');
 
     expect(seen).not.toBeNull();
     expect(seen!.dport).toBe(UDP_PORT_SYSLOG);
-    expect(seen!.severity).toBe(SYSLOG_SEVERITY.informational);
+    expect(seen!.severity).toBe(SYSLOG_SEVERITY.notification);
     expect(seen!.message).toBe('Configuration changed by console');
-    expect(seen!.tag).toMatch(/SYS-6-RESTART/);
+    expect(seen!.tag).toMatch(/SYS-5-RESTART/);
   });
 });
 
@@ -117,13 +124,13 @@ describe('Syslog — reactive bus', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ serverIp: string; severity: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.warn(r.id, 'router:test', 'Test warning');
-    Logger.error(r.id, 'router:bug', 'Test error');
+    r.getSyslogAgent().sendImmediate('warning', '%SYS-4-CONFIG_RESOLVE_FAILURE', 'Test warning');
+    r.getSyslogAgent().sendImmediate('error', '%LINK-3-UPDOWN', 'Test error');
     expect(sent.length).toBe(2);
     expect(sent[0].serverIp).toBe('10.0.0.99');
     expect(sent[0].severity).toBe('warning');
@@ -135,15 +142,15 @@ describe('Syslog — reactive bus', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99', { severityThreshold: 'warning' });
     const sent: Array<{ severity: string }> = [];
     const dropped: Array<{ reason: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
     bus.subscribe('syslog.packet.dropped', (e) => dropped.push(e.payload));
-    Logger.info(r.id, 'sys:i', 'informational - should drop');
-    Logger.warn(r.id, 'sys:w', 'warning - should pass');
+    r.getSyslogAgent().sendImmediate('informational', '%SYS-6-LOGGINGHOST_STARTSTOP', 'informational - should drop');
+    r.getSyslogAgent().sendImmediate('warning', '%SYS-4-CONFIG_RESOLVE_FAILURE', 'warning - should pass');
     expect(sent.length).toBe(1);
     expect(sent[0].severity).toBe('warning');
     expect(dropped.some(d => d.reason === 'threshold')).toBe(true);
@@ -183,12 +190,12 @@ describe('Syslog — vendor-neutral', () => {
     const r = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ message: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.info(r.id, 'sys:up', 'system started');
+    r.getSyslogAgent().sendImmediate('informational', '%SYS-6-RESTART', 'system started');
     expect(sent.length).toBe(1);
     expect(sent[0].message).toBe('system started');
   });
@@ -200,12 +207,12 @@ describe('Syslog — switch as source', () => {
     const sw1 = new CiscoSwitch('switch-cisco', 'SW1', 4);
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 4);
     sw1.setEventBus(bus); sw2.setEventBus(bus);
-    new Cable('c').connect(sw1.getPort('FastEthernet0/0')!, sw2.getPort('FastEthernet0/0')!);
-    sw1.getPort('FastEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    new Cable('c').connect(sw1.getPort('FastEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    sw1.getPort('FastEthernet0/1')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     sw1.getSyslogAgent().addServer('10.0.0.99');
     const sent: Array<{ deviceId: string }> = [];
     bus.subscribe('syslog.packet.sent', (e) => sent.push(e.payload));
-    Logger.info(sw1.id, 'sw:up', 'switch ready');
+    sw1.getSyslogAgent().sendImmediate('informational', '%SYS-6-RESTART', 'switch ready');
     expect(sent.some(s => s.deviceId === sw1.id)).toBe(true);
   });
 });

@@ -78,6 +78,14 @@ describe('Group 1: Basic Words & Numbers', () => {
     expect(first('0').value).toBe('0');
   });
 
+  it('MAC-address-style literal stays a single WORD, not a subtraction chain', () => {
+    expect(types('00-11-22-33-44-55')).toEqual([PSTokenType.WORD]);
+    expect(values('00-11-22-33-44-55')).toEqual(['00-11-22-33-44-55']);
+    expect(values('arp -s 192.168.1.50 00-11-22-33-44-55')).toEqual(
+      ['arp', 's', '192.168.1.50', '00-11-22-33-44-55'],
+    );
+  });
+
   it('hex integer literals 0x...', () => {
     expect(first('0xFF').type).toBe(PSTokenType.NUMBER);
     expect(first('0xFF').value).toBe('0xFF');
@@ -141,10 +149,14 @@ describe('Group 2: String Literals', () => {
   });
 
   it("single-quoted string with escaped '' (doubled quote)", () => {
-    // In PS single-quoted strings, '' is the escape for a literal '
+    // In PS single-quoted strings, '' is the escape for a literal '.
+    // This assertion used to expect the raw "it''s", deferring the
+    // resolution to "the evaluator" — but no evaluator ever did it, so
+    // Write-Output 'it''s' printed it''s. The lexer resolves it now,
+    // and tok.value is the string's value, like every other token.
     const t = first("'it''s'");
     expect(t.type).toBe(PSTokenType.STRING_SINGLE);
-    expect(t.value).toBe("it''s");   // raw value preserved; evaluator resolves ''→'
+    expect(t.value).toBe("it's");
   });
 
   it('double-quoted "expandable" string', () => {

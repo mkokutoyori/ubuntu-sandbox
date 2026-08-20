@@ -5,13 +5,12 @@
  * with interface labels at each endpoint and a type indicator at the midpoint.
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
 import {
   computeConnectionPath,
-  getConnectionColor,
-  getConnectionDash,
+  getLinkAppearance,
   computeInterfaceLabelPositions,
   getConnectionMidpointInfo
 } from './connection-line-logic';
@@ -22,8 +21,13 @@ interface ConnectionLineProps {
   devices: NetworkDeviceUI[];
 }
 
-export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
-  const { selectedConnectionId, selectConnection, removeConnection } = useNetworkStore();
+function ConnectionLineImpl({ connection, devices }: ConnectionLineProps) {
+  // Scoped selectors, not a bare useNetworkStore() — this component
+  // shouldn't re-render just because the user panned, zoomed, or moved
+  // an unrelated device (rapport 09 audit, §1).
+  const selectedConnectionId = useNetworkStore(s => s.selectedConnectionId);
+  const selectConnection = useNetworkStore(s => s.selectConnection);
+  const removeConnection = useNetworkStore(s => s.removeConnection);
 
   const isSelected = selectedConnectionId === connection.id;
 
@@ -34,8 +38,13 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
 
   if (!sourceDevice || !targetDevice) return null;
 
-  const color = getConnectionColor(connection.type);
-  const dash = getConnectionDash(connection.type);
+  // Either end tells the same story — a link carries or it does not —
+  // so one missing carrier is enough to call the whole link down.
+  const sourceIface = sourceDevice.interfaces.find(i => i.id === connection.sourceInterfaceId);
+  const targetIface = targetDevice.interfaces.find(i => i.id === connection.targetInterfaceId);
+  const isOperational = (sourceIface?.isOperational ?? true) && (targetIface?.isOperational ?? true);
+
+  const { color, dash } = getLinkAppearance(connection.type, isOperational);
 
   const { path, midX, midY, curveFactor } = computeConnectionPath(
     { x: sourceDevice.x, y: sourceDevice.y },
@@ -50,8 +59,47 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
   const midpointInfo = getConnectionMidpointInfo(connection);
   const adjustedMidY = midY + curveFactor * 0.2;
 
+  // The state belongs in the label, not only in the colour: a red line
+  // says nothing to a screen reader, and nothing to a colour-blind
+  // operator either.
+  const connectionLabel =
+    `${connection.type} cable: ${sourceDevice.name} ${connection.sourceInterfaceId} ` +
+    `to ${targetDevice.name} ${connection.targetInterfaceId}` +
+    `, ${isOperational ? 'link up' : 'link down'}${isSelected ? ', selected' : ''}`;
+
+  // A plain SVG shape has no way to receive keyboard focus or announce
+  // itself to a screen reader, so a cable could only be selected/deleted
+  // by clicking (rapport 09 audit). tabIndex + role make the whole <g> a
+  // real focus stop; Enter selects (same as click) and Delete/Backspace
+  // removes it, mirroring NetworkDevice's keyboard handling.
+  const handleKeyDown = (e: React.KeyboardEvent<SVGGElement>) => {
+    switch (e.key) {
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        selectConnection(connection.id);
+        break;
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        removeConnection(connection.id);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
-    <g className="group">
+    <g
+      className="group focus-visible:outline-none"
+      role="button"
+      tabIndex={0}
+      aria-label={connectionLabel}
+      aria-pressed={isSelected}
+      data-link-state={isOperational ? 'up' : 'down'}
+      onFocus={() => selectConnection(connection.id)}
+      onKeyDown={handleKeyDown}
+    >
       {/* Invisible wider path for easier clicking */}
       <path
         d={path}
@@ -125,7 +173,8 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
         cy={adjustedMidY}
         r={isSelected ? 6 : 4}
         fill={color}
-        className="transition-all"
+        className="transition-all cursor-pointer"
+        onClick={() => selectConnection(connection.id)}
       />
 
       {/* Type label below midpoint (visible on hover or selection) */}
@@ -164,3 +213,10 @@ export function ConnectionLine({ connection, devices }: ConnectionLineProps) {
     </g>
   );
 }
+
+// `devices`/`connection` are referentially stable across renders while
+// nothing they represent actually changed (networkStore.ts's snapshot
+// cache) — memoizing skips the per-frame re-render every ConnectionLine
+// otherwise took from NetworkCanvas re-rendering on packet animation
+// ticks alone (rapport 09 audit).
+export const ConnectionLine = memo(ConnectionLineImpl);

@@ -38,6 +38,8 @@ export interface ResultSet {
   message?: string;
   /** Warning messages. */
   warnings?: string[];
+  /** Row count reported by some producers (EXPLAIN PLAN, utilities). */
+  rowCount?: number;
 }
 
 /**

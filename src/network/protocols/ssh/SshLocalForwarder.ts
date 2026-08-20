@@ -7,20 +7,19 @@
  *   fwd.dispose();    // tears the listener down
  *
  * Wire semantics (simulator):
- *   On accept, the forwarder asks the SSH server to relay the connection
- *   to `<spec.remoteHost>:<spec.remotePort>`. The current implementation
- *   opens an exec channel running `nc <host> <port>` and bridges the
- *   bytes both ways. Real OpenSSH negotiates a `direct-tcpip` channel —
- *   the pedagogical surface (listener visible in `ss -tln`, traffic
- *   carried over the same SSH session) is what tutorials care about.
+ *   On accept, the SSH server opens a real connection to
+ *   `<spec.remoteHost>:<spec.remotePort>` and the two sockets are piped
+ *   both ways — the server dials on the user's behalf, as real OpenSSH
+ *   does over a `direct-tcpip` channel. See `forwardRelay.ts` for what
+ *   stood here before and why it could never carry a byte.
  *
  * Reference: SSH-IMPLEMENTATION-ANALYSIS.md §5 P6.
  */
 
-import type { TcpStream as TcpConnection } from '@/network/core/TcpConnection';
+import type { TcpStream as TcpConnection } from '@/network/tcp/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { SshSession } from './session/SshSession';
-import { isOk } from './Result';
+import { relayThroughDialer } from './forwardRelay';
 
 export interface LocalForwardSpec {
   /** Port opened on the local device the user is ssh-ing from. */
@@ -41,6 +40,12 @@ export class SshLocalForwarder {
     private readonly localDevice: EndHost,
     private readonly session: SshSession | null,
     private readonly spec: LocalForwardSpec,
+    /**
+     * The tunnel's OTHER end — the SSH server, which dials the target on
+     * the user's behalf exactly as real OpenSSH does. Absent it, the
+     * forwarder can only listen, which is what this path did until now.
+     */
+    private readonly dialDevice: EndHost | null = null,
   ) {
     this.listenerKey = spec.localPort;
   }
@@ -53,7 +58,7 @@ export class SshLocalForwarder {
   register(): void {
     if (this.registered) return;
     this.localDevice.getTcpStack().listen(this.spec.localPort, {
-      onAccept: (socket) => this.handleAccept(socket),
+      onAccept: (socket) => this.handleAccept(socket as unknown as TcpConnection),
     });
     this.registered = true;
   }
@@ -71,24 +76,11 @@ export class SshLocalForwarder {
   // ─── private ────────────────────────────────────────────────────
 
   private handleAccept(conn: TcpConnection): void {
-    if (!this.session) {
-      // Pre-registered forwarder, no SSH yet: refuse cleanly.
-      conn.close();
-      return;
-    }
-    // Bridge through an exec channel running `nc remoteHost remotePort`.
-    // The simulator's `nc` is a thin stub but the channel events make
-    // the tunnel observable via `last`, `auth.log`, and the syslogger.
-    const channelResult = this.session.openExecChannel(
-      `nc ${this.spec.remoteHost} ${this.spec.remotePort}`,
+    relayThroughDialer(
+      conn,
+      this.dialDevice,
+      this.spec.remoteHost,
+      this.spec.remotePort,
     );
-    if (!isOk(channelResult)) {
-      conn.close();
-      return;
-    }
-    const channel = channelResult.value;
-    conn.onData((data) => channel.write(data));
-    channel.onData((data) => conn.write(data));
-    conn.onClose?.(() => channel.close());
   }
 }

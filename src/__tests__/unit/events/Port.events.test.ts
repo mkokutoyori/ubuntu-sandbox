@@ -26,8 +26,8 @@ describe('Port events (Phase 3)', () => {
   });
 
   const buildFrame = (): EthernetFrame => ({
-    srcMAC: MACAddress.parse('00:11:22:33:44:55'),
-    dstMAC: MACAddress.parse('66:77:88:99:aa:bb'),
+    srcMAC: new MACAddress('00:11:22:33:44:55'),
+    dstMAC: new MACAddress('66:77:88:99:aa:bb'),
     etherType: 0x0800,
     payload: null,
   });
@@ -85,7 +85,7 @@ describe('Port events (Phase 3)', () => {
     port.setEventBus(bus);
     port.setEquipmentId('dev1');
 
-    port.configureIP(IPAddress.parse('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    port.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     port.clearIP();
     port.clearIP(); // no-op
 
@@ -119,8 +119,8 @@ describe('Cable + Port frame events (Phase 3)', () => {
   let trace: DomainEvent[];
 
   const buildFrame = (): EthernetFrame => ({
-    srcMAC: MACAddress.parse('00:11:22:33:44:55'),
-    dstMAC: MACAddress.parse('66:77:88:99:aa:bb'),
+    srcMAC: new MACAddress('00:11:22:33:44:55'),
+    dstMAC: new MACAddress('66:77:88:99:aa:bb'),
     etherType: 0x0800,
     payload: null,
   });

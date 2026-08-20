@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-06-12T11:49:27.618Z
+Generated: 2026-08-19T07:03:15.585Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -14,25 +14,25 @@ Total steps: 247
 [2/247] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/247] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+[3/247] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[4/247] r1 [R1-GE0/0/0] undo shutdown
+[4/247] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/247] r1 [R1-GE0/0/0] quit
+[5/247] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/247] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/247] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/247] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/247] r1 [R1-GE0/0/1] undo shutdown
+[8/247] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/247] r1 [R1-GE0/0/1] quit
+[9/247] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/247] r1 [R1] interface LoopBack1
@@ -164,7 +164,7 @@ Total steps: 247
 <empty>
 
 [52/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 0       0     0
@@ -247,15 +247,16 @@ Total steps: 247
 <empty>
 
 [76/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 6       0     1
    1       totally-stubby0       0     0
    2       nssa   0       0     0
+   3       normal 0       0     0
 
 [77/247] r1 <R1> display ospf abr-asbr
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
   
    (No border routers known)
 
@@ -267,55 +268,55 @@ Total steps: 247
 [79/247] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[80/247] r1 [R1-GE0/0/1] ospf cost 100
+[80/247] r1 [R1-GigabitEthernet0/0/1] ospf cost 100
 <empty>
 
-[81/247] r1 [R1-GE0/0/1] ospf dr-priority 200
+[81/247] r1 [R1-GigabitEthernet0/0/1] ospf dr-priority 200
 <empty>
 
-[82/247] r1 [R1-GE0/0/1] ospf timer hello 5
+[82/247] r1 [R1-GigabitEthernet0/0/1] ospf timer hello 5
 <empty>
 
-[83/247] r1 [R1-GE0/0/1] ospf timer dead 20
+[83/247] r1 [R1-GigabitEthernet0/0/1] ospf timer dead 20
 <empty>
 
-[84/247] r1 [R1-GE0/0/1] ospf timer retransmit 10
+[84/247] r1 [R1-GigabitEthernet0/0/1] ospf timer retransmit 10
 <empty>
 
-[85/247] r1 [R1-GE0/0/1] ospf trans-delay 2
+[85/247] r1 [R1-GigabitEthernet0/0/1] ospf trans-delay 2
 <empty>
 
-[86/247] r1 [R1-GE0/0/1] ospf network-type p2p
+[86/247] r1 [R1-GigabitEthernet0/0/1] ospf network-type p2p
 <empty>
 
-[87/247] r1 [R1-GE0/0/1] ospf network-type broadcast
+[87/247] r1 [R1-GigabitEthernet0/0/1] ospf network-type broadcast
 <empty>
 
-[88/247] r1 [R1-GE0/0/1] ospf network-type nbma
+[88/247] r1 [R1-GigabitEthernet0/0/1] ospf network-type nbma
 <empty>
 
-[89/247] r1 [R1-GE0/0/1] ospf network-type p2mp
+[89/247] r1 [R1-GigabitEthernet0/0/1] ospf network-type p2mp
 <empty>
 
-[90/247] r1 [R1-GE0/0/1] ospf authentication-mode md5 1 cipher Key123
+[90/247] r1 [R1-GigabitEthernet0/0/1] ospf authentication-mode md5 1 cipher Key123
 <empty>
 
-[91/247] r1 [R1-GE0/0/1] ospf authentication-mode null
+[91/247] r1 [R1-GigabitEthernet0/0/1] ospf authentication-mode null
 <empty>
 
-[92/247] r1 [R1-GE0/0/1] ospf mtu-enable
+[92/247] r1 [R1-GigabitEthernet0/0/1] ospf mtu-enable
 <empty>
 
-[93/247] r1 [R1-GE0/0/1] ospf bfd enable
+[93/247] r1 [R1-GigabitEthernet0/0/1] ospf bfd enable
 <empty>
 
-[94/247] r1 [R1-GE0/0/1] ospf bfd min-tx-interval 100 min-rx-interval 100
+[94/247] r1 [R1-GigabitEthernet0/0/1] ospf bfd min-tx-interval 100 min-rx-interval 100
 <empty>
 
-[95/247] r1 [R1-GE0/0/1] ospf silent-interface
+[95/247] r1 [R1-GigabitEthernet0/0/1] ospf silent-interface
 <empty>
 
-[96/247] r1 [R1-GE0/0/1] quit
+[96/247] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [97/247] r1 [R1] return
@@ -338,30 +339,30 @@ Total steps: 247
      (Passive interface)
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.1.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.2.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.3.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.4.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
@@ -383,30 +384,30 @@ Total steps: 247
      (Passive interface)
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.1.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.2.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.3.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.4.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
@@ -434,32 +435,34 @@ Total steps: 247
 [106/247] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[107/247] r1 [R1-GE0/0/1] ipv6 enable
+[107/247] r1 [R1-GigabitEthernet0/0/1] ipv6 enable
 <empty>
 
-[108/247] r1 [R1-GE0/0/1] ipv6 address 2001:db8:1::1/64
+[108/247] r1 [R1-GigabitEthernet0/0/1] ipv6 address 2001:db8:1::1/64
 <empty>
 
-[109/247] r1 [R1-GE0/0/1] ospfv3 1 area 0
+[109/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 1 area 0
 <empty>
 
-[110/247] r1 [R1-GE0/0/1] ospfv3 cost 50
+[110/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 cost 50
 <empty>
 
-[111/247] r1 [R1-GE0/0/1] ospfv3 network-type p2p
+[111/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 network-type p2p
 <empty>
 
-[112/247] r1 [R1-GE0/0/1] ospfv3 timer hello 5
+[112/247] r1 [R1-GigabitEthernet0/0/1] ospfv3 timer hello 5
   Error: Invalid process ID.
 
-[113/247] r1 [R1-GE0/0/1] quit
+[113/247] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [114/247] r1 [R1] return
 <empty>
 
 [115/247] r1 <R1> display ospfv3
-  % Incomplete command.
+  Error: Incomplete command found at '^' position.
+  display ospfv3
+                ^
 
 [116/247] r1 <R1> display ospfv3 peer
   OSPFv3 Process 1 with Router ID 1.1.1.1
@@ -477,13 +480,13 @@ Total steps: 247
 
 --- [119] § OSPF display / reset / debug ---
 [119/247] r1 <R1> display ospf peer
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 1.1.1.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
 
 [120/247] r1 <R1> display ospf peer brief
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 1.1.1.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
@@ -505,91 +508,96 @@ Total steps: 247
      (Passive interface)
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.1.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.2.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.3.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.4.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
 
 [122/247] r1 <R1> display ospf lsdb
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x80000017
+   Router    1.1.1.1         1.1.1.1         0     96    0x8000001c
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000018
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000001d
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x80000019
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000001e
+  
+                       Area: 3
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000001f
   
 
 [123/247] r1 <R1> display ospf lsdb router
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Type: Router
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x8000001a
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000001b
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000001c
+   Router    1.1.1.1         1.1.1.1         0     96    0x80000020
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000021
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000022
+   Router    1.1.1.1         1.1.1.1         0     24    0x80000023
 
 [124/247] r1 <R1> display ospf lsdb network
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Type: Network
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [125/247] r1 <R1> display ospf lsdb summary
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Type: Sum-Net
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [126/247] r1 <R1> display ospf lsdb ase
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Type: External
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [127/247] r1 <R1> display ospf lsdb nssa
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Type: 7
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
 
 [128/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
            Routing Tables
   
    Routing for Network
@@ -599,7 +607,7 @@ Total steps: 247
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [129/247] r1 <R1> display ospf abr-asbr
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
   
    (No border routers known)
 
@@ -619,7 +627,7 @@ Total steps: 247
 
 [133/247] r1 <R1> display ospf statistics
   OSPF statistics:
-    LSA: 3 total
+    LSA: 4 total
     SPF: 16 runs
     Neighbors: 0, Adjacent: 0
   
@@ -627,6 +635,7 @@ Total steps: 247
       Area 0: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
       Area 1: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
       Area 2: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
+      Area 3: 1 router LSA(s), 0 network LSA(s), 0 summary LSA(s)
 
 [134/247] r1 <R1> display ospf error
   OSPF errors: 0
@@ -649,13 +658,13 @@ Total steps: 247
   OSPF counters reset.
 
 [140/247] r1 <R1> debugging ospf event
-<empty>
+  Info: OSPF event debugging is on.
 
 [141/247] r1 <R1> debugging ospf packet
-<empty>
+  Info: OSPF packet debugging is on.
 
 [142/247] r1 <R1> undo debugging all
-  Info: All debugging turned off.
+  Info: 2 debugging switch(es) have been turned off.
 
 
 --- [143] § regression: display family ---
@@ -681,6 +690,8 @@ Total steps: 247
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
@@ -696,19 +707,27 @@ Total steps: 247
   #
   interface LoopBack1
    ip address 10.10.1.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack2
    ip address 10.10.2.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack3
    ip address 10.10.3.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack4
    ip address 10.10.4.1 255.255.255.0
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
+   maximum load-balancing 4
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -718,117 +737,91 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [146/247] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-   ipv6 enable
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack1
-   ip address 10.10.1.1 255.255.255.0
-  #
-  interface LoopBack2
-   ip address 10.10.2.1 255.255.255.0
-  #
-  interface LoopBack3
-   ip address 10.10.3.1 255.255.255.0
-  #
-  interface LoopBack4
-   ip address 10.10.4.1 255.255.255.0
-  #
-  #
-  ospf 1
-   router-id 192.168.1.1
-   area 0
-    network 10.10.1.0 0.0.0.255
-    network 10.10.2.0 0.0.0.255
-    network 10.10.3.0 0.0.0.255
-    network 10.10.4.0 0.0.0.255
-    network 10.10.5.0 0.0.0.255
-    network 10.10.6.0 0.0.0.255
-    network 192.168.1.0 0.0.0.255
-    network 10.0.0.0 0.0.0.3
-  #
+  Error: The configuration file doesn't exist.
 
 [147/247] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 6
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 6
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack1                         10.10.1.1/24         DOWN       DOWN
-  LoopBack2                         10.10.2.1/24         DOWN       DOWN
-  LoopBack3                         10.10.3.1/24         DOWN       DOWN
-  LoopBack4                         10.10.4.1/24         DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack1                         10.10.1.1/24         up         up(s)
+  LoopBack2                         10.10.2.1/24         up         up(s)
+  LoopBack3                         10.10.3.1/24         up         up(s)
+  LoopBack4                         10.10.4.1/24         up         up(s)
 
 [148/247] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack1 current state : UP
-  Line protocol current state : UP
-  Internet Address is 10.10.1.1/255.255.255.0
+  Line protocol current state : UP (spoofing)
+  Internet Address is 10.10.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack2 current state : UP
-  Line protocol current state : UP
-  Internet Address is 10.10.2.1/255.255.255.0
+  Line protocol current state : UP (spoofing)
+  Internet Address is 10.10.2.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack3 current state : UP
-  Line protocol current state : UP
-  Internet Address is 10.10.3.1/255.255.255.0
+  Line protocol current state : UP (spoofing)
+  Internet Address is 10.10.3.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack4 current state : UP
-  Line protocol current state : UP
-  Internet Address is 10.10.4.1/255.255.255.0
+  Line protocol current state : UP (spoofing)
+  Internet Address is 10.10.4.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -863,7 +856,7 @@ Total steps: 247
   No ARP entries found.
 
 [153/247] r1 <R1> display ospf peer
-  OSPF Process with Router ID 192.168.1.1
+  OSPF Process with Router ID 1.1.1.1
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
@@ -885,36 +878,36 @@ Total steps: 247
      (Passive interface)
   
    LoopBack1 (10.10.1.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.1.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack2 (10.10.2.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.2.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack3 (10.10.3.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.3.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
    LoopBack4 (10.10.4.1)
-     Area: 0  Cost: 1  State: DR
-     Type: broadcast  Priority: 1
-     DR: 10.10.4.1  BDR: 0.0.0.0
+     Area: 0  Cost: 1  State: Loopback
+     Type: loopback  Priority: 1
+     DR: 0.0.0.0  BDR: 0.0.0.0
      Hello: 10s  Dead: 40s
      Neighbors: 0
   
 
 [155/247] r1 <R1> display ospf routing
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
            Routing Tables
   
    Routing for Network
@@ -924,29 +917,34 @@ Total steps: 247
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
 [156/247] r1 <R1> display ospf lsdb
-           OSPF Process 1 with Router ID 192.168.1.1
+           OSPF Process 1 with Router ID 1.1.1.1
                     Link State Database
   
                        Area: 0
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     96    0x8000003b
+   Router    1.1.1.1         1.1.1.1         0     96    0x8000004c
   
                        Area: 1
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000003c
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000004d
   
                        Area: 2
    Type      LinkState ID    AdvRouter       Age   Len   Sequence
-   Router    192.168.1.1     192.168.1.1     0     24    0x8000003d
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000004e
+  
+                       Area: 3
+   Type      LinkState ID    AdvRouter       Age   Len   Sequence
+   Router    1.1.1.1         1.1.1.1         0     24    0x8000004f
   
 
 [157/247] r1 <R1> display ospf brief
-  OSPF Process 1 with Router ID 192.168.1.1
+  OSPF Process 1 with Router ID 1.1.1.1
   
    Area    Type   Intf    Adj   LSA
    0       normal 6       0     1
    1       totally-stubby0       0     1
    2       nssa   0       0     1
+   3       normal 0       0     1
 
 [158/247] r1 <R1> display rip
   Info: RIP is not enabled.
@@ -961,10 +959,12 @@ Total steps: 247
   Info: BGP is not running.
 
 [162/247] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [163/247] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [164/247] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -986,8 +986,9 @@ Total steps: 247
   Info: No VRRP backup group is configured.
 
 [168/247] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [169/247] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -1015,14 +1016,22 @@ Total steps: 247
 [176/247] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:15.694  Aug 19 2026(EE2FD3B3.B1A9FBE7)
 
 [177/247] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [178/247] r1 <R1> display clock
-  2026-06-12 11:49:27
-  Friday
+  2026-08-19 07:03:15
+  Wednesday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1034,13 +1043,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:27
+  CPU Usage Stat. Time : 2026-08-19 07:03:15
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:27
+  Memory utilization statistics at 2026-08-19 07:03:15
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1057,8 +1066,7 @@ Total steps: 247
   -------------------------------------------------------------------------------
 
 [184/247] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1076,12 +1084,16 @@ Total steps: 247
 
 [186/247] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:15 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:15 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1129,21 +1141,21 @@ Total steps: 247
 
 [193/247] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
-  LoopBack1                   down    down      0%    0%       0          0
-  LoopBack2                   down    down      0%    0%       0          0
-  LoopBack3                   down    down      0%    0%       0          0
-  LoopBack4                   down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
+  LoopBack1                   up    up           0%     0%          0          0
+  LoopBack2                   up    up           0%     0%          0          0
+  LoopBack3                   up    up           0%     0%          0          0
+  LoopBack4                   up    up           0%     0%          0          0
 
 [194/247] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1153,9 +1165,9 @@ Total steps: 247
       Output: 0 packets, 0 bytes
 
 [195/247] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1163,6 +1175,8 @@ Total steps: 247
 [196/247] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1179,19 +1193,27 @@ Total steps: 247
   #
   interface LoopBack1
    ip address 10.10.1.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack2
    ip address 10.10.2.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack3
    ip address 10.10.3.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack4
    ip address 10.10.4.1 255.255.255.0
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
+   maximum load-balancing 4
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1201,6 +1223,20 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [197/247] r1 <R1> display diagnostic-information
@@ -1234,16 +1270,17 @@ Total steps: 247
 
 [202/247] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [203/247] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [204] § regression: pipe filters ---
@@ -1266,19 +1303,27 @@ Total steps: 247
   #
   interface LoopBack1
    ip address 10.10.1.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack2
    ip address 10.10.2.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack3
    ip address 10.10.3.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   #
   interface LoopBack4
    ip address 10.10.4.1 255.255.255.0
-  #
+   mtu 1514
+   bandwidth 8000000
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
+   maximum load-balancing 4
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1289,9 +1334,24 @@ Total steps: 247
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
 
 [206/247] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   interface GigabitEthernet0/0/1
@@ -1303,14 +1363,23 @@ Total steps: 247
    shutdown
   interface LoopBack1
    ip address 10.10.1.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   interface LoopBack2
    ip address 10.10.2.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   interface LoopBack3
    ip address 10.10.3.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   interface LoopBack4
    ip address 10.10.4.1 255.255.255.0
+   mtu 1514
+   bandwidth 8000000
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
+   maximum load-balancing 4
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1320,6 +1389,19 @@ Total steps: 247
     network 10.10.6.0 0.0.0.255
     network 192.168.1.0 0.0.0.255
     network 10.0.0.0 0.0.0.3
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
 
 [207/247] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
@@ -1330,10 +1412,12 @@ Total steps: 247
   10.10.4.0/24        Direct  0    0     D     10.10.4.1       LoopBack4
 
 [208/247] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  LoopBack1                         10.10.1.1/24         up         up(s)
+  LoopBack2                         10.10.2.1/24         up         up(s)
+  LoopBack3                         10.10.3.1/24         up         up(s)
+  LoopBack4                         10.10.4.1/24         up         up(s)
 
 
 --- [209] § regression: view nav + undo ---
@@ -1403,19 +1487,19 @@ Total steps: 247
 [230/247] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[231/247] r1 [Huawei-GE0/0/0] display this
+[231/247] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
   #
 
-[232/247] r1 [Huawei-GE0/0/0] shutdown
+[232/247] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[233/247] r1 [Huawei-GE0/0/0] undo shutdown
+[233/247] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[234/247] r1 [Huawei-GE0/0/0] quit
+[234/247] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [235/247] r1 [Huawei] ospf 1
@@ -1424,7 +1508,8 @@ Total steps: 247
 [236/247] r1 [Huawei-ospf-1] display this
   #
   ospf 1
-   router-id 192.168.1.1
+   router-id 1.1.1.1
+   maximum load-balancing 4
    area 0
     network 10.10.1.0 0.0.0.255
     network 10.10.2.0 0.0.0.255
@@ -1454,47 +1539,60 @@ Total steps: 247
   Enter system view, return user view with return command.
 
 [242/247] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [243/247] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [244/247] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [245/247] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [246/247] r1 [Huawei] return
 <empty>

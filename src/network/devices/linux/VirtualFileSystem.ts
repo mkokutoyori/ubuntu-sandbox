@@ -5,6 +5,8 @@
 
 import { SAMPLE_SCRIPTS } from './SampleScripts';
 import { OS_RELEASE } from './system/SystemInfo';
+import { VfsPath, type PathActor } from './VfsPath';
+import { AT_DENY_USINE } from './jobs/AtPermissions';
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev';
 
@@ -24,11 +26,27 @@ export interface INode {
   ctime: number;
   deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
   /**
+   * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
+   * peut modifier ni supprimer le fichier. C'est ce qui rend une
+   * archive de journaux opposable.
+   */
+  immutable?: boolean;
+  /**
    * Generated pseudo-file: when set, the content is produced by this
    * function on every read (like a real procfs entry), never stored.
    * Writes to such a node are ignored.
    */
   generator?: () => string;
+  /**
+   * A symlink whose displayed target is produced on read.
+   *
+   * `/proc/<pid>/exe` needs this: the kernel appends ` (deleted)` once
+   * the executable is unlinked, and drops the suffix again if the file
+   * comes back, so the string cannot be stamped once at creation. Path
+   * RESOLUTION keeps using `target`, which stays the plain path — a
+   * deleted target then fails to resolve on its own, as it should.
+   */
+  targetGenerator?: () => string;
   /** Per-user POSIX ACLs (`setfacl -m u:name:rwx`). Empty / absent = no ACL. */
   aclUsers?: Map<string, number>;
   /** Per-group POSIX ACLs (`setfacl -m g:name:rwx`). */
@@ -61,9 +79,77 @@ export class VirtualFileSystem {
   private nextInodeId = 1;
   /** Per-path subscribers — see `onWrite()`. */
   private writeListeners: Map<string, Set<VfsWriteListener>> = new Map();
+  private readOnlyResolver?: (path: string) => boolean;
+  /**
+   * How big this filesystem is, and how many inodes it has.
+   *
+   * `df -h` and `df -i` already reported real usage against these two
+   * numbers — but nothing enforced them, so the report was a rendering
+   * with no consequence: a lab could "fill the disk" and every write
+   * still succeeded (docs/PRD-Pannes.md §F9.1/§F9.2, both marked ❌).
+   * They are the filesystem's own business, so they live here and `df`
+   * reads them, rather than each of them holding its own constant.
+   *
+   * The defaults are the ones `df` used to hardcode, so an untouched
+   * machine is unchanged: a 50 GB root is invisible until a lab writes
+   * enough to matter, which is exactly the PRD's stated intent.
+   */
+  private capacityBytes = 50 * 1024 * 1024 * 1024;
+  private inodeCapacity = 655_360;
 
   constructor() {
     this.initializeRootFS();
+  }
+
+  // ─── Capacity (docs/PRD-Pannes.md §F9.1, §F9.2) ──────────────────
+
+  getCapacityBytes(): number { return this.capacityBytes; }
+  getInodeCapacity(): number { return this.inodeCapacity; }
+  /** Shrink (or grow) the volume — how a lab stages a full disk. */
+  setCapacityBytes(bytes: number): void { this.capacityBytes = Math.max(0, bytes); }
+  setInodeCapacity(count: number): void { this.inodeCapacity = Math.max(0, count); }
+
+  /**
+   * Bytes in use — the sum of every file's reported size, which is what
+   * `du` and `ls -l` show, so the three agree by construction.
+   */
+  usedBytes(): number {
+    let total = 0;
+    for (const inode of this.inodes.values()) {
+      if (inode.type === 'directory' || inode.generator) continue;
+      total += inode.size;
+    }
+    return total;
+  }
+
+  /** Inodes in use — every object, directories included, as on ext4. */
+  usedInodes(): number { return this.inodes.size; }
+
+  freeBytes(): number { return Math.max(0, this.capacityBytes - this.usedBytes()); }
+  freeInodes(): number { return Math.max(0, this.inodeCapacity - this.usedInodes()); }
+
+  /**
+   * Would growing a file by `deltaBytes` fit? A shrink always fits.
+   *
+   * The check is on the DELTA, not the new size, because overwriting a
+   * 1 GB file with another 1 GB of content frees as much as it takes —
+   * refusing that on a full disk would be wrong.
+   */
+  private fitsBytes(deltaBytes: number): boolean {
+    if (deltaBytes <= 0) return true;
+    return this.usedBytes() + deltaBytes <= this.capacityBytes;
+  }
+
+  /** Is there an inode left for one more file or directory? */
+  private fitsInode(): boolean { return this.usedInodes() < this.inodeCapacity; }
+
+  setReadOnlyResolver(resolver: (path: string) => boolean): void {
+    this.readOnlyResolver = resolver;
+  }
+
+  isReadOnly(path: string): boolean {
+    if (!this.readOnlyResolver) return false;
+    return this.readOnlyResolver(this.canonicalKey(path));
   }
 
   private initializeRootFS(): void {
@@ -77,13 +163,13 @@ export class VirtualFileSystem {
     const dirs = [
       '/usr', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr/lib64',
       '/usr/local', '/usr/local/bin',
-      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly',
+      '/etc', '/etc/cron.hourly', '/etc/cron.daily', '/etc/cron.weekly', '/etc/cron.monthly', '/etc/cron.d',
       '/etc/sudoers.d',
       '/etc/ufw', '/etc/ufw/applications.d',
       '/etc/iptables',
       '/home', '/home/scripts', '/root', '/tmp', '/var', '/var/lib', '/var/lib/dhcp', '/var/log',
       '/var/tmp', '/var/cache', '/var/spool', '/var/spool/mail', '/var/spool/cron',
-      '/var/local', '/var/opt', '/var/backups', '/var/run',
+      '/var/local', '/var/opt', '/var/backups', '/var/run', '/var/spool/cron/crontabs',
       '/dev', '/proc', '/sys', '/opt', '/run', '/mnt', '/media',
       '/boot', '/srv',
     ];
@@ -112,22 +198,62 @@ export class VirtualFileSystem {
     this.createCharDev('/dev/zero', 'zero');
     this.createCharDev('/dev/urandom', 'urandom');
 
+    // devpts — /dev/pts/N slave nodes are materialised per-session by
+    // whoever opens a pty (SSH accept, local terminal); ptmx is the
+    // always-present cloning device real Linux seeds at boot.
+    this.mkdirp('/dev/pts', 0o755, 0, 0);
+    this.createCharDev('/dev/pts/ptmx', 'ptmx');
+    // The local console VT is a static device node present from boot,
+    // unlike pty slaves which come and go with sessions.
+    this.createCharDev('/dev/tty1', 'tty');
+
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
+    this.createFileAt('/etc/crontab',
+      'SHELL=/bin/sh\n' +
+      'PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n' +
+      '\n' +
+      '17 *\t* * *\troot\tcd / && run-parts --report /etc/cron.hourly\n' +
+      '25 6\t* * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )\n' +
+      '47 6\t* * 7\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n' +
+      '52 6\t1 * *\troot\ttest -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )\n',
+      0o644, 0, 0);
+    // `/etc/anacrontab`, recopié du fichier d'usine d'Ubuntu et non
+    // inventé : c'est lui que les trois lignes `test -x /usr/sbin/anacron`
+    // du crontab ci-dessus laissent la main quand anacron est installé.
+    this.createFileAt('/etc/anacrontab',
+      '# /etc/anacrontab: configuration file for anacron\n' +
+      '\n' +
+      '# See anacron(8) and anacrontab(5) for details.\n' +
+      '\n' +
+      'SHELL=/bin/sh\n' +
+      'HOME=/root\n' +
+      'LOGNAME=root\n' +
+      '\n' +
+      '# These replace cron\'s entries\n' +
+      '1\t5\tcron.daily\trun-parts --report /etc/cron.daily\n' +
+      '7\t10\tcron.weekly\trun-parts --report /etc/cron.weekly\n' +
+      '@monthly\t15\tcron.monthly\trun-parts --report /etc/cron.monthly\n',
+      0o644, 0, 0);
+    // Le paquet `at` livre un `/etc/at.deny` nommant les comptes de
+    // service — contrairement à cron, dont aucun fichier de permission
+    // n'existe d'usine. La différence est réelle et se voit à l'`ls`.
+    this.createFileAt('/etc/at.deny', AT_DENY_USINE, 0o640, 0, 1);
+    this.chmod('/var/spool/cron/crontabs', 0o1730);
     this.createFileAt('/etc/hosts',
       '127.0.0.1\tlocalhost\n' +
       '127.0.1.1\tlocalhost\n' +
       '\n' +
       '# The following lines are desirable for IPv6 capable hosts\n' +
       '::1\tlocalhost ip6-localhost ip6-loopback\n',
-      0o644, 0, 0);
+      0o666, 0, 0);
     this.createFileAt('/etc/shells', '/bin/bash\n/bin/sh\n', 0o644, 0, 0);
     this.createFileAt('/etc/os-release', OS_RELEASE, 0o644, 0, 0);
     this.createFileAt('/etc/lsb-release',
       'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=22.04\n' +
       'DISTRIB_CODENAME=jammy\nDISTRIB_DESCRIPTION="Ubuntu 22.04.4 LTS"\n',
       0o644, 0, 0);
-    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n', 0o440, 0, 0);
+    this.createFileAt('/etc/sudoers', 'root ALL=(ALL:ALL) ALL\n%sudo ALL=(ALL:ALL) ALL\n\n#includedir /etc/sudoers.d\n', 0o440, 0, 0);
     this.createFileAt('/etc/resolv.conf', '', 0o644, 0, 0);
 
     // UFW default config files
@@ -270,6 +396,48 @@ export class VirtualFileSystem {
     return '/' + resolved.join('/');
   }
 
+  path(input: string, cwd = '/', actor?: PathActor): VfsPath {
+    return new VfsPath(this, input, cwd, actor);
+  }
+
+  realpath(path: string, cwd = '/', requireFinal = true): string | null {
+    const input = path.startsWith('/')
+      ? path
+      : cwd.replace(/\/$/, '') + '/' + path;
+    let remaining = input.split('/').filter(Boolean);
+    const out: string[] = [];
+    let links = 0;
+
+    while (remaining.length > 0) {
+      const comp = remaining.shift()!;
+      if (comp === '.') continue;
+      if (comp === '..') { out.pop(); continue; }
+
+      const candidate = '/' + [...out, comp].join('/');
+      const node = this.resolveInode(candidate, false);
+
+      if (!node) {
+        if (remaining.length === 0 && !requireFinal) {
+          out.push(comp);
+          break;
+        }
+        return null;
+      }
+
+      if (node.type === 'symlink') {
+        if (++links > 40) return null;
+        const targetParts = node.target.split('/').filter(Boolean);
+        if (node.target.startsWith('/')) out.length = 0;
+        remaining = [...targetParts, ...remaining];
+        continue;
+      }
+
+      out.push(comp);
+    }
+
+    return '/' + out.join('/');
+  }
+
   /**
    * Resolve a path to its inode, following symlinks.
    * Returns null if path doesn't exist.
@@ -371,6 +539,7 @@ export class VirtualFileSystem {
       const existing = this.inodes.get(existingId);
       if (existing && existing.type === 'file') {
         if (!this.canWriteFile(existing, uid, gid)) return null;
+        if (!this.fitsBytes(content.length - existing.size)) return null; // ENOSPC
         existing.content = content;
         existing.size = content.length;
         existing.mtime = Date.now();
@@ -379,6 +548,9 @@ export class VirtualFileSystem {
       return null; // Can't overwrite non-file
     }
 
+    // A new file costs an inode as well as its bytes; a volume can run
+    // out of either (docs/PRD-Pannes.md §F9.1, §F9.2).
+    if (!this.fitsInode() || !this.fitsBytes(content.length)) return null;
     const inode = this.allocInode('file', permissions, uid, gid);
     inode.content = content;
     inode.size = content.length;
@@ -473,26 +645,39 @@ export class VirtualFileSystem {
   /** POSIX-ish write check on an existing file: root bypass, owner→
    *  user-w, group→group-w, other→other-w. Generated pseudo-files are
    *  treated as writable so /proc no-op writes still succeed. */
+  checkAccess(
+    inode: INode,
+    mode: 'r' | 'w' | 'x',
+    uid: number,
+    gid: number,
+    gids: number[] = [],
+  ): boolean {
+    if (uid === 0) return true;
+    if (mode === 'w' && inode.generator) return true;
+    const perms = inode.permissions & 0o777;
+    const bit = mode === 'r' ? 4 : mode === 'w' ? 2 : 1;
+    if (inode.uid === uid) return ((perms >> 6) & bit) !== 0;
+    if (inode.gid === gid || gids.includes(inode.gid)) return ((perms >> 3) & bit) !== 0;
+    return (perms & bit) !== 0;
+  }
+
   private canWriteFile(inode: INode, uid: number, gid: number): boolean {
-    if (uid === 0) return true;
-    if (inode.generator) return true;
-    const m = inode.permissions;
-    if (uid === inode.uid) return (m & 0o200) !== 0;
-    if (gid === inode.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    return this.checkAccess(inode, 'w', uid, gid);
   }
 
-  /** POSIX-ish write check on a directory: needed both to create a new
-   *  child and to delete an existing one. */
   private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
-    if (uid === 0) return true;
-    const m = parent.permissions;
-    if (uid === parent.uid) return (m & 0o200) !== 0;
-    if (gid === parent.gid) return (m & 0o020) !== 0;
-    return (m & 0o002) !== 0;
+    return this.checkAccess(parent, 'w', uid, gid);
   }
 
-  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false): boolean {
+  /**
+   * `declaredSizeBytes`, when given, overrides the inode's reported
+   * `size` instead of the actual `content.length` — for callers that
+   * track a real logical size out-of-band from the (much smaller or
+   * empty) physical placeholder they store, e.g. RMAN backup pieces
+   * whose true size can be gigabytes. `ls -l`/`du`/`stat` all read
+   * `inode.size`, so this is the only override point needed.
+   */
+  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number): boolean {
     // Handle special devices
     const inode = this.resolveInode(path);
     if (inode?.type === 'chardev') {
@@ -503,14 +688,19 @@ export class VirtualFileSystem {
     if (inode?.type === 'file') {
       // Generated pseudo-files (procfs) are read-only — writes are discarded.
       if (inode.generator) return true;
+      if (this.isReadOnly(path)) return false;
+      if (inode.immutable) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
+      const nextSize = declaredSizeBytes
+        ?? (append ? inode.content.length + content.length : content.length);
+      if (!this.fitsBytes(nextSize - inode.size)) return false; // ENOSPC
       const previous = inode.content;
       if (append) {
         inode.content += content;
       } else {
         inode.content = content;
       }
-      inode.size = inode.content.length;
+      inode.size = declaredSizeBytes ?? inode.content.length;
       inode.mtime = Date.now();
       this.emitWrite({
         path: this.canonicalKey(path),
@@ -523,6 +713,7 @@ export class VirtualFileSystem {
     }
 
     if (!inode) {
+      if (this.isReadOnly(path)) return false;
       // Ensure parent directories exist (auto-create like mkdir -p)
       const lastSlash = path.lastIndexOf('/');
       if (lastSlash > 0) {
@@ -531,10 +722,15 @@ export class VirtualFileSystem {
           this.mkdirp(parentDir, 0o755, uid, gid);
         }
       }
-      // Create new file
+      // Create new file. A declared size is what the file OCCUPIES, so it
+      // is what the volume has to have room for — checking only
+      // `content.length` here would let `truncate -s 1G` fit on a full
+      // disk, since its placeholder content is empty.
+      if (!this.fitsBytes(declaredSizeBytes ?? content.length)) return false; // ENOSPC
       const perms = 0o666 & ~umask;
       const newInode = this.createFileAt(path, content, perms, uid, gid);
       if (newInode !== null) {
+        if (declaredSizeBytes !== undefined) newInode.size = declaredSizeBytes;
         this.emitWrite({
           path: this.canonicalKey(path),
           previous: '',
@@ -547,6 +743,32 @@ export class VirtualFileSystem {
     }
 
     return false;
+  }
+
+  /**
+   * Register a symlink whose target STRING is produced on every read
+   * (`ls -l`, `readlink`), while `target` stays the plain path used for
+   * resolution. Idempotent: re-registering swaps the generator.
+   */
+  registerGeneratedSymlink(
+    path: string, generator: () => string, uid = 0, gid = 0,
+  ): void {
+    const existing = this.resolveInode(path, false);
+    if (existing && existing.type === 'symlink') {
+      existing.targetGenerator = generator;
+      return;
+    }
+    // The stored target is the resolvable one: strip whatever suffix the
+    // generator adds for display.
+    const plain = generator().replace(/ \(deleted\)$/, '');
+    if (!this.createSymlink(path, plain, uid, gid)) return;
+    const node = this.resolveInode(path, false);
+    if (node) node.targetGenerator = generator;
+  }
+
+  /** What `ls -l` and `readlink` print for a symlink. */
+  linkTarget(inode: INode): string {
+    return inode.targetGenerator ? inode.targetGenerator() : inode.target;
   }
 
   /**
@@ -593,6 +815,7 @@ export class VirtualFileSystem {
     const child = this.inodes.get(childId);
     if (!child) return false;
     if (child.type === 'directory') return false;
+    if (child.immutable) return false;
 
     parentInode.children.delete(basename);
     parentInode.mtime = Date.now();
@@ -612,6 +835,7 @@ export class VirtualFileSystem {
     const [parentInode, basename] = parent;
 
     if (parentInode.children.has(basename)) return false;
+    if (!this.fitsInode()) return false; // ENOSPC — a directory is an inode too
 
     const dirInode = this.allocInode('directory', permissions, uid, gid);
     const parentPath = path.split('/').filter(Boolean);
@@ -760,6 +984,15 @@ export class VirtualFileSystem {
     const inode = this.resolveInode(path);
     if (!inode?.aclUsers) return false;
     const had = inode.aclUsers.delete(user);
+    if (had) inode.ctime = Date.now();
+    return had;
+  }
+
+  /** Drop a per-group ACL entry. */
+  removeGroupAcl(path: string, group: string): boolean {
+    const inode = this.resolveInode(path);
+    if (!inode?.aclGroups) return false;
+    const had = inode.aclGroups.delete(group);
     if (had) inode.ctime = Date.now();
     return had;
   }

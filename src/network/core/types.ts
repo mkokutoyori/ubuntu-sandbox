@@ -79,12 +79,37 @@ export class MACAddress {
     return this.octets.map(o => o.toString(16).padStart(2, '0')).join(':');
   }
 
+  toCiscoString(): string {
+    const hex = this.octets.map(o => o.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
+  }
+
   toJSON(): string {
     return this.toString();
   }
 
   static resetCounter(): void {
     macCounter = 0;
+  }
+
+  /**
+   * Make sure the generator never hands out an address that is already in
+   * use — called when a MAC is restored from a saved topology rather than
+   * generated.
+   *
+   * The generator is a plain counter, so a restored address only stays
+   * unique if the counter is pushed past it: a topology whose devices were
+   * created and deleted before the save can hold a MAC numerically higher
+   * than the number of ports it contains, and the next device added after
+   * loading would otherwise be issued that very address. Addresses outside
+   * the generator's own `02:00:00:…` block (a hand-set MAC, a vendor OUI)
+   * are left alone — they were never drawn from this counter.
+   */
+  static reserve(mac: MACAddress): void {
+    const [b0, b1, b2, b3, b4, b5] = mac.getOctets();
+    if (b0 !== 0x02 || b1 !== 0x00 || b2 !== 0x00) return;
+    const value = (b3 << 16) | (b4 << 8) | b5;
+    if (value > macCounter) macCounter = value;
   }
 }
 
@@ -131,6 +156,11 @@ export class IPAddress {
   networkAddress(mask: SubnetMask): IPAddress {
     const m = mask.getOctets();
     return new IPAddress(this.octets.map((o, i) => o & m[i]));
+  }
+
+  broadcastAddress(mask: SubnetMask): IPAddress {
+    const m = mask.getOctets();
+    return new IPAddress(this.octets.map((o, i) => (o & m[i]) | (~m[i] & 0xff)));
   }
 
   equals(other: IPAddress): boolean {
@@ -390,6 +420,45 @@ export class IPv6Address {
            this.hextets[7] === 2;
   }
 
+  /** Check if this is All_DHCP_Relay_Agents_and_Servers (ff02::1:2, RFC 8415 §7.1) */
+  isAllDhcpRelayAgentsAndServersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 6).every(h => h === 0) &&
+           this.hextets[6] === 1 &&
+           this.hextets[7] === 2;
+  }
+
+  /**
+   * Multicast scope (RFC 4291 §2.7): 1 = interface, 2 = link, 5 = site,
+   * e = global. Returns -1 for a non-multicast address.
+   *
+   * This is NOT `isLinkLocal()`, which tests `fe80::/10` and is
+   * therefore false for every group including `ff02::5`.
+   */
+  multicastScope(): number {
+    if (!this.isMulticast()) return -1;
+    return this.hextets[0] & 0x000f;
+  }
+
+  /** A link-scoped group (`ff02::/16`). */
+  isLinkLocalScopeMulticast(): boolean {
+    return this.multicastScope() === 2;
+  }
+
+  /** Check if this is AllSPFRouters (ff02::5, RFC 5340 §A.1) */
+  isAllSpfRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 5;
+  }
+
+  /** Check if this is AllDRouters (ff02::6, RFC 5340 §A.1) */
+  isAllDRoutersMulticast(): boolean {
+    return this.hextets[0] === 0xff02 &&
+           this.hextets.slice(1, 7).every(h => h === 0) &&
+           this.hextets[7] === 6;
+  }
+
   /** Check if this is a solicited-node multicast address (ff02::1:ffXX:XXXX) */
   isSolicitedNodeMulticast(): boolean {
     return this.hextets[0] === 0xff02 &&
@@ -618,6 +687,7 @@ export interface EthernetFrame {
 export function ethernetFrameBytes(frame: EthernetFrame): number {
   let overhead = 18;
   if ((frame as { dot1q?: unknown }).dot1q) overhead += 4;
+  if ((frame as { outerDot1q?: unknown }).outerDot1q) overhead += 4;
   const p = frame.payload as { totalLength?: number; payloadLength?: number } | undefined;
   let payloadBytes: number;
   if (frame.etherType === ETHERTYPE_ARP) payloadBytes = 28;
@@ -810,6 +880,15 @@ export interface ARPPacket extends NetworkPdu {
   senderIP: IPAddress;
   targetMAC: MACAddress;
   targetIP: IPAddress;
+}
+
+export interface ARPEntry {
+  mac: MACAddress;
+  /** Interface on which this entry was learned */
+  iface: string;
+  timestamp: number;
+  /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
+  type: 'dynamic' | 'static' | 'failed';
 }
 
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────
@@ -1036,6 +1115,13 @@ export interface IPv6Packet extends NetworkPdu {
   destinationIP: IPv6Address;
   /** Upper-layer payload (ICMPv6, UDP, TCP, etc.) */
   payload: ICMPv6Packet | UDPPacket | unknown;
+  /**
+   * An AH/ESP header protects this packet (RFC 4302/4303). No bytes are
+   * serialized here, so the header cannot travel any other way; what
+   * matters is that a receiver without a matching security association
+   * sees it and drops. Used by OSPFv3 (RFC 4552 §3).
+   */
+  ipsecProtected?: boolean;
 }
 
 /**
@@ -1398,6 +1484,8 @@ export interface RIPPacket extends NetworkPdu {
   version: number;
   /** Route entries (up to 25 per message) */
   entries: RIPRouteEntry[];
+  /** RFC 2453 §4.1 authentication, carried as the first entry on the wire. */
+  auth?: { keyId: number; digest: string };
 }
 
 // ─── Device Types ────────────────────────────────────────────────────
@@ -1418,6 +1506,7 @@ export type DeviceType =
   | 'router-cisco'
   | 'router-huawei'
   // Firewalls
+  | 'firewall-generic'
   | 'firewall-cisco'
   | 'firewall-fortinet'
   | 'firewall-paloalto'
@@ -1442,6 +1531,8 @@ export interface PortCounters {
   errorsOut: number;
   dropsIn: number;
   dropsOut: number;
+  /** Frames discarded on receipt because of a bad FCS (IOS `show interfaces` CRC counter). */
+  crcErrorsIn?: number;
 }
 
 export interface PortInfo {

@@ -9,11 +9,21 @@
  */
 
 import type { CommandTrie } from '../CommandTrie';
+import type { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
+import {
+  type HuaweiDebugLookup,
+  type HuaweiDebugPlatform,
+  categoriesDeLaPlateforme,
+  resoudreDebugHuawei,
+} from '../../router/diag/huaweiDebugCatalog';
+import { HUAWEI_ERRORS } from '../cli-utils';
 
 /** `save` / `save force` — persist running config to "flash". */
 export function saveConfiguration(): string {
   return [
-    'Info: The current configuration was saved to the device successfully.',
+    'Warning: The current configuration will be written to the device.',
+    'Now saving the current configuration to the slot 0.',
+    'Save the configuration successfully.',
   ].join('\n');
 }
 
@@ -54,17 +64,22 @@ export function setHeader(): string {
  * Called by BOTH HuaweiSwitchShell and HuaweiVRPShell so the wiring
  * itself isn't duplicated (DRY).
  */
-export function registerHuaweiCommonMgmt(trie: CommandTrie, debugFlags?: Set<string>): void {
-  const onDebug = (label: string) => { debugFlags?.add(label); };
-  const offDebug = (label?: string) => {
-    if (!debugFlags) return;
-    if (!label) { debugFlags.clear(); return; }
-    debugFlags.delete(label);
-  };
-  trie.registerGreedy('save', 'Save current configuration', () => saveConfiguration());
+export function registerHuaweiCommonMgmt(
+  trie: CommandTrie,
+  debug?: { service: () => HuaweiDebugService | null; platform: HuaweiDebugPlatform },
+  onSave?: () => void,
+  onResetSaved?: () => void,
+): void {
+  if (debug) registerHuaweiDebugging(trie, debug.service, debug.platform);
+  trie.registerGreedy('save', 'Save current configuration', () => {
+    onSave?.();
+    return saveConfiguration();
+  });
   trie.register('reboot', 'Reboot the device', () => rebootDevice());
-  trie.register('reset saved-configuration', 'Erase startup configuration', () =>
-    resetSavedConfiguration());
+  trie.register('reset saved-configuration', 'Erase startup configuration', () => {
+    onResetSaved?.();
+    return resetSavedConfiguration();
+  });
   trie.register('commit', 'Commit candidate configuration', () => commitConfiguration());
   trie.registerGreedy('screen-length', 'Set terminal screen length', () => screenLength());
   trie.registerGreedy('header', 'Configure login/shell banner', () => setHeader());
@@ -72,35 +87,75 @@ export function registerHuaweiCommonMgmt(trie: CommandTrie, debugFlags?: Set<str
   trie.register('undo terminal monitor', 'Disable terminal monitoring', () => 'Info: Current terminal monitor is off.');
   trie.register('terminal debugging', 'Enable terminal debugging', () => 'Info: Current terminal debugging is on.');
   trie.register('undo terminal debugging', 'Disable terminal debugging', () => 'Info: Current terminal debugging is off.');
-  trie.registerGreedy('debugging ip icmp', 'Enable ICMP debugging', (args) => {
-    const what = `ip icmp${args.length ? ' ' + args.join(' ') : ''}`;
-    onDebug(`${what} debugging is on`);
-    return `Info: ${what} debugging is on.`;
-  });
-  trie.registerGreedy('debugging ip packet', 'Enable IP packet debugging', (args) => {
-    const what = `ip packet${args.length ? ' ' + args.join(' ') : ''}`;
-    onDebug(`${what} debugging is on`);
-    return `Info: ${what} debugging is on.`;
-  });
-  trie.registerGreedy('undo debugging ip icmp', 'Disable ICMP debugging', () => {
-    offDebug('ip icmp debugging is on');
-    return 'Info: ip icmp debugging is off.';
-  });
-  trie.registerGreedy('undo debugging ip packet', 'Disable IP packet debugging', () => {
-    offDebug('ip packet debugging is on');
-    return 'Info: ip packet debugging is off.';
-  });
-  trie.registerGreedy('debugging', 'Enable debugging', (args) => {
-    const what = args.join(' ') || 'all';
-    onDebug(`${what} debugging is on`);
-    return `Info: ${what} debugging is on.`;
-  });
-  trie.registerGreedy('undo debugging', 'Disable debugging', (args) => {
-    if (args.join(' ').toLowerCase().startsWith('all')) {
-      offDebug();
-      return 'Info: All possible debugging functions are off.';
+}
+
+/**
+ * `debugging` / `undo debugging` — un seul enregistrement, pour les deux
+ * plateformes et pour TOUTES les vues.
+ *
+ * Avant, la meme commande etait enregistree a trois endroits : le
+ * fourre-tout glouton ci-dessus (qui rangeait la phrase deja rendue dans
+ * un `Set` sans proprietaire), les formes OSPF de `HuaweiOspfCommands`,
+ * et les formes du routeur dans `HuaweiVRPShell`. Consequence mesuree :
+ * `debugging ospf spf` marchait en vue utilisateur et etait REFUSE en
+ * vue systeme, `debugging icmp` et `debugging ip icmp` designaient le
+ * meme sujet dans deux magasins distincts, et `debugging zzz` etait
+ * accepte.
+ */
+export function registerHuaweiDebugging(
+  trie: CommandTrie,
+  service: () => HuaweiDebugService | null,
+  plateforme: HuaweiDebugPlatform,
+): void {
+  const refus = (r: HuaweiDebugLookup, ligne: string): string | null => {
+    switch (r.kind) {
+      case 'incomplete':
+        return HUAWEI_ERRORS.INCOMPLETE(ligne);
+      case 'sans-source':
+        return `Error: ${r.raison}`;
+      case 'autre-plateforme':
+      case 'inconnu': {
+        const pos = ligne.toLowerCase().indexOf(r.token.toLowerCase());
+        return HUAWEI_ERRORS.UNRECOGNIZED(ligne, pos < 0 ? ligne.length : pos);
+      }
+      default:
+        return null;
     }
-    offDebug(`${args.join(' ')} debugging is on`);
-    return `Info: ${args.join(' ')} debugging is off.`;
+  };
+
+  // Chaque ecriture canonique est un VRAI chemin de la trie, et pas
+  // seulement une branche du fourre-tout : sans cela `debugging ip icmp`
+  // est avale par `debugging ipsec`, dont `ip` est un prefixe non
+  // ambigu — defaut mesure en retirant les anciens noeuds litteraux.
+  // C'est aussi ce qui rend ces formes decouvrables par `?`.
+  for (const spec of categoriesDeLaPlateforme(plateforme)) {
+    const chemin = spec.words.join(' ');
+    trie.registerGreedy(`debugging ${chemin}`, `Enable ${spec.label} debugging`, (args) => {
+      const svc = service();
+      return svc ? svc.enable(spec.category, args.length ? args.join(' ') : undefined) : '';
+    });
+    trie.registerGreedy(`undo debugging ${chemin}`, `Disable ${spec.label} debugging`, () => {
+      const svc = service();
+      return svc ? svc.disable(spec.category) : '';
+    });
+  }
+
+  trie.registerGreedy('debugging', 'Enable system debugging functions', (args, raw) => {
+    const svc = service();
+    if (!svc) return '';
+    const ligne = raw?.trim() || `debugging ${args.join(' ')}`.trim();
+    const r = resoudreDebugHuawei(args, svc.getPlatform());
+    return r.kind === 'ok'
+      ? svc.enable(r.spec.category, r.scope ?? undefined)
+      : (refus(r, ligne) ?? '');
+  });
+
+  trie.registerGreedy('undo debugging', 'Disable system debugging functions', (args, raw) => {
+    const svc = service();
+    if (!svc) return '';
+    const ligne = raw?.trim() || `undo debugging ${args.join(' ')}`.trim();
+    if (args.length && args[0].toLowerCase() === 'all') return svc.disableAll();
+    const r = resoudreDebugHuawei(args, svc.getPlatform());
+    return r.kind === 'ok' ? svc.disable(r.spec.category) : (refus(r, ligne) ?? '');
   });
 }

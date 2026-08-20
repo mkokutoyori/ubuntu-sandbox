@@ -19,6 +19,18 @@ export interface AuthorizedKey {
   readonly algorithm: string;
   readonly material: string;
   readonly comment: string;
+  readonly options?: AuthorizedKeyOptions;
+}
+
+export interface AuthorizedKeyOptions {
+  readonly command?: string;
+  readonly from?: string;
+  readonly noPty?: boolean;
+  readonly noPortForwarding?: boolean;
+  readonly noAgentForwarding?: boolean;
+  readonly noX11Forwarding?: boolean;
+  readonly restrict?: boolean;
+  readonly environment?: ReadonlyArray<readonly [string, string]>;
 }
 
 export interface SshHostConfig {
@@ -140,13 +152,87 @@ export function formatOctalMode(mode: number): string {
 export function parseAuthorizedKeysLine(line: string): AuthorizedKey | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('#')) return null;
-  const parts = trimmed.split(/\s+/);
+  const split = splitAuthorizedKeyLine(trimmed);
+  if (!split) return null;
+  const { optionsRaw, algorithm, material, comment } = split;
+  const options = optionsRaw ? parseAuthorizedKeyOptions(optionsRaw) : undefined;
+  return options
+    ? { algorithm, material, comment, options }
+    : { algorithm, material, comment };
+}
+
+function splitAuthorizedKeyLine(line: string): { optionsRaw: string | null; algorithm: string; material: string; comment: string } | null {
+  let i = 0;
+  let inQuote = false;
+  let optionsRaw: string | null = null;
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === '"' && line[i - 1] !== '\\') inQuote = !inQuote;
+    if (!inQuote && /\s/.test(ch)) {
+      const head = line.slice(0, i);
+      if (head.startsWith('ssh-') || head.startsWith('ecdsa-') || head.startsWith('sk-')) {
+        i = 0;
+        break;
+      }
+      optionsRaw = head;
+      i += 1;
+      while (i < line.length && /\s/.test(line[i])) i += 1;
+      break;
+    }
+    i += 1;
+  }
+  const rest = line.slice(i).trim();
+  const parts = rest.split(/\s+/);
   if (parts.length < 2) return null;
-  const [algorithm, material, ...rest] = parts;
-  if (!algorithm.startsWith('ssh-') && !algorithm.startsWith('ecdsa-')) {
+  const [algorithm, material, ...commentParts] = parts;
+  if (!algorithm.startsWith('ssh-') && !algorithm.startsWith('ecdsa-') && !algorithm.startsWith('sk-')) {
     return null;
   }
-  return { algorithm, material, comment: rest.join(' ') };
+  return { optionsRaw, algorithm, material, comment: commentParts.join(' ') };
+}
+
+function parseAuthorizedKeyOptions(raw: string): AuthorizedKeyOptions {
+  const opts: { -readonly [K in keyof AuthorizedKeyOptions]: AuthorizedKeyOptions[K] } = {};
+  const env: Array<readonly [string, string]> = [];
+  for (const tok of splitOptionList(raw)) {
+    const eq = tok.indexOf('=');
+    const key = (eq < 0 ? tok : tok.slice(0, eq)).toLowerCase();
+    const valRaw = eq < 0 ? '' : tok.slice(eq + 1);
+    const val = valRaw.replace(/^"|"$/g, '');
+    switch (key) {
+      case 'command': opts.command = val; break;
+      case 'from': opts.from = val; break;
+      case 'no-pty': opts.noPty = true; break;
+      case 'no-port-forwarding': opts.noPortForwarding = true; break;
+      case 'no-agent-forwarding': opts.noAgentForwarding = true; break;
+      case 'no-x11-forwarding': opts.noX11Forwarding = true; break;
+      case 'restrict':
+        opts.restrict = true;
+        opts.noPty = opts.noPortForwarding = opts.noAgentForwarding = opts.noX11Forwarding = true;
+        break;
+      case 'environment': {
+        const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(val);
+        if (m) env.push([m[1], m[2]]);
+        break;
+      }
+    }
+  }
+  if (env.length > 0) opts.environment = env;
+  return opts;
+}
+
+function splitOptionList(raw: string): string[] {
+  const tokens: string[] = [];
+  let cur = '';
+  let inQuote = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '"' && raw[i - 1] !== '\\') { inQuote = !inQuote; cur += ch; continue; }
+    if (!inQuote && ch === ',') { if (cur) tokens.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
 }
 
 /**

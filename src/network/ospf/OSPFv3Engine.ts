@@ -32,6 +32,7 @@ import {
 } from './types';
 import type { IProtocolEngine } from '../core/interfaces';
 import { getDefaultEventBus, type IEventBus } from '@/events/EventBus';
+import { computeOSPFv3LSAChecksum } from './checksum';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { TimerSet } from '@/events/TimerSet';
 import {
@@ -45,7 +46,6 @@ import {
   type OSPFv3Observables,
 } from './observables';
 import { OSPFv3SignalRefreshActor } from './actors';
-import type { OSPFNeighborState, OSPFInterfaceState, OSPFNeighborEvent } from './types';
 
 // ─── OSPFv3 LSA Types ───────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ export class OSPFv3Engine implements IProtocolEngine {
    *   - Intra-Area-Prefix-LSAs (0x2009): area-scoped
    */
   private linkLSAs: Map<string, OSPFv3LinkLSA> = new Map();          // key: ifaceName
+  private remoteLinkLSAs: Map<string, Map<string, OSPFv3LinkLSA>> = new Map(); // ifaceName → advertisingRouter → LSA
   private intraPrefixLSAs: Map<string, OSPFv3IntraAreaPrefixLSA> = new Map(); // key: areaId
 
   /** SPF scheduling — TimerSet token. */
@@ -488,6 +489,12 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   // ─── Hello Protocol ───────────────────────────────────────────
 
+  /** Send a Hello on a named interface (the v3 twin of OSPFv2's). */
+  sendHelloOnInterface(ifaceName: string): void {
+    const iface = this.interfaces.get(ifaceName);
+    if (iface) this.sendHello(iface);
+  }
+
   private sendHello(iface: OSPFv3Interface): void {
     if (!this.sendCallback) return;
 
@@ -520,6 +527,12 @@ export class OSPFv3Engine implements IProtocolEngine {
     this.dispatchIncoming(ifaceName, hello, srcIP);
     const iface = this.interfaces.get(ifaceName);
     if (!iface) return;
+
+    // passive-interface: a Hello is neither sent nor processed (IOS
+    // behaviour, already written in the v2 engine). Invisible while
+    // nothing arrived on the wire; once the Hello is real, a passive
+    // interface formed a one-way neighbour.
+    if (iface.passive) return;
 
     // Validate timers
     if (hello.helloInterval !== iface.helloInterval) return;
@@ -625,7 +638,12 @@ export class OSPFv3Engine implements IProtocolEngine {
 
   // ─── DR/BDR Election ──────────────────────────────────────────
 
-  private drElection(iface: OSPFv3Interface): void {
+  /**
+   * DR/BDR election (RFC 5340 §4.2.1). Public like its v2 counterpart:
+   * convergence accelerates the WaitTimer rather than waiting out the
+   * dead interval, and can only do so by calling this.
+   */
+  drElection(iface: OSPFv3Interface): void {
     if (iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
       this.setInterfaceState(iface, 'PointToPoint');
       return;
@@ -769,20 +787,40 @@ export class OSPFv3Engine implements IProtocolEngine {
       linkLocalAddress,
       prefixes,
     };
+    lsa.checksum = computeOSPFv3LSAChecksum(lsa);
 
     this.linkLSAs.set(ifaceName, lsa);
-
-    // Flooding Link-LSAs on the link is left to a future iteration
-    // (production would send via the interface to AllSPFRouters).
+    this.getBus().publish({
+      topic: 'ospf.lsa.installed',
+      payload: { ...this.routerRef(), areaId: 'link-local', lsa: lsaHeaderOf(lsa) },
+    });
 
     return lsa;
   }
 
-  /**
-   * Retrieve the Link-LSA for the named interface.
-   */
   getLinkLSA(ifaceName: string): OSPFv3LinkLSA | undefined {
     return this.linkLSAs.get(ifaceName);
+  }
+
+  installRemoteLinkLSA(ifaceName: string, lsa: OSPFv3LinkLSA): boolean {
+    let perIface = this.remoteLinkLSAs.get(ifaceName);
+    if (!perIface) {
+      perIface = new Map();
+      this.remoteLinkLSAs.set(ifaceName, perIface);
+    }
+    const existing = perIface.get(lsa.advertisingRouter);
+    if (existing && existing.lsSequenceNumber >= lsa.lsSequenceNumber) return false;
+    perIface.set(lsa.advertisingRouter, lsa);
+    this.getBus().publish({
+      topic: 'ospf.lsa.installed',
+      payload: { ...this.routerRef(), areaId: 'link-local', lsa: lsaHeaderOf(lsa) },
+    });
+    return true;
+  }
+
+  getRemoteLinkLSAs(ifaceName: string): OSPFv3LinkLSA[] {
+    const map = this.remoteLinkLSAs.get(ifaceName);
+    return map ? [...map.values()] : [];
   }
 
   // ─── OSPFv3 Intra-Area-Prefix-LSA (RFC 5340 §4.4.3) ──────────
@@ -810,6 +848,7 @@ export class OSPFv3Engine implements IProtocolEngine {
       referencedAdvRouter: this.config.routerId,
       prefixes,
     };
+    lsa.checksum = computeOSPFv3LSAChecksum(lsa);
 
     this.intraPrefixLSAs.set(areaId, lsa);
     return lsa;
@@ -873,6 +912,7 @@ export class OSPFv3Engine implements IProtocolEngine {
     this.lsdb = createEmptyLSDB();
     this.ospfRoutes = [];
     this.linkLSAs.clear();
+    this.remoteLinkLSAs.clear();
     this.intraPrefixLSAs.clear();
 
     // Reset signals to their empty/disabled baseline (bypass actors).

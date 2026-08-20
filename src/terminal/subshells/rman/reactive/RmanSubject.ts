@@ -17,7 +17,15 @@ export interface RmanObservable<T> {
 
 export type RmanOperator<T, U> = (source: RmanObservable<T>) => RmanObservable<U>;
 
-export class RmanSubject<T> implements RmanObservable<T> {
+/**
+ * Deliberately does NOT `implements RmanObservable<T>` — its own `pipe`
+ * is a single loosely-typed rest-arg method, which can never satisfy
+ * `RmanObservable<T>`'s properly-overloaded `pipe` (a class's
+ * implementation signature must itself be callable for every overload,
+ * which a rest-arg-of-`unknown` signature structurally isn't). Callers
+ * needing the fully-typed surface use `asObservable()`'s cast view.
+ */
+export class RmanSubject<T> {
   private readonly _subscribers = new Set<(v: T) => void>();
   private _completed = false;
 
@@ -43,10 +51,17 @@ export class RmanSubject<T> implements RmanObservable<T> {
     const self = this;
     return {
       subscribe: (fn) => self.subscribe(fn),
-      pipe:      (...ops: Array<RmanOperator<unknown, unknown>>) => self.pipe(...ops as never),
+      pipe: (...ops: Array<RmanOperator<unknown, unknown>>) => self.pipe(...ops),
     } as RmanObservable<T>;
   }
 
+  /**
+   * Untyped on purpose: `RmanSubject<T>` only exposes this loosely-typed
+   * rest-arg form (a class method can't carry the same overloads as
+   * `RmanObservable<T>` without the implementation signature itself
+   * becoming overload-incompatible). Callers that need properly inferred
+   * operator types must pipe through `asObservable()`'s cast view instead.
+   */
   pipe(...operators: Array<RmanOperator<unknown, unknown>>): RmanObservable<unknown> {
     let current: RmanObservable<unknown> = this.asObservable() as RmanObservable<unknown>;
     for (const op of operators) current = op(current);

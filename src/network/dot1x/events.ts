@@ -31,6 +31,9 @@ export interface Dot1xAuthOutcomePayload extends Dot1xDeviceRef {
   identity: string;
   accepted: boolean;
   reason: 'local-accept' | 'local-reject-unknown-user' | 'local-reject-bad-password' | 'radius-accept' | 'radius-reject';
+  /** RFC 3580 §3.31 dynamic VLAN, when the RADIUS Access-Accept carried Tunnel-Type=VLAN + Tunnel-Private-Group-ID. */
+  vlanId?: number;
+  sessionTimeoutSec?: number;
 }
 
 export type Dot1xDomainEvent =

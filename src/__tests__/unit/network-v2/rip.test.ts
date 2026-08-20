@@ -619,9 +619,13 @@ describe('Group 5: CLI Commands', () => {
 
     const output = await r1.executeCommand('show ip protocols');
     expect(output).toContain('Routing Protocol is "rip"');
-    expect(output).toContain('Version: 2');
-    expect(output).toContain('Split horizon: enabled');
-    expect(output).toContain('Advertised networks:');
+    // Sans `version 2`, IOS annonce son defaut : emission en v1, reception
+    // des deux. `Version: 2` etait une ligne que cette vue ne produit pas.
+    expect(output).toContain('Default version control: send version 1, receive any version');
+    // IOS ne parle pas d'horizon partage ici — c'est une propriete
+    // d'interface, que `show ip interface` rend. Les reseaux annonces
+    // sont sous leur titre reel.
+    expect(output).toContain('Routing for Networks:');
     expect(output).toContain('10.0.0.0');
 
     r1.disableRIP();
@@ -648,7 +652,7 @@ describe('Group 5: CLI Commands', () => {
 
     const output = await r1.executeCommand('show ip route');
     expect(output).toContain('R - RIP');
-    expect(output).toContain('R    192.168.1.0/24 [120/1]');
+    expect(output).toMatch(/R\s+192\.168\.1\.0\/24 \[120\/1\]/);
     expect(output).toContain('via 10.0.1.2');
 
     r1.disableRIP();
@@ -680,8 +684,13 @@ describe('Group 5: CLI Commands', () => {
 
     const output = await r1.executeCommand('show running-config');
     expect(output).toContain('router rip');
-    expect(output).toContain('version 2');
     expect(output).toContain('network 10.0.0.0');
+    // Aucun `version` n'a ete tape : IOS n'en rend pas. C'est le moteur
+    // qui tourne en v2 par defaut, ce que la configuration ne dit pas.
+    expect(output).not.toContain(' version 2');
+
+    await r1.executeCommand('version 2');
+    expect(await r1.executeCommand('show running-config')).toContain(' version 2');
 
     r1.disableRIP();
   });

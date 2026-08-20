@@ -131,4 +131,42 @@ describe('DHCP on the wire — relay agent (RFC 3046)', () => {
     expect(seenOnClient.length).toBeGreaterThanOrEqual(2);
     expect(seenOnClient.every(v => v === undefined)).toBe(true);
   });
+
+  it('increments hops to 1 on the first relay hop and stamps giaddr with the ingress IP (RFC 951 §3)', async () => {
+    const { h1, relay, server } = await buildRelayLab();
+    const bus = new EventBus();
+    h1.setEventBus(bus); relay.setEventBus(bus); server.setEventBus(bus);
+    const forwarded: Array<{ giaddr: string; helpers: string[]; hops: number }> = [];
+    bus.subscribe('dhcp.relay.forwarded', (e) =>
+      forwarded.push(e.payload as { giaddr: string; helpers: string[]; hops: number }));
+
+    await h1.executeCommand('dhclient eth0');
+
+    expect(dhcpState(h1, 'eth0').state).toBe('BOUND');
+    expect(forwarded.length).toBeGreaterThanOrEqual(2);
+    expect(forwarded[0].giaddr).toBe('10.0.1.1');
+    expect(forwarded[0].helpers).toEqual(['10.0.12.2']);
+    expect(forwarded[0].hops).toBe(1);
+  });
+
+  it('drops the request and emits dhcp.relay.dropped once hops reaches 16 (RFC 951 §3 loop guard)', async () => {
+    const { relay } = await buildRelayLab();
+    const bus = new EventBus();
+    relay.setEventBus(bus);
+    const drops: Array<{ reason: string; hops: number }> = [];
+    bus.subscribe('dhcp.relay.dropped', (e) =>
+      drops.push(e.payload as { reason: string; hops: number }));
+
+    type RelayInternals = {
+      relayDhcpToHelpers: (port: string, pkt: DHCPPacket, helpers: string[]) => void;
+    };
+    const Pkt = (await import('@/network/dhcp/DHCPPacket')).DHCPPacket;
+    const pkt = Pkt.createDiscover('aa:bb:cc:dd:ee:ff', 0xCAFEBABE);
+    pkt.hops = 16;
+    (relay as unknown as RelayInternals).relayDhcpToHelpers('GigabitEthernet0/0', pkt, ['10.0.12.2']);
+
+    expect(drops.length).toBe(1);
+    expect(drops[0].reason).toBe('hops-exceeded');
+    expect(drops[0].hops).toBe(16);
+  });
 });

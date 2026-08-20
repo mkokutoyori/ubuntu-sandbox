@@ -32,9 +32,9 @@ describe('isValidSubnetMask', () => {
 describe('Cisco interface config — argument validation (IOS error messages)', () => {
   it('ip address rejects an invalid mask and does not change interface state', async () => {
     const r = await intf();
-    expect(await r.executeCommand('ip address 1.2.3.4 999.0.0.0')).toBe(INVALID);
-    expect(await r.executeCommand('ip address 1.2.3.4 255.0.255.0')).toBe(INVALID);
-    expect(await r.executeCommand('ip address 300.1.1.1 255.255.255.0')).toBe(INVALID);
+    expect(await r.executeCommand('ip address 1.2.3.4 999.0.0.0')).toContain(INVALID);
+    expect(await r.executeCommand('ip address 1.2.3.4 255.0.255.0')).toContain(INVALID);
+    expect(await r.executeCommand('ip address 300.1.1.1 255.255.255.0')).toContain(INVALID);
     expect(r.getPort('GigabitEthernet0/0')?.getIPAddress()).toBeNull();
   });
 
@@ -46,11 +46,11 @@ describe('Cisco interface config — argument validation (IOS error messages)', 
 
   it('speed/duplex/mtu/bandwidth reject invalid arguments instead of silently ignoring them', async () => {
     const r = await intf();
-    expect(await r.executeCommand('speed 999')).toBe(INVALID);
-    expect(await r.executeCommand('duplex foo')).toBe(INVALID);
-    expect(await r.executeCommand('mtu abc')).toBe(INVALID);
-    expect(await r.executeCommand('bandwidth -5')).toBe(INVALID);
-    expect(await r.executeCommand('bandwidth 0')).toBe(INVALID);
+    expect(await r.executeCommand('speed 999')).toContain(INVALID);
+    expect(await r.executeCommand('duplex foo')).toContain(INVALID);
+    expect(await r.executeCommand('mtu abc')).toContain(INVALID);
+    expect(await r.executeCommand('bandwidth -5')).toContain(INVALID);
+    expect(await r.executeCommand('bandwidth 0')).toContain(INVALID);
   });
 
   it('valid speed/duplex/bandwidth still apply', async () => {

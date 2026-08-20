@@ -31,7 +31,32 @@ function seedValue(key: RegistryKey, name: string, value: string | number, type:
 
 // ─── Seed data ───────────────────────────────────────────────────────────────
 
-function buildHKLM(): RegistryKey {
+/** The subset of registry values that differ between a Windows client and a Windows Server install. */
+export interface WindowsProductIdentity {
+  productName: string;
+  currentBuildNumber: string;
+  releaseId: string;
+  editionId: string;
+  installationType: 'Client' | 'Server';
+}
+
+export const WINDOWS_CLIENT_PRODUCT_IDENTITY: WindowsProductIdentity = {
+  productName: 'Windows 10 Pro',
+  currentBuildNumber: '22631',
+  releaseId: '2009',
+  editionId: 'Professional',
+  installationType: 'Client',
+};
+
+export const WINDOWS_SERVER_PRODUCT_IDENTITY: WindowsProductIdentity = {
+  productName: 'Windows Server 2022 Standard',
+  currentBuildNumber: '20348',
+  releaseId: '2009',
+  editionId: 'ServerStandard',
+  installationType: 'Server',
+};
+
+function buildHKLM(product: WindowsProductIdentity): RegistryKey {
   const root = makeKey('HKEY_LOCAL_MACHINE');
 
   // HKLM:\SOFTWARE
@@ -49,13 +74,13 @@ function buildHKLM(): RegistryKey {
   // HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion
   const currentVersion = makeKey('CurrentVersion');
   windowsNT.subkeys.set('currentversion', currentVersion);
-  seedValue(currentVersion, 'ProductName', 'Windows 11 Pro');
+  seedValue(currentVersion, 'ProductName', product.productName);
   seedValue(currentVersion, 'CurrentVersion', '10.0');
-  seedValue(currentVersion, 'CurrentBuildNumber', '22621');
-  seedValue(currentVersion, 'ReleaseId', '2009');
-  seedValue(currentVersion, 'EditionID', 'Professional');
+  seedValue(currentVersion, 'CurrentBuildNumber', product.currentBuildNumber);
+  seedValue(currentVersion, 'ReleaseId', product.releaseId);
+  seedValue(currentVersion, 'EditionID', product.editionId);
   seedValue(currentVersion, 'RegisteredOwner', 'User');
-  seedValue(currentVersion, 'InstallationType', 'Client');
+  seedValue(currentVersion, 'InstallationType', product.installationType);
 
   // HKLM:\SOFTWARE\Microsoft\Windows
   const windows = makeKey('Windows');
@@ -173,6 +198,15 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
   } else if (up.startsWith('HKCU:\\') || up.startsWith('HKCU:')) {
     hive = 'HKCU';
     rest = p.slice(up.startsWith('HKCU:\\') ? 6 : 5);
+  } else if (up.startsWith('HKLM\\')) {
+    // GPO key strings (e.g. Set-GPRegistryValue -Key) conventionally omit
+    // the PSDrive colon real interactive `Get-Item`/`Set-ItemProperty`
+    // paths require — same hive, no drive semantics involved.
+    hive = 'HKLM';
+    rest = p.slice(5);
+  } else if (up.startsWith('HKCU\\')) {
+    hive = 'HKCU';
+    rest = p.slice(5);
   } else if (up.startsWith('HKEY_LOCAL_MACHINE\\')) {
     hive = 'HKLM';
     rest = p.slice('HKEY_LOCAL_MACHINE\\'.length);
@@ -193,9 +227,39 @@ function parseRegistryPath(path: string): ParsedRegPath | null {
 
 // ─── Registry Provider ────────────────────────────────────────────────────────
 
+/**
+ * Ce qu'une écriture dans la base a changé — de quoi remplir un 4657,
+ * dont l'intérêt tient entièrement à l'ancienne et à la nouvelle valeur.
+ */
+export interface RegistryValueChange {
+  path: string;
+  name: string;
+  previous?: string | number;
+  next: string | number;
+}
+
 export class PSRegistryProvider {
-  private hklm: RegistryKey = buildHKLM();
+  private hklm: RegistryKey;
   private hkcu: RegistryKey = buildHKCU();
+
+  /**
+   * Notifié après toute écriture, quel qu'en soit le chemin — `reg add`
+   * de cmd, `Set-ItemProperty` de PowerShell, ou une stratégie de
+   * groupe. Sans ce fil, une valeur de stratégie qui commande un service
+   * ne serait relue qu'au prochain démarrage : poser `EnableMulticast`
+   * à zéro afficherait « opération réussie » pendant que le port reste
+   * ouvert, ce qui est exactement le genre de réglage décoratif que ce
+   * dépôt refuse.
+   */
+  onValueChanged: ((change?: RegistryValueChange) => void) | null = null;
+
+  constructor(product: WindowsProductIdentity = WINDOWS_CLIENT_PRODUCT_IDENTITY) {
+    this.hklm = buildHKLM(product);
+  }
+
+  private notifyChanged(change?: RegistryValueChange): void {
+    this.onValueChanged?.(change);
+  }
 
   // ─── Internal navigation ──────────────────────────────────────────
 
@@ -324,6 +388,7 @@ export class PSRegistryProvider {
       return `Remove-Item : The item has children and the Recurse parameter was not specified. If you are sure you want to remove it and all its children, specify the Recurse parameter.`;
     }
     parent.subkeys.delete(leafKey);
+    this.notifyChanged();
     return '';
   }
 
@@ -373,13 +438,55 @@ export class PSRegistryProvider {
     return Array.from(key.subkeys.values()).map(k => k.name);
   }
 
+  /**
+   * Keeps `HKLM:\SYSTEM\CurrentControlSet\Services\<name>` coherent with the
+   * live `WindowsServiceManager` — the same account/start-type/binary a
+   * security audit script reads via `sc qc`/`Get-Service`, exposed through
+   * the registry surface real tooling (and real attackers) also targets.
+   */
+  upsertServiceKey(name: string, fields: { objectName: string; startCode: number; imagePath: string }): void {
+    const key = this.ensurePath({ hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services', name] });
+    seedValue(key, 'ObjectName', fields.objectName);
+    seedValue(key, 'Start', fields.startCode, 'DWord');
+    seedValue(key, 'ImagePath', fields.imagePath, 'ExpandString');
+  }
+
+  /**
+   * The other half of `upsertServiceKey`: `sc delete` removes the key as
+   * well as the service. Leaving it behind would have the SCM re-read a
+   * service on the next boot that nobody can start.
+   */
+  removeServiceKey(name: string): void {
+    const services = this.navigateTo({
+      hive: 'HKLM', segments: ['SYSTEM', 'CurrentControlSet', 'Services'],
+    });
+    services?.subkeys.delete(name.toLowerCase());
+  }
+
+  /**
+   * `gpupdate` writing a `Set-GPRegistryValue` policy entry into the local
+   * hive — unlike the interactive `Set-ItemProperty` cmdlet, real Group
+   * Policy Client creates whatever key path is missing (it isn't asking
+   * the admin to pre-create `HKLM:\Software\Policies\...` by hand).
+   */
+  applyGpoRegistryValue(path: string, name: string, value: string | number, type: RegistryValue['type']): void {
+    const parsed = parseRegistryPath(path);
+    if (!parsed) return;
+    const key = this.ensurePath(parsed);
+    const previous = key.values.get(name.toLowerCase())?.value;
+    seedValue(key, name, value, type);
+    this.notifyChanged({ path, name, previous, next: value });
+  }
+
   setItemProperty(path: string, name: string, value: string | number): string {
     const parsed = parseRegistryPath(path);
     if (!parsed) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const key = this.navigateTo(parsed);
     if (!key) return `Set-ItemProperty : Cannot find path '${path}' because it does not exist.`;
     const type: RegistryValue['type'] = typeof value === 'number' ? 'DWord' : 'String';
+    const previous = key.values.get(name.toLowerCase())?.value;
     key.values.set(name.toLowerCase(), { name, value, type });
+    this.notifyChanged({ path, name, previous, next: value });
     return '';
   }
 
@@ -391,7 +498,9 @@ export class PSRegistryProvider {
     if (!key.values.has(name.toLowerCase())) {
       return `Remove-ItemProperty : Property '${name}' does not exist at path '${path}'.`;
     }
+    const removed = key.values.get(name.toLowerCase())?.value;
     key.values.delete(name.toLowerCase());
+    this.notifyChanged({ path, name, previous: removed, next: '' });
     return '';
   }
 

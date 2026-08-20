@@ -102,19 +102,15 @@ describe('IPSecEngine — full observables surface', () => {
       status: 'QM_IDLE',
       created: Date.now(),
       lifetime: 86400,
-      authMethod: 'pre-share',
       encryption: 'aes',
       hash: 'sha',
-      group: 'group2',
-      lifetimeKB: 0,
-      spiInitiator: 1,
-      spiResponder: 2,
-      iv: '',
-      cookie: '',
-      messageId: 0,
+      group: 2,
+      spi: '0x1234ABCD',
+      role: 'initiator',
+      natT: false,
       dpdEnabled: false,
       dpdTimeouts: 0,
-    } as IKE_SA;
+    };
     (engine as unknown as { ikeSADB: Map<string, IKE_SA> }).ikeSADB.set('10.0.0.2', fakeIkeSA);
 
     // Manually publish the install event (in production this is done

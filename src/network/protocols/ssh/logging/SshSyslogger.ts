@@ -105,13 +105,45 @@ export class SshSyslogger {
       }
 
       case 'auth_failure': {
-        const method = event.method ?? 'unknown';
         const host = event.fromHost && event.fromHost !== event.ip ? ` (${event.fromHost})` : '';
+        if (event.reason === 'account_expired') {
+          return `pam_unix(sshd:account): account ${event.user} has expired (account expired)`;
+        }
+        if (event.reason === 'password_expired') {
+          return `pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=${event.ip} user=${event.user}`;
+        }
+        const method = event.method ?? 'unknown';
         return `Failed ${method} for ${event.user} from ${event.ip}${host} port ${event.port ?? this.port} ssh2`;
       }
 
+      case 'auth_account_phase':
+        return `pam_unix(sshd:account): expired password for user ${event.user}`;
+
       case 'auth_invalid_user':
         return `Invalid user ${event.user} from ${event.ip} port ${event.port ?? this.port}`;
+
+      case 'auth_strict_modes_refused':
+        return `Authentication refused: bad ownership or modes for file ${event.path}`;
+
+      case 'auth_policy_refused': {
+        const r = event.reason;
+        if (event.user === 'root' && /^PermitRootLogin/i.test(r)) {
+          return `ROOT LOGIN REFUSED FROM ${event.ip}`;
+        }
+        if (/AllowUsers/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because not listed in AllowUsers`;
+        }
+        if (/DenyUsers/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because listed in DenyUsers`;
+        }
+        if (/AllowGroups/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because none of user's groups are listed in AllowGroups`;
+        }
+        if (/DenyGroups/i.test(r)) {
+          return `User ${event.user} from ${event.ip} not allowed because a group is listed in DenyGroups`;
+        }
+        return `Connection refused for ${event.user} from ${event.ip}: ${r}`;
+      }
 
       case 'auth_throttled':
         return `Refusing connection from ${event.ip}: ${event.failuresInWindow} authentication failures in ${event.windowSeconds}s window`;

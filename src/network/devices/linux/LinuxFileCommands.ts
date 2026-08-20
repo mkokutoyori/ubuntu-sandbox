@@ -5,6 +5,18 @@
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { interpretEscapes } from './LinuxShellParser';
+import type { PathActor } from './VfsPath';
+
+export function actorOf(ctx: ShellContext): PathActor {
+  const groups = ctx.userMgr.getUserGroups(ctx.userMgr.currentUser) ?? [];
+  return {
+    uid: ctx.uid,
+    gid: ctx.gid,
+    gids: groups.map((g) => g.gid),
+    user: ctx.userMgr.currentUser,
+    groupNames: groups.map((g) => g.name),
+  };
+}
 
 // ANSI color codes matching GNU ls defaults (LS_COLORS)
 const C = {
@@ -26,15 +38,31 @@ export interface ShellContext {
   umask: number;
   uid: number;
   gid: number;
+  color?: boolean;
+  /** True when this command's stdout is not a terminal — piped into a
+   *  later command or redirected to a file (`>`/`>>`). Mirrors real
+   *  coreutils' `isatty(STDOUT_FILENO)` check. */
+  isPiped?: boolean;
+  /** When set, a script run through this context (e.g. a cron job) uses
+   *  this exact environment instead of the interactive session's. */
+  envOverride?: Record<string, string>;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
+  const errors: string[] = [];
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
+    const existed = ctx.vfs.exists(path);
     ctx.vfs.touch(path, ctx.uid, ctx.gid, ctx.umask);
+    // A file that did not appear on a volume with no inodes left is the
+    // one refusal `touch` can hit here (docs/PRD-Pannes.md §F9.2) —
+    // permission cases are already reported by the caller.
+    if (!existed && !ctx.vfs.exists(path) && ctx.vfs.freeInodes() === 0) {
+      errors.push(`touch: cannot touch '${arg}': No space left on device`);
+    }
   }
-  return '';
+  return errors.join('\n');
 }
 
 export function cmdLs(ctx: ShellContext, args: string[]): string {
@@ -46,12 +74,11 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   let recursive = false;
   let dirOnly = false;
   let classify = false;   // -F: append indicator (/ @ * |)
-  let onePerLine = false;  // -1: force single column
-  // GNU `ls` defaults to `--color=auto` only when stdout is a TTY. The
-  // simulator captures output for tests and dumps where stdout is not a
-  // TTY, so we default to plain text and only colorize on explicit
-  // `--color=always`. `--color=never` is also honored.
-  let useColor = false;
+  // -1 forces single column explicitly; a non-tty stdout (piped or
+  // redirected) does the same implicitly, matching real coreutils'
+  // isatty(STDOUT_FILENO) check.
+  let onePerLine = ctx.isPiped === true;
+  let useColor = ctx.color === true;
   const paths: string[] = [];
 
   for (const arg of args) {
@@ -73,7 +100,7 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
     } else if (arg.startsWith('--')) {
       if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
       else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
-      // --color=auto: keep default (off) — no TTY in capture mode.
+      else if (arg === '--color=auto') useColor = ctx.color === true;
     } else {
       paths.push(arg);
     }
@@ -335,7 +362,7 @@ function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath:
 
   // Symlink target
   if (inode.type === 'symlink') {
-    line += ` -> ${inode.target}`;
+    line += ` -> ${ctx.vfs.linkTarget(inode)}`;
   }
 
   return line;
@@ -364,7 +391,7 @@ export function cmdCat(ctx: ShellContext, args: string[]): string {
     if (arg.startsWith('-')) continue;
     const path = ctx.vfs.normalizePath(arg, ctx.cwd);
     const inode = ctx.vfs.resolveInode(path, true);
-    if (inode && ctx.uid !== 0 && !canReadInode(inode, ctx)) {
+    if (inode && ctx.uid !== 0 && !ctx.vfs.path(path, '/', actorOf(ctx)).canRead()) {
       return `cat: ${arg}: Permission denied`;
     }
     const content = ctx.vfs.readFile(path);
@@ -414,9 +441,19 @@ export function cmdEcho(ctx: ShellContext, args: string[]): string {
 export function cmdCp(ctx: ShellContext, args: string[]): string {
   const nonFlags = args.filter(a => !a.startsWith('-'));
   if (nonFlags.length < 2) return 'cp: missing operand';
-  const src = ctx.vfs.normalizePath(nonFlags[0], ctx.cwd);
-  const dst = ctx.vfs.normalizePath(nonFlags[1], ctx.cwd);
-  if (!ctx.vfs.copy(src, dst, ctx.uid, ctx.gid, ctx.umask)) {
+  const actor = actorOf(ctx);
+  const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
+  const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
+  if (ctx.uid !== 0) {
+    if (srcPath.exists() && !srcPath.canRead()) {
+      return `cp: cannot open '${nonFlags[0]}' for reading: Permission denied`;
+    }
+    const destDir = dstPath.isDirectory() ? dstPath : dstPath.parent();
+    if (destDir.inode() && !destDir.isWritableDir()) {
+      return `cp: cannot create regular file '${nonFlags[1]}': Permission denied`;
+    }
+  }
+  if (!ctx.vfs.copy(srcPath.value, dstPath.value, ctx.uid, ctx.gid, ctx.umask)) {
     return `cp: cannot copy '${nonFlags[0]}' to '${nonFlags[1]}'`;
   }
   return '';
@@ -425,9 +462,26 @@ export function cmdCp(ctx: ShellContext, args: string[]): string {
 export function cmdMv(ctx: ShellContext, args: string[]): string {
   const nonFlags = args.filter(a => !a.startsWith('-'));
   if (nonFlags.length < 2) return 'mv: missing operand';
-  const src = ctx.vfs.normalizePath(nonFlags[0], ctx.cwd);
-  const dst = ctx.vfs.normalizePath(nonFlags[1], ctx.cwd);
-  if (!ctx.vfs.rename(src, dst)) {
+  const actor = actorOf(ctx);
+  const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
+  const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
+  if (ctx.uid !== 0) {
+    const srcParent = srcPath.parent();
+    const sp = srcParent.inode();
+    if (sp && (!srcParent.canWrite() || !srcParent.canExecute())) {
+      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
+    }
+    const srcInode = srcPath.lstatNode();
+    if (srcInode && sp && (sp.permissions & 0o1000) !== 0
+        && srcInode.uid !== ctx.uid && sp.uid !== ctx.uid) {
+      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Operation not permitted`;
+    }
+    const destDir = dstPath.isDirectory() ? dstPath : dstPath.parent();
+    if (destDir.inode() && !destDir.isWritableDir()) {
+      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
+    }
+  }
+  if (!ctx.vfs.rename(srcPath.value, dstPath.value)) {
     return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}'`;
   }
   return '';
@@ -436,33 +490,60 @@ export function cmdMv(ctx: ShellContext, args: string[]): string {
 export function cmdRm(ctx: ShellContext, args: string[]): string {
   let recursive = false;
   let force = false;
+  let preserveRoot = true;
   const paths: string[] = [];
 
   for (const arg of args) {
-    if (arg.startsWith('-')) {
-      if (arg.includes('r') || arg.includes('R')) recursive = true;
-      if (arg.includes('f')) force = true;
-    } else {
-      paths.push(arg);
+    if (arg === '--') continue;
+    if (arg.startsWith('--')) {
+      if (arg === '--recursive') recursive = true;
+      else if (arg === '--force') force = true;
+      else if (arg === '--no-preserve-root') preserveRoot = false;
+      else if (arg === '--preserve-root') preserveRoot = true;
+      continue;
     }
+    if (arg.startsWith('-') && arg.length > 1) {
+      for (const ch of arg.slice(1)) {
+        if (ch === 'r' || ch === 'R') recursive = true;
+        else if (ch === 'f') force = true;
+      }
+      continue;
+    }
+    paths.push(arg);
   }
+
+  const actor = actorOf(ctx);
 
   for (const p of paths) {
     // Expand globs
     const expanded = expandGlob(ctx, p);
     for (const ep of expanded) {
-      const absPath = ctx.vfs.normalizePath(ep, ctx.cwd);
-      const inode = ctx.vfs.resolveInode(absPath, false);
+      const path = ctx.vfs.path(ep, ctx.cwd, actor);
+      const absPath = path.value;
+      if (absPath === '/' && recursive && preserveRoot) {
+        return `rm: it is dangerous to operate recursively on '/'\nrm: use --no-preserve-root to override this failsafe`;
+      }
+      const inode = path.lstatNode();
       if (!inode) {
         if (!force) return `rm: cannot remove '${ep}': No such file or directory`;
         continue;
       }
-      if (inode.type === 'directory') {
-        if (recursive) {
-          ctx.vfs.rmrf(absPath);
-        } else {
-          return `rm: cannot remove '${ep}': Is a directory`;
+      if (inode.type === 'directory' && !recursive) {
+        return `rm: cannot remove '${ep}': Is a directory`;
+      }
+      if (ctx.uid !== 0) {
+        const parent = path.parent();
+        const pnode = parent.inode();
+        if (pnode && (!parent.canWrite() || !parent.canExecute())) {
+          return `rm: cannot remove '${ep}': Permission denied`;
         }
+        if (pnode && (pnode.permissions & 0o1000) !== 0
+            && inode.uid !== ctx.uid && pnode.uid !== ctx.uid) {
+          return `rm: cannot remove '${ep}': Operation not permitted`;
+        }
+      }
+      if (inode.type === 'directory') {
+        ctx.vfs.rmrf(absPath);
       } else {
         ctx.vfs.deleteFile(absPath);
       }
@@ -480,13 +561,30 @@ export function cmdMkdir(ctx: ShellContext, args: string[]): string {
     paths.push(arg);
   }
 
+  const actor = actorOf(ctx);
   for (const p of paths) {
-    const absPath = ctx.vfs.normalizePath(p, ctx.cwd);
+    const path = ctx.vfs.path(p, ctx.cwd, actor);
+    const absPath = path.value;
     const perms = 0o777 & ~ctx.umask;
     if (parents) {
+      if (ctx.uid !== 0 && !path.exists()) {
+        let anc = path.parent();
+        while (!anc.exists() && anc.value !== '/') anc = anc.parent();
+        if (!anc.isWritableDir()) {
+          return `mkdir: cannot create directory '${p}': Permission denied`;
+        }
+      }
       ctx.vfs.mkdirp(absPath, perms, ctx.uid, ctx.gid);
     } else {
+      if (ctx.uid !== 0 && path.parent().inode() && !path.parent().isWritableDir()) {
+        return `mkdir: cannot create directory '${p}': Permission denied`;
+      }
       if (!ctx.vfs.mkdir(absPath, perms, ctx.uid, ctx.gid)) {
+        // A directory costs an inode; on an exhausted volume that is the
+        // real reason, and the one an operator has to be told about.
+        if (ctx.vfs.freeInodes() === 0) {
+          return `mkdir: cannot create directory '${p}': No space left on device`;
+        }
         return `mkdir: cannot create directory '${p}'`;
       }
     }
@@ -495,10 +593,23 @@ export function cmdMkdir(ctx: ShellContext, args: string[]): string {
 }
 
 export function cmdRmdir(ctx: ShellContext, args: string[]): string {
+  const actor = actorOf(ctx);
   for (const arg of args) {
     if (arg.startsWith('-')) continue;
-    const absPath = ctx.vfs.normalizePath(arg, ctx.cwd);
-    if (!ctx.vfs.rmdir(absPath)) {
+    const path = ctx.vfs.path(arg, ctx.cwd, actor);
+    if (ctx.uid !== 0) {
+      const parent = path.parent();
+      const pnode = parent.inode();
+      if (pnode && (!parent.canWrite() || !parent.canExecute())) {
+        return `rmdir: failed to remove '${arg}': Permission denied`;
+      }
+      const inode = path.lstatNode();
+      if (inode && pnode && (pnode.permissions & 0o1000) !== 0
+          && inode.uid !== ctx.uid && pnode.uid !== ctx.uid) {
+        return `rmdir: failed to remove '${arg}': Operation not permitted`;
+      }
+    }
+    if (!ctx.vfs.rmdir(path.value)) {
       return `rmdir: failed to remove '${arg}'`;
     }
   }
@@ -516,7 +627,14 @@ export function cmdLn(ctx: ShellContext, args: string[]): string {
   if (paths.length < 2) return 'ln: missing operand';
 
   const target = paths[0];
-  const linkPath = ctx.vfs.normalizePath(paths[1], ctx.cwd);
+  const actor = actorOf(ctx);
+  const linkP = ctx.vfs.path(paths[1], ctx.cwd, actor);
+  const linkPath = linkP.value;
+
+  if (ctx.uid !== 0 && linkP.parent().inode() && !linkP.parent().isWritableDir()) {
+    const kind = symbolic ? 'symbolic link' : 'hard link';
+    return `ln: failed to create ${kind} '${paths[1]}': Permission denied`;
+  }
 
   if (symbolic) {
     if (!ctx.vfs.createSymlink(linkPath, target, ctx.uid, ctx.gid)) {

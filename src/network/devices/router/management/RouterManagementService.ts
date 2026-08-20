@@ -1,3 +1,5 @@
+import { InfoCenterConfig, type InfoCenterError } from './InfoCenterConfig';
+
 export interface RawConfigEntry {
   feature: string;
   index: number;
@@ -11,6 +13,13 @@ export class RouterManagementService {
   nameServers: string[] = [];
   private readonly stelnetServer = { enabled: false, port: 22, acl: undefined as string | undefined };
   private readonly telnetServer = { enabled: false, port: 23, acl: undefined as string | undefined };
+  /**
+   * Le serveur SSH, cote GESTIONNAIRE : ce qu'il porte seul, c'est-a-dire
+   * l'etat d'ecoute et le port. Le reste de la configuration `ip ssh`
+   * (version, delai, tentatives, algorithmes) vit dans
+   * `CiscoSecurityConfig.ssh`, le magasin que la CLI ecrit -- il y en
+   * avait deux, avec des defauts qui se contredisaient.
+   */
   private readonly sshServer = { enabled: false, port: 22, version: 2, timeout: 60, retries: 3 };
   private readonly snmpAgent = {
     enabled: false,
@@ -18,8 +27,28 @@ export class RouterManagementService {
     sysContact: '',
     sysLocation: '',
     sysName: '',
+    versions: [] as string[],
     trapHosts: [] as Array<{ host: string; community: string; version: string }>,
   };
+
+  snmpRunningConfigLines(): string[] {
+    const s = this.snmpAgent;
+    if (!s.enabled) return [];
+    const lines: string[] = [];
+    for (const c of s.communities.values()) {
+      lines.push(`snmp-agent community ${c.access === 'rw' ? 'write' : 'read'} ${c.name}`
+        + (c.aclName ? ` acl ${c.aclName}` : ''));
+    }
+    if (s.versions.length > 0) lines.push(`snmp-agent sys-info version ${s.versions.join(' ')}`);
+    if (s.sysContact) lines.push(`snmp-agent sys-info contact ${s.sysContact}`);
+    if (s.sysLocation) lines.push(`snmp-agent sys-info location ${s.sysLocation}`);
+    for (const t of s.trapHosts) {
+      lines.push(`snmp-agent target-host ${t.host} params securityname ${t.community} ${t.version}`.trimEnd());
+    }
+    for (const r of this.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
+    if (lines.length === 0) lines.push('snmp-agent');
+    return lines;
+  }
   private readonly ntpService = {
     enabled: true,
     sourceInterface: '',
@@ -38,12 +67,7 @@ export class RouterManagementService {
     daylightEnd: '',
     daylightOffsetMin: 60,
   };
-  private readonly infoCenter = {
-    enabled: true,
-    timestamp: 'date',
-    sources: [] as Array<{ source: string; channel: number; severity: string }>,
-    loghosts: [] as Array<{ ip: string; channel: number; facility: string }>,
-  };
+  private readonly infoCenter = new InfoCenterConfig();
   private readonly sflow = {
     enabled: false,
     agentIp: '' as string,
@@ -94,11 +118,18 @@ export class RouterManagementService {
       this.snmpAgent.sysContact = args.slice(2).join(' ');
     } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'location' && args[2]) {
       this.snmpAgent.sysLocation = args.slice(2).join(' ');
-    } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'version') {
-      /* version flags */
+    } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'version' && args[2]) {
+      this.snmpAgent.versions = args.slice(2).map((v) => v.toLowerCase());
     } else if (head === 'community' && args[1]) {
-      const access = args[2]?.toLowerCase() === 'rw' ? 'rw' : 'ro';
-      this.snmpAgent.communities.set(args[1], { name: args[1], access, aclName: args[3] });
+      const mode = args[1].toLowerCase();
+      const named = mode === 'read' || mode === 'write';
+      const name = named ? args[2] : args[1];
+      if (!name) return;
+      const access = named
+        ? (mode === 'write' ? 'rw' : 'ro')
+        : (args[2]?.toLowerCase() === 'rw' ? 'rw' : 'ro');
+      const aclName = named ? args[4] : args[3];
+      this.snmpAgent.communities.set(name, { name, access, aclName });
     } else if (head === 'target-host' || head === 'trap-source') {
       this.snmpAgent.trapHosts.push({
         host: args[1] ?? 'unknown', community: args[2] ?? '', version: args[3] ?? 'v2c',
@@ -138,11 +169,22 @@ export class RouterManagementService {
   configureClock(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();
     if (head === 'timezone' && args[1] && args[3]) {
+      // VRP ecrit `clock timezone WAT add 01:00:00` : le signe est le mot
+      // `add`/`minus` et le decalage porte des SECONDES. L'expression
+      // reguliere attendait `+01:00`, une forme que VRP n'emet jamais,
+      // donc AUCUN fuseau configure sur un Huawei n'etait applique et
+      // `display clock` repondait UTC (lot N2).
       this.clockCfg.timezone = args[1];
-      const m = /^([-+])(\d{1,2}):(\d{2})$/.exec(args[3]);
+      const signe = args[2]?.toLowerCase() === 'minus' ? -1 : 1;
+      const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(args[3]);
       if (m) {
-        const sign = m[1] === '-' ? -1 : 1;
-        this.clockCfg.offsetMin = sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10));
+        this.clockCfg.offsetMin = signe * (parseInt(m[1], 10) * 60 + parseInt(m[2], 10));
+      } else {
+        const ios = /^([-+]?)(\d{1,2}):(\d{2})$/.exec(args[3]);
+        if (ios) {
+          const s = ios[1] === '-' ? -1 : 1;
+          this.clockCfg.offsetMin = s * (parseInt(ios[2], 10) * 60 + parseInt(ios[3], 10));
+        }
       }
     } else if (head === 'daylight-saving-time') {
       this.clockCfg.summerTimezone = args[1] ?? '';
@@ -154,30 +196,19 @@ export class RouterManagementService {
   }
   getClock(): typeof this.clockCfg { return this.clockCfg; }
 
-  configureInfoCenter(args: string[]): void {
-    const head = (args[0] ?? '').toLowerCase();
-    if (head === 'enable') this.infoCenter.enabled = true;
-    else if (head === 'disable') this.infoCenter.enabled = false;
-    else if (head === 'timestamp' && args[1]) this.infoCenter.timestamp = args[1];
-    else if (head === 'source' && args[1]) {
-      const chIdx = args.indexOf('channel');
-      const sevIdx = args.indexOf('level');
-      const channel = chIdx > -1 && args[chIdx + 1] ? parseInt(args[chIdx + 1], 10) : 0;
-      const severity = sevIdx > -1 && args[sevIdx + 1] ? args[sevIdx + 1] : 'informational';
-      this.infoCenter.sources.push({ source: args[1], channel, severity });
-    } else if (head === 'loghost' && args[1]) {
-      const chIdx = args.indexOf('channel');
-      const facIdx = args.indexOf('facility');
-      this.infoCenter.loghosts.push({
-        ip: args[1],
-        channel: chIdx > -1 && args[chIdx + 1] ? parseInt(args[chIdx + 1], 10) : 2,
-        facility: facIdx > -1 && args[facIdx + 1] ? args[facIdx + 1] : 'local7',
-      });
-    } else {
-      this.recordRaw('info-center', args.join(' '));
-    }
+  /**
+   * `info-center …` / `undo info-center …`.
+   *
+   * L'analyse vit dans `InfoCenterConfig` : ce qui tenait ici était un
+   * `if/else` qui ne validait rien, empilait les collecteurs et rangeait
+   * la ligne brute quand il ne comprenait pas. Il rend maintenant la
+   * faute, que la coquille traduit dans les mots de VRP.
+   */
+  configureInfoCenter(args: string[], undo = false): InfoCenterError | null {
+    return this.infoCenter.apply(args, undo);
   }
-  getInfoCenter(): typeof this.infoCenter { return this.infoCenter; }
+
+  getInfoCenter(): InfoCenterConfig { return this.infoCenter; }
 
   configureSflow(args: string[]): void {
     const head = (args[0] ?? '').toLowerCase();

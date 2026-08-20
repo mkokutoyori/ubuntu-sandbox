@@ -25,7 +25,7 @@ import { makeTimeSpan } from '@/powershell/cmdlets/core/DateTimeCmdlets';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
 import { NULL_PROVIDERS } from '@/powershell/providers/NullProviders';
-import { formatDefault } from '@/network/devices/windows/PSPipeline';
+import { formatDefault, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import type { CmdletContext, IRuntimeRef } from '@/powershell/cmdlets/CmdletContext';
 import type {
@@ -33,7 +33,7 @@ import type {
   PSPipelineStatement, PSAssignmentStatement,
   PSIfStatement, PSWhileStatement, PSDoWhileStatement, PSDoUntilStatement,
   PSForStatement, PSForeachStatement, PSSwitchStatement, PSTryStatement,
-  PSFunctionDefinition, PSReturnStatement, PSThrowStatement,
+  PSFunctionDefinition, PSReturnStatement, PSExitStatement, PSThrowStatement,
   PSPipeline, PSCommand,
   PSExpression, PSLiteralExpression, PSVariableExpression,
   PSBinaryExpression, PSUnaryExpression, PSRangeExpression,
@@ -51,6 +51,8 @@ import type {
 
 /** Thrown by return statements to unwind the call stack. */
 export class ReturnSignal   { constructor(public readonly value: PSValue) {} }
+/** `exit [<code>]` — unwinds to the script boundary, not just the function. */
+export class ExitSignal     { constructor(public readonly code: number) {} }
 /** Thrown by break statements inside loops. Carries optional label for labeled loops. */
 export class BreakSignal    { constructor(public readonly label?: string) {} }
 /** Thrown by continue statements inside loops. Carries optional label for labeled loops. */
@@ -203,8 +205,13 @@ const STATIC_TYPES: Record<string, Record<string, PSValue>> = {
       const n = Number(BigInt(String(s)));
       return n as PSValue;
     },
-    minvalue: -9223372036854775808 as PSValue,
-    maxvalue:  9223372036854775807 as PSValue,
+    // Un Int64 ne tient PAS dans un `number` JavaScript : ecrits en
+    // litteraux numeriques, ces deux bornes s'affichaient
+    // `9223372036854776000` — arrondies au seizieme chiffre, une valeur
+    // qu'un eleve recopie et qui est fausse. `PSValue` n'admet pas
+    // `bigint` ; la chaine affiche la borne EXACTE, comme PowerShell.
+    minvalue: '-9223372036854775808' as PSValue,
+    maxvalue: '9223372036854775807' as PSValue,
   } as Record<string, PSValue>,
 
   double: {
@@ -258,7 +265,7 @@ STATIC_TYPES['system.environment'] = STATIC_TYPES['environment'];
 
 const makeArrayList = (): PSValue => {
   const arr: PSValue[] = [];
-  (arr as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
+  (arr as unknown as Record<string, PSValue>)['__list__'] = arr as unknown as PSValue;
   Object.defineProperty(arr, 'Count', { get: () => arr.length, enumerable: false, configurable: true });
   return arr as unknown as PSValue;
 };
@@ -320,7 +327,7 @@ export class PSRuntime {
       // least one string-keyed field) → table format.
       const arr = result as PSValue[];
       if (arr.length > 0 && arr.every(v => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date))) {
-        const formatted = formatDefault(arr as Array<Record<string, unknown>>);
+        const formatted = formatDefault(arr as unknown as PSObject[]);
         if (formatted) this.outputLines.push(formatted);
         return;
       }
@@ -338,7 +345,7 @@ export class PSRuntime {
         && Object.keys(result as Record<string, unknown>).length > 0
         && !this.hasInternalSentinel(result as Record<string, unknown>)
         && this.allScalarValues(result as Record<string, unknown>)) {
-      const formatted = formatDefault([result as Record<string, unknown>]);
+      const formatted = formatDefault([result as unknown as PSObject]);
       if (formatted) { this.outputLines.push(formatted); return; }
     }
     this.outputLines.push(psValueToString(result));
@@ -360,6 +367,11 @@ export class PSRuntime {
       const t = typeof v;
       if (t === 'string' || t === 'number' || t === 'boolean') continue;
       if (v instanceof Date) continue;
+      // TimeSpan values (`{ __type: 'TimeSpan', TotalMilliseconds, ... }`,
+      // e.g. Get-ADDefaultDomainPasswordPolicy's MaxPasswordAge) are a value
+      // type like Date — allow them through to table/list formatting rather
+      // than falling back to the `Key=Value; ...` inline form.
+      if (t === 'object' && (v as Record<string, unknown>).__type === 'TimeSpan') continue;
       // Arrays render through renderObjectShort as `{a, b, c}` — that is a
       // legitimate table cell, so allow them. Nested non-Date objects still
       // disqualify the row (Get-Acl's Access keeps Format-List rendering).
@@ -488,7 +500,15 @@ export class PSRuntime {
     this.outputLines = [];
     this.indexFunctionSources(code);
     const ast = this.parseCached(code);
-    this.execTopLevel(ast.body.statements, this.global);
+    try {
+      this.execTopLevel(ast.body.statements, this.global);
+    } catch (e) {
+      // `exit` outside any script stops the remaining statements and
+      // records the code. It is an end, not an error, so what was already
+      // written stays written.
+      if (!(e instanceof ExitSignal)) throw e;
+      this.global.set('LASTEXITCODE', e.code);
+    }
     return this.outputLines.join('\n');
   }
 
@@ -572,7 +592,7 @@ export class PSRuntime {
       try {
         runOne(stmt);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -638,7 +658,7 @@ export class PSRuntime {
       try {
         runOne(stmt);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -693,7 +713,7 @@ export class PSRuntime {
       try {
         last = this.execStatement(stmt, env);
       } catch (e) {
-        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+        if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) throw e;
         const trap = traps[0];
         env.set('_', e instanceof Error ? e : new Error(String(e)));
         try {
@@ -727,6 +747,7 @@ export class PSRuntime {
       case 'FunctionDefinition':  result = this.execFunctionDef(node as PSFunctionDefinition, env); break;
       case 'ClassDefinition':     result = this.execClassDef(node as PSClassDefinition, env); break;
       case 'ReturnStatement':     return this.execReturn(node as PSReturnStatement, env);
+      case 'ExitStatement':       return this.execExit(node as PSExitStatement, env);
       case 'BreakStatement':      throw new BreakSignal((node as PSBreakStatement).label ?? undefined);
       case 'ContinueStatement':   throw new ContinueSignal((node as PSContinueStatement).label ?? undefined);
       case 'ThrowStatement':      return this.execThrow(node as PSThrowStatement, env);
@@ -766,6 +787,14 @@ export class PSRuntime {
 
   private execAssignment(node: PSAssignmentStatement, env: PSEnvironment): PSValue {
     const rhs = this.evalExpr(node.value, env);
+
+    // `$null = <expr>` (and, less commonly, `$true =`/`$false =`) is the
+    // idiomatic PowerShell way to discard a cmdlet's return value — the
+    // parser resolves these automatic variables to LiteralExpression nodes
+    // (see parsePrimaryExpression), so the assignment target here never
+    // carries a variable name to write to. Real PowerShell silently
+    // discards the write rather than erroring or actually mutating $null.
+    if (node.target.type === 'LiteralExpression') return rhs;
 
     if (node.target.type === 'IndexExpression' || node.target.type === 'MemberExpression') {
       const result = this.computeAssignResult(node, rhs, env);
@@ -1008,6 +1037,19 @@ export class PSRuntime {
       },
       getfolderpath: (folder: PSValue) => {
         const which = String(folder).toLowerCase();
+        // Real Windows expands %VAR% in "Shell Folders" values (they're
+        // stored as REG_EXPAND_SZ) at read time, not when the GPO writes
+        // them — same convention here.
+        const expand = (raw: string) => raw.replace(/%([^%]+)%/g, (m, name: string) => lookup(name) || m);
+        const shellFolder = (valueName: string): string | null => {
+          const reg = this.providers.registry;
+          const vals = reg?.getItemPropertyValues?.(
+            'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders');
+          const raw = vals?.[valueName];
+          return raw !== undefined ? expand(String(raw)) : null;
+        };
+        if (which.includes('desktop'))                                  return shellFolder('Desktop') ?? `${lookup('USERPROFILE')}\\Desktop`;
+        if (which.includes('mydocuments') || which === 'personal')      return shellFolder('Personal') ?? `${lookup('USERPROFILE')}\\Documents`;
         if (which.includes('userprofile') || which.includes('user'))    return lookup('USERPROFILE');
         if (which.includes('appdata'))                                  return lookup('APPDATA');
         if (which.includes('local'))                                    return lookup('LOCALAPPDATA');
@@ -1022,6 +1064,32 @@ export class PSRuntime {
   private aggregateCaptured(captured: PSValue[]): PSValue {
     if (captured.length === 0) return null;
     return captured.length === 1 ? captured[0] : captured;
+  }
+
+  /**
+   * A `.ps1` invoked as a command. This is where `exit` stops: it ends
+   * the script and sets $LASTEXITCODE, and the caller carries on — which
+   * is what separates a script from a function, where `exit` would keep
+   * unwinding.
+   */
+  private runScriptFile(
+    block: PSScriptBlock,
+    namedArgs: Record<string, PSValue>,
+    positionalArgs: PSValue[],
+    parentEnv: PSEnvironment,
+    pipelineInput?: PSValue,
+  ): PSValue {
+    try {
+      const value = this.invokeScriptBlock(block, namedArgs, positionalArgs, parentEnv, pipelineInput);
+      this.global.set('LASTEXITCODE', 0);
+      return value;
+    } catch (e) {
+      if (e instanceof ExitSignal) {
+        this.global.set('LASTEXITCODE', e.code);
+        return null;
+      }
+      throw e;
+    }
   }
 
   invokeScriptBlock(
@@ -1088,7 +1156,10 @@ export class PSRuntime {
   // ═══════════════════════════════════════════════════════════════════════════
 
   evalExpr(node: PSExpression, env: PSEnvironment): PSValue {
-    switch (node.type) {
+    // The parser also fabricates 'AssignmentStatement' / 'StatementExpression'
+    // pseudo-nodes force-cast to PSExpression (see PSParser.ts) for contexts
+    // like `$x = 1` used as an expression — hence the loose cast here.
+    switch (node.type as PSExpression['type'] | 'AssignmentStatement' | 'StatementExpression') {
       case 'LiteralExpression':        return this.evalLiteral(node as PSLiteralExpression, env);
       case 'VariableExpression':       return this.evalVariable(node as PSVariableExpression, env);
       case 'BinaryExpression':         return this.evalBinary(node as PSBinaryExpression, env);
@@ -1552,7 +1623,7 @@ export class PSRuntime {
     const fromFile = flags.includes('file');
 
     if (fromFile) {
-      const content = typeof subject === 'string' ? (this.io?.readFile?.(subject) ?? '') : '';
+      const content = typeof subject === 'string' ? (this.providers.filesystem?.readFile(subject) ?? '') : '';
       subject = content.split(/\r?\n/).filter(Boolean);
     }
     const subjects: PSValue[] = Array.isArray(subject) ? subject : [subject];
@@ -1671,6 +1742,14 @@ export class PSRuntime {
     try {
       result = renderBody(node.tryBody);
     } catch (e) {
+      // Control-flow signals (return / break / continue / exit) are not
+      // errors and must not be caught by `catch` — they propagate out of
+      // the try, with `finally` still running on the way. Mirrors
+      // PowerShell semantics.
+      if (e instanceof ReturnSignal || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ExitSignal) {
+        if (node.finallyBody) renderBody(node.finallyBody);
+        throw e;
+      }
       const errRecord = this.makeErrorRecord(e);
       const errList = (this.global.get('Error') as PSValue[]) ?? [];
       this.global.set('Error', [errRecord, ...errList]);
@@ -1785,6 +1864,12 @@ export class PSRuntime {
     throw new ReturnSignal(val);
   }
 
+  private execExit(node: PSExitStatement, env: PSEnvironment): PSValue {
+    const raw = node.value ? this.evalExpr(node.value, env) : 0;
+    const code = Number(psValueToString(raw));
+    throw new ExitSignal(Number.isFinite(code) ? code : 0);
+  }
+
   private execThrow(node: PSThrowStatement, env: PSEnvironment): PSValue {
     const val = node.value ? this.evalExpr(node.value, env) : new PSRuntimeError('ScriptHalted');
     if (val instanceof Error) throw val;
@@ -1812,7 +1897,7 @@ export class PSRuntime {
     const nameNode = node.name;
 
     // $x++ / $x-- encoded as AssignmentStatement in command-name position
-    if (nameNode.type === 'AssignmentStatement')
+    if ((nameNode.type as string) === 'AssignmentStatement')
       return this.execAssignment(nameNode as unknown as PSAssignmentStatement, env);
 
     // ++$x / --$x
@@ -1847,8 +1932,11 @@ export class PSRuntime {
           positional.push(this.evalExpr(a, env));
         return this.invokeScriptBlock(varVal as PSScriptBlock, named, positional, env, pipeInput);
       }
-      // Variable holds a non-scriptblock (array pipeline source, etc.)
-      return varVal;
+      // Variable holds a non-scriptblock (array pipeline source, etc.).
+      // Under `&` it names what to run — `& $path` on a variable holding
+      // a script path must run the script, not echo the path — so that
+      // case carries on to command resolution below.
+      if (!(nameNode as unknown as Record<string, unknown>).__callop__) return varVal;
     }
 
     // ScriptBlock in name position. Invoke only when the parser flagged it
@@ -1872,7 +1960,8 @@ export class PSRuntime {
     // If binary-operator parameters are present (e.g. `"hello" -match "..."` in pipeline
     // context where the parser couldn't parse it as a binary expression), apply them in order.
     // Note: operator params like -match have value=null; their right side is a positional arg.
-    if (this.isPureValueNode(nameNode, env)) {
+    const calledWithOperator = (nameNode as unknown as Record<string, unknown>).__callop__ === true;
+    if (!calledWithOperator && this.isPureValueNode(nameNode, env)) {
       let val = this.evalExpr(nameNode, env);
       if (node.parameters.length > 0 && node.parameters.every(p => PS_OPERATOR_PARAMS.has(p.name.toLowerCase()))) {
         const positionalQueue = node.arguments.map(a => this.evalExpr(a, env));
@@ -1975,7 +2064,7 @@ export class PSRuntime {
             body: ast.body,
             position: ast.position,
           } as PSScriptBlock;
-          return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+          return this.runScriptFile(block, named, positional, env, pipeInput);
         }
       }
       return this.dispatchCmdlet(tname, positional, named, pipeInput, env);
@@ -2003,7 +2092,7 @@ export class PSRuntime {
           body: ast.body,
           position: ast.position,
         } as PSScriptBlock;
-        return this.invokeScriptBlock(block, named, positional, env, pipeInput);
+        return this.runScriptFile(block, named, positional, env, pipeInput);
       }
     }
 
@@ -2308,7 +2397,9 @@ export class PSRuntime {
 
     const emittedValues: PSValue[] = [];
     const prevErrCount = this.errorObjects.length;
-    const ctx = this.buildCmdletContext(positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError);
+    const cmdletDisplayName = cmdlet.displayName ?? this.titleCase(cmdlet.name);
+    const ctx = this.buildCmdletContext(
+      positional, cmdletNamed, pipeInput, env, emittedValues, silentlyCont, stopOnError, cmdletDisplayName);
     let result: PSValue;
     try {
       result = cmdlet.execute(ctx);
@@ -2354,6 +2445,7 @@ export class PSRuntime {
     emittedValues: PSValue[],
     silentlyContinue: boolean = false,
     stopOnError: boolean = false,
+    cmdletDisplayName: string = 'Write-Error',
   ): CmdletContext {
     const self = this;
 
@@ -2392,17 +2484,32 @@ export class PSRuntime {
 
       emit: (val: PSValue) => emittedValues.push(val),
 
-      emitError: (msg: string) => {
+      emitError: (rawMsg: string) => {
+        // Many call sites already hand-embed "<Cmdlet> : " (mirroring the
+        // legacy engine's hardcoded strings). Strip it so the canonical
+        // prefix added below — derived once from the actually-dispatched
+        // cmdlet — is never duplicated.
+        const msg = rawMsg.replace(/^[A-Za-z][\w]*(?:-[A-Za-z][\w]*)+\s*:\s*/, '');
+        const category = 'NotSpecified';
+        const exceptionType = 'WriteErrorException';
+        const fullyQualifiedErrorId = 'Microsoft.PowerShell.Commands.WriteErrorException';
         const errObj = {
           Exception: { Message: msg },
-          CategoryInfo: { Category: 'NotSpecified' },
+          CategoryInfo: { Category: category },
           TargetObject: null,
+          FullyQualifiedErrorId: fullyQualifiedErrorId,
         } as Record<string, PSValue>;
         self.errorObjects.push(errObj);
         const prevGlobalErrors = (env.get('Error') as PSValue[] | null) ?? [];
         env.set('Error', [errObj, ...prevGlobalErrors]);
         if (stopOnError) throw new PSRuntimeError(msg);
-        if (!silentlyContinue) self.outputLines.push(`ERROR: ${msg}`);
+        if (!silentlyContinue) {
+          self.outputLines.push(
+            `${cmdletDisplayName} : ${msg}`,
+            `    + CategoryInfo          : ${category}: (:) [${cmdletDisplayName}], ${exceptionType}`,
+            `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
+          );
+        }
       },
 
       invokeBlock: (
@@ -2429,18 +2536,37 @@ export class PSRuntime {
       case 'array':   return Array.isArray(val) ? val : [val];
       case 'xml': {
         const xmlStr = String(val ?? '');
+        const parseAttrs = (attrsStr: string): Record<string, string> => {
+          const attrs: Record<string, string> = {};
+          const attrRe = /([\w:.-]+)\s*=\s*"([^"]*)"/g;
+          let am: RegExpExecArray | null;
+          while ((am = attrRe.exec(attrsStr)) !== null) attrs[am[1]] = am[2];
+          return attrs;
+        };
         const parseXML = (s: string): Record<string, PSValue> => {
           const node: Record<string, PSValue> = {
             OuterXml: s,
             InnerText: s.replace(/<[^>]*>/g, '').trim(),
           };
-          const childRe = /<([\w:.-]+)(?:\s[^>]*)?>([^]*?)<\/\1>/g;
+          const childRe = /<([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*"[^"]*")*)\s*(?:\/>|>([^]*?)<\/\1>)/g;
           let m: RegExpExecArray | null;
           while ((m = childRe.exec(s)) !== null) {
-            const [, tag, content] = m;
-            node[tag] = /<[\w:.-]/.test(content)
-              ? parseXML(content) as unknown as PSValue
-              : content;
+            const [, tag, attrsStr, content] = m;
+            const attrs = parseAttrs(attrsStr);
+            const hasAttrs = Object.keys(attrs).length > 0;
+            let childNode: PSValue;
+            if (content === undefined) {
+              childNode = hasAttrs ? (attrs as unknown as PSValue) : '';
+            } else if (/<[\w:.-]/.test(content)) {
+              childNode = parseXML(content) as unknown as PSValue;
+            } else if (hasAttrs) {
+              childNode = { ...attrs, '#text': content } as unknown as PSValue;
+            } else {
+              childNode = content;
+            }
+            if (node[tag] === undefined) node[tag] = childNode;
+            else if (Array.isArray(node[tag])) (node[tag] as PSValue[]).push(childNode);
+            else node[tag] = [node[tag], childNode];
           }
           return node;
         };
@@ -2521,7 +2647,11 @@ export class PSRuntime {
   private psLike(str: string, pattern: string, caseSensitive: boolean): boolean {
     const regex = '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
-    return new RegExp(regex, caseSensitive ? '' : 'i').test(str);
+    // `s` (dotAll): PowerShell wildcard matching treats the whole string as
+    // one blob — `*` must span embedded newlines (multi-line event-log
+    // messages, multi-line file content, …), not stop at them like JS `.`
+    // does by default.
+    return new RegExp(regex, caseSensitive ? 's' : 'is').test(str);
   }
 
   private psMatch(str: string, pattern: string, caseSensitive: boolean, env: PSEnvironment): boolean {
@@ -2566,7 +2696,7 @@ export class PSRuntime {
     if (typeof obj === 'string')  return this.getStringMember(obj, member);
 
     // ArrayList IS an array with a __list__ sentinel — handle list-style methods first
-    if (Array.isArray(obj) && (obj as Record<string, unknown>)['__list__'] !== undefined) {
+    if (Array.isArray(obj) && (obj as unknown as Record<string, unknown>)['__list__'] !== undefined) {
       const list = obj as PSValue[];
       switch (member) {
         case 'add':      return (v: PSValue) => { list.push(v); return null; };
@@ -2651,6 +2781,17 @@ export class PSRuntime {
           case 'pop':   return () => s.pop() ?? null;
           case 'peek':  return () => s[s.length - 1] ?? null;
           case 'count': return s.length;
+        }
+      }
+
+      // System.DirectoryServices.ActiveDirectorySchedule — accepted for
+      // `Set-ADReplicationSiteLink -ReplicationSchedule`, but no schedule-window
+      // grid is stored (PRD-Repadmin.md §0.2 — no KCC-adjacent scheduling
+      // modeled): SetSchedule/SetDailySchedule are real, callable no-ops rather
+      // than an absent method that would misparse the call site.
+      if (rec['__type__'] === 'ActiveDirectorySchedule') {
+        switch (member) {
+          case 'setschedule': case 'setdailyschedule': return () => null;
         }
       }
 

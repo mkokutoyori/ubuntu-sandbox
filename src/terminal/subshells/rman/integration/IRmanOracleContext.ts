@@ -15,7 +15,13 @@ export interface DatafileInfo {
 }
 
 export interface VfsAdapter {
-  writeFile(path: string, data: Uint8Array): Result<void, RmanError>;
+  /**
+   * `declaredSizeBytes`, when given, is the logical size the backup
+   * piece should report to `ls -l`/`du`/`stat` even though `data` may
+   * be a much smaller (or empty) physical placeholder — real backup
+   * pieces can be gigabytes, too large to actually buffer in memory.
+   */
+  writeFile(path: string, data: Uint8Array, declaredSizeBytes?: number): Result<void, RmanError>;
   readFile(path:  string):                   Result<Uint8Array, RmanError>;
   fileExists(path: string):                  boolean;
   deleteFile(path: string):                  Result<void, RmanError>;

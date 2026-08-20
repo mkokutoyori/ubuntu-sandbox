@@ -3,7 +3,7 @@ import type { NetworkOsAccount, SshAuthMethod } from '../../../devices/router/aa
 export interface AccountSnapshot {
   readonly name: string;
   readonly secret: string;
-  readonly secretAlgorithm: 'plain' | 'md5' | 'sha256' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
+  readonly secretAlgorithm: 'plain' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
   readonly privilege: number;
   readonly groups: readonly string[];
   readonly serviceTypes: readonly string[];
@@ -13,6 +13,13 @@ export interface AccountSnapshot {
   readonly lockReason: string | null;
   readonly expireAt: number | null;
   readonly passwordExpireAt: number | null;
+  /**
+   * La vue CLI attachee au compte (`username X view NOC`). Elle etait
+   * portee par `NetworkOsAccount` et perdue en chemin ici, donc la
+   * session ouverte pour ce compte ne pouvait pas y entrer : le lien
+   * entre un compte et son role n'existait qu'a l'ecrit.
+   */
+  readonly view?: string | null;
 }
 
 export interface IAccountAuthority {
@@ -37,5 +44,6 @@ export function fromNetworkOsAccount(account: NetworkOsAccount): AccountSnapshot
     lockReason: account.lockReason,
     expireAt: account.expireAt,
     passwordExpireAt: account.passwordExpireAt,
+    view: account.view,
   };
 }

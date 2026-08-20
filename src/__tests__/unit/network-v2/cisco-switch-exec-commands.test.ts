@@ -9,7 +9,7 @@ beforeEach(() => {
 });
 
 async function sw(): Promise<CiscoSwitch> {
-  const s = new CiscoSwitch('Switch1');
+  const s = new CiscoSwitch('switch-cisco', 'Switch1');
   await s.executeCommand('enable');
   return s;
 }

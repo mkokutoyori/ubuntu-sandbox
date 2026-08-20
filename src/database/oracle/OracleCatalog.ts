@@ -29,7 +29,7 @@ export interface StoredUnit {
   schema: string; name: string; type: string;
   parameters: Array<{ name: string; mode: string; dataType: string }>;
   returnType?: string; body: string; sourceLines: string[];
-  created: Date; status: string;
+  created: Date; status: 'VALID' | 'INVALID';
 }
 
 export interface StoredUnitErrors {
@@ -130,6 +130,16 @@ export interface AuditEntry {
   privUsed: string | null;
   sqlText: string | null;
   statementType: string | null;
+}
+
+/**
+ * A unified-audit trail row. Distinct from `AuditEntry` (SYS.AUD$) on
+ * purpose: unified auditing is a separate mechanism with its own
+ * enablement, and its rows name the policies that produced them.
+ */
+export interface UnifiedAuditEntry extends AuditEntry {
+  /** Policies that fired for this statement, comma-separated as Oracle does. */
+  policies: string;
 }
 
 /** Statement-level audit option shape */
@@ -246,6 +256,14 @@ export class OracleCatalog extends BaseCatalog {
   private instance: OracleInstance;
   /** Schema → password (for authentication) */
   private passwords: Map<string, string> = new Map();
+  /**
+   * External password-file membership ($ORACLE_HOME/dbs/orapw<SID>):
+   * user → set of administrative privileges (SYSDBA/SYSOPER/…). These are
+   * deliberately kept OUT of the ordinary system-privilege registry
+   * (DBA_SYS_PRIVS) and surface only through V$PWFILE_USERS, exactly like
+   * a real instance. SYS is always a member (seeded below).
+   */
+  private adminPrivileges: Map<string, Set<string>> = new Map();
   /** Auto-incrementing user ID counter */
   private nextUserId = 0;
   /** Auto-incrementing session ID */
@@ -389,6 +407,11 @@ export class OracleCatalog extends BaseCatalog {
       this.grantSystemPrivilege('SYS', priv, true);
       this.grantSystemPrivilege('SYSTEM', priv, true);
     }
+    // SYS is the sole default member of the password file (SYSDBA +
+    // SYSOPER) — V$PWFILE_USERS shows it on a fresh instance, SYSTEM is
+    // NOT a member and therefore cannot connect remotely AS SYSDBA.
+    this.grantAdminPrivilege('SYS', 'SYSDBA');
+    this.grantAdminPrivilege('SYS', 'SYSOPER');
     this.grantRole('SYS', 'DBA', true);
     this.grantRole('SYSTEM', 'DBA', true);
     this.grantRole('SYS', 'SELECT_CATALOG_ROLE', true);
@@ -415,6 +438,38 @@ export class OracleCatalog extends BaseCatalog {
     const stored = this.passwords.get(upper);
     if (stored === undefined) return false;
     return stored === password;
+  }
+
+  // ── Password file (administrative privileges) ────────────────────
+
+  /** Add an administrative privilege to the external password file. */
+  grantAdminPrivilege(grantee: string, privilege: string): void {
+    const g = grantee.toUpperCase();
+    const p = privilege.toUpperCase();
+    const set = this.adminPrivileges.get(g) ?? new Set<string>();
+    set.add(p);
+    this.adminPrivileges.set(g, set);
+  }
+
+  /** Remove an administrative privilege; drop the user when none remain. */
+  revokeAdminPrivilege(grantee: string, privilege: string): void {
+    const g = grantee.toUpperCase();
+    const set = this.adminPrivileges.get(g);
+    if (!set) return;
+    set.delete(privilege.toUpperCase());
+    if (set.size === 0) this.adminPrivileges.delete(g);
+  }
+
+  /** True when the user holds the given administrative privilege in the
+   *  password file — the gate for a remote `AS SYSDBA`/`AS SYSOPER`. */
+  isPasswordFileMember(username: string, privilege: string): boolean {
+    return this.adminPrivileges.get(username.toUpperCase())?.has(privilege.toUpperCase()) ?? false;
+  }
+
+  /** Password-file roster for V$PWFILE_USERS. */
+  getPasswordFileMembers(): { username: string; privileges: ReadonlySet<string> }[] {
+    return Array.from(this.adminPrivileges.entries())
+      .map(([username, privileges]) => ({ username, privileges }));
   }
 
   private storedVerifiers: Map<string, OracleStoredVerifiers> = new Map();
@@ -587,6 +642,67 @@ export class OracleCatalog extends BaseCatalog {
   /** Read-only snapshot of the audit trail (most recent last). */
   getAuditTrail(): readonly AuditEntry[] { return this.auditTrail; }
 
+  // ── Unified audit trail ────────────────────────────────────────
+
+  private unifiedAuditTrail: UnifiedAuditEntry[] = [];
+
+  /**
+   * Policies that would fire for this statement, in creation order.
+   *
+   * A policy carrying an object applies to that object alone; one
+   * without follows its action wherever it happens. `ACTIONS ALL`
+   * matches every action, which is what makes an object policy usable
+   * without listing each verb.
+   */
+  matchingUnifiedAuditPolicies(
+    username: string, action: string, objOwner?: string | null, objName?: string | null,
+  ): string[] {
+    const user = username.toUpperCase();
+    const act = action.toUpperCase();
+    const owner = objOwner?.toUpperCase();
+    const obj = objName?.toUpperCase();
+    const hits: string[] = [];
+    for (const p of this.unifiedAuditPolicies.values()) {
+      if (!p.enabled) continue;
+      if (p.enabledFor === null) {
+        if (p.exceptUsers.includes(user)) continue;
+      } else if (!p.enabledFor.includes(user)) {
+        continue;
+      }
+      if (!p.actions.includes('ALL') && !p.actions.includes(act)) continue;
+      if (p.objectName && (p.objectName !== obj || (p.objectSchema && p.objectSchema !== owner))) {
+        continue;
+      }
+      hits.push(p.name);
+    }
+    return hits;
+  }
+
+  recordUnifiedAudit(entry: UnifiedAuditEntry): void {
+    this.unifiedAuditTrail.push(entry);
+    if (this.unifiedAuditTrail.length > OracleCatalog.MAX_AUDIT_ENTRIES) {
+      this.unifiedAuditTrail.splice(0, this.unifiedAuditTrail.length - OracleCatalog.MAX_AUDIT_ENTRIES);
+    }
+  }
+
+  getUnifiedAuditTrail(): readonly UnifiedAuditEntry[] { return this.unifiedAuditTrail; }
+
+  /** One row per (policy, entity) enablement — AUDIT_UNIFIED_ENABLED_POLICIES. */
+  getEnabledUnifiedAuditPolicies(): { policyName: string; entityName: string; entityType: string }[] {
+    const rows: { policyName: string; entityName: string; entityType: string }[] = [];
+    for (const p of this.unifiedAuditPolicies.values()) {
+      if (!p.enabled) continue;
+      if (p.enabledFor === null) {
+        rows.push({ policyName: p.name, entityName: 'ALL USERS', entityType: 'USER' });
+      } else {
+        for (const u of p.enabledFor) {
+          rows.push({ policyName: p.name, entityName: u, entityType: 'USER' });
+        }
+      }
+    }
+    return rows;
+  }
+
   // ── Materialized views ────────────────────────────────────────────
   //
   // The MV container rows live in storage as a real table (that is what
@@ -732,6 +848,11 @@ export class OracleCatalog extends BaseCatalog {
     if (!actions) return;
     actions.delete(action.toUpperCase());
     if (actions.size === 0) this.objAuditOpts.delete(key);
+  }
+
+  /** Audit mode configured for one object/action pair, if any. */
+  getObjectAuditOption(schema: string, object: string, action: string): ObjectAuditMode | undefined {
+    return this.objAuditOpts.get(`${schema.toUpperCase()}.${object.toUpperCase()}`)?.get(action.toUpperCase());
   }
 
   /** Flattened, read-only snapshot of every object audit option. */
@@ -1156,6 +1277,8 @@ export class OracleCatalog extends BaseCatalog {
     /** Columns that activate the policy (DBMS_RLS sec_relevant_cols). */
     secRelevantCols: string[];
     policyType: 'STATIC' | 'SHARED_STATIC' | 'CONTEXT_SENSITIVE' | 'SHARED_CONTEXT_SENSITIVE' | 'DYNAMIC';
+    /** DBMS_RLS `update_check`: the written row must satisfy the predicate. */
+    updateCheck: boolean;
   }[] = [];
 
   /** Distinct (object, group) tuples shown by DBA_POLICY_GROUPS. */
@@ -1170,16 +1293,21 @@ export class OracleCatalog extends BaseCatalog {
     statementTypes?: string; policyType?: string;
     policyGroup?: string;
     secRelevantCols?: string;
+    updateCheck?: string | boolean;
   }): void {
     const parts = p.policyFunction.split('.');
     const pkg = parts.length === 2 ? parts[0].toUpperCase() : null;
     const fn = (parts.length === 2 ? parts[1] : parts[0]).toUpperCase();
-    const types = (p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE').toUpperCase();
+    // `executeDbmsRlsCall` passes '' for an argument the caller omitted,
+    // and '' is neither null nor undefined — `??` would keep it and leave
+    // every flag false, disarming a policy Oracle arms for all statement
+    // types. The same holds for policy_type and policy_group below.
+    const types = (p.statementTypes || 'SELECT,INSERT,UPDATE,DELETE').toUpperCase();
     this.rlsPolicies.push({
       objectOwner: p.objectSchema.toUpperCase(),
       objectName: p.objectName.toUpperCase(),
       policyName: p.policyName.toUpperCase(),
-      policyGroup: (p.policyGroup ?? 'SYS_DEFAULT').toUpperCase(),
+      policyGroup: (p.policyGroup || 'SYS_DEFAULT').toUpperCase(),
       pfOwner: p.functionSchema.toUpperCase(),
       pfPackage: pkg,
       pfFunction: fn,
@@ -1191,8 +1319,11 @@ export class OracleCatalog extends BaseCatalog {
         idx: types.includes('INDEX'),
       },
       enabled: true,
-      secRelevantCols: (p.secRelevantCols ?? '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
-      policyType: (p.policyType ?? 'DYNAMIC') as 'DYNAMIC',
+      secRelevantCols: (p.secRelevantCols || '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean),
+      policyType: (p.policyType || 'DYNAMIC') as 'DYNAMIC',
+      updateCheck: typeof p.updateCheck === 'boolean'
+        ? p.updateCheck
+        : String(p.updateCheck ?? '').trim().toUpperCase() === 'TRUE',
     });
     if (p.policyGroup && p.policyGroup.toUpperCase() !== 'SYS_DEFAULT') {
       const key = `${p.objectSchema.toUpperCase()}.${p.objectName.toUpperCase()}.${p.policyGroup.toUpperCase()}`;
@@ -1334,12 +1465,29 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── Catalog view queries ─────────────────────────────────────────
 
-  queryCatalogView(viewName: string, currentUser: string): ResultSet | null {
+  queryCatalogView(
+    viewName: string, currentUser: string,
+    enabledRoles: ReadonlySet<string> | null = null,
+    /**
+     * The querying session's OWN instance. On a standalone database this
+     * is always `this.instance` (the only one there is); on a RAC member
+     * whose catalog is SHARED with the rest of the cluster (see
+     * `OracleDatabase`'s `shared` constructor param), `this.instance`
+     * would otherwise always resolve to whichever node founded the
+     * cluster — every joining node's V$ queries (V$INSTANCE,
+     * V$SESSION, V$SYSSTAT, …) need to see THEIR OWN instance's state,
+     * not the founder's. `OracleExecutor` passes its own bound instance;
+     * defaulting to `this.instance` keeps every existing (non-RAC)
+     * caller's behaviour identical.
+     */
+    instanceOverride?: OracleInstance,
+  ): ResultSet | null {
     const upper = viewName.toUpperCase();
+    const inst = instanceOverride ?? this.instance;
 
     // V$ views
     if (upper.startsWith('V$') || upper.startsWith('V_$')) {
-      return this.queryVDollar(upper.replace('V_$', 'V$'), currentUser);
+      return this.queryVDollar(upper.replace('V_$', 'V$'), currentUser, inst);
     }
 
     // GV$ views — in a real RAC cluster, GV$X = UNION ALL of every
@@ -1348,7 +1496,7 @@ export class OracleCatalog extends BaseCatalog {
     // prepend INST_ID = 1.
     if (upper.startsWith('GV$') || upper.startsWith('GV_$')) {
       const vName = upper.replace(/^GV_?\$/, 'V$');
-      const base = this.queryVDollar(vName, currentUser);
+      const base = this.queryVDollar(vName, currentUser, inst);
       if (!base || !base.isQuery) return base;
       return queryResult(
         [{ name: 'INST_ID', dataType: oracleNumber(10) }, ...base.columns],
@@ -1379,6 +1527,7 @@ export class OracleCatalog extends BaseCatalog {
       runtime: this.instance.getRuntimeState(),
       catalog: this,
       currentUser,
+      enabledRoles,
     });
     if (fromRegistry) return fromRegistry;
 
@@ -1394,12 +1543,13 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── V$ Dynamic Performance Views ─────────────────────────────────
 
-  private queryVDollar(name: string, _currentUser: string): ResultSet | null {
+  private queryVDollar(name: string, _currentUser: string, instanceOverride?: OracleInstance): ResultSet | null {
+    const inst = instanceOverride ?? this.instance;
     // Every V$ view is self-registered under views/*.ts.
     const fromRegistry = queryView(name, {
-      instance: this.instance,
+      instance: inst,
       storage: this.storage,
-      runtime: this.instance.getRuntimeState(),
+      runtime: inst.getRuntimeState(),
       catalog: this,
       currentUser: _currentUser,
     });
@@ -1411,16 +1561,25 @@ export class OracleCatalog extends BaseCatalog {
 
   // ── DBA_ views ───────────────────────────────────────────────────
 
-  private queryDBA(viewName: string, _currentUser: string): ResultSet | null {
-    // Every DBA_ dictionary view is self-registered under views/*.ts.
+  private queryDBA(viewName: string, currentUser: string): ResultSet | null {
+    if (!this.canAccessDbaViews(currentUser)) return null;
     const fromRegistry = queryView(viewName, {
       instance: this.instance,
       storage: this.storage,
       runtime: this.instance.getRuntimeState(),
       catalog: this,
-      currentUser: _currentUser,
+      currentUser,
     });
     return fromRegistry ?? null; // Unknown view — fall through to table lookup
+  }
+
+  private canAccessDbaViews(user: string): boolean {
+    if (user === 'SYS') return true;
+    const engine = this.getSecurityEngine();
+    if (!engine) return true;
+    if (engine.privileges.isDba(user)) return true;
+    if (engine.privileges.hasSystemPrivilege(user, 'SELECT ANY DICTIONARY')) return true;
+    return engine.privileges.getGrantedRoles(user).includes('SELECT_CATALOG_ROLE');
   }
 
 

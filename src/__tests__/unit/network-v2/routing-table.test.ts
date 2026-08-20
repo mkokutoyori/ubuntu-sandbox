@@ -17,8 +17,10 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
+  __assumeCarrierOnUncabledPorts(true);
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
@@ -313,7 +315,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
 
       const result = await pc.executeCommand('route add 172.16.0.0 mask 255.255.0.0 192.168.1.254 metric 10');
-      expect(result).toContain('OK!');
+      expect(result.trim()).toBe('');
 
       const output = await pc.executeCommand('route print');
       expect(output).toContain('172.16.0.0');
@@ -329,7 +331,7 @@ describe('Group 3: CLI — Route Display & Management', () => {
       expect(output).toContain('172.16.0.0');
 
       const delResult = await pc.executeCommand('route delete 172.16.0.0 mask 255.255.0.0');
-      expect(delResult).toContain('OK!');
+      expect(delResult.trim()).toBe('');
 
       output = await pc.executeCommand('route print');
       expect(output).not.toContain('172.16.0.0');
@@ -349,9 +351,11 @@ describe('Group 3: CLI — Route Display & Management', () => {
       );
 
       const output = await router.executeCommand('show ip route');
-      expect(output).toContain('C    10.0.1.0/24 is directly connected');
-      expect(output).toContain('C    10.0.2.0/24 is directly connected');
-      expect(output).toContain('S    10.0.3.0/24 [1/0] via 10.0.2.2');
+      // IOS 15.x indente les routes sous leur en-tête classful ; le
+      // format à quatre espaces datait du rendu précédent.
+      expect(output).toMatch(/C\s+10\.0\.1\.0\/24 is directly connected/);
+      expect(output).toMatch(/C\s+10\.0\.2\.0\/24 is directly connected/);
+      expect(output).toMatch(/S\s+10\.0\.3\.0\/24 \[1\/0\] via 10\.0\.2\.2/);
     });
   });
 });

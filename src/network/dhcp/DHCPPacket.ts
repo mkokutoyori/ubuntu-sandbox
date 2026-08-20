@@ -20,6 +20,8 @@ export const DHCP_OPTION = {
   ROUTER: 3,
   DNS: 6,
   DOMAIN_NAME: 15,
+  NETBIOS_NAME_SERVER: 44,
+  NETBIOS_NODE_TYPE: 46,
   REQUESTED_IP: 50,
   LEASE_TIME: 51,
   MESSAGE_TYPE: 53,
@@ -29,9 +31,66 @@ export const DHCP_OPTION = {
   RENEWAL_TIME: 58,
   REBINDING_TIME: 59,
   CLIENT_IDENTIFIER: 61,
+  TFTP_SERVER_NAME: 66,
+  BOOTFILE_NAME: 67,
   END: 255,
   PAD: 0,
 } as const;
+
+/** RFC 2132 §8.7 NetBIOS node-type byte values, keyed by Cisco's `X-node` CLI spelling. */
+const NETBIOS_NODE_TYPE_VALUES: Record<string, number> = {
+  'b-node': 1, 'b': 1,
+  'p-node': 2, 'p': 2,
+  'm-node': 4, 'm': 4,
+  'h-node': 8, 'h': 8,
+};
+
+/** Converts either CLI spelling ("h-node") or an already-numeric string ("8") to its byte value. */
+export function encodeNetbiosNodeType(nodeType: string): number | undefined {
+  const known = NETBIOS_NODE_TYPE_VALUES[nodeType.toLowerCase()];
+  if (known !== undefined) return known;
+  const n = parseInt(nodeType, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+const RAW_OPTION_KIND_TAG: Record<'ip' | 'ascii' | 'hex', number> = { ip: 0, ascii: 1, hex: 2 };
+const RAW_OPTION_KIND_BY_TAG: Array<'ip' | 'ascii' | 'hex'> = ['ip', 'ascii', 'hex'];
+
+/**
+ * Encode a CLI-configured raw `option <code> {ip|ascii|hex} <value>` to wire
+ * bytes. Arbitrary vendor options (43, 150, …) are opaque by nature in real
+ * DHCP too (RFC 2132 leaves option 43's payload vendor-defined) — a leading
+ * kind tag byte is how this simulator's own receiver stays self-describing
+ * without hardcoding per-code knowledge of every vendor's convention.
+ */
+function encodeRawOption(kind: 'ip' | 'ascii' | 'hex', value: string): Uint8Array {
+  let body: number[];
+  if (kind === 'ip') {
+    body = value.trim().split(/\s+/).flatMap(ip => ip.split('.').map(Number));
+  } else if (kind === 'hex') {
+    const clean = value.replace(/[^0-9a-fA-F]/g, '');
+    body = [];
+    for (let i = 0; i < clean.length; i += 2) body.push(parseInt(clean.slice(i, i + 2), 16));
+  } else {
+    body = Array.from(value, ch => ch.charCodeAt(0));
+  }
+  return Uint8Array.from([RAW_OPTION_KIND_TAG[kind], ...body]);
+}
+
+/** Inverse of encodeRawOption — decode wire bytes back to a display string. */
+function decodeRawOption(bytes: Uint8Array): string {
+  const kind = RAW_OPTION_KIND_BY_TAG[bytes[0]] ?? 'hex';
+  const body = bytes.slice(1);
+  if (kind === 'ip') {
+    const ips: string[] = [];
+    for (let i = 0; i + 4 <= body.length; i += 4) ips.push(Array.from(body.slice(i, i + 4)).join('.'));
+    return ips.join(' ');
+  }
+  if (kind === 'hex') {
+    return Array.from(body, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return Array.from(body, b => String.fromCharCode(b)).join('');
+}
 
 /** DHCP Message Type values (Option 53) */
 const MESSAGE_TYPE_VALUES: Record<number, DHCPMessageType> = {
@@ -57,6 +116,16 @@ interface OfferOptions {
   renewalTime?: number;
   rebindingTime?: number;
   domainName?: string;
+  /** Option 66 — TFTP/next-server (Cisco `next-server`) */
+  nextServer?: string;
+  /** Option 67 — boot filename (Cisco `bootfile`) */
+  bootfile?: string;
+  /** Option 44 — NetBIOS (WINS) name servers */
+  netbiosServers?: string[];
+  /** Option 46 — NetBIOS node type (`b-node`/`p-node`/`m-node`/`h-node`) */
+  netbiosNodeType?: string;
+  /** Raw `option <code> {ip|ascii|hex} <value>` entries (43, 150, …) */
+  rawOptions?: Array<{ code: number; kind: 'ip' | 'ascii' | 'hex'; value: string }>;
 }
 
 export class DHCPPacket implements NetworkPdu {
@@ -98,6 +167,16 @@ export class DHCPPacket implements NetworkPdu {
 
   getOption(code: number): unknown {
     return this.options.get(code);
+  }
+
+  /** All option codes set on this packet. */
+  getOptionCodes(): number[] {
+    return Array.from(this.options.keys());
+  }
+
+  /** Decode a raw vendor/generic option's bytes back to its configured display string. */
+  static decodeVendorOption(bytes: Uint8Array): string {
+    return decodeRawOption(bytes);
   }
 
   setOption(code: number, value: unknown): void {
@@ -146,7 +225,23 @@ export class DHCPPacket implements NetworkPdu {
     if (opts.renewalTime !== undefined) pkt.setOption(DHCP_OPTION.RENEWAL_TIME, opts.renewalTime);
     if (opts.rebindingTime !== undefined) pkt.setOption(DHCP_OPTION.REBINDING_TIME, opts.rebindingTime);
     if (opts.domainName) pkt.setOption(DHCP_OPTION.DOMAIN_NAME, opts.domainName);
+    DHCPPacket.applyExtendedOptions(pkt, opts);
     return pkt;
+  }
+
+  private static applyExtendedOptions(pkt: DHCPPacket, opts: OfferOptions): void {
+    if (opts.nextServer) pkt.setOption(DHCP_OPTION.TFTP_SERVER_NAME, opts.nextServer);
+    if (opts.bootfile) pkt.setOption(DHCP_OPTION.BOOTFILE_NAME, opts.bootfile);
+    if (opts.netbiosServers && opts.netbiosServers.length > 0) {
+      pkt.setOption(DHCP_OPTION.NETBIOS_NAME_SERVER, opts.netbiosServers);
+    }
+    if (opts.netbiosNodeType) {
+      const encoded = encodeNetbiosNodeType(opts.netbiosNodeType);
+      if (encoded !== undefined) pkt.setOption(DHCP_OPTION.NETBIOS_NODE_TYPE, encoded);
+    }
+    for (const raw of opts.rawOptions ?? []) {
+      pkt.setOption(raw.code, encodeRawOption(raw.kind, raw.value));
+    }
   }
 
   static createRequest(
@@ -184,6 +279,7 @@ export class DHCPPacket implements NetworkPdu {
     if (opts.renewalTime !== undefined) pkt.setOption(DHCP_OPTION.RENEWAL_TIME, opts.renewalTime);
     if (opts.rebindingTime !== undefined) pkt.setOption(DHCP_OPTION.REBINDING_TIME, opts.rebindingTime);
     if (opts.domainName) pkt.setOption(DHCP_OPTION.DOMAIN_NAME, opts.domainName);
+    DHCPPacket.applyExtendedOptions(pkt, opts);
     return pkt;
   }
 
@@ -392,7 +488,8 @@ export class DHCPPacket implements NetworkPdu {
         offset += 4;
         break;
       }
-      case DHCP_OPTION.DNS: {
+      case DHCP_OPTION.DNS:
+      case DHCP_OPTION.NETBIOS_NAME_SERVER: {
         const servers = value as string[];
         buf[offset++] = servers.length * 4;
         for (const server of servers) {
@@ -412,8 +509,15 @@ export class DHCPPacket implements NetworkPdu {
         buf[offset++] = num & 0xFF;
         break;
       }
+      case DHCP_OPTION.NETBIOS_NODE_TYPE: {
+        buf[offset++] = 1;
+        buf[offset++] = value as number;
+        break;
+      }
       case DHCP_OPTION.DOMAIN_NAME:
-      case DHCP_OPTION.MESSAGE: {
+      case DHCP_OPTION.MESSAGE:
+      case DHCP_OPTION.TFTP_SERVER_NAME:
+      case DHCP_OPTION.BOOTFILE_NAME: {
         const str = value as string;
         buf[offset++] = str.length;
         for (let i = 0; i < str.length; i++) {
@@ -457,7 +561,8 @@ export class DHCPPacket implements NetworkPdu {
       case DHCP_OPTION.REQUESTED_IP:
         return DHCPPacket.readIP(data, 0);
 
-      case DHCP_OPTION.DNS: {
+      case DHCP_OPTION.DNS:
+      case DHCP_OPTION.NETBIOS_NAME_SERVER: {
         const servers: string[] = [];
         for (let i = 0; i < data.length; i += 4) {
           servers.push(DHCPPacket.readIP(data, i));
@@ -470,8 +575,13 @@ export class DHCPPacket implements NetworkPdu {
       case DHCP_OPTION.REBINDING_TIME:
         return ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0;
 
+      case DHCP_OPTION.NETBIOS_NODE_TYPE:
+        return data[0];
+
       case DHCP_OPTION.DOMAIN_NAME:
-      case DHCP_OPTION.MESSAGE: {
+      case DHCP_OPTION.MESSAGE:
+      case DHCP_OPTION.TFTP_SERVER_NAME:
+      case DHCP_OPTION.BOOTFILE_NAME: {
         let str = '';
         for (let i = 0; i < data.length; i++) {
           str += String.fromCharCode(data[i]);

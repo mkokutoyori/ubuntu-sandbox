@@ -57,8 +57,8 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       expect(output).toContain('successfully released');
       
       const output2 = await pc.executeCommand('ipconfig /renew');
-      expect(output2).toContain('DHCP Discover');
-      expect(output2).toContain('Broadcast');
+      expect(output2).toMatch(/IPv4 Address/);
+      expect(output2).not.toContain('DHCP Discover');
     });
   });
 
@@ -125,7 +125,7 @@ describe('Group 1: DHCP Client/Server Unit Tests', () => {
       // Check bindings (initially empty)
       const bindings = await router.executeCommand('show ip dhcp binding');
       expect(bindings).toContain('IP address');
-      expect(bindings).toContain('Client-id');
+      expect(bindings).toContain('Client-ID');
       expect(bindings).toContain('Lease expiration');
       
       // Simulate a lease
@@ -206,7 +206,8 @@ describe('Group 2: Functional — DORA Process', () => {
       // Verify router shows binding
       const binding = await router.executeCommand('show ip dhcp binding');
       const clientMac = pc.getMACAddress('eth0');
-      expect(binding).toContain(clientMac.toString());
+      const clientId = `01${clientMac.toString().replace(/[^0-9a-fA-F]/g, '')}`.toLowerCase();
+      expect(binding).toContain((clientId.match(/.{1,4}/g) ?? []).join('.'));
     });
 
     it('should handle multiple clients simultaneously', async () => {
@@ -227,8 +228,17 @@ describe('Group 2: Functional — DORA Process', () => {
       await router.executeCommand('ip dhcp excluded-address 192.168.10.1 192.168.10.10');
       await router.executeCommand('end');
       
-      // Connect all devices
-      // ... connection code ...
+      // Cable the lab: without a segment to broadcast on, no client can
+      // reach the server (docs/PRD-Frame-Only-Refactor.md P5).
+      new Cable('mc0').connect(router.getPorts()[0], switch1.getPorts()[0]);
+      new Cable('mc1').connect(pc1.getPorts()[0], switch1.getPorts()[1]);
+      new Cable('mc2').connect(pc2.getPorts()[0], switch1.getPorts()[2]);
+      new Cable('mc3').connect(pc3.getPorts()[0], switch1.getPorts()[3]);
+      for (const cmd of [
+        'enable', 'configure terminal',
+        `interface ${router.getPortNames()[0]}`,
+        'ip address 192.168.10.1 255.255.255.0', 'no shutdown', 'end',
+      ]) await router.executeCommand(cmd);
       
       // Request IPs simultaneously
       const promises = [
@@ -266,10 +276,16 @@ describe('Group 2: Functional — DORA Process', () => {
 
       const router = new CiscoRouter('DHCP-Server');
       const pc = new LinuxPC('linux-pc', 'PC1');
+      new Cable('rc1').connect(pc.getPorts()[0], router.getPorts()[0]);
 
       // Configure DHCP with short lease for testing
       await router.executeCommand('enable');
       await router.executeCommand('configure terminal');
+      await router.executeCommand(`interface ${router.getPortNames()[0]}`);
+      await router.executeCommand('ip address 10.0.0.1 255.255.255.0');
+      await router.executeCommand('no shutdown');
+      await router.executeCommand('exit');
+      await router.executeCommand('ip dhcp excluded-address 10.0.0.1');
       await router.executeCommand('ip dhcp pool TEST');
       await router.executeCommand('network 10.0.0.0 255.255.255.0');
       await router.executeCommand('lease 0 0 30'); // 30 seconds lease
@@ -335,8 +351,8 @@ describe('Group 2: Functional — DORA Process', () => {
       const output = await pc.executeCommand('sudo dhclient -v -t 5 eth0');
       
       expect(output).toContain('No DHCPOFFERS received');
-      expect(output).toContain('expired');
-      
+      expect(output).toContain('No working leases in persistent database - sleeping.');
+
       // Should have no IP configured
       const ipOutput = await pc.executeCommand('ip addr show eth0');
       expect(ipOutput).not.toContain('dynamic');
@@ -462,8 +478,16 @@ describe('Group 3: CLI — DHCP Configuration & Monitoring', () => {
 
     it('should show DHCP client events in Event Log', async () => {
       const pc = new WindowsPC('windows-pc', 'WinPC');
-      
-      // Check DHCP events
+
+      // Une machine qui n'a jamais rien tenté n'a pas d'événement DHCP —
+      // l'implémentation précédente en fabriquait un quand le journal
+      // était vide, ce qui faisait passer ce test sur une entrée
+      // inventée. Le client tente ici une location pour de vrai (sans
+      // serveur sur le lien, donc un échec, mais un échec journalisé).
+      await pc.executeCommand('ipconfig /renew');
+
+      // La requête XPath porte sur le fournisseur, et les événements y
+      // répondent parce qu'ils sont réellement dans le journal Système.
       const events = await pc.executeCommand('wevtutil qe System /q:"*[System[Provider[@Name=\"Dhcp-Client\"]]]" /c:5 /rd:true /f:text');
       expect(events).toContain('Dhcp-Client');
     });

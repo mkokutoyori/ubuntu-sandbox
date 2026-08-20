@@ -63,7 +63,8 @@ describe('LinuxProcess entity', () => {
 describe('LinuxService entity', () => {
   const base: ServiceUnit = {
     name: 'demo', description: 'demo', type: 'simple', execStart: '/bin/true',
-    user: 'root', group: 'root', wantedBy: [], after: [], requires: [],
+    user: 'root', group: 'root', wantedBy: [], wants: [], after: [], before: [],
+    requires: [], bindsTo: [], partOf: [], conflicts: [],
     restart: 'on-failure', loadedFrom: '/etc/systemd/system/demo.service',
     state: 'active', enabled: 'enabled',
   };

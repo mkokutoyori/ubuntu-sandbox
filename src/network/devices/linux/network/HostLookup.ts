@@ -7,10 +7,16 @@
  * on the topology answers to that address.
  */
 
+// The no-`from` fallback below serves the UI/terminal/shell layer, which
+// docs/PRD-Frame-Only-Refactor.md §2.2 allows to enumerate the topology.
+// Every caller inside src/network passes a source device.
+// eslint-disable-next-line no-restricted-imports
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
 import type { Port } from '@/network/hardware/Port';
+import type { IPv4Packet, TCPPacket, UDPPacket } from '@/network/core/types';
+import { IPAddress, IP_PROTO_TCP, IP_PROTO_UDP, createIPv4Packet } from '@/network/core/types';
 
 /**
  * BFS reachability across the physical topology: starting from any port
@@ -18,12 +24,51 @@ import type { Port } from '@/network/hardware/Port';
  * return true only when a port owning `dstIp` is reachable AND every
  * device + port on the path is powered on and admin-up.
  */
-export function isPathReachable(srcIp: string, dstIp: string): boolean {
+/**
+ * Every device reachable from `from` by walking the cable plant, `from`
+ * included. This is the topology as it is actually wired: a port hands
+ * back the device it belongs to, and a cable hands back its far end.
+ *
+ * With no `from` there is nothing to walk from, and the global registry
+ * is the only answer left. That path is for the outside world — the UI,
+ * terminal and shell layers §2.2 permits to enumerate the topology; no
+ * caller under `src/network` takes it any more.
+ */
+/**
+ * The machine a Linux command is running on, when its context can name
+ * one. Lets a command anchor its host lookup to its own place in the
+ * topology (docs/PRD-Frame-Only-Refactor.md P6).
+ */
+export function localDeviceOf(
+  ctx: { executor?: { getLocalDevice?: () => object | null } },
+): Equipment | null {
+  return (ctx.executor?.getLocalDevice?.() ?? null) as Equipment | null;
+}
+
+export function reachableDevices(from?: Equipment | null): Equipment[] {
+  if (!from) return EquipmentRegistry.getInstance().getAll();
+  const seen = new Map<string, Equipment>([[from.getId(), from]]);
+  const queue: Equipment[] = [from];
+  while (queue.length > 0) {
+    const dev = queue.shift()!;
+    for (const port of dev.getPorts()) {
+      const cable = port.getCable();
+      if (!cable) continue;
+      const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+      const peer = peerPort?.getOwner() as Equipment | null | undefined;
+      if (!peer || seen.has(peer.getId())) continue;
+      seen.set(peer.getId(), peer);
+      queue.push(peer);
+    }
+  }
+  return [...seen.values()];
+}
+
+export function isPathReachable(srcIp: string, dstIp: string, from?: Equipment | null): boolean {
   if (srcIp === dstIp) return true;
   if (!srcIp || srcIp === '127.0.0.1' || srcIp.startsWith('169.254.')) return true;
-  const registry = EquipmentRegistry.getInstance();
   const startPorts: Port[] = [];
-  for (const dev of registry.getAll()) {
+  for (const dev of reachableDevices(from)) {
     for (const port of dev.getPorts()) {
       const ip = port.getIPAddress();
       if (ip && ip.toString() === srcIp) startPorts.push(port);
@@ -32,9 +77,31 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
   if (startPorts.length === 0) return true;
   // Topologies that wire ports without a Cable (legacy tests) are
   // treated as reachable — the simulator falls back to the old
-  // registry-only behaviour when no cable plant exists.
-  const anyCable = startPorts.some(p => p.getCable() !== null);
+  // registry-only behaviour when no cable plant exists. A port that was
+  // cabled and then unplugged does not qualify: otherwise pulling the
+  // last cable would make everything look reachable again.
+  const anyCable = startPorts.some(p => p.getCable() !== null || p.wasEverCabled());
   if (!anyCable) return true;
+
+  return findReachableHost(srcIp, dstIp, from) !== null;
+}
+
+/**
+ * BFS the physical topology from any port owning `srcIp` and return the
+ * powered-on, link-up Equipment that actually owns `dstIp` (on a physical
+ * port or a line-up management SVI). Unlike `findHostByAddress`, this honours
+ * the cable plant, so when several devices in the static registry share an IP
+ * (e.g. test fixtures), it returns the one truly reachable over the wire.
+ * Returns null when no cabled path terminates at `dstIp`.
+ */
+export function findReachableHost(srcIp: string, dstIp: string, from?: Equipment | null): Equipment | null {
+  const startPorts: Port[] = [];
+  for (const dev of reachableDevices(from)) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
 
   const visited = new Set<string>();
   const queue: Port[] = [...startPorts];
@@ -48,15 +115,164 @@ export function isPathReachable(srcIp: string, dstIp: string): boolean {
     if (!cable) continue;
     const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
     if (!peerPort || !peerPort.getIsUp()) continue;
-    const peerDev = registry.getById(peerPort.getEquipmentId());
+    const peerDev = peerPort.getOwner() as Equipment | null;
     if (!peerDev || !peerDev.getIsPoweredOn()) continue;
     const peerIp = peerPort.getIPAddress();
-    if (peerIp && peerIp.toString() === dstIp) return true;
+    if (peerIp && peerIp.toString() === dstIp) return peerDev;
+    // A switch management SVI carries its IP on no physical port. When the
+    // destination is such an address, a reachable+up SVI on the peer device
+    // terminates the path exactly like a physical NIC would.
+    const sviPeer = peerDev as unknown as {
+      getSvis?: () => Array<{ ip?: { toString(): string } }>;
+      isSviLineUp?: (svi: unknown) => boolean;
+    };
+    for (const svi of sviPeer.getSvis?.() ?? []) {
+      if (svi.ip && svi.ip.toString() === dstIp && sviPeer.isSviLineUp?.(svi)) return peerDev;
+    }
     for (const sibling of peerDev.getPorts()) {
       if (sibling !== peerPort) queue.push(sibling);
     }
   }
-  return false;
+  return null;
+}
+
+interface RouterAclSurface {
+  getInterfaceACL?(ifName: string, direction: 'in' | 'out'): number | string | null;
+  evaluateACLByName?(name: string, ipPkt: IPv4Packet, now?: Date): 'permit' | 'deny' | null;
+}
+
+/**
+ * Walk the physical topology from any port owning `srcIp` to any port
+ * owning `dstIp`, and for every transit router along the way, evaluate
+ * its inbound ACL on the ingress interface and outbound ACL on the
+ * egress interface against a synthesized TCP SYN packet
+ * `(srcIp, dstIp, dstPort)`. Returns true as soon as any binding
+ * denies the packet — the model is "single deny wins", matching how a
+ * real router silently drops the SYN before the destination ever sees
+ * it. Returns false when no path is found (let the caller's existing
+ * reachability check name the failure) or when no binding denies.
+ *
+ * This is what makes `ssh: connect to host … port 22: Connection timed
+ * out` reachable through the topology-bypass shortcut: the SSH client
+ * still gets the same time-out feeling a real client gets when a
+ * Cisco ACL eats the SYN.
+ */
+export function transitTcpAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  now: Date = new Date(),
+  from?: Equipment | null,
+): 'permit' | 'deny' {
+  return transitAclVerdict(srcIp, dstIp, dstPort, 'tcp', now, from);
+}
+
+/**
+ * Same walk for a UDP probe — what a `traceroute` datagram meets on its
+ * way out. Only routers actually on the path get a say, which is the
+ * whole point: an ACL on some unrelated device denies nothing.
+ */
+export function transitUdpAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  now: Date = new Date(),
+  from?: Equipment | null,
+): 'permit' | 'deny' {
+  return transitAclVerdict(srcIp, dstIp, dstPort, 'udp', now, from);
+}
+
+function transitAclVerdict(
+  srcIp: string, dstIp: string, dstPort: number,
+  proto: 'tcp' | 'udp',
+  now: Date,
+  from?: Equipment | null,
+): 'permit' | 'deny' {
+  if (srcIp === dstIp) return 'permit';
+  const startPorts: Port[] = [];
+  for (const dev of reachableDevices(from)) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
+  if (startPorts.length === 0) return 'permit';
+
+  const synth = proto === 'tcp'
+    ? synthSynPacket(srcIp, dstIp, dstPort)
+    : synthUdpPacket(srcIp, dstIp, dstPort);
+  const visited = new Set<string>();
+  const queue: Port[] = [...startPorts];
+  while (queue.length > 0) {
+    const port = queue.shift()!;
+    const key = `${port.getEquipmentId()}:${port.getName()}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (!port.getIsUp()) continue;
+    const cable = port.getCable();
+    if (!cable) continue;
+    const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+    if (!peerPort || !peerPort.getIsUp()) continue;
+    const peerDev = peerPort.getOwner() as Equipment | null;
+    if (!peerDev || !peerDev.getIsPoweredOn()) continue;
+    const peerIp = peerPort.getIPAddress();
+    if (peerIp && peerIp.toString() === dstIp) return 'permit';
+    const router = peerDev as unknown as RouterAclSurface;
+    if (typeof router.getInterfaceACL === 'function' && typeof router.evaluateACLByName === 'function') {
+      const ingressIface = peerPort.getName();
+      const inbound = router.getInterfaceACL(ingressIface, 'in');
+      if (inbound !== null) {
+        const verdict = router.evaluateACLByName(String(inbound), synth, now);
+        if (verdict === 'deny') return 'deny';
+      }
+      for (const sibling of peerDev.getPorts()) {
+        if (sibling === peerPort) continue;
+        const outbound = router.getInterfaceACL(sibling.getName(), 'out');
+        if (outbound !== null) {
+          const verdict = router.evaluateACLByName(String(outbound), synth, now);
+          if (verdict === 'deny') return 'deny';
+        }
+        queue.push(sibling);
+      }
+      continue;
+    }
+    for (const sibling of peerDev.getPorts()) {
+      if (sibling !== peerPort) queue.push(sibling);
+    }
+  }
+  return 'permit';
+}
+
+function synthUdpPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
+  const udp: UDPPacket = {
+    type: 'udp',
+    sourcePort: 49152,
+    destinationPort: dstPort,
+    length: 8,
+    checksum: 0,
+    payload: null,
+  };
+  return createIPv4Packet(
+    new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_UDP, 64, udp, 8,
+  );
+}
+
+function synthSynPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
+  const tcp: TCPPacket = {
+    type: 'tcp',
+    sourcePort: 49152,
+    destinationPort: dstPort,
+    sequenceNumber: 0,
+    acknowledgementNumber: 0,
+    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+    windowSize: 65535,
+    checksum: 0,
+    payload: null,
+  };
+  return createIPv4Packet(
+    new IPAddress(srcIp),
+    new IPAddress(dstIp),
+    IP_PROTO_TCP,
+    64,
+    tcp,
+    20,
+  );
 }
 
 export interface RemoteHost {
@@ -85,18 +301,58 @@ export interface RemoteHost {
 export function findHostByAddress(
   addressOrName: string,
   resolverVfs?: { readFile: (p: string) => string | null },
+  from?: Equipment | null,
 ): RemoteHost | null {
-  const registry = EquipmentRegistry.getInstance();
+  const candidates = reachableDevices(from);
   const target = addressOrName.trim();
   if (!target) return null;
 
   // IPv4 numeric form → exact port match.
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(target)) {
     let off: RemoteHost | null = null;
-    for (const dev of registry.getAll()) {
+    for (const dev of candidates) {
       for (const port of dev.getPorts()) {
         const ip = port.getIPAddress();
         if (ip && ip.toString() === target) {
+          if (!dev.getIsPoweredOn()) {
+            off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+            continue;
+          }
+          if (!port.getIsUp()) {
+            off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
+            continue;
+          }
+          return { device: dev, ip: target, resolvedFrom: target };
+        }
+      }
+      const sviHost = dev as unknown as {
+        getSvis?: () => Array<{ ip?: { toString(): string }; vlan: number }>;
+        isSviLineUp?: (svi: unknown) => boolean;
+      };
+      for (const svi of sviHost.getSvis?.() ?? []) {
+        if (!svi.ip || svi.ip.toString() !== target) continue;
+        if (!dev.getIsPoweredOn()) {
+          off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
+        } else if (!sviHost.isSviLineUp?.(svi)) {
+          off = { device: dev, ip: target, resolvedFrom: target, interfaceDown: true };
+        } else {
+          return { device: dev, ip: target, resolvedFrom: target };
+        }
+      }
+    }
+    return off;
+  }
+
+  if (target.includes(':') && /^[0-9a-fA-F:]+(%[a-zA-Z0-9_-]+)?$/.test(target)) {
+    const bareTarget = target.split('%')[0].toLowerCase();
+    let off: RemoteHost | null = null;
+    for (const dev of candidates) {
+      for (const port of dev.getPorts()) {
+        const matched = port.getIPv6Addresses().some((entry) => {
+          const a = entry.address.toString().split('%')[0].toLowerCase();
+          return a === bareTarget;
+        });
+        if (matched) {
           if (!dev.getIsPoweredOn()) {
             off = { device: dev, ip: target, resolvedFrom: target, poweredOff: true };
             continue;
@@ -129,7 +385,7 @@ export function findHostByAddress(
       resolverVfs.readFile('C:\\Windows\\System32\\drivers\\etc\\hosts');
     for (const entry of HostsFile.parse(hostsRaw).entries) {
       if (entry.hasName(needle) || entry.hasName(shortNeedle)) {
-        const dev = registry.getAll().find(d =>
+        const dev = candidates.find(d =>
           d.getIsPoweredOn() &&
           d.getPorts().some(p => p.getIPAddress()?.toString() === entry.ip),
         );
@@ -138,7 +394,7 @@ export function findHostByAddress(
     }
   }
 
-  for (const dev of registry.getAll()) {
+  for (const dev of candidates) {
     if (!dev.getIsPoweredOn()) continue;
     const candidate = (dev as Equipment & { profile?: { hostname?: string } });
     const hostname = candidate.profile?.hostname?.toLowerCase();
@@ -151,6 +407,117 @@ export function findHostByAddress(
         .map(p => p.getIPAddress())
         .find(a => a !== null);
       if (ip) return { device: dev, ip: ip.toString(), resolvedFrom: target };
+    }
+  }
+  return null;
+}
+
+/** Duck-typed surface a NAT-capable router exposes — same pattern as
+ *  `RouterAclSurface` above, avoiding a hard import of `Router`/`NATEngine`
+ *  from this Linux-command-side module. */
+interface RouterNatSurface {
+  _getNATEngine?(): {
+    translateInbound(pkt: IPv4Packet, inIface: string): IPv4Packet | null;
+    translateOutbound(
+      pkt: IPv4Packet, outIface: string, inIface: string,
+      opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+    ): IPv4Packet | null;
+    isOutsideInterface(iface: string): boolean;
+  };
+  resolveRouteForHost?(destIp: string): { iface: string; nextHopIp: string } | null;
+}
+
+function packetDstPort(pkt: IPv4Packet): number {
+  const payload = pkt.payload as (UDPPacket | TCPPacket);
+  if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
+  return 0;
+}
+
+/**
+ * Resolve a literal destination IP that isn't configured on any real
+ * interface — as happens for the public/static-NAT address of a NAT
+ * *hairpinning* target (RFC 5382 §5) — by walking the topology from
+ * `srcIp` to the first NAT-capable router and replaying exactly the two
+ * engine calls `Router.processIPv4`/`forwardPacket` would make for a real
+ * packet: `translateInbound()` (PREROUTING DNAT) followed by
+ * `translateOutbound()` (POSTROUTING SNAT, with `isHairpin` set whenever
+ * the DNAT'd destination routes back out a non-outside interface).
+ *
+ * This intentionally reuses the *production* NATEngine methods rather than
+ * re-deriving the answer from static config — so it has the same real
+ * side effects a live packet would (session creation, hit counters), and
+ * genuinely reflects the "sans hairpinning" gap: a static NAT entry alone
+ * (DNAT) is not enough, real Cisco IOS hairpinning also needs the source
+ * translated back out (SNAT), which only succeeds once the operator's
+ * `ip nat inside source list <acl> ... overload` rule ACL actually permits
+ * the flow — exactly the `ACL-HAIRPIN` configuration this models.
+ *
+ * Returns null when no reachable router's NAT config resolves `dstIp` at
+ * all, or when it resolves the destination (DNAT) but the corresponding
+ * source translation (SNAT) required for a hairpin flow would not
+ * actually succeed — both cases the caller (topology-bypass client
+ * commands like `nc`) should treat identically to "host not found".
+ */
+export function resolveNatHairpinHost(
+  srcIp: string,
+  dstIp: string,
+  dstPort: number,
+  proto: 'tcp' | 'udp',
+  from?: Equipment | null,
+): (RemoteHost & { port: number }) | null {
+  const startPorts: Port[] = [];
+  for (const dev of reachableDevices(from)) {
+    for (const port of dev.getPorts()) {
+      const ip = port.getIPAddress();
+      if (ip && ip.toString() === srcIp) startPorts.push(port);
+    }
+  }
+  if (startPorts.length === 0) return null;
+
+  const pkt = proto === 'tcp'
+    ? synthSynPacket(srcIp, dstIp, dstPort)
+    : synthUdpPacket(srcIp, dstIp, dstPort);
+
+  const visited = new Set<string>();
+  const queue: Port[] = [...startPorts];
+  while (queue.length > 0) {
+    const port = queue.shift()!;
+    const key = `${port.getEquipmentId()}:${port.getName()}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    if (!port.getIsUp()) continue;
+    const cable = port.getCable();
+    if (!cable) continue;
+    const peerPort = cable.getPortA() === port ? cable.getPortB() : cable.getPortA();
+    if (!peerPort || !peerPort.getIsUp()) continue;
+    const peerDev = peerPort.getOwner() as Equipment | null;
+    if (!peerDev || !peerDev.getIsPoweredOn()) continue;
+
+    const router = peerDev as unknown as RouterNatSurface;
+    if (typeof router._getNATEngine === 'function' && typeof router.resolveRouteForHost === 'function') {
+      const engine = router._getNATEngine();
+      const inIface = peerPort.getName();
+      const dnatPkt = engine.translateInbound(pkt, inIface);
+      if (dnatPkt) {
+        const translatedDst = dnatPkt.destinationIP.toString();
+        const route = router.resolveRouteForHost(translatedDst);
+        if (route) {
+          const isHairpin = !engine.isOutsideInterface(route.iface) && translatedDst !== dstIp;
+          const snatPkt = engine.translateOutbound(dnatPkt, route.iface, inIface,
+            isHairpin ? { isHairpin: true, aclMatchPkt: pkt } : undefined);
+          // A non-hairpin DNAT (ordinary inbound port-forward) never needs
+          // SNAT to reach the destination — only a hairpin flow's session
+          // genuinely depends on the SNAT half succeeding too.
+          if (snatPkt || !isHairpin) {
+            const target = findHostByAddress(translatedDst, undefined, from);
+            if (target) return { ...target, port: packetDstPort(dnatPkt) };
+          }
+        }
+      }
+    }
+
+    for (const sibling of peerDev.getPorts()) {
+      if (sibling !== peerPort) queue.push(sibling);
     }
   }
   return null;

@@ -1,6 +1,14 @@
 import type { Router } from '../../Router';
 import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
+import { buildArchiveSubmodeOn, buildArchiveLogSubmodeOn } from './CiscoArchiveCommands';
+import { CISCO_ERRORS } from '../cli-utils';
+
+/** Les niveaux qu'EEM accepte derrière `priority` : l'indice EST la sévérité. */
+const EEM_SEVERITES: readonly string[] = [
+  'emergencies', 'alerts', 'critical', 'errors',
+  'warnings', 'notifications', 'informational', 'debugging',
+];
 
 export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   setApplet?(name: string | null): void;
@@ -11,6 +19,7 @@ export interface CiscoEemNetflowArchiveContext extends CiscoShellContext {
   getFlowRecord?(): string | null;
   setFlowMonitor?(name: string | null): void;
   getFlowMonitor?(): string | null;
+  syncNetflowAgent?(): void;
 }
 
 export function buildEemNetflowArchiveConfigCommands(
@@ -69,6 +78,7 @@ export function buildEemNetflowArchiveConfigCommands(
     } else if (args[0] === 'version' && args[1]) {
       nf().setLegacyVersion(parseInt(args[1], 10));
     }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('ip flow-cache', 'NetFlow cache timeout', (args) => {
@@ -77,6 +87,7 @@ export function buildEemNetflowArchiveConfigCommands(
     } else if (args[0] === 'timeout' && args[1] === 'inactive' && args[2]) {
       nf().setLegacyCacheInactiveSec(parseInt(args[2], 10));
     }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip route-cache flow', 'Enable NetFlow on all interfaces', () => '');
@@ -151,8 +162,26 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
     const kind = args[1]?.toLowerCase();
     if (kind === 'cli' && args[2] === 'command') {
       a.actions.push({ id, kind: 'cli', command: stripQuotes(args.slice(3).join(' ')) });
-    } else if (kind === 'syslog' && args[2] === 'msg') {
-      a.actions.push({ id, kind: 'syslog', message: stripQuotes(args.slice(3).join(' ')) });
+    } else if (kind === 'syslog') {
+      // `action <id> syslog [priority <niveau>] msg "<texte>"`.
+      //
+      // Seule la forme sans `priority` était analysée ; celle du
+      // tutoriel, avec, tombait dans le `return ''` final et l'action
+      // n'était PAS enregistrée — l'applet se déclenchait avec zéro
+      // action et n'écrivait rien. `EemAction` portait déjà le champ
+      // `severity` que personne ne remplissait.
+      let i = 2;
+      let severity: number | undefined;
+      if (args[i]?.toLowerCase() === 'priority') {
+        const niveau = EEM_SEVERITES.indexOf((args[i + 1] ?? '').toLowerCase());
+        if (niveau < 0) return CISCO_ERRORS.INVALID_INPUT;
+        severity = niveau;
+        i += 2;
+      }
+      if (args[i] !== 'msg') return CISCO_ERRORS.INVALID_INPUT;
+      const message = stripQuotes(args.slice(i + 1).join(' '));
+      if (!message) return CISCO_ERRORS.INCOMPLETE;
+      a.actions.push({ id, kind: 'syslog', severity, message });
     } else if (kind === 'mail') {
       const m: { to?: string; subject?: string; body?: string } = {};
       for (let i = 2; i < args.length; i++) {
@@ -167,6 +196,12 @@ export function buildEemAppletSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArc
       a.actions.push({ id, kind: 'wait', seconds: parseInt(args[2], 10) });
     } else if (kind === 'snmp-trap') {
       a.actions.push({ id, kind: 'snmp-trap', oid: stripQuotes(args.slice(2).join(' ')) });
+    } else {
+      // Une forme d'action qu'on ne sait pas lire était AVALÉE : la
+      // ligne répondait comme si de rien n'était, l'applet restait sans
+      // action, et rien ne le disait avant le jour où il aurait dû
+      // agir. Un refus est la seule réponse honnête.
+      return CISCO_ERRORS.INVALID_INPUT;
     }
     return '';
   });
@@ -184,19 +219,23 @@ export function buildFlowExporterSubmode(trie: CommandTrie, ctx: CiscoEemNetflow
   };
   trie.registerGreedy('destination', 'Exporter destination', (args) => {
     const e = get(); if (e && args[0]) e.destination = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('source', 'Exporter source interface', (args) => {
     const e = get(); if (e && args[0]) e.source = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('transport udp', 'Exporter transport port', (args) => {
     const e = get(); if (e && args[0]) { e.transportProtocol = 'udp'; e.transportPort = parseInt(args[0], 10); }
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('export-protocol', 'Exporter protocol', (args) => {
     const e = get();
     if (e && (args[0] === 'netflow-v9' || args[0] === 'ipfix' || args[0] === 'netflow-v5')) e.exportProtocol = args[0];
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('template data timeout', 'Template timeout', (args) => {
@@ -231,14 +270,17 @@ export function buildFlowMonitorSubmode(trie: CommandTrie, ctx: CiscoEemNetflowA
   });
   trie.registerGreedy('exporter', 'Monitor exporter', (args) => {
     const m = get(); if (m && args[0] && !m.exporterNames.includes(args[0])) m.exporterNames.push(args[0]);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache timeout active', 'Cache active timeout', (args) => {
     const m = get(); if (m && args[0]) m.cacheTimeoutActiveSec = parseInt(args[0], 10);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache timeout inactive', 'Cache inactive timeout', (args) => {
     const m = get(); if (m && args[0]) m.cacheTimeoutInactiveSec = parseInt(args[0], 10);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('cache entries', 'Cache max entries', (args) => {
@@ -247,46 +289,16 @@ export function buildFlowMonitorSubmode(trie: CommandTrie, ctx: CiscoEemNetflowA
   });
 }
 
+// Les deux sous-modes `archive` vivent dans `CiscoArchiveCommands.ts`,
+// partagés avec le switch : une seule implémentation, donc pas de
+// divergence possible entre les deux plateformes.
 export function buildArchiveSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  const ar = () => ctx.r().getArchiveService();
-  trie.registerGreedy('path', 'Archive path', (args) => {
-    if (args[0]) ar().setPath(args[0]);
-    return '';
-  });
-  trie.registerGreedy('time-period', 'Archive interval', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar().setTimePeriod(n);
-    return '';
-  });
-  trie.registerGreedy('maximum', 'Max revisions', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) ar().setMaximum(n);
-    return '';
-  });
-  trie.register('write-memory', 'Trigger archive on write', () => { ar().setWriteMemory(true); return ''; });
-  trie.register('no write-memory', 'Disable archive-on-write', () => { ar().setWriteMemory(false); return ''; });
-  trie.register('log config', 'Enter archive log config submode', () => {
-    ar().enableLogging();
-    ctx.setMode('config-archive-log' as CiscoShellMode);
-    return '';
-  });
+  buildArchiveSubmodeOn(trie, () => ctx.r().getArchiveService(),
+    () => ctx.setMode('config-archive-log' as CiscoShellMode));
 }
 
 export function buildArchiveLogSubmode(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
-  const ar = () => ctx.r().getArchiveService();
-  trie.registerGreedy('logging size', 'Archive log buffer size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (!isNaN(n)) (ar() as unknown as { setLogBufferSize?: (n: number) => void }).setLogBufferSize?.(n);
-    return '';
-  });
-  trie.register('logging enable', 'Enable archive logging', () => { ar().enableLogging(); return ''; });
-  trie.register('logging disable', 'Disable archive logging', () => { ar().disableLogging(); return ''; });
-  trie.register('hidekeys', 'Hide passwords in archive log', () => { ar().setHidekeys(true); return ''; });
-  trie.register('no hidekeys', 'Show passwords in archive log', () => { ar().setHidekeys(false); return ''; });
-  trie.registerGreedy('notify syslog contenttype', 'Notify syslog format', (args) => {
-    ar().setNotifySyslog(args[0] === 'xml' ? 'xml' : 'plaintext');
-    return '';
-  });
+  buildArchiveLogSubmodeOn(trie, () => ctx.r().getArchiveService());
 }
 
 export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: CiscoEemNetflowArchiveContext): void {
@@ -294,16 +306,19 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
   trie.register('ip route-cache flow', 'Enable legacy NetFlow on interface', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip flow ingress', 'Enable ingress NetFlow', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'ingress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.register('ip flow egress', 'Enable egress NetFlow', () => {
     const i = ctx.getSelectedInterface();
     if (i) nf().setLegacyInterfaceMode(i, 'egress', true);
+    ctx.syncNetflowAgent?.();
     return '';
   });
   trie.registerGreedy('ip flow monitor', 'Attach Flexible NetFlow monitor', (args) => {
@@ -311,6 +326,7 @@ export function buildEemNetflowArchiveInterfaceCommands(trie: CommandTrie, ctx: 
     if (!i || !args[0]) return '';
     const dir = args[1] === 'output' ? 'output' : 'input';
     nf().attachToInterface(i, args[0], dir);
+    ctx.syncNetflowAgent?.();
     return '';
   });
 }
@@ -409,8 +425,11 @@ export function buildEemNetflowArchiveShowCommands(trie: CommandTrie, getRouter:
     if (legacy.source) lines.push(`  Source ${legacy.source}`);
     return lines.join('\n');
   });
-  trie.register('show archive', 'Display archive status', () => getRouter().getArchiveService().formatShowArchive());
-  trie.register('show archive config differences', 'Display archive config diff', () => getRouter().getArchiveService().formatShowArchiveDiff());
+  // `show archive` / `show archive config differences` / `archive config`
+  // sont enregistrées une seule fois par `CiscoShellBase`, pour le
+  // routeur ET le switch (`registerArchiveExecCommands`) — les
+  // enregistrer ici aussi ferait taire l'une des deux définitions, ce que
+  // `command-trie-hygiene.test.ts` interdit à juste titre.
 }
 
 function stripQuotes(s: string): string {

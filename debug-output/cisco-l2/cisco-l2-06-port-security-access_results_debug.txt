@@ -1,6 +1,6 @@
 ============================================================
 Cisco L2 switch debug transcript — cisco-l2-06-port-security-access
-Generated: 2026-06-16T17:13:58.964Z
+Generated: 2026-08-18T19:51:07.574Z
 Topology: CORE(L2) trunked to SW1 & SW2 (L2 access). SW1: L1(Linux 1.11) Fa0/1, W1(Win 1.12) Fa0/2, SRV1(Linux 1.13) Fa0/3, Gi0/1=trunk. SW2: L2(Linux 1.21) Fa0/1, W2(Win 1.22) Fa0/2, SRV2(Linux 1.23) Fa0/3, Gi0/1=trunk. All hosts 192.168.1.0/24.
 focus=port-security/sticky/violation, errdisable, dot1x, DHCP snooping, DAI, storm-control
 Total steps: 421
@@ -53,24 +53,18 @@ Total steps: 421
    (no VLANs enabled for ARP inspection)
 
 [8/421] sw1 SW1# show dot1x
-  % Invalid input detected at '^' marker.
-  show dot1x
-       ^
+  Sysauthcontrol              Disabled
+  Dot1x Protocol Version      2
 
 [9/421] sw1 SW1# show dot1x all
-  % Invalid input detected at '^' marker.
-  show dot1x all
-       ^
+  Sysauthcontrol              Disabled
+  Dot1x Protocol Version      2
 
 [10/421] sw1 SW1# show storm-control
-  % Invalid input detected at '^' marker.
-  show storm-control
-       ^
+  Interface  Filter State   Upper        Lower        Current
 
 [11/421] sw1 SW1# show storm-control broadcast
-  % Invalid input detected at '^' marker.
-  show storm-control broadcast
-       ^
+  Interface  Filter State   Upper        Lower        Current
 
 
 --- [12] § port-security config loop (Fa0/1..0/20) ---
@@ -698,9 +692,7 @@ Total steps: 421
 <empty>
 
 [205/421] sw1 SW1(config)# errdisable recovery cause bpduguard
-  % Invalid input detected at '^' marker.
-  errdisable recovery cause bpduguard
-                            ^
+<empty>
 
 [206/421] sw1 SW1(config)# errdisable recovery cause arp-inspection
 <empty>
@@ -740,12 +732,12 @@ Total steps: 421
 
 [211/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=1.885 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.457 ms
+  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=2.722 ms
+  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.728 ms
   
   --- 192.168.1.13 ping statistics ---
   2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.457/1.171/1.885/0.714 ms
+  rtt min/avg/max/mdev = 0.728/1.725/2.722/0.997 ms
 
 [212/421] sw1 SW1# show port-security interface FastEthernet0/1
   Port Security              : Enabled
@@ -789,9 +781,8 @@ Total steps: 421
   Total Mac Addresses for this criterion: 6
 
 [215/421] sw1 SW1# show interfaces status err-disabled
-  % Invalid input detected at '^' marker.
-  show interfaces status err-disabled
                   ^
+  % Invalid input detected at '^' marker.
 
 
 --- [216] § 802.1X (dot1x) configuration ---
@@ -805,42 +796,29 @@ Total steps: 421
 <empty>
 
 [219/421] sw1 SW1(config)# dot1x system-auth-control
-  % Invalid input detected at '^' marker.
-  dot1x system-auth-control
-  ^
+<empty>
 
 [220/421] sw1 SW1(config)# do show dot1x
-  % Invalid input detected at '^' marker.
-  show dot1x
-       ^
+  Sysauthcontrol              Enabled
+  Dot1x Protocol Version      2
 
 [221/421] sw1 SW1(config)# interface FastEthernet0/1
 <empty>
 
 [222/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [223/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [224/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [225/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [226/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [227/421] sw1 SW1(config-if)# exit
 <empty>
@@ -849,29 +827,19 @@ Total steps: 421
 <empty>
 
 [229/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [230/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [231/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [232/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [233/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [234/421] sw1 SW1(config-if)# exit
 <empty>
@@ -880,29 +848,19 @@ Total steps: 421
 <empty>
 
 [236/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [237/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [238/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [239/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [240/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [241/421] sw1 SW1(config-if)# exit
 <empty>
@@ -911,29 +869,19 @@ Total steps: 421
 <empty>
 
 [243/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [244/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [245/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [246/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [247/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [248/421] sw1 SW1(config-if)# exit
 <empty>
@@ -942,29 +890,19 @@ Total steps: 421
 <empty>
 
 [250/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [251/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [252/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [253/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [254/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [255/421] sw1 SW1(config-if)# exit
 <empty>
@@ -973,29 +911,19 @@ Total steps: 421
 <empty>
 
 [257/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [258/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [259/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [260/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [261/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [262/421] sw1 SW1(config-if)# exit
 <empty>
@@ -1004,29 +932,19 @@ Total steps: 421
 <empty>
 
 [264/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [265/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [266/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [267/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [268/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [269/421] sw1 SW1(config-if)# exit
 <empty>
@@ -1035,29 +953,19 @@ Total steps: 421
 <empty>
 
 [271/421] sw1 SW1(config-if)# dot1x pae authenticator
-  % Invalid input detected at '^' marker.
-  dot1x pae authenticator
-  ^
+<empty>
 
 [272/421] sw1 SW1(config-if)# dot1x port-control auto
-  % Invalid input detected at '^' marker.
-  dot1x port-control auto
-  ^
+<empty>
 
 [273/421] sw1 SW1(config-if)# dot1x host-mode single-host
-  % Invalid input detected at '^' marker.
-  dot1x host-mode single-host
-  ^
+  % Host modes are not supported: a port authorises a single supplicant.
 
 [274/421] sw1 SW1(config-if)# dot1x reauthentication
-  % Invalid input detected at '^' marker.
-  dot1x reauthentication
-  ^
+  % Periodic re-authentication is not supported on this switch.
 
 [275/421] sw1 SW1(config-if)# dot1x timeout quiet-period 60
-  % Invalid input detected at '^' marker.
-  dot1x timeout quiet-period 60
-  ^
+<empty>
 
 [276/421] sw1 SW1(config-if)# exit
 <empty>
@@ -1066,14 +974,126 @@ Total steps: 421
 <empty>
 
 [278/421] sw1 SW1# show dot1x all
-  % Invalid input detected at '^' marker.
-  show dot1x all
-       ^
+  Sysauthcontrol              Enabled
+  Dot1x Protocol Version      2
+  
+  Dot1x Info for FastEthernet0/1
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/2
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/3
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/4
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/5
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/6
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/7
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
+  
+  Dot1x Info for FastEthernet0/8
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
 
 [279/421] sw1 SW1# show dot1x interface FastEthernet0/1
-  % Invalid input detected at '^' marker.
-  show dot1x interface FastEthernet0/1
-       ^
+  Dot1x Info for FastEthernet0/1
+  -----------------------------------
+  PAE                       = AUTHENTICATOR
+  PortControl               = AUTO
+  ControlDirection          = Both
+  HostMode                  = SINGLE_HOST
+  QuietPeriod               = 60
+  MaxReq                    = 2
+  Status                    = UNAUTHORIZED
+  Authorized                = NO
+  Supplicant                = none
+  Identity                  = none
 
 
 --- [280] § DHCP snooping ---
@@ -1087,9 +1107,8 @@ Total steps: 421
 <empty>
 
 [283/421] sw1 SW1(config)# ip dhcp snooping information option
-  % Invalid input detected at '^' marker.
-  ip dhcp snooping information option
                    ^
+  % Invalid input detected at '^' marker.
 
 [284/421] sw1 SW1(config)# interface GigabitEthernet0/1
 <empty>
@@ -1409,14 +1428,58 @@ Total steps: 421
 <empty>
 
 [383/421] sw1 SW1# show storm-control
-  % Invalid input detected at '^' marker.
-  show storm-control
-       ^
+  Interface  Filter State   Upper        Lower        Current
+  Fa0/1      Forwarding     20.00%       20.00%       0.00%
+  Fa0/1      Forwarding     30.00%       30.00%       0.00%
+  Fa0/1      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/2      Forwarding     20.00%       20.00%       0.00%
+  Fa0/2      Forwarding     30.00%       30.00%       0.00%
+  Fa0/2      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/3      Forwarding     20.00%       20.00%       0.00%
+  Fa0/3      Forwarding     30.00%       30.00%       0.00%
+  Fa0/3      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/4      Forwarding     20.00%       20.00%       0.00%
+  Fa0/4      Forwarding     30.00%       30.00%       0.00%
+  Fa0/4      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/5      Forwarding     20.00%       20.00%       0.00%
+  Fa0/5      Forwarding     30.00%       30.00%       0.00%
+  Fa0/5      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/6      Forwarding     20.00%       20.00%       0.00%
+  Fa0/6      Forwarding     30.00%       30.00%       0.00%
+  Fa0/6      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/7      Forwarding     20.00%       20.00%       0.00%
+  Fa0/7      Forwarding     30.00%       30.00%       0.00%
+  Fa0/7      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/8      Forwarding     20.00%       20.00%       0.00%
+  Fa0/8      Forwarding     30.00%       30.00%       0.00%
+  Fa0/8      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/9      Forwarding     20.00%       20.00%       0.00%
+  Fa0/9      Forwarding     30.00%       30.00%       0.00%
+  Fa0/9      Forwarding     100.00%      1000.00%     0.00%
+  Fa0/10     Forwarding     20.00%       20.00%       0.00%
+  Fa0/10     Forwarding     30.00%       30.00%       0.00%
+  Fa0/10     Forwarding     100.00%      1000.00%     0.00%
+  Fa0/11     Forwarding     20.00%       20.00%       0.00%
+  Fa0/11     Forwarding     30.00%       30.00%       0.00%
+  Fa0/11     Forwarding     100.00%      1000.00%     0.00%
+  Fa0/12     Forwarding     20.00%       20.00%       0.00%
+  Fa0/12     Forwarding     30.00%       30.00%       0.00%
+  Fa0/12     Forwarding     100.00%      1000.00%     0.00%
 
 [384/421] sw1 SW1# show storm-control broadcast
-  % Invalid input detected at '^' marker.
-  show storm-control broadcast
-       ^
+  Interface  Filter State   Upper        Lower        Current
+  Fa0/1      Forwarding     20.00%       20.00%       0.00%
+  Fa0/2      Forwarding     20.00%       20.00%       0.00%
+  Fa0/3      Forwarding     20.00%       20.00%       0.00%
+  Fa0/4      Forwarding     20.00%       20.00%       0.00%
+  Fa0/5      Forwarding     20.00%       20.00%       0.00%
+  Fa0/6      Forwarding     20.00%       20.00%       0.00%
+  Fa0/7      Forwarding     20.00%       20.00%       0.00%
+  Fa0/8      Forwarding     20.00%       20.00%       0.00%
+  Fa0/9      Forwarding     20.00%       20.00%       0.00%
+  Fa0/10     Forwarding     20.00%       20.00%       0.00%
+  Fa0/11     Forwarding     20.00%       20.00%       0.00%
+  Fa0/12     Forwarding     20.00%       20.00%       0.00%
 
 
 --- [385] § per-interface port-security inspection loop ---
@@ -1704,12 +1767,10 @@ Total steps: 421
 --- [406] § DAI generates traffic (host ARP) ---
 [406/421] l1 l1$ ping -c 2 192.168.1.13
   PING 192.168.1.13 (192.168.1.13) 56(84) bytes of data.
-  64 bytes from 192.168.1.13: icmp_seq=1 ttl=64 time=0.491 ms
-  64 bytes from 192.168.1.13: icmp_seq=2 ttl=64 time=0.269 ms
   
   --- 192.168.1.13 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss
-  rtt min/avg/max/mdev = 0.269/0.380/0.491/0.111 ms
+  2 packets transmitted, 0 received, 100% packet loss
+  ping: destination host unreachable
 
 [407/421] srv1 srv1$ arp -n
   Address                  HWtype  HWaddress           Flags Mask            Iface
@@ -1739,6 +1800,7 @@ Total steps: 421
 
 --- [410] § host verification ---
 [411/421] l1 l1$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.11/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1753,6 +1815,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [413/421] srv1 srv1$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.13/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1767,6 +1830,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [415/421] l2 l2$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.21/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1781,6 +1845,7 @@ Total steps: 421
   192.168.1.22             ether   02:00:00:00:00:5f   C     *               eth0
 
 [417/421] srv2 srv2$ ip -br addr
+  lo              UNKNOWN       127.0.0.1/8
   eth0            UP            192.168.1.23/24
   eth1            DOWN          
   eth2            DOWN          
@@ -1833,22 +1898,15 @@ Total steps: 421
 [421/421] sw1 SW1# show running-config
   Building configuration...
   
-  Current configuration:
+  Current configuration : 8138 bytes
+  !
+  service timestamps debug datetime msec
+  service timestamps log datetime msec
   !
   hostname SW1
   !
-  arp access-list TRUST-HOSTS
-   permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
-  !
-  ip arp inspection vlan 1,10,20
-  ip arp inspection validate src-mac dst-mac ip
-  ip arp inspection filter TRUST-HOSTS vlan 1
-  errdisable recovery cause arp-inspection
-  errdisable recovery interval 60
-  errdisable recovery cause psecure-violation
-  !
-  interface FastEthernet0/0
-   switchport mode access
+  aaa new-model
+  aaa authentication dot1x default group radius
   !
   interface FastEthernet0/1
    switchport mode access
@@ -2072,20 +2130,33 @@ Total steps: 421
    switchport port-security aging type inactivity
   !
   interface FastEthernet0/21
-   switchport mode access
   !
   interface FastEthernet0/22
-   switchport mode access
   !
   interface FastEthernet0/23
-   switchport mode access
   !
-  interface GigabitEthernet0/0
-   switchport mode access
+  interface FastEthernet0/24
   !
   interface GigabitEthernet0/1
    switchport mode trunk
    switchport trunk encapsulation dot1q
    ip arp inspection trust
+  !
+  interface GigabitEthernet0/2
+  !
+  interface Vlan1
+   no ip address
+   shutdown
+  !
+  arp access-list TRUST-HOSTS
+   permit ip host 192.168.1.13 mac host 0000.aaaa.bbbb
+  !
+  ip arp inspection vlan 1,10,20
+  ip arp inspection validate src-mac dst-mac ip
+  ip arp inspection filter TRUST-HOSTS vlan 1
+  errdisable recovery cause arp-inspection
+  errdisable recovery interval 60
+  errdisable recovery cause psecure-violation
+  errdisable recovery cause bpduguard
   !
   end

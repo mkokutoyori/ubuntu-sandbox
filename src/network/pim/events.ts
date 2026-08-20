@@ -49,6 +49,18 @@ export interface PimRpChangedPayload extends PimDeviceRef {
   rpAddress: string | null;
 }
 
+export interface PimBsrChangedPayload extends PimDeviceRef {
+  oldBsrIp: string | null;
+  newBsrIp: string | null;
+  priority: number;
+  isSelf: boolean;
+}
+
+export interface PimRpLearnedPayload extends PimDeviceRef {
+  bsrIp: string;
+  rps: Array<{ rpAddress: string; groupRange: string; priority: number }>;
+}
+
 export type PimDomainEvent =
   | { topic: 'pim.packet.sent'; payload: PimPacketSentPayload }
   | { topic: 'pim.packet.received'; payload: PimPacketReceivedPayload }
@@ -56,4 +68,6 @@ export type PimDomainEvent =
   | { topic: 'pim.neighbor.lost'; payload: PimNeighborLostPayload }
   | { topic: 'pim.dr.changed'; payload: PimDrChangedPayload }
   | { topic: 'pim.mroute.changed'; payload: PimMroutChangedPayload }
-  | { topic: 'pim.rp.changed'; payload: PimRpChangedPayload };
+  | { topic: 'pim.rp.changed'; payload: PimRpChangedPayload }
+  | { topic: 'pim.bsr.changed'; payload: PimBsrChangedPayload }
+  | { topic: 'pim.rp.learned'; payload: PimRpLearnedPayload };

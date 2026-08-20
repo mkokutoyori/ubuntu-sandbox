@@ -6,6 +6,22 @@ const DAY_ABBREVIATIONS = DAY_NAMES.map(d => d.slice(0, 3));
 
 const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
 
+/**
+ * RR century-rollover (Oracle's real default-year token, distinct from YY):
+ * a 2-digit value 0-49 rolls forward a century if the current year's own
+ * last 2 digits are 50-99, and a value 50-99 rolls back a century if the
+ * current year's are 0-49 — otherwise both stay in the current century.
+ */
+function resolveRRYear(twoDigit: number): number {
+  const currentYear = new Date().getFullYear();
+  const century = Math.floor(currentYear / 100) * 100;
+  const currentYY = currentYear % 100;
+  if (twoDigit <= 49) {
+    return currentYY <= 49 ? century + twoDigit : century + 100 + twoDigit;
+  }
+  return currentYY <= 49 ? century - 100 + twoDigit : century + twoDigit;
+}
+
 export function coerceDateValue(value: unknown): Date | null {
   if (value instanceof Date) return new Date(value.getTime());
   if (typeof value !== 'string') return null;
@@ -24,7 +40,7 @@ export function formatDateValue(d: Date): string {
 export function formatDateWithPattern(d: Date, fmt: string): string {
   let result = fmt;
   result = result.replace(/YYYY/g, String(d.getFullYear()));
-  result = result.replace(/YY/g, String(d.getFullYear()).slice(-2));
+  result = result.replace(/YY|RR/g, String(d.getFullYear()).slice(-2));
   result = result.replace(/MONTH/g, MONTH_NAMES[d.getMonth()]);
   result = result.replace(/MON/g, MONTH_ABBREVIATIONS[d.getMonth()]);
   result = result.replace(/MM/g, pad(d.getMonth() + 1));
@@ -57,6 +73,7 @@ export function parseDateWithPattern(dateStr: string, fmt: string): string {
     switch (fmtParts[i]) {
       case 'YYYY': year = v; break;
       case 'YY': year = 2000 + v; break;
+      case 'RR': year = resolveRRYear(v); break;
       case 'MM': month = v; break;
       case 'DD': day = v; break;
       case 'HH24': case 'HH': hour = v; break;

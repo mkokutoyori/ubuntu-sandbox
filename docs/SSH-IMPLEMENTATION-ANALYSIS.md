@@ -145,6 +145,8 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 
 **Tests** : `L1..L7` dans `ssh-lan-localforward.test.ts` (parser 3-part / 4-part / invalide, collecte multi-`-L`, `-o LocalForward=`, listener observable, `dispose` libère).
 
+**Écart connu (non corrigé ici)** : le bridge exec `nc` du point 3 n'a jamais été câblé — `ISshExecChannel` n'expose que le protocole `execute()` one-shot, pas un flux continu, donc le `nc` distant n'est même jamais invoqué (voir le commentaire de `SshLocalForwarder.ts` lui-même). Le listener existe et est observable (`ss -tln`), mais aucun octet ne transite réellement. `docs/PRD-Port-Forwarding.md` Phase 8 a câblé un vrai relais bidirectionnel pour `-L`/`-R`, mais uniquement sur l'AUTRE chemin SSH du code (`executeCommand` / `LinuxSshClient.ts` / `SshForwardingTable.ts`) — ce `SshLocalForwarder`, utilisé par la session interactive `LinuxTerminalSession`, reste non câblé.
+
 ### 1.12 [FEAT] Reverse port forwarding `-R`
 
 **Symptôme** : pas de tunnel inverse (`ssh -R remotePort:localHost:localPort`) — manquait pour les scénarios de bastion publiant un service local vers l'extérieur.
@@ -156,6 +158,8 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 4. `LinuxTerminalSession.installRemoteForwards` instancie un forwarder par `-R` après authentification. Listener disposé à la fin de la session.
 
 **Tests** : `R1..R7` dans `ssh-lan-remoteforward.test.ts`.
+
+**Écart connu (non corrigé ici)** : même limite que §1.11 — le bridge exec `nc` n'a jamais été câblé pour pomper de vrais octets. `docs/PRD-Port-Forwarding.md` Phase 8 fournit un relais `-R` réel, mais seulement sur le chemin `executeCommand`/`LinuxSshClient.ts`/`SshForwardingTable.ts`, pas sur ce `SshRemoteForwarder`.
 
 ### 1.13 [FEAT] `ssh-agent` + `ssh-add` (cache de clés en mémoire)
 
@@ -220,6 +224,8 @@ Nouvelle méthode `recordAuthFailure` écrit `Failed password for <user>...` sym
 UDP ASSOCIATE / BIND non implémentés (rares en tutorial).
 
 **Tests** : `D1..D9` dans `ssh-lan-dynamicforward.test.ts` (parser 1 / 2 / invalide ; collecte multi-`-D` ; `-o DynamicForward=` ; listener observable / dispose ; SOCKS5 greeting ; SOCKS5 CONNECT extrait `host:port`).
+
+**Écart connu (non corrigé ici)** : même limite que §1.11/§1.12 — le handshake SOCKS5 est réel mais le bridge exec `nc` qui devrait porter les données post-CONNECT n'a jamais été câblé. `docs/PRD-Port-Forwarding.md` Phase 8 ne couvre pas `-D` (pas de destination fixe à relayer) ; ce gap reste entier des deux côtés du code.
 
 ---
 
@@ -304,10 +310,11 @@ UDP ASSOCIATE / BIND non implémentés (rares en tutorial).
 
 ## 3. Comportements manquants
 
-### 3.1 Forwarding (port forwarding / X11 / agent)
+### 3.1 ~~Forwarding (port forwarding / X11 / agent)~~ → parser/listener corrigés §1.11/§1.12/§1.14/§1.16, relais réel toujours absent sur ce chemin
 
-- Aucun support de `-L` (local port forwarding), `-R` (remote), `-D` (dynamic SOCKS), `-X` (X11), `-A` (agent forwarding).
-- `SshSession` n'expose pas d'API `openTcpForward(localPort, remoteHost, remotePort)`.
+- `-L`/`-R`/`-D`/`-A` ont désormais un parser, un listener observable et (pour `-A`) un vrai shadow-copy de l'agent — voir §1.11/§1.12/§1.14/§1.16. Ce qui reste vrai : aucun de `-L`/`-R`/`-D` ne pompe de vrais octets sur ce chemin (`LinuxTerminalSession` + `SshLocalForwarder`/`SshRemoteForwarder`/`SshDynamicForwarder`) — le bridge exec `nc` n'a jamais été câblé (voir les écarts connus ajoutés à §1.11/§1.12/§1.16). `docs/PRD-Port-Forwarding.md` Phase 8 a câblé un relais réel pour `-L`/`-R`, mais sur l'AUTRE chemin du code (`executeCommand`/`LinuxSshClient.ts`), pas celui-ci.
+- `-X` (X11) reste entièrement absent.
+- `SshSession` n'expose toujours pas d'API `openTcpForward(localPort, remoteHost, remotePort)` — `SshLocalForwarder`/`SshRemoteForwarder` passent par un canal `exec` bricolé plutôt qu'un vrai canal `direct-tcpip`/`forwarded-tcpip`.
 
 ### 3.2 Multiplexage `ControlMaster`
 
@@ -331,9 +338,9 @@ Sur le subset documenté dans `SshSshdConfig` (`Port`, `PermitRootLogin`, `Passw
 
 | Commande | Statut |
 |---|---|
-| `ssh-add` / `ssh-agent` | absent |
-| `ssh -L/-R/-D` | absent |
-| `ssh -t` (force TTY) | absent (pas de TTY simulé) |
+| `ssh-add` / `ssh-agent` | corrigé §1.13 (cache de clés en mémoire) |
+| `ssh -L/-R/-D` | parser + listener corrigés §1.11/§1.12/§1.16 ; relais de données réel toujours absent sur ce chemin (voir écarts connus §1.11/§1.12/§1.16) |
+| `ssh -t` (force TTY) | corrigé §1.15 (canal shell PTY persistant) |
 | `ssh-keyscan` | absent |
 | `sftp -b <batchfile>` | absent (mode interactif uniquement) |
 | `scp -3` (relay) | absent |
@@ -399,6 +406,6 @@ Ordre de priorité, du plus impactant au plus accessoire :
 - **26 fichiers de tests** sous `src/__tests__/unit/network-v2/ssh-*` ; **483 / 483** scénarios verts (dont `F1..F7`, `G1..G9`, `H1..H7`, `J1..J7`, `L1..L7`, `R1..R7`, `A1..A9`, `FA1..FA6`, `T1..T9`, `D1..D9`).
 - **3 fichiers d'intégration côté terminal** : `LinuxTerminalSession`, `RemoteShellSubShell`, `SftpSubShell`
 - **2 fichiers d'intégration côté device** : `LinuxMachine`, `WindowsPC` (+ `LinuxCommandExecutor` qui possède désormais un `SshAgent`)
-- **Reste du plan §5** : tous les items P1..P9 ainsi que les ajouts post-gap (§1.10..§1.16) sont corrigés. Le module SSH couvre désormais : auth password/pubkey/known_hosts, exec/shell/SFTP, ProxyJump (`-J`), forwarding `-L`/`-R`/`-D`, ssh-agent + `ssh-add`, agent forwarding (`-A`), PTY (`-t` / `-tt` / `-T`), Hash known_hosts, wtmp/btmp, syslog reactive, fail2ban-style throttler, `sftp -b` batch.
+- **Reste du plan §5** : tous les items P1..P9 ainsi que les ajouts post-gap (§1.10..§1.16) sont corrigés. Le module SSH couvre désormais : auth password/pubkey/known_hosts, exec/shell/SFTP, ProxyJump (`-J`), forwarding `-L`/`-R`/`-D` (parser + listener réels, mais toujours sans relais de données sur ce chemin — voir écarts connus §1.11/§1.12/§1.16 ; `docs/PRD-Port-Forwarding.md` Phase 8 fournit un relais `-L`/`-R` réel sur l'autre chemin SSH du code, `executeCommand`/`LinuxSshClient.ts`), ssh-agent + `ssh-add`, agent forwarding (`-A`), PTY (`-t` / `-tt` / `-T`), Hash known_hosts, wtmp/btmp, syslog reactive, fail2ban-style throttler, `sftp -b` batch.
 - **Couverture** : `npm run test:coverage` (provider v8, cible 85/85/85/75 sur `src/network/protocols/ssh/**`).
 - **BRD** : section 0 récap + statuts inline pour chaque exigence

@@ -26,7 +26,7 @@ describe('Scn', () => {
   it('Scn.of(negative) returns err SCN_INVALID', () => {
     const r = Scn.of(-1);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('SCN_INVALID');
+    if (r.ok === false) expect(r.error.code).toBe('SCN_INVALID');
   });
 
   it('Scn.of(NaN) returns err SCN_INVALID', () => {

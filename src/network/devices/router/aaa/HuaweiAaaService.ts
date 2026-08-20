@@ -43,6 +43,15 @@ export interface HwtacacsTemplate {
   sharedKeyHidden?: 'cipher' | 'simple';
 }
 
+/** `[Huawei-aaa] password-policy ...` — VRP's local-user password policy. */
+export interface HuaweiPasswordPolicy {
+  minLength?: number;
+  expireDays?: number;
+  alertBeforeExpireDays?: number;
+  historyMaxRecords?: number;
+  level?: 'common' | 'high';
+}
+
 export class HuaweiAaaService {
   readonly authenticationSchemes: Map<string, AuthenticationScheme> = new Map();
   readonly authorizationSchemes: Map<string, AuthorizationScheme> = new Map();
@@ -50,6 +59,7 @@ export class HuaweiAaaService {
   readonly domains: Map<string, AaaDomain> = new Map();
   readonly radiusTemplates: Map<string, RadiusTemplate> = new Map();
   readonly hwtacacsTemplates: Map<string, HwtacacsTemplate> = new Map();
+  readonly passwordPolicy: HuaweiPasswordPolicy = {};
 
   ensureAuthenticationScheme(name: string): AuthenticationScheme {
     let s = this.authenticationSchemes.get(name);
@@ -84,10 +94,17 @@ export class HuaweiAaaService {
 
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
+    const hasPasswordPolicy = Object.keys(this.passwordPolicy).length > 0;
     const hasAaa = this.authenticationSchemes.size + this.authorizationSchemes.size
-      + this.accountingSchemes.size + this.domains.size;
+      + this.accountingSchemes.size + this.domains.size + (hasPasswordPolicy ? 1 : 0);
     if (hasAaa > 0) {
       lines.push('aaa');
+      const p = this.passwordPolicy;
+      if (p.level) lines.push(` password-policy level ${p.level}`);
+      if (p.minLength) lines.push(` password-policy min-length ${p.minLength}`);
+      if (p.expireDays) lines.push(` password-policy expire ${p.expireDays}`);
+      if (p.alertBeforeExpireDays) lines.push(` password-policy alert-before-expire ${p.alertBeforeExpireDays}`);
+      if (p.historyMaxRecords) lines.push(` password-policy history-record max-record-number ${p.historyMaxRecords}`);
       for (const s of this.authenticationSchemes.values()) {
         lines.push(` authentication-scheme ${s.name}`);
         if (s.mode?.length) lines.push(`  authentication-mode ${s.mode.join(' ')}`);

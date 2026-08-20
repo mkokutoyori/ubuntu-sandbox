@@ -11,12 +11,66 @@
  *   no arp <ip>                                — remove entry (config)
  */
 
-import { MACAddress } from '../../../core/types';
+import { IPAddress, MACAddress } from '../../../core/types';
 import type { ARPProvider, CiscoARPEntry } from '../CiscoDevice';
 import type { CommandTrie } from '../CommandTrie';
 
 // Re-export for backward compatibility
 export type { CiscoARPEntry, ARPProvider } from '../CiscoDevice';
+
+const ARP_IFACE_PREFIXES: Record<string, string> = {
+  fa: 'FastEthernet', fas: 'FastEthernet', fast: 'FastEthernet', fastethernet: 'FastEthernet',
+  gi: 'GigabitEthernet', gig: 'GigabitEthernet', giga: 'GigabitEthernet', gigabitethernet: 'GigabitEthernet',
+  te: 'TenGigabitEthernet', tengigabitethernet: 'TenGigabitEthernet',
+  eth: 'Ethernet', ethernet: 'Ethernet',
+};
+
+function arpSummary(entries: Array<[string, CiscoARPEntry]>): string {
+  const total = entries.length;
+  const dyn = entries.filter(([, e]) => e.type === 'dynamic').length;
+  const stat = entries.filter(([, e]) => e.type === 'static').length;
+  return [
+    `Total number of entries in the arp table: ${total}.`,
+    `Total number of Dynamic entries: ${dyn}.`,
+    `Total number of Static entries: ${stat}.`,
+    `Total number of Interface entries: ${total - dyn - stat}.`,
+  ].join('\n');
+}
+
+function arpCount(entries: Array<[string, CiscoARPEntry]>): string {
+  return `Total number of entries in the arp table: ${entries.length}.`;
+}
+
+function arpDetail(entries: Array<[string, CiscoARPEntry]>): string {
+  if (entries.length === 0) return 'No ARP entries.';
+  const lines = ['Protocol  Address          Age (min)   Hardware Addr   Type   Interface   VRF'];
+  for (const [ip, entry] of entries) {
+    const isStatic = entry.type === 'static';
+    const age = isStatic ? '-' : String(Math.floor((Date.now() - entry.timestamp) / 60000));
+    lines.push(
+      `Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}` +
+      `${(isStatic ? 'static' : 'ARPA').padEnd(7)}${entry.iface.padEnd(12)}Default`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function matchArpInterface(provider: ARPProvider, raw: string): string | null {
+  const collapsed = raw.replace(/\s+/g, '').toLowerCase();
+  const ports = provider._getPortsInternal();
+  for (const name of ports.keys()) {
+    if (name.toLowerCase() === collapsed) return name;
+  }
+  const m = collapsed.match(/^([a-z]+)([\d/.]+)$/);
+  if (!m) return null;
+  const full = ARP_IFACE_PREFIXES[m[1]];
+  if (!full) return null;
+  const resolved = `${full}${m[2]}`.toLowerCase();
+  for (const name of ports.keys()) {
+    if (name.toLowerCase() === resolved) return name;
+  }
+  return null;
+}
 
 // ─── Show ARP ───────────────────────────────────────────────────────
 
@@ -30,11 +84,25 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
 
   if (filterArgs && filterArgs.length > 0) {
     const filter = filterArgs.join(' ');
+    if (/^summary$/i.test(filter)) return arpSummary(entries);
+    if (/^count$/i.test(filter)) return arpCount(entries);
+    if (/^detail$/i.test(filter)) return arpDetail(entries);
+    if (/^statistics$/i.test(filter)) {
+      return "% Invalid input detected at '^' marker.";
+    }
     const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(filter);
+    const vlanMatch = /^vlan\s*(\d+)$/i.exec(filter);
     if (isIP) {
       entries = entries.filter(([ip]) => ip === filter);
+    } else if (vlanMatch) {
+      const vlanId = parseInt(vlanMatch[1], 10);
+      const sviIds = provider._getSviVlanIds?.();
+      if (!sviIds || !sviIds.includes(vlanId)) return '% Invalid interface';
+      entries = entries.filter(([, entry]) => entry.iface === `Vlan${vlanId}`);
     } else {
-      entries = entries.filter(([, entry]) => entry.iface === filter);
+      const canonical = matchArpInterface(provider, filter);
+      if (!canonical) return "% Invalid input detected at '^' marker.";
+      entries = entries.filter(([, entry]) => entry.iface === canonical);
     }
   }
 
@@ -47,7 +115,7 @@ export function showArp(provider: ARPProvider, filterArgs?: string[]): string {
     const suffix = isStatic
       ? `ARPA   ${entry.iface}\n                                                       static`
       : `ARPA   ${entry.iface}`;
-    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toString().padEnd(18)}${suffix}`);
+    lines.push(`Internet  ${ip.padEnd(17)}${age.padEnd(12)}${entry.mac.toCiscoString().padEnd(18)}${suffix}`);
   }
   return lines.join('\n');
 }
@@ -76,10 +144,6 @@ export function registerArpPrivilegedCommands(
   trie: CommandTrie,
   getProvider: () => ARPProvider,
 ): void {
-  trie.register('clear arp-cache', 'Clear ARP cache', () => {
-    getProvider()._clearARPCache();
-    return '';
-  });
 }
 
 // ─── Command Registration: Config Commands ──────────────────────────
@@ -93,7 +157,9 @@ export function registerArpConfigCommands(
 ): void {
   trie.registerGreedy('arp', 'Add static ARP entry', (args) => {
     if (args.length < 2) return '% Incomplete command.';
-    const ip = args[0];
+    let ip: IPAddress;
+    try { ip = new IPAddress(args[0]); }
+    catch { return `% Invalid IP address "${args[0]}"`; }
     const macStr = args[1];
     let mac: MACAddress;
     try {
@@ -119,7 +185,10 @@ export function registerArpConfigCommands(
 
   trie.registerGreedy('no arp', 'Remove ARP entry', (args) => {
     if (args.length < 1) return '% Incomplete command.';
-    getProvider()._deleteARP(args[0]);
+    let ip: IPAddress;
+    try { ip = new IPAddress(args[0]); }
+    catch { return `% Invalid IP address "${args[0]}"`; }
+    getProvider()._deleteARP(ip);
     return '';
   });
 }

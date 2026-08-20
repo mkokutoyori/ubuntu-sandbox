@@ -21,14 +21,14 @@ const DEFAULTS: FeatureDefaults = {
   // CDP is enabled by default on Cisco; LLDP is disabled by default.
   'cdp': true,
   'lldp': false,
-  // Routers route by default; CEF on; HTTP server off on modern IOS.
+  // Routers route by default; CEF on.
   'ip routing': true,
   'ipv6 unicast-routing': false,
   'ip cef': true,
-  'ip http server': false,
-  'ip http secure-server': false,
-  // Legacy source-routing historically defaulted on.
-  'ip source-route': true,
+  // `ip http server` / `ip http secure-server` ne sont plus ici : un
+  // booléen ne peut pas dire sur quel port ni pour qui, et cette table
+  // n'a pas de rendu vivant. Ils vivent dans `CiscoHttpService`, qui
+  // porte les six faits du serveur ensemble et les rend.
   'ip domain-lookup': true,
 };
 

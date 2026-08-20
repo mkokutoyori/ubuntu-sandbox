@@ -10,6 +10,8 @@ import type { Router } from '../../Router';
 import { FhrpRepository, hsrpVirtualMac, type HsrpGroup }
   from '../../inspection/config/FhrpRepository';
 import { hsrpMaxGroup, HSRP_V1_MAX_GROUP } from '../../../hsrp/types';
+import { getHsrpAgent } from '../../../equipment/RouterServiceCapabilities';
+import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
 
 interface HsrpCtx {
   r(): Router;
@@ -17,7 +19,7 @@ interface HsrpCtx {
 }
 
 function groupState(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live) {
     const s = live.state;
@@ -28,14 +30,14 @@ function groupState(router: Router, g: HsrpGroup): string {
 }
 
 function activeRouterLabel(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'active') return 'local';
   return live?.activeRouterIp ?? 'unknown';
 }
 
 function standbyRouterLabel(router: Router, g: HsrpGroup): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   const live = agent?.getGroup(g.iface, g.group);
   if (live?.state === 'standby') return 'local';
   return live?.standbyRouterIp ?? 'unknown';
@@ -72,7 +74,9 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
   for (const g of groups) {
     const state = groupState(router, g);
     rows.push(
-      `${g.iface.slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
+      // IOS abrège le nom (`Gi0/0`) dans cette vue ; le tronquer donnait
+      // `GigabitEthe`, qui ne désigne aucune interface et ne se retape pas.
+      `${iosShortInterfaceName(g.iface).slice(0, 11).padEnd(12)}${String(g.group).padEnd(5)}` +
       `${String(g.priority).padEnd(4)}${g.preempt ? 'P' : ' '} ` +
       `${state.padEnd(8)} ${activeRouterLabel(router, g).padEnd(15)} ` +
       `${standbyRouterLabel(router, g).padEnd(15)} ${g.vip ?? 'unknown'}`);
@@ -81,7 +85,7 @@ function renderBrief(router: Router, groups: HsrpGroup[]): string {
 }
 
 function applyStandby(repo: FhrpRepository, iface: string, args: string[], router: Router): string {
-  const agent = (router as unknown as { getHsrpAgent?: () => import('../../../hsrp/HsrpAgent').HsrpAgent }).getHsrpAgent?.();
+  const agent = getHsrpAgent(router);
   if (args[0] === 'version') {
     const v = args[1] === '2' ? 2 : 1;
     // Real IOS refuses to fall back to version 1 while groups above 255
@@ -125,13 +129,21 @@ function applyStandby(repo: FhrpRepository, iface: string, args: string[], route
       g.priority = parseInt(rest[0], 10) || g.priority;
       agent?.setPriority(iface, group, g.priority);
       return '';
-    case 'preempt':
+    case 'preempt': {
       g.preempt = true;
+      // Le delai etait range sur cette facade et lu par le SEUL
+      // affichage : `preempt delay minimum` etait accepte, rendu, et
+      // n'a jamais retarde une prise de role. Il atteint desormais
+      // l'agent, qui est la seule chose qui decide.
+      let delai: number | undefined;
       if (rest[0] === 'delay' && rest[1] === 'minimum') {
-        g.preemptDelay = parseInt(rest[2], 10) || undefined;
+        const n = parseInt(rest[2], 10);
+        delai = Number.isFinite(n) && n > 0 ? n : undefined;
+        g.preemptDelay = delai;
       }
-      agent?.setPreempt(iface, group, true);
+      agent?.setPreempt(iface, group, true, delai);
       return '';
+    }
     case 'timers': {
       const nums = rest.filter((t) => /^\d+$/.test(t)).map(Number);
       if (nums.length >= 2) {

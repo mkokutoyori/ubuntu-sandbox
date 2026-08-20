@@ -42,12 +42,12 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('A2 lists "**Never logged in**" for a fresh account', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       expect(exec.execute('lastlog -u alice')).toContain('**Never logged in**');
     });
 
     it('A3 renders host, tty and a year once a login is recorded', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '192.168.1.50', 'pts/2');
       const row = rowFor(exec.execute('lastlog -u alice'), 'alice')!;
       expect(row).toContain('192.168.1.50');
@@ -56,8 +56,8 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('A4 -u filters to a single account', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
-      exec.userMgr.useradd('bob', { uid: 1002 });
+      exec.userMgr.useradd('alice', { u: 1001 });
+      exec.userMgr.useradd('bob', { u: 1002 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.lastlog.record('bob', '10.0.0.6', 'pts/1');
       const out = exec.execute('lastlog -u alice');
@@ -70,8 +70,8 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('A6 -t DAYS keeps only recent logins', () => {
-      exec.userMgr.useradd('recent', { uid: 1001 });
-      exec.userMgr.useradd('stale', { uid: 1002 });
+      exec.userMgr.useradd('recent', { u: 2001 });
+      exec.userMgr.useradd('stale', { u: 2002 });
       exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
       exec.lastlog.record('stale', '10.0.0.6', 'pts/1', Date.now() - 30 * 86400_000);
       const out = exec.execute('lastlog -t 7');
@@ -80,8 +80,8 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('A7 -b DAYS keeps only old logins', () => {
-      exec.userMgr.useradd('recent', { uid: 1001 });
-      exec.userMgr.useradd('stale', { uid: 1002 });
+      exec.userMgr.useradd('recent', { u: 2001 });
+      exec.userMgr.useradd('stale', { u: 2002 });
       exec.lastlog.record('recent', '10.0.0.5', 'pts/0');
       exec.lastlog.record('stale', '10.0.0.6', 'pts/1', Date.now() - 30 * 86400_000);
       const out = exec.execute('lastlog -b 7');
@@ -98,7 +98,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('A10 plain lastlog lists every account exactly once', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       const out = exec.execute('lastlog');
       const aliceRows = out.split('\n').filter(l => /^alice\b/.test(l));
       expect(aliceRows).toHaveLength(1);
@@ -120,7 +120,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B3 a recorded login is projected to the file', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const rows = readLastlogFile(exec);
       const alice = rows.find(r => r.user === 'alice');
@@ -130,7 +130,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B4 reading the file back via cat yields valid JSON of the entries', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const out = exec.execute('cat /var/log/lastlog');
       expect(() => JSON.parse(out)).not.toThrow();
@@ -138,7 +138,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B5 -C removes the user from the on-disk projection', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.userMgr.currentUid = 0;
       exec.execute('lastlog -C -u alice');
@@ -146,7 +146,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B6 -S writes a fresh stamp to the file', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.currentUid = 0;
       const before = Date.now() - 1000;
       exec.execute('lastlog -S -u alice');
@@ -156,7 +156,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B7 a fresh registry re-hydrates from an existing file', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.42', 'pts/9');
       const reborn = new LinuxLastlogRegistry();
       reborn.attachVfs(exec.vfs);
@@ -164,7 +164,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('B8 the command output and the file projection agree', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '172.16.0.9', 'pts/4');
       const fileHost = readLastlogFile(exec).find(r => r.user === 'alice')!.sourceHost;
       expect(rowFor(exec.execute('lastlog -u alice'), 'alice')).toContain(fileHost);
@@ -198,7 +198,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('C5 a non-root user may still read lastlog', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.userMgr.currentUid = 1001;
       const out = exec.execute('lastlog -u alice');
@@ -207,7 +207,7 @@ describe('lastlog — advanced multi-layer', () => {
     });
 
     it('C6 -C and -S are refused to non-root', () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.userMgr.currentUid = 1001;
       expect(exec.execute('lastlog -C -u alice')).toMatch(/must be root/);
       expect(exec.execute('lastlog -S -u alice')).toMatch(/must be root/);

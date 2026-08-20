@@ -19,6 +19,7 @@ function sshErrorMessage(e: SshError): string {
     case 'PERMISSION_DENIED':  return 'Permission denied';
     case 'INVALID_ARGUMENT':   return e.message;
     case 'CONNECTION_REFUSED': return 'Connection refused';
+    case 'CONNECTION_TIMEOUT': return 'Connection timed out';
     case 'NOT_AUTHENTICATED':  return 'Not authenticated';
     case 'AUTH_FAILED':        return 'Authentication failed';
     case 'CHANNEL_ERROR':      return e.message;
@@ -92,7 +93,10 @@ export class SftpInteractiveSession {
     const data = this.local.readFile(absLocal);
     if (!data.ok) { this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `local ${absLocal}: open failed` }); return; }
     const w = this.remote.writeFile(absRemote, data.value);
-    if (!w.ok) { this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `remote ${absRemote}: write failed` }); return; }
+    if (w.ok === false) {
+      this.recordError({ kind: 'parse', line: `put ${localPath}`, reason: `remote ${absRemote}: ${sshErrorMessage(w.error)}` });
+      return;
+    }
     this.lines.push(`Uploading ${absLocal} to ${absRemote}`);
   }
 
@@ -141,32 +145,32 @@ export class SftpInteractiveSession {
   private doMkdir(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.mkdir(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `mkdir ${path}`, reason: `Couldn't create directory: ${sshErrorMessage(r.error)}` });
+    if (r.ok === false) this.recordError({ kind: 'parse', line: `mkdir ${path}`, reason: `Couldn't create directory: ${sshErrorMessage(r.error)}` });
   }
 
   private doRmdir(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.rmdir(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rmdir ${path}`, reason: `Couldn't remove directory: ${sshErrorMessage(r.error)}` });
+    if (r.ok === false) this.recordError({ kind: 'parse', line: `rmdir ${path}`, reason: `Couldn't remove directory: ${sshErrorMessage(r.error)}` });
   }
 
   private doRm(path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.deleteFile(target);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rm ${path}`, reason: `Couldn't delete file: ${sshErrorMessage(r.error)}` });
+    if (r.ok === false) this.recordError({ kind: 'parse', line: `rm ${path}`, reason: `Couldn't delete file: ${sshErrorMessage(r.error)}` });
   }
 
   private doChmod(mode: number, path: string): void {
     const target = this.remote.normalizePath(path, this.remoteCwd);
     const r = this.remote.setPermissions(target, mode);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `chmod ${mode.toString(8)} ${path}`, reason: `Couldn't setstat on "${target}": ${sshErrorMessage(r.error)}` });
+    if (r.ok === false) this.recordError({ kind: 'parse', line: `chmod ${mode.toString(8)} ${path}`, reason: `Couldn't setstat on "${target}": ${sshErrorMessage(r.error)}` });
   }
 
   private doRename(src: string, dst: string): void {
     const a = this.remote.normalizePath(src, this.remoteCwd);
     const b = this.remote.normalizePath(dst, this.remoteCwd);
     const r = this.remote.rename(a, b);
-    if (!r.ok) this.recordError({ kind: 'parse', line: `rename ${src} ${dst}`, reason: `Couldn't rename file "${a}" to "${b}": ${sshErrorMessage(r.error)}` });
+    if (r.ok === false) this.recordError({ kind: 'parse', line: `rename ${src} ${dst}`, reason: `Couldn't rename file "${a}" to "${b}": ${sshErrorMessage(r.error)}` });
   }
 
   private recordError(e: SftpCommandParseError): void {

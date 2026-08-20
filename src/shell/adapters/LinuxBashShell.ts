@@ -18,7 +18,8 @@ import { parseReadInvocation, performInteractiveRead } from '../input';
 import {
   tryInterpretSshLaunch,
   finalisePendingAuth,
-  runSshExec,
+  wireProbeFor,
+  SSH_PASSWORD_PROMPTS,
   type PendingSshAuth,
 } from '../sshLauncher';
 
@@ -48,7 +49,6 @@ import { nextLineId } from '@/terminal/sessions/TerminalSession';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { RichOutputLine } from '@/terminal/core/types';
 
-const SSH_MAX_ATTEMPTS = 3;
 
 export interface LinuxBashShellOptions extends AbstractShellOptions {
   /**
@@ -155,17 +155,6 @@ export class LinuxBashShell extends AbstractShell {
     return dev.getCompletions ? dev.getCompletions(line) : [];
   }
 
-  /**
-   * Sub-shell launchers a real bash recognises by exec'ing the binary.
-   * Each entry maps the bare command line (after trimming flags) to the
-   * child-shell kind we should push.
-   */
-  private static readonly SUBSHELL_TRIGGERS: ReadonlyMap<RegExp, string> = new Map([
-    [/^sqlplus\b/i,  'sqlplus'],
-    [/^rman\b/i,     'rman'],
-    [/^lsnrctl\b/i,  'lsnrctl'],
-  ]);
-
   protected async dispatch(line: string): Promise<ShellLineResult> {
     const readIntercept = await this.tryInteractiveRead(line);
     if (readIntercept) return readIntercept;
@@ -175,28 +164,27 @@ export class LinuxBashShell extends AbstractShell {
     // adapter for that interpreter pointed at the same device, so the
     // user lands in the child's real prompt instead of a single-shot
     // command transcript.
-    for (const [pattern, kind] of LinuxBashShell.SUBSHELL_TRIGGERS) {
-      if (pattern.test(line)) {
-        const child = ShellFactory.tryCreateChild(kind, {
-          device: this.device,
-          user: this.user,
-          parent: this,
-          launchLine: line,
-        });
-        if (child) {
-          // Some adapters (SqlPlusShell, RmanShell) expose `isReady` and
-          // refuse to be pushed against a device that lacks the backing
-          // service. Mirror real bash by emitting "command not found".
-          const ready = (child as unknown as { isReady?: boolean }).isReady;
-          if (ready === false) {
-            child.dispose();
-            return { output: [`bash: ${kind}: command not found`] };
-          }
-          return { output: [], childShell: child };
+    const subShellKind = ShellFactory.launcherKindFor(line, this.kind);
+    if (subShellKind) {
+      const child = ShellFactory.tryCreateChild(subShellKind, {
+        device: this.device,
+        user: this.user,
+        parent: this,
+        launchLine: line,
+      });
+      if (child) {
+        // Some adapters (SqlPlusShell, RmanShell) expose `isReady` and
+        // refuse to be pushed against a device that lacks the backing
+        // service. Mirror real bash by emitting "command not found".
+        const ready = (child as unknown as { isReady?: boolean }).isReady;
+        if (ready === false) {
+          child.dispose();
+          return { output: [`bash: ${subShellKind}: command not found`] };
         }
-        // Fall through if no adapter is registered — print the legacy
-        // device output (banner / error) like the simulator did before.
+        return { output: [], childShell: child };
       }
+      // Fall through if no adapter is registered — print the legacy
+      // device output (banner / error) like the simulator did before.
     }
 
     // ssh launch intercept: shared helper resolves the target. Handles
@@ -207,6 +195,8 @@ export class LinuxBashShell extends AbstractShell {
       knownHostsTracker: this.knownHostsTracker,
       sourceIp: firstConfiguredIp(this.device),
       sourceHostname: (this.device as unknown as { getHostname?: () => string }).getHostname?.(),
+      wireProbe: wireProbeFor(this.device),
+      sourceDevice: this.device,
     });
     if (sshAttempt) {
       if (sshAttempt.kind === 'noop' || sshAttempt.kind === 'error'
@@ -278,16 +268,22 @@ export class LinuxBashShell extends AbstractShell {
     for (;;) {
       const pw = await this.input.password(promptText);
       if (pw === null) return { output: [] };
-      const finalised = finalisePendingAuth(auth, pw);
-      if (finalised) {
-        if (execCmd !== null) {
-          const lines = await runSshExec(auth, execCmd);
-          finalised.shell.dispose();
-          return { output: [...finalised.banner, ...lines] };
-        }
+      const finalised = await finalisePendingAuth(auth, pw);
+      if (finalised.kind === 'refused') {
+        return { output: finalised.message.split('\n') };
+      }
+      if (finalised.kind === 'exec') {
+        return { output: [...finalised.banner, ...finalised.lines] };
+      }
+      if (finalised.kind === 'exec') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: [...finalised.banner, ...finalised.lines] };
+    }
+    if (finalised.kind === 'success') {
         return { output: [...finalised.banner], childShell: finalised.shell };
       }
-      if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+      if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
         return { output: [`${auth.user}@${auth.host}: Permission denied (publickey,password).`] };
       }
       this.input.emit('Permission denied, please try again.');
@@ -321,18 +317,17 @@ export class LinuxBashShell extends AbstractShell {
     const auth = this.pendingSshAuth;
     if (!auth) return { output: [] };
 
-    const finalised = finalisePendingAuth(auth, value);
-    if (finalised) {
+    const finalised = await finalisePendingAuth(auth, value);
+    if (finalised.kind === 'refused') {
+      this.pendingSshAuth = null;
+      this.pendingExecCommand = null;
+      return { output: finalised.message.split('\n') };
+    }
+    if (finalised.kind === 'success') {
       const execCmd = this.pendingExecCommand;
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
-      // Exec mode: run the one-shot command then dispose the freshly
-      // built shell — we never push it onto the stack.
-      if (execCmd !== null) {
-        const lines = await runSshExec(auth, execCmd);
-        finalised.shell.dispose();
-        return { output: [...finalised.banner, ...lines] };
-      }
+
       // Interactive login: hand the shell back as a child plus the
       // OpenSSH banner the host terminal will write before activating.
       return {
@@ -340,7 +335,7 @@ export class LinuxBashShell extends AbstractShell {
         childShell: finalised.shell,
       };
     }
-    if (auth.attempts >= SSH_MAX_ATTEMPTS) {
+    if (auth.attempts >= SSH_PASSWORD_PROMPTS) {
       this.pendingSshAuth = null;
       this.pendingExecCommand = null;
       return {

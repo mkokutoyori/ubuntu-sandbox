@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-vrrp-qos
-Generated: 2026-06-12T11:49:25.774Z
+Generated: 2026-08-19T07:03:22.317Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP VRRP/BFD-for-VRRP + MQC QoS classifier/behavior/policy
 Total steps: 257
@@ -14,25 +14,25 @@ Total steps: 257
 [2/257] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/257] r1 [R1-GE0/0/0] ip address 192.168.1.2 255.255.255.0
+[3/257] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.2 255.255.255.0
 <empty>
 
-[4/257] r1 [R1-GE0/0/0] undo shutdown
+[4/257] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/257] r1 [R1-GE0/0/0] quit
+[5/257] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/257] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/257] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/257] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/257] r1 [R1-GE0/0/1] undo shutdown
+[8/257] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/257] r1 [R1-GE0/0/1] quit
+[9/257] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/257] r1 [R1] return
@@ -46,185 +46,379 @@ Total steps: 257
 [12/257] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[13/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.1
+[13/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 virtual-ip 192.168.1.1
 <empty>
 
-[14/257] r1 [R1-GE0/0/0] vrrp vrid 1 virtual-ip 192.168.1.101
+[14/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 virtual-ip 192.168.1.101
 <empty>
 
-[15/257] r1 [R1-GE0/0/0] vrrp vrid 1 priority 110
+[15/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 priority 110
 <empty>
 
-[16/257] r1 [R1-GE0/0/0] vrrp vrid 1 preempt-mode timer delay 20
+[16/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 preempt-mode timer delay 20
 <empty>
 
-[17/257] r1 [R1-GE0/0/0] vrrp vrid 1 timer advertise 1
+[17/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 timer advertise 1
 <empty>
 
-[18/257] r1 [R1-GE0/0/0] vrrp vrid 1 authentication-mode md5 Vrrp@Key1
+[18/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 authentication-mode md5 Vrrp@Key1
 <empty>
 
-[19/257] r1 [R1-GE0/0/0] vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+[19/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
 <empty>
 
-[20/257] r1 [R1-GE0/0/0] vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
+[20/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 1 track ip route 10.0.0.0 255.0.0.0 reduced 20
+                    ^
+
+[21/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 description VRRP-GRP-1
 <empty>
 
-[21/257] r1 [R1-GE0/0/0] vrrp vrid 1 description VRRP-GRP-1
+[22/257] r1 [R1-GigabitEthernet0/0/0] admin-vrrp vrid 1
+  Error: Administrative VRRP (mVRRP) is not implemented in this simulator.
+
+[23/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 virtual-ip 192.168.1.2
 <empty>
 
-[22/257] r1 [R1-GE0/0/0] admin-vrrp vrid 1
+[24/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 virtual-ip 192.168.1.102
 <empty>
 
-[23/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.2
+[25/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 priority 120
 <empty>
 
-[24/257] r1 [R1-GE0/0/0] vrrp vrid 2 virtual-ip 192.168.1.102
+[26/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 preempt-mode timer delay 20
 <empty>
 
-[25/257] r1 [R1-GE0/0/0] vrrp vrid 2 priority 120
+[27/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 timer advertise 1
 <empty>
 
-[26/257] r1 [R1-GE0/0/0] vrrp vrid 2 preempt-mode timer delay 20
+[28/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 authentication-mode md5 Vrrp@Key2
 <empty>
 
-[27/257] r1 [R1-GE0/0/0] vrrp vrid 2 timer advertise 1
+[29/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
 <empty>
 
-[28/257] r1 [R1-GE0/0/0] vrrp vrid 2 authentication-mode md5 Vrrp@Key2
+[30/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
+                    ^
+
+[31/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 2 description VRRP-GRP-2
 <empty>
 
-[29/257] r1 [R1-GE0/0/0] vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+[32/257] r1 [R1-GigabitEthernet0/0/0] admin-vrrp vrid 2
+  Error: Administrative VRRP (mVRRP) is not implemented in this simulator.
+
+[33/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 virtual-ip 192.168.1.3
 <empty>
 
-[30/257] r1 [R1-GE0/0/0] vrrp vrid 2 track ip route 10.0.0.0 255.0.0.0 reduced 20
+[34/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 virtual-ip 192.168.1.103
 <empty>
 
-[31/257] r1 [R1-GE0/0/0] vrrp vrid 2 description VRRP-GRP-2
+[35/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 priority 130
 <empty>
 
-[32/257] r1 [R1-GE0/0/0] admin-vrrp vrid 2
+[36/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 preempt-mode timer delay 20
 <empty>
 
-[33/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.3
+[37/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 timer advertise 1
 <empty>
 
-[34/257] r1 [R1-GE0/0/0] vrrp vrid 3 virtual-ip 192.168.1.103
+[38/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 authentication-mode md5 Vrrp@Key3
 <empty>
 
-[35/257] r1 [R1-GE0/0/0] vrrp vrid 3 priority 130
+[39/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
 <empty>
 
-[36/257] r1 [R1-GE0/0/0] vrrp vrid 3 preempt-mode timer delay 20
+[40/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
+                    ^
+
+[41/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 3 description VRRP-GRP-3
 <empty>
 
-[37/257] r1 [R1-GE0/0/0] vrrp vrid 3 timer advertise 1
+[42/257] r1 [R1-GigabitEthernet0/0/0] admin-vrrp vrid 3
+  Error: Administrative VRRP (mVRRP) is not implemented in this simulator.
+
+[43/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 virtual-ip 192.168.1.4
 <empty>
 
-[38/257] r1 [R1-GE0/0/0] vrrp vrid 3 authentication-mode md5 Vrrp@Key3
+[44/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 virtual-ip 192.168.1.104
 <empty>
 
-[39/257] r1 [R1-GE0/0/0] vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+[45/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 priority 140
 <empty>
 
-[40/257] r1 [R1-GE0/0/0] vrrp vrid 3 track ip route 10.0.0.0 255.0.0.0 reduced 20
+[46/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 preempt-mode timer delay 20
 <empty>
 
-[41/257] r1 [R1-GE0/0/0] vrrp vrid 3 description VRRP-GRP-3
+[47/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 timer advertise 1
 <empty>
 
-[42/257] r1 [R1-GE0/0/0] admin-vrrp vrid 3
+[48/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 authentication-mode md5 Vrrp@Key4
 <empty>
 
-[43/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.4
+[49/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
 <empty>
 
-[44/257] r1 [R1-GE0/0/0] vrrp vrid 4 virtual-ip 192.168.1.104
+[50/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
+                    ^
+
+[51/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 4 description VRRP-GRP-4
 <empty>
 
-[45/257] r1 [R1-GE0/0/0] vrrp vrid 4 priority 140
-<empty>
+[52/257] r1 [R1-GigabitEthernet0/0/0] admin-vrrp vrid 4
+  Error: Administrative VRRP (mVRRP) is not implemented in this simulator.
 
-[46/257] r1 [R1-GE0/0/0] vrrp vrid 4 preempt-mode timer delay 20
-<empty>
+[53/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 version 3
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 1 version 3
+              ^
 
-[47/257] r1 [R1-GE0/0/0] vrrp vrid 4 timer advertise 1
-<empty>
-
-[48/257] r1 [R1-GE0/0/0] vrrp vrid 4 authentication-mode md5 Vrrp@Key4
-<empty>
-
-[49/257] r1 [R1-GE0/0/0] vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
-<empty>
-
-[50/257] r1 [R1-GE0/0/0] vrrp vrid 4 track ip route 10.0.0.0 255.0.0.0 reduced 20
-<empty>
-
-[51/257] r1 [R1-GE0/0/0] vrrp vrid 4 description VRRP-GRP-4
-<empty>
-
-[52/257] r1 [R1-GE0/0/0] admin-vrrp vrid 4
-<empty>
-
-[53/257] r1 [R1-GE0/0/0] vrrp vrid 1 version 3
-<empty>
-
-[54/257] r1 [R1-GE0/0/0] quit
+[54/257] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [55/257] r1 [R1] return
 <empty>
 
 [56/257] r1 <R1> display vrrp
-  GE0/0/0 | Virtual Router 1
+    GigabitEthernet0/0/0 | Virtual Router 1
       State : Master
-      Virtual IP : 192.168.1.1, 192.168.1.101
-      Priority : 110
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.101
+      Master IP : 192.168.1.2
+      PriorityRun : 110
+      PriorityConfig : 110
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0101
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-1
-  GE0/0/0 | Virtual Router 2
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 2
       State : Master
-      Virtual IP : 192.168.1.2, 192.168.1.102
-      Priority : 120
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.102
+      Master IP : 192.168.1.2
+      PriorityRun : 120
+      PriorityConfig : 120
+      MasterPriority : 255
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0102
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-2
-  GE0/0/0 | Virtual Router 3
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 3
       State : Master
-      Virtual IP : 192.168.1.3, 192.168.1.103
-      Priority : 130
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.103
+      Master IP : 192.168.1.2
+      PriorityRun : 130
+      PriorityConfig : 130
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0103
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-3
-  GE0/0/0 | Virtual Router 4
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 4
       State : Master
-      Virtual IP : 192.168.1.4, 192.168.1.104
-      Priority : 140
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.104
+      Master IP : 192.168.1.2
+      PriorityRun : 140
+      PriorityConfig : 140
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0104
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-4
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
 
 [57/257] r1 <R1> display vrrp brief
-  Total: 4     Master: 4     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
-  1     Master       GE0/0/0                  Normal   192.168.1.1,192.168.1.101
-  2     Master       GE0/0/0                  Normal   192.168.1.2,192.168.1.102
-  3     Master       GE0/0/0                  Normal   192.168.1.3,192.168.1.103
-  4     Master       GE0/0/0                  Normal   192.168.1.4,192.168.1.104
+  Total:4     Master:4     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  -------------
+    1       Master        GigabitEthernet0/0/0  Normal    192.168.1.101
+    2       Master        GigabitEthernet0/0/0  Normal    192.168.1.102
+    3       Master        GigabitEthernet0/0/0  Normal    192.168.1.103
+    4       Master        GigabitEthernet0/0/0  Normal    192.168.1.104
 
 [58/257] r1 <R1> display vrrp interface GigabitEthernet0/0/0
-  Info: No VRRP group on GigabitEthernet0/0/0
+    GigabitEthernet0/0/0 | Virtual Router 1
+      State : Master
+      Virtual IP : 192.168.1.101
+      Master IP : 192.168.1.2
+      PriorityRun : 110
+      PriorityConfig : 110
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0101
+      Check TTL : YES
+      Config type : normal-vrrp
+      Description : VRRP-GRP-1
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 2
+      State : Master
+      Virtual IP : 192.168.1.102
+      Master IP : 192.168.1.2
+      PriorityRun : 120
+      PriorityConfig : 120
+      MasterPriority : 255
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0102
+      Check TTL : YES
+      Config type : normal-vrrp
+      Description : VRRP-GRP-2
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 3
+      State : Master
+      Virtual IP : 192.168.1.103
+      Master IP : 192.168.1.2
+      PriorityRun : 130
+      PriorityConfig : 130
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0103
+      Check TTL : YES
+      Config type : normal-vrrp
+      Description : VRRP-GRP-3
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 4
+      State : Master
+      Virtual IP : 192.168.1.104
+      Master IP : 192.168.1.2
+      PriorityRun : 140
+      PriorityConfig : 140
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0104
+      Check TTL : YES
+      Config type : normal-vrrp
+      Description : VRRP-GRP-4
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
 
 [59/257] r1 <R1> display vrrp statistics
-  GE0/0/0 | VRID 1 | Adv sent: 0 received: 0 | Track triggers: 2
-  GE0/0/0 | VRID 2 | Adv sent: 0 received: 0 | Track triggers: 2
-  GE0/0/0 | VRID 3 | Adv sent: 0 received: 0 | Track triggers: 2
-  GE0/0/0 | VRID 4 | Adv sent: 0 received: 0 | Track triggers: 2
+    Checksum errors : 0
+    Version errors : 0
+    Vrid errors : 0
+    Other errors : 0
+    GigabitEthernet0/0/0 | Virtual Router 1
+      Transited to master : 1
+      Transited to backup : 0
+      Transited to initialize : 0
+      Received advertisements : 0
+      Sent advertisements : 4
+      Advertisement interval errors : 0
+      Failed to authentication check : 0
+      Received ip ttl errors : 0
+      Received packets with priority zero : 0
+      Sent packets with priority zero : 0
+      Received invalid type packets : 0
+      Received unmatched address list packets : 0
+      Unknown authentication type packets : 0
+      Mismatched authentication type : 0
+      Packet length errors : 0
+      Discarded packets since track admin-vrrp : 0
+      Received attacking packets : 0
+      Received selfsend packets : 0
+      Sent gratuitous arp packets : 1
+    GigabitEthernet0/0/0 | Virtual Router 2
+      Transited to master : 1
+      Transited to backup : 0
+      Transited to initialize : 0
+      Received advertisements : 0
+      Sent advertisements : 4
+      Advertisement interval errors : 0
+      Failed to authentication check : 0
+      Received ip ttl errors : 0
+      Received packets with priority zero : 0
+      Sent packets with priority zero : 0
+      Received invalid type packets : 0
+      Received unmatched address list packets : 0
+      Unknown authentication type packets : 0
+      Mismatched authentication type : 0
+      Packet length errors : 0
+      Discarded packets since track admin-vrrp : 0
+      Received attacking packets : 0
+      Received selfsend packets : 0
+      Sent gratuitous arp packets : 1
+    GigabitEthernet0/0/0 | Virtual Router 3
+      Transited to master : 1
+      Transited to backup : 0
+      Transited to initialize : 0
+      Received advertisements : 0
+      Sent advertisements : 4
+      Advertisement interval errors : 0
+      Failed to authentication check : 0
+      Received ip ttl errors : 0
+      Received packets with priority zero : 0
+      Sent packets with priority zero : 0
+      Received invalid type packets : 0
+      Received unmatched address list packets : 0
+      Unknown authentication type packets : 0
+      Mismatched authentication type : 0
+      Packet length errors : 0
+      Discarded packets since track admin-vrrp : 0
+      Received attacking packets : 0
+      Received selfsend packets : 0
+      Sent gratuitous arp packets : 1
+    GigabitEthernet0/0/0 | Virtual Router 4
+      Transited to master : 1
+      Transited to backup : 0
+      Transited to initialize : 0
+      Received advertisements : 0
+      Sent advertisements : 4
+      Advertisement interval errors : 0
+      Failed to authentication check : 0
+      Received ip ttl errors : 0
+      Received packets with priority zero : 0
+      Sent packets with priority zero : 0
+      Received invalid type packets : 0
+      Received unmatched address list packets : 0
+      Unknown authentication type packets : 0
+      Mismatched authentication type : 0
+      Packet length errors : 0
+      Discarded packets since track admin-vrrp : 0
+      Received attacking packets : 0
+      Received selfsend packets : 0
+      Sent gratuitous arp packets : 1
 
 
 --- [60] § BFD for VRRP ---
@@ -264,10 +458,12 @@ Total steps: 257
 [71/257] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[72/257] r1 [R1-GE0/0/0] vrrp vrid 1 track bfd-session 1 reduced 50
-<empty>
+[72/257] r1 [R1-GigabitEthernet0/0/0] vrrp vrid 1 track bfd-session 1 reduced 50
+  Error: Wrong parameter found at '^' position.
+  vrrp vrid 1 track bfd-session 1 reduced 50
+                    ^
 
-[73/257] r1 [R1-GE0/0/0] quit
+[73/257] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [74/257] r1 [R1] return
@@ -429,34 +625,34 @@ Total steps: 257
 [121/257] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[122/257] r1 [R1-GE0/0/1] traffic-policy WAN-OUT outbound
+[122/257] r1 [R1-GigabitEthernet0/0/1] traffic-policy WAN-OUT outbound
 <empty>
 
-[123/257] r1 [R1-GE0/0/1] qos lr outbound cir 100000 cbs 1875000
+[123/257] r1 [R1-GigabitEthernet0/0/1] qos lr outbound cir 100000 cbs 1875000
 <empty>
 
-[124/257] r1 [R1-GE0/0/1] qos gts dscp ef cir 2000 cbs 50000
+[124/257] r1 [R1-GigabitEthernet0/0/1] qos gts dscp ef cir 2000 cbs 50000
 <empty>
 
-[125/257] r1 [R1-GE0/0/1] qos queue 5 length packets 100
+[125/257] r1 [R1-GigabitEthernet0/0/1] qos queue 5 length packets 100
 <empty>
 
-[126/257] r1 [R1-GE0/0/1] qos wfq
+[126/257] r1 [R1-GigabitEthernet0/0/1] qos wfq
 <empty>
 
-[127/257] r1 [R1-GE0/0/1] qos wred dscp
+[127/257] r1 [R1-GigabitEthernet0/0/1] qos wred dscp
 <empty>
 
-[128/257] r1 [R1-GE0/0/1] trust dscp
+[128/257] r1 [R1-GigabitEthernet0/0/1] trust dscp
 <empty>
 
-[129/257] r1 [R1-GE0/0/1] trust 8021p
+[129/257] r1 [R1-GigabitEthernet0/0/1] trust 8021p
 <empty>
 
-[130/257] r1 [R1-GE0/0/1] qos queue-profile QP1
+[130/257] r1 [R1-GigabitEthernet0/0/1] qos queue-profile QP1
 <empty>
 
-[131/257] r1 [R1-GE0/0/1] quit
+[131/257] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [132/257] r1 [R1] qos queue-profile QP1
@@ -491,25 +687,25 @@ Total steps: 257
 [141/257] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[142/257] r1 [R1-GE0/0/1] qos car inbound cir 8000 cbs 1500000
+[142/257] r1 [R1-GigabitEthernet0/0/1] qos car inbound cir 8000 cbs 1500000
 <empty>
 
-[143/257] r1 [R1-GE0/0/1] qos pq
+[143/257] r1 [R1-GigabitEthernet0/0/1] qos pq
 <empty>
 
-[144/257] r1 [R1-GE0/0/1] qos cq
+[144/257] r1 [R1-GigabitEthernet0/0/1] qos cq
 <empty>
 
-[145/257] r1 [R1-GE0/0/1] qos wrr
+[145/257] r1 [R1-GigabitEthernet0/0/1] qos wrr
 <empty>
 
-[146/257] r1 [R1-GE0/0/1] qos priority 5
+[146/257] r1 [R1-GigabitEthernet0/0/1] qos priority 5
 <empty>
 
-[147/257] r1 [R1-GE0/0/1] undo qos pq
+[147/257] r1 [R1-GigabitEthernet0/0/1] undo qos pq
 <empty>
 
-[148/257] r1 [R1-GE0/0/1] quit
+[148/257] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [149/257] r1 [R1] return
@@ -548,8 +744,34 @@ Total steps: 257
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp vrid 1 virtual-ip 192.168.1.101
+   vrrp vrid 1 priority 110
+   vrrp vrid 1 preempt-mode timer delay 20
+   vrrp vrid 1 description VRRP-GRP-1
+   vrrp vrid 1 authentication-mode md5 cipher Vrrp@Key1
+   vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 2 virtual-ip 192.168.1.102
+   vrrp vrid 2 priority 120
+   vrrp vrid 2 preempt-mode timer delay 20
+   vrrp vrid 2 description VRRP-GRP-2
+   vrrp vrid 2 authentication-mode md5 cipher Vrrp@Key2
+   vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 3 virtual-ip 192.168.1.103
+   vrrp vrid 3 priority 130
+   vrrp vrid 3 preempt-mode timer delay 20
+   vrrp vrid 3 description VRRP-GRP-3
+   vrrp vrid 3 authentication-mode md5 cipher Vrrp@Key3
+   vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 4 virtual-ip 192.168.1.104
+   vrrp vrid 4 priority 140
+   vrrp vrid 4 preempt-mode timer delay 20
+   vrrp vrid 4 description VRRP-GRP-4
+   vrrp vrid 4 authentication-mode md5 cipher Vrrp@Key4
+   vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
@@ -560,68 +782,71 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 3000
-   rule 0 permit
+   rule 5 permit ip
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
   #
 
 [156/257] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.2 255.255.255.0
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  acl number 3000
-   rule 0 permit
-  #
+  Error: The configuration file doesn't exist.
 
 [157/257] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.2/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.2/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [158/257] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.2/255.255.255.0
+  Internet Address is 192.168.1.2/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -681,10 +906,12 @@ Total steps: 257
   Info: BGP is not running.
 
 [172/257] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [173/257] r1 <R1> display nat address-group
-  No NAT address pools configured.
+  NAT Address Group Information:
+   (no address groups configured)
 
 [174/257] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -692,7 +919,7 @@ Total steps: 257
 [175/257] r1 <R1> display acl all
   Advanced ACL 3000, 1 rule(s)
   ACL's step is 5
-   rule 0 permit
+   rule 5 permit ip
   Total 1 ACL(s)
 
 [176/257] r1 <R1> display dhcp server statistics
@@ -706,46 +933,83 @@ Total steps: 257
   Pool number: 0
 
 [177/257] r1 <R1> display vrrp
-  GE0/0/0 | Virtual Router 1
+    GigabitEthernet0/0/0 | Virtual Router 1
       State : Master
-      Virtual IP : 192.168.1.1, 192.168.1.101
-      Priority : 110
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.101
+      Master IP : 192.168.1.2
+      PriorityRun : 110
+      PriorityConfig : 110
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0101
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-1
-  GE0/0/0 | Virtual Router 2
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 2
       State : Master
-      Virtual IP : 192.168.1.2, 192.168.1.102
-      Priority : 120
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.102
+      Master IP : 192.168.1.2
+      PriorityRun : 120
+      PriorityConfig : 120
+      MasterPriority : 255
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0102
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-2
-  GE0/0/0 | Virtual Router 3
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 3
       State : Master
-      Virtual IP : 192.168.1.3, 192.168.1.103
-      Priority : 130
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.103
+      Master IP : 192.168.1.2
+      PriorityRun : 130
+      PriorityConfig : 130
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0103
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-3
-  GE0/0/0 | Virtual Router 4
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
+    GigabitEthernet0/0/0 | Virtual Router 4
       State : Master
-      Virtual IP : 192.168.1.4, 192.168.1.104
-      Priority : 140
-      Advertisement timer : 1 seconds
-      Preempt mode : Yes (delay 20s)
-      Authentication : md5
+      Virtual IP : 192.168.1.104
+      Master IP : 192.168.1.2
+      PriorityRun : 140
+      PriorityConfig : 140
+      MasterPriority : 100
+      Preempt : YES   Delay Time : 20 s
+      TimerRun : 1 s
+      TimerConfig : 1 s
+      Auth type : MD5
+      Virtual MAC : 0000-5e00-0104
+      Check TTL : YES
+      Config type : normal-vrrp
       Description : VRRP-GRP-4
+      Track IF : GigabitEthernet0/0/1   Priority reduced : 30
+      IF state : UP
 
 [178/257] r1 <R1> display vrrp brief
-  Total: 4     Master: 4     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
-  1     Master       GE0/0/0                  Normal   192.168.1.1,192.168.1.101
-  2     Master       GE0/0/0                  Normal   192.168.1.2,192.168.1.102
-  3     Master       GE0/0/0                  Normal   192.168.1.3,192.168.1.103
-  4     Master       GE0/0/0                  Normal   192.168.1.4,192.168.1.104
+  Total:4     Master:4     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  -------------
+    1       Master        GigabitEthernet0/0/0  Normal    192.168.1.101
+    2       Master        GigabitEthernet0/0/0  Normal    192.168.1.102
+    3       Master        GigabitEthernet0/0/0  Normal    192.168.1.103
+    4       Master        GigabitEthernet0/0/0  Normal    192.168.1.104
 
 [179/257] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -773,14 +1037,22 @@ Total steps: 257
 [186/257] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:22.407  Aug 19 2026(EE2FD3BA.683126E9)
 
 [187/257] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [188/257] r1 <R1> display clock
-  2026-06-12 11:49:25
-  Friday
+  2026-08-19 07:03:22
+  Wednesday
   Time Zone(UTC) : UTC
 
 [189/257] r1 <R1> display lldp neighbor
@@ -792,13 +1064,13 @@ Total steps: 257
 [191/257] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:25
+  CPU Usage Stat. Time : 2026-08-19 07:03:22
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [192/257] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:25
+  Memory utilization statistics at 2026-08-19 07:03:22
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -815,8 +1087,7 @@ Total steps: 257
   -------------------------------------------------------------------------------
 
 [194/257] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -834,12 +1105,20 @@ Total steps: 257
 
 [196/257] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 8
+  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:22 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:22 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 1 state init -> master
+  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 2 state init -> master
+  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 3 state init -> master
+  2026-08-19 07:03:22 %01VRRP/5/NOTIFICATIONS: GE0/0/0 VRID 4 state init -> master
 
 [197/257] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -887,17 +1166,17 @@ Total steps: 257
 
 [203/257] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [204/257] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.2/24
-  Broadcast address : 192.168.1.2
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -907,9 +1186,9 @@ Total steps: 257
       Output: 0 packets, 0 bytes
 
 [205/257] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.2/255.255.255.0
+  Internet Address is 192.168.1.2/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -918,8 +1197,34 @@ Total steps: 257
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp vrid 1 virtual-ip 192.168.1.101
+   vrrp vrid 1 priority 110
+   vrrp vrid 1 preempt-mode timer delay 20
+   vrrp vrid 1 description VRRP-GRP-1
+   vrrp vrid 1 authentication-mode md5 cipher Vrrp@Key1
+   vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 2 virtual-ip 192.168.1.102
+   vrrp vrid 2 priority 120
+   vrrp vrid 2 preempt-mode timer delay 20
+   vrrp vrid 2 description VRRP-GRP-2
+   vrrp vrid 2 authentication-mode md5 cipher Vrrp@Key2
+   vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 3 virtual-ip 192.168.1.103
+   vrrp vrid 3 priority 130
+   vrrp vrid 3 preempt-mode timer delay 20
+   vrrp vrid 3 description VRRP-GRP-3
+   vrrp vrid 3 authentication-mode md5 cipher Vrrp@Key3
+   vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 4 virtual-ip 192.168.1.104
+   vrrp vrid 4 priority 140
+   vrrp vrid 4 preempt-mode timer delay 20
+   vrrp vrid 4 description VRRP-GRP-4
+   vrrp vrid 4 authentication-mode md5 cipher Vrrp@Key4
+   vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
@@ -930,9 +1235,30 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 3000
-   rule 0 permit
+   rule 5 permit ip
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
   #
 
 [207/257] r1 <R1> display diagnostic-information
@@ -966,16 +1292,17 @@ Total steps: 257
 
 [212/257] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [213/257] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [214] § regression: pipe filters ---
@@ -985,6 +1312,30 @@ Total steps: 257
 [215/257] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp vrid 1 virtual-ip 192.168.1.101
+   vrrp vrid 1 priority 110
+   vrrp vrid 1 preempt-mode timer delay 20
+   vrrp vrid 1 description VRRP-GRP-1
+   vrrp vrid 1 authentication-mode md5 cipher Vrrp@Key1
+   vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 2 virtual-ip 192.168.1.102
+   vrrp vrid 2 priority 120
+   vrrp vrid 2 preempt-mode timer delay 20
+   vrrp vrid 2 description VRRP-GRP-2
+   vrrp vrid 2 authentication-mode md5 cipher Vrrp@Key2
+   vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 3 virtual-ip 192.168.1.103
+   vrrp vrid 3 priority 130
+   vrrp vrid 3 preempt-mode timer delay 20
+   vrrp vrid 3 description VRRP-GRP-3
+   vrrp vrid 3 authentication-mode md5 cipher Vrrp@Key3
+   vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 4 virtual-ip 192.168.1.104
+   vrrp vrid 4 priority 140
+   vrrp vrid 4 preempt-mode timer delay 20
+   vrrp vrid 4 description VRRP-GRP-4
+   vrrp vrid 4 authentication-mode md5 cipher Vrrp@Key4
+   vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   #
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
@@ -995,15 +1346,61 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 3000
-   rule 0 permit
+   rule 5 permit ip
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
   #
 
 [216/257] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp vrid 1 virtual-ip 192.168.1.101
+   vrrp vrid 1 priority 110
+   vrrp vrid 1 preempt-mode timer delay 20
+   vrrp vrid 1 description VRRP-GRP-1
+   vrrp vrid 1 authentication-mode md5 cipher Vrrp@Key1
+   vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 2 virtual-ip 192.168.1.102
+   vrrp vrid 2 priority 120
+   vrrp vrid 2 preempt-mode timer delay 20
+   vrrp vrid 2 description VRRP-GRP-2
+   vrrp vrid 2 authentication-mode md5 cipher Vrrp@Key2
+   vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 3 virtual-ip 192.168.1.103
+   vrrp vrid 3 priority 130
+   vrrp vrid 3 preempt-mode timer delay 20
+   vrrp vrid 3 description VRRP-GRP-3
+   vrrp vrid 3 authentication-mode md5 cipher Vrrp@Key3
+   vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 4 virtual-ip 192.168.1.104
+   vrrp vrid 4 priority 140
+   vrrp vrid 4 preempt-mode timer delay 20
+   vrrp vrid 4 description VRRP-GRP-4
+   vrrp vrid 4 authentication-mode md5 cipher Vrrp@Key4
+   vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   interface GigabitEthernet0/0/1
    ip address 10.0.0.1 255.255.255.252
   interface GigabitEthernet0/0/2
@@ -1011,17 +1408,35 @@ Total steps: 257
   interface GigabitEthernet0/0/3
    shutdown
   acl number 3000
-   rule 0 permit
+   rule 5 permit ip
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  bfd
+  bfd VRRP1 bind peer-ip 10.0.0.2 source-ip 10.0.0.1 auto
+   discriminator local 1
+   discriminator remote 2
+   min-tx-interval 100
+   min-rx-interval 100
+   detect-multiplier 3
 
 [217/257] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.2     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [218/257] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.2/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              192.168.1.2/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
 
 --- [219] § regression: view nav + undo ---
@@ -1091,19 +1506,43 @@ Total steps: 257
 [240/257] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[241/257] r1 [Huawei-GE0/0/0] display this
+[241/257] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.2 255.255.255.0
+   vrrp vrid 1 virtual-ip 192.168.1.101
+   vrrp vrid 1 priority 110
+   vrrp vrid 1 preempt-mode timer delay 20
+   vrrp vrid 1 description VRRP-GRP-1
+   vrrp vrid 1 authentication-mode md5 cipher Vrrp@Key1
+   vrrp vrid 1 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 2 virtual-ip 192.168.1.102
+   vrrp vrid 2 priority 120
+   vrrp vrid 2 preempt-mode timer delay 20
+   vrrp vrid 2 description VRRP-GRP-2
+   vrrp vrid 2 authentication-mode md5 cipher Vrrp@Key2
+   vrrp vrid 2 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 3 virtual-ip 192.168.1.103
+   vrrp vrid 3 priority 130
+   vrrp vrid 3 preempt-mode timer delay 20
+   vrrp vrid 3 description VRRP-GRP-3
+   vrrp vrid 3 authentication-mode md5 cipher Vrrp@Key3
+   vrrp vrid 3 track interface GigabitEthernet0/0/1 reduced 30
+   vrrp vrid 4 virtual-ip 192.168.1.104
+   vrrp vrid 4 priority 140
+   vrrp vrid 4 preempt-mode timer delay 20
+   vrrp vrid 4 description VRRP-GRP-4
+   vrrp vrid 4 authentication-mode md5 cipher Vrrp@Key4
+   vrrp vrid 4 track interface GigabitEthernet0/0/1 reduced 30
   #
 
-[242/257] r1 [Huawei-GE0/0/0] shutdown
+[242/257] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[243/257] r1 [Huawei-GE0/0/0] undo shutdown
+[243/257] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[244/257] r1 [Huawei-GE0/0/0] quit
+[244/257] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [245/257] r1 [Huawei] ospf 1
@@ -1133,47 +1572,60 @@ Total steps: 257
   Enter system view, return user view with return command.
 
 [252/257] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [253/257] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [254/257] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [255/257] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [256/257] r1 [Huawei] return
 <empty>

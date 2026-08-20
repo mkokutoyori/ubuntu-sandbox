@@ -13,15 +13,24 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { DevicePalette } from '@/components/network/DevicePalette';
-import { isFullyImplemented } from '@/network';
+import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network';
+
+/**
+ * The count is DERIVED from the catalogue, never written down: a device
+ * that graduates to a full simulation must change one flag, not a
+ * constant in a test that nobody thinks to look at.
+ */
+const limitedInPalette = DEVICE_CATEGORIES
+  .flatMap(category => category.devices)
+  .filter(device => !isFullyImplemented(device.type));
 
 describe('DevicePalette — limited-simulation badges', () => {
   it('marks every stubbed device type with a Limited badge', () => {
     render(<DevicePalette />);
 
     const badges = screen.getAllByText('Limited');
-    // mac-pc + the three firewalls are in the default palette categories.
-    expect(badges.length).toBe(4);
+    expect(badges.length).toBe(limitedInPalette.length);
+    expect(limitedInPalette.length).toBeGreaterThan(0);
   });
 
   it('explains the limitation in the badge tooltip', () => {
@@ -52,5 +61,6 @@ describe('isFullyImplemented classification', () => {
     expect(isFullyImplemented('windows-pc')).toBe(true);
     expect(isFullyImplemented('router-cisco')).toBe(true);
     expect(isFullyImplemented('switch-huawei')).toBe(true);
+    expect(isFullyImplemented('firewall-fortinet')).toBe(true);
   });
 });

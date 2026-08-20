@@ -8,11 +8,12 @@
  * Reference: DESIGN-SSH-SFTP.md section 6.
  */
 
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   TcpStream as TcpConnection,
   TcpConnector,
-} from '@/network/core/TcpConnection';
+} from '@/network/tcp/types';
+import { isDialFailure } from '@/network/tcp/types';
 import { AuthChain, createAuthMethods } from '../auth/AuthChain';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type {
@@ -44,7 +45,7 @@ import {
 
 export interface SshSessionDeps {
   readonly tcpConnector: TcpConnector;
-  readonly vfs: VirtualFileSystem;
+  readonly vfs: ISshLocalFs;
   readonly localUser: string;
   readonly localUid: number;
   readonly localGid: number;
@@ -55,7 +56,11 @@ export interface SshSessionDeps {
 interface ServerBanner {
   readonly hostKey: { algorithm: string; publicKey: string };
   readonly serverVersion: string;
+  readonly preAuthBanner?: string;
 }
+
+
+export const SSH_PASSWORD_PROMPTS = 3;
 
 export class SshSession implements ISshSession {
   private _state: SshSessionState = idle();
@@ -85,15 +90,18 @@ export class SshSession implements ISshSession {
   ): Promise<Result<SshConnectionInfo>> {
     this.transition(connecting(opts.host, opts.port));
 
-    const conn = await this.deps.tcpConnector(opts.host, opts.port);
-    if (!conn) {
-      this.transition(disconnected('connection refused'));
+    const dialed = await this.deps.tcpConnector(opts.host, opts.port);
+    if (!dialed || isDialFailure(dialed)) {
+      const silent = isDialFailure(dialed) && dialed.dialFailed === 'timeout';
+      this.transition(disconnected(
+        silent ? 'connection timed out' : 'connection refused'));
       return err({
-        kind: 'CONNECTION_REFUSED',
+        kind: silent ? 'CONNECTION_TIMEOUT' : 'CONNECTION_REFUSED',
         host: opts.host,
         port: opts.port,
       });
     }
+    const conn = dialed;
     this.conn = conn;
 
     const banner = await this.exchangeBanner(conn);
@@ -102,6 +110,9 @@ export class SshSession implements ISshSession {
       conn.close();
       this.conn = null;
       return propagateErr(banner);
+    }
+    if (banner.value.preAuthBanner) {
+      this.deps.interactionHandler.showInfo(banner.value.preAuthBanner);
     }
     const hostKey = SshHostKey.fromFiles(
       banner.value.hostKey.publicKey,
@@ -126,8 +137,29 @@ export class SshSession implements ISshSession {
       return propagateErr(authResult);
     }
 
+    // Follow our own transport from here on. A session that does not
+    // notice its socket dying reports itself connected forever, which
+    // pushes every consumer into probing with a fresh handshake just to
+    // find out — and that is what made a remote log an accept/close
+    // pair per command.
+    conn.onClose?.((reason) => {
+      if (this._state.kind === 'connected') {
+        this.transition(disconnected(reason || 'connection closed'));
+      }
+      this.conn = null;
+    });
+
     const sessionId = `${opts.user}@${opts.host}:${opts.port}#${Date.now()}`;
     this.transition(connected(opts.user, opts.host, sessionId));
+
+    conn.onData((data) => {
+      try {
+        const msg = JSON.parse(data) as { op?: string };
+        if (msg.op === 'keepalive') {
+          conn.write(JSON.stringify({ op: 'keepalive_ack' }));
+        }
+      } catch { /* not JSON or not keepalive — channel layers handle it */ }
+    });
 
     const info: SshConnectionInfo = {
       host: opts.host,
@@ -305,7 +337,7 @@ export class SshSession implements ISshSession {
     _user: string,
     _opts: SshConnectOptions,
   ): ISshAuthContext {
-    let attemptsLeft = 3;
+    let attemptsLeft = SSH_PASSWORD_PROMPTS;
     return {
       checkPassword: () => false,
       checkPasswordAsync: async (u, password) => {
@@ -316,6 +348,7 @@ export class SshSession implements ISshSession {
           user: u,
           password,
         });
+        if (response.ended) attemptsLeft = 0;
         return response.ok === true;
       },
       checkPublicKey: () => false,
@@ -326,6 +359,7 @@ export class SshSession implements ISshSession {
           user: u,
           publicKey,
         });
+        if (response.ended) attemptsLeft = 0;
         return response.ok === true;
       },
       getAttemptsRemaining: () => attemptsLeft,
@@ -336,18 +370,28 @@ export class SshSession implements ISshSession {
   private requestServerAuth(
     conn: TcpConnection,
     payload: Record<string, unknown>,
-  ): Promise<{ ok: boolean }> {
+  ): Promise<{ ok: boolean; ended: boolean }> {
     return new Promise((resolve) => {
-      const off = conn.onData((data) => {
+      let settled = false;
+      const offData = conn.onData((data) => {
+        if (settled) return;
         try {
-          const parsed = JSON.parse(data) as { ok?: boolean };
+          const parsed = JSON.parse(data) as { ok?: boolean; ended?: boolean };
           if (typeof parsed.ok === 'boolean') {
-            off();
-            resolve({ ok: parsed.ok });
+            settled = true;
+            offData();
+            offClose?.();
+            resolve({ ok: parsed.ok, ended: parsed.ended === true });
           }
         } catch {
           /* ignore */
         }
+      });
+      const offClose = conn.onClose?.(() => {
+        if (settled) return;
+        settled = true;
+        offData();
+        resolve({ ok: false, ended: true });
       });
       conn.write(JSON.stringify(payload));
     });

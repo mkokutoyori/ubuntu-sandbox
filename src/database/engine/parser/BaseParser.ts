@@ -689,6 +689,16 @@ export abstract class BaseParser {
       defaultValue = this.parseExpression();
     }
 
+    // GENERATED [ALWAYS | BY DEFAULT [ON NULL]] AS IDENTITY [(options)]
+    //
+    // Le champ `identity` existait sur le nœud d'AST depuis toujours, et
+    // rien ne le remplissait : `CREATE TABLE t (id NUMBER GENERATED
+    // ALWAYS AS IDENTITY …)` échouait sur « Expected RPAREN ». Dans la
+    // suite de debug `oracle-end-to-end-dba`, ce seul refus aux étapes
+    // 12-14 expliquait les quarante `ORA-00942` qui suivaient (audit 11,
+    // §6) : les trois tables de travail n'existaient jamais.
+    const identity = this.parseIdentityClause();
+
     // Column constraints
     while (true) {
       const constraint = this.parseColumnConstraint();
@@ -696,7 +706,53 @@ export abstract class BaseParser {
       constraints.push(constraint);
     }
 
-    return { type: 'ColumnDefinition', position: pos, name, dataType, defaultValue, constraints };
+    return { type: 'ColumnDefinition', position: pos, name, dataType, defaultValue, identity, constraints };
+  }
+
+  /**
+   * `GENERATED [ALWAYS | BY DEFAULT [ON NULL]] AS IDENTITY [(options)]`.
+   *
+   * La distinction porte : `ALWAYS` **interdit** de fournir la valeur
+   * soi-même (ORA-32795), `BY DEFAULT` la laisse passer et ne génère que
+   * si la colonne est absente. Les options entre parenthèses
+   * (`START WITH`, `INCREMENT BY`, `CACHE`, `NOCACHE`, `CYCLE`, …) sont
+   * celles d'une séquence — elles sont lues ici et confiées à la
+   * séquence que l'exécuteur crée derrière.
+   */
+  protected parseIdentityClause(): { always: boolean; startWith?: number; incrementBy?: number } | undefined {
+    if (!this.matchKeyword('GENERATED')) return undefined;
+    let always = true;
+    if (this.matchKeyword('BY')) {
+      this.expectKeyword('DEFAULT');
+      always = false;
+      // `ON NULL` : génère aussi quand on fournit explicitement NULL.
+      if (this.matchKeyword('ON')) this.expectKeyword('NULL');
+    } else {
+      this.matchKeyword('ALWAYS');
+    }
+    this.expectKeyword('AS');
+    this.expectKeyword('IDENTITY');
+
+    const out: { always: boolean; startWith?: number; incrementBy?: number } = { always };
+    if (this.match(TokenType.LPAREN)) {
+      while (!this.check(TokenType.RPAREN) && !this.check(TokenType.EOF)) {
+        if (this.matchKeyword('START')) {
+          this.expectKeyword('WITH');
+          out.startWith = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        } else if (this.matchKeyword('INCREMENT')) {
+          this.expectKeyword('BY');
+          out.incrementBy = Number(this.expect(TokenType.NUMBER_LITERAL).value);
+        } else {
+          // Les autres options d'identité (CACHE n, NOCACHE, CYCLE,
+          // NOCYCLE, ORDER, MINVALUE/MAXVALUE) sont avalées : la
+          // séquence sous-jacente les porte déjà par défaut, et en
+          // inventer l'effet serait pire que de les ignorer.
+          this.advance();
+        }
+      }
+      this.expect(TokenType.RPAREN);
+    }
+    return out;
   }
 
   protected parseTypeSpec(): TypeSpec {
@@ -783,7 +839,7 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return { type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete };
+      return this.applyDeferrable<ColumnConstraint>({ type: 'ColumnConstraint', position: pos, constraintName, constraintType: 'REFERENCES', refTable, refColumn, onDelete });
     }
 
     // If we consumed CONSTRAINT name but no recognized constraint follows, backtrack
@@ -804,13 +860,13 @@ export abstract class BaseParser {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns };
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'PRIMARY_KEY', columns });
     }
     if (this.matchKeyword('UNIQUE')) {
       this.expect(TokenType.LPAREN);
       const columns = this.parseIdentifierList();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns };
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'UNIQUE', columns });
     }
     if (this.matchKeyword('FOREIGN')) {
       this.expectKeyword('KEY');
@@ -832,16 +888,41 @@ export abstract class BaseParser {
         if (this.matchKeyword('CASCADE')) onDelete = 'CASCADE';
         else { this.expectKeyword('SET'); this.expectKeyword('NULL'); onDelete = 'SET_NULL'; }
       }
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete };
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'FOREIGN_KEY', columns, refTable, refColumns, onDelete });
     }
     if (this.matchKeyword('CHECK')) {
       this.expect(TokenType.LPAREN);
       const checkExpr = this.parseExpression();
       this.expect(TokenType.RPAREN);
-      return { type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr };
+      return this.applyDeferrable<TableConstraint>({ type: 'TableConstraint', position: pos, constraintName, constraintType: 'CHECK', columns: [], checkExpr });
     }
 
     throw this.error('Expected constraint type (PRIMARY KEY, UNIQUE, FOREIGN KEY, CHECK)');
+  }
+
+  protected parseDeferrableClause(): { deferrable?: boolean; initiallyDeferred?: boolean } {
+    let deferrable: boolean | undefined;
+    let initiallyDeferred: boolean | undefined;
+    if (this.checkKeyword('DEFERRABLE')) {
+      this.advance();
+      deferrable = true;
+    } else if (this.checkKeyword('NOT') && this.peekNext()?.value?.toUpperCase() === 'DEFERRABLE') {
+      this.advance(); this.advance();
+      deferrable = false;
+    }
+    if (this.checkKeyword('INITIALLY')) {
+      this.advance();
+      if (this.matchKeyword('DEFERRED')) initiallyDeferred = true;
+      else { this.matchKeyword('IMMEDIATE'); initiallyDeferred = false; }
+    }
+    return { deferrable, initiallyDeferred };
+  }
+
+  protected applyDeferrable<T extends { deferrable?: boolean; initiallyDeferred?: boolean }>(c: T): T {
+    const d = this.parseDeferrableClause();
+    if (d.deferrable !== undefined) c.deferrable = d.deferrable;
+    if (d.initiallyDeferred !== undefined) c.initiallyDeferred = d.initiallyDeferred;
+    return c;
   }
 
   protected parseCreateView(pos: import('../lexer/Token').SourcePosition, orReplace: boolean): import('./ASTNode').CreateViewStatement {
@@ -1544,22 +1625,75 @@ export abstract class BaseParser {
     return { action: 'ADD_SUPPLEMENTAL_LOG_GROUP', logGroupName, columns, always };
   }
 
-  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement {
+  protected parseSetStatement(): import('./ASTNode').SetTransactionStatement
+    | import('./ASTNode').SetConstraintsStatement | import('./ASTNode').SetRoleStatement {
     const pos = this.current().position;
     this.expectKeyword('SET');
     // SET TRANSACTION [READ ONLY|READ WRITE] [ISOLATION LEVEL …] [NAME 'x']
     // SET ROLE r [, r2…] | SET ROLE NONE | SET ROLE ALL [EXCEPT …]
     // SET CONSTRAINT[S] {ALL | name [,…]} {DEFERRED | IMMEDIATE}
-    if (this.matchKeyword('TRANSACTION')
-        || this.matchKeyword('ROLE')
-        || this.matchKeyword('CONSTRAINTS')
-        || this.matchKeyword('CONSTRAINT')) {
-      // The simulator doesn't track transaction isolation / role state
-      // changes — accept and no-op.
+    if (this.matchKeyword('TRANSACTION')) {
+      let readOnly: boolean | undefined;
+      let isolationLevel: 'READ_COMMITTED' | 'SERIALIZABLE' | undefined;
+      if (this.matchKeyword('READ')) {
+        if (this.matchKeyword('ONLY')) readOnly = true;
+        else { this.matchKeyword('WRITE'); readOnly = false; }
+      } else if (this.matchKeyword('ISOLATION')) {
+        this.matchKeyword('LEVEL');
+        if (this.matchKeyword('SERIALIZABLE')) isolationLevel = 'SERIALIZABLE';
+        else { this.matchKeyword('READ'); this.matchKeyword('COMMITTED'); isolationLevel = 'READ_COMMITTED'; }
+      }
       this.consumeRestOfStatement();
-      return { type: 'SetTransactionStatement', position: pos } as import('./ASTNode').SetTransactionStatement;
+      return { type: 'SetTransactionStatement', position: pos, readOnly, isolationLevel };
     }
+    if (this.matchKeyword('CONSTRAINTS') || this.matchKeyword('CONSTRAINT')) {
+      let all = false;
+      const names: string[] = [];
+      if (this.matchKeyword('ALL')) {
+        all = true;
+      } else {
+        do { names.push(this.expectIdentifier().toUpperCase()); } while (this.match(TokenType.COMMA));
+      }
+      let mode: 'DEFERRED' | 'IMMEDIATE' = 'IMMEDIATE';
+      if (this.matchKeyword('DEFERRED')) mode = 'DEFERRED';
+      else this.matchKeyword('IMMEDIATE');
+      this.consumeRestOfStatement();
+      return { type: 'SetConstraintsStatement', position: pos, all, names: all ? undefined : names, mode };
+    }
+    if (this.matchKeyword('ROLE')) return this.parseSetRoleBody(pos);
     throw this.error(`Unsupported SET target: ${this.current().value}`);
+  }
+
+  /**
+   * Body of `SET ROLE`, after the `ROLE` keyword.
+   *
+   * `NONE` disables everything, `ALL [EXCEPT r, …]` enables every granted
+   * role but the named ones, and a bare list enables exactly those —
+   * each optionally carrying the password of a role created
+   * `IDENTIFIED BY`.
+   */
+  protected parseSetRoleBody(pos: import('../lexer/Token').SourcePosition): import('./ASTNode').SetRoleStatement {
+    if (this.matchKeyword('NONE')) {
+      this.consumeRestOfStatement();
+      return { type: 'SetRoleStatement', position: pos, mode: 'NONE', roles: [] };
+    }
+    const roles: { name: string; password?: string }[] = [];
+    const all = this.matchKeyword('ALL');
+    if (all && !this.matchKeyword('EXCEPT')) {
+      this.consumeRestOfStatement();
+      return { type: 'SetRoleStatement', position: pos, mode: 'ALL', roles: [] };
+    }
+    do {
+      const name = this.expectIdentifier().toUpperCase();
+      let password: string | undefined;
+      if (this.matchKeyword('IDENTIFIED')) {
+        this.expectKeyword('BY');
+        password = this.expectIdentifierOrString();
+      }
+      roles.push({ name, password });
+    } while (this.match(TokenType.COMMA));
+    this.consumeRestOfStatement();
+    return { type: 'SetRoleStatement', position: pos, mode: all ? 'ALL' : 'LIST', roles };
   }
 
   protected parseFlashback(): import('./ASTNode').FlashbackStatement {
@@ -1747,13 +1881,6 @@ export abstract class BaseParser {
       privileges.push(priv);
     } while (this.match(TokenType.COMMA));
     return { privileges, privilegeColumns: Object.keys(cols).length > 0 ? cols : undefined };
-  }
-
-  /** Comma-separated identifier list (`a, b, c`). At least one identifier required. */
-  protected parseIdentifierList(): string[] {
-    const out: string[] = [this.expectIdentifier()];
-    while (this.match(TokenType.COMMA)) out.push(this.expectIdentifier());
-    return out;
   }
 
   protected parsePrivilegeList(): string[] {
@@ -2371,6 +2498,12 @@ export abstract class BaseParser {
 
   protected match(type: TokenType): boolean {
     if (this.check(type)) { this.advance(); return true; }
+    return false;
+  }
+
+  /** Same as `match`, but also requires the current token's value to match. */
+  protected matchOperator(type: TokenType, value: string): boolean {
+    if (this.check(type) && this.current().value === value) { this.advance(); return true; }
     return false;
   }
 

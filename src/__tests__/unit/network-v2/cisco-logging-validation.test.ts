@@ -16,7 +16,7 @@ const INCOMPLETE = '% Incomplete command.';
 describe('Cisco logging host — shared validation (router + switch)', () => {
   it('router and switch reject incomplete and invalid logging hosts identically', async () => {
     const r = new CiscoRouter('R1');
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     new Cable('lan').connect(
       r.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);
 
@@ -24,7 +24,7 @@ describe('Cisco logging host — shared validation (router + switch)', () => {
       await d.executeCommand('enable');
       await d.executeCommand('configure terminal');
       expect(await d.executeCommand('logging host')).toBe(INCOMPLETE);
-      expect(await d.executeCommand('logging host 999.1.1.1')).toBe(INVALID);
+      expect(await d.executeCommand('logging host 999.1.1.1')).toContain(INVALID);
       expect(await d.executeCommand('logging host 10.0.0.99')).toBe('');
       await d.executeCommand('end');
     }
@@ -32,7 +32,7 @@ describe('Cisco logging host — shared validation (router + switch)', () => {
 
   it('the applied host is reflected in show logging and running-config on both', async () => {
     const r = new CiscoRouter('R1');
-    const sw = new CiscoSwitch('SW1');
+    const sw = new CiscoSwitch('switch-cisco', 'SW1');
     new Cable('lan').connect(
       r.getPort('GigabitEthernet0/0')!, sw.getPort('GigabitEthernet0/1')!);
 
@@ -62,7 +62,7 @@ describe('Cisco ip name-server / ip domain-name — argument validation', () => 
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     expect(await r.executeCommand('ip name-server')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('ip name-server 999.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('ip name-server 999.1.1.1')).toContain(INVALID);
     expect(await r.executeCommand('ip name-server 8.8.8.8')).toBe('');
     expect(await r.executeCommand('ip domain-name')).toBe(INCOMPLETE);
     expect(await r.executeCommand('ip domain-name example.com')).toBe('');

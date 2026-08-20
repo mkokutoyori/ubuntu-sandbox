@@ -11,9 +11,11 @@
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import type { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { LinuxCommandExecutor } from '@/network/devices/linux/LinuxCommandExecutor';
+import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { AuthMethodType, ISshAuthContext } from '../auth/ISshAuthMethod';
 import type { ISftpFileSystem } from '../sftp/ISftpFileSystem';
 import { LinuxSftpFSAdapter } from '../sftp/LinuxSftpFSAdapter';
+import { ChrootedSftpFileSystem } from '../sftp/ChrootedSftpFileSystem';
 import { SshHostKey } from '../SshHostKey';
 import { SshUserContext } from '../SshUserContext';
 import {
@@ -33,8 +35,17 @@ import {
   type ISshServerEventBus,
 } from './SshServerEvent';
 import { SshSyslogger } from '../logging/SshSyslogger';
+import { SshdServerConfig } from './SshdServerConfig';
 import { LinuxUtmpProjection } from '../logging/LinuxUtmpProjection';
 import { SshAuthThrottler } from '../security/SshAuthThrottler';
+import { Fail2banAgent } from '../security/Fail2banAgent';
+import { SshInteractiveShell } from './SshInteractiveShell';
+import { SubShellStack } from '@/shell/SubShellStack';
+import type { Equipment } from '@/network/equipment/Equipment';
+import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
+import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
+import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 
 const AUTHORIZED_KEYS_PATH = (home: string): string =>
   `${home.replace(/\/$/, '')}/.ssh/authorized_keys`;
@@ -46,6 +57,9 @@ const WTMP_PATH = '/var/log/wtmp.json';
 const BTMP_PATH = '/var/log/btmp.json';
 
 const SSHD_CONFIG_PATH = '/etc/ssh/sshd_config';
+const FAIL2BAN_JAIL_LOCAL_PATH = '/etc/fail2ban/jail.local';
+const DEFAULT_FAIL2BAN_JAIL_LOCAL =
+  '[sshd]\nenabled = true\nmaxretry = 5\nbantime = 300\nfindtime = 60\n';
 const HOST_KEY_PATH = '/etc/ssh/ssh_host_ed25519_key';
 const HOST_KEY_PUB_PATH = '/etc/ssh/ssh_host_ed25519_key.pub';
 const ETC_SSH_DIR = '/etc/ssh';
@@ -93,6 +107,12 @@ function appendJsonLog(
   vfs.chmod(path, mode);
 }
 
+/** Render a sub-shell's output lines the way the wire expects stdout. */
+function joinLines(lines: readonly string[]): string {
+  if (lines.length === 0) return '';
+  return lines.join('\n') + '\n';
+}
+
 function matchesUserPattern(pattern: string, user: string): boolean {
   if (pattern === user || pattern === '*') return true;
   const re = new RegExp(
@@ -117,6 +137,14 @@ export interface LinuxSshServerContextOptions {
   throttlerThreshold?: number;
   throttlerWindowMs?: number;
   throttlerBlockMs?: number;
+  /**
+   * The LinuxMachine this context serves. Passed through to
+   * `createInteractiveShell()` so SshServerHandler can offer real-time
+   * streaming (`ping`) over an interactive shell channel. Omitted by tests
+   * that construct a bare context without a full device — those simply
+   * don't get streaming (createInteractiveShell returns null).
+   */
+  device?: unknown;
 }
 
 export class LinuxSshServerContext implements ISshServerContext {
@@ -126,8 +154,12 @@ export class LinuxSshServerContext implements ISshServerContext {
   readonly sshdConfig: SshdConfig;
   readonly events: ISshServerEventBus;
   private readonly throttler: SshAuthThrottler | null;
+  readonly fail2ban: Fail2banAgent | null;
   private readonly syslogger: SshSyslogger | null;
   private readonly utmpProjection: LinuxUtmpProjection | null;
+  readonly rawConfig: string;
+  private cachedEffective: SshdServerConfig | null = null;
+  private readonly device: unknown;
 
   constructor(
     private readonly vfs: VirtualFileSystem,
@@ -156,25 +188,61 @@ export class LinuxSshServerContext implements ISshServerContext {
     });
     this.auth = this.buildAuthContext();
     this.events = opts.bus ?? new SshServerEventBus();
+    this.device = opts.device ?? null;
 
     // Reactive subsystems: each one is independent and only needs the bus.
     this.syslogger = (opts.enableSyslog ?? true)
       ? new SshSyslogger(this.vfs, this.events, {
           hostname: this.hostname,
           port: this.sshdConfig.listenPort,
+          // The pid of the REAL sshd in this machine's process table, not
+          // a fresh random one: `ps`, `sshd[<pid>]` in auth.log and
+          // `journalctl -u ssh` describe one daemon and must name it the
+          // same way. Falls back to the random default only when no sshd
+          // process exists to point at.
+          sshdPid: this.executor?.processMgr?.list({ comm: 'sshd' })[0]?.pid,
           // Hand the device's journal in so SSH events surface in
           // `journalctl -u sshd`, not just in /var/log/auth.log.
           logMgr: this.executor?.logMgr,
         })
       : null;
 
+    // Fail2ban jail (sshd) — constructed before the throttler so its
+    // `auth_failure` subscription (the "Found <ip>" line) observes each
+    // attempt before the throttler's own handler synchronously re-emits
+    // `auth_throttled` on the attempt that crosses the threshold — real
+    // fail2ban.log always shows every `Found` line before the `Ban`
+    // line it triggers, never after.
+    this.fail2ban = this.executor
+      ? new Fail2banAgent(
+          this.events,
+          {
+            execute: (args) => ({ exitCode: this.executor!.iptables.execute(args).exitCode }),
+            hasChain: (name) => this.executor!.iptables.hasChain('filter', name),
+          },
+          {
+            appendLog: (line) => {
+              const prev = this.vfs.readFile('/var/log/fail2ban.log') ?? '';
+              this.vfs.writeFile('/var/log/fail2ban.log', prev + line + '\n', 0, 0, 0o022);
+            },
+          },
+          {
+            journal: {
+              log: (action) => this.executor!.logMgr.logDaemon('fail2ban-server', action, undefined, 'fail2ban'),
+            },
+          },
+        )
+      : null;
+
+    const jail = this.loadFail2banJailConfig();
     this.throttler = (opts.enableThrottler ?? true)
       ? new SshAuthThrottler(this.events, {
-          threshold: opts.throttlerThreshold,
-          windowMs: opts.throttlerWindowMs,
-          blockMs: opts.throttlerBlockMs,
+          threshold: opts.throttlerThreshold ?? jail.maxretry,
+          windowMs: opts.throttlerWindowMs ?? jail.findtimeSeconds * 1000,
+          blockMs: opts.throttlerBlockMs ?? jail.bantimeSeconds * 1000,
         })
       : null;
+
 
     // utmp / btmp are owned by recordLogin / recordAuthFailure on
     // this same context — the projection exists for tests that drive
@@ -182,6 +250,8 @@ export class LinuxSshServerContext implements ISshServerContext {
     // LinuxSshServerContext, so we deliberately do NOT subscribe a
     // second writer here (it would double every row).
     this.utmpProjection = null;
+
+    this.rawConfig = this.vfs.readFile('/etc/ssh/sshd_config') ?? '';
   }
 
   /** Tell SshServerHandler whether the source IP is currently rate-limited. */
@@ -192,6 +262,23 @@ export class LinuxSshServerContext implements ISshServerContext {
   /** Currently-banned IPs (fail2ban-client status backend). */
   bannedIps(): string[] {
     return this.throttler?.bannedIps() ?? [];
+  }
+
+  /**
+   * `fail2ban-client set <jail> unbanip <ip>` — lift the ban immediately,
+   * both at the iptables layer (Fail2banAgent) and the SSH-protocol
+   * layer (the throttler's own block), regardless of remaining time.
+   * Returns false when the IP was not actually banned.
+   */
+  unbanIp(ip: string): boolean {
+    const wasBanned = this.fail2ban?.forceUnban(ip) ?? false;
+    this.throttler?.unblock(ip);
+    return wasBanned;
+  }
+
+  /** `fail2ban-client get <jail> bantime` — configured ban duration, in seconds. */
+  bantimeSeconds(): number {
+    return this.fail2ban?.bantimeSeconds() ?? 0;
   }
 
   /** Total recorded auth failures across the throttler's lifetime. */
@@ -212,7 +299,33 @@ export class LinuxSshServerContext implements ISshServerContext {
 
   /** Re-read /etc/ssh/sshd_config and return a fresh context (SSH-07-R6). */
   reloadConfig(): LinuxSshServerContext {
-    return new LinuxSshServerContext(this.vfs, this.userManager, this.hostname);
+    return new LinuxSshServerContext(
+      this.vfs, this.userManager, this.hostname, {}, this.executor, this.fullExecutor,
+      { device: this.device },
+    );
+  }
+
+  /**
+   * Real-time job runtime for one shell channel (streaming `ping`, Ctrl+C
+   * interrupt). Returns null when this context was built without a device
+   * reference (bare unit-test contexts) — SshServerHandler falls back to
+   * the plain one-shot `getShell()` round trip in that case.
+   */
+  createInteractiveShell(_userCtx: SshUserContext): SshInteractiveShell | null {
+    if (!this.device) return null;
+    return new SshInteractiveShell(this.device);
+  }
+
+  /**
+   * Modern (Match-block aware) view of sshd_config, captured at the
+   * moment this context was constructed. Callers SHOULD use this rather
+   * than re-parsing /etc/ssh/sshd_config every login, so changes to the
+   * on-disk file are only honoured after `systemctl reload ssh` (the
+   * real sshd behaviour). The text snapshot lives in {@link rawConfig}.
+   */
+  effectiveSshdServerConfig(): SshdServerConfig {
+    if (!this.cachedEffective) this.cachedEffective = SshdServerConfig.parse(this.rawConfig);
+    return this.cachedEffective;
   }
 
   /** Banner text shown before authentication (SSH-07-R8). */
@@ -222,14 +335,131 @@ export class LinuxSshServerContext implements ISshServerContext {
   }
 
   getFilesystem(userCtx: SshUserContext): ISftpFileSystem {
-    return new LinuxSftpFSAdapter(this.vfs, userCtx.uid, userCtx.gid);
+    const fs = new LinuxSftpFSAdapter(this.vfs, userCtx.uid, userCtx.gid);
+    const chroot = this.chrootDirectoryFor(userCtx.username);
+    return chroot ? new ChrootedSftpFileSystem(fs, chroot) : fs;
   }
 
-  getShell(_userCtx: SshUserContext, _cwd: string): ILinuxShell {
-    // BRD SSH-05/SSH-04: prefer the device-wide pipeline (`fullExecutor`)
+  /**
+   * `ChrootDirectory` for this account, global or from the first matching
+   * `Match` block. A real sshd confines the session itself; here it was
+   * applied only by a client that resolved the remote VFS in memory, so
+   * the same account escaped its chroot the moment the transfer went
+   * over the wire.
+   */
+  private chrootDirectoryFor(user: string): string | null {
+    const cfg = this.effectiveSshdServerConfig();
+    const groups = (this.userManager.getUserGroups?.(user) ?? []).map((g: { name: string }) => g.name);
+    for (const block of cfg.matchBlocks) {
+      const applies = block.criteria.every((c: { keyword: string; value: string }) => {
+        if (c.keyword === 'User') return c.value === user || c.value === '*';
+        if (c.keyword === 'Group') return groups.includes(c.value);
+        return true;
+      });
+      if (!applies) continue;
+      const cd = (block.overrides as { chrootDirectory?: string }).chrootDirectory;
+      if (cd) return cd;
+    }
+    return cfg.chrootDirectory;
+  }
+
+  getShell(userCtx: SshUserContext, cwd: string, opts?: { interactive?: boolean }): ILinuxShell {
+    // Real per-session isolation: a dedicated LinuxShellSession (its own
+    // cwd/env/su-stack, exactly like a real pty) so commands run as the
+    // AUTHENTICATED user, not whatever user the device's single shared
+    // ambient LinuxCommandExecutor happens to be sitting in. Without
+    // this, `ssh alice@host` then `whoami` would print the device's
+    // ambient console user instead of "alice" — SshServerHandler calls
+    // getShell() once per shell channel and reuses the returned object
+    // (see `shell_open`), so this session persists correctly across the
+    // channel's lifetime and is torn down via ILinuxShell.dispose().
+    if (this.device instanceof LinuxMachine) {
+      const device = this.device;
+      const interactive = opts?.interactive ?? false;
+      // An account can exist in /etc/passwd with no home on disk
+      // (`useradd` without -m). Real sshd reports "Could not chdir to home
+      // directory" and starts the session in `/` rather than in a
+      // directory that isn't there.
+      const startCwd = this.vfs.exists(cwd) ? cwd : '/';
+      const session = device.openShellSession({ user: userCtx.username, cwd: startCwd });
+      // `sqlplus` / `rman` typed over SSH must push their REPL on this
+      // side of the wire — the client only exchanges lines and a prompt,
+      // so a client-side sub-shell stack would never see them.
+      const subShells = new SubShellStack({
+        device: device as unknown as Equipment,
+        user: userCtx.username,
+        primaryKind: 'bash',
+      });
+      return {
+        execute: async (line: string) => {
+          if (subShells.active) {
+            const routed = await subShells.process(line);
+            return { stdout: joinLines(routed.output), stderr: '', exitCode: routed.exitCode };
+          }
+          const launched = subShells.launch(line);
+          if (launched) return { stdout: joinLines(launched), stderr: '', exitCode: 0 };
+          const stdout = await device.executeCommandInSession(line, session, { color: interactive });
+          // The shell session's own `$?`, captured by the command pipeline.
+          // Guessing it from the output text used to report success for
+          // anything the pattern missed — `false`, a failing grep, a
+          // missing file.
+          return { stdout, stderr: '', exitCode: session.lastExitCode };
+        },
+        // Completion runs inside this channel's own session, so paths
+        // resolve against its cwd rather than the device-wide one.
+        getCompletions: (line: string) =>
+          [...(subShells.getCompletions(line) ?? device.getCompletionsForSession(line, session))],
+        isNested: () => subShells.active,
+        // The engine runs here, on this channel's own session: the file
+        // it opens, the permissions it obeys and the swap file it drops
+        // are the remote's, not the client's.
+        openEditor: (commandLine: string) => {
+          installDefaultEditors();
+          const launch = parseEditorLaunch(commandLine);
+          if (!launch) return null;
+          const fs = new LinuxEditorFsContext(device, session);
+          const content = launch.filePath === '' ? null : fs.readFile(launch.filePath);
+          return createEditorSession(launch.editor, {
+            fs,
+            filePath: launch.filePath === '' ? '' : fs.resolvePath(launch.filePath),
+            content: content ?? '',
+            isNewFile: content === null,
+            owner: userCtx.username,
+            readOnly: launch.readOnly,
+            showPosition: launch.showPosition,
+            showLineNumbers: launch.showLineNumbers,
+            initialCursorLine: launch.initialCursorLine,
+            initialCursorCol: launch.initialCursorCol,
+          });
+        },
+        getPrompt: () => {
+          const nested = subShells.getPrompt();
+          if (nested !== null) return nested;
+          // The authenticated user's real home from /etc/passwd — never a
+          // guessed `/home/<name>`, which would be wrong for root (/root)
+          // and for any account with a custom home.
+          const home = userCtx.homeDirectory;
+          const shortCwd = session.cwd === home ? '~'
+            : session.cwd.startsWith(`${home}/`) ? `~${session.cwd.slice(home.length)}`
+            : session.cwd;
+          return `${userCtx.username}@${device.getSshHostname()}:${shortCwd}${userCtx.isRoot() ? '#' : '$'} `;
+        },
+        // A persistent shell channel ends by hanging up (real terminal
+        // close); a one-shot exec ran its single command to completion,
+        // so its shell exits normally instead.
+        dispose: () => {
+          subShells.dispose();
+          device.closeShellSession(session, { graceful: !interactive });
+        },
+      };
+    }
+
+    // BRD SSH-05/SSH-04: bare test contexts built without a resolvable
+    // device fall back to the shared ambient pipeline (`fullExecutor`)
     // when available, since it covers network commands (ip, arp, ping)
     // and systemctl in addition to the bash interpreter. Fall back to the
-    // executor's bash-only path, then to an informative stub.
+    // executor's bash-only path, then to an informative stub. No real
+    // device (LinuxMachine.getSshServerContext()) ever takes this path.
     const executor = this.executor;
     const full = this.fullExecutor;
     if (full) {
@@ -385,6 +615,41 @@ export class LinuxSshServerContext implements ISshServerContext {
     }
   }
 
+  /**
+   * Read the sshd jail's `maxretry`/`bantime`/`findtime` from
+   * `/etc/fail2ban/jail.local`, seeding it with fail2ban's real stock
+   * defaults on first access. Consulted once at construction, matching
+   * real fail2ban which only re-reads its jail config on service
+   * restart, not on every connection.
+   */
+  private loadFail2banJailConfig(): { maxretry: number; bantimeSeconds: number; findtimeSeconds: number } {
+    const defaults = { maxretry: 5, bantimeSeconds: 300, findtimeSeconds: 60 };
+    let raw = this.vfs.readFile(FAIL2BAN_JAIL_LOCAL_PATH);
+    if (raw === null) {
+      if (!this.vfs.exists('/etc/fail2ban')) this.vfs.mkdirp('/etc/fail2ban', 0o755, 0, 0);
+      this.vfs.writeFile(FAIL2BAN_JAIL_LOCAL_PATH, DEFAULT_FAIL2BAN_JAIL_LOCAL, 0, 0, 0o022);
+      raw = DEFAULT_FAIL2BAN_JAIL_LOCAL;
+    }
+
+    let inSshdSection = false;
+    const values: Partial<typeof defaults> = {};
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith(';')) continue;
+      const section = /^\[(\w+)\]$/.exec(trimmed);
+      if (section) { inSshdSection = section[1] === 'sshd'; continue; }
+      if (!inSshdSection) continue;
+      const kv = /^(\w+)\s*=\s*(\S+)$/.exec(trimmed);
+      if (!kv) continue;
+      const value = parseInt(kv[2], 10);
+      if (!Number.isFinite(value)) continue;
+      if (kv[1] === 'maxretry') values.maxretry = value;
+      else if (kv[1] === 'bantime') values.bantimeSeconds = value;
+      else if (kv[1] === 'findtime') values.findtimeSeconds = value;
+    }
+    return { ...defaults, ...values };
+  }
+
   private loadOrGenerateHostKey(): SshHostKey {
     const pub = this.vfs.readFile(HOST_KEY_PUB_PATH);
     const priv = this.vfs.readFile(HOST_KEY_PATH);
@@ -441,6 +706,9 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (!this.config.pubkeyAuthentication) return false;
         const userEntry = this.userManager.getUser(user);
         if (!userEntry) return false;
+        if (this.sshdConfig.strictModes && this.firstStrictModesViolation(userEntry.uid, userEntry.home) !== null) {
+          return false;
+        }
         const path = AUTHORIZED_KEYS_PATH(userEntry.home);
         const content = this.vfs.readFile(path);
         if (!content) return false;
@@ -455,6 +723,7 @@ export class LinuxSshServerContext implements ISshServerContext {
         if (this.config.passwordAuthentication) methods.push('password');
         return methods;
       },
+      checkAccountLifecycle: (user) => this.userManager.accountLifecycleGate(user),
     };
   }
 
@@ -490,5 +759,29 @@ export class LinuxSshServerContext implements ISshServerContext {
       }
     }
     return true;
+  }
+
+  /**
+   * StrictModes (`man 5 sshd_config`): refuse a pubkey login when $HOME or
+   * ~/.ssh are group/world-writable, or authorized_keys has any group/other
+   * access at all — mirrors OpenSSH's stock check (0o022 mask on
+   * $HOME/~/.ssh) plus the stricter, universally-taught "must be 0600" rule
+   * on authorized_keys (0o077 mask). Returns the first offending path, or
+   * null when nothing fails.
+   */
+  private firstStrictModesViolation(userUid: number, home: string): string | null {
+    for (const path of [home, `${home}/.ssh`]) {
+      const inode = this.vfs.resolveInode(path, true);
+      if (!inode) continue;
+      if (inode.uid !== userUid && inode.uid !== 0) return path;
+      if ((inode.permissions & 0o022) !== 0) return path;
+    }
+    const akPath = AUTHORIZED_KEYS_PATH(home);
+    const ak = this.vfs.resolveInode(akPath, true);
+    if (ak) {
+      if (ak.uid !== userUid && ak.uid !== 0) return akPath;
+      if ((ak.permissions & 0o077) !== 0) return akPath;
+    }
+    return null;
   }
 }

@@ -49,7 +49,7 @@ describe('VRRP — single-speaker election', () => {
   it('the only configured speaker becomes Master', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureVrrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     const g = r.getVrrpAgent().getGroup('GigabitEthernet0/0', 1);
     expect(g?.state).toBe('master');
@@ -59,7 +59,7 @@ describe('VRRP — single-speaker election', () => {
   it('show vrrp reports State is Master', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureVrrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r.executeCommand('show vrrp');
     expect(out).toMatch(/State is Master/);
@@ -74,8 +74,8 @@ describe('VRRP — two-speaker election', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureVrrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 110);
     await configureVrrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
 
@@ -89,8 +89,8 @@ describe('VRRP — two-speaker election', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureVrrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     expect(r2.getVrrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('master');
     await configureVrrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
@@ -115,7 +115,7 @@ describe('VRRP — wire format', () => {
         seen = { proto: ipPkt.protocol, dst: ipPkt.destinationIP?.toString() ?? '' };
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureVrrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254');
 
     expect(seen).not.toBeNull();
@@ -131,8 +131,8 @@ describe('VRRP — reactive bus', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     const states: Array<{ deviceId: string; newState: string }> = [];
     const masters: Array<{ deviceId: string; masterIp: string | null }> = [];
     bus.subscribe('vrrp.state.changed', (e) => states.push(e.payload));
@@ -148,7 +148,7 @@ describe('VRRP — link-down behaviour', () => {
   it('link-down brings the master back to Init', async () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     await configureVrrp(r, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254');
     expect(r.getVrrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('master');
     r.getPort('GigabitEthernet0/0')!.setUp(false);
@@ -163,8 +163,8 @@ describe('VRRP — Cisco↔Huawei interop', () => {
     const huawei = new HuaweiRouter('HW1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cisco.setEventBus(bus); huawei.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
 
     cisco.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     huawei.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
@@ -189,8 +189,8 @@ describe('VRRP — show vrrp reports peer master IP', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureVrrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureVrrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r2.executeCommand('show vrrp');
@@ -204,8 +204,8 @@ describe('VRRP — show vrrp reports peer master IP', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureVrrp(r1, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0', 1, '10.0.0.254', 200);
     await configureVrrp(r2, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0', 1, '10.0.0.254', 100);
     const out = await r2.executeCommand('show vrrp brief');

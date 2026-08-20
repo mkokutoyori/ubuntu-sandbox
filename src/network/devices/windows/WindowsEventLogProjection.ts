@@ -10,10 +10,20 @@
  */
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
-import type { WindowsServiceEventPayload } from './events';
+import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
+import type {
+  WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
+  WindowsServiceCreatedPayload,
+} from './events';
 
 /** SCM event ID for a service state transition (System log). */
 const SCM_STATE_CHANGE = 7036;
+/** SCM event ID for an unexpected service termination (System log). */
+const SCM_UNEXPECTED_TERMINATION = 7034;
+/** SCM event ID announcing the corrective action about to be taken (System log). */
+const SCM_RECOVERY_ACTION = 7031;
+/** SCM event ID for a new service installed in the system (System log). */
+const SCM_SERVICE_INSTALLED = 7045;
 /** Windows Filtering Platform — packet blocked (Security log). */
 const WFP_PACKET_BLOCKED = 5152;
 /** TCP listener started (System log). */
@@ -27,6 +37,7 @@ export interface WindowsEventLogSink {
     logName: string, source: string, eventId: number,
     entryType: 'Information' | 'Warning' | 'Error' | 'SuccessAudit' | 'FailureAudit',
     message: string,
+    data?: Record<string, string>,
   ): string;
 }
 
@@ -37,10 +48,14 @@ export class WindowsEventLogProjection {
     bus: IEventBus,
     private readonly sink: WindowsEventLogSink,
     private readonly deviceId: string,
+    private readonly auditPolicy?: WindowsAuditPolicy,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.service.started', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
+      bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
+      bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
+      bus.subscribe('windows.service.recovery-critical', (e) => this.onRecoveryCritical(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
       bus.subscribe('windows.firewall.drop', (e) => this.onFirewallDrop(e.payload)),
@@ -50,6 +65,10 @@ export class WindowsEventLogProjection {
       bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
       bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
     );
+  }
+
+  private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
+    return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
   }
 
   private onPortProxyAdded(p: {
@@ -116,6 +135,7 @@ export class WindowsEventLogProjection {
   }): void {
     if (p.deviceId !== this.deviceId) return;
     if (!p.passive) return;
+    if (!this.gated('Filtering Platform Connection', 'success')) return;
     this.sink.writeEventLog(
       'Security', 'Microsoft-Windows-Security-Auditing',
       WFP_CONNECTION_ALLOWED, 'SuccessAudit',
@@ -131,6 +151,7 @@ export class WindowsEventLogProjection {
     protocol: string; direction: 'Inbound' | 'Outbound';
   }): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Filtering Platform Packet Drop', 'failure')) return;
     this.sink.writeEventLog(
       'Security', 'Microsoft-Windows-Security-Auditing',
       WFP_PACKET_BLOCKED, 'FailureAudit',
@@ -155,6 +176,56 @@ export class WindowsEventLogProjection {
       SCM_STATE_CHANGE,
       'Information',
       `The ${p.displayName} service entered the ${p.running ? 'running' : 'stopped'} state.`,
+    );
+  }
+
+  private onServiceCrashed(p: WindowsServiceCrashedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_UNEXPECTED_TERMINATION,
+      'Error',
+      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.failureCount} time(s).`,
+    );
+  }
+
+  private onServiceCreated(p: WindowsServiceCreatedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_SERVICE_INSTALLED,
+      'Information',
+      `A service was installed in the system.\n\n` +
+      `Service Name:  ${p.serviceName}\n` +
+      `Service File Name:  ${p.binaryPath}\n` +
+      `Service Type:  user mode service\n` +
+      `Service Start Type:  demand start\n` +
+      `Service Account:  ${p.account}`,
+      // L'ordre compte : un script lit `Data[0]` pour le nom du service,
+      // `Data[1]` pour le binaire. 7045 est le premier événement qu'on
+      // regarde quand un service inconnu apparaît, et un message en
+      // texte libre ne se dépouille pas.
+      {
+        ServiceName: p.serviceName,
+        ImagePath: p.binaryPath,
+        ServiceType: 'user mode service',
+        StartType: 'demand start',
+        AccountName: p.account,
+      },
+    );
+  }
+
+  private onRecoveryCritical(p: WindowsServiceRecoveryCriticalPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.sink.writeEventLog(
+      'System',
+      'Service Control Manager',
+      SCM_RECOVERY_ACTION,
+      'Error',
+      `The ${p.displayName} service terminated unexpectedly. It has done this ${p.rank} time(s). ` +
+      `The configured corrective action is Reboot the Computer — suppressed by the simulator; the service remains stopped.`,
     );
   }
 }

@@ -2230,6 +2230,101 @@ l'ACTION). Non-régression : `unit/database/` complet (126 fichiers, 3022 tests
 verts) + `network-v2/logging-enhancements` (12) ; `tsc` propre, ESLint propre sur le
 code modifié (warning `no-this-alias` `LinuxMachine.ts:1059` préexistant).
 
+### 2026-06-21 — DBMS_SCHEDULER : jobs STORED_PROCEDURE réellement invoqués + statut FAILED fidèle
+**Défaillance (fonctionnalité cassée + écart Oracle réel) :** trois défauts liés dans la
+couche scheduler.
+1. `DbmsScheduler.CreateJob` castait `job_type` en littéral `as 'PLSQL_BLOCK'`
+   (`packages/DbmsScheduler.ts:19`) — un mensonge de type qui faisait croire que tout job
+   était de type PLSQL_BLOCK, alors que la valeur runtime réelle (`STORED_PROCEDURE`,
+   `EXECUTABLE`) était bien conservée. Smell masquant le défaut nº2.
+2. `SchedulerManager.runJob` routait **tous** les jobs non-EXECUTABLE par
+   `executeSql(job_action)` verbatim. Un job `STORED_PROCEDURE` ne porte qu'un **nom de
+   procédure nu** dans `job_action` (les arguments passent par `SET_JOB_ARGUMENT_VALUE`) —
+   Oracle l'invoque comme un appel. Passer ce nom nu à `executeSql` n'est pas du SQL valide,
+   donc **tout job STORED_PROCEDURE échouait** (alors que la même procédure marche en `EXEC`).
+   De plus le job s'exécutait dans le schéma `SYS` (via `connectAsSysdba`) au lieu du schéma
+   de son **propriétaire**, donc un nom non-qualifié ne se résolvait pas chez le bon owner.
+3. `runJob` ne marquait `FAILED` que sur exception **levée**. Or les erreurs PL/SQL/SQL
+   remontent dans `result.message` (`ORA-`/`PLS-`), pas comme exceptions (cf. itération 2 :
+   un bloc imparsable renvoie `ORA-06550`). Un job dont l'action levait une erreur était donc
+   rapporté `SUCCEEDED` à tort dans `DBA_SCHEDULER_JOB_RUN_DETAILS`.
+**Correction (enhancement de l'existant, pas de duplication) :**
+- `packages/DbmsScheduler.ts` : `coerceJobType()` valide la valeur contre l'union
+  `JobType` réelle (`PLSQL_BLOCK`/`STORED_PROCEDURE`/`EXECUTABLE`), défaut PLSQL_BLOCK — fin
+  du cast trompeur, `job_type` correct dans `DBA_SCHEDULER_JOBS`.
+- `scheduler/SchedulerManager.runJob` : la branche non-EXECUTABLE retarge le contexte
+  d'exécution (`currentUser`/`currentSchema`) vers le **propriétaire** du job (fidèle : le
+  slave tourne dans le schéma de l'owner avec ses privilèges, la connexion interne restant
+  SYSDBA), et un job `STORED_PROCEDURE` est enveloppé en `BEGIN <action>; END;` — réutilisant
+  la chaîne `routePlsql → executeProcedureCall` déjà en place (résolution de noms, droits
+  EXECUTE, definer rights) plutôt que de dupliquer le dispatch.
+- Détection d'échec : après `executeSql`, `runJob` scanne `result.message` pour un code
+  `ORA-`/`PLS-` et bascule le run en `FAILED` avec le bon `ERROR#`. Cohérent avec la façon
+  dont le moteur PL/SQL surface ses erreurs.
+**Validation :** nouvelle suite `oracle-scheduler-stored-procedure.test.ts` (3 tests : un job
+STORED_PROCEDURE invoque la procédure et **persiste** son INSERT + run SUCCEEDED ; `JOB_TYPE`
+réel rendu dans `DBA_SCHEDULER_JOBS` ; procédure inexistante → run **FAILED**). Non-régression :
+`unit/database/` complet (129 fichiers, 3041 tests verts), dont les suites scheduler
+existantes (`autorun`, `executable`, `multitenant-dg`) ; `tsc` propre, ESLint propre sur le
+code modifié.
+
+### 2026-06-21 — I/O fichiers serveur Oracle soumis au DAC du host (utilisateur OS `oracle`)
+**Défaillance (cohérence couche filesystem ↔ accès, majeure) :** tout l'I/O fichier
+côté serveur Oracle — `UTL_FILE`, tables externes, `BFILE`, Data Pump, `CREATE PFILE/SPFILE` —
+transitait par les hooks `setDeviceFileReader/Writer/Remover` (`terminal/commands/database.ts`)
+câblés sur le **chemin éditeur** du device (`readFileForEditor`/`writeFileFromEditor`).
+Conséquences, divergentes d'un vrai serveur :
+1. **Lecture sans aucun contrôle de permission** : `readFileForEditor` fait un
+   `vfs.readFile` brut. Oracle pouvait donc lire un fichier `root:root` en `0600` (p.ex.
+   placé dans un DIRECTORY) que l'utilisateur OS `oracle` n'a normalement pas le droit de lire.
+   Le privilège Oracle `READ ON DIRECTORY` était vérifié, mais **jamais** le DAC du host.
+2. **Écriture mal attribuée** : `writeFileFromEditor` écrit avec l'uid du **shell interactif
+   courant** (souvent root), pas celui d'`oracle`. Un fichier produit par `UTL_FILE.PUT_LINE`
+   apparaissait donc `root:root` au lieu d'`oracle:oinstall`, et une écriture dans un
+   répertoire interdit à `oracle` **réussissait** quand même.
+**Correction (réutilisation de l'infra DAC existante, pas de réimplémentation) :**
+- `LinuxMachine` expose trois capacités serveur — `readFileAsOracle`, `writeFileAsOracle`,
+  `removeFileAsOracle` — qui résolvent l'identité de l'utilisateur OS `oracle` (uid/gid/groupes
+  via le `LinuxUserManager`, repli 54321:54321) et appliquent le DAC du host via le modèle
+  d'acteur `VfsPath`/`PathActor` **déjà en place** (mêmes `checkAccess`/ACL POSIX que le shell) :
+  lecture = search(x) sur le répertoire + read(r) sur le fichier ; écriture = write sur un
+  fichier existant ou write+search sur le répertoire parent à la création ; unlink = write+search
+  sur le répertoire. Le fichier créé est possédé `oracle:oinstall`.
+- `terminal/commands/database.ts` recâble les trois hooks Oracle sur ces capacités `*AsOracle`
+  (repli sur le chemin éditeur pour les devices qui ne modélisent pas l'identité oracle). Le
+  probe d'existence (`setHostFileProbe`) reste sur le chemin brut — l'existence d'un fichier
+  ne dépend pas de la permission de lecture.
+- `UtlFileEngine` : `flush` renvoie désormais le verdict d'écriture du host ; `FOPEN('W'/'A')`
+  refusé → `ORA-29283`, `PUT/PUT_LINE/NEW_LINE/FFLUSH/FCLOSE` en échec d'écriture → `ORA-29285`.
+  Le refus DAC, rendu possible par le point ci-dessus, est ainsi **observable** comme sur un
+  vrai serveur, au lieu d'être silencieusement avalé.
+**Validation :** nouvelle suite `oracle-server-file-dac.test.ts` pilotant un vrai `LinuxServer`
+(VFS + DAC de bout en bout, pas le stand-in Map) : (1) un fichier écrit par `UTL_FILE` est
+possédé par `oracle` et lisible par `cat` ; (2) Oracle lit un fichier world-readable mais se
+voit refuser un `root:root 0600` (`ORA-29283`, pas de fuite) ; (3) une écriture `UTL_FILE` dans
+`/root` (0700) échoue (`ORA-29285`, fichier non créé). Non-régression : `unit/database/` complet
+(130 fichiers, 3044 tests verts) — dont `oracle-utl-file`, `-privileges`, `external-table`,
+`bfile`, `datapump-directory` — + `debug/oracle/` (14 suites) ; `tsc` propre, ESLint propre sur
+le code ajouté (les 2 `no-this-alias` de `LinuxMachine.ts` préexistent, hors périmètre).
+
+### 2026-06-21 — Déduplication de la résolution de table dans ALTER TABLE (+ ORA-942 sur MOVE COMPRESS)
+**Défaillance (duplication + incohérence mineure) :** `OracleExecutor.executeAlterTable`
+ré-inlinait cinq fois le couple `storage.getTableMeta(...)` + `if (!meta) throw ORA-942`
+(branches MODIFY_COLUMN, ENCRYPT_COLUMN, RENAME_COLUMN, RENAME_TABLE, MOVE_TABLESPACE) alors
+que le helper privé `requireTableMeta(schema, table)` — déjà utilisé par TRUNCATE et la branche
+ADD_COLUMN du même switch — fait exactement cela. Une correction de fidélité sur le message/code
+d'erreur ORA-942 aurait dû être répétée six fois. Par ailleurs, la branche `MOVE_COMPRESS`
+résolvait la table avec un `if (meta) { … }` **sans else** : un `ALTER TABLE … MOVE COMPRESS`
+sur une table inexistante était un **no-op silencieux** au lieu de lever `ORA-00942`, à rebours
+de toutes les autres branches.
+**Correction (source unique, pas de réécriture) :** les cinq inlines deviennent
+`const meta = this.requireTableMeta(schema, tableName);` ; `MOVE_COMPRESS` adopte le même helper
+et applique la compression sans garde conditionnelle. Comportement inchangé sur le chemin nominal
+(la table est déjà garantie existante par le `tableExists` en tête de méthode), code aligné et
+ORA-942 désormais uniforme sur toutes les branches. ~10 lignes dupliquées retirées.
+**Validation :** `unit/database/` complet (130 fichiers, 3044 tests verts), dont les suites
+ALTER/MODIFY/TDE/tablespace ; `tsc` propre.
+
 <!-- Format :
 ### YYYY-MM-DD — Titre court (commit <sha>)
 **Défaillance :** description du problème (duplication, anti-pattern, écart Oracle réel).

@@ -23,16 +23,32 @@ export interface PsCmdShimContext {
   executeCmdCommand(line: string): Promise<string>;
   /** Persistent shim state across `powershell -Command` invocations. */
   shimState?: PsShimState;
+  /**
+   * When present, cmdlet-shaped tokens (Verb-Noun) unknown to the shim
+   * are routed to the full PowerShell runtime instead of falling back
+   * to cmd.exe. Callers should reuse the same interpreter across shim
+   * invocations so `$vars`, aliases and functions defined in previous
+   * -Command lines persist.
+   */
+  runFullPs?(code: string): string | Promise<string>;
 }
 
 export interface PsShimState {
   vars: Map<string, string>;
   fns: Map<string, string>;
   aliases: Map<string, string>;
+  /**
+   * Noms dont la valeur vit dans le vrai moteur et non dans `vars`.
+   * `vars` ne sait retenir que du texte : une affectation d'objet
+   * (`$a = New-ScheduledTaskAction …`) y perdait l'objet et ne rendait
+   * que son tableau imprimé, si bien que le `-Action $a` de la phrase
+   * suivante arrivait vide au cmdlet.
+   */
+  runtimeVars: Set<string>;
 }
 
 export function createShimState(): PsShimState {
-  return { vars: new Map(), fns: new Map(), aliases: new Map() };
+  return { vars: new Map(), fns: new Map(), aliases: new Map(), runtimeVars: new Set() };
 }
 
 type State = PsShimState;
@@ -42,9 +58,27 @@ const PS_SWITCH_FLAGS = new Set([
 ]);
 const PS_VALUE_FLAGS = new Set([
   '-executionpolicy', '-version', '-windowstyle', '-inputformat',
-  '-outputformat', '-encodedcommand', '-configurationname', '-file',
+  '-outputformat', '-encodedcommand', '-configurationname',
   '-psconsolefile',
 ]);
+
+/**
+ * `-File <path> [args…]`. It used to sit in PS_VALUE_FLAGS, which meant
+ * the path was recognised and then thrown away: `powershell -File x.ps1`
+ * printed nothing at all, and adding a script parameter made the whole
+ * line fall through to cmd.exe and come back as "powershell is not
+ * recognized". Everything after the path belongs to the script, exactly
+ * as the real host passes it.
+ */
+function extractFileInvocation(args: string[]): { path: string; scriptArgs: string[] } | null {
+  const idx = args.findIndex(a => /^-f(ile)?$/i.test(a));
+  if (idx === -1 || !args[idx + 1]) return null;
+  return { path: args[idx + 1], scriptArgs: args.slice(idx + 2) };
+}
+
+function quoteForPs(path: string): string {
+  return `'${path.replace(/'/g, "''")}'`;
+}
 
 function extractPsScript(args: string[]): string {
   const cIdx = args.findIndex(a => /^-c(ommand)?$/i.test(a));
@@ -64,6 +98,15 @@ export async function runPowerShellShim(
   ctx: PsCmdShimContext,
   args: string[],
 ): Promise<string> {
+  const file = extractFileInvocation(args);
+  if (file) {
+    if (!ctx.runFullPs) {
+      return `powershell : Cannot run "${file.path}" — no PowerShell engine is available on this host.`;
+    }
+    const call = [`& ${quoteForPs(file.path)}`, ...file.scriptArgs].join(' ');
+    return String(await ctx.runFullPs(call)).replace(/\s+$/, '');
+  }
+
   const raw = extractPsScript(args).trim();
   if (!raw) return '';
   const script = stripBalancedQuotes(raw);
@@ -123,14 +166,27 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
   // $x = <expression>
   const assign = /^\$([A-Za-z_]\w*)\s*=\s*(.+)$/s.exec(stmt);
   if (assign) {
-    const value = await evalExpression(state, assign[2].trim(), ctx);
-    state.vars.set(assign[1], value);
+    const name = assign[1];
+    const rhs = assign[2].trim();
+    if (ctx.runFullPs && looksLikeCmdlet(headWordOf(rhs))) {
+      await ctx.runFullPs(withShimVars(state, stmt));
+      runtimeVars(state).add(name);
+      state.vars.delete(name);
+      return '';
+    }
+    const value = await evalExpression(state, rhs, ctx);
+    state.vars.set(name, value);
+    runtimeVars(state).delete(name);
     return '';
   }
 
   // bare $x → print
   const bareVar = /^\$([A-Za-z_]\w*)\s*$/.exec(stmt);
-  if (bareVar) return state.vars.get(bareVar[1]) ?? '';
+  if (bareVar) {
+    if (ctx.runFullPs && runtimeVars(state).has(bareVar[1]))
+      return String(await ctx.runFullPs(stmt)).replace(/\s+$/, '');
+    return state.vars.get(bareVar[1]) ?? '';
+  }
 
   // Pipeline with Select-String
   const pipeIdx = stmt.indexOf('|');
@@ -152,14 +208,54 @@ async function evalStatement(state: State, stmt: string, ctx: PsCmdShimContext):
     return evalStatement(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
   }
 
+  if (ctx.runFullPs && looksLikeCmdlet(headWord)) {
+    return String(await ctx.runFullPs(withShimVars(state, stmt))).replace(/\s+$/, '');
+  }
+
   // Fall through to cmd.exe (covers ssh, hostname, etc.).
   return (await ctx.executeCmdCommand(stmt)).trim();
+}
+
+function looksLikeCmdlet(word: string): boolean {
+  return /^[A-Za-z]+-[A-Za-z][\w-]*$/.test(word);
+}
+
+/** Premier mot d'une expression, parenthèse et `&` d'invocation retirés. */
+function headWordOf(expr: string): string {
+  return expr.replace(/^[&(\s]+/, '').split(/[\s(]/)[0] ?? '';
+}
+
+function runtimeVars(state: State): Set<string> {
+  if (!state.runtimeVars) state.runtimeVars = new Set();
+  return state.runtimeVars;
+}
+
+/**
+ * Le shim et le moteur tiennent chacun leurs variables. Une phrase confiée
+ * au moteur ne verrait donc pas celles que le shim a retenues — `$h = hostname`
+ * puis `Write-Output $h` rendait une ligne vide. Les noms cités par la phrase,
+ * et eux seuls, sont réinjectés ; un nom que le moteur possède déjà n'est
+ * jamais écrasé par la copie texte du shim.
+ */
+function withShimVars(state: State, code: string): string {
+  const owned = runtimeVars(state);
+  const seeds: string[] = [];
+  for (const [name, value] of state.vars) {
+    if (owned.has(name)) continue;
+    if (!new RegExp(`\\$${name}\\b`).test(code)) continue;
+    seeds.push(`$${name} = '${String(value).replace(/'/g, "''")}'`);
+  }
+  return seeds.length > 0 ? `${seeds.join('\n')}\n${code}` : code;
 }
 
 async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext): Promise<string> {
   // Variable
   const ref = /^\$([A-Za-z_]\w*)\s*$/.exec(expr);
-  if (ref) return state.vars.get(ref[1]) ?? '';
+  if (ref) {
+    if (ctx.runFullPs && runtimeVars(state).has(ref[1]))
+      return String(await ctx.runFullPs(expr)).replace(/\s+$/, '');
+    return state.vars.get(ref[1]) ?? '';
+  }
 
   // Numeric literal
   if (/^-?\d+(\.\d+)?$/.test(expr)) return expr;
@@ -182,6 +278,10 @@ async function evalExpression(state: State, expr: string, ctx: PsCmdShimContext)
   if (target) {
     const rest = expr.slice(head.length).trim();
     return evalExpression(state, `${target}${rest ? ' ' + rest : ''}`, ctx);
+  }
+
+  if (ctx.runFullPs && looksLikeCmdlet(headWordOf(expr))) {
+    return String(await ctx.runFullPs(withShimVars(state, expr))).replace(/\s+$/, '');
   }
 
   // External command via cmd.exe

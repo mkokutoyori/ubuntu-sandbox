@@ -130,6 +130,24 @@ export const PS_OPERATOR_PARAMS = new Set([
   ...PS_BITWISE_OPS,
 ]);
 
+/**
+ * The subset of `PS_OPERATOR_PARAMS` that's genuinely ambiguous with a real
+ * cmdlet parameter of the same name: comparison/logical operators, because
+ * `Where-Object`'s simplified syntax (`Where-Object Name -eq 'foo' -and Age
+ * -gt 5`) uses them as bare, VALUELESS parameter tokens — the parser must
+ * not consume a value after them so `WhereObjectCmdlet` can reconstruct the
+ * comparison chain from the raw positional list. String ops (`-Replace`,
+ * `-Split`, `-Join`) and bitwise ops (`-Band`, `-Bor`, ...) are excluded:
+ * no cmdlet in this codebase uses THEM as bare chained-comparison
+ * parameters, but several real cmdlets (`Set-ADObject -Replace @{...}`)
+ * declare a same-named parameter that DOES need its value consumed —
+ * unlike the comparison/logical case, there's no ambiguity to protect here.
+ */
+export const PS_AMBIGUOUS_OPERATOR_PARAMS = new Set([
+  ...PS_COMPARISON_OPS,
+  ...PS_LOGICAL_OPS,
+]);
+
 // ─── PowerShell Keywords ───────────────────────────────────────────────────────
 
 /** Reserved keywords (case-insensitive in PowerShell, stored lowercase). */

@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-dhcp-nat
-Generated: 2026-06-12T11:49:25.161Z
+Generated: 2026-08-19T07:03:25.185Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP DHCP global/relay/v6/snoop + NAT outbound/static/server
 Total steps: 288
@@ -14,25 +14,25 @@ Total steps: 288
 [2/288] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[3/288] r1 [R1-GE0/0/0] ip address 192.168.1.1 255.255.255.0
+[3/288] r1 [R1-GigabitEthernet0/0/0] ip address 192.168.1.1 255.255.255.0
 <empty>
 
-[4/288] r1 [R1-GE0/0/0] undo shutdown
+[4/288] r1 [R1-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[5/288] r1 [R1-GE0/0/0] quit
+[5/288] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [6/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[7/288] r1 [R1-GE0/0/1] ip address 10.0.0.1 255.255.255.252
+[7/288] r1 [R1-GigabitEthernet0/0/1] ip address 10.0.0.1 255.255.255.252
 <empty>
 
-[8/288] r1 [R1-GE0/0/1] undo shutdown
+[8/288] r1 [R1-GigabitEthernet0/0/1] undo shutdown
 <empty>
 
-[9/288] r1 [R1-GE0/0/1] quit
+[9/288] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [10/288] r1 [R1] dhcp enable
@@ -408,22 +408,22 @@ Total steps: 288
 [101/288] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[102/288] r1 [R1-GE0/0/0] dhcp select interface
+[102/288] r1 [R1-GigabitEthernet0/0/0] dhcp select interface
 <empty>
 
-[103/288] r1 [R1-GE0/0/0] dhcp server dns-list 8.8.8.8
+[103/288] r1 [R1-GigabitEthernet0/0/0] dhcp server dns-list 8.8.8.8
 <empty>
 
-[104/288] r1 [R1-GE0/0/0] dhcp server lease day 1
+[104/288] r1 [R1-GigabitEthernet0/0/0] dhcp server lease day 1
 <empty>
 
-[105/288] r1 [R1-GE0/0/0] dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
+[105/288] r1 [R1-GigabitEthernet0/0/0] dhcp server excluded-ip-address 192.168.1.1 192.168.1.9
 <empty>
 
-[106/288] r1 [R1-GE0/0/0] dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
+[106/288] r1 [R1-GigabitEthernet0/0/0] dhcp server static-bind ip-address 192.168.1.60 mac-address 00e0-fc11-2233
 <empty>
 
-[107/288] r1 [R1-GE0/0/0] quit
+[107/288] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [108/288] r1 [R1] return
@@ -440,22 +440,22 @@ Total steps: 288
 [111/288] r1 [R1] interface GigabitEthernet0/0/0
 <empty>
 
-[112/288] r1 [R1-GE0/0/0] dhcp select relay
+[112/288] r1 [R1-GigabitEthernet0/0/0] dhcp select relay
 <empty>
 
-[113/288] r1 [R1-GE0/0/0] dhcp relay server-ip 10.0.0.2
+[113/288] r1 [R1-GigabitEthernet0/0/0] dhcp relay server-ip 10.0.0.2
 <empty>
 
-[114/288] r1 [R1-GE0/0/0] dhcp relay server-ip 10.0.0.3
+[114/288] r1 [R1-GigabitEthernet0/0/0] dhcp relay server-ip 10.0.0.3
 <empty>
 
-[115/288] r1 [R1-GE0/0/0] dhcp relay information enable
+[115/288] r1 [R1-GigabitEthernet0/0/0] dhcp relay information enable
 <empty>
 
-[116/288] r1 [R1-GE0/0/0] dhcp relay information strategy keep
+[116/288] r1 [R1-GigabitEthernet0/0/0] dhcp relay information strategy keep
 <empty>
 
-[117/288] r1 [R1-GE0/0/0] quit
+[117/288] r1 [R1-GigabitEthernet0/0/0] quit
 <empty>
 
 [118/288] r1 [R1] return
@@ -496,22 +496,22 @@ Total steps: 288
 <empty>
 
 [127/288] r1 <R1> interface GigabitEthernet0/0/0
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   interface GigabitEthernet0/0/0
   ^
 
 [128/288] r1 <R1> ipv6 enable
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   ipv6 enable
   ^
 
 [129/288] r1 <R1> ipv6 address 2001:db8:1::1/64
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   ipv6 address 2001:db8:1::1/64
   ^
 
 [130/288] r1 <R1> dhcpv6 server V6POOL
-  % Invalid input detected at '^' marker.
+  Error: Unrecognized command found at '^' position.
   dhcpv6 server V6POOL
   ^
 
@@ -547,23 +547,25 @@ Total steps: 288
 [139/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[140/288] r1 [R1-GE0/0/1] dhcp snooping trusted
+[140/288] r1 [R1-GigabitEthernet0/0/1] dhcp snooping trusted
 <empty>
 
-[141/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate enable
+[141/288] r1 [R1-GigabitEthernet0/0/1] dhcp snooping check dhcp-rate enable
 <empty>
 
-[142/288] r1 [R1-GE0/0/1] dhcp snooping check dhcp-rate 100
+[142/288] r1 [R1-GigabitEthernet0/0/1] dhcp snooping check dhcp-rate 100
 <empty>
 
-[143/288] r1 [R1-GE0/0/1] quit
+[143/288] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [144/288] r1 [R1] return
 <empty>
 
 [145/288] r1 <R1> display dhcp snooping
-  % Incomplete command.
+  Error: Incomplete command found at '^' position.
+  display dhcp snooping
+                       ^
 
 [146/288] r1 <R1> display dhcp snooping interface GigabitEthernet0/0/1
   DHCP snooping not configured on GigabitEthernet0/0/1.
@@ -597,42 +599,45 @@ Total steps: 288
 [155/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[156/288] r1 [R1-GE0/0/1] nat outbound 2000
+[156/288] r1 [R1-GigabitEthernet0/0/1] nat outbound 2000
 <empty>
 
-[157/288] r1 [R1-GE0/0/1] nat outbound 2000 address-group 1
+[157/288] r1 [R1-GigabitEthernet0/0/1] nat outbound 2000 address-group 1
 <empty>
 
-[158/288] r1 [R1-GE0/0/1] nat outbound 2001 address-group 1 no-pat
+[158/288] r1 [R1-GigabitEthernet0/0/1] nat outbound 2001 address-group 1 no-pat
 <empty>
 
-[159/288] r1 [R1-GE0/0/1] nat outbound 2000 interface GigabitEthernet0/0/1
+[159/288] r1 [R1-GigabitEthernet0/0/1] nat outbound 2000 interface GigabitEthernet0/0/1
 <empty>
 
-[160/288] r1 [R1-GE0/0/1] quit
+[160/288] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [161/288] r1 [R1] return
 <empty>
 
 [162/288] r1 <R1> display nat outbound
-   NAT Outbound:
-   ACL       Type      Pool
-   ----------------------------------------
-   2000      overload  ---
-   2000      pool      1
-   2001      pool      1
-   2000      overload  ---
+  NAT Outbound Information:
+   ACL       Type      Pool                Flags
+   -------------------------------------------------------
+   2000      easy-ip overload---                 
+   2000      pool      1                   
+   2001      pool      1                   no-pat
+   2000      easy-ip overload---                 
 
 [163/288] r1 <R1> display nat address-group
+  NAT Address Group Information:
    Index  Pool Name   Start IP         End IP
    0      1           10.0.0.50        10.0.0.60
 
 [164/288] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [165/288] r1 <R1> display nat session protocol tcp
-  No active NAT sessions.
+  NAT Session Table Information:
+   No active NAT sessions
 
 
 --- [166] § NAT static / server ---
@@ -660,19 +665,21 @@ Total steps: 288
 [173/288] r1 [R1] interface GigabitEthernet0/0/1
 <empty>
 
-[174/288] r1 [R1-GE0/0/1] nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
+[174/288] r1 [R1-GigabitEthernet0/0/1] nat server protocol tcp global 10.0.0.100 80 inside 192.168.1.100 8080
 <empty>
 
-[175/288] r1 [R1-GE0/0/1] nat server protocol tcp global current-interface 2222 inside 192.168.1.101 22
+[175/288] r1 [R1-GigabitEthernet0/0/1] nat server protocol tcp global current-interface 2222 inside 192.168.1.101 22
+  Error: Wrong parameter found at '^' position.
+  nat server protocol tcp global current-interface 2222 inside 192.168.1.101 22
+                      ^
+
+[176/288] r1 [R1-GigabitEthernet0/0/1] nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
 <empty>
 
-[176/288] r1 [R1-GE0/0/1] nat server protocol udp global 10.0.0.100 53 inside 192.168.1.102 53
+[177/288] r1 [R1-GigabitEthernet0/0/1] nat dns-map example.com 10.0.0.100 80 tcp
 <empty>
 
-[177/288] r1 [R1-GE0/0/1] nat dns-map example.com 10.0.0.100 80 tcp
-<empty>
-
-[178/288] r1 [R1-GE0/0/1] quit
+[178/288] r1 [R1-GigabitEthernet0/0/1] quit
 <empty>
 
 [179/288] r1 [R1] nat static enable
@@ -692,22 +699,13 @@ Total steps: 288
    10.0.0.15        192.168.1.15      ---       ---    ---
    10.0.0.16        192.168.1.16      ---       ---    ---
    10.0.0.100       192.168.1.100     tcp       80     8080
-   current-interface192.168.1.101     tcp       2222   22
    10.0.0.100       192.168.1.102     udp       53     53
 
 [182/288] r1 <R1> display nat server
-   Static NAT:
-   Global IP        Local IP          Protocol  GPort  LPort
-   ------------------------------------------------------------
-   10.0.0.11        192.168.1.11      ---       ---    ---
-   10.0.0.12        192.168.1.12      ---       ---    ---
-   10.0.0.13        192.168.1.13      ---       ---    ---
-   10.0.0.14        192.168.1.14      ---       ---    ---
-   10.0.0.15        192.168.1.15      ---       ---    ---
-   10.0.0.16        192.168.1.16      ---       ---    ---
-   10.0.0.100       192.168.1.100     tcp       80     8080
-   current-interface192.168.1.101     tcp       2222   22
-   10.0.0.100       192.168.1.102     udp       53     53
+  NAT Server Information:
+   Proto  Global IP:Port              Inside IP:Port
+   tcp    10.0.0.100:80              192.168.1.100:8080
+   udp    10.0.0.100:53              192.168.1.102:53
 
 [183/288] r1 <R1> reset nat session all
 <empty>
@@ -736,6 +734,8 @@ Total steps: 288
   #
   sysname R1
   #
+  dns resolve
+  #
   dhcp enable
   #
   dhcp snooping enable
@@ -806,132 +806,66 @@ Total steps: 288
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [187/288] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  dhcp enable
-  #
-  dhcp snooping enable
-  #
-  ip pool VLAN10
-   network 192.168.1.0 mask 255.255.255.0
-   gateway-list 192.168.1.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan10.lab
-   lease day 1 hour 12 minute 30
-  #
-  ip pool VLAN20
-   network 192.168.2.0 mask 255.255.255.0
-   gateway-list 192.168.2.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan20.lab
-   lease day 2 hour 12 minute 30
-  #
-  ip pool VLAN30
-   network 192.168.3.0 mask 255.255.255.0
-   gateway-list 192.168.3.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan30.lab
-   lease day 3 hour 12 minute 30
-  #
-  ip pool VLAN40
-   network 192.168.4.0 mask 255.255.255.0
-   gateway-list 192.168.4.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan40.lab
-   lease day 4 hour 12 minute 30
-  #
-  ip pool VLAN50
-   network 192.168.5.0 mask 255.255.255.0
-   gateway-list 192.168.5.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan50.lab
-   lease day 5 hour 12 minute 30
-  #
-  ip pool VLAN60
-   network 192.168.6.0 mask 255.255.255.0
-   gateway-list 192.168.6.1
-   dns-list 8.8.8.8 8.8.4.4
-   domain-name vlan60.lab
-   lease day 6 hour 12 minute 30
-  #
-  ip pool INFINITE
-   network 172.16.0.0 mask 255.255.0.0
-  #
-  dhcp server forbidden-ip 192.168.1.1 192.168.1.10
-  dhcp server forbidden-ip 192.168.2.1 192.168.2.10
-  dhcp server forbidden-ip 192.168.3.1 192.168.3.10
-  dhcp server forbidden-ip 192.168.4.1 192.168.4.10
-  dhcp server forbidden-ip 192.168.5.1 192.168.5.10
-  dhcp server forbidden-ip 192.168.6.1 192.168.6.10
-  dhcp server forbidden-ip 192.168.1.1 192.168.1.9
-  interface GigabitEthernet0/0/0
-   ip address 192.168.1.1 255.255.255.0
-   dhcp relay server-ip 10.0.0.2
-   dhcp relay server-ip 10.0.0.3
-  #
-  interface GigabitEthernet0/0/1
-   ip address 10.0.0.1 255.255.255.252
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
-  acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
-  #
-  acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
-  #
+  Error: The configuration file doesn't exist.
 
 [188/288] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [189/288] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
-  Internet Address is 10.0.0.1/255.255.255.252
+  Internet Address is 10.0.0.1/30
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -991,9 +925,16 @@ Total steps: 288
   Info: BGP is not running.
 
 [203/288] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   Total sessions: 2
+  
+   Proto  Inside Local           Inside Global          Outside Global
+   ---------------------------------------------------------------------------
+   tcp    192.168.1.100:8080     10.0.0.100:80          ---
+   udp    192.168.1.102:53       10.0.0.100:53          ---
 
 [204/288] r1 <R1> display nat address-group
+  NAT Address Group Information:
    Index  Pool Name   Start IP         End IP
    0      1           10.0.0.50        10.0.0.60
 
@@ -1078,10 +1019,10 @@ Total steps: 288
 [206/288] r1 <R1> display acl all
   Basic ACL 2000, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   Basic ACL 2001, 1 rule(s)
   ACL's step is 5
-   rule 0 permit source 192.168.2.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
   Total 2 ACL(s)
 
 [207/288] r1 <R1> display dhcp server statistics
@@ -1098,8 +1039,9 @@ Total steps: 288
   Info: No VRRP backup group is configured.
 
 [209/288] r1 <R1> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
 [210/288] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -1127,14 +1069,22 @@ Total steps: 288
 [217/288] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:25.259  Aug 19 2026(EE2FD3BD.424DD2F1)
 
 [218/288] r1 <R1> display ntp session
-  No NTP associations
+  Info: No NTP session exists.
 
 [219/288] r1 <R1> display clock
-  2026-06-12 11:49:25
-  Friday
+  2026-08-19 07:03:25
+  Wednesday
   Time Zone(UTC) : UTC
 
 [220/288] r1 <R1> display lldp neighbor
@@ -1146,13 +1096,13 @@ Total steps: 288
 [222/288] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:49:25
+  CPU Usage Stat. Time : 2026-08-19 07:03:25
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [223/288] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:49:25
+  Memory utilization statistics at 2026-08-19 07:03:25
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1169,8 +1119,7 @@ Total steps: 288
   -------------------------------------------------------------------------------
 
 [225/288] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -1188,12 +1137,16 @@ Total steps: 288
 
 [227/288] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:03:25 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:03:25 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:25 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [228/288] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1241,17 +1194,17 @@ Total steps: 288
 
 [234/288] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [235/288] r1 <R1> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is 192.168.1.1/24
-  Broadcast address : 192.168.1.1
+  Broadcast address : 192.168.1.255
   The Maximum Transmit Unit : 1500 bytes
   Input bandwidth utilization  : 0%
   Output bandwidth utilization : 0%
@@ -1261,9 +1214,9 @@ Total steps: 288
       Output: 0 packets, 0 bytes
 
 [236/288] r1 <R1> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
-  Internet Address is 192.168.1.1/255.255.255.0
+  Internet Address is 192.168.1.1/24
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
@@ -1271,6 +1224,8 @@ Total steps: 288
 [237/288] r1 <R1> display this
   #
   sysname R1
+  #
+  dns resolve
   #
   dhcp enable
   #
@@ -1342,12 +1297,25 @@ Total steps: 288
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [238/288] r1 <R1> display diagnostic-information
@@ -1381,16 +1349,17 @@ Total steps: 288
 
 [243/288] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [244/288] r1 <R1> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [245] § regression: pipe filters ---
@@ -1412,16 +1381,30 @@ Total steps: 288
   interface GigabitEthernet0/0/3
    shutdown
   #
-  #
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   #
   acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+  #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [247/288] r1 <R1> display current-configuration | exclude #
   sysname R1
+  dns resolve
   dhcp enable
   dhcp snooping enable
   ip pool VLAN10
@@ -1480,19 +1463,30 @@ Total steps: 288
   interface GigabitEthernet0/0/3
    shutdown
   acl number 2000
-   rule 0 permit source 192.168.1.0 0.0.0.255
+   rule 5 permit source 192.168.1.0 0.0.0.255
   acl number 2001
-   rule 0 permit source 192.168.2.0 0.0.0.255
+   rule 5 permit source 192.168.2.0 0.0.0.255
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
 
 [248/288] r1 <R1> display ip routing-table | include Direct
   192.168.1.0/24      Direct  0    0     D     192.168.1.1     GE0/0/0
   10.0.0.0/30         Direct  0    0     D     10.0.0.1        GE0/0/1
 
 [249/288] r1 <R1> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           192.168.1.1/24       UP         UP
-  GE0/0/1                           10.0.0.1/30          UP         UP
+  GigabitEthernet0/0/0              192.168.1.1/24       up         up
+  GigabitEthernet0/0/1              10.0.0.1/30          up         up
 
 
 --- [250] § regression: view nav + undo ---
@@ -1562,7 +1556,7 @@ Total steps: 288
 [271/288] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[272/288] r1 [Huawei-GE0/0/0] display this
+[272/288] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    ip address 192.168.1.1 255.255.255.0
@@ -1570,13 +1564,13 @@ Total steps: 288
    dhcp relay server-ip 10.0.0.3
   #
 
-[273/288] r1 [Huawei-GE0/0/0] shutdown
+[273/288] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[274/288] r1 [Huawei-GE0/0/0] undo shutdown
+[274/288] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[275/288] r1 [Huawei-GE0/0/0] quit
+[275/288] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [276/288] r1 [Huawei] ospf 1
@@ -1606,47 +1600,60 @@ Total steps: 288
   Enter system view, return user view with return command.
 
 [283/288] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [284/288] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [285/288] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [286/288] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [287/288] r1 [Huawei] return
 <empty>

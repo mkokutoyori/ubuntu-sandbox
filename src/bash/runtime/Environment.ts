@@ -73,12 +73,36 @@ export class Environment {
 
   // ─── Variable Access ──────────────────────────────────────────
 
+  private readonly namerefs = new Map<string, string>();
+
+  declareNameref(name: string, target: string): void {
+    this.namerefs.set(name, target);
+  }
+
+  private namerefTarget(name: string): string | undefined {
+    let cursor: Environment | null = this;
+    while (cursor) {
+      const target = cursor.namerefs.get(name);
+      if (target !== undefined) return target;
+      cursor = cursor.parent;
+    }
+    return undefined;
+  }
+
+  resolveName(name: string, depth = 0): string {
+    if (depth >= 16) return name;
+    const target = this.namerefTarget(name);
+    if (target === undefined || target === name) return name;
+    return this.resolveName(target, depth + 1);
+  }
+
   /** Get a variable value, searching up the scope chain. */
   get(name: string): string | undefined {
     // Special variables first
     const special = this.getSpecial(name);
     if (special !== undefined) return special;
 
+    name = this.resolveName(name);
     if (this.vars.has(name)) return this.vars.get(name);
     return this.parent?.get(name);
   }
@@ -92,6 +116,7 @@ export class Environment {
    * Throws when the chosen binding is readonly.
    */
   set(name: string, value: string): void {
+    name = this.resolveName(name);
     const target = this.localNames.has(name) ? this : this.resolveSetTarget(name);
     if (target.readonlyVars.has(name)) {
       throw new Error(`bash: ${name}: readonly variable`);
@@ -116,7 +141,22 @@ export class Environment {
     this.localNames.add(name);
   }
 
+  /** Variable names beginning with `prefix`, across the scope chain, sorted. */
+  namesWithPrefix(prefix: string): string[] {
+    const names = new Set<string>();
+    let cursor: Environment | null = this;
+    while (cursor) {
+      for (const key of cursor.vars.keys()) {
+        if (key.startsWith(prefix) && /^[A-Za-z_][A-Za-z_0-9]*$/.test(key)) names.add(key);
+      }
+      cursor = cursor.parent;
+    }
+    return [...names].sort();
+  }
+
   // ─── trap handlers ────────────────────────────────────────────
+
+  getParent(): Environment | null { return this.parent; }
 
   /** Install (or replace) the handler for `signal`. */
   setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
@@ -349,8 +389,11 @@ export class Environment {
 
   /** Create a child scope (for function calls). */
   createChild(): Environment {
-    // Functions / subshells keep the parent shell's $$ and $PPID.
-    const child = new Environment({ pid: this.pid, ppid: this.ppid });
+    // Functions / subshells keep the parent shell's $$ and $PPID, and see
+    // whatever $? was set to just before the call — a function body's
+    // first statement (e.g. a trap handler checking `$?`) must observe
+    // the caller's exit status, not a reset-to-0 default.
+    const child = new Environment({ pid: this.pid, ppid: this.ppid, initialExitCode: this.lastExitCode });
     child.parent = this;
     // Inherit PID and script name
     child.vars.set('0', this.get('0') ?? '');

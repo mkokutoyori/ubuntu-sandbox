@@ -22,6 +22,8 @@ export interface EventLogEntry {
   eventId: number;
   category: string;
   message: string;
+  /** Structured EventData fields (TargetUserName, SubjectUserName, IpAddress, Status, …) as real Windows Security events carry — surfaced via Get-WinEvent's ToXml(). */
+  data?: Record<string, string>;
 }
 
 export interface EventLogMetadata {
@@ -29,6 +31,8 @@ export interface EventLogMetadata {
   maxSizeKB: number;
   overflow: 'OverwriteOlder' | 'DoNotOverwrite' | 'OverwriteAsNeeded';
   entries: EventLogEntry[];
+  /** `wevtutil sl /e:false` — absent vaut activé. */
+  enabled?: boolean;
 }
 
 // ─── Seed helpers ─────────────────────────────────────────────────────────────
@@ -50,7 +54,7 @@ const RECORD_ID_BASE = 1000;
 function entry(
   next: () => number,
   type: EntryType, source: string, eventId: number, message: string,
-  daysAgo: number, hoursAgo = 0,
+  daysAgo: number, hoursAgo = 0, data?: Record<string, string>,
 ): EventLogEntry {
   return {
     index: next(),
@@ -60,6 +64,7 @@ function entry(
     eventId,
     category: '(0)',
     message,
+    data,
   };
 }
 
@@ -95,9 +100,37 @@ function buildSecurityLog(next: () => number): EventLogEntry[] {
     entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4624, 'An account was successfully logged on.', 1),
     entry(next, 'FailureAudit', 'Microsoft-Windows-Security-Auditing', 4625, 'An account failed to log on.', 1),
     entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4648, 'A logon was attempted using explicit credentials.', 0),
-    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4672, 'Special privileges assigned to new logon.', 0),
+    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4672,
+      'Special privileges assigned to new logon.', 0, 0,
+      { SubjectUserName: 'SYSTEM', SubjectDomainName: 'NT AUTHORITY',
+        PrivilegeList: BOOT_PRIVILEGE_LIST }),
+    // 4673 — un appel de service privilégié. Le noyau en émet au
+    // démarrage (l'ouverture de session du service local en fait un), et
+    // ce n'est pas une entrée de décor : c'est le même mécanisme que les
+    // 4624/4672 déjà présents ici.
+    entry(next, 'SuccessAudit', 'Microsoft-Windows-Security-Auditing', 4673,
+      'A privileged service was called.', 0, 1,
+      { SubjectUserName: 'SYSTEM', SubjectDomainName: 'NT AUTHORITY',
+        Service: 'Security', PrivilegeList: 'SeSecurityPrivilege',
+        ProcessName: 'C:\\Windows\\System32\\lsass.exe' }),
   ];
 }
+
+/**
+ * Les privilèges qu'un jeton d'administrateur reçoit à l'ouverture de
+ * session, et que 4672 énumère. La liste est celle que Windows nomme —
+ * `SeDebugPrivilege` et `SeImpersonatePrivilege` en sont les deux plus
+ * surveillées, parce qu'elles suffisent à prendre la main sur un autre
+ * processus.
+ */
+export const BOOT_PRIVILEGE_LIST = [
+  'SeSecurityPrivilege', 'SeBackupPrivilege', 'SeRestorePrivilege',
+  'SeTakeOwnershipPrivilege', 'SeDebugPrivilege', 'SeSystemEnvironmentPrivilege',
+  'SeLoadDriverPrivilege', 'SeImpersonatePrivilege',
+].join('\n\t\t\t');
+
+/** Assumed average serialized size of one entry, used to derive a fillable entry-count cap from `maxSizeKB` (CrashOnAuditFail, PRD-Auditpol.md §2.1 P10). */
+const AVG_ENTRY_BYTES = 500;
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -108,6 +141,10 @@ const EVTX_DIR = 'C:\\Windows\\System32\\winevt\\Logs';
 export interface EvtxFilesystem {
   mkdirp(absPath: string): void;
   createFile(absPath: string, content: string): { ok: boolean; error?: string };
+  /** Optionnel : `wevtutil epl` refuse d'écraser sans `/ow:true`. */
+  exists?(absPath: string): boolean;
+  /** Optionnel : `wevtutil qe /lf:` relit un fichier exporté. */
+  readFile?(absPath: string): { ok: boolean; content?: string; error?: string };
 }
 
 export class PSEventLogProvider {
@@ -116,6 +153,14 @@ export class PSEventLogProvider {
   attachBus(bus: import('@/events/EventBus').IEventBus, deviceId: string): void {
     this.bus = bus;
     this.deviceId = deviceId;
+  }
+  /** Windows Event Forwarding hook (PRD-Wecutil.md §2.1 P4) — called with
+   *  every freshly-written entry so the owning device can dial any
+   *  collector with a matching active subscription. `ForwardedEvents`
+   *  itself is excluded so a received event is never re-forwarded. */
+  private forwarder: ((logName: string, entry: EventLogEntry) => void) | null = null;
+  attachForwarder(fn: (logName: string, entry: EventLogEntry) => void): void {
+    this.forwarder = fn;
   }
   private logs: Map<string, EventLogMetadata>;
   /** Per-instance RecordId counter (see RECORD_ID_BASE note above). */
@@ -140,6 +185,24 @@ export class PSEventLogProvider {
     });
     this.logs.set('setup', {
       logName: 'Setup', maxSizeKB: 1028, overflow: 'OverwriteAsNeeded',
+      entries: [],
+    });
+    // Le canal où PowerShell dépose ses 4103/4104. Il existe sur tout
+    // Windows moderne, vide tant que la stratégie de journalisation
+    // n'est pas posée — un journal absent et un journal vide ne se
+    // disent pas de la même façon à qui l'interroge.
+    this.logs.set('microsoft-windows-powershell/operational', {
+      logName: 'Microsoft-Windows-PowerShell/Operational',
+      maxSizeKB: 15360, overflow: 'OverwriteAsNeeded',
+      entries: [],
+    });
+    // Le canal où le planificateur consigne l'histoire de chaque tâche —
+    // enregistrée, démarrée, action lancée puis terminée. C'est là qu'on
+    // va voir pourquoi une tâche n'a pas fait ce qu'on croyait ; sans
+    // lui, `Get-WinEvent` répondait que le journal n'existe pas.
+    this.logs.set('microsoft-windows-taskscheduler/operational', {
+      logName: 'Microsoft-Windows-TaskScheduler/Operational',
+      maxSizeKB: 10240, overflow: 'OverwriteAsNeeded',
       entries: [],
     });
     this.logs.set('forwardedevents', {
@@ -193,6 +256,61 @@ export class PSEventLogProvider {
     }));
   }
 
+  /**
+   * L'état d'un journal, tel que `wevtutil gl`/`gli` le rapportent.
+   *
+   * `oldestRecordNumber` et `numberOfLogRecords` sont réels — le plus
+   * petit index présent et le nombre d'entrées. `fileSize` est la taille
+   * du `.evtx` matérialisé : un fichier qui existe déjà, donc une taille
+   * mesurée et non inventée.
+   */
+  getLogStatus(logName: string): {
+    logName: string; enabled: boolean; maxSizeKB: number;
+    overflow: EventLogMetadata['overflow'];
+    numberOfLogRecords: number; oldestRecordNumber: number;
+    fileSize: number; lastWriteTime: Date | null;
+  } | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return null;
+    const indexes = meta.entries.map((e) => e.index);
+    return {
+      logName: meta.logName,
+      enabled: meta.enabled !== false,
+      maxSizeKB: meta.maxSizeKB,
+      overflow: meta.overflow,
+      numberOfLogRecords: meta.entries.length,
+      oldestRecordNumber: indexes.length ? Math.min(...indexes) : 0,
+      fileSize: renderEvtx(meta).length,
+      lastWriteTime: meta.entries.length
+        ? meta.entries[meta.entries.length - 1].timeGenerated
+        : null,
+    };
+  }
+
+  /**
+   * `wevtutil sl` — modifie la configuration d'un journal.
+   *
+   * Un journal désactivé cesse réellement d'accepter des entrées : sans
+   * cela, `/e:false` serait un réglage décoratif, ce que ce dépôt
+   * n'accepte pas.
+   */
+  setLogConfig(logName: string, cfg: {
+    enabled?: boolean; maxSizeKB?: number; retention?: boolean;
+  }): string | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return `Failed to read configuration for log ${logName}. The specified channel could not be found.`;
+    if (cfg.enabled !== undefined) meta.enabled = cfg.enabled;
+    if (cfg.maxSizeKB !== undefined) meta.maxSizeKB = cfg.maxSizeKB;
+    // La rétention a un effet réel : `DoNotOverwrite` est ce que lit
+    // `isLogFull`, donc ce qui décide si un journal saturé refuse
+    // d'écraser. `autoBackup` n'a rien derrière — rien n'archive un
+    // journal plein ici — et n'est donc pas modifiable : voir le refus
+    // de `/ab:` côté commande.
+    if (cfg.retention === true) meta.overflow = 'DoNotOverwrite';
+    else if (cfg.retention === false) meta.overflow = 'OverwriteAsNeeded';
+    return null;
+  }
+
   getEventLog(logName: string, opts: { newest?: number; entryType?: string; source?: string }): string {
     const key = logName.toLowerCase();
     const meta = this.logs.get(key);
@@ -241,6 +359,60 @@ export class PSEventLogProvider {
     this.materialize();
   }
 
+  /**
+   * `wevtutil epl <journal> <fichier>` — écrit une copie du journal à
+   * l'emplacement demandé, dans le même format que les `.evtx` que le
+   * système matérialise déjà sous `winevt\Logs`. C'est bien un export :
+   * le fichier existe ensuite et se relit, il n'est pas seulement
+   * annoncé.
+   *
+   * Rend `null` en cas de succès — `wevtutil` réussi n'écrit rien sur la
+   * sortie — et le refus réel sinon.
+   */
+  exportLog(logName: string, destination: string, overwrite: boolean): string | null {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) {
+      return `Failed to export log ${logName}. The specified channel could not be found.`;
+    }
+    if (!this.fs) {
+      return `Failed to export log ${logName}. The system cannot find the path specified.`;
+    }
+    if (!overwrite && this.fs.exists?.(destination)) {
+      return `Failed to export log ${logName}. The file exists.`;
+    }
+    const parent = destination.replace(/\\[^\\]*$/, '');
+    if (parent && parent !== destination) this.fs.mkdirp(parent);
+    this.fs.createFile(destination, renderEvtx(meta));
+    return null;
+  }
+
+  /**
+   * Relit un fichier produit par `exportLog` — la moitié manquante de
+   * l'aller-retour : exporter puis relire doit dire la même chose.
+   */
+  readExportedLog(path: string): string | null {
+    const r = this.fs?.readFile?.(path);
+    if (!r || !r.ok || r.content === undefined) return null;
+    return r.content;
+  }
+
+  /**
+   * `wevtutil al` — archive un journal exporté.
+   *
+   * Sur un vrai Windows, l'archivage ajoute les ressources de
+   * localisation pour que le fichier reste lisible sur une machine
+   * dépourvue des éditeurs d'origine. Ici les messages sont déjà rendus
+   * dans le fichier : il n'y a rien à ajouter, et l'opération se réduit
+   * à vérifier que le fichier existe. Le déclarer vaut mieux que
+   * simuler un enrichissement qui n'a pas lieu.
+   */
+  archiveExportedLog(path: string): string | null {
+    if (this.readExportedLog(path) === null) {
+      return `Failed to archive log file ${path}. The system cannot find the file specified.`;
+    }
+    return null;
+  }
+
   /** Re-render every event log to its `.evtx` file (no-op when unwired). */
   private materialize(): void {
     if (!this.fs) return;
@@ -249,12 +421,48 @@ export class PSEventLogProvider {
     }
   }
 
-  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string): string {
+  /**
+   * L'horloge de l'hôte. Par défaut celle du poste qui exécute — mais un
+   * `WindowsPC` a la sienne, simulée, et c'est elle que `Get-Date`
+   * consulte. Tant que le journal horodatait avec `new Date()`, les deux
+   * ne parlaient pas du même instant : un `Get-WinEvent -FilterHashtable
+   * @{ StartTime = (Get-Date).AddHours(-24) }` ne retrouvait aucun
+   * événement que la machine venait pourtant d'écrire. Deux commandes du
+   * même système ne peuvent pas être en désaccord sur « maintenant ».
+   */
+  now: () => number = () => Date.now();
+
+  /**
+   * Bascule le journal sur l'horloge de l'hôte, et **décale les entrées
+   * déjà présentes** du même écart.
+   *
+   * Les entrées de démarrage sont construites relativement à l'instant
+   * de construction (« il y a sept jours »…). Poser l'horloge sans les
+   * décaler les laisserait dans un autre référentiel que tout ce qui
+   * s'écrit ensuite ; le même décalage appliqué à toutes conserve
+   * exactement leur espacement.
+   */
+  attachClock(now: () => number): void {
+    const shift = now() - Date.now();
+    this.now = now;
+    if (shift === 0) return;
+    for (const meta of this.logs.values()) {
+      for (const e of meta.entries) {
+        e.timeGenerated = new Date(e.timeGenerated.getTime() + shift);
+      }
+    }
+  }
+
+  writeEventLog(logName: string, source: string, eventId: number, entryType: EntryType, message: string, data?: Record<string, string>): string {
     const key = logName.toLowerCase();
     if (!this.logs.has(key)) return `Write-EventLog : Cannot open log "${logName}". The log does not exist.`;
     const meta = this.logs.get(key)!;
-    const ts = new Date();
-    meta.entries.push({
+    // Un journal désactivé refuse silencieusement, comme sur un vrai
+    // Windows : l'écriture n'échoue pas bruyamment, elle n'a simplement
+    // pas lieu. C'est ce qui rend `sl /e:false` observable.
+    if (meta.enabled === false) return '';
+    const ts = new Date(this.now());
+    const entry: EventLogEntry = {
       index: this.nextIndex(),
       timeGenerated: ts,
       entryType,
@@ -262,8 +470,11 @@ export class PSEventLogProvider {
       eventId,
       category: '(0)',
       message,
-    });
+      data,
+    };
+    meta.entries.push(entry);
     this.materialize();
+    if (this.forwarder && key !== 'forwardedevents') this.forwarder(meta.logName, entry);
     if (this.bus && this.deviceId) {
       const sevMap: Record<EntryType, { name: 'informational' | 'warnings' | 'errors' | 'critical' | 'notifications'; num: number }> = {
         Information: { name: 'informational', num: 6 },
@@ -309,11 +520,27 @@ export class PSEventLogProvider {
     return '';
   }
 
-  limitEventLog(logName: string): string {
-    // Silently accept — size limits are not enforced in simulation.
+  limitEventLog(logName: string, opts: { maximumSizeKB?: number; overflowAction?: EventLogMetadata['overflow'] } = {}): string {
     const key = logName.toLowerCase();
-    if (!this.logs.has(key)) return `Limit-EventLog : No log with name "${logName}" was found.`;
+    const meta = this.logs.get(key);
+    if (!meta) return `Limit-EventLog : No log with name "${logName}" was found.`;
+    if (opts.maximumSizeKB !== undefined) meta.maxSizeKB = opts.maximumSizeKB;
+    if (opts.overflowAction !== undefined) meta.overflow = opts.overflowAction;
     return '';
+  }
+
+  /**
+   * True when `logName` has reached its (derived) entry-count cap AND its
+   * retention policy forbids overwriting — the two preconditions real
+   * Windows checks before halting on `CrashOnAuditFail`
+   * (PRD-Auditpol.md §2.1 P10).
+   */
+  isFullAndProtected(logName: string): boolean {
+    const meta = this.logs.get(logName.toLowerCase());
+    if (!meta) return false;
+    if (meta.overflow !== 'DoNotOverwrite') return false;
+    const maxEntries = Math.max(1, Math.floor((meta.maxSizeKB * 1024) / AVG_ENTRY_BYTES));
+    return meta.entries.length >= maxEntries;
   }
 
   // ─── Get-WinEvent ─────────────────────────────────────────────────

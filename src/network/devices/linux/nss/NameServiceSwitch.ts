@@ -32,6 +32,8 @@ import {
 import type {
   NssDatabaseConfig, NssEnumResult, NssResult, NssSourceSpec, NssStatus,
 } from './types';
+import { NssCache } from './NssCache';
+import { startNssWalk, type NssWalk } from './chainWalk';
 
 /**
  * Cache-invalidation signal — every IAM / host event that could change
@@ -42,11 +44,33 @@ import type {
  */
 export type CacheInvalidationListener = (database: string) => void;
 
+/**
+ * Files a database can be produced from. A cached answer stamps the
+ * mtime of each of these, so an edit invalidates it by construction —
+ * no TTL, no staleness window.
+ */
+const BACKING_FILES: Record<string, string[]> = {
+  passwd: ['/etc/passwd'],
+  group: ['/etc/group'],
+  shadow: ['/etc/shadow'],
+  gshadow: ['/etc/gshadow'],
+  hosts: ['/etc/hosts'],
+  services: ['/etc/services'],
+  protocols: ['/etc/protocols'],
+  networks: ['/etc/networks'],
+  ethers: ['/etc/ethers'],
+  rpc: ['/etc/rpc'],
+  netgroup: ['/etc/netgroup'],
+  aliases: ['/etc/aliases'],
+};
+
 export class NameServiceSwitch {
   /** Cache-invalidation listeners (downstream caches subscribe). */
   private readonly invalidationListeners = new Set<CacheInvalidationListener>();
   /** Disposable event-bus subscriptions, cleared on dispose(). */
   private readonly busSubscriptions: Unsubscribe[] = [];
+  /** The layered cache the invalidation signal finally feeds. */
+  private readonly cache = new NssCache();
 
   /**
    * @param vfs       VFS owning `/etc/nsswitch.conf`.
@@ -64,6 +88,39 @@ export class NameServiceSwitch {
     private readonly deviceId: string | null = null,
   ) {
     if (this.bus) this.wireBusInvalidation(this.bus);
+    // The signal finally has a consumer: every wired IAM/host event now
+    // drops that database's cached answers instead of reaching nobody.
+    this.onCacheInvalidated((db) => this.cache.invalidate(db));
+  }
+
+  /** The layered cache, for observability and tests. */
+  getCache(): NssCache { return this.cache; }
+
+  /**
+   * Composite cache key. Embeds the mtime of `/etc/nsswitch.conf` and of
+   * every file the database can come from, so any edit yields a
+   * different key — a cached answer can never be served stale.
+   * Returns null when the answer is not safely cacheable.
+   */
+  private cacheKeyFor(database: string, specs: NssSourceSpec[], key: string): string | null {
+    const files = BACKING_FILES[database];
+    if (!files) return null;
+
+    const sourceStamps: string[] = [];
+    for (const spec of specs) {
+      if (spec.name === 'files') { sourceStamps.push('files'); continue; }
+      // Any other source must be able to stamp its own state, or the
+      // answer is not safely cacheable (`dns`, for one, never is).
+      const src = this.sources.get(spec.name) as { getRevision?: () => number } | undefined;
+      const rev = src?.getRevision?.();
+      if (rev === undefined) return null;
+      sourceStamps.push(`${spec.name}@${rev}`);
+    }
+
+    const fileStamps = ['/etc/nsswitch.conf', ...files]
+      .map((p) => `${p}@${this.vfs.resolveInode(p)?.mtime ?? 0}`)
+      .join(',');
+    return `${database}|${sourceStamps.join('+')}|${fileStamps}|${key}`;
   }
 
   // ─── Public API ─────────────────────────────────────────────────────
@@ -102,50 +159,99 @@ export class NameServiceSwitch {
   lookup<T>(
     database: string,
     invoke: (source: INssSource) => NssResult<T> | undefined,
+    cacheKey?: string,
   ): NssResult<T> {
     const config = this.parsedConfig();
     const specs = sourcesFor(config, database);
-    /**
-     * Track the strongest negative answer we have observed. NOTFOUND
-     * from a *registered* source beats UNAVAIL from a missing one
-     * (glibc semantics: getent returns exit 2 "Key not found" as long
-     * as at least one source said NOTFOUND, even if the next source
-     * is unavailable).
-     */
-    let sawNotFound = false;
-    let sawUnavail = false;
+
+    const ck = cacheKey === undefined ? null : this.cacheKeyFor(database, specs, `k:${cacheKey}`);
+    if (ck) {
+      const hit = this.cache.get<NssResult<T>>(ck);
+      if (hit) return hit.value;
+    }
+    const result = this.lookupUncached(database, specs, invoke);
+    if (ck) this.cache.set(database, ck, result);
+    return result;
+  }
+
+  /**
+   * La marche `[STATUS=action]` de glibc. La règle elle-même vit dans
+   * `chainWalk.ts` : le modèle de comptes (`LinuxUserManager`) la suit
+   * aussi, et deux copies seraient deux occasions de diverger — une
+   * machine où `getent passwd alice` et `id alice` ne répondent pas
+   * pareil est pire qu'une machine où les deux se trompent.
+   */
+  private startWalk<T>(): NssWalk<T> {
+    return startNssWalk<T>();
+  }
+
+  private lookupUncached<T>(
+    database: string,
+    specs: NssSourceSpec[],
+    invoke: (source: INssSource) => NssResult<T> | undefined,
+  ): NssResult<T> {
+    void database;
+    const walk = this.startWalk<T>();
 
     for (const spec of specs) {
       const src = this.sources.get(spec.name);
-      if (!src) {
-        sawUnavail = true;
-        const action = effectiveAction(spec, 'UNAVAIL');
-        if (action === 'return') return { status: 'UNAVAIL' };
-        continue;
-      }
-
-      const r = invoke(src);
-      if (!r) {
-        sawUnavail = true;
-        const action = effectiveAction(spec, 'UNAVAIL');
-        if (action === 'return') return { status: 'UNAVAIL' };
-        continue;
-      }
-
-      if (r.status === 'NOTFOUND') sawNotFound = true;
-      if (r.status === 'UNAVAIL')  sawUnavail = true;
-
-      const action = effectiveAction(spec, r.status);
-      if (r.status === 'SUCCESS' && action === 'return') return r;
-      if (action === 'return') return r;
-      // 'continue' / 'merge' → try next source. (We treat 'merge' as
-      // continue for single-key lookups — it only meaningfully differs
-      // for enumeration of hosts; see enumerate() below.)
+      const r: NssResult<T> = src ? (invoke(src) ?? { status: 'UNAVAIL' }) : { status: 'UNAVAIL' };
+      const stop = walk.step(spec, r);
+      if (stop) return stop;
     }
+    return walk.finish();
+  }
 
-    if (sawNotFound) return { status: 'NOTFOUND' };
-    if (sawUnavail)  return { status: 'UNAVAIL' };
-    return { status: 'NOTFOUND' };
+  /**
+   * Variante asynchrone de {@link lookup}, pour la base `hosts`. Une
+   * source sans jumeau asynchrone est interrogée par sa méthode
+   * synchrone : `files` lit le VFS et n'a rien à attendre.
+   *
+   * Rien n'est mis en cache ici — `cacheKeyFor` refuse déjà toute
+   * déclaration contenant `dns`, faute de révision pour l'estampiller.
+   */
+  async lookupAsync<T>(
+    database: string,
+    invoke: (source: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+  ): Promise<NssResult<T>> {
+    const specs = sourcesFor(this.parsedConfig(), database);
+    const walk = this.startWalk<T>();
+
+    for (const spec of specs) {
+      const src = this.sources.get(spec.name);
+      const r: NssResult<T> = src ? (await invoke(src) ?? { status: 'UNAVAIL' }) : { status: 'UNAVAIL' };
+      const stop = walk.step(spec, r);
+      if (stop) return stop;
+    }
+    return walk.finish();
+  }
+
+  /** Contrepartie asynchrone de {@link lookupVia} (`getent -s <source>`). */
+  async lookupViaAsync<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+  ): Promise<NssResult<T>> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL' };
+    return await invoke(src) ?? { status: 'UNAVAIL' };
+  }
+
+  lookupVia<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssResult<T> | undefined,
+  ): NssResult<T> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL' };
+    return invoke(src) ?? { status: 'UNAVAIL' };
+  }
+
+  enumerateVia<T>(
+    sourceName: string,
+    invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+  ): NssEnumResult<T> {
+    const src = this.sources.get(sourceName);
+    if (!src) return { status: 'UNAVAIL', entries: [] };
+    return invoke(src) ?? { status: 'UNAVAIL', entries: [] };
   }
 
   /**
@@ -156,9 +262,25 @@ export class NameServiceSwitch {
   enumerate<T>(
     database: string,
     invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+    cacheKey?: string,
   ): NssEnumResult<T> {
     const config = this.parsedConfig();
     const specs = sourcesFor(config, database);
+
+    const ck = cacheKey === undefined ? null : this.cacheKeyFor(database, specs, `e:${cacheKey}`);
+    if (ck) {
+      const hit = this.cache.get<NssEnumResult<T>>(ck);
+      if (hit) return hit.value;
+    }
+    const result = this.enumerateUncached(specs, invoke);
+    if (ck) this.cache.set(database, ck, result);
+    return result;
+  }
+
+  private enumerateUncached<T>(
+    specs: NssSourceSpec[],
+    invoke: (source: INssSource) => NssEnumResult<T> | undefined,
+  ): NssEnumResult<T> {
     const aggregate: T[] = [];
     let lastStatus: NssStatus = 'NOTFOUND';
 

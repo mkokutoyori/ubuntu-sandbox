@@ -2,7 +2,7 @@
  * PacketAnimation - Visual representation of packets traveling on network cables
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { NetworkDeviceUI, Connection } from '@/store/networkStore';
 
 export type PacketKind = 'arp' | 'icmp' | 'broadcast' | 'data';
@@ -39,7 +39,7 @@ const PACKET_GLOWS = {
   data: 'rgba(59, 130, 246, 0.6)'
 };
 
-export function PacketAnimation({ packet, connection, devices }: PacketAnimationProps) {
+function PacketAnimationImpl({ packet, connection, devices }: PacketAnimationProps) {
   const { sourceDevice, targetDevice, position } = useMemo(() => {
     const source = devices.find(d => d.id === connection.sourceDeviceId);
     const target = devices.find(d => d.id === connection.targetDeviceId);
@@ -140,6 +140,12 @@ export function PacketAnimation({ packet, connection, devices }: PacketAnimation
     </g>
   );
 }
+
+// A moving packet's own `progress` prop changes every rAF frame by
+// design, so memoizing this doesn't skip its own animation — it just
+// avoids recomputing when NetworkCanvas re-renders for an unrelated
+// reason (rapport 09 audit) and this particular packet's props didn't.
+export const PacketAnimation = memo(PacketAnimationImpl);
 
 interface PacketLegendProps {
   className?: string;

@@ -8,8 +8,8 @@
  * Reference: DESIGN-SSH-SFTP.md section 9.3 ; BRD-SSH-SFTP.md SFTP-01.
  */
 
-import type { TcpConnector } from '@/network/core/TcpConnection';
-import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
+import type { TcpConnector } from '@/network/tcp/types';
+import type { ISshLocalFs } from '../ISshLocalFs';
 import type {
   ISshSftpChannel,
   SftpResponse,
@@ -36,7 +36,7 @@ export interface SftpConnectOptions {
 
 export interface SftpSessionDeps {
   readonly tcpConnector: TcpConnector;
-  readonly localVfs: VirtualFileSystem;
+  readonly localVfs: ISshLocalFs;
   readonly localUser: string;
   readonly localUid: number;
   readonly localGid: number;
@@ -491,7 +491,9 @@ function formatConnectError(
 ): string {
   switch (error.kind) {
     case 'CONNECTION_REFUSED':
-      return `ssh: connect to host ${host} port 22: No route to host`;
+      return `ssh: connect to host ${host} port 22: Connection refused`;
+    case 'CONNECTION_TIMEOUT':
+      return `ssh: connect to host ${host} port 22: Connection timed out`;
     case 'HOST_KEY_REJECTED':
       return `Host key verification failed.`;
     case 'HOST_KEY_CHANGED':

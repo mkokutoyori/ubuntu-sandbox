@@ -17,7 +17,7 @@
 import { OSProcess } from '../../os/OSProcess';
 import type { ProcessSession, WindowsProcess as WindowsProcessRecord } from '../WindowsProcessManager';
 
-export class WindowsProcess extends OSProcess implements WindowsProcessRecord {
+export class WindowsProcess extends OSProcess {
   // ─── Windows-flavoured Task Manager surface ─────────────────────────
   name: string;
   session: ProcessSession;
@@ -28,6 +28,8 @@ export class WindowsProcess extends OSProcess implements WindowsProcessRecord {
   pmK: number;
   wsK: number;
   cpuSec: number;
+  threads: number;
+  cpuPercent: number;
   status: 'Running' | 'Not Responding';
   windowTitle: string;
   critical: boolean;
@@ -72,6 +74,8 @@ export class WindowsProcess extends OSProcess implements WindowsProcessRecord {
     this.pmK = init.pmK;
     this.wsK = init.wsK;
     this.cpuSec = init.cpuSec;
+    this.threads = init.threads;
+    this.cpuPercent = init.cpuPercent;
     this.status = init.status;
     this.windowTitle = init.windowTitle;
     this.critical = init.critical;
@@ -80,10 +84,6 @@ export class WindowsProcess extends OSProcess implements WindowsProcessRecord {
     this.threadCount = this.numThreads;
     if (init.critical || init.systemOwned) this.integrityLevel = 'System';
   }
-
-  /** ProcessInfo declares `sessionId: number` — alias to the renamed field. */
-  get sessionId(): string { return String(this.sessionIdNum); }
-  set sessionId(v: string | number) { this.sessionIdNum = Number(v); }
 
   // ─── queries ───────────────────────────────────────────────────────
 
@@ -108,15 +108,19 @@ export class WindowsProcess extends OSProcess implements WindowsProcessRecord {
   /**
    * Plain-object snapshot — keeps the original WindowsProcessRecord
    * shape for telemetry consumers / sc.exe rendering / test deep-equals.
+   * Declared as `Record<string, unknown>` (matching OSProcess.snapshot's
+   * signature) since WindowsProcessRecord has no index signature.
    */
-  snapshot(): WindowsProcessRecord {
-    return {
+  override snapshot(): Record<string, unknown> {
+    const record: WindowsProcessRecord = {
       pid: this.pid, name: this.name, ppid: this.ppid,
       session: this.session, sessionId: this.sessionIdNum, owner: this.owner,
       handles: this.handles, npmK: this.npmK, pmK: this.pmK, wsK: this.wsK,
-      cpuSec: this.cpuSec, status: this.status, windowTitle: this.windowTitle,
+      cpuSec: this.cpuSec, threads: this.threads, cpuPercent: this.cpuPercent,
+      status: this.status, windowTitle: this.windowTitle,
       critical: this.critical, systemOwned: this.systemOwned,
       hostedServices: [...this.hostedServices],
     };
+    return record as unknown as Record<string, unknown>;
   }
 }

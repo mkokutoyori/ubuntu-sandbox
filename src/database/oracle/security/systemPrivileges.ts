@@ -42,10 +42,30 @@ export const ORACLE_SYSTEM_PRIVILEGES: ReadonlySet<string> = new Set([
   'ANALYZE ANY', 'BACKUP ANY TABLE', 'EXPORT FULL DATABASE',
   'IMPORT FULL DATABASE', 'ADMINISTER DATABASE TRIGGER',
   'ADMINISTER KEY MANAGEMENT', 'COMMENT ANY TABLE',
+  'EXEMPT ACCESS POLICY', 'EXEMPT REDACTION POLICY',
   'SYSDBA', 'SYSOPER', 'SYSBACKUP', 'SYSDG', 'SYSKM',
+]);
+
+/**
+ * Administrative ("SYS*") privileges. Unlike ordinary system privileges
+ * these are NOT recorded in SYS.SYSAUTH$ / DBA_SYS_PRIVS — they live in
+ * the external password file ($ORACLE_HOME/dbs/orapw<SID>) and surface
+ * through V$PWFILE_USERS. They are also what `AS SYSDBA` / `AS SYSOPER`
+ * authenticate against on a remote (Oracle Net) connection, and they are
+ * excluded from the `GRANT ALL PRIVILEGES` expansion. Keeping them in
+ * the canonical name set above lets `GRANT SYSDBA TO …` still parse and
+ * be recognised as a privilege.
+ */
+export const ADMINISTRATIVE_PRIVILEGES: ReadonlySet<string> = new Set([
+  'SYSDBA', 'SYSOPER', 'SYSASM', 'SYSBACKUP', 'SYSDG', 'SYSKM',
 ]);
 
 /** Case-insensitive membership test for a system privilege name. */
 export function isSystemPrivilege(name: string): boolean {
   return ORACLE_SYSTEM_PRIVILEGES.has(name.trim().toUpperCase());
+}
+
+/** True for SYSDBA/SYSOPER/SYSASM/SYSBACKUP/SYSDG/SYSKM (password-file privileges). */
+export function isAdministrativePrivilege(name: string): boolean {
+  return ADMINISTRATIVE_PRIVILEGES.has(name.trim().toUpperCase());
 }

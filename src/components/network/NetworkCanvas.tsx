@@ -2,7 +2,7 @@
  * NetworkCanvas - Main canvas for network topology design
  */
 
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { NetworkDevice } from './NetworkDevice';
@@ -36,55 +36,142 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     clearAll,
     isConnecting,
     cancelConnecting,
-    connectionSource
+    connectionSource,
+    selectedDeviceId,
+    selectedConnectionId,
   } = useNetworkStore();
 
   const devices = getDevices();
 
   const activePackets = useActivePackets();
 
+  // Screen-reader status line: the canvas had no non-visual feedback for
+  // add/remove/select/connect — a keyboard/AT user got no confirmation an
+  // action actually happened (rapport 09 audit). Diffing against the
+  // previous render's counts/selection keeps this to real state changes,
+  // not a message on every re-render.
+  const [announcement, setAnnouncement] = useState('');
+  const prevDeviceCount = useRef(devices.length);
+  const prevConnectionCount = useRef(connections.length);
+  const prevSelectedDeviceId = useRef(selectedDeviceId);
+  const prevSelectedConnectionId = useRef(selectedConnectionId);
+
+  useEffect(() => {
+    if (devices.length > prevDeviceCount.current) {
+      const added = devices[devices.length - 1];
+      setAnnouncement(added ? `${added.name} added to canvas` : 'Device added to canvas');
+    } else if (devices.length < prevDeviceCount.current) {
+      setAnnouncement('Device removed from canvas');
+    } else if (connections.length > prevConnectionCount.current) {
+      setAnnouncement('Devices connected');
+    } else if (connections.length < prevConnectionCount.current) {
+      setAnnouncement('Connection removed');
+    } else if (selectedDeviceId && selectedDeviceId !== prevSelectedDeviceId.current) {
+      const selected = devices.find(d => d.id === selectedDeviceId);
+      if (selected) setAnnouncement(`${selected.name} selected`);
+    } else if (selectedConnectionId && selectedConnectionId !== prevSelectedConnectionId.current) {
+      setAnnouncement('Connection selected');
+    }
+    prevDeviceCount.current = devices.length;
+    prevConnectionCount.current = connections.length;
+    prevSelectedDeviceId.current = selectedDeviceId;
+    prevSelectedConnectionId.current = selectedConnectionId;
+  }, [devices, connections.length, selectedDeviceId, selectedConnectionId]);
+
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  // Tracks the in-progress pan gesture so a plain click on the empty
+  // background (no drag past the threshold) still clears the selection,
+  // while a drag pans the map. Distance in px before a press becomes a pan.
+  const panGestureRef = useRef<{ startX: number; startY: number; moved: boolean; fromBackground: boolean } | null>(null);
+  const PAN_CLICK_THRESHOLD = 4;
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = -e.deltaY * 0.001;
-      setZoom(zoom + delta);
-    }
-  }, [zoom, setZoom]);
+  // Once a source interface is picked the popover (and its Escape handler)
+  // is gone, so without this the only ways out of connect mode were clicking
+  // empty canvas or the banner's X button.
+  useEffect(() => {
+    if (!isConnecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelConnecting();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isConnecting, cancelConnecting]);
+
+  // React registers `onWheel` as a passive listener, so preventDefault()
+  // there is silently ignored and ctrl+wheel zoomed the whole browser page
+  // on top of the canvas. Bind manually with { passive: false }.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.001;
+        setZoom(useNetworkStore.getState().zoom + delta);
+      }
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [setZoom]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    const middleOrAlt = e.button === 1 || (e.button === 0 && e.altKey);
+    const leftOnBackground = e.button === 0 && !e.altKey && e.target === e.currentTarget;
+    if (middleOrAlt || leftOnBackground) {
       setIsPanning(true);
       setStartPan({ x: e.clientX - panX, y: e.clientY - panY });
-    } else if (e.button === 0 && e.target === e.currentTarget) {
-      clearSelection();
-      if (isConnecting) {
-        cancelConnecting();
-      }
+      panGestureRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+        // Only a plain left-press on the empty background can resolve to a
+        // "click" (clear selection). Middle/Alt drags are pans, never clicks.
+        fromBackground: leftOnBackground && !middleOrAlt,
+      };
     }
-  }, [panX, panY, clearSelection, isConnecting, cancelConnecting]);
+  }, [panX, panY]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const rect = canvas.getBoundingClientRect();
-    setMousePos({
-      x: (e.clientX - rect.left) / zoom,
-      y: (e.clientY - rect.top) / zoom
-    });
+    // mousePos only feeds the elastic connection-drawing line below —
+    // updating it on every idle mouse movement re-rendered the whole
+    // canvas subtree for no visible effect (rapport 09 audit).
+    if (isConnecting) {
+      const rect = canvas.getBoundingClientRect();
+      setMousePos({
+        x: (e.clientX - rect.left) / zoom,
+        y: (e.clientY - rect.top) / zoom
+      });
+    }
 
-    if (isPanning) {
+    if (!isPanning) return;
+    const gesture = panGestureRef.current;
+    if (gesture && !gesture.moved) {
+      const dist = Math.abs(e.clientX - gesture.startX) + Math.abs(e.clientY - gesture.startY);
+      if (dist > PAN_CLICK_THRESHOLD) gesture.moved = true;
+    }
+    // Hold a sub-threshold background press perfectly still so a click
+    // stays a click; middle/Alt pans (fromBackground=false) move at once.
+    if (!gesture || gesture.moved || !gesture.fromBackground) {
       setPan(e.clientX - startPan.x, e.clientY - startPan.y);
     }
-  }, [isPanning, startPan, zoom, setPan]);
+  }, [isConnecting, isPanning, startPan, zoom, setPan]);
 
   const handleMouseUp = useCallback(() => {
+    const gesture = panGestureRef.current;
+    panGestureRef.current = null;
     setIsPanning(false);
-  }, []);
+    // A plain click on the empty background (no drag) clears the selection
+    // and cancels an in-progress connection — the drag path pans instead.
+    if (gesture?.fromBackground && !gesture.moved) {
+      clearSelection();
+      if (isConnecting) cancelConnecting();
+    }
+  }, [clearSelection, isConnecting, cancelConnecting]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -131,7 +218,16 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     : null;
 
   return (
-    <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div
+      role="application"
+      aria-label="Network topology canvas"
+      className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"
+    >
+      {/* Screen-reader-only status announcements for add/remove/select/connect. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
+
       {/* Grid background */}
       <div
         className="absolute inset-0 opacity-20"
@@ -171,11 +267,10 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         id="network-canvas"
         ref={canvasRef}
         className={cn(
-          "absolute inset-0 cursor-default",
+          "absolute inset-0 cursor-grab",
           isPanning && "cursor-grabbing",
           isConnecting && "cursor-crosshair"
         )}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -256,6 +351,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom - 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom <= 0.25}
+          aria-label="Zoom out"
         >
           <ZoomOut className="w-4 h-4 text-white/70" />
         </button>
@@ -266,6 +362,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom + 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom >= 2}
+          aria-label="Zoom in"
         >
           <ZoomIn className="w-4 h-4 text-white/70" />
         </button>
@@ -273,6 +370,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         <button
           onClick={() => { setZoom(1); setPan(0, 0); }}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
+          aria-label="Reset zoom and pan"
         >
           <Maximize2 className="w-4 h-4 text-white/70" />
         </button>

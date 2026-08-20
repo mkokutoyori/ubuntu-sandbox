@@ -73,6 +73,10 @@ export function uptimeHeader(users = 1, uptimeSeconds = 0): string {
  */
 export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
   const seconds = lifecycle.uptimeSeconds();
+  const valid = new Set(['-p', '--pretty', '-s', '--since', '-h', '--help', '-V', '--version']);
+  for (const a of args) {
+    if (a.startsWith('-') && !valid.has(a)) return `uptime: unrecognized option '${a}'`;
+  }
   if (args.includes('-p') || args.includes('--pretty')) {
     return prettyUptime(Math.floor(seconds / 60));
   }
@@ -90,11 +94,27 @@ export function cmdUptime(args: string[], lifecycle: HostLifecycle): string {
  * and `/proc/sys/kernel/*`.
  */
 export function cmdUname(args: string[], hostname: string, kernel: KernelInfo): string {
+  const validShort = new Set(['a', 's', 'n', 'r', 'v', 'm', 'p', 'i', 'o']);
+  for (const a of args) {
+    if (a === '-' || !a.startsWith('-')) continue;
+    if (a.startsWith('--')) {
+      const long = a.slice(2);
+      if (!['all', 'kernel-name', 'nodename', 'kernel-release', 'kernel-version', 'machine', 'processor', 'hardware-platform', 'operating-system', 'help', 'version'].includes(long)) {
+        return `uname: unrecognized option '${a}'`;
+      }
+      continue;
+    }
+    for (const ch of a.slice(1)) {
+      if (!validShort.has(ch)) return `uname: invalid option -- '${ch}'`;
+    }
+  }
   const flags = args.filter(a => a.startsWith('-')).join('').replace(/-/g, '');
   const all = flags.includes('a');
   const want = (f: string): boolean => all || flags.includes(f);
 
-  if (args.length === 0 || (flags === '' && args.length > 0)) {
+  const positional = args.filter(a => !a.startsWith('-'));
+  if (positional.length > 0) return `uname: extra operand '${positional[0]}'`;
+  if (args.length === 0 || flags === '') {
     return kernel.sysname;
   }
 
@@ -229,6 +249,18 @@ function parseDateSpec(spec: string): Date | null {
   if (s.startsWith('@')) {
     const seconds = parseInt(s.slice(1), 10);
     return isNaN(seconds) ? null : new Date(seconds * 1000);
+  }
+  // GNU date relative specs: "5 minutes ago", "-5 minutes", "1 day ago",
+  // "-1 day" — the two forms are equivalent, both accepted by real `date -d`.
+  const relative = /^(-)?\s*(\d+)\s*(second|minute|hour|day|week)s?(\s+ago)?$/i.exec(s);
+  if (relative) {
+    const isPast = relative[1] === '-' || !!relative[4];
+    const amount = parseInt(relative[2], 10);
+    const unitMs: Record<string, number> = {
+      second: 1000, minute: 60_000, hour: 3_600_000, day: 86_400_000, week: 604_800_000,
+    };
+    const ms = amount * unitMs[relative[3].toLowerCase()];
+    return new Date(Date.now() + (isPast ? -ms : ms));
   }
   const t = Date.parse(s);
   return isNaN(t) ? null : new Date(t);

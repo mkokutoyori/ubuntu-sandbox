@@ -30,11 +30,54 @@ export interface WindowsServiceEventPayload extends WindowsDeviceRef {
   running: boolean;
 }
 
+/** A service's hosting process died out from under it (not a graceful stop). */
+export interface WindowsServiceCrashedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  /** How many times this service has crashed within the current reset window. */
+  failureCount: number;
+}
+
+/** `sc config <name> obj= "<account>"` changed a service's logon account. */
+export interface WindowsServiceAccountChangedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  previousAccount: string;
+  newAccount: string;
+  /** The username that made the change (for 4657 audit attribution). */
+  changedBy: string;
+}
+
+/** A `run` recovery action (`sc failure ... actions= run/...`) has fired. */
+export interface WindowsServiceRecoveryRunPayload extends WindowsDeviceRef {
+  serviceName: string;
+  command: string;
+  /** Failure rank (1 = first failure) that selected this action. */
+  rank: number;
+}
+
+/** A `reboot` recovery action fired — suppressed in the simulator, logged instead. */
+export interface WindowsServiceRecoveryCriticalPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  rank: number;
+}
+
+/** A new service was installed (`New-Service` / `sc create`). */
+export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  binaryPath: string;
+  account: string;
+  /** The username that ran the install (for 4697 audit attribution). */
+  installedBy: string;
+}
+
 // ─── Account lifecycle ──────────────────────────────────────────────────
 
 /** The kind of change applied to a local account. */
 export type WindowsAccountChange =
-  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified';
+  | 'created' | 'deleted' | 'password-reset' | 'enabled' | 'disabled' | 'modified' | 'locked-out';
 
 export interface WindowsAccountChangedPayload extends WindowsDeviceRef {
   account: string;
@@ -52,6 +95,23 @@ export interface WindowsLogonEventPayload extends WindowsDeviceRef {
 export interface WindowsLogoffEventPayload extends WindowsDeviceRef {
   account: string;
   /** Windows logon type of the session that ended (mirrors the 4624 it pairs with). */
+  logonType: number;
+}
+
+/** `lockWorkstation()`/`unlockWorkstation()` (PRD-Winlogon.md §2.1 P2/P3) — a workstation lock and a password-protected screensaver share this same shape, distinguished only by `origin`. */
+export interface WindowsWorkstationLockEventPayload extends WindowsDeviceRef {
+  account: string;
+  origin: 'user' | 'screensaver';
+}
+
+/**
+ * A Terminal Services (RDP) session disconnected without an explicit
+ * logoff, or reconnected to an existing disconnected session
+ * (PRD-Winlogon.md §2.1 P4) — 4779/4778, distinct from 4634 (logoff)
+ * because the underlying logon session stays open.
+ */
+export interface WindowsSessionLinkEventPayload extends WindowsDeviceRef {
+  account: string;
   logonType: number;
 }
 
@@ -74,6 +134,27 @@ export interface WindowsProcessEventPayload extends WindowsDeviceRef {
   name: string;
   /** True for a spawn, false for a termination. */
   started: boolean;
+  /** PID du parent — le `ProcessId` de 4688, distinct de `NewProcessId`. */
+  ppid?: number;
+  /** Nom du parent, quand il tourne encore (`ParentProcessName`). */
+  parentName?: string;
+  /** Compte sous lequel le processus s'exécute (`SubjectUserName`). */
+  owner?: string;
+  /**
+   * Ligne de commande complète. Windows ne la journalise dans 4688 que
+   * si `ProcessCreationIncludeCmdLine_Enabled` vaut 1 — c'est
+   * précisément ce réglage qui rend une obfuscation `-EncodedCommand`
+   * visible, et sans lui le champ n'existe pas.
+   */
+  commandLine?: string;
+  /** Real UAC elevation context, when the spawner knows it (PRD-Winlogon.md §2.1 P5) — see `WindowsProcess.elevation`. */
+  elevation?: 'full' | 'default' | 'limited';
+}
+
+/** `runas` — an explicit-credentials logon (PRD-Winlogon.md §2.1 P5, 4648): `subject` is the *caller's* account, `target` the account impersonated. */
+export interface WindowsExplicitCredentialsEventPayload extends WindowsDeviceRef {
+  subject: string;
+  target: string;
 }
 
 // ─── Port-proxy lifecycle (netsh interface portproxy) ───────────────────
@@ -96,9 +177,20 @@ export interface WindowsPortProxyEventPayload extends WindowsDeviceRef {
 export type WindowsDomainEvent =
   | { topic: 'windows.service.started'; payload: WindowsServiceEventPayload }
   | { topic: 'windows.service.stopped'; payload: WindowsServiceEventPayload }
+  | { topic: 'windows.service.crashed'; payload: WindowsServiceCrashedPayload }
+  | { topic: 'windows.service.created'; payload: WindowsServiceCreatedPayload }
+  | { topic: 'windows.service.account-changed'; payload: WindowsServiceAccountChangedPayload }
+  | { topic: 'windows.filesystem.acl-changed'; payload: WindowsFileAclChangedPayload }
+  | { topic: 'windows.service.recovery-run'; payload: WindowsServiceRecoveryRunPayload }
+  | { topic: 'windows.service.recovery-critical'; payload: WindowsServiceRecoveryCriticalPayload }
   | { topic: 'windows.account.changed'; payload: WindowsAccountChangedPayload }
   | { topic: 'windows.account.logon'; payload: WindowsLogonEventPayload }
   | { topic: 'windows.account.logoff'; payload: WindowsLogoffEventPayload }
+  | { topic: 'windows.workstation.locked'; payload: WindowsWorkstationLockEventPayload }
+  | { topic: 'windows.workstation.unlocked'; payload: WindowsWorkstationLockEventPayload }
+  | { topic: 'windows.session.disconnected'; payload: WindowsSessionLinkEventPayload }
+  | { topic: 'windows.session.reconnected'; payload: WindowsSessionLinkEventPayload }
+  | { topic: 'windows.account.explicit-credentials'; payload: WindowsExplicitCredentialsEventPayload }
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }
@@ -107,6 +199,15 @@ export type WindowsDomainEvent =
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload };
+
+/** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */
+export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
+  path: string;
+  identity: string;
+  permissions: string;
+  /** The username that made the change (for 4670 audit attribution). */
+  changedBy: string;
+}
 
 export interface WindowsFirewallDropPayload {
   deviceId: string;

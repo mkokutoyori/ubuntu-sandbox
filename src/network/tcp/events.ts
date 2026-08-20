@@ -50,6 +50,14 @@ export interface TcpConnectionClosedPayload extends TcpDeviceRef {
   remoteIp: string;
   remotePort: number;
   reason: TcpCloseReason;
+  /**
+   * True when this device ACCEPTED the connection, false when it dialled
+   * out — the same flag `TcpConnectionOpenedPayload` already carries.
+   * Without it a subscriber cannot tell the two apart, which is how a
+   * router came to log its own refused outbound telnet as
+   * `Connection from 10.0.0.1:23 closed (rst)`.
+   */
+  passive: boolean;
 }
 
 export interface TcpListenerChangedPayload extends TcpDeviceRef {
@@ -63,7 +71,18 @@ export interface TcpSegmentDroppedPayload extends TcpDeviceRef {
   destinationIp: string;
   sourcePort: number;
   destinationPort: number;
-  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum';
+  reason: 'no-listener' | 'no-socket' | 'bad-state' | 'no-egress' | 'no-source-ip' | 'disabled' | 'bad-checksum' | 'no-ephemeral';
+}
+
+/** PRD-TCP.md P1 — a segment (SYN/data/FIN) was resent by the RTO timer. */
+export interface TcpRetransmitPayload extends TcpDeviceRef {
+  localIp: string;
+  localPort: number;
+  remoteIp: string;
+  remotePort: number;
+  sequence: number;
+  attempt: number;
+  rtoMs: number;
 }
 
 export type TcpDomainEvent =
@@ -73,4 +92,5 @@ export type TcpDomainEvent =
   | { topic: 'tcp.connection.opened'; payload: TcpConnectionOpenedPayload }
   | { topic: 'tcp.connection.closed'; payload: TcpConnectionClosedPayload }
   | { topic: 'tcp.listener.changed'; payload: TcpListenerChangedPayload }
-  | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload };
+  | { topic: 'tcp.segment.dropped'; payload: TcpSegmentDroppedPayload }
+  | { topic: 'tcp.retransmit'; payload: TcpRetransmitPayload };

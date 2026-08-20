@@ -13,7 +13,7 @@
  *     (IamPolicyFilesProjection rewrites config, IamAuthLogProjection logs).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -39,7 +39,7 @@ function wiredManager(deviceId = 'dev-1') {
 /** Collect the payloads of every event published on a given topic. */
 function capture<T extends DomainEvent['topic']>(bus: EventBus, topic: T) {
   const payloads: Array<Extract<DomainEvent, { topic: T }>['payload']> = [];
-  bus.subscribe(topic, (e) => payloads.push(e.payload));
+  bus.subscribe(topic, (e) => payloads.push(e.payload as any));
   return payloads;
 }
 
@@ -326,6 +326,59 @@ describe('faillock — lockout tally', () => {
     const ctx = { userMgr: mgr } as unknown as ShellContext;
     cmdFaillock(ctx, ['--user', 'bob', '--reset']);
     expect(mgr.isAccountLockedOut('bob')).toBe(false);
+  });
+});
+
+describe('faillock — lockout auto-expiry (unlock_time)', () => {
+  it('rejects even the CORRECT password while locked out', () => {
+    const { mgr } = wiredManager();
+    mgr.useradd('bob');
+    mgr.setPassword('bob', 'Str0ng!pwxy');
+    mgr.checkPassword('bob', 'wrong');
+    mgr.checkPassword('bob', 'wrong');
+    mgr.checkPassword('bob', 'wrong');
+
+    expect(mgr.isAccountLockedOut('bob')).toBe(true);
+    expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(false);
+  });
+
+  it('does not auto-unlock before unlock_time elapses', () => {
+    vi.useFakeTimers();
+    try {
+      const { mgr } = wiredManager();
+      mgr.useradd('bob');
+      mgr.setPassword('bob', 'Str0ng!pwxy');
+      mgr.checkPassword('bob', 'wrong');
+      mgr.checkPassword('bob', 'wrong');
+      mgr.checkPassword('bob', 'wrong');
+
+      vi.advanceTimersByTime(599_000); // default unlock_time = 600s
+
+      expect(mgr.isAccountLockedOut('bob')).toBe(true);
+      expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('auto-unlocks once unlock_time elapses, and the correct password then succeeds', () => {
+    vi.useFakeTimers();
+    try {
+      const { mgr } = wiredManager();
+      mgr.useradd('bob');
+      mgr.setPassword('bob', 'Str0ng!pwxy');
+      mgr.checkPassword('bob', 'wrong');
+      mgr.checkPassword('bob', 'wrong');
+      mgr.checkPassword('bob', 'wrong');
+      expect(mgr.isAccountLockedOut('bob')).toBe(true);
+
+      vi.advanceTimersByTime(600_000); // default unlock_time = 600s
+
+      expect(mgr.isAccountLockedOut('bob')).toBe(false);
+      expect(mgr.checkPassword('bob', 'Str0ng!pwxy')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

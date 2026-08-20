@@ -15,7 +15,7 @@
  * Huawei VRP tests: 26-50
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -280,10 +280,10 @@ describe('Cisco IOS — OSPF CLI', () => {
 
   // ─── 20. show ip ospf — not configured ─────────────────────────
 
-  it('20. "show ip ospf" without OSPF should return error', async () => {
+  it('20. "show ip ospf" without OSPF stays silent, like a real router', async () => {
     await exec(r1, 'enable');
     const output = await exec(r1, 'show ip ospf');
-    expect(output).toContain('not configured');
+    expect(output).toBe('');
   });
 
   // ─── 21. show ip ospf — configured ─────────────────────────────

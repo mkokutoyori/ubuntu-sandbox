@@ -1,8 +1,13 @@
 import type { IEventBus } from '@/events/EventBus';
+import {
+  huaweiIrreversibleCipher, huaweiDecipher,
+  looksLikeIrreversibleCipher, looksLikeReversibleCipher,
+} from '@/crypto/passwords/huawei';
+import { ciscoPasswordMatches } from '../../shells/cisco/ciscoPasswordVerify';
 
 export type SshAuthMethod = 'password' | 'publickey' | 'keyboard-interactive';
 export type PasswordHashAlgorithm =
-  | 'plain' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
+  | 'plain' | 'plain-password' | 'md5' | 'sha256' | 'scrypt' | 'sha512' | 'cipher' | 'irreversible-cipher' | 'type-7';
 export type AccountServiceType =
   | 'ssh' | 'stelnet' | 'telnet' | 'ftp' | 'http' | 'terminal' | 'web' | 'snmp' | 'ppp' | 'mail';
 
@@ -23,6 +28,8 @@ export interface NetworkOsAccountSnapshot {
   readonly lastFailedLoginFrom: string | null;
   readonly expireAt: number | null;
   readonly passwordExpireAt: number | null;
+  /** Previous secrets, most-recent-first — checked against a history policy (Huawei `password-policy history-record`). */
+  readonly passwordHistory: readonly string[];
   readonly idleTimeoutSeconds: number;
   readonly maxConcurrentSessions: number;
   readonly accessClassIn: number | null;
@@ -31,6 +38,18 @@ export interface NetworkOsAccountSnapshot {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  readonly noPassword: boolean;
+  readonly oneTime: boolean;
+  readonly autocommand: string | null;
+  readonly noHangup: boolean;
+  /**
+   * La vue CLI attachee au compte (`username X view NOC_VIEW`).
+   *
+   * Elle vit sur le COMPTE et non a cote, parce que c'est le compte qui
+   * porte le role : un lien range ailleurs se perdrait a la relecture,
+   * ce qui est exactement le defaut que le mecanisme referme.
+   */
+  readonly view: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly factoryDefault: boolean;
@@ -74,6 +93,7 @@ export class NetworkOsAccount {
   readonly lastFailedLoginFrom: string | null;
   readonly expireAt: number | null;
   readonly passwordExpireAt: number | null;
+  readonly passwordHistory: readonly string[];
   readonly idleTimeoutSeconds: number;
   readonly maxConcurrentSessions: number;
   readonly accessClassIn: number | null;
@@ -82,11 +102,18 @@ export class NetworkOsAccount {
   readonly homeDirectory: string | null;
   readonly publicKeys: readonly string[];
   readonly description: string | null;
+  readonly noPassword: boolean;
+  readonly oneTime: boolean;
+  readonly autocommand: string | null;
+  readonly noHangup: boolean;
+  readonly view: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly factoryDefault: boolean;
 
   private constructor(s: NetworkOsAccountSnapshot) {
     this.name = s.name;
+    this.view = s.view;
     this.secret = s.secret;
     this.passwordHashAlgorithm = s.passwordHashAlgorithm;
     this.privilege = s.privilege;
@@ -102,6 +129,7 @@ export class NetworkOsAccount {
     this.lastFailedLoginFrom = s.lastFailedLoginFrom;
     this.expireAt = s.expireAt;
     this.passwordExpireAt = s.passwordExpireAt;
+    this.passwordHistory = s.passwordHistory;
     this.idleTimeoutSeconds = s.idleTimeoutSeconds;
     this.maxConcurrentSessions = s.maxConcurrentSessions;
     this.accessClassIn = s.accessClassIn;
@@ -110,6 +138,10 @@ export class NetworkOsAccount {
     this.homeDirectory = s.homeDirectory;
     this.publicKeys = s.publicKeys;
     this.description = s.description;
+    this.noPassword = s.noPassword;
+    this.oneTime = s.oneTime;
+    this.autocommand = s.autocommand;
+    this.noHangup = s.noHangup;
     this.createdAt = s.createdAt;
     this.updatedAt = s.updatedAt;
     this.factoryDefault = s.factoryDefault;
@@ -119,6 +151,7 @@ export class NetworkOsAccount {
     const now = init.now ?? Date.now();
     return new NetworkOsAccount({
       name: init.name,
+      view: null,
       secret: init.secret ?? '',
       passwordHashAlgorithm: init.passwordHashAlgorithm ?? 'plain',
       privilege: init.privilege ?? 1,
@@ -134,6 +167,7 @@ export class NetworkOsAccount {
       lastFailedLoginFrom: null,
       expireAt: init.expireAt ?? null,
       passwordExpireAt: init.passwordExpireAt ?? null,
+      passwordHistory: Object.freeze([]),
       idleTimeoutSeconds: init.idleTimeoutSeconds ?? 0,
       maxConcurrentSessions: init.maxConcurrentSessions ?? 0,
       accessClassIn: init.accessClassIn ?? null,
@@ -142,6 +176,10 @@ export class NetworkOsAccount {
       homeDirectory: init.homeDirectory ?? null,
       publicKeys: Object.freeze([]),
       description: init.description ?? null,
+      noPassword: false,
+      oneTime: false,
+      autocommand: null,
+      noHangup: false,
       createdAt: now,
       updatedAt: now,
       factoryDefault: init.factoryDefault ?? false,
@@ -164,11 +202,15 @@ export class NetworkOsAccount {
       lastLoginAt: this.lastLoginAt, lastLoginFrom: this.lastLoginFrom,
       lastLoginMethod: this.lastLoginMethod, lastFailedLoginAt: this.lastFailedLoginAt,
       lastFailedLoginFrom: this.lastFailedLoginFrom, expireAt: this.expireAt,
-      passwordExpireAt: this.passwordExpireAt, idleTimeoutSeconds: this.idleTimeoutSeconds,
+      passwordExpireAt: this.passwordExpireAt, passwordHistory: this.passwordHistory,
+      idleTimeoutSeconds: this.idleTimeoutSeconds,
       maxConcurrentSessions: this.maxConcurrentSessions, accessClassIn: this.accessClassIn,
       accessClassOut: this.accessClassOut, ftpDirectory: this.ftpDirectory,
       homeDirectory: this.homeDirectory, publicKeys: this.publicKeys,
-      description: this.description, createdAt: this.createdAt, updatedAt: this.updatedAt,
+      description: this.description, view: this.view,
+      noPassword: this.noPassword, oneTime: this.oneTime,
+      autocommand: this.autocommand, noHangup: this.noHangup,
+      createdAt: this.createdAt, updatedAt: this.updatedAt,
       factoryDefault: this.factoryDefault,
     };
   }
@@ -182,7 +224,38 @@ export class NetworkOsAccount {
   }
 
   withSecret(secret: string, algo: PasswordHashAlgorithm = 'plain'): NetworkOsAccount {
-    return this.mutate({ secret, passwordHashAlgorithm: algo });
+    return this.mutate({ secret, passwordHashAlgorithm: algo, noPassword: false });
+  }
+
+  withoutPassword(): NetworkOsAccount {
+    return this.mutate({ noPassword: true, secret: '', passwordHashAlgorithm: 'plain' });
+  }
+
+  withOneTime(oneTime: boolean): NetworkOsAccount {
+    return this.mutate({ oneTime });
+  }
+
+  withAutocommand(line: string | null, noHangup: boolean): NetworkOsAccount {
+    return this.mutate({ autocommand: line, noHangup });
+  }
+
+  withPasswordExpireAt(at: number | null): NetworkOsAccount {
+    return this.mutate({ passwordExpireAt: at });
+  }
+
+  /** True when `secret` matches the current password or one still retained in history (Huawei `password-policy history-record`). */
+  wouldReuseSecret(secret: string, maxHistory: number): boolean {
+    if (maxHistory <= 0) return false;
+    if (this.secret !== '' && this.secret === secret) return true;
+    return this.passwordHistory.slice(0, maxHistory).includes(secret);
+  }
+
+  /** Like withSecret(), but pushes the outgoing secret onto the history list (bounded to maxHistory). */
+  withSecretRetainingHistory(secret: string, algo: PasswordHashAlgorithm, maxHistory: number): NetworkOsAccount {
+    const history = maxHistory > 0
+      ? Object.freeze([this.secret, ...this.passwordHistory].filter(s => s !== '').slice(0, maxHistory))
+      : this.passwordHistory;
+    return this.mutate({ secret, passwordHashAlgorithm: algo, passwordHistory: history });
   }
 
   withPrivilege(level: number): NetworkOsAccount {
@@ -195,6 +268,10 @@ export class NetworkOsAccount {
 
   withDescription(text: string): NetworkOsAccount {
     return this.mutate({ description: text });
+  }
+
+  withView(view: string | null): NetworkOsAccount {
+    return this.mutate({ view });
   }
 
   withIdleTimeout(seconds: number): NetworkOsAccount {
@@ -268,9 +345,44 @@ export class NetworkOsAccount {
     return { ok: true };
   }
 
+  /**
+   * Le secret range est sous la forme que la configuration rend : une
+   * empreinte pour `irreversible-cipher`, un chiffre pour `cipher`. La
+   * comparaison doit donc passer par l'algorithme, sinon un compte
+   * recharge depuis une configuration n'ouvre plus — la configuration ne
+   * porte pas le clair, et c'est bien son role.
+   */
   authenticate(password: string): boolean {
+    // Un compte VERROUILLE n'authentifie plus, et un compte desactive non
+    // plus. Les deux drapeaux existaient, etaient poses au bon moment par
+    // `aaa local authentication attempts max-fail`, rendus par `show aaa
+    // local user lockout` — et consultes par PERSONNE : apres trois
+    // echecs le compte etait marque verrouille et le bon mot de passe
+    // continuait de l'ouvrir. Le mecanisme entier ne protegeait rien, et
+    // la vue affirmait le contraire.
+    if (this.locked || this.disabled) return false;
+    if (this.noPassword) return true;
     if (!this.secret) return false;
-    return this.secret === password;
+    if (this.passwordHashAlgorithm === 'irreversible-cipher') {
+      return looksLikeIrreversibleCipher(this.secret)
+        ? huaweiIrreversibleCipher(password) === this.secret
+        : this.secret === password;
+    }
+    if (this.passwordHashAlgorithm === 'cipher') {
+      return looksLikeReversibleCipher(this.secret)
+        ? huaweiDecipher(this.secret) === password
+        : this.secret === password;
+    }
+    // Cote Cisco, le meme raisonnement — la configuration ne porte pas le
+    // clair — n'etait applique NULLE PART : `username X secret <mot>` est
+    // rendu `username X secret 5 $1$...`, donc l'import d'une topologie
+    // rangeait le condense et le compte ne se connectait plus jamais ;
+    // et `service password-encryption` cassait `username X password`
+    // sur-le-champ, sans meme attendre un rechargement. Mesure :
+    // `authenticate('admin','Admin@2025')` vrai avant sauvegarde, faux
+    // apres. `ciscoPasswordMatches` retombe sur l'egalite pour une valeur
+    // en clair, donc le cas ordinaire ne change pas.
+    return ciscoPasswordMatches(password, this.secret, this.passwordHashAlgorithm);
   }
 
   allowsService(service: AccountServiceType): boolean {
@@ -279,6 +391,39 @@ export class NetworkOsAccount {
     if (service === 'stelnet' && this.serviceTypes.includes('ssh')) return true;
     return this.serviceTypes.includes(service);
   }
+}
+
+export interface CiscoUsernamePatch {
+  privilege?: number;
+  secret?: string;
+  secretAlgo?: PasswordHashAlgorithm;
+  nopassword?: boolean;
+  description?: string;
+  view?: string;
+  autocommand?: string;
+  nohangup?: boolean;
+  oneTime?: boolean;
+  accessClass?: number;
+  maxLinks?: number;
+}
+
+export function applyCiscoUsernamePatch(
+  base: NetworkOsAccount, kv: CiscoUsernamePatch,
+): NetworkOsAccount {
+  let account = base;
+  if (kv.privilege !== undefined) account = account.withPrivilege(kv.privilege);
+  if (kv.nopassword) account = account.withoutPassword();
+  else if (kv.secret !== undefined) account = account.withSecret(kv.secret, kv.secretAlgo ?? 'plain');
+  if (kv.description) account = account.withDescription(kv.description);
+  if (kv.view !== undefined) account = account.withView(kv.view);
+  if (kv.autocommand !== undefined || kv.nohangup) {
+    account = account.withAutocommand(kv.autocommand ?? account.autocommand, kv.nohangup ?? account.noHangup);
+  }
+  if (kv.oneTime) account = account.withOneTime(true);
+  if (kv.accessClass !== undefined) account = account.withAccessClass('in', kv.accessClass);
+  if (kv.maxLinks !== undefined) account = account.withMaxSessions(kv.maxLinks);
+  if (account.factoryDefault) account = account.asOperatorOwned();
+  return account;
 }
 
 export interface NetworkOsAccountEventEnvelope {

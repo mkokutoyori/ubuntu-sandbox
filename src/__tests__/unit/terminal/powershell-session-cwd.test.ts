@@ -30,7 +30,7 @@ describe('PowerShell sub-shell uses owner session cwd', () => {
     bus = new EventBus();
     __setDefaultEventBus(bus);
     EquipmentRegistry.getInstance().setEventBus(bus);
-    pc = new WindowsPC('PC1', 0, 0);
+    pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.setEventBus(bus);
     const fs = pc.getFileSystem();
     fs.mkdirp('C:\\projects\\alpha');

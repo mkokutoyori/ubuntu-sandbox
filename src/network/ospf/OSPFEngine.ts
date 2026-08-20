@@ -30,6 +30,7 @@ import {
   OSPF_MAX_AGE, OSPF_LS_REFRESH_TIME, OSPF_MIN_LS_INTERVAL, OSPF_MIN_LS_ARRIVAL,
   OSPF_INITIAL_SEQUENCE_NUMBER, OSPF_MAX_SEQUENCE_NUMBER,
   OSPF_BACKBONE_AREA, OSPF_ALL_SPF_ROUTERS, OSPF_ALL_DR_ROUTERS,
+  areasEqual, isBackboneAreaId,
   OSPF_AD_INTRA_AREA, OSPF_AD_INTER_AREA, OSPF_AD_EXTERNAL,
   OSPF_INFINITY_METRIC,
   OSPF_VERSION_2,
@@ -131,10 +132,10 @@ export class OSPFEngine implements IProtocolEngine {
   setBatchConvergence(on: boolean): void { this.batchConvergence = on; }
 
   /** SPF throttle — configurable via setThrottleSPF() */
-  private spfThrottleInitial = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
-  private spfThrottleHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
-  private spfThrottleMax = OSPF_CONSTANTS.SPF_THROTTLE_MAX_MS;
-  private spfCurrentHold = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
+  private spfThrottleInitial: number = OSPF_CONSTANTS.SPF_THROTTLE_INITIAL_MS;
+  private spfThrottleHold: number = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
+  private spfThrottleMax: number = OSPF_CONSTANTS.SPF_THROTTLE_MAX_MS;
+  private spfCurrentHold: number = OSPF_CONSTANTS.SPF_THROTTLE_HOLD_MS;
   private spfLastRunAt = 0;            // timestamp (ms) when SPF last ran
 
   /** SPF scheduling — TimerSet token. */
@@ -527,11 +528,11 @@ export class OSPFEngine implements IProtocolEngine {
   private incrementStat(packetType: number, direction: 'rx' | 'tx'): void {
     const key = direction === 'rx' ? 'rx' : 'tx';
     switch (packetType) {
-      case 1: (this.packetStats as Record<string, number>)[`${key}Hello`]++; break;
-      case 2: (this.packetStats as Record<string, number>)[`${key}DBD`]++; break;
-      case 3: (this.packetStats as Record<string, number>)[`${key}LSR`]++; break;
-      case 4: (this.packetStats as Record<string, number>)[`${key}LSU`]++; break;
-      case 5: (this.packetStats as Record<string, number>)[`${key}LSAck`]++; break;
+      case 1: (this.packetStats as unknown as Record<string, number>)[`${key}Hello`]++; break;
+      case 2: (this.packetStats as unknown as Record<string, number>)[`${key}DBD`]++; break;
+      case 3: (this.packetStats as unknown as Record<string, number>)[`${key}LSR`]++; break;
+      case 4: (this.packetStats as unknown as Record<string, number>)[`${key}LSU`]++; break;
+      case 5: (this.packetStats as unknown as Record<string, number>)[`${key}LSAck`]++; break;
     }
   }
 
@@ -611,7 +612,9 @@ export class OSPFEngine implements IProtocolEngine {
    * This determines which interfaces participate in OSPF.
    */
   addNetwork(network: string, wildcard: string, areaId: string): void {
-    this.config.networks.push({ network, wildcard, areaId });
+    const already = this.config.networks.some((n) =>
+      n.network === network && n.wildcard === wildcard && areasEqual(n.areaId, areaId));
+    if (!already) this.config.networks.push({ network, wildcard, areaId });
 
     // Ensure area exists
     if (!this.config.areas.has(areaId)) {
@@ -619,7 +622,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       });
     }
 
@@ -631,7 +634,7 @@ export class OSPFEngine implements IProtocolEngine {
 
   removeNetwork(network: string, wildcard: string, areaId: string): void {
     this.config.networks = this.config.networks.filter(
-      n => !(n.network === network && n.wildcard === wildcard && n.areaId === areaId)
+      n => !(n.network === network && n.wildcard === wildcard && areasEqual(n.areaId, areaId))
     );
   }
 
@@ -654,7 +657,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       };
       this.config.areas.set(areaId, area);
       if (!this.lsdb.areas.has(areaId)) {
@@ -773,7 +776,7 @@ export class OSPFEngine implements IProtocolEngine {
         areaId,
         type: 'normal',
         interfaces: [],
-        isBackbone: areaId === OSPF_BACKBONE_AREA || areaId === '0',
+        isBackbone: isBackboneAreaId(areaId),
       };
       this.config.areas.set(areaId, area);
     }
@@ -788,9 +791,13 @@ export class OSPFEngine implements IProtocolEngine {
     const iface = this.interfaces.get(ifName);
     if (iface) {
       iface.passive = true;
-      // Stop hello timer on passive interfaces
       this.timers.clear(iface.helloTimer);
       iface.helloTimer = null;
+      for (const neighbor of [...iface.neighbors.values()]) {
+        this.neighborEvent(iface, neighbor, 'KillNbr');
+      }
+      iface.neighbors.clear();
+      this.scheduleSPF();
     }
   }
 
@@ -864,13 +871,23 @@ export class OSPFEngine implements IProtocolEngine {
       ? Math.max(1, Math.floor(this.config.referenceBandwidth / bandwidth))
       : 1;
 
+    const already = this.interfaces.get(name);
+    if (already) {
+      return this.reactivateInterface(already, ipAddress, mask, areaId, defaultCost, options);
+    }
+
     const iface: OSPFInterface = {
       name,
       ipAddress,
       mask,
       areaId,
       state: 'Down',
-      networkType: options?.networkType ?? 'broadcast',
+      // Une interface de bouclage naît `loopback` : OSPF le déduit du
+      // type d'interface et non d'une commande. `ip ospf network …` la
+      // fait basculer, ce qui est exactement le remède documenté quand
+      // on veut voir annoncer le préfixe configuré plutôt qu'un /32.
+      networkType: options?.networkType
+        ?? (/^Loopback/i.test(name) ? 'loopback' : 'broadcast'),
       helloInterval: options?.helloInterval ?? OSPF_DEFAULT_HELLO_INTERVAL,
       deadInterval: options?.deadInterval ?? OSPF_DEFAULT_DEAD_INTERVAL,
       retransmitInterval: OSPF_DEFAULT_RETRANSMIT_INTERVAL,
@@ -904,9 +921,97 @@ export class OSPFEngine implements IProtocolEngine {
     return iface;
   }
 
+  private reactivateInterface(
+    iface: OSPFInterface,
+    ipAddress: string,
+    mask: string,
+    areaId: string,
+    defaultCost: number,
+    options?: {
+      cost?: number;
+      priority?: number;
+      networkType?: OSPFNetworkType;
+      helloInterval?: number;
+      deadInterval?: number;
+      mtu?: number;
+      propagationDelayMs?: number;
+      bandwidthBps?: number;
+    },
+  ): OSPFInterface {
+    const networkType = options?.networkType
+      ?? (/^Loopback/i.test(iface.name) ? 'loopback' : iface.networkType);
+
+    const invalidatesAdjacencies = !areasEqual(iface.areaId, areaId)
+      || iface.ipAddress !== ipAddress
+      || iface.mask !== mask
+      || iface.networkType !== networkType;
+
+    iface.ipAddress = ipAddress;
+    iface.mask = mask;
+    iface.areaId = areaId;
+    iface.networkType = networkType;
+    iface.priority = options?.priority ?? iface.priority;
+    iface.helloInterval = options?.helloInterval ?? iface.helloInterval;
+    iface.deadInterval = options?.deadInterval ?? iface.deadInterval;
+    iface.mtu = options?.mtu ?? iface.mtu;
+    iface.propagationDelayMs = options?.propagationDelayMs ?? iface.propagationDelayMs;
+    iface.passive = this.config.passiveInterfaces.has(iface.name);
+    if (options?.cost !== undefined) {
+      iface.cost = options.cost;
+      iface.costExplicit = true;
+    } else if (!iface.costExplicit) {
+      iface.cost = defaultCost;
+    }
+
+    const area = this.config.areas.get(areaId);
+    if (area && !area.interfaces.includes(iface.name)) area.interfaces.push(iface.name);
+
+    if (!invalidatesAdjacencies) return iface;
+
+    for (const [, neighbor] of iface.neighbors) {
+      this.neighborEvent(iface, neighbor, 'KillNbr');
+    }
+    iface.neighbors.clear();
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
+    iface.state = 'Down';
+    this.interfaceUp(iface.name);
+    return iface;
+  }
+
+  /**
+   * Change le type de réseau d'une interface DÉJÀ active, et relance sa
+   * machine à états.
+   *
+   * Le type était écrit directement sur l'objet par l'appelant, ce qui
+   * laissait l'état d'avant : une loopback basculée en `point-to-point`
+   * continuait d'annoncer `State Loopback`, et — plus grave — gardait
+   * ses minuteurs d'avant, donc n'émettait toujours pas de Hello. Sur
+   * une vraie machine, `ip ospf network` réinitialise l'interface.
+   */
+  setInterfaceNetworkType(name: string, type: OSPFNetworkType): void {
+    const iface = this.interfaces.get(name);
+    if (!iface || iface.networkType === type) return;
+    this.timers.clear(iface.helloTimer);
+    iface.helloTimer = null;
+    this.timers.clear(iface.waitTimer);
+    iface.waitTimer = null;
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
+    iface.networkType = type;
+    this.interfaceUp(name);
+  }
+
   deactivateInterface(name: string): void {
     const iface = this.interfaces.get(name);
     if (!iface) return;
+
+    const areaId = iface.areaId;
+    const wasDR = iface.state === 'DR';
 
     // Kill all neighbors
     for (const [, neighbor] of iface.neighbors) {
@@ -920,15 +1025,50 @@ export class OSPFEngine implements IProtocolEngine {
     iface.waitTimer = null;
 
     iface.state = 'Down';
+    iface.neighbors.clear();
+    iface.dr = '0.0.0.0';
+    iface.bdr = '0.0.0.0';
 
-    // Remove from area
-    const area = this.config.areas.get(iface.areaId);
-    if (area) {
-      area.interfaces = area.interfaces.filter(i => i !== name);
-    }
-
-    this.interfaces.delete(name);
+    if (wasDR) this.flushOwnLSA(areaId, 2, iface.ipAddress);
+    this.refreshRouterLSAForArea(areaId);
     this.scheduleSPF();
+  }
+
+  private hasInterfaceInArea(areaId: string): boolean {
+    for (const [, iface] of this.interfaces) {
+      if (iface.state !== 'Down' && areasEqual(iface.areaId, areaId)) return true;
+    }
+    for (const [, vl] of this.virtualLinks) {
+      if (areasEqual(vl.iface.areaId, areaId)) return true;
+    }
+    return false;
+  }
+
+  private refreshRouterLSAForArea(areaId: string): void {
+    if (this.hasInterfaceInArea(areaId)) {
+      this.originateRouterLSA(areaId);
+    } else {
+      this.flushOwnLSA(areaId, 1, this.config.routerId);
+    }
+  }
+
+  private flushOwnLSA(areaId: string, lsType: number, linkStateId: string): void {
+    const areaDB = this.lsdb.areas.get(areaId);
+    if (!areaDB) return;
+    const key = makeLSDBKey(lsType, linkStateId, this.config.routerId);
+    const lsa = areaDB.get(key);
+    if (!lsa) return;
+
+    lsa.lsAge = OSPF_MAX_AGE;
+    lsa.lsSequenceNumber = this.nextSeqNumber();
+    lsa.checksum = computeOSPFLSAChecksum(lsa);
+    this.floodLSA(areaId, lsa, null, true);
+    areaDB.delete(key);
+
+    this.getBus().publish({
+      topic: 'ospf.lsa.flushed',
+      payload: { ...this.routerRef(), areaId, lsa: this.headerOf(lsa), reason: 'interface-down' },
+    } as never);
   }
 
   getInterface(name: string): OSPFInterface | undefined {
@@ -949,6 +1089,16 @@ export class OSPFEngine implements IProtocolEngine {
     }
   }
 
+  resetInterfaceCost(ifName: string): void {
+    const iface = this.interfaces.get(ifName);
+    if (!iface) return;
+    const bw = OSPFEngine.inferInterfaceBandwidthBps(ifName);
+    iface.cost = bw > 0 ? Math.max(1, Math.floor(this.config.referenceBandwidth / bw)) : 1;
+    iface.costExplicit = false;
+    this.originateRouterLSA(iface.areaId);
+    this.scheduleSPF();
+  }
+
   setInterfacePriority(ifName: string, priority: number): void {
     const iface = this.interfaces.get(ifName);
     if (iface) {
@@ -967,14 +1117,51 @@ export class OSPFEngine implements IProtocolEngine {
     peerRouterId: string,
     packetAreaId: string,
   ): OSPFInterface | null {
-    if (packetAreaId !== OSPF_BACKBONE_AREA) return null;
+    if (!isBackboneAreaId(packetAreaId)) return null;
     const transitIface = this.interfaces.get(ifaceName);
-    if (!transitIface || transitIface.areaId === OSPF_BACKBONE_AREA) return null;
+    if (!transitIface || isBackboneAreaId(transitIface.areaId)) return null;
     const vl = this.virtualLinks.get(peerRouterId);
-    if (!vl || vl.transitAreaId !== transitIface.areaId) return null;
+    if (!vl || !areasEqual(vl.transitAreaId, transitIface.areaId)) return null;
     // Keep the VL iface's IP in sync with our transit interface IP
     vl.iface.ipAddress = transitIface.ipAddress;
     return vl.iface;
+  }
+
+  private ifaceForReceivedPacket(
+    ifaceName: string,
+    packetAreaId: string,
+    senderRouterId: string,
+    srcIP: string,
+    packetType: number,
+  ): OSPFInterface | null {
+    const physIface = this.interfaces.get(ifaceName);
+    if (!physIface) return null;
+
+    const vlIface = this.resolveVLIface(ifaceName, senderRouterId, packetAreaId);
+    if (vlIface) return vlIface;
+
+    if (!areasEqual(packetAreaId, physIface.areaId)) {
+      const why = isBackboneAreaId(packetAreaId)
+        ? 'mismatch area ID, from backbone area must be virtual-link but not found'
+        : `mismatch area ID, received ${packetAreaId} but interface is in area ${physIface.areaId}`;
+      Logger.warn(this.deviceId ?? 'ospf', 'ospf:area-mismatch',
+        `OSPF-4-ERRRCV: Received invalid packet: ${why}, from ${srcIP}, ${ifaceName}`);
+      this.getBus().publish({
+        topic: 'ospf.area.mismatch',
+        payload: {
+          ...this.routerRef(),
+          iface: ifaceName,
+          from: srcIP,
+          packetType,
+          areaReceived: packetAreaId,
+          areaConfigured: physIface.areaId,
+          reason: why,
+        },
+      } as never);
+      return null;
+    }
+
+    return physIface;
   }
 
   /**
@@ -1009,7 +1196,7 @@ export class OSPFEngine implements IProtocolEngine {
       // If we don't have a transit iface from SPF, find one by area
       if (!transitIfaceName) {
         for (const [, iface] of this.interfaces) {
-          if (iface.areaId === vl.transitAreaId) {
+          if (areasEqual(iface.areaId, vl.transitAreaId)) {
             transitIfaceName = iface.name;
             vl.iface.ipAddress = iface.ipAddress;
             break;
@@ -1043,13 +1230,19 @@ export class OSPFEngine implements IProtocolEngine {
 
   // ─── Interface State Machine ───────────────────────────────────
 
-  private interfaceUp(name: string): void {
+  interfaceUp(name: string): void {
     const iface = this.interfaces.get(name);
     if (!iface) return;
 
     const oldState = iface.state;
 
-    if (iface.networkType === 'point-to-point') {
+    if (iface.networkType === 'loopback') {
+      // RFC 2328 §9.1 : une interface de bouclage entre directement en
+      // état Loopback. Elle n'élit rien et n'attend personne — la faire
+      // passer par `Waiting` puis par une élection lui faisait déclarer
+      // qu'elle était DR d'elle-même.
+      iface.state = 'Loopback';
+    } else if (iface.networkType === 'point-to-point') {
       iface.state = 'PointToPoint';
     } else {
       // Broadcast or NBMA: enter Waiting state for DR election
@@ -1060,8 +1253,10 @@ export class OSPFEngine implements IProtocolEngine {
       }, iface.deadInterval * 1000);
     }
 
-    // Start sending hellos (unless passive)
-    if (!iface.passive) {
+    // Start sending hellos (unless passive). Une interface de bouclage
+    // n'en émet jamais : il n'y a personne au bout, et un Hello qui
+    // revient à son émetteur ferait une adjacence avec soi-même.
+    if (!iface.passive && iface.networkType !== 'loopback') {
       this.startHelloTimer(iface);
     }
 
@@ -1147,25 +1342,35 @@ export class OSPFEngine implements IProtocolEngine {
    */
   processHello(ifaceName: string, srcIP: string, hello: OSPFHelloPacket): void {
     this.dispatchIncoming(ifaceName, hello, srcIP);
-    // VL detection: backbone Hello on transit interface → process on VL synthetic iface
-    const vlIface = this.resolveVLIface(ifaceName, hello.routerId, hello.areaId);
-    const physIface = this.interfaces.get(ifaceName);
-    if (!physIface) return;
-
-    // Drop backbone packets arriving on non-backbone interfaces if sender is not a VL peer
-    if (!vlIface && hello.areaId === OSPF_BACKBONE_AREA && physIface.areaId !== OSPF_BACKBONE_AREA) return;
-
-    const iface = vlIface ?? physIface;
+    const iface = this.ifaceForReceivedPacket(
+      ifaceName, hello.areaId, hello.routerId, srcIP, 1);
     if (!iface) return;
     // passive-interface: hellos neither sent nor processed (IOS behaviour)
     if (iface.passive) return;
 
     // Validate hello parameters
     if (iface.networkType === 'broadcast') {
-      if (hello.networkMask !== iface.mask) return;
+      if (hello.networkMask !== iface.mask) {
+        this.publierDiscordanceHello(ifaceName, iface, hello, srcIP);
+        return;
+      }
     }
-    if (hello.helloInterval !== iface.helloInterval) return;
-    if (hello.deadInterval !== iface.deadInterval) return;
+    if (hello.helloInterval !== iface.helloInterval || hello.deadInterval !== iface.deadInterval) {
+      const mismatched = hello.helloInterval !== iface.helloInterval ? 'hello' : 'dead';
+      this.getBus().publish({
+        topic: 'ospf.interface.state-changed',
+        payload: {
+          ...this.routerRef(),
+          iface: ifaceName,
+          oldState: `${mismatched} interval mismatch`,
+          newState: mismatched === 'hello'
+            ? `Mismatched hello parameters from ${srcIP}: received ${hello.helloInterval}, configured ${iface.helloInterval}`
+            : `Mismatched dead parameters from ${srcIP}: received ${hello.deadInterval}, configured ${iface.deadInterval}`,
+        },
+      });
+      if (iface.neighbors.delete(hello.routerId)) this.scheduleSPF();
+      return;
+    }
 
     const neighborId = hello.routerId;
     let neighbor = iface.neighbors.get(neighborId);
@@ -1266,13 +1471,11 @@ export class OSPFEngine implements IProtocolEngine {
   // ─── Neighbor State Machine (RFC 2328 §10.1) ──────────────────
 
   neighborEvent(iface: OSPFInterface, neighbor: OSPFNeighbor, event: OSPFNeighborEvent): void {
-    const oldState = neighbor.state;
-
     switch (event) {
       // RFC 2328 §10.3: Start event — used for NBMA networks (Attempt state)
       case 'Start':
         if (neighbor.state === 'Down') {
-          neighbor.state = 'Attempt';
+          this.setNeighborState(iface, neighbor, 'Attempt', event);
           // On NBMA, send a Hello directly to the configured neighbor
           this.sendHelloTo(iface, neighbor.ipAddress);
         }
@@ -1281,17 +1484,17 @@ export class OSPFEngine implements IProtocolEngine {
       case 'HelloReceived':
         this.resetDeadTimer(iface, neighbor);
         if (neighbor.state === 'Down' || neighbor.state === 'Attempt') {
-          neighbor.state = 'Init';
+          this.setNeighborState(iface, neighbor, 'Init', event);
         }
         break;
 
       case 'TwoWayReceived':
         if (neighbor.state === 'Init') {
           if (this.shouldFormAdjacency(iface, neighbor)) {
-            neighbor.state = 'ExStart';
+            this.setNeighborState(iface, neighbor, 'ExStart', event);
             this.startDDExchange(iface, neighbor);
           } else {
-            neighbor.state = 'TwoWay';
+            this.setNeighborState(iface, neighbor, 'TwoWay', event);
           }
         }
         break;
@@ -1300,7 +1503,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state === 'ExStart') {
           // Cancel DD retransmission timer — negotiation complete
           this.cancelDDRetransmitTimer(neighbor);
-          neighbor.state = 'Exchange';
+          this.setNeighborState(iface, neighbor, 'Exchange', event);
           this.sendDDWithSummary(iface, neighbor);
         }
         break;
@@ -1308,10 +1511,10 @@ export class OSPFEngine implements IProtocolEngine {
       case 'ExchangeDone':
         if (neighbor.state === 'Exchange') {
           if (neighbor.lsRequestList.length > 0) {
-            neighbor.state = 'Loading';
+            this.setNeighborState(iface, neighbor, 'Loading', event);
             this.sendLSRequest(iface, neighbor);
           } else {
-            neighbor.state = 'Full';
+            this.setNeighborState(iface, neighbor, 'Full', event);
             this.onAdjacencyFull(iface, neighbor);
           }
         }
@@ -1321,7 +1524,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state === 'Loading') {
           // Cancel LSR retransmission timer — loading complete
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'Full';
+          this.setNeighborState(iface, neighbor, 'Full', event);
           this.onAdjacencyFull(iface, neighbor);
         }
         break;
@@ -1329,14 +1532,14 @@ export class OSPFEngine implements IProtocolEngine {
       case 'AdjOK':
         if (neighbor.state === 'TwoWay') {
           if (this.shouldFormAdjacency(iface, neighbor)) {
-            neighbor.state = 'ExStart';
+            this.setNeighborState(iface, neighbor, 'ExStart', event);
             this.startDDExchange(iface, neighbor);
           }
         } else if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
           if (!this.shouldFormAdjacency(iface, neighbor)) {
             this.cancelDDRetransmitTimer(neighbor);
             this.cancelLSRRetransmitTimer(neighbor);
-            neighbor.state = 'TwoWay';
+            this.setNeighborState(iface, neighbor, 'TwoWay', event);
             neighbor.lsRequestList = [];
             neighbor.lsRetransmissionList = [];
             neighbor.dbSummaryList = [];
@@ -1349,7 +1552,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (['Exchange', 'Loading', 'Full'].includes(neighbor.state)) {
           this.cancelDDRetransmitTimer(neighbor);
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'ExStart';
+          this.setNeighborState(iface, neighbor, 'ExStart', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
           neighbor.dbSummaryList = [];
@@ -1363,7 +1566,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (neighbor.state !== 'Down' && neighbor.state !== 'Init') {
           this.cancelDDRetransmitTimer(neighbor);
           this.cancelLSRRetransmitTimer(neighbor);
-          neighbor.state = 'Init';
+          this.setNeighborState(iface, neighbor, 'Init', event);
           neighbor.lsRequestList = [];
           neighbor.lsRetransmissionList = [];
           neighbor.dbSummaryList = [];
@@ -1375,7 +1578,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.clearDeadTimer(neighbor);
         this.cancelDDRetransmitTimer(neighbor);
         this.cancelLSRRetransmitTimer(neighbor);
-        neighbor.state = 'Down';
+        this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
         neighbor.dbSummaryList = [];
@@ -1385,7 +1588,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.clearDeadTimer(neighbor);
         this.cancelDDRetransmitTimer(neighbor);
         this.cancelLSRRetransmitTimer(neighbor);
-        neighbor.state = 'Down';
+        this.setNeighborState(iface, neighbor, 'Down', event);
         neighbor.lsRequestList = [];
         neighbor.lsRetransmissionList = [];
         neighbor.dbSummaryList = [];
@@ -1400,32 +1603,58 @@ export class OSPFEngine implements IProtocolEngine {
         break;
     }
 
-    if (oldState !== neighbor.state) {
-      const msg = `OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${oldState} -> ${neighbor.state} (${event})`;
-      this.eventLog.push(msg);
-      this.neighborChangeCount++;
-      if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
-        // Log adjacency change event
-        this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${oldState} to ${neighbor.state}, ${event}`);
-      }
+  }
 
-      // Reactive flow: emit the FSM transition. The bundled actors take
-      // it from here:
-      //   - SignalRefreshActor refreshes neighbors / interfaces / runtime.
-      //   - RouterLsaActor re-originates the Router-LSA on Full ↔ X.
-      //   - SpfActor schedules an SPF run on Full ↔ X.
-      this.getBus().publish({
-        topic: 'ospf.neighbor.state-changed',
-        payload: {
-          ...this.routerRef(),
-          iface: iface.name,
-          neighborId: neighbor.routerId,
-          oldState,
-          newState: neighbor.state,
-          event,
-        },
-      });
+
+  private publierDiscordanceHello(
+    ifaceName: string,
+    iface: OSPFInterface,
+    hello: { helloInterval: number; deadInterval: number; networkMask: string },
+    srcIP: string,
+  ): void {
+    this.getBus().publish({
+      topic: 'ospf.hello.mismatch',
+      payload: {
+        ...this.routerRef(),
+        iface: ifaceName,
+        from: srcIP,
+        deadReceived: hello.deadInterval,
+        deadConfigured: iface.deadInterval,
+        helloReceived: hello.helloInterval,
+        helloConfigured: iface.helloInterval,
+        maskReceived: hello.networkMask,
+        maskConfigured: iface.mask,
+      },
+    } as never);
+  }
+
+  private setNeighborState(
+    iface: OSPFInterface,
+    neighbor: OSPFNeighbor,
+    next: OSPFNeighbor['state'],
+    event: string,
+  ): void {
+    const from = neighbor.state;
+    if (from === next) return;
+    neighbor.state = next;
+
+    this.eventLog.push(`OSPF: Neighbor ${neighbor.routerId} (${iface.name}): ${from} -> ${next} (${event})`);
+    this.neighborChangeCount++;
+    if (this.logAdjacencyChanges || this.config.logAdjacencyChanges) {
+      this.eventLog.push(`%OSPF-5-ADJCHG: Process ${this.config.processId}, Nbr ${neighbor.routerId} on ${iface.name} from ${from} to ${next}, ${event}`);
     }
+
+    this.getBus().publish({
+      topic: 'ospf.neighbor.state-changed',
+      payload: {
+        ...this.routerRef(),
+        iface: iface.name,
+        neighborId: neighbor.routerId,
+        oldState: from,
+        newState: next,
+        event,
+      },
+    });
   }
 
   /**
@@ -1458,7 +1687,7 @@ export class OSPFEngine implements IProtocolEngine {
    */
   private startDDRetransmitTimer(iface: OSPFInterface, neighbor: OSPFNeighbor): void {
     // Only set timer if neighbor is still in ExStart (exchange may have already completed)
-    if (neighbor.state !== 'ExStart') return;
+    if ((neighbor.state as string) !== 'ExStart') return;
     this.cancelDDRetransmitTimer(neighbor);
     neighbor.ddRetransmitTimer = this.timers.setTimeout(() => {
       neighbor.ddRetransmitTimer = null;
@@ -1732,7 +1961,7 @@ export class OSPFEngine implements IProtocolEngine {
       // Fire AdjOK — if adjacency should be formed, this transitions us to ExStart.
       this.neighborEvent(iface, neighbor, 'AdjOK');
       // If AdjOK transitioned us to ExStart, fall through to ExStart handling below.
-      if (neighbor.state !== 'ExStart') return;
+      if ((neighbor.state as string) !== 'ExStart') return;
     }
 
     if (neighbor.state === 'Full') {
@@ -1745,7 +1974,7 @@ export class OSPFEngine implements IProtocolEngine {
           iface.networkType !== 'broadcast' && iface.networkType !== 'nbma') {
         this.neighborEvent(iface, neighbor, 'SeqNumberMismatch');
         // After SeqNumberMismatch we drop to ExStart — re-process this DD as ExStart
-        if (neighbor.state !== 'ExStart') return;
+        if ((neighbor.state as string) !== 'ExStart') return;
       } else {
         return;
       }
@@ -1764,7 +1993,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
         // After transitioning to Exchange, check if slave has no more headers
         // and master also sent !MORE — fire ExchangeDone if applicable
-        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+        if ((neighbor.state as string) === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
           // We (slave) have no more to send and master also done: exchange complete
           this.neighborEvent(iface, neighbor, 'ExchangeDone');
         }
@@ -1782,7 +2011,7 @@ export class OSPFEngine implements IProtocolEngine {
         this.neighborEvent(iface, neighbor, 'NegotiationDone');
         // If Slave sent !MORE (all their headers in one shot) AND we (Master) have no more,
         // then exchange is complete from both sides
-        if (neighbor.state === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
+        if ((neighbor.state as string) === 'Exchange' && neighbor.dbSummaryList.length === 0 && !(dd.flags & DD_FLAG_MORE)) {
           this.neighborEvent(iface, neighbor, 'ExchangeDone');
         }
       }
@@ -1963,9 +2192,24 @@ export class OSPFEngine implements IProtocolEngine {
       const key = makeLSDBKey(lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
       const areaDB = this.lsdb.areas.get(iface.areaId);
 
-      // Skip if LSA is MaxAge and not in DB
+      for (const [, nbr] of iface.neighbors) {
+        nbr.lsRequestList = nbr.lsRequestList.filter(
+          (h) => makeLSDBKey(h.lsType, h.linkStateId, h.advertisingRouter) !== key,
+        );
+      }
+
       if (lsa.lsAge >= OSPF_MAX_AGE) {
-        if (areaDB && !areaDB.has(key)) continue;
+        ackedHeaders.push(this.extractHeader(lsa));
+        if (areaDB?.has(key)) {
+          areaDB.delete(key);
+          this.lsArrivalTimes.delete(key);
+          lsdbChanged = true;
+          if (lsa.lsType === 1 || lsa.lsType === 2) topologyChanged = true;
+          const maxAgeExclude = (iface.networkType === 'broadcast' || iface.networkType === 'nbma')
+            ? ifaceName : null;
+          this.floodLSA(iface.areaId, lsa, maxAgeExclude);
+        }
+        continue;
       }
 
       const existing = this.lookupLSA(iface.areaId, lsa.lsType, lsa.linkStateId, lsa.advertisingRouter);
@@ -2217,10 +2461,24 @@ export class OSPFEngine implements IProtocolEngine {
 
     // Generate links for each interface in this area
     for (const [, iface] of this.interfaces) {
-      if (iface.areaId !== areaId) continue;
+      if (!areasEqual(iface.areaId, areaId)) continue;
       if (iface.state === 'Down') continue;
 
-      if (iface.networkType === 'point-to-point') {
+      if (iface.networkType === 'loopback') {
+        // RFC 2328 §12.4.1.1 : une interface de bouclage est annoncée
+        // comme un lien de type 3 dont le LinkID est SON ADRESSE et le
+        // LinkData 255.255.255.255 — un hôte isolé, pas le sous-réseau.
+        // C'est cela que signifie « treated as a stub Host », et c'est
+        // ce qui fait qu'une loopback en /24 est vue en /32 par les
+        // voisins tant qu'on n'a pas changé son type de réseau.
+        links.push({
+          linkId: iface.ipAddress,
+          linkData: '255.255.255.255',
+          type: 3,
+          numTOS: 0,
+          metric: 0,
+        });
+      } else if (iface.networkType === 'point-to-point') {
         // Add point-to-point link for each Full neighbor
         for (const [, neighbor] of iface.neighbors) {
           if (neighbor.state === 'Full') {
@@ -2281,7 +2539,7 @@ export class OSPFEngine implements IProtocolEngine {
     }
 
     // Virtual link type 4 links (RFC 2328 §12.4.1.1) — only in backbone Router-LSA
-    if (areaId === OSPF_BACKBONE_AREA) {
+    if (isBackboneAreaId(areaId)) {
       for (const [peerRouterId, vl] of this.virtualLinks) {
         const vlNeighbor = vl.iface.neighbors.get(peerRouterId);
         if (vlNeighbor && vlNeighbor.state === 'Full') {
@@ -2515,9 +2773,11 @@ export class OSPFEngine implements IProtocolEngine {
       forwardingAddress: nssaLsa.forwardingAddress,
       externalRouteTag: nssaLsa.externalRouteTag,
     };
-    lsa.checksum = this.computeLSAChecksum(lsa);
-    // Type 5 goes directly into external LSDB and is flooded everywhere
-    this.lsdb.external.set(makeLSDBKey(5, lsa.linkStateId, lsa.advertisingRouter), lsa);
+    // installLSA() recomputes the real Fletcher-16 checksum (this.computeLSAChecksum()
+    // is a simplified placeholder every other origination path overwrites the same
+    // way) — every receiving router's verifyOSPFLSAChecksum() would otherwise reject
+    // this LSA on arrival and the translated route would silently never propagate.
+    this.installLSA(OSPF_BACKBONE_AREA, lsa);
     this.floodLSA(OSPF_BACKBONE_AREA, lsa, null);
     return lsa;
   }
@@ -2615,8 +2875,16 @@ export class OSPFEngine implements IProtocolEngine {
     let sentToAny = false;
     for (const [ifName, iface] of this.interfaces) {
       if (ifName === excludeIface) continue;
-      if (iface.areaId !== areaId && lsa.lsType !== 5) continue;
+      if (!areasEqual(iface.areaId, areaId) && lsa.lsType !== 5) continue;
       if (iface.passive) continue;
+      // RFC 2328 §12.4.5 / RFC 3101 §3.4: AS-external-LSAs (Type 5) are never
+      // flooded into stub, totally-stubby, or NSSA areas — that's the whole
+      // point of those area types. Type 7 already carries the NSSA-internal
+      // equivalent; a stub/totally-stubby area gets only the default route.
+      if (lsa.lsType === 5) {
+        const ifaceAreaType = this.config.areas.get(iface.areaId)?.type;
+        if (ifaceAreaType === 'stub' || ifaceAreaType === 'totally-stubby' || ifaceAreaType === 'nssa') continue;
+      }
 
       for (const [, neighbor] of iface.neighbors) {
         if (neighbor.state === 'Full' || neighbor.state === 'Exchange' || neighbor.state === 'Loading') {
@@ -2670,6 +2938,15 @@ export class OSPFEngine implements IProtocolEngine {
         if (lsa.lsAge >= OSPF_MAX_AGE) continue;
         this.floodLSA(areaId, lsa, null, true); // force past MinLSInterval
       }
+    }
+    // Type-5 (AS-external) LSAs live in the AS-wide external LSDB, not in any
+    // area's LSDB — they need their own reflood pass, or a late-forming
+    // adjacency (still converging when the LSA was first originated) never
+    // gets the redistributed/default route at all.
+    for (const [, lsa] of this.lsdb.external) {
+      if (lsa.advertisingRouter !== this.config.routerId) continue;
+      if (lsa.lsAge >= OSPF_MAX_AGE) continue;
+      this.floodLSA(OSPF_BACKBONE_AREA, lsa, null, true); // force past MinLSInterval
     }
   }
 
@@ -2904,7 +3181,7 @@ export class OSPFEngine implements IProtocolEngine {
         if (r.routeType === 'intra-area') return true;
         // Backbone inter-area routes (learned from other areas via Type 3 LSAs) should be
         // propagated into non-backbone areas — this is the backbone pass-through function.
-        if (r.routeType === 'inter-area' && sourceAreaId === OSPF_BACKBONE_AREA) return true;
+        if (r.routeType === 'inter-area' && isBackboneAreaId(sourceAreaId)) return true;
         return false;
       });
 
@@ -3062,7 +3339,7 @@ export class OSPFEngine implements IProtocolEngine {
     while (candidates.length > 0) {
       candidates.sort((a, b) => a.distance - b.distance);
       const best = candidates.shift()!;
-      tree.set(best.id, best);
+      tree.set(OSPFEngine.spfVertexKey(best.type, best.id), best);
       this.addCandidatesFromVertex(best, areaId, areaDB, tree, candidates);
     }
     // ── End Dijkstra ─────────────────────────────────────────────────────────
@@ -3374,7 +3651,7 @@ export class OSPFEngine implements IProtocolEngine {
             }
           }
           if (!networkLSA) continue;
-          if (tree.has(drIP)) continue;
+          if (tree.has(OSPFEngine.spfVertexKey('network', drIP))) continue;
 
           const newDist = vertex.distance + link.metric;
           const nextHop = vertex.distance === 0 ? null : vertex.nextHop;
@@ -3391,7 +3668,7 @@ export class OSPFEngine implements IProtocolEngine {
           });
         } else if (link.type === 4) {
           // Virtual link — only meaningful in backbone SPF (RFC 2328 §15)
-          if (areaId !== OSPF_BACKBONE_AREA) continue;
+          if (!isBackboneAreaId(areaId)) continue;
           const peerRouterId = link.linkId;
           const neighborKey = makeLSDBKey(1, peerRouterId, peerRouterId);
           const neighborLSA = areaDB.get(neighborKey) as RouterLSA | undefined;
@@ -3445,8 +3722,21 @@ export class OSPFEngine implements IProtocolEngine {
     }
   }
 
+  /**
+   * SPF tree keys are per-vertex-type: a router vertex is keyed by its
+   * Router ID, a network (transit-segment) vertex by its DR's IP. These are
+   * separate ID namespaces per RFC 2328 §16.1 — but when a router's
+   * auto-detected Router ID equals an IP it's also DR for (common on a
+   * single-subnet router with one interface), the bare strings collide.
+   * Only network-vertex keys need the qualifier: router lookups elsewhere
+   * (ABR/ASBR by Router ID) never need to see a network vertex.
+   */
+  private static spfVertexKey(type: 'router' | 'network', id: string): string {
+    return type === 'network' ? `net:${id}` : id;
+  }
+
   private addOrUpdateCandidate(candidates: SPFVertex[], newVertex: SPFVertex): void {
-    const existing = candidates.find(c => c.id === newVertex.id);
+    const existing = candidates.find(c => c.id === newVertex.id && c.type === newVertex.type);
     if (existing) {
       if (newVertex.distance < existing.distance) {
         existing.distance = newVertex.distance;
@@ -3525,7 +3815,7 @@ export class OSPFEngine implements IProtocolEngine {
     }
     // Fall back: any interface in the transit area
     for (const [, iface] of this.interfaces) {
-      if (iface.areaId === vl.transitAreaId) return iface.name;
+      if (areasEqual(iface.areaId, vl.transitAreaId)) return iface.name;
     }
     return null;
   }
@@ -3807,6 +4097,8 @@ export class OSPFEngine implements IProtocolEngine {
           `OSPF packet type ${packet.packetType} from ${srcIP} dropped on ${ifaceName}: authentication mismatch`);
         return;
       }
+      if (!this.ifaceForReceivedPacket(
+        ifaceName, packet.areaId, packet.routerId, srcIP, packet.packetType)) return;
     }
 
     switch (packet.packetType) {

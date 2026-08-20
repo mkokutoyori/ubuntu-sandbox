@@ -51,7 +51,7 @@ export class LinuxCommandRegistry {
    * `LinuxPC.containsNetworkCommand()`.
    */
   hasNetworkCommandIn(line: string): boolean {
-    const words = line.split(/[\s;|&]+/);
+    const words = line.split(/[\s;|&"'`()]+/);
     for (const w of words) {
       const cmd = this.cmds.get(w);
       if (cmd && cmd.needsNetworkContext) return true;

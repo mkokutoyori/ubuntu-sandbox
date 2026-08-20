@@ -197,9 +197,15 @@ implements FhrpDataPlane {
     this.advertiseIfDue(g);
   }
 
-  setPreempt(iface: string, id: number, on: boolean): void {
+  setPreempt(iface: string, id: number, on: boolean, delaySec?: number): void {
     const g = this.ensureGroup(iface, id);
     g.preempt = on;
+    // Le delai voyage AVEC le drapeau parce que la commande n'en fait
+    // qu'une : `preempt delay minimum <s>` pose les deux, et les separer
+    // ferait exister un instant ou la preemption est armee sans son
+    // delai — donc une prise de role que l'operateur n'a pas demandee.
+    if (delaySec !== undefined) g.preemptDelaySec = delaySec;
+    if (!on) this.clearPreemptDelay(g);
     this.recompute(g, 'preempt');
   }
 
@@ -290,6 +296,72 @@ implements FhrpDataPlane {
       (e) => this.onLinkDown(e.payload.portName),
     ));
   }
+
+  // ── Delai de preemption, commun aux trois familles ───────────────
+
+  /**
+   * Le delai de preemption est-il ecoule pour ce groupe ?
+   *
+   * Il vit sur la BASE parce que les trois familles ont la meme
+   * commande sous trois orthographes — `standby <n> preempt delay
+   * minimum <s>`, `vrrp <n> preempt delay minimum <s>`, `glbp <n>
+   * preempt delay minimum <s>` cote IOS, `preempt-mode timer delay <s>`
+   * cote VRP — et la meme decision. En ecrire trois copies, c'etait
+   * garantir qu'elles finiraient par differer.
+   *
+   * Il ne retarde PAS le basculement : quand il n'y a plus d'actif du
+   * tout, la reprise est immediate — c'est le chemin de la panne, et le
+   * retarder ferait perdre du trafic pour rien. Ce qu'il retarde est la
+   * PREEMPTION d'un pair vivant qui parle encore, ce que la
+   * documentation donne comme sa raison d'etre : eviter qu'un routeur
+   * qui vient de redemarrer ne reprenne le trafic avant que son routage
+   * n'ait converge.
+   *
+   * L'horloge part quand ce routeur devient eligible et est REMISE A
+   * ZERO des qu'il cesse de l'etre, sans quoi une eligibilite
+   * intermittente finirait par accumuler assez de temps pour preempter
+   * sans avoir jamais ete stable une seule seconde.
+   */
+  protected preemptDelayElapsed(g: G): boolean {
+    const delai = g.preemptDelaySec ?? 0;
+    if (delai <= 0) { g.preemptEligibleSinceMs = null; return true; }
+    const now = Date.now();
+    if (g.preemptEligibleSinceMs == null) {
+      g.preemptEligibleSinceMs = now;
+      // Le minuteur est arme ici, et il faut que quelque chose le
+      // reveille : sans ce rendez-vous, la preemption n'aurait lieu qu'a
+      // la prochaine annonce recue, donc jamais si le pair se tait.
+      this.armPreemptWakeup(g, delai * 1000);
+      return false;
+    }
+    return now - g.preemptEligibleSinceMs >= delai * 1000;
+  }
+
+  /** Le groupe cesse d'etre eligible : l'horloge repart de zero. */
+  protected clearPreemptDelay(g: G): void {
+    g.preemptEligibleSinceMs = null;
+  }
+
+  private preemptWakeups = new Map<string, TimerHandle>();
+
+  private armPreemptWakeup(g: G, inMs: number): void {
+    const cle = this.keyOf(g.iface, this.groupIdOf(g));
+    if (this.preemptWakeups.has(cle)) return;
+    const s = this.getScheduler();
+    this.preemptWakeups.set(cle, s.setTimeout(() => {
+      this.preemptWakeups.delete(cle);
+      this.recompute(g, 'preempt');
+      this.advertiseIfDue(g);
+    }, inMs));
+  }
+
+  /**
+   * L'identifiant numerique du groupe, pour la cle du minuteur.
+   *
+   * Les trois familles le nomment differemment (`vrid`, `group`), d'ou
+   * ce petit accesseur plutot qu'un champ de plus sur la base.
+   */
+  protected abstract groupIdOf(g: G): number;
 
   /** Default reaction; HSRP overrides to honour tracked objects. */
   protected onLinkUp(portName: string): void {

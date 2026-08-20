@@ -62,3 +62,18 @@ export class ContinueSignal extends BashError {
     this.name = 'ContinueSignal';
   }
 }
+
+/**
+ * Raised when a background job walks into an unconditional loop
+ * (`while true`, `until false`) — parks there instead of hanging forever.
+ * `interp` (typed `unknown` here to avoid a circular import with
+ * BashInterpreter) carries the interpreter that actually parked — a
+ * rethrow by an outer nested fork (e.g. `bash -c` inside a backgrounded
+ * job) must forward the original one, not substitute its own.
+ */
+export class DaemonParkSignal extends BashError {
+  constructor(public readonly output: string, public readonly interp?: unknown) {
+    super('daemon job parked in an unconditional loop');
+    this.name = 'DaemonParkSignal';
+  }
+}

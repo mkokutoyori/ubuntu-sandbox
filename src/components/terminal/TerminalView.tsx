@@ -14,13 +14,19 @@
  *   - ANSI color parsing
  */
 
-import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import type {
+  RemoteNanoController,
+  RemoteVimController,
+} from '@/terminal/editors/RemoteEditorController';
 import type { TerminalSession, OutputLine, InputMode, TerminalTheme } from '@/terminal/sessions/TerminalSession';
 import type { LinuxTerminalSession } from '@/terminal/sessions/LinuxTerminalSession';
 import type { WindowsTerminalSession } from '@/terminal/sessions/WindowsTerminalSession';
-import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
+import { parseAnsiToSegments, stripAnsi } from '@/terminal/core/OutputFormatter';
+import { LinuxMachine } from '@/network/devices/LinuxMachine';
+import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
 
 // ─── Hook: subscribe to a session's state changes ─────────────────
 
@@ -66,32 +72,56 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   const reverseSearchRef = useRef<HTMLInputElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom on output changes
+  // Scroll to bottom on output changes — but only while the user hasn't
+  // scrolled up to read earlier output. A real terminal freezes the view
+  // when you scroll back; forcing scrollTop unconditionally on every
+  // render (as this used to) yanked the view back down on every notify
+  // during a stream (tail -f, ping, debug ip ospf), making the
+  // scrollback unreadable (rapport 09 audit — mirrors the live-tail
+  // pattern already correct in NetworkLogsPanel.tsx).
+  const [stuckToBottom, setStuckToBottom] = useState(true);
   useEffect(() => {
-    if (terminalRef.current) {
+    if (stuckToBottom && terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   });
 
+  const handleTerminalScroll = useCallback(() => {
+    const el = terminalRef.current;
+    if (!el) return;
+    // Small epsilon: fractional scroll positions (momentum scroll,
+    // sub-pixel rendering) can land a px or two short of the true max.
+    setStuckToBottom(el.scrollHeight - el.scrollTop - el.clientHeight <= 4);
+  }, []);
+
   // Focus management — use currentInputMode (polymorphic) for all session types.
   // This stays in sync with the rendering logic which also reads currentInputMode.
   const effectiveMode = session.currentInputMode;
+  // A foreground stream (tail -f, tcpdump, …) swaps in the hidden capture
+  // input below. Tracked as a dependency (not just read inline) so the
+  // focus effect only re-runs when this actually flips, not on every
+  // streamed line — see the ref on that input for why that distinction matters.
+  const hasAttachedStream = (session.listAttachedStreams?.().length ?? 0) > 0;
 
   useEffect(() => {
     if (effectiveMode.type === 'password') {
-      setTimeout(() => hiddenInputRef.current?.focus(), 10);
+      setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 10);
     } else if (effectiveMode.type === 'interactive-text') {
       setTimeout(() => interactiveInputRef.current?.focus(), 10);
     } else if (effectiveMode.type === 'reverse-search') {
       setTimeout(() => reverseSearchRef.current?.focus(), 30);
+    } else if (effectiveMode.type === 'pager') {
+      inputRef.current?.focus({ preventScroll: true });
+    } else if (effectiveMode.type === 'normal' && hasAttachedStream) {
+      inputRef.current?.focus({ preventScroll: true });
     } else if (effectiveMode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
-  }, [effectiveMode.type]);
+  }, [effectiveMode.type, hasAttachedStream]);
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus();
+    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
     else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
     else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
     else if (effectiveMode.type === 'booting') return;
@@ -107,25 +137,32 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       return;
     }
 
-    // Ctrl+Shift+V → paste from clipboard
+    // Ctrl+Shift+V → paste from clipboard (multi-line aware)
     if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
       e.preventDefault();
       pasteFromClipboard().then(text => {
-        if (text) {
-          // Determine input mode and paste into the correct buffer
-          const currentMode = session.currentInputMode;
-          if (session.inputMode.type === 'reverse-search') {
-            session.updateReverseSearch(session.reverseSearchQuery + text);
-          } else if (currentMode.type === 'interactive-text') {
-            session.setInputBuf(session.getInputBuf() + text);
-          } else if (currentMode.type === 'password') {
-            session.setPasswordBuf(session.getPasswordBuf() + text);
-          } else {
-            session.setInput(session.input + text);
-          }
-        }
+        if (text) session.pasteText(text);
       });
       return;
+    }
+
+    // Ctrl+C pendant un collage : l'interrompre AVANT que la touche ne
+    // parte au shell. Un bloc collé par erreur doit pouvoir être arrêté,
+    // et c'est le geste que tout le monde fait.
+    if (e.key === 'c' && e.ctrlKey && !e.shiftKey && session.abortPaste()) {
+      e.preventDefault();
+      return;
+    }
+
+    // ArrowRight at end-of-input accepts the ghost suggestion inline.
+    if (e.key === 'ArrowRight' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      const el = e.currentTarget;
+      const atEnd = el.selectionStart === el.value.length
+        && el.selectionEnd === el.value.length;
+      if (atEnd && session.getGhostSuggestion() && session.acceptGhost()) {
+        e.preventDefault();
+        return;
+      }
     }
 
     const consumed = session.handleKey({
@@ -136,6 +173,27 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       shiftKey: e.shiftKey,
     });
     if (consumed) e.preventDefault();
+  }, [session]);
+
+  // Native paste (Ctrl+V / middle-click / context menu) — the single-line
+  // <input> silently drops embedded newlines, so intercept the paste event
+  // and route the raw clipboard text through the multi-line paste handler.
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (text.includes('\n') || text.includes('\r')) {
+      e.preventDefault();
+      session.pasteText(text);
+    }
+  }, [session]);
+
+  // Les champs sans valeur contrôlée — pager, capture de flux — ne
+  // voient jamais passer un `onChange`, donc un collage y était
+  // intégralement perdu, y compris sur une seule ligne. Ils routent
+  // TOUT vers la session.
+  const handlePasteRaw = useCallback((e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text');
+    if (text) session.pasteText(text);
   }, [session]);
 
   // Global keydown for copy/paste when terminal div is focused but no input has focus
@@ -151,7 +209,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       if (e.key === 'V' && e.ctrlKey && e.shiftKey) {
         e.preventDefault();
         pasteFromClipboard().then(text => {
-          if (text) session.setInput(session.input + text);
+          if (text) session.pasteText(text);
         });
       }
     };
@@ -160,10 +218,48 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     return () => el.removeEventListener('keydown', handler);
   }, [session]);
 
-  // ── Editor overlay (Linux only) ─────────────────────────────────
-  if (session.inputMode.type === 'editor') {
-    const editorMode = session.inputMode;
-    const linuxSession = session as LinuxTerminalSession;
+  // An editor whose buffer lives on the remote: the very same overlays,
+  // driven by a proxy over the SSH channel instead of a local engine
+  // (docs/PRD-SSH-Unification.md §4bis B3).
+  if (session.currentInputMode.type === 'remote-editor') {
+    const remote = session.currentInputMode;
+    const done = () => session.foreground.editorExit(remote.controller.savedOnExit);
+    return (
+      <div className="h-full w-full flex flex-col">
+        {remote.editorType === 'nano' ? (
+          <NanoEditor
+            filePath={remote.filePath}
+            initialContent=""
+            isNewFile={remote.controller.isNewFile}
+            driver={remote.controller as RemoteNanoController}
+            onExit={done}
+          />
+        ) : (
+          <VimEditor
+            filePath={remote.filePath}
+            initialContent=""
+            isNewFile={remote.controller.isNewFile}
+            editorName={remote.editorType === 'vi' ? 'vi' : 'vim'}
+            driver={remote.controller as RemoteVimController}
+            onExit={done}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (session.currentInputMode.type === 'editor') {
+    const editorMode = session.currentInputMode;
+    // The editing device is whichever session is actually driving the
+    // overlay — for a plain terminal that's `session` itself, but over an
+    // SSH hop (or any nested child session) it's `session.foreground`,
+    // the same session `currentInputMode`/`editorSave`/`editorExit` above
+    // already delegate to (LinuxTerminalSession/WindowsTerminalSession
+    // `currentInputMode` overrides both forward to `foreground`).
+    const linuxSession = session.foreground as LinuxTerminalSession;
+    const linuxDevice = linuxSession.device as LinuxMachine;
+    const fsContext = new LinuxEditorFsContext(linuxDevice, linuxSession.shell ?? undefined);
+    const owner = linuxSession.shell?.user ?? linuxDevice.getCurrentUser();
     if (editorMode.editorType === 'nano') {
       return (
         <div className="h-full w-full flex flex-col">
@@ -171,8 +267,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             filePath={editorMode.absolutePath}
             initialContent={editorMode.content}
             isNewFile={editorMode.isNewFile}
-            onSave={(content: string, path: string) => linuxSession.editorSave(content, path)}
-            onExit={() => linuxSession.editorExit()}
+            readOnly={editorMode.readOnly}
+            showPosition={editorMode.showPosition}
+            showLineNumbers={editorMode.showLineNumbers}
+            initialCursorLine={editorMode.initialCursorLine}
+            initialCursorCol={editorMode.initialCursorCol}
+            fsContext={fsContext}
+            onExit={(saved: boolean) => session.editorExit(saved)}
           />
         </div>
       );
@@ -184,8 +285,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           initialContent={editorMode.content}
           isNewFile={editorMode.isNewFile}
           editorName={editorMode.editorType === 'vi' ? 'vi' : 'vim'}
-          onSave={(content: string, path: string) => linuxSession.editorSave(content, path)}
-          onExit={() => linuxSession.editorExit()}
+          initialCursorLine={editorMode.initialCursorLine}
+          fsContext={fsContext}
+          owner={owner}
+          onExit={(saved: boolean) => session.editorExit(saved)}
         />
       </div>
     );
@@ -217,9 +320,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         <InfoBar theme={theme} session={session} />
       )}
 
-      {/* ── SSH context banner (linux only — BRD SSH-04) ── */}
+      {/* ── SSH context banner (BRD SSH-04) ── */}
       {sessionType === 'linux' && (
-        <SshContextBanner theme={theme} session={session as LinuxTerminalSession} />
+        <SshContextBanner theme={theme} session={session} />
       )}
 
       {/* ── Windows CMD banner ── */}
@@ -239,12 +342,26 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
       {/* ── Terminal output ── */}
       <div
         ref={terminalRef}
+        data-testid="terminal-output"
         className="flex-1 overflow-auto px-3 py-2"
         style={{ backgroundColor: theme.backgroundColor, lineHeight: sessionType === 'windows' ? '1.25' : '1.35' }}
         onClick={handleClick}
+        onScroll={handleTerminalScroll}
       >
         {session.lines.map((line) => (
-          <LineRenderer key={line.id} line={line} theme={theme} sessionType={sessionType} />
+          // content-visibility: auto skips layout/paint for scrollback that
+          // isn't near the viewport — scrollback is configurable up to
+          // 50,000 lines (rapport 09 audit), and without this every past
+          // line stays a live DOM/layout node forever. contain-intrinsic-size
+          // is a single-row estimate (most lines are); a wrapped long line
+          // gets its real height once it scrolls into view, same trade-off
+          // MDN documents for long chat/log lists.
+          <div
+            key={line.id}
+            style={{ contentVisibility: 'auto', containIntrinsicSize: `0 ${sessionType === 'windows' ? '1.25em' : '1.35em'}` }}
+          >
+            <LineRenderer line={line} theme={theme} sessionType={sessionType} />
+          </div>
         ))}
 
         {/* Tab suggestions (linux, windows) */}
@@ -271,13 +388,28 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             <input
               ref={hiddenInputRef}
+              name="terminalPassword"
               type="password"
+              autoComplete="off"
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="absolute overflow-hidden"
+              onPaste={handlePaste}
+              className="overflow-hidden"
               style={{
-                position: 'absolute',
+                // `fixed` (not `absolute`) deliberately: this input sits
+                // inside a long scrollable output list. Typing into it
+                // moves its native caret, and Chromium reveals a moving
+                // caret by scrolling every ancestor up to and including
+                // `overflow:hidden` ones that were never meant to scroll
+                // (see TerminalModal's wrapper around this component) —
+                // `preventScroll` on focus() doesn't cover that, only the
+                // initial focus. `fixed` positioning takes it out of the
+                // scrollable-ancestor chain entirely, so there is nothing
+                // left for the browser to scroll to "reveal" it.
+                position: 'fixed',
+                top: 0,
+                left: 0,
                 width: '1px',
                 height: '1px',
                 padding: 0,
@@ -286,8 +418,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 whiteSpace: 'nowrap',
                 borderWidth: 0,
               }}
-              autoComplete="off"
-              autoFocus
             />
             {(inputMode as { promptText?: string }).promptText && (
               <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
@@ -308,14 +438,16 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             )}
             <input
               ref={interactiveInputRef}
+              name="terminalPrompt"
               type="text"
+              autoComplete="off"
               value={session.getInputBuf()}
               onChange={(e) => session.setInputBuf(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               className="flex-1 bg-transparent outline-none border-none p-0 m-0"
               style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
               spellCheck={false}
-              autoComplete="off"
               autoFocus
             />
           </div>
@@ -332,46 +464,77 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
         {/* Hidden capture input while a foreground stream (e.g. `tail -f`)
             holds the tty — the prompt stays invisible but Ctrl+C still
-            reaches the session. */}
+            reaches the session. Focusing happens in the effect above, keyed
+            off `hasAttachedStream` — NOT in this ref callback: an inline
+            arrow function ref re-runs on every render (i.e. on every
+            streamed line), which was stealing focus from other terminals
+            on each new packet/line even when the user had since clicked
+            elsewhere. */}
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
-          && (session.listAttachedStreams?.().length ?? 0) > 0 && (
+          && hasAttachedStream && (
           <input
             ref={inputRef}
+            name="terminalStreamCapture"
             type="text"
+            autoComplete="off"
+            aria-hidden="true"
+            tabIndex={-1}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
+            onPaste={handlePasteRaw}
           />
         )}
 
         {/* Normal input line — hidden while a foreground stream holds the tty. */}
         {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
-          && (session.listAttachedStreams?.().length ?? 0) === 0 && (
+          && !hasAttachedStream && (
           <div className="flex items-center" style={{ minHeight: sessionType === 'windows' ? '1.25em' : '1.35em' }}>
             <PromptRenderer session={session} sessionType={sessionType} theme={theme} />
-            <input
-              ref={inputRef}
-              type="text"
-              value={session.input}
-              onChange={(e) => {
-                session.setInput(e.target.value);
-              }}
-              onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent outline-none border-none p-0 m-0"
-              style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
-              spellCheck={false}
-              autoComplete="off"
-            />
+            <div className="relative flex-1">
+              {session.getGhostSuggestion() && (
+                <div
+                  aria-hidden
+                  className="absolute inset-0 pointer-events-none whitespace-pre overflow-hidden"
+                  style={{ fontFamily: 'inherit', fontSize: 'inherit' }}
+                >
+                  <span style={{ visibility: 'hidden' }}>{session.input}</span>
+                  <span data-testid="ghost-suggestion" style={{ color: '#6b7280' }}>
+                    {session.getGhostSuggestion()}
+                  </span>
+                </div>
+              )}
+              <input
+                ref={inputRef}
+                name="terminalInput"
+                type="text"
+                autoComplete="off"
+                value={session.input}
+                onChange={(e) => {
+                  session.setInput(e.target.value);
+                }}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                className="w-full bg-transparent outline-none border-none p-0 m-0"
+                style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
+                spellCheck={false}
+              />
+            </div>
           </div>
         )}
 
-        {/* Pager hidden input (captures keys) */}
+        {/* Pager hidden input (captures keys). Focusing happens in the
+            effect above (keyed off `effectiveMode.type`), not in this ref
+            callback — same reasoning as the stream-capture input. */}
         {isPager && !isBooting && (
           <input
             ref={inputRef}
+            name="terminalPagerCapture"
+            autoComplete="off"
+            aria-hidden="true"
+            tabIndex={-1}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
-            autoFocus
+            onPaste={handlePasteRaw}
           />
         )}
 
@@ -418,7 +581,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
  */
 const SshContextBanner: React.FC<{
   theme: TerminalTheme;
-  session: LinuxTerminalSession;
+  session: TerminalSession;
 }> = ({ theme, session }) => {
   const ctx = session.getSshContextInfo();
   if (!ctx.active) return null;
@@ -496,6 +659,8 @@ const ReverseSearchBar: React.FC<{
       <span style={{ color: '#facc15', whiteSpace: 'pre' }}>(reverse-i-search)`</span>
       <input
         ref={inputRef}
+        name="terminalReverseSearch"
+        autoComplete="off"
         value={query}
         onChange={(e) => session.updateReverseSearch(e.target.value)}
         onKeyDown={onKeyDown}
@@ -509,7 +674,6 @@ const ReverseSearchBar: React.FC<{
           width: `${Math.max(1, query.length)}ch`,
         }}
         spellCheck={false}
-        autoComplete="off"
         autoFocus
       />
       <span style={{ color: '#facc15', whiteSpace: 'pre' }}>': </span>
@@ -523,8 +687,7 @@ const ReverseSearchBar: React.FC<{
 /** Render a prompt appropriate to the session type */
 const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; theme: TerminalTheme }> = ({ session, sessionType, theme }) => {
   if (sessionType === 'linux') {
-    const linux = session as LinuxTerminalSession;
-    const p = linux.getPromptParts();
+    const p = session.getPromptParts();
     // Foreign sub-shell (SSH'd into Windows / Cisco / Huawei, sqlplus,
     // sftp, …): the bash-style `user@host:path$` decomposition does not
     // apply. Render the sub-shell's raw prompt verbatim so cmd shows
@@ -556,11 +719,6 @@ const PromptRenderer: React.FC<{ session: TerminalSession; sessionType: string; 
 
 /** Render a single output line — exported for unit tests. */
 export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; sessionType: string }> = React.memo(({ line, theme, sessionType }) => {
-  // Echo line: the prompt is stored separately in `promptText` so it
-  // can be styled (and so test introspection on `text` sees only the
-  // typed command). Linux-style prompts decompose into user@host : path
-  // promptChar — preserve the colored rendering the legacy regex
-  // detector applied to whole-line scrollback strings.
   if (line.promptText !== undefined) {
     const linuxPromptMatch = sessionType === 'linux'
       ? line.promptText.match(/^(\S+)@(\S+):(.+?)([$#])\s*$/)
@@ -605,26 +763,23 @@ export const LineRenderer: React.FC<{ line: OutputLine; theme: TerminalTheme; se
     );
   }
 
-  // Linux: ANSI color support
   if (sessionType === 'linux') {
     return <LinuxLineRenderer line={line} theme={theme} />;
   }
 
-  // Cisco/Huawei
   if (sessionType === 'cisco' || sessionType === 'huawei') {
     let color = theme.textColor;
     if (line.type === 'error') color = theme.errorColor;
     else if (line.type === 'boot') color = theme.bootColor || theme.textColor;
     else if (line.type === 'more') color = theme.pagerColor || '#facc15';
-    return <pre className="whitespace-pre-wrap leading-5" style={{ color, margin: 0, fontFamily: 'inherit' }}>{line.text}</pre>;
+    return <pre className="whitespace-pre-wrap leading-5" style={{ color, margin: 0, fontFamily: 'inherit' }}>{stripAnsi(line.text)}</pre>;
   }
 
-  // Windows
   let color = theme.textColor;
   if (line.type === 'error') color = theme.errorColor;
   else if (line.type === 'warning') color = theme.warningColor || '#cca700';
   else if (line.type === 'ps-header') color = '#eeedf0';
-  return <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit', lineHeight: '1.25', color }}>{line.text}</pre>;
+  return <pre className="whitespace-pre-wrap" style={{ margin: 0, fontFamily: 'inherit', lineHeight: '1.25', color }}>{stripAnsi(line.text)}</pre>;
 });
 LineRenderer.displayName = 'LineRenderer';
 

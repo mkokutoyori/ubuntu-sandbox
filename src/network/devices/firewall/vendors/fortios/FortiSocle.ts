@@ -1,0 +1,470 @@
+import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
+import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
+import { newSession, type CliSession } from '../../../../../cli/CliSession';
+import { parseCommand } from '../../../../../cli/CommandParser';
+import { complete, type CompletionTrigger, type Suggestion } from '../../../../../cli/CompletionEngine';
+import { FortiMessages } from './FortiMessages';
+import type { FortiAttributeSpec, FortiTableSpec } from './schema/types';
+import type { AccessIntent, AccessVerdict } from '../../authz/AccessMatrix';
+import type { FortiConfigTree } from './runtime/FortiConfigTree';
+import type { FortiNavigator } from './runtime/FortiNavigator';
+import type { FortiObject } from './runtime/FortiObject';
+import type { FortiTable } from './runtime/FortiTable';
+
+const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.freeze([
+  [['config'], 'Configure object.'],
+  [['config', 'firewall'], 'Configure firewall.'],
+  [['config', 'firewall', 'service'], 'Configure services.'],
+  [['config', 'firewall', 'schedule'], 'Configure schedules.'],
+  [['config', 'system'], 'Configure system settings.'],
+  [['config', 'system', 'dhcp'], 'Configure DHCP.'],
+  [['config', 'router'], 'Configure router.'],
+  [['config', 'log'], 'Configure logging.'],
+  [['config', 'log', 'syslogd', 'setting'], 'Configure the first syslog collector.'],
+  [['config', 'log', 'syslogd2', 'setting'], 'Configure the second syslog collector.'],
+  [['config', 'log', 'memory'], 'Configure memory logging.'],
+  [['diagnose'], 'Diagnose facility.'],
+  [['diagnose', 'sys'], 'System diagnostics.'],
+  [['diagnose', 'sys', 'session'], 'Session table diagnostics.'],
+  [['diagnose', 'sys', 'sdwan'], 'SD-WAN diagnostics.'],
+  [['diagnose', 'sys', 'ha'], 'Cluster diagnostics.'],
+  [['diagnose', 'sys', 'ha', 'checksum'], 'Configuration checksums.'],
+  [['execute', 'ha'], 'Cluster operations.'],
+  [['execute', 'ha', 'failover'], 'Force a failover.'],
+  [['diagnose', 'debug'], 'Debug facility.'],
+  [['diagnose', 'debug', 'flow'], 'Trace the path a packet follows.'],
+  [['diagnose', 'firewall'], 'Firewall diagnostics.'],
+  [['diagnose', 'firewall', 'iprope'], 'Compiled policy table.'],
+  [['diagnose', 'sniffer'], 'Packet sniffer.'],
+  [['execute'], 'Execute static commands.'],
+  [['execute', 'log'], 'Log operations.'],
+  [['execute', 'log', 'filter'], 'Set the log display filter.'],
+  [['get'], 'Get dynamic and system information.'],
+  [['set'], 'Set a field value.'],
+  [['unset'], 'Reset a field to its default.'],
+  [['append'], 'Append a value to a list.'],
+  [['select'], 'Select a value from a list.'],
+  [['unselect'], 'Remove a value from a list.'],
+]);
+
+const FORTI_MODES = Object.freeze({ forti: { parent: null } });
+const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
+const MODE = ['forti'];
+
+export interface SocleDeps {
+  readonly tree: FortiConfigTree;
+  readonly nav: FortiNavigator;
+  readonly hostname: () => string;
+  readonly device: unknown;
+  readonly candidatesFor: (targets: readonly string[]) => readonly EnumValue[];
+  readonly view: (rest: readonly string[], full: boolean) => string;
+  readonly inspect: (rest: readonly string[]) => string;
+  readonly diagnose: (rest: readonly string[]) => string;
+  readonly runExecute: (rest: readonly string[]) => string;
+  readonly enterGlobal: () => string;
+  readonly authorize?: (spec: FortiTableSpec, intent: AccessIntent) => AccessVerdict;
+  readonly principal?: () => string;
+}
+
+export interface FortiOutcome {
+  readonly handled: boolean;
+  readonly output: string;
+}
+
+const UNHANDLED: FortiOutcome = Object.freeze({ handled: false, output: '' });
+
+function done(output: string): FortiOutcome {
+  return { handled: true, output };
+}
+
+export class FortiSocle {
+  private readonly cache = new Map<string, CommandTable>();
+
+  constructor(private readonly deps: SocleDeps) {}
+
+  execute(line: string): FortiOutcome {
+    const table = this.contextTable();
+    const session = this.session();
+    const parsed = parseCommand(table, line, session);
+
+    switch (parsed.status) {
+      case 'empty': return done('');
+      case 'ambiguous':
+        return done(FortiMessages.ambiguous(parsed.token, parsed.candidates));
+      case 'incomplete':
+        return done(FortiMessages.incomplete('the rest of the command'));
+      case 'invalid': return UNHANDLED;
+      case 'ok': {
+        const output = parsed.spec.run(session, parsed.args);
+        return done(typeof output === 'string' ? output : '');
+      }
+    }
+  }
+
+  suggestions(input: string, trigger: CompletionTrigger): readonly Suggestion[] {
+    return complete(this.contextTable(), input, this.session(), trigger).suggestions;
+  }
+
+  completion(input: string): string | undefined {
+    return complete(this.contextTable(), input, this.session(), 'TAB').completion;
+  }
+
+  private session(): CliSession {
+    return newSession(this.deps.hostname(), this.deps.device, {
+      hierarchy: FORTI_MODES, prompts: FORTI_PROMPTS,
+      topLevel: 'forti', execLevel: 'forti', initialMode: 'forti',
+    });
+  }
+
+  private contextTable(): CommandTable {
+    const key = this.contextKey();
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+
+    const table = new CommandTable();
+    for (const spec of this.contextSpecs()) table.declare(spec);
+    for (const [path, legend] of LEGENDS) table.describePath(path, legend);
+    this.cache.set(key, table);
+    return table;
+  }
+
+  private contextKey(): string {
+    const principal = this.deps.principal ? this.deps.principal() : '';
+    const object = this.deps.nav.currentObject();
+    if (object) {
+      const shape = object.availableAttributes().map(a => a.name).join(',');
+      return `object:${principal}:${object.spec.path.join(' ')}:${shape}`
+        + `:${this.referenceStamp(object)}`;
+    }
+    const table = this.deps.nav.currentTable();
+    if (table) {
+      return `table:${principal}:${table.spec.path.join(' ')}:${table.keys().join(',')}`;
+    }
+    return `root:${principal}:${this.deps.tree.specPaths().length}`;
+  }
+
+  private referenceStamp(object: FortiObject): string {
+    const parts: string[] = [];
+    for (const attribute of object.availableAttributes()) {
+      if (!attribute.referenceTo) continue;
+      parts.push(this.deps.candidatesFor(attribute.referenceTo).map(v => v.keyword).join('|'));
+    }
+    return parts.join(';');
+  }
+
+  private contextSpecs(): CommandSpec[] {
+    const object = this.deps.nav.currentObject();
+    if (object) return this.objectSpecs(object);
+
+    const table = this.deps.nav.currentTable();
+    if (table) return this.tableSpecs(table);
+
+    return this.rootSpecs();
+  }
+
+  private branchSpecs(): CommandSpec[] {
+    const out: CommandSpec[] = [];
+    for (const path of this.deps.tree.specPaths()) {
+      const spec = this.deps.tree.spec(path);
+      if (!spec || spec.scopeOnly) continue;
+
+      const verdict = this.verdict(spec, 'write');
+      if (verdict === 'absent') continue;
+
+      out.push(this.plain(
+        `config ${path.join(' ')}`, ['config', ...path], spec.help,
+        () => verdict === 'read-only'
+          ? FortiMessages.noPermission(path.join(' '))
+          : this.deps.nav.descend(path),
+      ));
+    }
+    return out;
+  }
+
+  private verdict(spec: FortiTableSpec, intent: AccessIntent): AccessVerdict {
+    return this.deps.authorize ? this.deps.authorize(spec, intent) : 'run';
+  }
+
+  private rootSpecs(): CommandSpec[] {
+    const out: CommandSpec[] = [
+      this.plain('config global', ['config', 'global'],
+        'Enter the global configuration scope.',
+        () => this.deps.enterGlobal()),
+      this.plain('config vdom', ['config', 'vdom'],
+        'Configure virtual domain.',
+        () => this.deps.nav.descend(['vdom'])),
+    ];
+    out.push(...this.branchSpecs());
+    out.push(...this.viewSpecs());
+    out.push(...this.diagnoseSpecs());
+    out.push(this.withArgument('execute', ['execute',
+      { name: 'command', type: 'REST', description: 'Command to execute.' }],
+      'Execute static commands.',
+      (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
+    return out;
+  }
+
+  private diagnoseSpecs(): CommandSpec[] {
+    const rest = (name: string, description: string): ArgumentSpec => ({
+      name, type: 'REST', optional: true, description,
+    });
+    const run = (words: readonly string[]) =>
+      (_s: CliSession, args: Readonly<Record<string, string>>): string =>
+        this.deps.diagnose([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
+    const run2 = (words: readonly string[]) =>
+      (_s: CliSession, args: Readonly<Record<string, string>>): string =>
+        this.deps.runExecute([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
+
+    return [
+      this.withArgument('diagnose sys session list',
+        ['diagnose', 'sys', 'session', 'list'], 'List the session table.',
+        run(['sys', 'session', 'list'])),
+      this.plain('diagnose sys session stat',
+        ['diagnose', 'sys', 'session', 'stat'], 'Session table statistics.',
+        () => this.deps.diagnose(['sys', 'session', 'stat'])),
+      this.withArgument('diagnose sys session filter',
+        ['diagnose', 'sys', 'session', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the session table filter.', run(['sys', 'session', 'filter'])),
+      this.plain('diagnose sys session clear',
+        ['diagnose', 'sys', 'session', 'clear'], 'Clear sessions matching the filter.',
+        () => this.deps.diagnose(['sys', 'session', 'clear'])),
+      this.withArgument('diagnose sys sdwan health-check',
+        ['diagnose', 'sys', 'sdwan', 'health-check', rest('rest', 'Health check name.')],
+        'Show what each SD-WAN health check measured.',
+        run(['sys', 'sdwan', 'health-check'])),
+      this.plain('diagnose sys sdwan member',
+        ['diagnose', 'sys', 'sdwan', 'member'], 'List the SD-WAN members.',
+        () => this.deps.diagnose(['sys', 'sdwan', 'member'])),
+      this.plain('diagnose sys sdwan service',
+        ['diagnose', 'sys', 'sdwan', 'service'], 'List the SD-WAN service rules.',
+        () => this.deps.diagnose(['sys', 'sdwan', 'service'])),
+      this.plain('diagnose sys ha status', ['diagnose', 'sys', 'ha', 'status'],
+        'Show the cluster state.', () => this.deps.diagnose(['sys', 'ha', 'status'])),
+      this.plain('diagnose sys ha checksum show',
+        ['diagnose', 'sys', 'ha', 'checksum', 'show'],
+        'Compare the members configuration checksums.',
+        () => this.deps.diagnose(['sys', 'ha', 'checksum', 'show'])),
+      this.plain('execute ha failover set', ['execute', 'ha', 'failover', 'set'],
+        'Give the primary role up.', () => this.deps.runExecute(['ha', 'failover', 'set'])),
+      this.withArgument('execute ha manage',
+        ['execute', 'ha', 'manage', rest('rest', 'Cluster member index.')],
+        'Open the CLI of another cluster member.',
+        run2(['ha', 'manage'])),
+      this.plain('diagnose debug reset', ['diagnose', 'debug', 'reset'],
+        'Reset the debug settings.', () => this.deps.diagnose(['debug', 'reset'])),
+      this.plain('diagnose debug enable', ['diagnose', 'debug', 'enable'],
+        'Enable debug output.', () => this.deps.diagnose(['debug', 'enable'])),
+      this.plain('diagnose debug disable', ['diagnose', 'debug', 'disable'],
+        'Disable debug output.', () => this.deps.diagnose(['debug', 'disable'])),
+      this.withArgument('diagnose debug flow filter',
+        ['diagnose', 'debug', 'flow', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the flow trace filter.', run(['debug', 'flow', 'filter'])),
+      this.withArgument('diagnose debug flow trace',
+        ['diagnose', 'debug', 'flow', 'trace', rest('rest', '`start <count>` or `stop`.')],
+        'Start or stop the flow trace.', run(['debug', 'flow', 'trace'])),
+      this.withArgument('diagnose debug flow show',
+        ['diagnose', 'debug', 'flow', 'show', rest('rest', 'Display option.')],
+        'Choose what the flow trace displays.', run(['debug', 'flow', 'show'])),
+      this.withArgument('diagnose firewall iprope list',
+        ['diagnose', 'firewall', 'iprope', 'list', rest('rest', 'Policy group.')],
+        'List the compiled policies.', run(['firewall', 'iprope', 'list'])),
+      this.withArgument('diagnose firewall iprope show',
+        ['diagnose', 'firewall', 'iprope', 'show', rest('rest', '<group> <index>')],
+        'Show one compiled policy.', run(['firewall', 'iprope', 'show'])),
+      this.plain('diagnose vpn tunnel list',
+        ['diagnose', 'vpn', 'tunnel', 'list'],
+        'List the IPsec tunnels and their security associations.',
+        () => this.deps.diagnose(['vpn', 'tunnel', 'list'])),
+      this.plain('diagnose vpn tunnel summary',
+        ['diagnose', 'vpn', 'tunnel', 'summary'],
+        'Summarise the IPsec tunnels.',
+        () => this.deps.diagnose(['vpn', 'tunnel', 'summary'])),
+      this.withArgument('diagnose vpn tunnel up',
+        ['diagnose', 'vpn', 'tunnel', 'up', rest('rest', 'Tunnel name.')],
+        'Bring one IPsec tunnel up.', run(['vpn', 'tunnel', 'up'])),
+      this.plain('diagnose firewall auth list',
+        ['diagnose', 'firewall', 'auth', 'list'],
+        'List the authenticated users.',
+        () => this.deps.diagnose(['firewall', 'auth', 'list'])),
+      this.plain('diagnose firewall auth clear',
+        ['diagnose', 'firewall', 'auth', 'clear'],
+        'De-authenticate every user.',
+        () => this.deps.diagnose(['firewall', 'auth', 'clear'])),
+      this.withArgument('diagnose firewall auth filter',
+        ['diagnose', 'firewall', 'auth', 'filter', rest('rest', 'Filter criterion.')],
+        'Restrict what the authenticated-user list shows.',
+        run(['firewall', 'auth', 'filter'])),
+      this.withArgument('diagnose sniffer packet',
+        ['diagnose', 'sniffer', 'packet', rest('rest', '<interface> <filter> [verbose] [count]')],
+        'Capture packets on an interface.', run(['sniffer', 'packet'])),
+    ];
+  }
+
+  private tableSpecs(table: FortiTable): CommandSpec[] {
+    const spec = table.spec;
+    const keys: readonly EnumValue[] = table.keys().map(k => ({
+      keyword: k, description: `Existing entry ${k}.`,
+    }));
+    const keyArgument: ArgumentSpec = {
+      name: 'key',
+      type: spec.keyType === 'integer' ? 'INT' : 'WORD',
+      description: spec.keyType === 'integer' ? 'Entry ID.' : 'Entry name.',
+    };
+
+    const out: CommandSpec[] = [
+      this.withArgument('edit', ['edit', { ...keyArgument, alternatives: keys }],
+        'Add/edit a table value.', (_s, args) => this.deps.nav.edit(args.key)),
+      this.withArgument('delete', ['delete', { ...keyArgument, alternatives: keys }],
+        'Delete a table value.', (_s, args) => this.deps.nav.delete(args.key)),
+      this.plain('purge', ['purge'], 'Purge all the table entries.',
+        () => this.deps.nav.purge()),
+      this.withArgument('clone', ['clone',
+        { ...keyArgument, name: 'from', alternatives: keys }, 'to',
+        { ...keyArgument, name: 'to' }],
+        'Clone an object instance.',
+        (_s, args) => this.deps.nav.clone([args.from, 'to', args.to])),
+      this.withArgument('rename', ['rename',
+        { ...keyArgument, name: 'from', alternatives: keys }, 'to',
+        { ...keyArgument, name: 'to' }],
+        'Rename a table value.',
+        (_s, args) => this.deps.nav.rename([args.from, 'to', args.to])),
+      this.plain('end', ['end'], 'End and save.', () => this.deps.nav.end()),
+      this.plain('abort', ['abort'], 'Exit without saving.', () => this.deps.nav.abort()),
+    ];
+
+    if (spec.ordered) {
+      out.push(this.withArgument('move', ['move',
+        { ...keyArgument, name: 'from', alternatives: keys },
+        {
+          name: 'position', type: 'ENUM', description: 'Placement.',
+          values: [
+            { keyword: 'before', description: 'Place before the target.' },
+            { keyword: 'after', description: 'Place after the target.' },
+          ],
+        },
+        { ...keyArgument, name: 'to', alternatives: keys }],
+        'Move an object instance.',
+        (_s, args) => this.deps.nav.move([args.from, args.position, args.to])));
+    }
+
+    out.push(...this.viewSpecs());
+    return out;
+  }
+
+  private objectSpecs(object: FortiObject): CommandSpec[] {
+    const out: CommandSpec[] = [
+      this.plain('next', ['next'], 'Save and exit the object.', () => this.deps.nav.next()),
+      this.plain('end', ['end'], 'End and save.', () => this.deps.nav.end()),
+      this.plain('abort', ['abort'], 'Exit without saving.', () => this.deps.nav.abort()),
+    ];
+
+    const writable = this.verdict(object.spec, 'write') === 'run';
+    for (const attribute of object.availableAttributes()) {
+      if (attribute.readOnly) continue;
+      if (!writable) continue;
+      out.push(...this.attributeSpecs(attribute));
+    }
+
+    for (const name of object.childNames()) {
+      const child = object.childSpec(name);
+      if (!child) continue;
+      out.push(this.plain(`config ${name}`, ['config', name], child.help,
+        () => this.deps.nav.descend([name])));
+    }
+
+    if (object.spec.scopeOnly) out.push(...this.branchSpecs());
+
+    out.push(...this.viewSpecs());
+    return out;
+  }
+
+  private attributeSpecs(attribute: FortiAttributeSpec): CommandSpec[] {
+    const value = this.valueArgument(attribute);
+    const out: CommandSpec[] = [
+      this.withArgument(`set ${attribute.name}`, ['set', attribute.name, ...value],
+        attribute.help,
+        (_s, args) => this.deps.nav.set(attribute.name, collect(value, args))),
+      this.plain(`unset ${attribute.name}`, ['unset', attribute.name], attribute.help,
+        () => this.deps.nav.unset(attribute.name)),
+    ];
+
+    if (!attribute.multiValue) return out;
+
+    for (const verb of ['append', 'select', 'unselect'] as const) {
+      out.push(this.withArgument(`${verb} ${attribute.name}`,
+        [verb, attribute.name, ...value], attribute.help,
+        (_s, args) => this.deps.nav[verb](attribute.name, collect(value, args))));
+    }
+    return out;
+  }
+
+  private valueArgument(attribute: FortiAttributeSpec): ArgumentSpec[] {
+    if (attribute.unimplemented) {
+      return [{ name: 'value', type: 'REST', description: attribute.help }];
+    }
+    if (attribute.multiValue) {
+      const alternatives = attribute.referenceTo
+        ? this.deps.candidatesFor(attribute.referenceTo)
+        : undefined;
+      return [{
+        ...attribute.parts[0], name: 'value', type: 'REST',
+        alternatives: alternatives && alternatives.length > 0 ? alternatives : undefined,
+      }];
+    }
+    if (attribute.referenceTo) {
+      const alternatives = this.deps.candidatesFor(attribute.referenceTo);
+      return [{
+        ...attribute.parts[0],
+        alternatives: alternatives.length > 0 ? alternatives : undefined,
+      }];
+    }
+    return [...attribute.parts];
+  }
+
+  private viewSpecs(): CommandSpec[] {
+    return [
+      this.withArgument('show', ['show',
+        { name: 'path', type: 'REST', optional: true, description: 'Configuration path.' }],
+        'Show configuration.',
+        (_s, args) => this.deps.view(words(args.path), false)),
+      this.withArgument('get', ['get',
+        { name: 'path', type: 'REST', optional: true, description: 'Object path.' }],
+        'Get dynamic and system information.',
+        (_s, args) => this.deps.inspect(words(args.path))),
+    ];
+  }
+
+  private plain(
+    id: string, path: readonly string[], description: string, run: () => string,
+  ): CommandSpec {
+    return { id, path, description, modes: MODE, minPrivilege: 0, run: () => run() };
+  }
+
+  private withArgument(
+    id: string,
+    path: readonly (string | ArgumentSpec)[],
+    description: string,
+    run: (session: CliSession, args: Readonly<Record<string, string>>) => string,
+  ): CommandSpec {
+    return { id, path, description, modes: MODE, minPrivilege: 0, run };
+  }
+}
+
+function words(raw: string | undefined): string[] {
+  return (raw ?? '').split(/\s+/).filter(Boolean);
+}
+
+function collect(
+  parts: readonly ArgumentSpec[], args: Readonly<Record<string, string>>,
+): string[] {
+  if (parts.length === 1 && parts[0].type === 'REST') return words(args[parts[0].name]);
+  return parts.map(part => args[part.name]).filter(v => v !== undefined);
+}
+
+export function valueAccepted(part: ArgumentSpec, token: string): boolean {
+  return argumentAccepts(part, token);
+}
+
+export function tableHelp(spec: FortiTableSpec): string {
+  return spec.help;
+}

@@ -16,14 +16,17 @@ import {
   SftpChownCommand,
   SftpDfCommand,
   SftpGetCommand,
+  SftpHardlinkCommand,
   SftpLsCommand,
   SftpMkdirCommand,
   SftpPutCommand,
   SftpPwdCommand,
+  SftpReadlinkCommand,
   SftpRenameCommand,
   SftpRmCommand,
   SftpRmdirCommand,
   SftpStatCommand,
+  SftpSymlinkCommand,
   SftpVersionCommand,
 } from './SftpCommands';
 
@@ -51,6 +54,9 @@ export class SftpCommandDispatcher {
       new SftpChmodCommand(),
       new SftpChownCommand(),
       new SftpStatCommand(),
+      new SftpSymlinkCommand(),
+      new SftpReadlinkCommand(),
+      new SftpHardlinkCommand(),
       new SftpVersionCommand(),
       new SftpDfCommand(),
       new SftpCdCommand(),
@@ -60,12 +66,12 @@ export class SftpCommandDispatcher {
 
   dispatch(
     op: string,
-    req: SftpRequestPayload,
+    req: Omit<SftpRequestPayload, 'op'>,
     ctx: SftpCommandContext,
   ): Result<unknown> {
     const cmd = this.registry.get(op);
     if (!cmd) return err({ kind: 'UNKNOWN_OP', op });
-    return cmd.execute(req, ctx);
+    return cmd.execute({ ...req, op }, ctx);
   }
 
   has(op: string): boolean {

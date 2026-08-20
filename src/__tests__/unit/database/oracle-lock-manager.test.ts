@@ -174,3 +174,45 @@ describe('DML locks via the bus', () => {
     a.dispose();
   });
 });
+
+describe('TM lock enforcement for ordinary DML (rapport 07, item #50)', () => {
+  it('a DML is denied — not silently applied — while another session holds a conflicting table lock', () => {
+    const srv = server('dml-tm-1');
+    const a = session(srv);
+    const b = session(srv);
+    run(a, 'CREATE TABLE DMLTM_T (id NUMBER);');
+    run(a, 'LOCK TABLE DMLTM_T IN EXCLUSIVE MODE;');
+    const out = run(b, 'INSERT INTO DMLTM_T VALUES (1);');
+    expect(out).toMatch(/ORA-00054/);
+    const count = run(a, 'SELECT COUNT(*) FROM DMLTM_T;');
+    expect(count).toMatch(/^\s*0\s*$/m);
+    a.dispose();
+    b.dispose();
+  });
+
+  it('a compatible lock mode (ROW SHARE) does not block ordinary DML', () => {
+    const srv = server('dml-tm-2');
+    const a = session(srv);
+    const b = session(srv);
+    run(a, 'CREATE TABLE DMLTM_T2 (id NUMBER);');
+    run(a, 'LOCK TABLE DMLTM_T2 IN ROW SHARE MODE;');
+    const out = run(b, 'INSERT INTO DMLTM_T2 VALUES (1);');
+    expect(out).not.toMatch(/ORA-00054/);
+    const count = run(b, 'SELECT COUNT(*) FROM DMLTM_T2;');
+    expect(count).toMatch(/^\s*1\s*$/m);
+    a.dispose();
+    b.dispose();
+  });
+
+  it('releasing the lock holder lets the previously-denied DML succeed', () => {
+    const srv = server('dml-tm-3');
+    const a = session(srv);
+    const b = session(srv);
+    run(a, 'CREATE TABLE DMLTM_T3 (id NUMBER);');
+    run(a, 'LOCK TABLE DMLTM_T3 IN EXCLUSIVE MODE;');
+    expect(run(b, 'INSERT INTO DMLTM_T3 VALUES (1);')).toMatch(/ORA-00054/);
+    a.dispose();
+    expect(run(b, 'INSERT INTO DMLTM_T3 VALUES (1);')).not.toMatch(/ORA-00054/);
+    b.dispose();
+  });
+});

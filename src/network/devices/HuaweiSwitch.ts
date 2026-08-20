@@ -1,9 +1,11 @@
-import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, type IPv4Packet, IPAddress } from '../core/types';
+import { DeviceType, EthernetFrame, ETHERTYPE_IPV4, IPAddress, type MACAddress } from '../core/types';
 import { AgentRegistry } from './AgentRegistry';
 import { lldpToNeighborDTO } from './inspection/neighborConverters';
 import { Switch, STPPortState } from './Switch';
 import type { ISwitchShell } from './shells/ISwitchShell';
 import { HuaweiSwitchShell } from './shells/HuaweiSwitchShell';
+import { NATEngine } from './router/NATEngine';
+import { VRP_ACL_NUMBERING, VRP_SEQUENCING, VRP_DEFAULT_STEP, sourceProbePacket } from './router/ACLEngine';
 import { LldpAgent } from '../lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '../lldp/types';
 import { StpAgent, type StpForwardState } from '../stp/StpAgent';
@@ -11,21 +13,46 @@ import { ETHERTYPE_STP } from '../stp/types';
 import { LacpAgent } from '../lacp/LacpAgent';
 import { ETHERTYPE_LACP } from '../lacp/types';
 import { IgmpSnoopingAgent } from '../igmp-snooping/IgmpSnoopingAgent';
+import { PimSnoopingAgent } from '../pim-snooping/PimSnoopingAgent';
 import { Dot1xAgent } from '../dot1x/Dot1xAgent';
 import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
+import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
+import { RouterManagementService } from './router/management/RouterManagementService';
 
 export class HuaweiSwitch extends Switch {
+  static readonly MAX_PORT_GROUPS = 32;
+  static readonly MAX_PORT_GROUP_MEMBERS = 48;
+
   private readonly agents = new AgentRegistry();
   private readonly lldpAgent: LldpAgent;
   private readonly stpAgent: StpAgent;
   private readonly lacpAgent: LacpAgent;
   private readonly igmpSnoopingAgent: IgmpSnoopingAgent;
+  private readonly pimSnoopingAgent: PimSnoopingAgent;
   private readonly dot1xAgent: Dot1xAgent;
+  private readonly natEngine = new NATEngine();
+  _getNATEngine(): NATEngine { return this.natEngine; }
+  private readonly voiceVlanOuiEntries: Array<{ macHex: string; maskHex: string; description?: string }> = [];
 
   constructor(type: DeviceType = 'switch-huawei', name: string = 'Switch', portCount: number = 50, x: number = 0, y: number = 0) {
     super(type, name, portCount, x, y);
+    // Même raison que sur HuaweiRouter : les plages VRP, pas celles d'IOS.
+    this.getVaclEngine().setNumberingPolicy(VRP_ACL_NUMBERING);
+    this.getVaclEngine().setSequencingPolicy(VRP_SEQUENCING, VRP_DEFAULT_STEP);
+    this.getVaclEngine().setUnmatchedDataPlaneAction('permit');
+    this.natEngine.setDeviceId(this.id, this.getHostname());
+    this.natEngine.setEventBus(this.getBus());
+    this.natEngine.setACLMatchFn((aclId, srcIP, realPkt) => {
+      const pkt = realPkt ?? sourceProbePacket(new IPAddress(srcIP));
+      return this.getVaclEngine().evaluateACLByName(String(aclId), pkt) === 'permit';
+    });
+    this.natEngine.setInterfaceIPFn((iface) => {
+      const m = iface.match(/^Vlanif(\d+)$/);
+      if (!m) return null;
+      return this.getSvi(Number(m[1]))?.ip?.toString() ?? null;
+    });
     const hostBase = {
       id: this.id, name: this.name,
       getHostname: () => this.getHostname(),
@@ -41,9 +68,25 @@ export class HuaweiSwitch extends Switch {
       ...hostBase,
       onForwardStateChanged: (p, s, v) => this.applyStpForwardState(p, s, v),
       onTopologyChangeAging: (sec) => this._setStpFastAging(sec),
+      getStpPortVlans: (p) => this.getStpPortVlans(p),
+      getStpBundleGroup: (p) => this.getStpBundleGroup(p),
     }, () => this.getBus(), baseMac);
-    this.lacpAgent = new LacpAgent(hostBase, () => this.getBus(), baseMac);
+    this.lacpAgent = new LacpAgent({
+      ...hostBase,
+      onLacpBundleChanged: (port, groupId, bundled) =>
+        this.stpAgent.onBundleChanged(port, `Eth-Trunk${groupId}`, bundled),
+    }, () => this.getBus(), baseMac);
+    this.stpAgent.setMode('mstp');
+    this.stpAgent.setPathcostMethod('long');
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
+      ...hostBase,
+      resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
+      isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
+      getSviIp: (vlan: number) =>
+        this.getSvis().find(s => s.vlan === vlan)?.ip?.toString() ?? null,
+      getVlanIds: () => [...this.getVLANs().keys()],
+    }, () => this.getBus());
+    this.pimSnoopingAgent = new PimSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),
       isTrunkPort: (p: string) => this._vtpIsTrunkPort(p),
@@ -53,7 +96,7 @@ export class HuaweiSwitch extends Switch {
       onDot1xPortAuthorized: (p, authorized) => this.applyDot1xAuth(p, authorized),
     }, () => this.getBus());
     this.agents.registerAll(
-      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent,
+      this.lldpAgent, this.stpAgent, this.lacpAgent, this.igmpSnoopingAgent, this.pimSnoopingAgent,
       this.dot1xAgent,
     );
     this.agents.startAll();
@@ -61,6 +104,21 @@ export class HuaweiSwitch extends Switch {
 
   private applyDot1xAuth(portName: string, authorized: boolean): void {
     if (!authorized) this.flushDynamicMacsOnPort(portName, 'dot1x-unauthorized');
+  }
+
+  /**
+   * The Eth-Trunk a port is currently bundled into. VRP runs STP on the
+   * trunk, not on its members, exactly as IOS does on a Port-channel.
+   */
+  private getStpBundleGroup(portName: string): { groupKey: string; members: string[] } | undefined {
+    const info = this.lacpAgent.getPortInfo(portName);
+    if (!info || !info.bundled) return undefined;
+    const members = this.lacpAgent.getGroupMembers(info.groupId)
+      .filter(p => p.bundled)
+      .map(p => p.portName)
+      .sort();
+    if (members.length === 0) return undefined;
+    return { groupKey: `Eth-Trunk${info.groupId}`, members };
   }
 
   private applyStpForwardState(portName: string, state: StpForwardState, vlan: number): void {
@@ -73,14 +131,35 @@ export class HuaweiSwitch extends Switch {
     // (setEventBus can fire from the base constructor, before the registry
     // field initializer ran — hence the optional chain.)
     this.agents?.restartAll();
+    this._huaweiDebugService?.attachToBus(this.getBus(), this.id);
+  }
+
+  private _huaweiDebugService: HuaweiDebugService | null = null;
+
+  /**
+   * Le switch n'avait AUCUN magasin : `debugging stp` repondait
+   * `Info: stp debugging is on.` et n'etait range nulle part, tandis que
+   * `display debugging` etait refuse — la commande ne pouvait donc ni
+   * agir ni etre relue. Meme service que le routeur, meme table, sur les
+   * categories que cette plateforme sait tracer.
+   */
+  getHuaweiDebugService(): HuaweiDebugService {
+    if (!this._huaweiDebugService) {
+      this._huaweiDebugService = new HuaweiDebugService();
+      this._huaweiDebugService.setPlatform('switch');
+    }
+    this._huaweiDebugService.attachToBus(this.getBus(), this.id);
+    return this._huaweiDebugService;
   }
 
   protected override handleFrame(portName: string, frame: EthernetFrame): void {
     if (frame.etherType === ETHERTYPE_LLDP) {
+      if (this.isL2ProtocolTunneled(portName, 'lldp')) { super.handleFrame(portName, frame); return; }
       this.lldpAgent.handleFrame(portName, frame);
       return;
     }
     if (frame.etherType === ETHERTYPE_STP) {
+      if (this.isL2ProtocolTunneled(portName, 'stp')) { super.handleFrame(portName, frame); return; }
       this.stpAgent.handleFrame(portName, frame);
       return;
     }
@@ -96,6 +175,7 @@ export class HuaweiSwitch extends Switch {
       return;
     }
     this.igmpSnoopingAgent.handleFrame(portName, frame);
+    this.pimSnoopingAgent.handleFrame(portName, frame);
     super.handleFrame(portName, frame);
   }
 
@@ -103,11 +183,84 @@ export class HuaweiSwitch extends Switch {
     return this.igmpSnoopingAgent;
   }
 
+  protected override getPimSnoopingAgentOrNull(): PimSnoopingAgent {
+    return this.pimSnoopingAgent;
+  }
+
+  addVoiceVlanOui(macHex: string, maskHex: string, description?: string): void {
+    this.voiceVlanOuiEntries.push({ macHex, maskHex, description });
+  }
+
+  getVoiceVlanOuiEntries(): ReadonlyArray<{ macHex: string; maskHex: string; description?: string }> {
+    return this.voiceVlanOuiEntries;
+  }
+
+  protected override matchesVoiceVlanOui(mac: MACAddress): boolean {
+    const macHex = mac.toString().replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+    for (const entry of this.voiceVlanOuiEntries) {
+      let match = true;
+      for (let i = 0; i < 12; i += 2) {
+        const macByte = parseInt(macHex.slice(i, i + 2), 16);
+        const entryByte = parseInt(entry.macHex.slice(i, i + 2), 16);
+        const maskByte = parseInt(entry.maskHex.slice(i, i + 2), 16);
+        if ((macByte & maskByte) !== (entryByte & maskByte)) { match = false; break; }
+      }
+      if (match) return true;
+    }
+    return false;
+  }
+
+  private _managementService: RouterManagementService | null = null;
+  getManagementService(): RouterManagementService {
+    if (!this._managementService) this._managementService = new RouterManagementService();
+    return this._managementService;
+  }
+
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
+  private readonly portGroups = new Map<string, string[]>();
+
+  getPortGroups(): [string, string[]][] {
+    return [...this.portGroups].map(([n, m]) => [n, [...m]] as [string, string[]])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  getPortGroupMembers(name: string): string[] | null {
+    const m = this.portGroups.get(name);
+    return m ? [...m] : null;
+  }
+
+  createPortGroup(name: string): boolean {
+    if (this.portGroups.has(name)) return true;
+    if (this.portGroups.size >= HuaweiSwitch.MAX_PORT_GROUPS) return false;
+    this.portGroups.set(name, []);
+    return true;
+  }
+
+  deletePortGroup(name: string): boolean {
+    return this.portGroups.delete(name);
+  }
+
+  addPortGroupMembers(name: string, ports: readonly string[]): 'ok' | 'absent' | 'plein' {
+    const membres = this.portGroups.get(name);
+    if (!membres) return 'absent';
+    const fusion = [...new Set([...membres, ...ports])];
+    if (fusion.length > HuaweiSwitch.MAX_PORT_GROUP_MEMBERS) return 'plein';
+    this.portGroups.set(name, fusion);
+    return 'ok';
+  }
+
+  removePortGroupMembers(name: string, ports: readonly string[]): boolean {
+    const membres = this.portGroups.get(name);
+    if (!membres) return false;
+    this.portGroups.set(name, membres.filter(m => !ports.includes(m)));
+    return true;
+  }
+
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }
+  getPimSnoopingAgent(): PimSnoopingAgent { return this.pimSnoopingAgent; }
   getDot1xAgent(): Dot1xAgent { return this.dot1xAgent; }
 
   protected getPortName(index: number, _total: number): string {

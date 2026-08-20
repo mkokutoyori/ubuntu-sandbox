@@ -14,6 +14,8 @@ export interface ActiveSessionInfo {
   schema: string;
   osUser: string;
   machine: string;
+  /** Client's real IPv4 for TCP (Oracle Net) sessions; null for bequeath. */
+  clientIp: string | null;
   terminal: string;
   program: string;
   logonTime: Date;
@@ -62,6 +64,7 @@ export class SessionLimitTracker {
       schema: schema.toUpperCase(),
       osUser: osCtx.osUser,
       machine: osCtx.hostname,
+      clientIp: osCtx.clientIp ?? null,
       terminal: osCtx.terminal,
       program: osCtx.program,
       logonTime: new Date(),

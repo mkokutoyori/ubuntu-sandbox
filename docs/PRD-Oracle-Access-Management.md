@@ -1,0 +1,660 @@
+# PRD — Gestion des accès Oracle (authentification, privilèges, rôles, audit)
+
+**Version** : 1.0
+**Date** : 2026-07-29
+**Projet** : Ubuntu Sandbox — moteur Oracle
+**Auteur** : Claude Code
+**Références normatives** :
+- *Oracle Database Security Guide* 19c — §4 (Configuring Privilege and Role Authorization), §10 (Virtual Private Database), §23-27 (Auditing)
+- *Oracle Database SQL Language Reference* 19c — `GRANT`, `REVOKE`, `CREATE USER`, `ALTER USER`, `CREATE ROLE`, `SET ROLE`, `AUDIT`
+- *Oracle Database PL/SQL Packages and Types Reference* — `DBMS_RLS`
+- Codes d'erreur : ORA-01017, ORA-01031, ORA-01045, ORA-00942, ORA-01917, ORA-01919, ORA-01924, ORA-01934, ORA-01931, ORA-28000, ORA-28001
+
+---
+
+## 0. Contexte et portée du document
+
+Ce PRD couvre la **gestion des accès** du moteur Oracle simulé : qui peut se
+connecter, avec quoi, et ce qu'il a le droit de faire une fois connecté. Il
+recouvre l'authentification (comptes, profils, mots de passe), l'autorisation
+(privilèges système et objet, rôles), la restriction de données (privilèges
+colonne, VPD/RLS) et la traçabilité (audit classique, audit unifié).
+
+**Ce document ne repart pas de zéro, et c'est son principal message.** Le
+socle est réel et se comporte déjà comme Oracle sur les points qui comptent :
+la connexion est refusée sans `CREATE SESSION` (ORA-01045), un compte
+verrouillé rend ORA-28000, un non-DBA ne peut ni créer un utilisateur ni
+accorder un privilège, un `GRANT` vers un bénéficiaire inexistant échoue avant
+toute mutation (ORA-01917), et le moteur choisit correctement entre ORA-00942
+et ORA-01031 selon la doctrine de dissimulation d'information d'Oracle. Ces
+comportements ont été **vérifiés en exécutant le moteur**, pas déduits du code.
+
+Les manques sont donc précis, et quatre d'entre eux ont ceci de commun :
+la commande est **acceptée**, l'état est **stocké**, la vue de dictionnaire
+**l'affiche** — et rien ne l'applique. C'est la forme de défaut la plus
+coûteuse pour un simulateur pédagogique : l'apprenant reçoit une confirmation
+et une preuve apparente, alors que le contrôle n'existe pas.
+
+Le `docs/PRD-Oracle-DBMS.md` existant est un document de progression d'une
+autre génération (phases livrées, inventaire de fonctionnalités) ; il ne traite
+pas la sécurité au-delà d'une ligne « GRANT/REVOKE: System privileges, table
+privileges, roles ». Ce PRD-ci ne le remplace pas, il traite un sous-système
+qu'il ne couvrait pas.
+
+Aucune ligne de code de production n'est écrite dans le cadre de ce document ;
+il sert de base à la planification et à la revue avant le premier commit TDD.
+
+---
+
+## 1. Analyse de l'existant
+
+### 1.1 Inventaire
+
+| Fichier | Rôle actuel |
+|---|---|
+| `src/database/oracle/security/SecurityEngine.ts` | Façade des sous-systèmes : profils, quotas, suivi de connexion, mots de passe, limites de session, privilèges. `authenticate()` porte la séquence complète (compte inexistant → ORA-01017 ; verrouillé → ORA-28000 avec auto-déverrouillage sur `PASSWORD_LOCK_TIME` ; expiré → ORA-28001 ; période de grâce) |
+| `security/PrivilegeChecker.ts` | Lecture seule : `hasSystemPrivilege`, `hasObjectPrivilege`, `getGrantedRoles` (fermeture transitive en largeur d'abord), `isDba`. Les privilèges objet sont hérités par rôle **et** par `PUBLIC` |
+| `security/PrivilegeEnforcer.ts` | Décisions d'erreur centralisées pour l'exécuteur : ORA-01031, ORA-00942, ORA-01917, ORA-01934. Contient la doctrine Oracle du choix ORA-00942 vs ORA-01031 |
+| `security/ProfileManager.ts`, `QuotaManager.ts`, `LoginTracker.ts`, `PasswordManager.ts`, `PasswordVerifier.ts`, `SessionLimitTracker.ts` | Cycle de vie des mots de passe, `FAILED_LOGIN_ATTEMPTS`, quotas tablespace, `SESSIONS_PER_USER` |
+| `security/classicProfiles.ts`, `classicRoles.ts`, `systemPrivileges.ts` | `DEFAULT`/`MONITORING_PROFILE`, `CONNECT`/`RESOURCE`/`DBA`/`SELECT_CATALOG_ROLE`…, catalogue des privilèges système |
+| `security/OracleSession.ts` | État par session : utilisateur courant, schéma courant, contexte OS |
+| `executor/SecurityDclExecutor.ts` | `GRANT`/`REVOKE` (système, objet, colonne, rôle, `DIRECTORY`), `AUDIT`/`NOAUDIT`, politiques d'audit unifié, `ADMINISTER KEY MANAGEMENT` |
+| `executor/UserAdminExecutor.ts` | `CREATE`/`ALTER`/`DROP USER`, `CREATE`/`DROP ROLE`, `CREATE`/`ALTER`/`DROP PROFILE`, clause `DEFAULT ROLE`, `GRANT/REVOKE CONNECT THROUGH` |
+| `OracleCatalog.ts` | Magasin : `sysPrivileges`, `tabPrivileges`, `colPrivileges`, `roleGrants`, `defaultRoleSpecs`, mots de passe de rôle, `proxyUsers`, `rlsPolicies`, `unifiedAuditPolicies`, options d'audit classique, `auditTrail` |
+| `security/audit/AuditJournal.ts` + `SecurityAuditActor.ts` | Journal borné (FIFO par catégorie) alimenté **par de vrais événements de bus** : `oracle.security.connection-traced`, `oracle.ddl.executed`, `oracle.dml.executed`, `oracle.audit.recorded`, `oracle.error.raised`, `oracle.session.idle-sniped` |
+| `security/audit/` (16 fichiers) | Traces de connexion, historiques DDL/DML, comptes dormants, anomalies, usage de privilèges, séparation des tâches (`SodEvaluator`/`SodPolicy`), registre d'objets sensibles |
+| `security/DataRedactionManager.ts`, `NetworkAclManager.ts` | Redaction de données, ACL réseau (`DBMS_NETWORK_ACL_ADMIN`) |
+| `views/` (~35 vues de sécurité) | `DBA_USERS`, `DBA_ROLES`, `DBA_SYS_PRIVS`, `DBA_TAB_PRIVS`, `DBA_COL_PRIVS`, `DBA_ROLE_PRIVS`, `SESSION_PRIVS`, `SESSION_ROLES`, `PROXY_USERS`, `DBA_POLICIES`, `AUDIT_UNIFIED_POLICIES`, `DBA_AUDIT_TRAIL`, `DBA_FGA_AUDIT_TRAIL`, `DBA_UNUSED_PRIVS`, `DBA_DV_*`… |
+| `src/__tests__/unit/database/oracle-access-management*.test.ts` | 4 fichiers, 2 568 lignes : `-comprehensive` (1 627), `-syntax` (298), base (436), `-gaps` (207) |
+
+### 1.2 Ce qui est réel et solide (à ne pas réécrire)
+
+Chaque point ci-dessous a été **observé en exécutant le moteur** via
+`SqlPlusSubShell`, pas seulement lu.
+
+- **La porte d'entrée est vraie.** `CONNECT nosess/…` sur un compte sans
+  `CREATE SESSION` rend `ORA-01045: user NOSESS lacks CREATE SESSION
+  privilege; logon denied`, et la session **reste fermée** : la commande
+  suivante rend `ORA-01012: not logged on`. Un simulateur qui laisserait
+  passer là serait inutilisable pour enseigner quoi que ce soit.
+- **Le refus d'administration est vrai.** Connecté en `bob` (simple
+  `CREATE SESSION`), `GRANT SELECT ON SYS.secret TO nosess`, `DROP USER
+  nosess` et `CREATE USER carl` rendent tous les trois ORA-01031.
+- **La doctrine d'erreur d'Oracle est respectée**, ce qui est rare et subtil :
+  `PrivilegeEnforcer.requireObjectAccess()` préfère **ORA-00942** (« table or
+  view does not exist ») à ORA-01031 quand l'utilisateur ne détient *aucun*
+  privilège sur l'objet — dissimulation d'information — et bascule sur
+  ORA-01031 dès qu'il en détient un autre, puisqu'il sait déjà que l'objet
+  existe.
+- **Le DML est réellement gaté** : les quatre chemins `SELECT`/`INSERT`/
+  `UPDATE`/`DELETE` de `OracleExecutor` appellent `requireObjectAccess`.
+- **L'héritage par rôle fonctionne**, y compris transitivement et via
+  `PUBLIC` : `GRANT SELECT ON SYS.emp TO reader; GRANT reader TO alice;`
+  suffit à ce qu'`alice` lise la table.
+- **Les garde-fous du DCL sont réels** : ORA-01917 arrête tout le `GRANT`
+  avant la moindre mutation ; ORA-01934 détecte un cycle de rôles par
+  fermeture transitive ; ORA-01931 refuse un octroi à `SYS`.
+- **`WITH GRANT OPTION` est appliqué côté privilèges objet** :
+  `requireGrantableObjectPrivileges` exige que le ré-octroyant détienne
+  *chacun* des privilèges avec l'option.
+- **`EXECUTE` est vérifié** avant d'exécuter une procédure ou un paquetage
+  (`OracleDatabase.ts:1624` et `:1864`).
+- **L'audit classique est vraiment conditionnel** :
+  `OracleExecutor.recordAuditForStatement()` consulte les options d'objet
+  (`AUDIT SELECT ON hr.emp`) et de statement avant d'écrire dans la trace, et
+  retombe sur l'audit fin (FGA) sinon. Ce n'est pas un journal qui enregistre
+  tout.
+- **Le journal de sécurité est événementiel**, pas fabriqué : `SecurityAuditActor`
+  est l'unique abonné au bus et alimente `AuditJournal`, que ~30 vues `DBA_*`
+  lisent en direct.
+- **`SESSION_PRIVS` est réel et par session** (vérifié : `bob` n'y voit que
+  `CREATE SESSION`).
+
+### 1.3 Gap analysis — limites vérifiées
+
+| # | Limite | Comparé à | Sévérité |
+|---|---|---|---|
+| 1 | **`SET ROLE` n'est pas seulement absent : il répond faux.** Le lexème `ROLE` n'a pas de branche dans `BaseParser.parseSetStatement()` — dont le commentaire annonce pourtant `SET ROLE r \| NONE \| ALL EXCEPT …` — donc la ligne tombe dans la branche `SET TRANSACTION` et son `consumeRestOfStatement()`. **Vérifié en exécution** : `SET ROLE NONE;` et `SET ROLE reader;` répondent tous deux `Transaction set.` L'opérateur reçoit une confirmation pour une commande qui n'a rien fait, et le message désigne un autre objet. | `SET ROLE` (SQL Language Reference), qui doit rendre ORA-01924 sur un rôle non accordé | **Majeure** |
+| 2 | **Les rôles ne sont jamais activés/désactivés par session.** `PrivilegeChecker.getGrantedRoles()` parcourt tous les `roleGrants` sans notion de rôle *actif*. `OracleCatalog.setDefaultRoleSpec()` enregistre la clause `ALTER USER … DEFAULT ROLE …`, et `isDefaultRole()` la résout correctement — mais **son unique consommateur est la colonne `DEFAULT_ROLE` de `DBA_ROLE_PRIVS`** : la clause est rendue dans une vue, jamais appliquée à une session. Idem pour `getRolePassword()`, sans appelant du tout, dont le commentaire annonce pourtant « checked at SET ROLE ». **Vérifié** : après `SET ROLE NONE`, `SELECT * FROM SESSION_ROLES` liste toujours `READER`. Conséquence : un TP « rôle protégé par mot de passe » ou « DEFAULT ROLE NONE puis SET ROLE » est intégralement faux. | Modèle de rôles Oracle (rôles par défaut, rôles activés à la demande, rôles à mot de passe) | **Majeure** |
+| 3 | **Les privilèges de colonne sont stockés, affichés, et jamais appliqués.** `GRANT UPDATE (salary) ON SYS.emp TO alice` est accepté et apparaît correctement dans `DBA_COL_PRIVS`. **Vérifié** : connectée, `alice` exécute `UPDATE SYS.emp SET id = 9` → `2 rows updated.` Elle a modifié une colonne qui ne lui a jamais été accordée. Le commentaire de `PrivilegeChecker.hasObjectPrivilege()` dit lui-même « the executor is responsible for refusing access to ungranted columns » — aucun exécuteur ne le fait. | `GRANT UPDATE (col)` réel, qui rend ORA-01031 sur une colonne non accordée | **Majeure** |
+| 4 | **VPD / Row-Level Security : la politique est enregistrée, jamais appliquée.** `DBMS_RLS.ADD_POLICY` renseigne `OracleCatalog.rlsPolicies` (types d'instruction, `sec_relevant_cols`, groupes, `policy_type`) et `DBA_POLICIES` l'affiche. Les seuls consommateurs de `getRlsPolicies()` sont **des vues**. **Vérifié** : politique posée sur `SYS.EMP`, `SELECT * FROM SYS.emp` rend les deux lignes. Le commentaire du magasin l'admet à demi-mot (« a predicate transform *that the executor would apply* »). | `DBMS_RLS` réel : le prédicat rendu par la fonction de politique est ajouté à la requête | **Majeure** |
+| 5 | **`WITH ADMIN OPTION` est asymétrique.** Les privilèges *objet* honorent `WITH GRANT OPTION` (§1.2). Les privilèges *système* et les *rôles* stockent bien l'option (`sysPrivileges.grantable`, `roleGrants.adminOption`, rendue par `DBA_ROLE_PRIVS`), mais `SecurityDclExecutor` exige `GRANT ANY PRIVILEGE`/`GRANT ANY ROLE` pour tout octroi : détenir un privilège *avec* l'option d'administration ne permet pas de le ré-accorder. | `GRANT … WITH ADMIN OPTION` réel | Moyenne |
+| 6 | **`REVOKE` ne cascade pas.** `BaseCatalog.revokeTablePrivilege()` filtre exactement la ligne visée ; rien ne révoque les octrois que le révoqué avait lui-même consentis via `WITH GRANT OPTION`. Un privilège retiré au milieu d'une chaîne laisse le bout de chaîne actif. | Sémantique Oracle : la révocation d'un privilège objet cascade sur les octrois dépendants | Moyenne |
+| 7 | **L'audit unifié ne produit aucune ligne de trace.** `CREATE AUDIT POLICY` / `AUDIT POLICY … BY user` sont acceptés, stockés (`unifiedAuditPolicies`) et rendus par `AUDIT_UNIFIED_POLICIES` — le seul consommateur. Aucun chemin d'écriture vers `UNIFIED_AUDIT_TRAIL` n'existe, alors que l'audit *classique* écrit réellement (§1.2). Deux modèles d'audit coexistent donc, l'un réel, l'autre décoratif, sans que rien ne le signale. | Audit unifié 12c+ | Moyenne |
+| 8 | **L'authentification par proxy est de la comptabilité.** `ALTER USER alice GRANT CONNECT THROUGH bob` alimente `proxyUsers` et `PROXY_USERS`. Le magasin le documente lui-même : « the simulator does not actually arbitrate connection routing ». Aucune syntaxe `CONNECT bob[alice]/pw` ne consomme la table. | Proxy authentication réelle | Mineure |
+| 9 | **`AUTHID DEFINER`/`CURRENT_USER` — à confirmer au chiffrage.** La colonne existe dans `DBA_PROCEDURES` mais aucune trace d'un basculement d'utilisateur effectif à l'appel d'une procédure n'a été trouvée dans `OracleCatalog`/`OracleDatabase`. À vérifier explicitement **avant** de décider de l'implémenter, plutôt que d'en supposer l'absence. | Droits du définisseur vs de l'appelant | Mineure (à confirmer) |
+
+**Ce que la suite de tests dit déjà d'elle-même.** `oracle-access-management-gaps.test.ts`
+annonce en tête de fichier son propre contrat : « implemented as real catalog
+behaviour where the engine supports it, and **as parser tolerance (no-op +
+accept) where it doesn't yet** ». Ses sections `DEFAULT ROLE`, `Column-level
+GRANT/REVOKE` et `Proxy authentication (no-op tolerance)` n'affirment donc que
+`/User altered/` ou `/Grant succeeded/` — elles épinglent l'acceptation, jamais
+l'effet. Ce PRD ne les contredit pas : il propose de les **compléter** par des
+assertions d'effet, en gardant leurs assertions d'acceptation intactes.
+
+**Conclusion de la phase d'analyse** : le socle authentification/autorisation
+est réel et n'a pas besoin d'être réécrit. Quatre manques majeurs partagent une
+même signature — accepté, stocké, affiché, non appliqué — et se corrigent
+chacun en branchant un magasin existant sur un point de décision existant,
+sans nouveau modèle de données lourd.
+
+---
+
+## 2. Objectifs
+
+### 2.1 Objectifs (ce PRD)
+
+Chaque fonctionnalité est livrée **complète** : la commande, l'effet
+observable, la vue de dictionnaire cohérente, et le code d'erreur Oracle réel.
+Une commande dont l'effet n'est pas implémenté doit le **dire**, pas répondre
+« succeeded ».
+
+1. **`SET ROLE` réel, et rôles activés par session.** Branche dédiée au
+   parseur (`SET ROLE r [,…] [IDENTIFIED BY pw] | NONE | ALL [EXCEPT …]`),
+   liste des rôles actifs portée par `OracleSession`, initialisée à
+   l'ouverture depuis `DEFAULT ROLE` (défaut `ALL`), consultée par
+   `PrivilegeChecker.getGrantedRoles()`. ORA-01924 (« role not granted or does
+   not exist ») sur un rôle non accordé, ORA-01979 sur un mot de passe de rôle
+   erroné. `SESSION_ROLES` reflète l'état réel. Lève du même coup le code mort
+   `getDefaultRoleSpec`/`getRolePassword`.
+2. **Privilèges de colonne appliqués.** `GRANT SELECT|UPDATE|INSERT|REFERENCES
+   (col…)` restreint réellement : un `UPDATE` touchant une colonne non
+   accordée rend ORA-01031, un `SELECT` d'une colonne non accordée rend
+   ORA-01031 — et l'utilisateur qui détient un privilège *table* complet n'est
+   pas affecté. La restriction se pose au même endroit que la vérification
+   objet existante, pas dans un second chemin parallèle.
+3. **VPD/RLS : le prédicat est réellement appliqué.** À la lecture comme à
+   l'écriture, une politique active sur l'objet fait appeler sa fonction de
+   politique ; le prédicat rendu est composé (`AND`) avec celui de la requête.
+   Respect des `statement_types` (une politique `SELECT` ne filtre pas un
+   `DELETE`), de `sec_relevant_cols` (la politique ne s'active que si une
+   colonne pertinente est référencée), et de `enable`/`disable`. `SYS` et le
+   propriétaire y échappent, comme dans Oracle.
+4. **`WITH ADMIN OPTION` appliqué pour les privilèges système et les rôles**,
+   par symétrie avec `WITH GRANT OPTION` déjà réel côté objet — même forme de
+   vérification, réutilisée, pas dupliquée.
+5. **`REVOKE` cascade sur les octrois dépendants** consentis via
+   `WITH GRANT OPTION`, en une seule traversée du graphe d'octrois.
+6. **Audit unifié réellement écrivant.** Une politique activée produit des
+   lignes dans `UNIFIED_AUDIT_TRAIL`, en réutilisant le point de décision de
+   l'audit classique (`recordAuditForStatement`) plutôt qu'en ouvrant un second
+   chemin. `BY`/`EXCEPT user` et `WHENEVER [NOT] SUCCESSFUL` respectés.
+7. **Authentification par proxy effective.** `CONNECT proxy[client]/pw`
+   authentifie le *proxy*, ouvre la session sous l'identité du *client*, et
+   n'active que le rôle nommé par `WITH ROLE` s'il y en a un. Refus
+   ORA-01017 si l'autorisation `CONNECT THROUGH` n'existe pas.
+8. **Franchise sur ce qui reste non appliqué.** Toute commande de sécurité
+   acceptée sans effet (après ce PRD : Database Vault, `DBA_DV_*`, chiffrement
+   TDE) le déclare dans sa sortie, comme `PRD-PIM.md` P2 l'a fait pour le mode
+   dense — plutôt que de répondre « succeeded » en silence.
+
+### 2.2 Non-objectifs (hors périmètre)
+
+- **Database Vault** (`DBA_DV_REALM`, `DBA_DV_COMMAND_RULE`…) : les vues
+  existent et rendent vide, ce qui est une réponse honnête ; le modèle de
+  royaumes et de règles de commande est un produit à part entière.
+- **TDE / chiffrement au repos** : `V$ENCRYPTION_WALLET` et
+  `DBA_ENCRYPTED_COLUMNS` restent des vues vides ; le simulateur n'a pas de
+  stockage sur disque à chiffrer.
+- **Label Security (OLS)**, **Data Redaction au-delà de l'existant**
+  (`DataRedactionManager` est déjà là et n'est pas retouché).
+- **Kerberos / authentification externe réelle** : `IDENTIFIED EXTERNALLY` et
+  `GLOBALLY` restent acceptés et stockés ; brancher un vrai KDC dépasse ce
+  périmètre (le simulateur en a un côté Windows, l'y relier est un autre PRD).
+- **Isolation réelle entre PDB** : `CLAUDE.md` documente déjà que
+  `OracleStorage` n'a aucune notion de CON_ID. Les privilèges communs
+  (`GRANT … CONTAINER=ALL`) n'ont donc pas de sens tant que ce socle manque.
+- **Réécriture du socle décrit en §1.2.**
+
+---
+
+## 3. Architecture cible
+
+### 3.1 Principe directeur
+
+**Un seul point de décision par question.** Le défaut de fond des quatre gaps
+majeurs n'est pas l'absence de modèle de données — il est présent et correct —
+mais l'absence de *consommateur* au point où la décision se prend. La cible
+n'ajoute donc pas de moteur parallèle : elle branche des magasins existants sur
+`PrivilegeEnforcer` (autorisation) et sur le pipeline de requête (VPD), qui
+sont déjà les points de passage obligés.
+
+### 3.2 Diagramme de flux
+
+```
+CONNECT user/pw[@svc]              CONNECT proxy[client]/pw
+        |                                   |
++-------v-----------------------------------v-----------------+
+|  SecurityEngine.authenticate()   (déjà réel)                 |
+|  + arbitrage proxy (objectif 7) → identité effective         |
++-------v------------------------------------------------------+
+|  OracleSession                                               |
+|   · currentUser / currentSchema        (déjà réel)           |
+|   · activeRoles  ← DEFAULT ROLE, muté par SET ROLE (obj. 1)  |
++-------v------------------------------------------------------+
+        | chaque instruction
++-------v------------------------------------------------------+
+|  PrivilegeEnforcer            (point de décision UNIQUE)     |
+|   · requireSystemPrivilege        déjà réel                  |
+|   · requireObjectAccess           déjà réel                  |
+|   · requireColumnAccess           NOUVEAU (objectif 2)       |
+|   · requireGrantable*             étendu système+rôle (obj.4)|
+|      └─ PrivilegeChecker.getGrantedRoles(session)  ← actifs  |
++-------v------------------------------------------------------+
+|  Pipeline de requête                                         |
+|   · RlsPredicateApplier    NOUVEAU (objectif 3)              |
+|     politique active ∧ statement_type ∧ sec_relevant_cols    |
+|     → prédicat composé en AND avec le WHERE                  |
++-------v------------------------------------------------------+
+|  recordAuditForStatement()   (déjà réel, classique + FGA)    |
+|   + branche audit unifié     (objectif 6)                    |
++--------------------------------------------------------------+
+```
+
+### 3.3 Modules touchés
+
+```
+src/database/engine/parser/BaseParser.ts        # branche SET ROLE (objectif 1)
+src/database/engine/parser/ASTNode.ts           # SetRoleStatement
+src/database/oracle/security/OracleSession.ts   # activeRoles + API d'activation
+src/database/oracle/security/PrivilegeChecker.ts# getGrantedRoles tient compte des actifs
+src/database/oracle/security/PrivilegeEnforcer.ts # requireColumnAccess, admin option
+src/database/oracle/security/RlsPredicateApplier.ts  # NOUVEAU (objectif 3)
+src/database/oracle/OracleExecutor.ts           # appel colonne + RLS + audit unifié
+src/database/oracle/executor/SecurityDclExecutor.ts  # admin option, revoke cascade
+src/database/oracle/OracleCatalog.ts            # cascade d'octrois, trace unifiée
+src/database/oracle/views/session_roles.ts      # lit les rôles actifs
+src/database/oracle/views/unified_audit_trail.ts# NOUVEAU (objectif 6)
+```
+
+### 3.4 Design patterns retenus
+
+| Pattern | Usage | Justification |
+|---|---|---|
+| **Decorator** | `RlsPredicateApplier` enveloppe le prédicat de la requête | Le prédicat VPD se compose avec le `WHERE` existant sans réécrire le planificateur |
+| **Strategy** | Une stratégie par `policy_type` (`STATIC`, `CONTEXT_SENSITIVE`, `DYNAMIC`) | Oracle ré-évalue la fonction de politique à des fréquences différentes ; la différence est locale |
+| **Single Source of Truth** | L'ensemble des rôles actifs vit sur `OracleSession`, et `PrivilegeChecker` le consulte | Supprime la divergence « rôle accordé » vs « rôle actif », origine des gaps 1 et 2 |
+| **Chain of Responsibility** | `requireObjectAccess` → `requireColumnAccess` | La vérification colonne ne s'exécute que si l'accès objet est déjà accordé — l'ordre porte la sémantique Oracle |
+| **Template Method** | `recordAuditForStatement` garde sa structure, l'audit unifié devient une étape | Un seul point de décision « faut-il auditer », deux destinations |
+
+---
+
+## 4. Modèle de données
+
+### 4.1 Rôles actifs par session (objectif 1)
+
+```
+OracleSession {
+  // … champs existants (currentUser, currentSchema, osContext) …
+  activeRoles: Set<string>     // majuscules, fermeture transitive incluse
+}
+```
+
+Initialisé à l'ouverture depuis `defaultRoleSpecs` (déjà stocké, aujourd'hui
+mort) : `ALL` par défaut, `NONE` vide l'ensemble, `LIST`/`EXCEPT` filtrent.
+`SET ROLE` remplace l'ensemble en bloc — jamais d'ajout incrémental, comme
+Oracle. Un rôle protégé par mot de passe n'entre dans l'ensemble que si le
+`IDENTIFIED BY` de la commande correspond à `getRolePassword()`.
+
+**Point d'attention explicite** : `PrivilegeChecker.getGrantedRoles()` est
+utilisé pour deux questions distinctes — « quels rôles cet utilisateur
+détient-il » (vues `DBA_ROLE_PRIVS`, administration) et « quels rôles
+comptent maintenant » (autorisation). Elles doivent être séparées en deux
+méthodes, sans quoi corriger l'une casse l'autre.
+
+### 4.2 Privilèges de colonne (objectif 2)
+
+Aucun nouveau champ : `OracleCatalog.colPrivileges` porte déjà
+`{ grantee, privilege, objectSchema, objectName, columnName, grantor,
+grantable }`. Ce qui manque est la *question* posée au bon moment :
+
+```
+requireColumnAccess(schema, object, operation, columns: string[]): void
+```
+
+Sémantique Oracle à respecter : un privilège **table** couvre toutes les
+colonnes ; un privilège **colonne** ne couvre que les siennes ; les deux
+s'additionnent. `SELECT *` sur une table dont seules certaines colonnes sont
+accordées rend ORA-01031, il n'élague pas silencieusement.
+
+**Livré en P3.** `PrivilegeChecker.getColumnRestriction()` rend l'ensemble
+des colonnes autorisées, ou `null` quand rien ne restreint — propriétaire,
+DBA, `<priv> ANY TABLE`, privilège table. `null` couvre aussi le cas « aucun
+octroi de colonne du tout » : ce n'est pas une restriction mais une absence
+de privilège, et trancher entre ORA-00942 et ORA-01031 reste le travail de
+`requireObjectAccess`, qui reste donc bien le premier maillon de la chaîne
+annoncée au §3.4. `requireColumnAccess` ne fait plus que l'inclusion.
+
+Les colonnes touchées sont calculées par l'appelant :
+`stmt.assignments` pour `UPDATE`, la liste `INSERT` (ou toutes les colonnes
+quand elle est omise), et pour `SELECT` un parcours d'AST
+(`security/SelectColumnUsage.ts`) couvrant liste de projection, `WHERE`,
+`GROUP BY`, `HAVING`, `ORDER BY` et `CONNECT BY` — lire une colonne dans un
+`WHERE` compte autant que la projeter. Le parcours ne se déclenche que si la
+table est effectivement restreinte, donc le chemin ordinaire ne coûte qu'une
+recherche.
+
+Trois écarts assumés, à ne pas confondre avec des oublis :
+
+- `DELETE` n'a pas de privilège de colonne en Oracle — rien à vérifier.
+- Le `WHERE` d'un `UPDATE` exige en Oracle réel le privilège `SELECT` sur
+  les colonnes lues. Ce n'est pas modélisé : seules les colonnes affectées
+  sont vérifiées, avec le privilège `UPDATE`.
+- Oracle réel n'accepte de colonnes que sur `INSERT`, `UPDATE` et
+  `REFERENCES` ; `GRANT SELECT (col) ON t` y est refusé, la voie officielle
+  étant une vue. Le parseur de ce simulateur l'accepte depuis l'origine et
+  `DBA_COL_PRIVS` l'affiche ; P3 le rend donc *effectif* plutôt que
+  décoratif. Refuser l'octroi serait le comportement fidèle, mais c'est une
+  décision de portée différente (elle casse des tests existants qui
+  l'exercent) et elle n'est pas prise ici.
+
+Un `*` de projection désigne toutes les colonnes ; celui de `COUNT(*)` non —
+il ne lit aucune colonne en particulier, et l'accès objet répond déjà à la
+question qu'il pose.
+
+### 4.3 Prédicat VPD (objectif 3)
+
+Aucun nouveau champ non plus : `rlsPolicies` porte déjà `statementTypes`,
+`secRelevantCols`, `policyType`, `enabled`, `pfOwner`/`pfPackage`/`pfFunction`.
+La fonction de politique est une vraie fonction PL/SQL du moteur ; elle rend
+une chaîne de prédicat, composée en `AND` avec le `WHERE` de la requête.
+
+**Livré en P4 (lecture).** `security/RlsPredicateApplier.ts` appelle la
+fonction de politique par le même chemin que n'importe quelle fonction
+stockée invoquée depuis SQL (`execScalarFunctionCall`), puis ré-analyse la
+chaîne rendue en expression — exactement comme `ConstraintValidator`
+ré-analyse une clause `CHECK` stockée, cache borné compris. Plusieurs
+politiques sur un même objet se composent en `AND` : une politique ne peut
+que restreindre.
+
+Le filtre est posé là où les lignes de la table de base sont lues
+(`loadTable`), pas sur le produit d'une jointure. C'est la sémantique
+d'Oracle, et cela lui fait couvrir d'un coup les jointures, les
+sous-requêtes et les corps de vue.
+
+Points de sémantique tranchés ici :
+
+- **Exemptions** : `SYS`, et le détenteur d'`EXEMPT ACCESS POLICY` (ajouté
+  au catalogue `systemPrivileges.ts`). Le propriétaire de l'objet, lui,
+  **est** soumis — c'est le piège classique de VPD, et le reproduire est
+  l'intérêt de l'exercice. Le §5 disait l'inverse ; c'était une erreur de
+  rédaction, corrigée.
+- **Un prédicat inanalysable rend ORA-28113**, il n'est pas ignoré. Un
+  filtre de sécurité qui disparaît en silence est pire qu'une requête en
+  erreur. Même code quand la fonction de politique n'existe pas.
+- **Un prédicat vide ne restreint rien**, comme en Oracle réel.
+- **Récursion** : une fonction de politique qui lit l'objet qu'elle protège
+  s'appellerait sans fin. La ré-entrée est bloquée et la lecture interne
+  passe non filtrée — Oracle lève ORA-28108 pour la boucle équivalente ;
+  ne pas boucler est le minimum, rendre l'erreur exacte ne l'est pas ici.
+
+**Livré en P5 (écriture, `update_check`, `sec_relevant_cols`).** Sur une
+table protégée par `id = 1`, l'écriture était restée entièrement libre après
+P4 : `UPDATE` répondait « 2 rows updated. » et `DELETE` « 2 rows deleted. »
+Un utilisateur ne pouvait pas *voir* la ligne de son collègue mais pouvait
+l'écraser et la supprimer.
+
+Le prédicat fait deux travaux distincts sur une écriture, et les confondre
+serait faux :
+
+- il **restreint les lignes atteignables** par `UPDATE`/`DELETE` — on ne
+  modifie pas ce qu'on ne voit pas. Composé en `AND` avec le `WHERE` de
+  l'instruction, au point où le moteur décide quelles lignes concordent ;
+- avec `update_check`, il **valide en plus la ligne écrite** : un `INSERT`
+  ou un `UPDATE` ne peut pas pousser une ligne là où son auteur n'aurait
+  plus le droit de la relire. Sinon ORA-28115. Seules les politiques
+  portant cet argument participent à ce second travail — c'est le
+  paramètre `onlyWithCheckOption` de `resolveRlsPredicate`.
+
+`update_check` n'était pas même enregistré : `executeDbmsRlsCall` ne lisait
+pas l'argument et `DBA_POLICIES.CHK_OPTION` rendait la constante `'NO'`.
+Champ `updateCheck` ajouté au magasin, lu par la vue.
+
+`sec_relevant_cols` n'armait rien non plus. La politique ne se déclenche
+désormais que si l'instruction référence une des colonnes nommées —
+projetée ou lue dans un `WHERE`, `SELECT *` les référençant toutes. Les
+colonnes lues sont celles que P3 calculait déjà : `prepareSelectColumnScope`
+les enregistre une fois dans une `WeakMap` clé par nœud d'AST, et les deux
+questions — privilège de colonne, pertinence d'une politique — lisent la
+même réponse. Les calculer deux fois les aurait laissées diverger, ce que
+le §9 de ce document interdit explicitement. Une portée non déterminée arme
+la politique : une pertinence qu'on ne sait pas établir ne doit pas
+désarmer un filtre.
+
+Écarts assumés :
+
+- `sec_relevant_cols` ne gouverne que la lecture. Oracle le décrit comme
+  s'appliquant aux colonnes « référencées dans une requête » ; l'étendre à
+  l'écriture serait une extrapolation.
+- `sec_relevant_cols_opt => DBMS_RLS.ALL_ROWS`, qui remplace le filtrage de
+  lignes par un masquage en `NULL` des colonnes sensibles, n'est pas
+  implémenté — c'est un second mode de rendu, pas un réglage du même.
+- Les types d'instruction `INDEX` restent inertes.
+
+**Défaut adjacent corrigé au passage.** `executeDbmsRlsCall` passe `''`
+pour un argument omis, et `addRlsPolicy` écrivait
+`p.statementTypes ?? 'SELECT,INSERT,UPDATE,DELETE'` : `''` n'étant ni `null`
+ni `undefined`, le défaut ne s'appliquait jamais et les cinq drapeaux
+tombaient à faux. Une politique posée sans `statement_types` — le cas
+courant — était donc désarmée pour tous les types d'instruction, et
+`DBA_POLICIES` affichait `SEL = NO`. Même cause pour `policy_type` (vide au
+lieu de `DYNAMIC`) et `policy_group` (vide au lieu de `SYS_DEFAULT`).
+Corrigé en `||` aux quatre endroits. Sans cela, P4 aurait filtré
+correctement… des politiques qui ne s'armaient jamais.
+
+Cas limites à traiter explicitement : prédicat vide ou `NULL` (aucun filtrage),
+fonction inexistante (ORA-28110 « policy function has error »), politique sur
+un objet dont le propriétaire exécute la requête (pas de filtrage).
+
+### 4.3 bis Déléguer un droit et le reprendre (items 5 et 6, phase P6)
+
+Le §1.3 annonçait deux limites ; le sondage préalable en a trouvé quatre,
+dont une qui n'était pas dans l'inventaire et qui est la plus grave.
+
+**Un champ manquait avant tout le reste.** `CatalogPrivilege` ne portait pas
+de `grantor` et `DBA_TAB_PRIVS.GRANTOR` rendait la constante `'SYS'` : un
+octroi fait par `alice` était attribué à `SYS`. Sans savoir qui a donné
+quoi, aucune cascade n'est calculable. Le champ est ajouté, et il entre
+aussi dans la **clé d'unicité** d'une ligne : comme dans le vrai
+`DBA_TAB_PRIVS`, un utilisateur peut détenir le même privilège de deux
+personnes, et une révocation doit pouvoir en retirer un sans l'autre.
+Sans cela, un second octroi se serait fondu dans le premier et serait tombé
+avec lui.
+
+**`WITH ADMIN OPTION` ne déléguait rien.** L'option était stockée et rendue
+par `DBA_SYS_PRIVS`/`DBA_ROLE_PRIVS`, mais `SecurityDclExecutor` exigeait
+`GRANT ANY PRIVILEGE`/`GRANT ANY ROLE` pour tout octroi système.
+`requireGrantableSystemPrivileges` accepte désormais aussi le détenteur de
+ce privilège précis avec l'option — délégation par privilège, l'option sur
+l'un ne disant rien de l'autre.
+
+**N'importe qui pouvait révoquer n'importe quoi.** `executeRevoke` n'avait
+aucun contrôle d'autorisation, ni pour l'objet ni pour le système : un
+compte sans le moindre droit sur `SYS.EMP` exécutait
+`REVOKE SELECT ON SYS.emp FROM reader` — « Revoke succeeded. » C'est le
+défaut le plus sérieux de ce lot, et il n'était pas au §1.3. Un privilège
+objet ne se reprend maintenant que par son donneur (ORA-01927), à moins de
+détenir `GRANT ANY OBJECT PRIVILEGE` ou d'être DBA ; un privilège système
+ou un rôle demandent la même autorité que pour l'accorder.
+
+**L'asymétrie d'Oracle est reproduite, pas lissée.** La révocation d'un
+privilège **objet** cascade le long de la chaîne des donneurs ; celle d'un
+privilège **système** ou d'un **rôle** ne cascade pas. C'est contre-intuitif
+et documenté, donc testé dans les deux sens. La cascade épargne celui qui
+détient encore le privilège d'un autre donneur : ses propres octrois
+survivent, puisqu'il pouvait toujours les faire.
+
+Écart assumé : Oracle laisse le propriétaire d'un objet reprendre par
+`GRANT ANY OBJECT PRIVILEGE` un octroi consenti par un tiers ; ici le
+propriétaire non-DBA doit détenir ce privilège explicitement, comme tout
+le monde.
+
+### 4.4 Trace d'audit unifiée (objectif 6)
+
+**Livré en P7.** `CREATE AUDIT POLICY … ACTIONS UPDATE, DELETE ON SYS.emp`
+puis `AUDIT POLICY … BY alice` étaient acceptés et stockés,
+`AUDIT_UNIFIED_POLICIES` les affichait, et l'`UPDATE` d'alice ne produisait
+aucune ligne : aucun chemin d'écriture n'existait, alors que l'audit
+classique écrit réellement. Deux modèles coexistaient, l'un réel, l'autre
+décoratif, sans que rien ne le signale.
+
+Trois pièces manquaient, toutes ajoutées :
+
+- un **magasin** propre, `unifiedAuditTrail`, distinct de `auditTrail`
+  (SYS.AUD$) — l'audit unifié est un mécanisme séparé, avec sa propre
+  activation, et ses lignes nomment les politiques qui les ont produites ;
+- un **résolveur**, `matchingUnifiedAuditPolicies(user, action, owner,
+  name)` : une politique portant un objet ne vaut que pour lui, une
+  politique sans clause `ON` suit son action partout, et `ACTIONS ALL`
+  couvre tous les verbes ;
+- la colonne **`UNIFIED_AUDIT_POLICIES`** de `UNIFIED_AUDIT_TRAIL`, que la
+  vue n'avait pas — c'est elle qui rend la trace attribuable, et seules les
+  lignes issues d'une politique la portent.
+
+Le point d'appel est `recordAuditForStatement`, mais **avant** son retour
+anticipé : l'audit unifié ne passe pas par les options `AUDIT` classiques,
+et une instruction peut être prise par l'un, l'autre, les deux ou aucun.
+
+`AUDIT_UNIFIED_ENABLED_POLICIES` (nouvelle vue) manquait aussi : on pouvait
+armer une politique pour un utilisateur sans aucun moyen de le relire. Une
+politique armée pour tous s'y montre sous l'entité `ALL USERS`, comme en
+Oracle réel.
+
+Écarts assumés : la clause `ROLES` d'une politique (auditer l'usage d'un
+rôle) est stockée et affichée, pas appliquée ; les conditions
+`WHEN … EVALUATE PER …` ne sont pas modélisées ; et les colonnes de
+`UNIFIED_AUDIT_TRAIL` restent le sous-ensemble déjà en place, augmenté de
+`UNIFIED_AUDIT_POLICIES` — le vrai en compte plus de cent.
+
+Structure alignée sur `UNIFIED_AUDIT_TRAIL` réel, restreinte aux colonnes que
+le moteur peut honnêtement renseigner : `EVENT_TIMESTAMP`, `DBUSERNAME`,
+`ACTION_NAME`, `OBJECT_SCHEMA`, `OBJECT_NAME`, `SQL_TEXT`, `RETURN_CODE`,
+`UNIFIED_AUDIT_POLICIES`, `SESSIONID`. Bornée comme `AuditJournal` l'est déjà
+(FIFO, budget mémoire explicite) — le simulateur tourne dans un navigateur.
+
+---
+
+### 4.5 Authentification par proxy (objectif 7, phase P8)
+
+`ALTER USER alice GRANT CONNECT THROUGH appsrv` alimentait `proxyUsers` et
+`PROXY_USERS` affichait la ligne — et `CONNECT appsrv[alice]/App1234`
+rendait ORA-01017. La syntaxe `proxy[client]` n'était analysée nulle part :
+le nom d'utilisateur valait littéralement `appsrv[alice]`, un compte qui
+n'existe pas. Le magasin le disait de lui-même : « the simulator does not
+actually arbitrate connection routing ».
+
+Ce qui est livré : `CONNECT proxy[client]/mot_de_passe_du_proxy` ouvre une
+session **dont l'utilisateur est le client**. Le mot de passe vérifié est
+celui du **proxy** — c'est tout l'intérêt du mécanisme : le serveur
+applicatif n'a jamais eu celui de l'utilisateur final. `SHOW USER` rend le
+client, ses privilèges s'appliquent, et
+`SYS_CONTEXT('USERENV','PROXY_USER')` — attribut qui existait déjà sur
+`OracleSession` sans jamais être renseigné — nomme enfin le proxy.
+
+Ordre des contrôles : **l'autorisation avant le mot de passe**. Un proxy
+non autorisé reçoit ORA-28150 sans que la moindre tentative soit faite
+contre le compte du client, et un client inexistant rend le même
+ORA-28150 plutôt que d'avouer son absence.
+
+`WITH ROLE r` réutilise la machinerie de P1 : la session du proxy n'a que
+`r` d'actif, ce que `SESSION_ROLES` montre. Sans la clause, le client garde
+les rôles que son compte activerait.
+
+Corrigé au passage : `PROXY_USERS.AUTHORIZATION_CONSTRAINT` rendait « NO
+CLIENT ROLES MAY BE ACTIVATED » pour un octroi sans clause de rôle, alors
+qu'Oracle y met « PROXY MAY ACTIVATE ALL CLIENT ROLES » — la première
+formule correspond à `WITH NO ROLES`, une forme que le parseur n'accepte
+pas encore.
+
+Écarts assumés : `WITH NO ROLES` et `WITH ROLE ALL EXCEPT …` ne sont pas
+analysés ; l'authentification par proxy avec certificat ou identité
+d'entreprise (`AUTHENTICATION REQUIRED`) n'est pas modélisée ; et
+`V$SESSION` ne distingue pas encore une session mandatée.
+
+## 5. Plan de mise en œuvre (TDD, par phases)
+
+Chaque phase suit la méthode du projet : test d'abord (vraies instructions SQL
+sur un vrai `SqlPlusSubShell`, aucun mock du moteur), puis implémentation
+jusqu'au vert, puis régression avant commit. Aucun stub, aucune duplication.
+
+| Phase | Contenu | Sortie testable |
+|---|---|---|
+| **P1** | `SET ROLE` au parseur + `activeRoles` sur `OracleSession` + séparation « rôles détenus » / « rôles actifs » dans `PrivilegeChecker` | `SET ROLE NONE` puis `SELECT` sur une table accessible par rôle → ORA-00942 ; `SESSION_ROLES` vide ; `SET ROLE reader` la rend de nouveau lisible ; `SET ROLE inconnu` → ORA-01924 |
+| **P2** | `DEFAULT ROLE` réellement consulté à l'ouverture de session ; rôles à mot de passe | `ALTER USER alice DEFAULT ROLE NONE` puis reconnexion → aucun rôle actif ; `SET ROLE secure_role IDENTIFIED BY …` accepté, mot de passe faux → ORA-01979 |
+| **P3** | `requireColumnAccess` branché sur les quatre chemins DML | `GRANT UPDATE (salary)` puis `UPDATE emp SET id = 9` → ORA-01031 ; `UPDATE emp SET salary = 1` → succès ; le détenteur du privilège table complet n'est pas gêné |
+| **P4** | `RlsPredicateApplier` — lecture (`SELECT`) | Politique rendant `id = 1` sur `EMP` : `SELECT` rend une ligne au lieu de deux ; politique désactivée → deux lignes ; `SYS` et le détenteur d'`EXEMPT ACCESS POLICY` voient tout |
+| **P5** | VPD en écriture (`INSERT`/`UPDATE`/`DELETE`), `statement_types`, `sec_relevant_cols` | Une politique `SELECT` seule ne filtre pas un `DELETE` ; une politique à `sec_relevant_cols` ne s'active que si la colonne est référencée |
+| **P6** | `WITH ADMIN OPTION` (système + rôle) et cascade de `REVOKE` | Un utilisateur détenant `CREATE TABLE WITH ADMIN OPTION` peut le ré-accorder sans être DBA ; révoquer un privilège au milieu d'une chaîne d'octrois retire le bout de chaîne |
+| **P7** | Audit unifié écrivant, branché sur le point de décision existant | Politique `ACTIONS UPDATE ON hr.emp` activée `BY alice` : un `UPDATE` d'`alice` produit une ligne dans `UNIFIED_AUDIT_TRAIL`, un `UPDATE` de `bob` non ; `EXCEPT` respecté |
+| **P8** | Proxy réel (`CONNECT proxy[client]/pw`) | Connexion acceptée sous l'identité du client ; sans `CONNECT THROUGH` → ORA-01017 ; `WITH ROLE r` n'active que `r` |
+| **P9** | Franchise sur le résiduel + audit anti-duplication + régression complète | Database Vault / TDE annoncent leur non-application ; les 4 suites existantes vertes ; aucune seconde implémentation d'une décision d'autorisation |
+
+**P1 est le pivot** : sans notion de rôle actif, ni P2, ni la moitié des
+scénarios de sécurité réalistes ne tiennent. P3 et P4 sont indépendantes l'une
+de l'autre et de P1 — elles peuvent être menées en parallèle si besoin.
+
+---
+
+## 6. Stratégie de test
+
+- **TDD strict**, sur le vrai chemin utilisateur : `SqlPlusSubShell` sur un
+  `LinuxServer`, instructions SQL réelles, aucun accès direct au catalogue dans
+  les assertions d'effet.
+- **Chaque test d'effet est doublé d'un test de non-effet** : un privilège
+  accordé doit ouvrir, un privilège absent doit fermer. C'est précisément ce
+  qui manque aujourd'hui aux sections « no-op tolerance » de
+  `oracle-access-management-gaps.test.ts` — dont les assertions d'acceptation
+  sont **conservées**, non remplacées.
+- **Codes d'erreur exacts** : chaque refus est asserté par son numéro ORA, pas
+  par une expression régulière large. Un ORA-01031 rendu là où Oracle rend
+  ORA-00942 est un échec.
+- **Golden master** : les 2 568 lignes des 4 suites
+  `oracle-access-management*` doivent rester vertes ; toute assertion qui
+  change doit être justifiée dans le commit comme encodant une prémisse fausse,
+  jamais « ajustée » pour passer.
+- **Le scénario du non-régressé** : le socle §1.2 (ORA-01045, ORA-01012,
+  ORA-01031 sur DDL d'administration, ORA-01917, arbitrage ORA-00942/01031)
+  reçoit une suite dédiée *avant* la première modification, pour que sa
+  préservation soit prouvée et non supposée.
+- **Cohérence vue/effet** : pour chaque objectif, un test vérifie que la vue de
+  dictionnaire et le comportement disent la même chose — c'est exactement la
+  divergence que ce PRD corrige, elle ne doit pas se reformer ailleurs.
+
+---
+
+## 7. Risques et points d'attention
+
+1. **`getGrantedRoles()` sert deux questions** (§4.1). Le séparer est la
+   première chose à faire en P1 ; ne pas le faire ferait passer les tests
+   d'autorisation en cassant silencieusement les vues d'administration.
+2. **VPD et le planificateur.** Composer un prédicat suppose un point
+   d'insertion propre dans le pipeline de requête. À repérer **avant** P4 : si
+   `OracleExecutor` n'expose pas de couture, la créer est un préalable, pas un
+   détail — et il vaut mieux le découvrir en lisant qu'en implémentant.
+3. **Récursion des politiques VPD.** La fonction de politique est du PL/SQL qui
+   peut lire la table qu'elle protège. Oracle exempte la fonction de sa propre
+   politique ; il faut le faire aussi, sinon récursion infinie.
+4. **La cascade de `REVOKE` peut être large.** Sur un graphe d'octrois profond,
+   révoquer à la racine retire beaucoup. Le test doit couvrir le cas où deux
+   chemins d'octroi indépendants mènent au même bénéficiaire : le privilège
+   survit tant qu'un chemin subsiste.
+5. **Le budget mémoire de la trace unifiée.** `AuditJournal` est borné pour de
+   bonnes raisons ; la nouvelle trace doit l'être dès le premier commit, pas
+   après le premier gonflement.
+6. **Ne pas transformer une correction en régression.** Appliquer les
+   privilèges de colonne rendra `ORA-01031` là où des TP existants passaient.
+   C'est l'objectif — mais chaque suite qui casse doit être relue une par une :
+   certaines exercent peut-être une prémisse fausse, d'autres un scénario
+   légitime que le nouveau contrôle casse à tort.
+
+---
+
+## 8. Suite prévue
+
+Une fois la gestion des accès solide, les extensions naturelles (hors de ce
+PRD) : rattachement de `IDENTIFIED EXTERNALLY` au KDC Kerberos déjà simulé côté
+Windows ; privilèges communs et locaux une fois qu'`OracleStorage` aura une
+notion de CON_ID (préalable documenté dans `CLAUDE.md`) ; Database Vault, qui
+ne prend son sens qu'au-dessus d'un modèle de rôles réellement activable —
+c'est-à-dire au-dessus de la phase P1 de ce document.

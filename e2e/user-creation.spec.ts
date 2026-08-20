@@ -88,7 +88,7 @@ test.describe('useradd – low-level, non-interactive', () => {
   test('sudo useradd creates the account silently — NO password prompt', async ({ page }) => {
     const id = await addLinuxPc(page);
     await openTerminal(page, id);
-    await typeCommand(page, 'sudo useradd bob');
+    await typeCommand(page, 'sudo useradd frank');
 
     // `sudo` itself asks for a password…
     await expect(inTerminal(page, 'password for')).toBeVisible({ timeout: 8_000 });
@@ -99,8 +99,8 @@ test.describe('useradd – low-level, non-interactive', () => {
     await expect(inTerminal(page, 'Full Name')).toHaveCount(0, { timeout: 1_000 });
 
     // The account was nonetheless created.
-    const passwd = await runOnDevice(page, id, 'getent passwd bob');
-    expect(passwd).toContain('bob');
+    const passwd = await runOnDevice(page, id, 'getent passwd frank');
+    expect(passwd).toContain('frank');
   });
 });
 
@@ -113,7 +113,7 @@ test.describe('adduser – interactive Debian front-end', () => {
   test('sudo adduser asks for a NEW PASSWORD after sudo auth', async ({ page }) => {
     const id = await addLinuxPc(page);
     await openTerminal(page, id);
-    await typeCommand(page, 'sudo adduser bob');
+    await typeCommand(page, 'sudo adduser frank');
 
     await expect(inTerminal(page, 'password for')).toBeVisible({ timeout: 8_000 });
     await typePassword(page, 'admin');
@@ -124,24 +124,24 @@ test.describe('adduser – interactive Debian front-end', () => {
   test('sudo adduser shows the realistic Debian creation banner', async ({ page }) => {
     const id = await addLinuxPc(page);
     await openTerminal(page, id);
-    await typeCommand(page, 'sudo adduser bob');
+    await typeCommand(page, 'sudo adduser frank');
     await expect(inTerminal(page, 'password for')).toBeVisible({ timeout: 8_000 });
     await typePassword(page, 'admin');
 
-    await expect(inTerminal(page, "Adding user `bob'")).toBeVisible({ timeout: 8_000 });
+    await expect(inTerminal(page, "Adding user `frank'")).toBeVisible({ timeout: 8_000 });
     await expect(inTerminal(page, 'Creating home directory')).toBeVisible({ timeout: 3_000 });
   });
 
   test('sudo adduser completes the full flow and creates a usable account', async ({ page }) => {
     const id = await addLinuxPc(page);
     await openTerminal(page, id);
-    await typeCommand(page, 'sudo adduser bob');
+    await typeCommand(page, 'sudo adduser frank');
     await expect(inTerminal(page, 'password for')).toBeVisible({ timeout: 8_000 });
     await typePassword(page, 'admin');
     await expect(inTerminal(page, 'New password:')).toBeVisible({ timeout: 8_000 });
-    await typePassword(page, 'bobsecret');
+    await typePassword(page, 'franksecret');
     await expect(inTerminal(page, 'Retype new password:')).toBeVisible({ timeout: 8_000 });
-    await typePassword(page, 'bobsecret');
+    await typePassword(page, 'franksecret');
 
     // The five GECOS finger prompts.
     await expect(inTerminal(page, 'Full Name')).toBeVisible({ timeout: 8_000 });
@@ -157,8 +157,8 @@ test.describe('adduser – interactive Debian front-end', () => {
     await expect(inTerminal(page, 'Is the information correct?')).toBeVisible({ timeout: 5_000 });
     await typeInteractive(page, 'Y');
 
-    const passwd = await runOnDevice(page, id, 'getent passwd bob');
-    expect(passwd).toContain('bob');
+    const passwd = await runOnDevice(page, id, 'getent passwd frank');
+    expect(passwd).toContain('frank');
     expect(passwd).toContain('Bob Martin');
   });
 
@@ -178,23 +178,29 @@ test.describe('adduser – interactive Debian front-end', () => {
     expect(passwd).toContain('Carol Smith');
   });
 
-  test('sudo adduser <user> <group> adds to a group with no prompts', async ({ page }) => {
+  test('sudo adduser <user> <group> adds an existing user to a group with no prompts', async ({ page }) => {
     const id = await addLinuxPc(page);
     await openTerminal(page, id);
 
-    // Pre-create the account programmatically.
-    await runOnDevice(page, id, 'useradd dave');
-
-    await typeCommand(page, 'sudo adduser dave sudo');
+    // Create a fresh target group (the membership target must pre-exist).
+    await typeCommand(page, 'sudo addgroup developers');
     await expect(inTerminal(page, 'password for')).toBeVisible({ timeout: 8_000 });
     await typePassword(page, 'admin');
+    await expect(inTerminal(page, "Adding group `developers'")).toBeVisible({ timeout: 5_000 });
 
-    // No password prompt for a membership change.
+    // Add an already-existing account (the pre-seeded `alice`) to it. A
+    // membership change never prompts for a new password.
+    await typeCommand(page, 'sudo adduser alice developers');
+    // sudo may or may not re-prompt depending on credential caching — answer if it does.
+    await page.waitForTimeout(600);
+    const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+    if (await pw.count() > 0) { await pw.first().fill('admin'); await pw.first().press('Enter'); }
+
     await expect(inTerminal(page, 'New password:')).toHaveCount(0, { timeout: 3_000 });
-    await expect(inTerminal(page, "Adding user `dave' to group `sudo'")).toBeVisible({ timeout: 5_000 });
+    await expect(inTerminal(page, "Adding user `alice' to group `developers'")).toBeVisible({ timeout: 5_000 });
 
-    const groups = await runOnDevice(page, id, 'groups dave');
-    expect(groups).toContain('sudo');
+    const groups = await runOnDevice(page, id, 'groups alice');
+    expect(groups).toContain('developers');
   });
 
   test('sudo addgroup creates a group with no prompts', async ({ page }) => {

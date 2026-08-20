@@ -26,11 +26,14 @@ const COMMON_SHOW = [
   'show lldp neighbors detail', 'show snmp', 'show ntp status',
   'show ntp associations', 'show controllers', 'show environment',
   'show line', 'show ssh', 'show ip ssh', 'show hosts', 'show vrf',
-  'show ip vrf', 'show boot', 'show redundancy', 'show file systems',
+  'show ip vrf', 'show boot', 'show file systems',
   'show calendar', 'show terminal', 'show processes memory',
   'show buffers', 'show tcp brief', 'show sockets', 'show stacks',
   'show reload', 'show aaa sessions',
 ];
+
+/** Châssis à plan de contrôle redondant uniquement : absent d'un ISR G2. */
+const SWITCH_ONLY_SHOW = ['show redundancy'];
 
 describe('Cisco common show family (router & switch, DRY)', () => {
   it('router: every generic show command is recognized (priv)', async () => {
@@ -39,6 +42,9 @@ describe('Cisco common show family (router & switch, DRY)', () => {
     for (const c of COMMON_SHOW) {
       const out = await r.executeCommand(c);
       expect(out, `router: ${c}`).not.toMatch(/Invalid input|Unrecognized|Incomplete/);
+    }
+    for (const c of SWITCH_ONLY_SHOW) {
+      expect(await r.executeCommand(c), `router: ${c}`).toContain('% Invalid input detected');
     }
   });
 
@@ -54,7 +60,7 @@ describe('Cisco common show family (router & switch, DRY)', () => {
   it('switch: the same shared show commands work (DRY)', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 26);
     await sw.executeCommand('enable');
-    for (const c of COMMON_SHOW) {
+    for (const c of [...COMMON_SHOW, ...SWITCH_ONLY_SHOW]) {
       const out = await sw.executeCommand(c);
       expect(out, `switch: ${c}`).not.toMatch(/Invalid input|Unrecognized|Incomplete/);
     }
@@ -77,11 +83,12 @@ describe('Cisco common show family (router & switch, DRY)', () => {
     await r1.executeCommand('enable');
 
     const cdp = await r1.executeCommand('show cdp neighbors');
-    // The real peers (R2 on Gi0/1, L1 on Gi0/0) must appear; an
-    // unconnected port (Gi0/2) must NOT manufacture an entry.
+    // CDP is Cisco-proprietary: R2 (a real CDP speaker on Gi0/1) must
+    // appear, while L1 (a LinuxPC on Gi0/0, which never sends a CDP
+    // frame) must NOT — matching real IOS behaviour.
     expect(cdp).toContain('R2');
-    expect(cdp).toContain('L1');
-    expect(cdp).toMatch(/Total cdp entries displayed : 2/);
+    expect(cdp).not.toContain('L1');
+    expect(cdp).toMatch(/Total cdp entries displayed : 1/);
     const cdpDetail = await r1.executeCommand('show cdp neighbors detail');
     expect(cdpDetail).toContain('R2');
     expect(cdpDetail).toMatch(/Port ID \(outgoing port\): GigabitEthernet0\/1/);

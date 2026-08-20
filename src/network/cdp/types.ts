@@ -52,6 +52,7 @@ export interface CdpFrame extends NetworkPdu {
   addresses: string[];
   /** TLV 0x000a — Native VLAN (switches only). */
   nativeVlan?: number;
+  voiceVlan?: number;
   /** TLV 0x000b — Duplex. */
   duplex: 'half' | 'full' | 'auto';
   /** TLV 0x0009 — VTP management domain (left blank — VTP not modelled). */
@@ -73,6 +74,7 @@ export interface CdpNeighborEntry {
   remoteCapability: CdpCapability;
   remoteAddresses: string[];
   remoteSoftwareVersion: string;
+  advertisementVersion: number;
   /** When this entry was learned (or last refreshed) — used for `show cdp`. */
   learnedAtMs: number;
   /** Total hold-time the advertisement asked us to honour (sec). */
@@ -81,6 +83,7 @@ export interface CdpNeighborEntry {
   expiresAtMs: number;
   /** Native VLAN if the peer is a switch. */
   nativeVlan?: number;
+  remoteVoiceVlan?: number;
   duplex: 'half' | 'full' | 'auto';
 }
 

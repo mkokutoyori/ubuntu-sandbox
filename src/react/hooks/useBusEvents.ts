@@ -33,7 +33,13 @@ export function useBusEvents<T extends DomainEventTopic>(
     const bus = opts.bus ?? getDefaultEventBus();
     const unsubscribe = bus.subscribe(topic, (event) => {
       const typed = event as EventOf<T>;
-      if (filterRef.current && !filterRef.current(typed.payload)) return;
+      // PayloadOf<T> is a deferred conditional type — two separate
+      // references to it (the filter's declared param vs typed.payload)
+      // aren't always considered mutually assignable inside a generic
+      // function body. Narrow through unknown to match filter's actual
+      // parameter type exactly.
+      const payload = typed.payload as unknown as Parameters<NonNullable<typeof filterRef.current>>[0];
+      if (filterRef.current && !filterRef.current(payload)) return;
       setEvents((prev) => {
         const next = prev.length >= max ? prev.slice(prev.length - max + 1) : prev.slice();
         next.push(typed);

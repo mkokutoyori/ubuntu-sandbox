@@ -32,8 +32,59 @@ export interface RadiusAuthRejectedByServerPayload extends RadiusDeviceRef {
   reason: 'unknown-user' | 'bad-password' | 'bad-secret' | 'client-not-authorized';
 }
 
+export interface RadiusAccountingRecordPayload extends RadiusDeviceRef {
+  serverIp: string;
+  sessionId: string;
+  username: string;
+  status: 'start' | 'interim-update' | 'stop';
+  sessionTimeSec: number;
+  inputOctets: number;
+  outputOctets: number;
+  terminateCause: string | null;
+}
+
+export interface RadiusServerHealthPayload extends RadiusDeviceRef {
+  serverIp: string;
+}
+
+export interface RadiusCoaReceivedPayload extends RadiusDeviceRef {
+  fromIp: string;
+  code: 'disconnect-request' | 'coa-request';
+  username: string | null;
+  accepted: boolean;
+  errorCause: string | null;
+}
+
+export interface RadiusCoaCompletedPayload extends RadiusDeviceRef {
+  nasIp: string;
+  code: 'disconnect-request' | 'coa-request';
+  result: 'ack' | 'nak' | 'timeout';
+  errorCause: string | null;
+}
+
+/** RFC 6613 — RADIUS/TCP. Fired by both `RadiusTcpClient` (NAS) and `RadiusTcpServer` on each PAP round. */
+export interface RadiusTcpCompletedPayload extends RadiusDeviceRef {
+  serverIp: string;
+  username: string;
+  result: 'accept' | 'reject' | 'timeout';
+}
+
+/** RFC 2607 — a proxying `RadiusServerAgent` forwarded a `user@realm` request to that realm's home server. */
+export interface RadiusProxyForwardedPayload extends RadiusDeviceRef {
+  username: string;
+  realm: string;
+  homeServerIp: string;
+}
+
 export type RadiusDomainEvent =
   | { topic: 'radius.packet.sent'; payload: RadiusPacketSentPayload }
   | { topic: 'radius.packet.received'; payload: RadiusPacketReceivedPayload }
   | { topic: 'radius.auth.completed'; payload: RadiusAuthCompletedPayload }
-  | { topic: 'radius.auth.rejected'; payload: RadiusAuthRejectedByServerPayload };
+  | { topic: 'radius.auth.rejected'; payload: RadiusAuthRejectedByServerPayload }
+  | { topic: 'radius.accounting.record'; payload: RadiusAccountingRecordPayload }
+  | { topic: 'radius.server.dead'; payload: RadiusServerHealthPayload }
+  | { topic: 'radius.server.alive'; payload: RadiusServerHealthPayload }
+  | { topic: 'radius.coa.received'; payload: RadiusCoaReceivedPayload }
+  | { topic: 'radius.coa.completed'; payload: RadiusCoaCompletedPayload }
+  | { topic: 'radius.tcp.completed'; payload: RadiusTcpCompletedPayload }
+  | { topic: 'radius.proxy.forwarded'; payload: RadiusProxyForwardedPayload };

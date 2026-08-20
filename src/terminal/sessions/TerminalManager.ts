@@ -14,13 +14,19 @@
  *   manager.closeTerminal(sessionId);
  */
 
-import { Equipment, isFullyImplemented } from '@/network';
-import type { ICLIDevice } from '@/network';
+import { Equipment } from '@/network';
 import { TerminalSession } from './TerminalSession';
-import { LinuxTerminalSession } from './LinuxTerminalSession';
-import { CiscoTerminalSession } from './CiscoTerminalSession';
-import { HuaweiTerminalSession } from './HuaweiTerminalSession';
-import { WindowsTerminalSession } from './WindowsTerminalSession';
+import { createSessionForDevice } from './sessionFactory';
+import { consolePortUnique } from '@/network/equipment/HostCapabilities';
+
+/**
+ * Par quelle ligne le terminal se branche. `console` est le port
+ * physique — un seul par chassis, d'ou la reservation. `vty` est une
+ * ligne virtuelle : c'est ce qu'est REELLEMENT une seconde fenetre sur
+ * un routeur, et les sessions y sont independantes comme sur une vraie
+ * machine.
+ */
+export type LigneTerminal = 'console' | 'vty';
 import { getDefaultEventBus, type IEventBus, type Unsubscribe } from '@/events/EventBus';
 
 let nextSessionId = 1;
@@ -154,35 +160,21 @@ export class TerminalManager {
    * Open a new terminal for a device.  Returns the session ID.
    * Starts the session's init() (boot sequence, etc.) asynchronously.
    */
-  openTerminal(device: Equipment): string | null {
+  openTerminal(device: Equipment, ligne?: LigneTerminal): string | null {
     if (!device.getIsPoweredOn()) return null;
 
-    const osType = device.getOSType();
-    const deviceType = device.getDeviceType();
     const deviceId = device.getId();
 
-    const sessionId = `session-${nextSessionId++}`;
-    let session: TerminalSession;
-
-    switch (osType) {
-      case 'linux':
-        session = new LinuxTerminalSession(sessionId, device);
-        break;
-      case 'cisco-ios':
-        session = new CiscoTerminalSession(sessionId, device as ICLIDevice);
-        break;
-      case 'huawei-vrp':
-        session = new HuaweiTerminalSession(sessionId, device as ICLIDevice);
-        break;
-      case 'windows':
-        session = new WindowsTerminalSession(sessionId, device);
-        break;
-      default:
-        if (!isFullyImplemented(deviceType)) return null;
-        // Fallback to linux for fully-implemented but unknown OS types
-        session = new LinuxTerminalSession(sessionId, device);
-        break;
+    const line: LigneTerminal = ligne ?? 'console';
+    if (line === 'console') {
+      const openConsole = this.consoleDejaOuverte(device);
+      if (openConsole) { this.notify(); return openConsole; }
     }
+
+    const sessionId = `session-${nextSessionId++}`;
+    const session = createSessionForDevice(device, sessionId);
+    if (!session) return null;
+    if (line === 'vty') session.attachToVtyLine();
 
     this.sessions.set(sessionId, session);
     const deviceSessions = this.deviceSessions.get(deviceId) || [];
@@ -201,6 +193,16 @@ export class TerminalManager {
 
     this.notify();
     return sessionId;
+  }
+
+  private consoleDejaOuverte(device: Equipment): string | null {
+    if (!consolePortUnique(device)) return null;
+    const ouvertes = this.deviceSessions.get(device.getId()) ?? [];
+    for (const id of ouvertes) {
+      const s = this.sessions.get(id);
+      if (s && !s.device.getId().startsWith('__')) return id;
+    }
+    return null;
   }
 
   /**

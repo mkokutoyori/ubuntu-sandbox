@@ -91,7 +91,7 @@ describe('IGMP — querier startup', () => {
     cable.setEventBus(bus);
     let seen: { messageType: string; destinationIp: string } | null = null;
     bus.subscribe('igmp.packet.sent', (e) => { seen = e.payload; });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     expect(seen).not.toBeNull();
@@ -102,7 +102,7 @@ describe('IGMP — querier startup', () => {
   it('startup→querier after startupQueryCount queries', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     const rt = r.getIgmpAgent().getInterfaceRuntime('GigabitEthernet0/0');
@@ -116,10 +116,10 @@ describe('IGMP — membership tracking', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
-    sendIgmpReport({ ip: '10.0.0.55', port: sw.getPort('FastEthernet0/0')! }, r, '239.1.1.1');
+    sendIgmpReport({ ip: '10.0.0.55', port: sw.getPort('FastEthernet0/1')! }, r, '239.1.1.1');
     expect(r.getIgmpAgent().hasMember('GigabitEthernet0/0', '239.1.1.1')).toBe(true);
   });
 
@@ -128,19 +128,19 @@ describe('IGMP — membership tracking', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     const joins: Array<{ groupAddress: string; reporterIp: string }> = [];
     bus.subscribe('igmp.group.joined', (e) => joins.push(e.payload));
-    sendIgmpReport({ ip: '10.0.0.55', port: sw.getPort('FastEthernet0/0')! }, r, '239.1.1.1');
+    sendIgmpReport({ ip: '10.0.0.55', port: sw.getPort('FastEthernet0/1')! }, r, '239.1.1.1');
     expect(joins.some(j => j.groupAddress === '239.1.1.1' && j.reporterIp === '10.0.0.55')).toBe(true);
   });
 
   it('reserved 224.0.0.x groups are not tracked', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     r.getIgmpAgent().injectReport('GigabitEthernet0/0', '224.0.0.5', '10.0.0.55');
@@ -154,7 +154,7 @@ describe('IGMP — leave processing', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     r.getIgmpAgent().injectReport('GigabitEthernet0/0', '239.7.7.7', '10.0.0.55');
@@ -163,7 +163,7 @@ describe('IGMP — leave processing', () => {
     const leaves: Array<{ groupAddress: string; reason: string }> = [];
     bus.subscribe('igmp.group.left', (e) => leaves.push(e.payload));
 
-    const swPort = sw.getPort('FastEthernet0/0')!;
+    const swPort = sw.getPort('FastEthernet0/1')!;
     const payload: IgmpPacket = {
       type: 'igmp', version: 2,
       messageType: 'leave-group',
@@ -200,11 +200,11 @@ describe('IGMP — querier election', () => {
     const r = new CiscoRouter('R-high');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
 
-    const swPort = sw.getPort('FastEthernet0/0')!;
+    const swPort = sw.getPort('FastEthernet0/1')!;
     const payload: IgmpPacket = {
       type: 'igmp', version: 2,
       messageType: 'membership-query',
@@ -240,7 +240,7 @@ describe('IGMP — link-down clears memberships', () => {
   it('losing the link removes all memberships on that interface', () => {
     const r = new CiscoRouter('R1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
-    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
+    new Cable('c').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);
     r.getIgmpAgent().injectReport('GigabitEthernet0/0', '239.9.9.9', '10.0.0.42');
@@ -257,8 +257,8 @@ describe('IGMP — Cisco↔Huawei interop', () => {
     const huawei = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cisco.setEventBus(bus); huawei.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     cisco.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     huawei.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     cisco.getIgmpAgent().enableInterface('GigabitEthernet0/0', 2);

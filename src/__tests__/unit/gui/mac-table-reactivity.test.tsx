@@ -21,12 +21,20 @@ function lan() {
   const a = new LinuxPC('linux-pc', 'pcA', 0, 0);
   const b = new LinuxPC('linux-pc', 'pcB', 0, 0);
   const sw = new GenericSwitch('switch-generic', 'sw1', 8, 0, 0);
+  a.powerOn(); b.powerOn(); sw.powerOn();
   sw.setEventBus(getDefaultEventBus());
   new Cable('c1').connect(a.getPorts()[0], sw.getPorts()[0]);
   new Cable('c2').connect(b.getPorts()[0], sw.getPorts()[1]);
   const mask = new SubnetMask('255.255.255.0');
   a.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);
   b.getPorts()[0].configureIP(new IPAddress('10.0.0.2'), mask);
+  // Building the lab is already traffic: `configureIP` announces the
+  // address, so the switch has learned both MACs before a test can watch.
+  // The bus event fires on FIRST learn, so a test that subscribed after
+  // this point saw nothing and read as "learning publishes nothing" —
+  // the switch was right, the lab had simply already taught it. Forget
+  // what it learned, so the ping below is what teaches it.
+  sw.clearMACTable();
   return { a, b, sw };
 }
 

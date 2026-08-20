@@ -22,6 +22,10 @@ export const IAM_PATHS = {
   groupBackup: '/etc/group-',
   gshadowBackup: '/etc/gshadow-',
 
+  // ── Name service switch ───────────────────────────────────────────────
+  /** Decides which sources answer a lookup — including the files above. */
+  nsswitchConf: '/etc/nsswitch.conf',
+
   // ── Policy & defaults ─────────────────────────────────────────────────
   loginDefs: '/etc/login.defs',
   useraddDefaults: '/etc/default/useradd',

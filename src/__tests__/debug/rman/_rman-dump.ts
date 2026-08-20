@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Equipment } from '@/network';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
-import type { ISubShell } from '@/terminal/subshells/ISubShell';
+import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/rman');
 
@@ -50,7 +50,7 @@ export function createRmanRunner(device: Equipment, args: string[] = ['target', 
     banner: () => banner,
     execute(line: string): string {
       try {
-        const r = sb.processLine(line);
+        const r = sb.processLine(line) as SubShellResult;
         const out = (r.output ?? []).join('\n');
         return out;
       } catch (e) {

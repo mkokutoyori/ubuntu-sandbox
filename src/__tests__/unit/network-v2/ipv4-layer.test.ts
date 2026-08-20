@@ -21,6 +21,7 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 beforeEach(() => {
   resetCounters();
@@ -192,16 +193,16 @@ describe('Group 2: Routing & TTL', () => {
 
       // Wire: PC_A.eth0 — SW1.port0 — R1.Gi0/0, R1.Gi0/1 — SW2.port0 — PC_B.eth0
       const c1 = new Cable('c1');
-      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
+      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
       const c2 = new Cable('c2');
-      c2.connect(sw1.getPort('FastEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
+      c2.connect(sw1.getPort('FastEthernet0/2')!, router.getPort('GigabitEthernet0/0')!);
       const c3 = new Cable('c3');
-      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/0')!);
+      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
       const c4 = new Cable('c4');
-      c4.connect(sw2.getPort('FastEthernet0/1')!, pcB.getPort('eth0')!);
+      c4.connect(sw2.getPort('FastEthernet0/2')!, pcB.getPort('eth0')!);
 
       // Ping from A to B
-      const results = await pcA.executeCommand('ping -c 1 10.0.2.2');
+      const results = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.2.2');
 
       // Should succeed with TTL=63 (64 - 1 hop)
       expect(results).toContain('64 bytes from 10.0.2.2');
@@ -229,13 +230,13 @@ describe('Group 2: Routing & TTL', () => {
       pcB.setDefaultGateway(new IPAddress('10.0.2.1'));
 
       const c1 = new Cable('c1');
-      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/0')!);
+      c1.connect(pcA.getPort('eth0')!, sw1.getPort('FastEthernet0/1')!);
       const c2 = new Cable('c2');
-      c2.connect(sw1.getPort('FastEthernet0/1')!, router.getPort('GigabitEthernet0/0')!);
+      c2.connect(sw1.getPort('FastEthernet0/2')!, router.getPort('GigabitEthernet0/0')!);
       const c3 = new Cable('c3');
-      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/0')!);
+      c3.connect(router.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
       const c4 = new Cable('c4');
-      c4.connect(sw2.getPort('FastEthernet0/1')!, pcB.getPort('eth0')!);
+      c4.connect(sw2.getPort('FastEthernet0/2')!, pcB.getPort('eth0')!);
 
       // Traceroute sends with incrementing TTL — first hop (TTL=1) should reveal router
       const results = await pcA.executeCommand('traceroute 10.0.2.2');
@@ -253,7 +254,7 @@ describe('Group 2: Routing & TTL', () => {
       pcA.getPort('eth0')!.configureIP(new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
       // No default gateway set → 10.0.0.1 is unreachable
 
-      const results = await pcA.executeCommand('ping -c 1 10.0.0.1');
+      const results = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.0.1');
       expect(results).toContain('Network is unreachable');
     });
   });
@@ -276,11 +277,11 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       pc2.getPort('eth0')!.configureIP(new IPAddress('192.168.1.20'), new SubnetMask('255.255.255.0'));
 
       const c1 = new Cable('c1');
-      c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+      c1.connect(pc1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
       const c2 = new Cable('c2');
-      c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+      c2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
-      const output = await pc1.executeCommand('ping -c 2 192.168.1.20');
+      const output = await pingOnSimulatedClock(pc1, 'ping -c 2 192.168.1.20');
 
       expect(output).toContain('64 bytes from 192.168.1.20');
       expect(output).toContain('icmp_seq=1');
@@ -326,7 +327,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       const c3 = new Cable('c3');
       c3.connect(r2.getPort('GigabitEthernet0/1')!, pcB.getPort('eth0')!);
 
-      const output = await pcA.executeCommand('ping -c 1 10.0.3.2');
+      const output = await pingOnSimulatedClock(pcA, 'ping -c 1 10.0.3.2');
 
       // TTL should be 62 (64 - 2 hops)
       expect(output).toContain('64 bytes from 10.0.3.2');
@@ -356,7 +357,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       c2.connect(router.getPort('GigabitEthernet0/1')!, linPC.getPort('eth0')!);
 
       // Ping from Windows → Linux (through router)
-      const output = await winPC.executeCommand('ping -n 1 10.0.2.2');
+      const output = await pingOnSimulatedClock(winPC, 'ping -n 1 10.0.2.2');
 
       expect(output).toContain('Reply from 10.0.2.2');
       // Linux replies with TTL=64, decremented by 1 through router = 63
@@ -368,14 +369,27 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
   describe('I-L3-04: Router CLI commands', () => {
     it('should display routing table with connected and static routes', async () => {
       const router = new CiscoRouter('R1');
+      // A connected route only exists while the link is up: an uncabled
+      // interface is down/down on IOS and contributes nothing to the RIB.
+      const h1 = new LinuxPC('linux-pc', 'H1', 0, 0);
+      const h2 = new LinuxPC('linux-pc', 'H2', 0, 0);
+      new Cable('r1').connect(router.getPort('GigabitEthernet0/0')!, h1.getPort('eth0')!);
+      new Cable('r2').connect(router.getPort('GigabitEthernet0/1')!, h2.getPort('eth0')!);
+      for (const cmd of ['enable', 'configure terminal',
+        'interface GigabitEthernet0/0', 'no shutdown', 'exit',
+        'interface GigabitEthernet0/1', 'no shutdown', 'exit', 'end']) {
+        await router.executeCommand(cmd);
+      }
       router.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
       router.configureInterface('GigabitEthernet0/1', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.0'));
       router.addStaticRoute(new IPAddress('10.0.3.0'), new SubnetMask('255.255.255.0'), new IPAddress('10.0.2.2'));
 
       const output = await router.executeCommand('show ip route');
-      expect(output).toContain('C    10.0.1.0/24 is directly connected');
-      expect(output).toContain('C    10.0.2.0/24 is directly connected');
-      expect(output).toContain('S    10.0.3.0/24 [1/0] via 10.0.2.2');
+      // IOS 15.x indente les routes sous leur en-tête classful ; le
+      // format à quatre espaces datait du rendu précédent.
+      expect(output).toMatch(/C\s+10\.0\.1\.0\/24 is directly connected/);
+      expect(output).toMatch(/C\s+10\.0\.2\.0\/24 is directly connected/);
+      expect(output).toMatch(/S\s+10\.0\.3\.0\/24 \[1\/0\] via 10\.0\.2\.2/);
     });
 
     it('should display interface brief', async () => {
@@ -400,7 +414,7 @@ describe('Group 3: Integration — Realistic Scenarios', () => {
       const c1 = new Cable('c1');
       c1.connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
 
-      const output = await pc.executeCommand('ping -c 1 10.0.1.1');
+      const output = await pingOnSimulatedClock(pc, 'ping -c 1 10.0.1.1');
       expect(output).toContain('64 bytes from 10.0.1.1');
       // Router uses TTL=255
       expect(output).toContain('ttl=255');

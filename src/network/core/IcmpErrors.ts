@@ -20,8 +20,11 @@ import {
 /** Destination Unreachable (Type 3) codes */
 export const ICMP_UNREACH_NET = 0;
 export const ICMP_UNREACH_HOST = 1;
+export const ICMP_UNREACH_PROTO = 2;
 export const ICMP_UNREACH_PORT = 3;
 export const ICMP_UNREACH_FRAG_NEEDED = 4;
+export const ICMP_UNREACH_NET_PROHIBITED = 9;
+export const ICMP_UNREACH_HOST_PROHIBITED = 10;
 export const ICMP_UNREACH_ADMIN_PROHIBITED = 13;
 
 /** Time Exceeded (Type 11) codes */

@@ -25,6 +25,24 @@ export class BashLexer {
   private column: number = 1;
 
   /**
+   * Extra tokens produced by a scanner that emits more than one token
+   * (the heredoc operator also emits its body token). Drained by
+   * tokenize() before scanning further input.
+   */
+  private queued: Token[] = [];
+
+  /**
+   * Heredocs whose operator has been lexed but whose body hasn't been
+   * collected yet — bash gathers the bodies, in order, starting on the
+   * line AFTER the one holding the `<<` operators.
+   */
+  private pendingHeredocs: Array<{
+    delimiter: string;
+    stripTabs: boolean;
+    bodyToken: Token;
+  }> = [];
+
+  /**
    * Tokenize the full input string.
    * @param input   Bash source code.
    * @param strip   If true, filter out comments (default: true).
@@ -34,10 +52,16 @@ export class BashLexer {
     this.pos = 0;
     this.line = 1;
     this.column = 1;
+    this.queued = [];
+    this.pendingHeredocs = [];
 
     const tokens: Token[] = [];
 
-    while (!this.isAtEnd()) {
+    while (!this.isAtEnd() || this.queued.length > 0) {
+      if (this.queued.length > 0) {
+        tokens.push(this.queued.shift()!);
+        continue;
+      }
       const posBeforeSkip = this.pos;
       this.skipSpacesAndTabs();
       if (this.isAtEnd()) break;
@@ -52,6 +76,11 @@ export class BashLexer {
         tokens.push(tok);
       }
     }
+
+    // A heredoc left open at EOF (no delimiter line, or no trailing
+    // newline at all) takes the rest of the input as its body — bash
+    // warns but accepts; keeping it lenient matches the interactive use.
+    if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
 
     tokens.push(this.makeToken(TokenType.EOF, ''));
     return tokens;
@@ -139,6 +168,14 @@ export class BashLexer {
           value += '\\' + this.peek();
           this.advance();
         }
+      } else if (this.peek() === '$' && this.peekAt(1) === '(') {
+        // `$(...)` embedded in a double-quoted string opens its own
+        // quoting context — a `"` inside it must not be mistaken for
+        // the outer string's terminator (e.g. `"$(cmd "$x")"`).
+        value += this.consumeBalancedParenSpan();
+      } else if (this.peek() === '`') {
+        // Same for a backtick command substitution embedded inside.
+        value += this.consumeBalancedBacktickSpan();
       } else {
         value += this.peek();
         this.advance();
@@ -147,6 +184,63 @@ export class BashLexer {
     if (this.isAtEnd()) throw new LexerError("Unterminated double-quoted string", start);
     this.advance(); // skip closing "
     return { type: TokenType.DOUBLE_QUOTED, value, position: start };
+  }
+
+  /** Consume `$(...)`, honouring nested parens and quotes so an embedded
+   *  `"`/`'` is never mistaken for the enclosing double-quote's terminator. */
+  private consumeBalancedParenSpan(): string {
+    let out = '$(';
+    this.advance();
+    this.advance();
+    let depth = 1;
+    while (!this.isAtEnd() && depth > 0) {
+      const ch = this.peek();
+      if (ch === '\\') {
+        out += ch;
+        this.advance();
+        if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        out += this.consumeQuotedSpan(ch);
+        continue;
+      }
+      if (ch === '(') { depth++; out += ch; this.advance(); continue; }
+      if (ch === ')') { depth--; out += ch; this.advance(); continue; }
+      out += ch;
+      this.advance();
+    }
+    return out;
+  }
+
+  /** Consume a `'...'` or `"..."` span verbatim (including delimiters). */
+  private consumeQuotedSpan(quote: string): string {
+    let out = quote;
+    this.advance();
+    while (!this.isAtEnd() && this.peek() !== quote) {
+      if (quote === '"' && this.peek() === '\\') {
+        out += this.peek();
+        this.advance();
+        if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+        continue;
+      }
+      out += this.peek();
+      this.advance();
+    }
+    if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+    return out;
+  }
+
+  /** Consume a `` `...` `` span verbatim (including backticks). */
+  private consumeBalancedBacktickSpan(): string {
+    let out = '`';
+    this.advance();
+    while (!this.isAtEnd() && this.peek() !== '`') {
+      out += this.peek();
+      this.advance();
+    }
+    if (!this.isAtEnd()) { out += this.peek(); this.advance(); }
+    return out;
   }
 
   private scanBacktickSub(): Token {
@@ -350,7 +444,15 @@ export class BashLexer {
     this.advance();
     if (!this.isAtEnd() && this.peek() === ';') {
       this.advance();
+      if (!this.isAtEnd() && this.peek() === '&') {
+        this.advance();
+        return { type: TokenType.DSEMI_AMP, value: ';;&', position: start };
+      }
       return { type: TokenType.DSEMI, value: ';;', position: start };
+    }
+    if (!this.isAtEnd() && this.peek() === '&') {
+      this.advance();
+      return { type: TokenType.SEMI_AMP, value: ';&', position: start };
     }
     return { type: TokenType.SEMI, value: ';', position: start };
   }
@@ -380,6 +482,9 @@ export class BashLexer {
   private scanGreat(): Token {
     const start = this.position();
     this.advance();
+    if (!this.isAtEnd() && this.peek() === '(') {
+      return this.scanBalancedParens(start, 'out');
+    }
     if (!this.isAtEnd() && this.peek() === '>') {
       this.advance();
       return { type: TokenType.DGREAT, value: '>>', position: start };
@@ -391,14 +496,63 @@ export class BashLexer {
     return { type: TokenType.GREAT, value: '>', position: start };
   }
 
+  private scanBalancedParens(start: SourcePosition, kind: 'in' | 'out'): Token {
+    this.advance();
+    let depth = 1;
+    let cmd = '';
+    while (!this.isAtEnd() && depth > 0) {
+      if (this.peek() === '(') depth++;
+      else if (this.peek() === ')') {
+        depth--;
+        if (depth === 0) break;
+      }
+      cmd += this.peek();
+      this.advance();
+    }
+    if (this.isAtEnd() && depth > 0) {
+      throw new LexerError('Unterminated process substitution', start);
+    }
+    this.advance();
+    return {
+      type: kind === 'in' ? TokenType.PROC_SUB_IN : TokenType.PROC_SUB_OUT,
+      value: cmd,
+      position: start,
+    };
+  }
+
   private scanLess(): Token {
     const start = this.position();
     this.advance();
+    if (!this.isAtEnd() && this.peek() === '(') {
+      return this.scanBalancedParens(start, 'in');
+    }
     if (!this.isAtEnd() && this.peek() === '<') {
       this.advance();
       if (!this.isAtEnd() && this.peek() === '<') {
         this.advance();
         return { type: TokenType.HERESTRING, value: '<<<', position: start };
+      }
+      // Heredoc — the delimiter word is consumed here (it is lexer
+      // syntax, not a shell word), and the body is captured natively
+      // once the current line ends. A quoted delimiter suppresses
+      // expansion: the body token becomes SINGLE_QUOTED; an unquoted
+      // one becomes DOUBLE_QUOTED, whose text goes through the normal
+      // inline `$var`/`$(cmd)`/`\$` expansion — exactly bash's rules.
+      let stripTabs = false;
+      if (!this.isAtEnd() && this.peek() === '-') {
+        stripTabs = true;
+        this.advance();
+      }
+      while (!this.isAtEnd() && (this.peek() === ' ' || this.peek() === '\t')) this.advance();
+      const delim = this.scanHeredocDelimiter();
+      if (delim !== null) {
+        const bodyToken: Token = {
+          type: delim.quoted ? TokenType.SINGLE_QUOTED : TokenType.DOUBLE_QUOTED,
+          value: '',
+          position: this.position(),
+        };
+        this.queued.push(bodyToken);
+        this.pendingHeredocs.push({ delimiter: delim.value, stripTabs, bodyToken });
       }
       return { type: TokenType.HEREDOC, value: '<<', position: start };
     }
@@ -459,8 +613,11 @@ export class BashLexer {
       if (ch === '}' && !value) break;
       // [ and ] at start of word are test brackets; mid-word they're glob chars
       if ((ch === '[' || ch === ']') && !value) break;
-      // Other operator starts
-      if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}') break;
+      // Other operator starts. `#` is excluded: a word-initial `#` is
+      // already consumed as a comment by scanToken, so any `#` reaching
+      // scanWord is mid-word and thus a literal character — bash only
+      // begins a comment at a word boundary (`echo a#b` prints `a#b`).
+      if (this.isOperatorStart(ch) && ch !== '[' && ch !== ']' && ch !== '{' && ch !== '}' && ch !== '#') break;
 
       // Escape — keep both bytes in the raw value so downstream
       // glob/quote-removal can tell escaped meta-chars (`\*`, `\?`,
@@ -521,7 +678,70 @@ export class BashLexer {
   private scanNewline(): Token {
     const start = this.position();
     this.advance();
+    // Pending heredoc bodies start on the line after their operators —
+    // consume them here so subsequent tokens resume past the bodies.
+    if (this.pendingHeredocs.length > 0) this.collectHeredocBodies();
     return { type: TokenType.NEWLINE, value: '\n', position: start };
+  }
+
+  /**
+   * Delimiter word right after `<<` / `<<-`: a quoted ('EOF' / "EOF") or
+   * bare word. Returns null when the operator has no delimiter (a syntax
+   * error the parser reports when its redirection target is missing).
+   */
+  private scanHeredocDelimiter(): { value: string; quoted: boolean } | null {
+    if (this.isAtEnd()) return null;
+    const ch = this.peek();
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      this.advance();
+      let value = '';
+      while (!this.isAtEnd() && this.peek() !== quote) {
+        value += this.peek();
+        this.advance();
+      }
+      if (!this.isAtEnd()) this.advance(); // closing quote
+      return value.length > 0 ? { value, quoted: true } : null;
+    }
+    let value = '';
+    let quoted = false;
+    while (!this.isAtEnd() && !' \t\n|&;<>()'.includes(this.peek())) {
+      // A backslash-escaped delimiter (\EOF) also disables expansion.
+      if (this.peek() === '\\') {
+        quoted = true;
+        this.advance();
+        if (this.isAtEnd()) break;
+      }
+      value += this.peek();
+      this.advance();
+    }
+    return value.length > 0 ? { value, quoted } : null;
+  }
+
+  /**
+   * Consume the heredoc bodies queued on the line that just ended, in
+   * order, filling each operator's body token. The delimiter line itself
+   * is swallowed. `<<-` strips leading tabs from body and delimiter
+   * lines, per bash.
+   */
+  private collectHeredocBodies(): void {
+    const pending = this.pendingHeredocs;
+    this.pendingHeredocs = [];
+    for (const h of pending) {
+      const bodyLines: string[] = [];
+      while (!this.isAtEnd()) {
+        let lineEnd = this.input.indexOf('\n', this.pos);
+        if (lineEnd === -1) lineEnd = this.input.length;
+        const rawLine = this.input.slice(this.pos, lineEnd);
+        const line = h.stripTabs ? rawLine.replace(/^\t+/, '') : rawLine;
+        // Advance past the line (and its newline, if present).
+        while (this.pos < lineEnd) this.advance();
+        if (!this.isAtEnd()) this.advance();
+        if (line.trim() === h.delimiter) break;
+        bodyLines.push(line);
+      }
+      h.bodyToken.value = bodyLines.join('\n');
+    }
   }
 
   // ─── Helpers ───────────────────────────────────────────────────
@@ -555,9 +775,16 @@ export class BashLexer {
     return { type, value, position: this.position() };
   }
 
+  /** `\<newline>` outside a word is a line continuation: both characters
+   *  vanish, unlike a bare `\n` which is a significant statement
+   *  separator — this is what lets `cmd1 && \` + newline + `cmd2` read
+   *  as one logical line, a common real-world script formatting idiom. */
   private skipSpacesAndTabs(): void {
-    while (!this.isAtEnd() && (this.peek() === ' ' || this.peek() === '\t')) {
-      this.advance();
+    while (!this.isAtEnd()) {
+      const ch = this.peek();
+      if (ch === ' ' || ch === '\t') { this.advance(); continue; }
+      if (ch === '\\' && this.peekAt(1) === '\n') { this.advance(); this.advance(); continue; }
+      break;
     }
   }
 

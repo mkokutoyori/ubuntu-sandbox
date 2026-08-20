@@ -21,8 +21,10 @@ import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { __assumeCarrierOnUncabledPorts } from '@/network/devices/inspection/InterfaceStatusView';
 
 beforeEach(() => {
+  __assumeCarrierOnUncabledPorts(true);
   resetCounters();
   resetDeviceCounters();
   Logger.reset();
@@ -512,7 +514,12 @@ describe('T-ROUT-03: L2 Rewrite — egress MAC verification', () => {
     const pcB_MAC = pcBPort.getMAC();
 
     // Frames arriving at R1 from PC_A: dstMAC should be R1's ingress MAC
-    const r1Ipv4 = r1InFrames.filter(f => f.etherType === ETHERTYPE_IPV4);
+    // PC_A also sends its own link-local multicast traffic (LLMNR self-
+    // announce, RFC 4795 §4.1) on interface bring-up — a real, deliberate
+    // feature (see LlmnrAgent), not routing noise. It shares ETHERTYPE_IPV4
+    // and can arrive at R1's ingress port before the ping, so filter down
+    // to the unicast-addressed frame the ping itself produces.
+    const r1Ipv4 = r1InFrames.filter(f => f.etherType === ETHERTYPE_IPV4 && f.dstMAC.equals(r1IngressMAC));
     expect(r1Ipv4.length).toBeGreaterThanOrEqual(1);
     expect(r1Ipv4[0].dstMAC.equals(r1IngressMAC)).toBe(true);
 

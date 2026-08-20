@@ -31,8 +31,11 @@ import {
   BgpSession, type BgpFsmState,
 } from './BgpSession';
 import {
+  BGP_DEFAULT_CONNECT_RETRY_SEC,
   type BgpUpdateMessage, type BgpNlri, type BgpPathAttributes,
 } from './messages';
+import { TimerSet } from '@/events/TimerSet';
+import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpNeighborCfg {
@@ -98,6 +101,12 @@ interface BgpRibEntry {
   peerIp: string;
 }
 
+/** RFC 4271 §8.2.2 — the FSM's retry clock and counter, per neighbour. */
+interface ConnectRetryState {
+  timer: symbol | null;
+  counter: number;
+}
+
 /** Per-neighbour session state owned by the engine. */
 interface PeerSession {
   link: BgpPeerLink;
@@ -118,11 +127,46 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    *  UPDATE arrives on a peer's converge) must still reach the Router RIB. */
   private onRibChange: (() => void) | null = null;
   private readonly peers = new Map<string, PeerSession>();
-  /** Neighbours we reached over TCP this round (link existed) but did not
+  /** Neighbours we have reached over TCP (link existed) but did not
    *  finish peering with — they read Active rather than Idle. */
   private readonly attempted = new Set<string>();
   /** Re-entrancy guard for the synchronous triggered-update cascade. */
   private propagating = false;
+  /** True while {@link refreshFromCache} runs: recompute, never dial. */
+  private cacheOnly = false;
+
+  // ── ConnectRetryTimer (RFC 4271 §8.2.2) ────────────────────────────
+  private schedulerOverride: IScheduler | null = null;
+  /** Inject a scheduler (virtual time in tests, real time in the app). */
+  setScheduler(scheduler: IScheduler | null): void { this.schedulerOverride = scheduler; }
+  private getScheduler(): IScheduler {
+    return this.schedulerOverride ?? getDefaultScheduler();
+  }
+  private readonly timers = new TimerSet(() => this.getScheduler());
+  /** Per-neighbour ConnectRetryTimer + ConnectRetryCounter (§8.2.2). */
+  private readonly connectRetry = new Map<string, ConnectRetryState>();
+  private connectRetrySec = BGP_DEFAULT_CONNECT_RETRY_SEC;
+
+  /** `neighbor <ip> timers connect-retry <sec>` — the FSM's retry clock. */
+  setConnectRetrySec(sec: number): void {
+    if (Number.isFinite(sec) && sec > 0) this.connectRetrySec = sec;
+  }
+  getConnectRetrySec(): number { return this.connectRetrySec; }
+
+  /**
+   * ConnectRetryCounter (§8.2.2): how many transport attempts have failed
+   * since this peer last came up. `show ip bgp neighbors` reports it, and
+   * it is the honest measure of a peering that is not happening.
+   */
+  getConnectRetryCounter(ip: string): number {
+    return this.connectRetry.get(ip)?.counter ?? 0;
+  }
+
+  /** True while this neighbour is waiting out its ConnectRetryTimer. */
+  isConnectRetryPending(ip: string): boolean {
+    return this.connectRetry.get(ip)?.timer !== null
+      && this.connectRetry.get(ip)?.timer !== undefined;
+  }
 
   protected defaultConfig(): BGPConfig {
     return {
@@ -165,7 +209,19 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   override disable(): void {
     for (const ps of this.peers.values()) ps.session.close();
     this.peers.clear();
+    this.shutdownTimers();
+    this.attempted.clear();
     super.disable();
+  }
+
+  /**
+   * Release every ConnectRetryTimer. The device calls it when the router
+   * is powered off: a retry clock outliving its chassis would go on
+   * dialling from a machine that is not there.
+   */
+  shutdownTimers(): void {
+    this.timers.clearAll();
+    this.connectRetry.clear();
   }
 
   /**
@@ -198,17 +254,73 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       if (!this.config.neighbors.has(ip)) {
         ps.session.close();
         this.peers.delete(ip);
+        this.clearConnectRetry(ip);
+        this.attempted.delete(ip);
       }
     }
-    // Open a session to each configured neighbour we are not peered with.
-    this.attempted.clear();
+    // Forget the retry state of neighbours that were removed outright.
+    for (const ip of [...this.connectRetry.keys()]) {
+      if (!this.config.neighbors.has(ip)) this.clearConnectRetry(ip);
+    }
     for (const ip of this.config.neighbors.keys()) {
       if (this.peers.has(ip)) continue;
-      const link = this.wire?.connect(ip) ?? null;
-      if (!link) continue;                 // not a reachable cabled peer ⇒ Idle
-      this.attempted.add(ip);              // TCP reached; peering may still fail
-      this.startSession(link, true);
+      // RFC 4271 §8.2.2: while the ConnectRetryTimer runs, the FSM sits in
+      // Active and does NOT re-dial — the timer is what paces attempts.
+      // Dialling here on every convergence was the whole problem: with
+      // convergence running on every show and every link event, an
+      // unreachable neighbour was re-dialled without limit.
+      if (this.isConnectRetryPending(ip)) continue;
+      this.tryConnect(ip);
     }
+  }
+
+  /**
+   * One transport attempt (§8.2.2 "initiate a TCP connection"). Success
+   * clears the retry clock; failure — no route to the peer, or a peer
+   * that refuses to complete the OPEN exchange — starts it, and nothing
+   * else will try again until it fires.
+   */
+  private tryConnect(ip: string): boolean {
+    if (!this.isEnabled() || !this.config.neighbors.has(ip)) return false;
+    const link = this.wire?.connect(ip) ?? null;
+    if (!link) {
+      // Not a reachable cabled peer: the FSM never leaves Idle, but it
+      // still owes the peer a retry.
+      this.armConnectRetry(ip);
+      return false;
+    }
+    this.attempted.add(ip);        // TCP reached; peering may still fail
+    this.startSession(link, true);
+    if (this.peers.get(ip)?.session.isEstablished()) {
+      this.clearConnectRetry(ip);  // §8.2.2: cleared once the peering is up
+      return true;
+    }
+    // The handshake ran and did not establish. `onPeerClosed` may already
+    // have armed the timer on the way out — don't count the failure twice.
+    if (!this.isConnectRetryPending(ip)) this.armConnectRetry(ip);
+    return false;
+  }
+
+  private armConnectRetry(ip: string): void {
+    const st = this.connectRetry.get(ip) ?? { timer: null, counter: 0 };
+    this.timers.clear(st.timer);
+    st.counter += 1;
+    st.timer = this.timers.setTimeout(() => {
+      st.timer = null;
+      // ConnectRetryTimer_Expires (§8.2.2): try the transport again.
+      if (this.tryConnect(ip)) {
+        this.propagate();
+        this.onRibChange?.();
+      }
+    }, this.connectRetrySec * 1000);
+    this.connectRetry.set(ip, st);
+  }
+
+  private clearConnectRetry(ip: string): void {
+    const st = this.connectRetry.get(ip);
+    if (!st) return;
+    this.timers.clear(st.timer);
+    this.connectRetry.delete(ip);
   }
 
   private startSession(link: BgpPeerLink, initiator: boolean): void {
@@ -234,6 +346,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   }
 
   private onEstablished(ip: string): void {
+    // §8.2.2: the ConnectRetryTimer is cleared once the peering is up —
+    // and this is the one place that covers both directions, since an
+    // inbound connection establishes a peering we never dialled.
+    this.clearConnectRetry(ip);
     // Advertise our full table to the freshly-up peer.
     this.advertiseTo(ip);
   }
@@ -262,10 +378,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ps = this.peers.get(ip);
     if (!ps) return;
     ps.adjRibIn.clear();
-    // Keep the entry (configured neighbour) so the view reads Active, not
-    // Idle; manageSessions will retry the connection on the next converge.
     ps.adjRibOut.clear();
     this.peers.delete(ip);
+    // A peering that goes down restarts the ConnectRetryTimer (§8.2.2):
+    // the FSM falls back to Active and waits out the clock rather than
+    // re-dialling at whatever rate the rest of the system converges.
+    if (this.config.neighbors.has(ip) && this.isEnabled()) {
+      this.armConnectRetry(ip);
+    }
     this.propagate(ip);
     this.onRibChange?.();
   }
@@ -429,9 +549,34 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     }
   }
 
+  /**
+   * Recompute contributed routes from the Adj-RIB-In WITHOUT opening
+   * sessions or re-advertising — the per-forwarding-decision path, and
+   * the counterpart of EIGRPEngine's `refreshFromCache()`.
+   *
+   * Dialling belongs to a real convergence round (config/show time).
+   * Doing it from the data path is what made an unreachable neighbour
+   * explode: `manageSessions()` dials it, the SYN dies waiting for ARP,
+   * two seconds later the router builds an ICMP unreachable for its own
+   * SYN, and routing that ICMP calls straight back in here — one fresh
+   * dial per configured neighbour, doubling at every ARP timeout, until
+   * the ephemeral pool is drained and every further attempt logs
+   * `%TCP-4-WARNINGS: Segment dropped (no-ephemeral)`. A few seconds of
+   * that is hundreds of thousands of terminal lines, and a wedged tab.
+   */
+  refreshFromCache(): void {
+    if (this.cacheOnly) return;
+    this.cacheOnly = true;
+    try {
+      super.converge();
+    } finally {
+      this.cacheOnly = false;
+    }
+  }
+
   // ── Template-method hooks ──────────────────────────────────────────
   protected computeNeighbors(_peers: RoutingPeer[]): void {
-    if (this.isEnabled()) {
+    if (this.isEnabled() && !this.cacheOnly) {
       this.manageSessions();
       // Re-advertise to every Established peer so a local config change
       // (a new/removed `network`, redistribution) reaches peers that came
@@ -483,16 +628,43 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     })).sort((a, b) => String(a.network).localeCompare(String(b.network)));
   }
 
+  /**
+   * Ce que nous avons RÉELLEMENT annoncé à ce voisin — son Adj-RIB-Out,
+   * pas la Loc-RIB. Les deux diffèrent dès qu'un filtre ou le split
+   * horizon iBGP s'applique, et `show ip bgp neighbors <ip>
+   * advertised-routes` demande la première.
+   */
+  getAdvertisedRoutes(neighborIp: string): BgpTableRow[] {
+    const ps = this.peers.get(neighborIp);
+    if (!ps) return [];
+    const rows: BgpTableRow[] = [];
+    for (const { nlri, serial } of ps.adjRibOut.values()) {
+      let attrs: BgpPathAttributes | null = null;
+      try { attrs = JSON.parse(serial) as BgpPathAttributes; } catch { attrs = null; }
+      rows.push({
+        network: new IPAddress(nlri.network),
+        mask: SubnetMask.fromCIDR(nlri.prefixLength),
+        nextHop: attrs?.nextHop ? new IPAddress(String(attrs.nextHop)) : null,
+        asPath: attrs?.asPath ?? [],
+        weight: 0,
+        localPref: attrs?.localPref ?? BGP_DEFAULT_LOCAL_PREF,
+        origin: 'i' as const,
+      });
+    }
+    return rows.sort((a, b) => String(a.network).localeCompare(String(b.network)));
+  }
+
   private publishNeighborState(
     ip: string, oldState: string | undefined, newState: string, remoteAs?: number,
   ): void {
+    if ((oldState ?? 'Idle') === newState) return;
     this.bus?.publish({
       topic: 'bgp.neighbor.state-changed',
       payload: {
         deviceId: this.deviceId, neighborIp: ip,
         oldState: oldState ?? 'Idle', newState, remoteAs: remoteAs ?? null,
       },
-    } as never);
+    });
   }
 }
 

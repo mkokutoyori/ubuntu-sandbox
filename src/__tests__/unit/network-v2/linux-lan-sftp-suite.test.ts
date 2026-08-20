@@ -132,10 +132,35 @@ function assertRow(out: string, row: Row): void {
   }
 }
 
-/** Build a here-doc sftp invocation. */
-function sftp(dest: string, verbs: string[], opts: { flags?: string } = {}): string {
+const WINDOWS_HOSTS = new Set(['10.0.0.20', '10.0.0.21']);
+
+/**
+ * The password each account of this lab answers to. A here-doc now opens
+ * the same real session a bare `sftp` does, so every invocation has to
+ * carry one: the standard Linux cast gives a user their own name,
+ * `root` and the default `user` answer to `admin`, and a Windows box
+ * ships `User` / `user`.
+ */
+function passwordFor(user: string, host: string): string {
+  if (WINDOWS_HOSTS.has(host)) return 'user';
+  return user === 'root' || user === 'user' ? 'admin' : user;
+}
+
+/**
+ * Build a here-doc sftp invocation, carrying the account's password.
+ *
+ * `fromWindows` drops it: a Windows box ships no `sshpass`, and its own
+ * client (`WindowsSftpClient`) is a separate path that still resolves the
+ * remote in memory — §26 measures that client, not this one.
+ */
+function sftp(
+  dest: string, verbs: string[], opts: { flags?: string; fromWindows?: boolean } = {},
+): string {
   const flags = opts.flags ? `${opts.flags} ` : '';
-  return `sftp ${flags}${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
+  const user = /^([\w.-]+)@/.exec(dest)?.[1] ?? 'user';
+  const host = dest.replace(/^[\w.-]+@/, '').split(':')[0];
+  const auth = opts.fromWindows ? '' : `sshpass -p ${passwordFor(user, host)} `;
+  return `${auth}sftp ${flags}${dest} <<'EOF'\n${verbs.join('\n')}\nbye\nEOF`;
 }
 
 // ─── Section 1 — SFTP happy path (PC↔PC, PC↔Server, Server↔Server, Linux→Windows) ──
@@ -449,7 +474,7 @@ describe('§6 — mkdir creates remote directories', () => {
     },
     {
       name: 'mkdir relative to cwd creates underneath it',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/base && chown alice:alice /tmp/base'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/base && chown alice:alice /tmp/base"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['cd /tmp/base', 'mkdir leaf', 'cd leaf', 'pwd']),
       contains: [/Remote working directory: \/tmp\/base\/leaf/],
@@ -477,7 +502,7 @@ describe('§7 — rmdir removes empty directories', () => {
   const rows: Row[] = [
     {
       name: 'rmdir on an empty dir removes it; subsequent cd fails',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/togo && chown alice:alice /tmp/togo'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/togo && chown alice:alice /tmp/togo"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/togo', 'cd /tmp/togo']),
       contains: [/Not a directory|No such/i],
@@ -485,7 +510,7 @@ describe('§7 — rmdir removes empty directories', () => {
     {
       name: 'rmdir on a non-empty directory fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/full && echo x > /tmp/full/x && chown -R alice:alice /tmp/full');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/full && echo x > /tmp/full/x && chown -R alice:alice /tmp/full"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/full']),
@@ -499,7 +524,7 @@ describe('§7 — rmdir removes empty directories', () => {
     },
     {
       name: 'rmdir on a regular file fails (not a directory)',
-      setup: async (l) => { await l.pc2.executeCommand('echo nope > /tmp/notadir && chown alice:alice /tmp/notadir'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo nope > /tmp/notadir && chown alice:alice /tmp/notadir"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rmdir /tmp/notadir']),
       contains: [/rmdir failed|Not a directory|Failure/i],
@@ -527,14 +552,14 @@ describe('§8 — rm / delete remove remote files', () => {
   const rows: Row[] = [
     {
       name: 'rm of a regular file removes it',
-      setup: async (l) => { await l.pc2.executeCommand('echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo gone > /tmp/doomed.txt && chown alice:alice /tmp/doomed.txt"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/doomed.txt', 'ls /tmp']),
       excludes: ['doomed.txt'],
     },
     {
       name: 'delete is an alias for rm',
-      setup: async (l) => { await l.pc2.executeCommand('echo bye > /tmp/aliased && chown alice:alice /tmp/aliased'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "echo bye > /tmp/aliased && chown alice:alice /tmp/aliased"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['delete /tmp/aliased', 'ls /tmp']),
       excludes: ['aliased'],
@@ -547,7 +572,7 @@ describe('§8 — rm / delete remove remote files', () => {
     },
     {
       name: 'rm of a directory is refused (not a regular file)',
-      setup: async (l) => { await l.pc2.executeCommand('mkdir -p /tmp/dir-rm && chown alice:alice /tmp/dir-rm'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/dir-rm && chown alice:alice /tmp/dir-rm"'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/dir-rm']),
       contains: [/unlink failed|directory|Failure/i],
@@ -555,7 +580,7 @@ describe('§8 — rm / delete remove remote files', () => {
     {
       name: 'multiple rms in one batch keep going through errors',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo 1 > /tmp/r1 && echo 2 > /tmp/r2 && chown alice:alice /tmp/r1 /tmp/r2');
+        await l.pc2.executeCommand('sudo sh -c "echo 1 > /tmp/r1 && echo 2 > /tmp/r2 && chown alice:alice /tmp/r1 /tmp/r2"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rm /tmp/r1', 'rm /tmp/ghost', 'rm /tmp/r2', 'ls /tmp']),
@@ -692,7 +717,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename old new moves the file',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from && chown alice:alice /tmp/from');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/from && chown alice:alice /tmp/from"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from /tmp/to']));
       },
       on: l => l.pc2,
@@ -702,7 +727,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename leaves no file at the source',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/from2 && chown alice:alice /tmp/from2');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/from2 && chown alice:alice /tmp/from2"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['rename /tmp/from2 /tmp/to2']));
       },
       on: l => l.pc2,
@@ -713,7 +738,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'mv is an alias for rename',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src');
+        await l.pc2.executeCommand('sudo sh -c "echo r > /tmp/mv-src && chown alice:alice /tmp/mv-src"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['mv /tmp/mv-src /tmp/mv-dst']));
       },
       on: l => l.pc2,
@@ -723,7 +748,7 @@ describe('§11 — rename / mv move remote files atomically', () => {
     {
       name: 'rename when destination already exists fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb');
+        await l.pc2.executeCommand('sudo sh -c "echo a > /tmp/ra && echo b > /tmp/rb && chown alice:alice /tmp/ra /tmp/rb"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['rename /tmp/ra /tmp/rb']),
@@ -759,7 +784,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 600 /tmp/secret sets mode 0600',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo s > /tmp/secret && chown alice:alice /tmp/secret');
+        await l.pc2.executeCommand('sudo sh -c "echo s > /tmp/secret && chown alice:alice /tmp/secret"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 600 /tmp/secret']));
       },
       on: l => l.pc2,
@@ -769,7 +794,7 @@ describe('§12 — chmod changes remote file permissions', () => {
     {
       name: 'chmod 755 on a directory updates its mode',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /tmp/dir-perm && chown alice:alice /tmp/dir-perm');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /tmp/dir-perm && chown alice:alice /tmp/dir-perm"');
         await l.pc1.executeCommand(sftp('alice@10.0.0.2', ['chmod 755 /tmp/dir-perm']));
       },
       on: l => l.pc2,
@@ -818,19 +843,19 @@ describe('§13 — bye / quit / exit terminate the session', () => {
     {
       name: 'quit is an alias for bye',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nquit\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nquit\nEOF`,
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'exit is an alias for bye',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nexit\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nexit\nEOF`,
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'commands after bye are not executed',
       on: l => l.pc1,
-      cmd: `sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/should-not-be-created\nEOF`,
+      cmd: `sshpass -p alice sftp alice@10.0.0.2 <<'EOF'\npwd\nbye\nmkdir /tmp/should-not-be-created\nEOF`,
       excludes: [/mkdir failed/, /should-not-be-created/],
     },
     {
@@ -1124,14 +1149,20 @@ describe('§19 — sftp access denied for root / blocked users', () => {
     },
     {
       name: 'DenyUsers bob: sftp bob@pc2 is rejected',
-      setup: async (l) => { await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "DenyUsers bob\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],
     },
     {
       name: 'AllowUsers alice: bob refused, alice accepted',
-      setup: async (l) => { await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null'); },
+      setup: async (l) => {
+        await l.pc2.executeCommand('printf "AllowUsers alice\\n"| sudo tee /etc/ssh/sshd_config > /dev/null');
+        await l.pc2.executeCommand('sudo systemctl reload ssh');
+      },
       on: l => l.pc1,
       cmd: sftp('bob@10.0.0.2', ['pwd']),
       contains: [/Permission denied/],
@@ -1410,7 +1441,7 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
         await l.pc1.executeCommand('printf "pwd\\nbye\\n" > /tmp/batch.txt');
       },
       on: l => l.pc1,
-      cmd: 'sftp -b /tmp/batch.txt alice@10.0.0.2',
+      cmd: 'sshpass -p alice sftp -b /tmp/batch.txt alice@10.0.0.2',
       contains: [/Connected to 10\.0\.0\.2/, /sftp>/],
     },
     {
@@ -1423,11 +1454,12 @@ describe('§25 — sftp -b runs a batch file non-interactively', () => {
       name: 'sftp -b runs the verbs from the file (mkdir lands on remote)',
       setup: async (l) => {
         await l.pc1.executeCommand('printf "mkdir /tmp/from-batch\\nbye\\n" > /tmp/b2.txt');
-        await l.pc1.executeCommand('sftp -b /tmp/b2.txt alice@10.0.0.2');
+        await l.pc1.executeCommand('sshpass -p alice sftp -b /tmp/b2.txt alice@10.0.0.2');
       },
       on: l => l.pc2,
       cmd: 'ls -d /tmp/from-batch',
-      contains: ['from-batch'],
+      contains: [/^\/tmp\/from-batch$/m],
+      excludes: [/No such file/],
     },
   ];
 
@@ -1458,20 +1490,20 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
     {
       name: 'win1 → linux pc2: sftp alice@10.0.0.2 connects',
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.2/],
       excludes: [/not recognized|command not found/i],
     },
     {
       name: 'win1 → linux server: sftp alice@srv1 connects',
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.10', ['pwd']),
+      cmd: sftp('alice@10.0.0.10', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.10/],
     },
     {
       name: 'win1 → win2: cross-Windows sftp connects',
       on: l => l.win1,
-      cmd: sftp('User@10.0.0.21', ['pwd']),
+      cmd: sftp('User@10.0.0.21', ['pwd'], { fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.21/],
     },
     {
@@ -1481,13 +1513,13 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
         await l.pc2.executeCommand('sudo systemctl reload ssh');
       },
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222' }),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { flags: '-P 2222', fromWindows: true }),
       contains: [/Connected to 10\.0\.0\.2/],
     },
     {
       name: 'sftp from Windows to an unreachable IP fails gracefully',
       on: l => l.win1,
-      cmd: sftp('alice@192.0.2.99', ['pwd']),
+      cmd: sftp('alice@192.0.2.99', ['pwd'], { fromWindows: true }),
       contains: [/no route|Could not resolve|refused|timed out/i],
       excludes: [/Connected to/],
     },
@@ -1495,7 +1527,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       name: 'win1 → pc2 with sshd stopped: Connection refused',
       setup: async (l) => { await l.pc2.executeCommand('systemctl stop ssh'); },
       on: l => l.win1,
-      cmd: sftp('alice@10.0.0.2', ['pwd']),
+      cmd: sftp('alice@10.0.0.2', ['pwd'], { fromWindows: true }),
       contains: [/Connection refused/],
     },
     {
@@ -1503,7 +1535,7 @@ describe('§26 — Windows ships the OpenSSH sftp client', () => {
       setup: async (l) => {
         await l.win1.executeCommand('echo from-win > C:\\Users\\User\\to-linux.txt');
         await l.win1.executeCommand(
-          sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt']),
+          sftp('alice@10.0.0.2', ['put /C:/Users/User/to-linux.txt /tmp/from-win.txt'], { fromWindows: true }),
         );
       },
       on: l => l.pc2,
@@ -1628,7 +1660,7 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
   const rows: Row[] = [
     {
       name: 'iptables DROP on dport 22 → sftp fails',
-      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP'); },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
       contains: [/refused|timed out|no route|unreachable/i],
@@ -1637,8 +1669,8 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
     {
       name: 'iptables -F restores sftp',
       setup: async (l) => {
-        await l.pc2.executeCommand('iptables -A INPUT -p tcp --dport 22 -j DROP');
-        await l.pc2.executeCommand('iptables -F');
+        await l.pc2.executeCommand('sudo iptables -A INPUT -p tcp --dport 22 -j DROP');
+        await l.pc2.executeCommand('sudo iptables -F');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
@@ -1657,7 +1689,7 @@ describe('§29 — firewall rules blocking port 22 also block sftp', () => {
     },
     {
       name: 'source-based DROP blocks only one client',
-      setup: async (l) => { await l.pc2.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP'); },
+      setup: async (l) => { await l.pc2.executeCommand('sudo iptables -A INPUT -s 10.0.0.1 -j DROP'); },
       on: l => l.pc3,
       cmd: sftp('alice@10.0.0.2', ['pwd']),
       contains: [/Connected to 10\.0\.0\.2/],
@@ -1873,7 +1905,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'put into a directory the user cannot write fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/locked && chown root:root /var/locked && chmod 700 /var/locked');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /var/locked && chown root:root /var/locked && chmod 700 /var/locked"');
         await l.pc1.executeCommand('echo hi > /tmp/h');
       },
       on: l => l.pc1,
@@ -1883,7 +1915,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'get of a file the user cannot read fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo secret > /tmp/hidden && chown root:root /tmp/hidden && chmod 600 /tmp/hidden');
+        await l.pc2.executeCommand('sudo sh -c "echo secret > /tmp/hidden && chown root:root /tmp/hidden && chmod 600 /tmp/hidden"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['get /tmp/hidden /tmp/hidden']),
@@ -1892,7 +1924,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'rm of a file owned by another user without write perm fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo nope > /tmp/keepme && chown root:root /tmp/keepme && chmod 644 /tmp/keepme');
+        await l.pc2.executeCommand('sudo sh -c "echo nope > /tmp/keepme && chown root:root /tmp/keepme && chmod 644 /tmp/keepme"');
         await l.pc2.executeCommand('chmod 755 /tmp');
       },
       on: l => l.pc1,
@@ -1902,7 +1934,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'chmod by a non-owner fails',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo o > /tmp/owned && chown root:root /tmp/owned && chmod 600 /tmp/owned');
+        await l.pc2.executeCommand('sudo sh -c "echo o > /tmp/owned && chown root:root /tmp/owned && chmod 600 /tmp/owned"');
       },
       on: l => l.pc1,
       cmd: sftp('alice@10.0.0.2', ['chmod 777 /tmp/owned']),
@@ -1911,8 +1943,8 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'setfacl deny on a directory blocks put even when world-writable',
       setup: async (l) => {
-        await l.pc2.executeCommand('mkdir -p /var/acl && chmod 777 /var/acl');
-        await l.pc2.executeCommand('setfacl -m u:alice:--- /var/acl');
+        await l.pc2.executeCommand('sudo sh -c "mkdir -p /var/acl && chmod 777 /var/acl"');
+        await l.pc2.executeCommand('sudo sh -c "setfacl -m u:alice:--- /var/acl"');
         await l.pc1.executeCommand('echo a > /tmp/a');
       },
       on: l => l.pc1,
@@ -1932,7 +1964,7 @@ describe('§33 — POSIX permissions and ACLs gate sftp put / get', () => {
     {
       name: 'sticky bit on /tmp prevents alice from deleting bob\'s file',
       setup: async (l) => {
-        await l.pc2.executeCommand('echo b > /tmp/bobs && chown bob:bob /tmp/bobs && chmod 644 /tmp/bobs');
+        await l.pc2.executeCommand('sudo sh -c "echo b > /tmp/bobs && chown bob:bob /tmp/bobs && chmod 644 /tmp/bobs"');
         await l.pc2.executeCommand('chmod 1777 /tmp');
       },
       on: l => l.pc1,
@@ -2113,7 +2145,7 @@ import { SftpSession } from '@/network/protocols/ssh/sftp/SftpSession';
 import { SftpSubShell } from '@/terminal/subshells/SftpSubShell';
 import { SilentSshInteractionHandler } from '@/network/protocols/ssh/session/ISshInteractionHandler';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
-import type { TcpConnector } from '@/network/core/TcpConnection';
+import type { TcpConnector } from '@/network/tcp/types';
 import type { SubShellResult } from '@/terminal/subshells/ISubShell';
 
 function tcpConnectorOf(pc: LinuxPC | LinuxServer): TcpConnector {

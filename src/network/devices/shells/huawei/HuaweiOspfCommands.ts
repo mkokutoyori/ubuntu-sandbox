@@ -17,6 +17,7 @@
  */
 
 import type { Router } from '../../Router';
+import { estAdresseIPv4, refuseMotInattenduVrp } from '../cli-utils';
 import { CommandTrie } from '../CommandTrie';
 import { SubnetMask } from '../../../core/types';
 // ─── Types for Huawei Shell Context ──────────────────────────────────
@@ -37,15 +38,35 @@ export function registerOSPFSystemCommands(
   ctx: HuaweiOSPFShellContext,
   setOSPFArea: (area: string | null) => void,
 ): void {
-  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args) => {
+  systemTrie.registerGreedy('ospf', 'Configure OSPF protocol', (args, raw) => {
     const processId = args.length >= 1 ? parseInt(args[0], 10) : 1;
     if (isNaN(processId) || processId < 1 || processId > 65535) {
       return 'Error: Invalid OSPF process ID.';
     }
     const router = ctx.r();
+    // La queue de `ospf <id>` n'admet que deux mots-cles. Tout le reste
+    // etait jete : `ospf 1 zzz` entrait en vue OSPF sans un mot.
+    //
+    // Elle est lue AVANT d'activer le processus : un refus ne doit rien
+    // poser, or `_enableOSPF` etait appele en premier et la commande
+    // refusee laissait un `ospf 1` dans la configuration.
+    let routerId: string | null = null;
+    for (let i = 1; i < args.length; i++) {
+      const tok = args[i];
+      if (tok === 'router-id') {
+        const rid = args[++i];
+        if (!rid || !estAdresseIPv4(rid)) return 'Error: Wrong parameter.';
+        routerId = rid;
+      } else if (tok === 'vpn-instance') {
+        if (!args[++i]) return 'Error: Incomplete command.';
+      } else {
+        return refuseMotInattenduVrp(raw ?? `ospf ${args.join(' ')}`, tok);
+      }
+    }
     if (!router._getOSPFEngineInternal()) {
       router._enableOSPF(processId);
     }
+    if (routerId) router._getOSPFEngineInternal()?.setRouterId(routerId);
     ctx.setMode('ospf');
     return '';
   });
@@ -84,6 +105,11 @@ export function buildOSPFViewCommands(
 ): void {
   trie.registerGreedy('router-id', 'Set OSPF router ID', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
+    // Un router-id EST une adresse IPv4 en notation pointee. N'importe
+    // quel mot etait accepte, `pasuneadresse` compris.
+    // Le message nu suffit : la normalisation du point de sortie (V4)
+    // lui donne l'echo de la ligne et le curseur.
+    if (!estAdresseIPv4(args[0])) return 'Error: Wrong parameter.';
     const ospf = ctx.r()._getOSPFEngineInternal();
     if (!ospf) return 'Error: OSPF is not enabled.';
     ospf.setRouterId(args[0]);
@@ -98,6 +124,8 @@ export function buildOSPFViewCommands(
     ctx.setMode('ospf-area');
     return '';
   });
+  // `area <id>` : forme close.
+  trie.allowArgs('area', 1);
 
   trie.registerGreedy('silent-interface', 'Set interface as silent (passive)', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
@@ -148,6 +176,7 @@ export function buildOSPFViewCommands(
       const ospf = ctx.r()._getOSPFEngineInternal();
       if (ospf && (ospf as any).setMaximumPaths) (ospf as any).setMaximumPaths(n);
       (ctx.r()._getOSPFExtraConfig() as any).maximumPaths = n;
+      ctx.r().setMaximumPaths('ospf', n);
     }
     return '';
   });
@@ -216,8 +245,14 @@ export function buildOSPFViewCommands(
   trie.registerGreedy('filter-policy', 'Filter routes in routing updates', (args) => {
     if (args.length < 2) return 'Error: Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
-    const direction = args[1].toLowerCase() as 'in' | 'out';
-    extra.distributeList = { aclId: args[0], direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : direction };
+    const isIpPrefix = args[0].toLowerCase() === 'ip-prefix';
+    const filterArg = isIpPrefix ? args[1] : args[0];
+    const direction = (isIpPrefix ? args[2] : args[1])?.toLowerCase();
+    if (!direction) return 'Error: Incomplete command.';
+    extra.distributeList = {
+      ...(isIpPrefix ? { prefixListName: filterArg } : { aclId: filterArg }),
+      direction: direction === 'export' ? 'out' : direction === 'import' ? 'in' : (direction as 'in' | 'out'),
+    };
     return '';
   });
 
@@ -300,6 +335,7 @@ export function buildOSPFViewCommands(
   });
 
   trie.registerGreedy('bfd all-interfaces enable', 'Enable BFD on all OSPF interfaces', (_args) => {
+    ctx.r()._getOSPFExtraConfig().bfdAllInterfaces = true;
     return '';
   });
 
@@ -335,6 +371,8 @@ export function buildOSPFAreaViewCommands(
     ospf.addNetwork(network, wildcard, areaId);
     return '';
   });
+  // `network <adresse> <masque-generique>` : forme close.
+  trie.allowArgs('network', 2);
 
   trie.registerGreedy('stub', 'Configure area as stub', (args) => {
     const ospf = ctx.r()._getOSPFEngineInternal();
@@ -394,6 +432,9 @@ export function buildOSPFAreaViewCommands(
     const extra = ctx.r()._getOSPFExtraConfig();
     if (!extra.areaRanges.has(areaId)) extra.areaRanges.set(areaId, []);
     extra.areaRanges.get(areaId)!.push({ network: args[0], mask: args[1] });
+    const ospf = ctx.r()._getOSPFEngineInternal();
+    const advertise = !args.some(a => a.toLowerCase() === 'not-advertise' || a.toLowerCase() === 'suppress-vlink');
+    ospf?.addAreaRange(areaId, args[0], args[1], advertise);
     return '';
   });
 
@@ -545,17 +586,21 @@ export function registerOSPFInterfaceCommands(
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected.';
     const mode = args[0].toLowerCase();
+    const cle = (depuis: number): string | undefined => {
+      const mot = args.findIndex((a, i) => i >= depuis
+        && (a.toLowerCase() === 'cipher' || a.toLowerCase() === 'plain'));
+      return mot >= 0 ? args[mot + 1] : args[depuis];
+    };
     if (mode === 'md5') {
-      setPendingOspfIf(ifName, { authType: 2 });
-      // md5 <key-id> cipher <key>
-      if (args.length >= 4) {
-        setPendingOspfIf(ifName, { authKey: args[3] });
-      }
+      const keyId = parseInt(args[1] ?? '', 10);
+      if (isNaN(keyId)) return 'Error: Incomplete command.';
+      setPendingOspfIf(ifName, { authType: 2, authKeyId: keyId, authKey: cle(2) });
     } else if (mode === 'simple') {
-      setPendingOspfIf(ifName, { authType: 1 });
-      if (args.length >= 2) {
-        setPendingOspfIf(ifName, { authKey: args[1] });
-      }
+      setPendingOspfIf(ifName, { authType: 1, authKey: cle(1) });
+    } else if (mode === 'null') {
+      setPendingOspfIf(ifName, { authType: 0, authKey: undefined });
+    } else {
+      return 'Error: Wrong parameter found at \'^\' position.';
     }
     return '';
   });
@@ -601,11 +646,14 @@ export function registerOSPFInterfaceCommands(
     return '';
   });
 
-  trie.registerGreedy('ospf mtu-enable', 'Enable MTU check in DBD packets', (_args) => {
-    return '';
-  });
+  trie.registerGreedy('ospf mtu-enable', 'Enable MTU check in DBD packets', () =>
+    "Error: This simulator's OSPF engine writes the MTU into a DBD packet but "
+    + 'never compares it, so this command would be stored without effect.\nospf mtu-enable');
 
   trie.registerGreedy('ospf bfd enable', 'Enable BFD on OSPF interface', (_args) => {
+    const ifName = ctx.getSelectedInterface();
+    if (!ifName) return '';
+    setPendingOspfIf(ifName, { bfd: true });
     return '';
   });
 
@@ -659,10 +707,11 @@ export function registerOSPFInterfaceCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
 
     const subCmd = args[0].toLowerCase();
-    if (subCmd === 'cost' && args.length >= 2) return '';
-    if (subCmd === 'priority' && args.length >= 2) return '';
-    if (subCmd === 'network-type' && args.length >= 2) return '';
-    if (subCmd === 'authentication') return '';
+    for (const inerte of ['cost', 'priority', 'network-type', 'authentication']) {
+      if (subCmd !== inerte) continue;
+      return `Error: This simulator's OSPFv3 engine carries no per-interface ${inerte}, `
+        + `so this command would be stored without effect.\nospfv3 ${args.join(' ')}`;
+    }
 
     // ospfv3 <process-id> area <area-id>
     if (args.length < 3) return 'Error: Incomplete command.';
@@ -680,7 +729,7 @@ export function registerOSPFInterfaceCommands(
     const port = router._getPortsInternal().get(ifName);
     if (port) {
       const ipv6Addrs = port.getIPv6Addresses();
-      const globalAddr = ipv6Addrs.find(a => a.scope === 'global');
+      const globalAddr = ipv6Addrs.find(a => a.origin !== 'link-local');
       const addr = globalAddr ? globalAddr.address.toString() : '::';
       if (!v3.getInterface(ifName)) {
         v3.activateInterface(ifName, areaId, { ipAddress: addr });
@@ -759,26 +808,6 @@ export function registerOSPFDisplayCommands(trie: CommandTrie, getRouter: () => 
   trie.registerGreedy('reset ospf', 'Reset OSPF data (counters/process)', (args) => {
     if (args.includes('counters')) return 'OSPF counters reset.';
     if (args.includes('process')) return 'OSPF process reset.';
-    return '';
-  });
-  trie.register('debugging ospf event', 'Enable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
-    if (svc) svc.enable('ospf-event');
-    return '';
-  });
-  trie.register('debugging ospf packet', 'Enable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
-    if (svc) svc.enable('ospf-packet');
-    return '';
-  });
-  trie.register('undo debugging ospf event', 'Disable OSPF event debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
-    if (svc) svc.disable('ospf-event');
-    return '';
-  });
-  trie.register('undo debugging ospf packet', 'Disable OSPF packet debugging', () => {
-    const svc = (getRouter() as any).getDebugService?.();
-    if (svc) svc.disable('ospf-packet');
     return '';
   });
 }

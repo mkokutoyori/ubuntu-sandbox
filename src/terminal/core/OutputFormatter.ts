@@ -40,7 +40,60 @@ const ANSI_BG: Record<number, string> = {
   104: '#729fcf', 105: '#ad7fa8', 106: '#34e2e2', 107: '#eeeeec',
 };
 
+/** Ce sur quoi `7` (vidéo inverse) retombe quand rien n'est déclaré. */
+const DEFAULT_FG = '#d3d7cf';
+const DEFAULT_BG = '#2e3436';
+
 // ─── ANSI Parsing ───────────────────────────────────────────────────
+
+/**
+ * La palette 256 couleurs de xterm, calculée et non tabulée.
+ *
+ * 0-15 : les seize couleurs de base. 16-231 : un cube 6×6×6 dont chaque
+ * composante prend une des six valeurs de `CUBE_LEVELS` — ce n'est pas
+ * une rampe linéaire, le premier pas saute de 0 à 95, et l'ignorer
+ * donnerait des teintes fausses sur toute la moitié sombre du cube.
+ * 232-255 : vingt-quatre gris de 8 à 238, par pas de 10.
+ */
+const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
+
+function xterm256(index: number): string | undefined {
+  if (index < 0 || index > 255) return undefined;
+  if (index < 8) return ANSI_FG[30 + index];
+  if (index < 16) return ANSI_FG[90 + (index - 8)];
+  const hex = (n: number) => n.toString(16).padStart(2, '0');
+  if (index < 232) {
+    const n = index - 16;
+    const r = CUBE_LEVELS[Math.floor(n / 36) % 6];
+    const g = CUBE_LEVELS[Math.floor(n / 6) % 6];
+    const b = CUBE_LEVELS[n % 6];
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  }
+  const gris = 8 + (index - 232) * 10;
+  return `#${hex(gris)}${hex(gris)}${hex(gris)}`;
+}
+
+/**
+ * Lit une couleur étendue à partir de `38`/`48` et rend la position du
+ * dernier paramètre consommé. Les deux formes sont `5;N` (palette 256)
+ * et `2;R;G;B` (couleur vraie) : elles s'étendent sur plusieurs
+ * paramètres, ce qu'une boucle qui regarde les codes un à un ne peut
+ * pas faire — c'est pourquoi elles étaient simplement ignorées, et
+ * pourquoi `38;5;196` laissait au passage `5` et `196` être interprétés
+ * comme « clignotant » et rien du tout.
+ */
+function couleurEtendue(codes: number[], i: number): { couleur?: string; fin: number } {
+  if (codes[i + 1] === 5) {
+    return { couleur: xterm256(codes[i + 2]), fin: i + 2 };
+  }
+  if (codes[i + 1] === 2) {
+    const [r, g, b] = [codes[i + 2], codes[i + 3], codes[i + 4]];
+    const ok = [r, g, b].every((n) => Number.isFinite(n) && n >= 0 && n <= 255);
+    const hex = (n: number) => n.toString(16).padStart(2, '0');
+    return { couleur: ok ? `#${hex(r)}${hex(g)}${hex(b)}` : undefined, fin: i + 4 };
+  }
+  return { fin: i };
+}
 
 /** Parse a string containing ANSI escape codes into styled TextSegments */
 export function parseAnsiToSegments(text: string): TextSegment[] {
@@ -49,40 +102,74 @@ export function parseAnsiToSegments(text: string): TextSegment[] {
   const regex = /\x1b\[([0-9;]*)m/g;
   let lastIndex = 0;
   let bold = false;
+  let dim = false;
+  let italic = false;
+  let underline = false;
+  let inverse = false;
   let fg: string | undefined;
   let bg: string | undefined;
   let match: RegExpExecArray | null;
 
+  const pousser = (chunk: string) => {
+    if (!chunk) return;
+    // `7` échange le premier plan et le fond. `TextStyle` n'a pas de
+    // champ pour cela, et n'en a pas besoin : l'inversion est un fait
+    // de RENDU, donc elle est appliquée au moment de construire le
+    // segment. Sans couleur explicite, on retombe sur les couleurs par
+    // défaut d'un terminal sombre, sinon inverser ne se verrait pas.
+    const av = inverse ? (bg ?? DEFAULT_BG) : fg;
+    const ar = inverse ? (fg ?? DEFAULT_FG) : bg;
+    segments.push(buildSegment(chunk, av, ar, bold, { dim, italic, underline }));
+  };
+
   while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      const chunk = text.slice(lastIndex, match.index);
-      if (chunk) {
-        segments.push(buildSegment(chunk, fg, bg, bold));
-      }
-    }
+    if (match.index > lastIndex) pousser(text.slice(lastIndex, match.index));
     lastIndex = regex.lastIndex;
     const codes = match[1] ? match[1].split(';').map(Number) : [0];
-    for (const code of codes) {
-      if (code === 0) { bold = false; fg = undefined; bg = undefined; }
-      else if (code === 1) bold = true;
-      else if (code === 22) bold = false;
+    for (let i = 0; i < codes.length; i++) {
+      const code = codes[i];
+      if (code === 0) {
+        bold = dim = italic = underline = inverse = false;
+        fg = bg = undefined;
+      } else if (code === 1) bold = true;
+      else if (code === 2) dim = true;
+      else if (code === 3) italic = true;
+      else if (code === 4) underline = true;
+      else if (code === 7) inverse = true;
+      else if (code === 22) { bold = false; dim = false; }
+      else if (code === 23) italic = false;
+      else if (code === 24) underline = false;
+      else if (code === 27) inverse = false;
+      else if (code === 38) { const r = couleurEtendue(codes, i); fg = r.couleur ?? fg; i = r.fin; }
+      else if (code === 48) { const r = couleurEtendue(codes, i); bg = r.couleur ?? bg; i = r.fin; }
+      else if (code === 39) fg = undefined;
+      else if (code === 49) bg = undefined;
       else if (ANSI_FG[code]) fg = ANSI_FG[bold ? code + 60 : code] ?? ANSI_FG[code];
       else if (ANSI_BG[code]) bg = ANSI_BG[code];
     }
   }
 
-  if (lastIndex < text.length) {
-    segments.push(buildSegment(text.slice(lastIndex), fg, bg, bold));
-  }
+  if (lastIndex < text.length) pousser(text.slice(lastIndex));
 
   return segments.length > 0 ? segments : [{ text: '' }];
 }
 
-function buildSegment(text: string, fg?: string, bg?: string, bold?: boolean): TextSegment {
+export function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+}
+
+function buildSegment(
+  text: string, fg?: string, bg?: string, bold?: boolean,
+  extra?: { dim?: boolean; italic?: boolean; underline?: boolean },
+): TextSegment {
   const style: TextStyle = {};
   if (fg) style.color = fg;
   if (bg) style.backgroundColor = bg;
   if (bold) style.bold = true;
+  if (extra?.dim) style.dim = true;
+  if (extra?.italic) style.italic = true;
+  if (extra?.underline) style.underline = true;
   return Object.keys(style).length > 0 ? { text, style } : { text };
 }
 

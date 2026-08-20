@@ -17,10 +17,13 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { RRType } from '@/network/dns/wire/RRType';
+import type { ARecordData } from '@/network/dns/wire/ResourceRecord';
 
 function buildDnsTopology(options: { cabled?: boolean } = {}) {
   const pc = new LinuxPC('linux-pc', 'PC1');
-  const srv = new LinuxServer('DNS1');
+  const srv = new LinuxServer('linux-server', 'DNS1');
 
   pc.configureInterface('eth0', new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
   srv.configureInterface('eth0', new IPAddress('10.0.1.10'), new SubnetMask('255.255.255.0'));
@@ -71,7 +74,7 @@ describe('DNS over UDP/53 — nominal path', () => {
     const response = await pc.queryDnsServer(new IPAddress('10.0.1.10'), 'nope.invalid', 'A');
 
     expect(response).not.toBeNull();
-    expect(response!.rcode).toBe('NXDOMAIN');
+    expect(response!.flags.rcode).toBe(DnsRcode.NXDOMAIN);
     expect(response!.answers).toHaveLength(0);
   }, 15000);
 
@@ -81,8 +84,9 @@ describe('DNS over UDP/53 — nominal path', () => {
     const response = await pc.queryDnsServer(new IPAddress('10.0.1.10'), 'webserver', 'A');
 
     expect(response).not.toBeNull();
-    expect(response!.rcode).toBe('NOERROR');
-    expect(response!.answers[0].value).toBe('10.0.1.88');
+    expect(response!.flags.rcode).toBe(DnsRcode.NOERROR);
+    expect(response!.answers[0].data.type).toBe(RRType.A);
+    expect((response!.answers[0].data as ARecordData).address.toString()).toBe('10.0.1.88');
   }, 15000);
 });
 
@@ -143,7 +147,9 @@ describe('dig / nslookup / host over UDP/53', () => {
   it('dig times out when the server is not cabled', async () => {
     const { pc } = buildDnsTopology({ cabled: false });
 
-    const out = await pc.executeCommand('dig @10.0.1.10 webserver.example');
+    // +tries=1: this test only cares that dig times out at all, not about the
+    // (now honored) default of 3 attempts — see PRD-Nslookup-Dig-Rndc-Runas.md P3.
+    const out = await pc.executeCommand('dig @10.0.1.10 webserver.example +tries=1');
 
     expect(out).toContain('connection timed out; no servers could be reached');
   }, 15000);

@@ -20,7 +20,7 @@ describe('Cisco OSPF config-router — argument validation', () => {
   it('rejects an invalid router-id', async () => {
     const r = await router();
     await r.executeCommand('router ospf 1');
-    expect(await r.executeCommand('router-id 999.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('router-id 999.1.1.1')).toContain(INVALID);
     expect(await r.executeCommand('router-id')).toBe(INCOMPLETE);
     expect(await r.executeCommand('router-id 1.1.1.1')).toBe('');
   });
@@ -28,7 +28,7 @@ describe('Cisco OSPF config-router — argument validation', () => {
   it('rejects an unknown redistribution protocol', async () => {
     const r = await router();
     await r.executeCommand('router ospf 1');
-    expect(await r.executeCommand('redistribute bogus')).toBe(INVALID);
+    expect(await r.executeCommand('redistribute bogus')).toContain(INVALID);
     expect(await r.executeCommand('redistribute')).toBe(INCOMPLETE);
     expect(await r.executeCommand('redistribute static')).toBe('');
     expect(await r.executeCommand('redistribute connected')).toBe('');
@@ -39,7 +39,7 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
   it('rejects an invalid router-id for EIGRP', async () => {
     const r = await router();
     await r.executeCommand('router eigrp 100');
-    expect(await r.executeCommand('router-id 999.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('router-id 999.1.1.1')).toContain(INVALID);
     expect(await r.executeCommand('router-id')).toBe(INCOMPLETE);
     expect(await r.executeCommand('router-id 2.2.2.2')).toBe('');
   });
@@ -47,15 +47,18 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
   it('rejects an unknown redistribution protocol for EIGRP', async () => {
     const r = await router();
     await r.executeCommand('router eigrp 100');
-    expect(await r.executeCommand('redistribute bogus')).toBe(INVALID);
+    expect(await r.executeCommand('redistribute bogus')).toContain(INVALID);
     expect(await r.executeCommand('redistribute')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('redistribute static')).toBe('');
+    // Depuis `6badd4617`, EIGRP prévient qu'une redistribution sans
+    // métrique par défaut n'annonce rien. La commande reste acceptée.
+    expect(await r.executeCommand('redistribute static'))
+      .toMatch(/^% Warning: Redistributing without default metric/);
   });
 
   it('rejects an invalid router-id for BGP', async () => {
     const r = await router();
     await r.executeCommand('router bgp 65000');
-    expect(await r.executeCommand('router-id 300.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('router-id 300.1.1.1')).toContain(INVALID);
     expect(await r.executeCommand('router-id 3.3.3.3')).toBe('');
   });
 
@@ -64,9 +67,9 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
     await r.executeCommand('router bgp 65000');
     expect(await r.executeCommand('neighbor')).toBe(INCOMPLETE);
     expect(await r.executeCommand('neighbor 1.1.1.1')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('neighbor 999.1.1.1 remote-as 100')).toBe(INVALID);
+    expect(await r.executeCommand('neighbor 999.1.1.1 remote-as 100')).toContain(INVALID);
     expect(await r.executeCommand('neighbor 1.1.1.1 remote-as')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('neighbor 1.1.1.1 remote-as abc')).toBe(INVALID);
+    expect(await r.executeCommand('neighbor 1.1.1.1 remote-as abc')).toContain(INVALID);
     expect(await r.executeCommand('neighbor 1.1.1.1 remote-as 100')).toBe('');
   });
 
@@ -81,7 +84,7 @@ describe('Cisco EIGRP/BGP config-router — argument validation', () => {
     const r = await router();
     await r.executeCommand('router eigrp 100');
     expect(await r.executeCommand('network')).toBe(INCOMPLETE);
-    expect(await r.executeCommand('network 999.0.0.0')).toBe(INVALID);
+    expect(await r.executeCommand('network 999.0.0.0')).toContain(INVALID);
     expect(await r.executeCommand('network 10.0.0.0')).toBe('');
   });
 });

@@ -11,6 +11,9 @@
 
 import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsSecurityAudit } from './WindowsSecurityAudit';
+import { nextLogonId } from './WindowsSecurityAudit';
+import { BOOT_PRIVILEGE_LIST } from './PSEventLogProvider';
+import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsAccountChangedPayload,
   WindowsLogonEventPayload,
@@ -18,6 +21,12 @@ import type {
   WindowsGroupEventPayload,
   WindowsGroupMemberEventPayload,
   WindowsProcessEventPayload,
+  WindowsServiceAccountChangedPayload,
+  WindowsFileAclChangedPayload,
+  WindowsServiceCreatedPayload,
+  WindowsWorkstationLockEventPayload,
+  WindowsSessionLinkEventPayload,
+  WindowsExplicitCredentialsEventPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -27,17 +36,52 @@ export class WindowsSecurityAuditProjection {
     bus: IEventBus,
     private readonly audit: WindowsSecurityAudit,
     private readonly deviceId: string,
+    private readonly auditPolicy?: WindowsAuditPolicy,
+    /** Vrai quand `ProcessCreationIncludeCmdLine_Enabled` est posé. */
+    private readonly commandLineAudited?: () => boolean,
   ) {
     this.subscriptions.push(
       bus.subscribe('windows.account.changed', (e) => this.onAccountChanged(e.payload)),
       bus.subscribe('windows.account.logon', (e) => this.onLogon(e.payload)),
       bus.subscribe('windows.account.logoff', (e) => this.onLogoff(e.payload)),
+      bus.subscribe('windows.workstation.locked', (e) => this.onWorkstationLocked(e.payload)),
+      bus.subscribe('windows.workstation.unlocked', (e) => this.onWorkstationUnlocked(e.payload)),
+      bus.subscribe('windows.session.disconnected', (e) => this.onSessionDisconnected(e.payload)),
+      bus.subscribe('windows.session.reconnected', (e) => this.onSessionReconnected(e.payload)),
+      bus.subscribe('windows.account.explicit-credentials', (e) => this.onExplicitCredentials(e.payload)),
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
       bus.subscribe('windows.process.started', (e) => this.onProcess(e.payload)),
       bus.subscribe('windows.process.stopped', (e) => this.onProcess(e.payload)),
+      bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
+      bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
+      bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
     );
+  }
+
+  private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
+    return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
+  }
+
+  private onServiceCreated(p: WindowsServiceCreatedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy);
+  }
+
+  private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('registry', 'success')) return;
+    this.audit.registryValueModified(
+      `HKLM\\SYSTEM\\CurrentControlSet\\Services\\${p.serviceName}\\ObjectName`,
+      p.previousAccount, p.newAccount, p.changedBy,
+    );
+  }
+
+  private onAclChanged(p: WindowsFileAclChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('file system', 'success')) return;
+    this.audit.permissionChanged(p.path, p.identity, p.permissions, p.changedBy);
   }
 
   /** Detach every subscription — call before discarding the projection. */
@@ -50,6 +94,7 @@ export class WindowsSecurityAuditProjection {
 
   private onAccountChanged(p: WindowsAccountChangedPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('User Account Management', 'success')) return;
     switch (p.change) {
       case 'created': this.audit.accountCreated(p.account); break;
       case 'deleted': this.audit.accountDeleted(p.account); break;
@@ -57,39 +102,136 @@ export class WindowsSecurityAuditProjection {
       case 'enabled': this.audit.accountEnabled(p.account); break;
       case 'disabled': this.audit.accountDisabled(p.account); break;
       case 'modified': this.audit.accountChanged(p.account); break;
+      case 'locked-out': this.audit.accountLockedOut(p.account); break;
     }
   }
 
+  /**
+   * L'identifiant de session en cours pour chaque compte connecté.
+   *
+   * C'est ce qui rend la corrélation possible : le 4634 doit porter le
+   * même `TargetLogonId` que le 4624 qui l'a ouverte, sinon on voit des
+   * connexions et des déconnexions sans savoir lesquelles vont ensemble.
+   */
+  private readonly openSessions = new Map<string, string>();
+
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (p.success) this.audit.logonSuccess(p.account, p.logonType);
-    else this.audit.logonFailure(p.account);
+    if (p.success) {
+      if (!this.gated('Logon', 'success')) return;
+      const logonId = nextLogonId();
+      this.openSessions.set(p.account.toLowerCase(), logonId);
+      this.audit.logonSuccess(p.account, p.logonType, undefined, logonId);
+      // 4672 — un compte privilégié reçoit ses privilèges à l'ouverture
+      // de session, et Windows le journalise séparément du 4624. C'est
+      // l'événement qu'on surveille pour repérer une session à pouvoirs.
+      if (isPrivilegedAccount(p.account) && this.gated('Special Logon', 'success')) {
+        this.audit.specialPrivileges(p.account, ADMIN_PRIVILEGES, logonId);
+      }
+    } else {
+      if (!this.gated('Logon', 'failure')) return;
+      this.audit.logonFailure(p.account);
+    }
   }
 
   private onLogoff(p: WindowsLogoffEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.audit.logoff(p.account);
+    if (!this.gated('Logoff', 'success')) return;
+    const key = p.account.toLowerCase();
+    const logonId = this.openSessions.get(key);
+    this.openSessions.delete(key);
+    this.audit.logoff(p.account, p.logonType, logonId);
+  }
+
+  /**
+   * 4779 — session RDP déconnectée sans logoff explicite. La session
+   * logique reste ouverte côté serveur (contrairement à 4634), donc on
+   * *lit* le `TargetLogonId` déjà attribué par le 4624 d'origine sans le
+   * retirer de `openSessions` — un `logoff`/`rwinsta` ultérieur pourra
+   * encore le corréler.
+   */
+  private onSessionDisconnected(p: WindowsSessionLinkEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    const logonId = this.openSessions.get(p.account.toLowerCase());
+    this.audit.sessionDisconnected(p.account, p.logonType, logonId);
+  }
+
+  /** 4778 — reconnexion à une session RDP existante ; pas de nouveau 4624. */
+  private onSessionReconnected(p: WindowsSessionLinkEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    const logonId = this.openSessions.get(p.account.toLowerCase());
+    this.audit.sessionReconnected(p.account, p.logonType, logonId);
+  }
+
+  /** 4648 — `runas` (ou tout logon à identifiants explicites) ; jamais gaté par 'Other Logon/Logoff Events' comme 4778/4779, gouverné par 'Logon' comme 4624/4625. */
+  private onExplicitCredentials(p: WindowsExplicitCredentialsEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Logon', 'success')) return;
+    this.audit.explicitCredentialsLogon(p.subject, p.target);
+  }
+
+  private onWorkstationLocked(p: WindowsWorkstationLockEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    this.audit.workstationLocked(p.account, p.origin);
+  }
+
+  private onWorkstationUnlocked(p: WindowsWorkstationLockEventPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Other Logon/Logoff Events', 'success')) return;
+    this.audit.workstationUnlocked(p.account, p.origin);
   }
 
   private onGroupCreated(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     this.audit.groupCreated(p.group);
   }
 
   private onGroupDeleted(p: WindowsGroupEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     this.audit.groupDeleted(p.group);
   }
 
   private onMembership(p: WindowsGroupMemberEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('Security Group Management', 'success')) return;
     if (p.added) this.audit.groupMemberAdded(p.group, p.member);
     else this.audit.groupMemberRemoved(p.group, p.member);
   }
 
   private onProcess(p: WindowsProcessEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    if (p.started) this.audit.processCreated(p.name, p.pid);
-    else this.audit.processTerminated(p.name, p.pid);
+    const details = {
+      ppid: p.ppid, parentName: p.parentName, owner: p.owner,
+      // Windows ne journalise la ligne de commande que si la stratégie
+      // `ProcessCreationIncludeCmdLine_Enabled` est posée. La lire ici
+      // plutôt que d'inclure le champ inconditionnellement, c'est ce qui
+      // fait de ce réglage autre chose qu'une valeur décorative.
+      commandLine: this.commandLineAudited?.() ? p.commandLine : undefined,
+      elevation: p.elevation,
+    };
+    if (p.started) {
+      if (!this.gated('Process Creation', 'success')) return;
+      this.audit.processCreated(p.name, p.pid, details);
+    } else {
+      if (!this.gated('Process Termination', 'success')) return;
+      this.audit.processTerminated(p.name, p.pid, details);
+    }
   }
+}
+
+/**
+ * Les privilèges qu'un jeton d'administrateur reçoit — la même liste que
+ * les entrées 4672 de démarrage, pour que les deux ne divergent pas.
+ */
+const ADMIN_PRIVILEGES = BOOT_PRIVILEGE_LIST.split('\n\t\t\t');
+
+/** Un compte qui ouvre une session à privilèges (4672). */
+function isPrivilegedAccount(account: string): boolean {
+  const leaf = account.slice(account.indexOf('\\') + 1).toLowerCase();
+  return leaf === 'administrator' || leaf === 'system' || leaf.endsWith('admin');
 }

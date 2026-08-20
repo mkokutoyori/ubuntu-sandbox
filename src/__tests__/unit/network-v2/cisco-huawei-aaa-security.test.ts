@@ -11,7 +11,7 @@ import { NetworkOsCredentialStore } from '@/network/devices/router/aaa/NetworkOs
 import { SecurityAuditLog } from '@/network/devices/router/aaa/SecurityAuditLog';
 import { LoginBlocker } from '@/network/devices/router/aaa/LoginBlocker';
 import { SshSessionRegistry } from '@/network/devices/router/aaa/SshSessionRegistry';
-import { VtyLineConfig, VtyLineRange } from '@/network/devices/router/aaa/VtyLineConfig';
+import { VtyLineConfig, VtyLineRange } from '@/network/devices/router/vty/VtyLineConfig';
 import { EventBus } from '@/events/EventBus';
 
 interface Lab {
@@ -60,9 +60,6 @@ describe('§A — Cisco local-user database is queryable and persistent', () => 
   });
 
   test('a second username adds a separate account', async () => {
-    // The lab fixture pre-seeds the standard cross-vendor cast
-    // (alice/bob/carl/dave) so SSH cross-vendor tests work without
-    // per-pairing setup. Assert containment rather than strict equality.
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret a');
     await lab.ciscoR1.executeCommand('username readonly privilege 1 secret b');
@@ -94,12 +91,11 @@ describe('§B — Huawei local-user database is queryable and persistent', () =>
     await lab.hwR1.executeCommand('quit');
     const u = lab.hwR1._getLocalUser('admin');
     expect(u?.privilege).toBe(15);
-    expect(u?.secret).toBe('Admin@123');
+    expect(u?.secret).not.toBe('Admin@123');
+    expect(lab.hwR1.getCredentialStore().get('admin')?.authenticate('Admin@123')).toBe(true);
   });
 
   test('multiple local-users are stored', async () => {
-    // See note in §A — the default cast (alice/bob/carl/dave) is
-    // present, so assert containment.
     await lab.hwR1.executeCommand('system-view');
     await lab.hwR1.executeCommand('aaa');
     await lab.hwR1.executeCommand('local-user admin password cipher a');
@@ -130,7 +126,7 @@ describe('§C — local users appear in running-config / current-configuration',
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    const out = lab.ciscoR1.runSshCommandSync('admin', 'show running-config');
     expect(out?.output).toMatch(/username admin privilege 15 secret/);
   });
 
@@ -365,12 +361,12 @@ describe('§H — LoginBlocker reacts to repeated login failures', () => {
     expect(blocker.isBlocked('10.0.0.2', now + 300)).toBe(true);
   });
 
-  test('a successful login from the same IP clears the counter', () => {
+  test('a successful login does not reset the rolling failure window', () => {
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now);
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 100);
     store.recordLoginSuccess('admin', '10.0.0.2', 'password', now + 200);
     store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + 300);
-    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(false);
+    expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 
   test('failures older than the window are not counted', () => {
@@ -388,11 +384,11 @@ describe('§H — LoginBlocker reacts to repeated login failures', () => {
     expect(blocker.isBlocked('10.0.0.2', now + 61_000)).toBe(false);
   });
 
-  test('failures from a different IP are tracked independently', () => {
+  test('quiet-mode triggered by one source blocks every other source device-wide', () => {
     for (let i = 0; i < 3; i++) {
       store.recordLoginFailure('admin', '10.0.0.2', 'bad', now + i * 100);
     }
-    expect(blocker.isBlocked('10.0.0.3', now + 400)).toBe(false);
+    expect(blocker.isBlocked('10.0.0.3', now + 400)).toBe(true);
     expect(blocker.isBlocked('10.0.0.2', now + 400)).toBe(true);
   });
 });
@@ -413,8 +409,9 @@ describe('§I — login block-for / authentication-retries wired into Router', (
   test('Cisco show running-config retains login block-for line', async () => {
     await lab.ciscoR1.executeCommand('configure terminal');
     await lab.ciscoR1.executeCommand('login block-for 60 attempts 2 within 30');
+    await lab.ciscoR1.executeCommand('username auditeur privilege 15 secret Audit@123');
     await lab.ciscoR1.executeCommand('end');
-    const out = lab.ciscoR1.runSshCommandSync('', 'show running-config');
+    const out = lab.ciscoR1.runSshCommandSync('auditeur', 'show running-config');
     expect(out?.output).toMatch(/login block-for 60 attempts 2 within 30/);
   });
 
@@ -438,6 +435,7 @@ async function provisionCiscoSsh(r: CiscoRouter): Promise<void> {
   await r.executeCommand('enable');
   await r.executeCommand('configure terminal');
   await r.executeCommand('username admin privilege 15 secret Admin@123');
+  await r.executeCommand('ip domain-name labo.local');
   await r.executeCommand('crypto key generate rsa modulus 2048');
   await r.executeCommand('line vty 0 4');
   await r.executeCommand('login local');
@@ -451,14 +449,14 @@ describe('§J — SSH dispatch publishes lifecycle events on the bus', () => {
 
   test('successful SSH login emits router.aaa.account.login.success', async () => {
     const seen: string[] = [];
-    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.success', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.success', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
     await lab.linux1.executeCommand('ssh admin@10.0.0.6 "show version"');
     expect(seen).toContain('admin');
   });
 
   test('failed SSH login (unknown user) emits router.aaa.account.login.failure', async () => {
     const seen: string[] = [];
-    lab.ciscoR1.getBus().subscribe('router.aaa.account.login.failure', e => seen.push((e.payload as { account: { name: string } }).account.name));
+    (lab.ciscoR1 as any).getBus().subscribe('router.aaa.account.login.failure', (e: any) => seen.push((e.payload as { account: { name: string } }).account.name));
     await lab.linux1.executeCommand('ssh ghost@10.0.0.6 "show version"');
     expect(seen).toContain('ghost');
   });
@@ -537,7 +535,7 @@ describe('§K — SshSessionRegistry tracks active VTY sessions reactively', () 
   test('formatDisplayUsers returns VRP-style listing', () => {
     store.recordLoginSuccess('admin', '10.0.0.1', 'password', now);
     const text = registry.formatDisplayUsers();
-    expect(text).toMatch(/UI\s+Delay/);
+    expect(text).toMatch(/User-Intf\s+Delay/);
     expect(text).toMatch(/SSH/);
     expect(text).toMatch(/admin/);
     expect(text).toMatch(/10\.0\.0\.1/);
@@ -584,72 +582,86 @@ describe('§L — Router wires SshSessionRegistry into show users / display user
 });
 
 describe('§M — VtyLineConfig domain model carries every line directive', () => {
-  test('defaults are sane for a fresh vty range', () => {
+  test('a fresh vty range leaves every directive unset (null = inherit default)', () => {
     const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4));
     expect(cfg.range.first).toBe(0);
     expect(cfg.range.last).toBe(4);
-    expect(cfg.transportInput).toEqual(['ssh']);
-    expect(cfg.transportOutput).toEqual(['ssh']);
-    expect(cfg.loginMode).toBe('none');
-    expect(cfg.execTimeoutMinutes).toBe(10);
-    expect(cfg.execTimeoutSeconds).toBe(0);
-    expect(cfg.sessionTimeoutMinutes).toBe(0);
-    expect(cfg.privilegeLevel).toBe(1);
-    expect(cfg.history).toBe(20);
-    expect(cfg.terminalLength).toBe(24);
-    expect(cfg.terminalWidth).toBe(80);
+    expect(cfg.first).toBe(0);
+    expect(cfg.last).toBe(4);
+    expect(cfg.login).toBeNull();
+    expect(cfg.linePassword).toBeNull();
+    expect(cfg.transportInput).toBeNull();
+    expect(cfg.execTimeoutMinutes).toBeNull();
+    expect(cfg.privilege).toBeNull();
     expect(cfg.accessClassIn).toBeNull();
-    expect(cfg.accessClassOut).toBeNull();
-    expect(cfg.password).toBeNull();
-    expect(cfg.autocommand).toBeNull();
-    expect(cfg.motdBannerEnabled).toBe(true);
-    expect(cfg.escapeChar).toBe(30);
-    expect(cfg.location).toBeNull();
+    expect(cfg.renderCisco()).toEqual(['line vty 0 4']);
   });
 
-  test('mutators return new instances with patched fields', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withTransportInput(['ssh'])
-      .withLoginMode('local')
-      .withExecTimeout(5, 30)
-      .withAccessClass('in', 20)
-      .withPrivilege(15)
-      .withAutocommand('show ip interface brief')
-      .withLocation('rack-12-row-A');
-    expect(cfg.loginMode).toBe('local');
+  test('withFields returns a new immutable instance with patched fields', () => {
+    const base = VtyLineConfig.forRange(new VtyLineRange(0, 4));
+    const cfg = base.withFields({
+      login: 'local',
+      execTimeoutMinutes: 5,
+      execTimeoutSeconds: 30,
+      accessClassIn: '20',
+      privilege: 15,
+      transportInput: 'ssh',
+    });
+    expect(cfg).not.toBe(base);
+    expect(base.login).toBeNull();           // original untouched
+    expect(cfg.login).toBe('local');
     expect(cfg.execTimeoutMinutes).toBe(5);
     expect(cfg.execTimeoutSeconds).toBe(30);
-    expect(cfg.accessClassIn).toBe(20);
-    expect(cfg.privilegeLevel).toBe(15);
-    expect(cfg.autocommand).toBe('show ip interface brief');
-    expect(cfg.location).toBe('rack-12-row-A');
+    expect(cfg.accessClassIn).toBe('20');
+    expect(cfg.privilege).toBe(15);
+    expect(Object.isFrozen(cfg)).toBe(true);
   });
 
-  test('toRunningConfig emits IOS-style line block', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withLoginMode('local')
-      .withTransportInput(['ssh'])
-      .withExecTimeout(5, 0);
-    const text = cfg.toRunningConfig();
+  test('renderCisco emits an IOS-style line block', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({
+      login: 'local',
+      transportInput: 'ssh',
+      execTimeoutMinutes: 5,
+      execTimeoutSeconds: 0,
+    });
+    const text = cfg.renderCisco().join('\n');
     expect(text).toContain('line vty 0 4');
     expect(text).toContain(' login local');
     expect(text).toContain(' transport input ssh');
     expect(text).toContain(' exec-timeout 5 0');
   });
 
-  test('VtyLineRange equality and merging', () => {
+  test('renderHuawei emits a VRP user-interface block', () => {
+    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({
+      authenticationMode: 'aaa',
+      idleTimeoutMinutes: 5,
+      transportInput: 'ssh',
+    });
+    const text = cfg.renderHuawei().join('\n');
+    expect(text).toContain('user-interface vty 0 4');
+    expect(text).toContain(' authentication-mode aaa');
+    expect(text).toContain(' protocol inbound ssh');
+  });
+
+  test('requiresPasswordButUnset drives the incoming-VTY verdict', () => {
+    const noPw = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({ login: 'password' });
+    expect(noPw.requiresPasswordButUnset()).toBe(true);
+    const withPw = noPw.withFields({ linePassword: 'cisco' });
+    expect(withPw.requiresPasswordButUnset()).toBe(false);
+    const localAuth = VtyLineConfig.forRange(new VtyLineRange(0, 4)).withFields({ login: 'local' });
+    expect(localAuth.requiresPasswordButUnset()).toBe(false);
+  });
+
+  test('VtyLineRange value object: equality, membership and size', () => {
     const a = new VtyLineRange(0, 4);
     const b = new VtyLineRange(0, 4);
     expect(a.equals(b)).toBe(true);
     expect(a.contains(2)).toBe(true);
+    expect(a.contains(7)).toBe(false);
     expect(a.size()).toBe(5);
-  });
-
-  test('transport input none disables every protocol', () => {
-    const cfg = VtyLineConfig.forRange(new VtyLineRange(0, 4))
-      .withTransportInput([]);
-    expect(cfg.transportInput).toEqual([]);
-    expect(cfg.toRunningConfig()).toContain(' transport input none');
+    expect(a.overlaps(new VtyLineRange(4, 8))).toBe(true);
+    expect(a.overlaps(new VtyLineRange(5, 15))).toBe(false);
+    expect(() => new VtyLineRange(5, 1)).toThrow();
   });
 });
 
@@ -771,5 +783,214 @@ describe('§P — Cisco username captures hash algorithm + secret form', () => {
     await lab.ciscoR1.executeCommand('end');
     const acc = lab.ciscoR1.getCredentialStore().get('admin');
     expect(acc?.passwordHashAlgorithm).toBe('scrypt');
+  });
+});
+
+describe('§Q — security passwords min-length is actually enforced', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('rejects a username secret shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('username admin secret short');
+    expect(out).toMatch(/Password too short/);
+    expect(lab.ciscoR1.getCredentialStore().get('admin')).toBeUndefined();
+  });
+
+  test('accepts a username secret meeting the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('username admin secret longenough1');
+    expect(out).not.toMatch(/Password too short/);
+    expect(lab.ciscoR1.getCredentialStore().get('admin')?.secret).toBe('longenough1');
+  });
+
+  test('does not check length against an already-hashed secret (type 5)', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 20');
+    const out = await lab.ciscoR1.executeCommand('username admin secret 5 $1$short$hash');
+    expect(out).not.toMatch(/Password too short/);
+  });
+
+  test('rejects an enable secret shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('enable secret short');
+    expect(out).toMatch(/Password too short/);
+  });
+
+  test('rejects an enable password shorter than the configured minimum', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('security passwords min-length 8');
+    const out = await lab.ciscoR1.executeCommand('enable password short');
+    expect(out).toMatch(/Password too short/);
+  });
+
+  test('with no min-length configured, short passwords are still accepted', async () => {
+    await lab.ciscoR1.executeCommand('configure terminal');
+    const out = await lab.ciscoR1.executeCommand('username admin secret ab');
+    expect(out).not.toMatch(/Password too short/);
+  });
+});
+
+describe('§R — aaa local authentication attempts max-fail locks out the account', () => {
+  let lab: Lab;
+  beforeEach(async () => {
+    lab = await buildLab();
+    await lab.ciscoR1.executeCommand('configure terminal');
+    await lab.ciscoR1.executeCommand('aaa new-model');
+    await lab.ciscoR1.executeCommand('aaa local authentication attempts max-fail 3');
+    await lab.ciscoR1.executeCommand('username admin privilege 15 secret Admin@123');
+    await lab.ciscoR1.executeCommand('end');
+  });
+
+  test('is persisted in running-config', async () => {
+    const out = await lab.ciscoR1.executeCommand('show running-config');
+    expect(out).toMatch(/aaa local authentication attempts max-fail 3/);
+  });
+
+  test('locks the account after the configured number of consecutive failures', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(false);
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(true);
+  });
+
+  test('a locked account can no longer authenticate even with the right password', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.isLoginPermitted().ok).toBe(false);
+  });
+
+  test('show aaa local user lockout lists the locked account', async () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    const out = await lab.ciscoR1.executeCommand('show aaa local user lockout');
+    expect(out).toMatch(/admin/);
+  });
+
+  test('clear aaa local user lockout username unlocks the account', async () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    for (let i = 0; i < 3; i++) store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(true);
+    await lab.ciscoR1.executeCommand('clear aaa local user lockout username admin');
+    expect(store.get('admin')?.locked).toBe(false);
+  });
+
+  test('a successful login before the threshold resets the failure counter', () => {
+    const store = lab.ciscoR1.getCredentialStore();
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginSuccess('admin', '10.0.0.9', 'password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    store.recordLoginFailure('admin', '10.0.0.9', 'bad password');
+    expect(store.get('admin')?.locked).toBe(false);
+  });
+});
+
+describe('§S — Huawei password-policy under aaa view', () => {
+  let lab: Lab;
+  beforeEach(async () => { lab = await buildLab(); });
+
+  test('min-length rejects a cleartext local-user password that is too short', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    const out = await lab.hwR1.executeCommand('local-user admin password short');
+    expect(out).toMatch(/must contain at least 8 characters/);
+    expect(lab.hwR1.getCredentialStore().get('admin')).toBeUndefined();
+  });
+
+  test('min-length accepts a cleartext password meeting the minimum', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    const out = await lab.hwR1.executeCommand('local-user admin password longenough1');
+    expect(out).not.toMatch(/must contain/);
+    expect(lab.hwR1.getCredentialStore().get('admin')?.secret).toBe('longenough1');
+  });
+
+  test('min-length does not apply to an already-hashed cipher password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 20');
+    const out = await lab.hwR1.executeCommand('local-user admin password cipher %^%#shorthash%^%#');
+    expect(out).not.toMatch(/must contain/);
+  });
+
+  test('history-record rejects reusing the current password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 3');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    const out = await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    expect(out).toMatch(/has been used before/);
+  });
+
+  test('history-record rejects a password still within the retained window', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 2');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    await lab.hwR1.executeCommand('local-user admin password SecondPass2');
+    const out = await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    expect(out).toMatch(/has been used before/);
+  });
+
+  test('history-record allows a brand-new password', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 3');
+    await lab.hwR1.executeCommand('local-user admin password FirstPass1');
+    const out = await lab.hwR1.executeCommand('local-user admin password BrandNewPass9');
+    expect(out).not.toMatch(/has been used before/);
+  });
+
+  test('expire sets passwordExpireAt on the account when the password is set', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('local-user admin password Admin@123');
+    const acc = lab.hwR1.getCredentialStore().get('admin');
+    expect(acc?.passwordExpireAt).not.toBeNull();
+    expect(acc!.passwordExpireAt!).toBeGreaterThan(Date.now() + 89 * 86_400_000);
+  });
+
+  test('an expired password blocks SSH login via the lifecycle gate', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('local-user admin password Admin@123');
+    const acc = lab.hwR1.getCredentialStore().get('admin')!;
+    lab.hwR1.getCredentialStore().upsert(acc.withPasswordExpireAt(Date.now() - 1000));
+    expect(lab.hwR1.getCredentialStore().get('admin')?.isPasswordExpired()).toBe(true);
+  });
+
+  test('password-policy settings are persisted in current-configuration', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    await lab.hwR1.executeCommand('password-policy min-length 8');
+    await lab.hwR1.executeCommand('password-policy expire 90');
+    await lab.hwR1.executeCommand('password-policy alert-before-expire 7');
+    await lab.hwR1.executeCommand('password-policy history-record max-record-number 4');
+    await lab.hwR1.executeCommand('password-policy level high');
+    await lab.hwR1.executeCommand('quit');
+    await lab.hwR1.executeCommand('quit');
+    const out = await lab.hwR1.executeCommand('display current-configuration');
+    expect(out).toMatch(/password-policy min-length 8/);
+    expect(out).toMatch(/password-policy expire 90/);
+    expect(out).toMatch(/password-policy alert-before-expire 7/);
+    expect(out).toMatch(/password-policy history-record max-record-number 4/);
+    expect(out).toMatch(/password-policy level high/);
+  });
+
+  test('with no policy configured, short passwords are still accepted', async () => {
+    await lab.hwR1.executeCommand('system-view');
+    await lab.hwR1.executeCommand('aaa');
+    const out = await lab.hwR1.executeCommand('local-user admin password ab');
+    expect(out).not.toMatch(/must contain/);
   });
 });

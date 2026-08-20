@@ -15,9 +15,11 @@ function makeCtx(uid = 0, gid = 0): ShellContext {
   return { vfs, userMgr, cwd: '/', umask: 0o022, uid, gid };
 }
 
-function execCmd(args: string[]): string {
-  // Simple mock: just return args joined
-  return '';
+function execCmd(_args: string[]): { output: string; exitCode: number } {
+  // Simple mock: builtins (echo, etc.) are handled by BashInterpreter itself,
+  // so this stub is only reached for external commands, which these tests
+  // don't exercise.
+  return { output: '', exitCode: 0 };
 }
 
 beforeEach(() => {

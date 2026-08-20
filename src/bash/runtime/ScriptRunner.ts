@@ -15,6 +15,7 @@ import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { BashLexer } from '@/bash/lexer/BashLexer';
 import { BashParser } from '@/bash/parser/BashParser';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
+import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
 
 export interface ScriptResult {
@@ -22,6 +23,16 @@ export interface ScriptResult {
   exitCode: number;
   /** Final environment variables after execution (for state sync). */
   env?: Record<string, string>;
+  /**
+   * Pure stderr stream (content routed to fd 2). `output` remains the
+   * merged terminal view; this lets callers route stderr independently.
+   */
+  stderr?: string;
+  /** True when a `daemonMode` job parked in an unconditional loop instead
+   *  of running forever — see {@link DaemonParkSignal}. `interp` is the
+   *  live interpreter, kept alive so `kill -SIGNAL` can fire its traps. */
+  parked?: boolean;
+  interp?: BashInterpreter;
 }
 
 /**
@@ -31,9 +42,11 @@ export function runScript(
   ctx: ShellContext,
   scriptPath: string,
   scriptArgs: string[],
-  executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/ast/types').Command>,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  invocation: 'direct' | 'interpreter' = 'direct',
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -47,8 +60,12 @@ export function runScript(
     return { output: `bash: ${scriptPath}: Is a directory\n`, exitCode: 126 };
   }
 
-  // 2. Check execute permission
-  if (!checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr)) {
+  // 2. Direct invocation (./script) needs the execute bit; running the
+  //    file through an interpreter (`bash script`) only needs to read it.
+  const permitted = invocation === 'interpreter'
+    ? checkReadPermission(inode, ctx.uid, ctx.gid, ctx.userMgr)
+    : checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr);
+  if (!permitted) {
     return { output: `bash: ${scriptPath}: Permission denied\n`, exitCode: 126 };
   }
 
@@ -62,7 +79,7 @@ export function runScript(
   const io = buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, undefined, aliases, functions,
+    buildEnvVars(ctx), io, identity, aliases, functions,
   );
 }
 
@@ -74,16 +91,17 @@ export function runScriptContent(
   content: string,
   scriptName: string,
   scriptArgs: string[],
-  executeCommand: (args: string[], env?: Record<string, string>) => { output: string; exitCode: number },
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
   aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/ast/types').Command>,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
-  // Strip shebang, then preprocess heredocs
-  const source = preprocessHeredocs(stripShebang(content));
+  // Strip shebang — heredoc bodies are collected natively by BashLexer.
+  const source = stripShebang(content);
 
+  let interp: BashInterpreter | undefined;
   try {
     const lexer = new BashLexer();
     const parser = new BashParser();
@@ -91,8 +109,8 @@ export function runScriptContent(
     const tokens = lexer.tokenize(source);
     const ast = parser.parse(tokens);
 
-    const interp = new BashInterpreter({
-      executeCommand: (args, env) => executeCommand(args, env),
+    interp = new BashInterpreter({
+      executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
       variables: variables ?? {},
       scriptName,
       positionalArgs: scriptArgs,
@@ -102,6 +120,7 @@ export function runScriptContent(
       initialExitCode: identity?.initialExitCode,
       aliases,
       functions,
+      daemonMode: identity?.daemonMode,
     });
 
     const result = interp.execute(ast);
@@ -112,8 +131,123 @@ export function runScriptContent(
     }
     return { ...result, env: finalEnv };
   } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility
+    const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
+    return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };
+  }
+}
+
+/**
+ * Async twin of {@link runScript}: same file-existence/permission checks,
+ * but the final execution step goes through {@link runScriptContentAsync}
+ * so a network command inside the script file (`ssh`, `curl`, …) is
+ * genuinely awaited instead of silently discarded by a synchronous caller.
+ */
+export async function runScriptAsync(
+  ctx: ShellContext,
+  scriptPath: string,
+  scriptArgs: string[],
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) =>
+    { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
+    | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
+  aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  invocation: 'direct' | 'interpreter' = 'direct',
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+): Promise<ScriptResult> {
+  const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
+
+  const inode = ctx.vfs.resolveInode(absPath);
+  if (!inode) {
+    return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
+  }
+
+  if (inode.type === 'directory') {
+    return { output: `bash: ${scriptPath}: Is a directory\n`, exitCode: 126 };
+  }
+
+  const permitted = invocation === 'interpreter'
+    ? checkReadPermission(inode, ctx.uid, ctx.gid, ctx.userMgr)
+    : checkExecutePermission(inode, ctx.uid, ctx.gid, ctx.userMgr);
+  if (!permitted) {
+    return { output: `bash: ${scriptPath}: Permission denied\n`, exitCode: 126 };
+  }
+
+  const content = ctx.vfs.readFile(absPath);
+  if (content === null) {
+    return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
+  }
+
+  const io = buildIOContext(ctx);
+  return runScriptContentAsync(
+    content, scriptPath, scriptArgs, executeCommand,
+    buildEnvVars(ctx), io, identity, aliases, functions,
+  );
+}
+
+/**
+ * Async twin of {@link runScriptContent}: drives the same interpreter core
+ * through its async driver so external commands may return Promises
+ * (network commands that traverse the simulated wire).
+ */
+export async function runScriptContentAsync(
+  content: string,
+  scriptName: string,
+  scriptArgs: string[],
+  executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) =>
+    { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
+    | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
+  variables?: Record<string, string>,
+  io?: IOContext,
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
+  aliases?: AliasTable,
+  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+): Promise<ScriptResult> {
+  const source = stripShebang(content);
+
+  let interp: BashInterpreter | undefined;
+  try {
+    const lexer = new BashLexer();
+    const parser = new BashParser();
+
+    const tokens = lexer.tokenize(source);
+    const ast = parser.parse(tokens);
+
+    interp = new BashInterpreter({
+      executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
+      variables: variables ?? {},
+      scriptName,
+      positionalArgs: scriptArgs,
+      io,
+      pid: identity?.pid,
+      ppid: identity?.ppid,
+      initialExitCode: identity?.initialExitCode,
+      aliases,
+      functions,
+      daemonMode: identity?.daemonMode,
+    });
+
+    const result = await interp.executeAsync(ast);
+    const finalEnv: Record<string, string> = {};
+    for (const [k, v] of interp.env.getAll()) {
+      finalEnv[k] = v;
+    }
+    return { ...result, env: finalEnv };
+  } catch (e: unknown) {
+    if (e instanceof DaemonParkSignal) {
+      const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
+      const finalEnv: Record<string, string> = {};
+      if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
+      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+    }
+    const msg = e instanceof Error ? e.message : String(e);
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
     return { output: `bash: ${scriptName}: ${normalized}\n`, exitCode: 2 };
   }
@@ -153,73 +287,30 @@ function checkExecutePermission(
   return !!(perms & 1);
 }
 
-// ─── Helpers ────────────────────────────────────────────────────
+function checkReadPermission(
+  inode: INode,
+  uid: number,
+  gid: number,
+  userMgr: ShellContext['userMgr'],
+): boolean {
+  if (uid === 0) return true;
 
-/**
- * Preprocess heredocs in bash source.
- *
- * Transforms:
- *   cmd << 'DELIM'        →  cmd <<< 'body line 1\nbody line 2'
- *   cmd << DELIM           →  cmd <<< "body line 1\nbody line 2"
- *   cmd <<- DELIM          →  cmd <<< "body (tabs stripped)"
- *
- * Quoted delimiter  → single-quoted herestring (no expansion).
- * Unquoted delimiter → double-quoted herestring (expansion happens).
- */
-function preprocessHeredocs(source: string): string {
-  const lines = source.split('\n');
-  const result: string[] = [];
-  let i = 0;
+  const perms = inode.permissions & 0o7777;
 
-  while (i < lines.length) {
-    const line = lines[i];
-    // Match << or <<- followed by optional space and a delimiter word
-    // Use (?<!<) lookbehind and (?!<) lookahead to avoid matching <<< (herestring)
-    const heredocMatch = line.match(
-      /(?<!<)<<(-?)(?!<)\s*(?:'([^']+)'|"([^"]+)"|(\S+))\s*$/,
-    );
-
-    if (!heredocMatch) {
-      result.push(line);
-      i++;
-      continue;
-    }
-
-    const stripTabs = heredocMatch[1] === '-';
-    // Delimiter: group 2 = single-quoted, group 3 = double-quoted, group 4 = unquoted
-    const delimiter = heredocMatch[2] ?? heredocMatch[3] ?? heredocMatch[4];
-    const isQuoted = !!(heredocMatch[2] || heredocMatch[3]);
-
-    // Collect body lines until we hit the delimiter
-    const bodyLines: string[] = [];
-    i++;
-    while (i < lines.length) {
-      const bodyLine = stripTabs ? lines[i].replace(/^\t+/, '') : lines[i];
-      if (bodyLine.trim() === delimiter) {
-        i++;
-        break;
-      }
-      bodyLines.push(bodyLine);
-      i++;
-    }
-
-    const body = bodyLines.join('\n');
-
-    // Replace << ... with <<< 'body' or <<< "body"
-    const prefix = line.substring(0, heredocMatch.index!);
-    if (isQuoted) {
-      // Single-quoted herestring: no expansion
-      const escaped = body.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
-      result.push(prefix + "<<< '" + escaped + "'");
-    } else {
-      // Double-quoted herestring: expansion will happen
-      const escaped = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      result.push(prefix + '<<< "' + escaped + '"');
-    }
+  if (inode.uid === uid) {
+    return !!((perms >> 6) & 4);
   }
 
-  return result.join('\n');
+  const userGroups = userMgr.getUserGroups(userMgr.currentUser);
+  const isInGroup = inode.gid === gid || userGroups.some(g => g.gid === inode.gid);
+  if (isInGroup) {
+    return !!((perms >> 3) & 4);
+  }
+
+  return !!(perms & 4);
 }
+
+// ─── Helpers ────────────────────────────────────────────────────
 
 /** Remove shebang line if present. */
 function stripShebang(content: string): string {
@@ -266,12 +357,14 @@ function buildIOContext(ctx: ShellContext): IOContext {
 
 /** Build initial environment variables from ShellContext. */
 function buildEnvVars(ctx: ShellContext): Record<string, string> {
+  if (ctx.envOverride) return { ...ctx.envOverride };
   return {
     HOME: ctx.uid === 0 ? '/root' : `/home/${ctx.userMgr.currentUser}`,
     PWD: ctx.cwd,
     USER: ctx.userMgr.currentUser,
     LOGNAME: ctx.userMgr.currentUser,
     UID: String(ctx.uid),
+    EUID: String(ctx.uid),
     SHELL: '/bin/bash',
     PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
   };

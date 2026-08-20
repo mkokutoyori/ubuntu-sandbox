@@ -7,6 +7,10 @@
 import { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
 
+import type { CommandSpec } from '@/cli/CommandTable';
+import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
+
 export function registerIPSecShowCommands(
   trie: CommandTrie,
   getRouter: () => Router,
@@ -55,12 +59,6 @@ export function registerIPSecShowCommands(
   trie.register('show crypto ipsec security-policy', 'Display IPSec security policies (SPD)', () =>
     eng()?.showSecurityPolicy() ?? 'IPSec not configured.');
 
-  trie.register('show crypto engine brief', 'Display crypto engine brief', () =>
-    eng()?.showCryptoEngineBrief() ?? 'IPSec not configured.');
-
-  trie.register('show crypto engine configuration', 'Display crypto engine configuration', () =>
-    eng()?.showCryptoEngineConfiguration() ?? 'IPSec not configured.');
-
   trie.register('show crypto ikev2 proposal', 'Display IKEv2 proposals', () =>
     eng()?.showCryptoIKEv2Proposal() ?? 'IPSec not configured.');
 
@@ -78,6 +76,32 @@ export function registerIPSecShowCommands(
 
   trie.register('show crypto isakmp profile', 'Display ISAKMP profiles', () =>
     'No active ISAKMP profile sessions');
+  trie.register('show crypto gdoi', 'Display GDOI GET-VPN group status', () => {
+    const e = eng();
+    if (!e) return 'IPSec not configured.';
+    const groups = e.getGdoiGroups() as Map<string, {
+      name: string; identityNumber?: number; groupAddress?: string;
+      transformSetName?: string; localAddress?: string; keyServerAddress?: string;
+      isKeyServer: boolean;
+    }>;
+    if (groups.size === 0) return 'No GDOI groups configured.';
+    return [...groups.values()].map((g) => {
+      const lines = [
+        `Group Name: ${g.name}`,
+        `Group Identity: ${g.identityNumber ?? '<none>'}`,
+        `Group Members: ${g.isKeyServer ? 'Key Server' : 'Group Member'}`,
+      ];
+      if (g.isKeyServer) {
+        const msa = g.groupAddress ? e.findMulticastSAForOutbound?.(g.groupAddress) : null;
+        lines.push(`  Group Address: ${g.groupAddress ?? '<none>'}`);
+        lines.push(`  Transform Set: ${g.transformSetName ?? '<none>'}`);
+        lines.push(`  Registered Members: ${msa?.receivers?.length ?? 0}`);
+      } else {
+        lines.push(`  Key Server: ${g.keyServerAddress ?? '<none>'}`);
+      }
+      return lines.join('\n');
+    }).join('\n\n');
+  });
   trie.registerGreedy('show crypto ikev2 sa detailed', 'Detailed IKEv2 SAs', () =>
     eng()?.showCryptoIKEv2SADetail?.() ?? eng()?.showCryptoIKEv2SA?.() ?? 'IPSec not configured.');
   trie.register('show crypto ikev2 stats', 'IKEv2 statistics', () => {
@@ -104,10 +128,15 @@ export function registerIPSecShowCommands(
     let ipsecCount = 0;
     if (sessions) for (const arr of sessions.ipsecSADB.values()) ipsecCount += arr.length;
     return [
-      'Hardware Encryption Layer: not available (software-only sim)',
-      'Cryptographic API library: software (Node crypto fallback)',
-      `Active IKE/IKEv2 SAs: ${ikeCount}`,
-      `Active IPSec SAs: ${ipsecCount}`,
+      'Hardware Encryption : ACTIVE',
+      '',
+      'Number of hardware crypto engines = 1.',
+      '',
+      'CryptoEngine Onboard VPN details: state = Active',
+      ' Capability     : IPPCP, DES, 3DES, AES, RSA',
+      `  IKE Sessions   : ${ikeCount} active, 100 max`,
+      `  IPSec Sessions : ${ipsecCount} active, 200 max`,
+      '  DH Groups      : 1, 2, 5, 14, 19, 20',
     ].join('\n');
   });
   trie.register('show crypto engine connections active', 'Active crypto engine connections', () => {
@@ -158,61 +187,17 @@ export function registerIPSecShowCommands(
     const n = e.clearISAKMPSAs(peer);
     return n === 0 ? 'No matching ISAKMP SAs found' : `Cleared ${n} ISAKMP SA${n === 1 ? '' : 's'}`;
   });
-  trie.registerGreedy('clear crypto isakmp sa', 'Clear ISAKMP SAs', (args) => {
-    const e = eng();
-    if (!e) return 'IPSec not configured.';
-    const peer = parsePeerFromArgs(args);
-    const n = e.clearISAKMPSAs(peer);
-    return n === 0 ? 'No matching ISAKMP SAs found' : `Cleared ${n} ISAKMP SA${n === 1 ? '' : 's'}`;
-  });
-  trie.registerGreedy('clear crypto session', 'Clear crypto sessions', () => {
-    const e = eng();
-    if (!e) return 'IPSec not configured.';
-    const n = e.clearSessions();
-    return n === 0 ? 'No active crypto sessions' : `Cleared ${n} crypto session entries`;
-  });
-  trie.registerGreedy('clear crypto ikev2 sa', 'Clear IKEv2 SAs', (args) => {
-    const e = eng();
-    if (!e) return 'IPSec not configured.';
-    const peer = parsePeerFromArgs(args);
-    const n = e.clearIKEv2SAs(peer);
-    return n === 0 ? 'No matching IKEv2 SAs found' : `Cleared ${n} IKEv2 SA${n === 1 ? '' : 's'}`;
-  });
 
   const debugSvc = () => getRouter().getDebugService();
-  trie.registerGreedy('debug crypto isakmp', 'Enable ISAKMP debug', () => {
-    eng()?.setDebug('isakmp', true);
-    return debugSvc().enable('crypto.isakmp');
-  });
-  trie.registerGreedy('debug crypto ipsec', 'Enable IPSec debug', () => {
-    eng()?.setDebug('ipsec', true);
-    return debugSvc().enable('crypto.ipsec');
-  });
-  trie.registerGreedy('debug crypto ikev2', 'Enable IKEv2 debug', () => {
-    eng()?.setDebug('ikev2', true);
-    return debugSvc().enable('crypto.ikev2');
-  });
-  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', (args) => {
-    const scope = args.join(' ').toLowerCase();
-    if (scope.startsWith('transactions')) return debugSvc().enable('crypto.pki.transactions');
-    if (scope.startsWith('messages')) return debugSvc().enable('crypto.pki.messages');
-    return debugSvc().enable('crypto.pki');
-  });
-  trie.registerGreedy('no debug crypto isakmp', 'Disable ISAKMP debug', () => {
-    eng()?.setDebug('isakmp', false);
-    return debugSvc().disable('crypto.isakmp');
-  });
-  trie.registerGreedy('no debug crypto ipsec', 'Disable IPSec debug', () => {
-    eng()?.setDebug('ipsec', false);
-    return debugSvc().disable('crypto.ipsec');
-  });
-  trie.registerGreedy('no debug crypto ikev2', 'Disable IKEv2 debug', () => {
-    eng()?.setDebug('ikev2', false);
-    return debugSvc().disable('crypto.ikev2');
-  });
-  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => debugSvc().disable('crypto.pki'));
-  trie.register('undebug all', 'Disable all debug', () => debugSvc().disableAll());
+  const PKI_REFUS = '% Crypto PKI has no trace point on this platform:'
+    + ' the certificate engine publishes no enrolment or validation event';
+  trie.registerGreedy('debug crypto pki', 'Enable PKI debug', () => PKI_REFUS);
+  trie.registerGreedy('no debug crypto pki', 'Disable PKI debug', () => PKI_REFUS);
   trie.register('show debugging', 'Display active debug flags', () => debugSvc().format());
+  trie.register('show debug condition', 'Display standing debug conditions',
+    () => debugSvc().formatConditions());
+  trie.register('show debugging condition', 'Display standing debug conditions',
+    () => debugSvc().formatConditions());
 
   const nhrp = () => getRouter().getNhrpService();
   trie.register('show ip nhrp', 'Display NHRP cache', () => nhrp().formatCache());
@@ -229,4 +214,23 @@ function parsePeerFromArgs(args: string[]): string | undefined {
     if (/^\d+\.\d+\.\d+\.\d+$/.test(args[i])) return args[i];
   }
   return undefined;
+}
+
+const DEJA_AU_SOCLE = new Set(
+  SHOW_CRYPTO_FAMILY.map(spec =>
+    spec.path.filter((step): step is string => typeof step === 'string').join(' ')));
+
+export function cryptoShowSpecs(ctx: Parameters<typeof registerIPSecShowCommands>[1]): CommandSpec[] {
+  return specsFromTrieRegistrations(
+    (collector) => registerIPSecShowCommands(collector as unknown as CommandTrie, ctx),
+    {
+      modes: ['user', 'privileged'], minPrivilege: 1,
+      restDescription: 'Filter',
+      restDescriptionFor: (path) => ({
+        'show crypto ipsec sa interface': 'Interface name',
+        'show crypto map interface': 'Interface name',
+      })[path],
+      skip: (path) => !path.startsWith('show crypto') || DEJA_AU_SOCLE.has(path),
+    },
+  );
 }

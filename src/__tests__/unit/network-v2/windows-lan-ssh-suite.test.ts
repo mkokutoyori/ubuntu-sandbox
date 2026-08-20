@@ -41,9 +41,9 @@ function buildWinLan(): WinLan {
   const win2 = new WindowsPC('windows-pc', 'win2', 0, 0);
   const win3 = new WindowsPC('windows-pc', 'win3', 0, 0);
   const win4 = new WindowsPC('windows-pc', 'win4', 0, 0);
-  const sw = new GenericSwitch('switch', 'core-sw', 0, 0);
+  const sw = new GenericSwitch('switch-generic', 'core-sw', 8, 0, 0);
   const all = [win1, win2, win3, win4];
-  all.forEach((d, i) => { new Cable(d.getPorts()[0], sw.getPorts()[i]); });
+  all.forEach((d, i) => { new Cable(`c${i}`).connect(d.getPorts()[0], sw.getPorts()[i]); });
 
   const mask = new SubnetMask('255.255.255.0');
   win1.getPorts()[0].configureIP(new IPAddress('10.0.0.1'), mask);

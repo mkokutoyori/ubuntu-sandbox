@@ -25,6 +25,22 @@ export interface FhrpGroupBase {
   vip: string | null;
   priority: number;
   preempt: boolean;
+  /**
+   * `preempt delay minimum <s>` (IOS) / `preempt-mode timer delay <s>`
+   * (VRP) : combien de temps ce routeur doit rester ELIGIBLE avant de
+   * prendre le role a un pair vivant de priorite moindre.
+   *
+   * Le reglage vit sur la BASE et non sur chaque protocole parce que les
+   * trois familles l'ont, sous trois orthographes, et que c'est la meme
+   * decision. Il etait range par les trois CLI dans trois facades que
+   * seuls les affichages lisaient — donc inerte partout.
+   */
+  preemptDelaySec?: number;
+  /**
+   * Depuis quand ce routeur est eligible ; `null` quand il ne l'est pas.
+   * C'est ce qui rend le delai reel plutot que decoratif.
+   */
+  preemptEligibleSinceMs?: number | null;
 }
 
 export interface FhrpConfigBase<G extends FhrpGroupBase> {
@@ -75,4 +91,32 @@ export function compareFhrpCandidates(
   const bi = b.ip.split('.').map(Number);
   for (let i = 0; i < 4; i++) if (ai[i] !== bi[i]) return bi[i] - ai[i];
   return 0;
+}
+
+export interface FhrpTrackEntry {
+  target: string;
+  decrement: number;
+  down: boolean;
+}
+
+export function makeFhrpKey(iface: string, group: number): string {
+  return `${iface}|${group}`;
+}
+
+export function createDefaultFhrpConfig<G extends FhrpGroupBase>(): FhrpConfigBase<G> {
+  return { enabled: true, groups: new Map() };
+}
+
+/**
+ * Priority after applying object-tracking decrements, clamped to the
+ * protocol's legal range (HSRP 0-255, VRRP owner-reserved 1-254).
+ */
+export function trackedPriority(
+  base: number, tracks: readonly FhrpTrackEntry[], min: number, max: number,
+): number {
+  let p = base;
+  for (const t of tracks) if (t.down) p -= t.decrement;
+  if (p < min) p = min;
+  if (p > max) p = max;
+  return p;
 }

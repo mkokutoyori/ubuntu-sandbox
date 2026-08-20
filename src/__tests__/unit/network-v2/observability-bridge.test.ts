@@ -32,14 +32,14 @@ describe('observability: lastlog / journalctl coherency', () => {
     });
 
     it('shows "**Never logged in**" for users without a lastlog entry', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       const out = exec.execute('lastlog');
       expect(out).toContain('alice');
       expect(out).toContain('**Never logged in**');
     });
 
     it('shows the recorded login when the SSH server populated lastlog', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const out = exec.execute('lastlog -u alice');
       expect(out).toContain('alice');
@@ -49,8 +49,8 @@ describe('observability: lastlog / journalctl coherency', () => {
     });
 
     it('honours `-u <user>` to filter a single user', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
-      exec.userMgr.useradd('bob', { uid: 1002 });
+      exec.userMgr.useradd('alice', { u: 1001 });
+      exec.userMgr.useradd('bob', { u: 1002 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.lastlog.record('bob',   '10.0.0.6', 'pts/1');
       const out = exec.execute('lastlog -u alice');
@@ -59,8 +59,8 @@ describe('observability: lastlog / journalctl coherency', () => {
     });
 
     it('-t DAYS shows only entries more recent than the cutoff', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
-      exec.userMgr.useradd('bob',   { uid: 1002 });
+      exec.userMgr.useradd('alice', { u: 1001 });
+      exec.userMgr.useradd('bob',   { u: 1002 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       const veryOld = Date.now() - 30 * 86400_000;
       const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
@@ -71,8 +71,8 @@ describe('observability: lastlog / journalctl coherency', () => {
     });
 
     it('-b DAYS shows only entries older than the cutoff', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
-      exec.userMgr.useradd('bob',   { uid: 1002 });
+      exec.userMgr.useradd('alice', { u: 1001 });
+      exec.userMgr.useradd('bob',   { u: 1002 });
       const old = Date.now() - 30 * 86400_000;
       const slot = (exec.lastlog as unknown as { entries: Map<string, { current: { when: number; sourceHost: string; tty: string } }> }).entries;
       slot.set('bob', { current: { when: old, sourceHost: '10.0.0.6', tty: 'pts/1' } });
@@ -84,7 +84,7 @@ describe('observability: lastlog / journalctl coherency', () => {
     });
 
     it('-C clears a single user; subsequent lastlog shows Never logged in', async () => {
-      exec.userMgr.useradd('alice', { uid: 1001 });
+      exec.userMgr.useradd('alice', { u: 1001 });
       exec.lastlog.record('alice', '10.0.0.5', 'pts/0');
       exec.userMgr.currentUid = 0;
       exec.execute('lastlog -C -u alice');
@@ -130,7 +130,7 @@ describe('observability: lastlog / journalctl coherency', () => {
       const bus = new SshServerEventBus();
       new SshSyslogger(vfs, bus, { hostname: 'box', sshdPid: 4242, logMgr: exec.logMgr });
 
-      bus.emit({ kind: 'auth_failure', user: 'mallory', method: 'password', ip: '10.0.0.99' });
+      bus.emit({ kind: 'auth_failure', user: 'mallory', method: 'password', ip: '10.0.0.99', reason: 'bad password' });
 
       const journal = exec.logMgr.executeJournalctl(['-u', 'ssh']);
       expect(journal).toContain('Failed password for mallory from 10.0.0.99');

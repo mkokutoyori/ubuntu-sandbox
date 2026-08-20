@@ -89,9 +89,59 @@ export interface SshHostKeyInfo {
  * `null` to mean "I cannot answer synchronously, defer to the async
  * path".
  */
+/**
+ * One CLI session's worth of shell, minted per SSH channel. It owns its
+ * own mode context (user EXEC / privileged / config) the way a real VTY
+ * line does, while the device configuration it edits stays shared.
+ */
+export interface SshVtyShell {
+  execute(rawInput: string): string | Promise<string>;
+  /** True when the last executed line asked for the screen to be wiped. */
+  lastClearedScreen?(): boolean;
+  /** A challenge the last line raised, awaiting one value from the client. */
+  lastPendingInput?(): { kind: 'password' | 'text'; promptText: string } | null;
+  /**
+   * True when the last line logged the session out. The exit word is the
+   * vendor's own — `quit` at VRP user-view, `exit` at IOS EXEC, `exit`
+   * on cmd — so the remote says so rather than the client guessing
+   * (docs/PRD-SSH-Unification.md §4bis B4).
+   */
+  lastEndedSession?(): boolean;
+  /** Hand back the value the client collected for that challenge. */
+  handleInput?(value: string): Promise<string>;
+  getPrompt(): string;
+  /** Tab candidates for the shell's current CLI mode. */
+  getCompletions?(line: string): string[];
+  /**
+   * True while a sub-shell pushed on this channel owns the input, so the
+   * client knows `exit` pops that interpreter instead of closing the SSH
+   * session (docs/PRD-SSH-Unification.md §4bis B2).
+   */
+  isNested?(): boolean;
+  /**
+   * Output this session receives without having asked for it on the line
+   * it arrives on: `debug` traces and, once `terminal monitor` is on,
+   * syslog. It is asynchronous by nature — a real router prints it the
+   * moment the event happens, not when the operator next presses Enter —
+   * so it needs a push of its own rather than riding a command's reply.
+   * Absent means the remote never speaks unprompted.
+   */
+  subscribeAsyncOutput?(sink: (line: string) => void): () => void;
+  /** The line has dropped — give back whatever this session holds on the device. */
+  dispose?(): void;
+}
+
 export interface SshExecTarget {
   /** Device hostname as it would appear in a remote shell prompt. */
   getSshHostname(): string;
+
+  /**
+   * Mint a CLI shell for one SSH channel. Targets that provide it get a
+   * genuinely stateful remote session (`enable`, `configure terminal`);
+   * those that do not fall back to the one-shot `runSshCommandSync` path
+   * (docs/PRD-SSH-Unification.md §3.2).
+   */
+  createVtyShell?(user?: string): SshVtyShell | null;
 
   /** Reactive bus the target publishes SSH lifecycle events on. */
   getSshEventBus?(): IEventBus;

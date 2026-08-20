@@ -17,6 +17,14 @@ export const EIGRP_MULTICAST_IP = '224.0.0.10';
 /** Default hold time advertised in Hellos (IOS LAN default, §5.3.4). */
 export const EIGRP_DEFAULT_HOLD_SEC = 15;
 
+/**
+ * Default Hello interval (RFC 7868 §5.3.1): 5 s on high-speed links.
+ * Low-speed NBMA (≤ T1) uses 60 s, with the hold time following at 3×
+ * — `ip hello-interval eigrp` / `ip hold-time eigrp` override both per
+ * interface, and IOS deliberately does NOT recompute one from the other.
+ */
+export const EIGRP_DEFAULT_HELLO_SEC = 5;
+
 /** Protocol version carried in the EIGRP header (§5.1). */
 export const EIGRP_VERSION = 2;
 
@@ -38,6 +46,20 @@ export interface EigrpRouteTlv {
   readonly external: boolean;
 }
 
+export interface EigrpAuthTlv {
+  readonly type: 'md5';
+  readonly keyId: number;
+  readonly digest: string;
+}
+
+export interface EigrpStubTlv {
+  readonly connected: boolean;
+  readonly summary: boolean;
+  readonly staticRoutes: boolean;
+  readonly redistributed: boolean;
+  readonly receiveOnly: boolean;
+}
+
 /** Hello — neighbor discovery and adjacency parameter check (§5.3.4). */
 export interface EigrpHelloPacket {
   readonly type: 'eigrp';
@@ -46,6 +68,8 @@ export interface EigrpHelloPacket {
   readonly kValues: EigrpKValues;
   readonly holdTimeSec: number;
   readonly routerId?: string;
+  readonly auth?: EigrpAuthTlv;
+  readonly stub?: EigrpStubTlv;
 }
 
 /** Update — full topology advertisement with vector metrics (§5.3.2). */
@@ -54,6 +78,7 @@ export interface EigrpUpdatePacket {
   readonly opcode: 'update';
   readonly asn: number;
   readonly routes: readonly EigrpRouteTlv[];
+  readonly auth?: EigrpAuthTlv;
 }
 
 export type EigrpPacket = EigrpHelloPacket | EigrpUpdatePacket;

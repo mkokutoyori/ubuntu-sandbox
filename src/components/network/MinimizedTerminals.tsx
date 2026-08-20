@@ -17,7 +17,7 @@
 
 import {
   X, Terminal, Columns2, Rows2, LayoutGrid,
-  Layers, PanelLeft, ChevronLeft, ChevronRight,
+  Layers, PanelLeft, ChevronLeft, ChevronRight, Monitor,
 } from 'lucide-react';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import type { TileLayout } from './NetworkDesigner';
@@ -33,6 +33,8 @@ interface TerminalTaskbarProps {
   focusedIndex: number;
   visibleCount: number;
   onFocusChange: (index: number) => void;
+  desktopPeek: boolean;
+  onToggleDesktop: () => void;
 }
 
 const LAYOUT_OPTIONS: { id: TileLayout; icon: typeof LayoutGrid; label: string; shortcut: string }[] = [
@@ -53,6 +55,8 @@ export function TerminalTaskbar({
   focusedIndex,
   visibleCount,
   onFocusChange,
+  desktopPeek,
+  onToggleDesktop,
 }: TerminalTaskbarProps) {
   if (sessions.length === 0) return null;
 
@@ -66,6 +70,21 @@ export function TerminalTaskbar({
       "bg-slate-900/95 border-t border-white/10",
       "backdrop-blur-sm"
     )}>
+      {/* ── Show desktop / topology toggle ── */}
+      <button
+        onClick={onToggleDesktop}
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1.5 mr-2 rounded transition-colors border shrink-0",
+          desktopPeek
+            ? "bg-blue-500/30 text-blue-300 border-blue-500/40"
+            : "text-white/50 border-white/10 hover:text-white/80 hover:bg-white/5"
+        )}
+        title={desktopPeek ? 'Back to terminals' : 'Show topology (terminals stay open)'}
+      >
+        <Monitor className="w-3.5 h-3.5" />
+        <span className="text-[11px]">{desktopPeek ? 'Terminals' : 'Desktop'}</span>
+      </button>
+
       {/* ── Layout selector ── */}
       <div className="flex items-center gap-0.5 mr-2 border-r border-white/10 pr-2">
         {LAYOUT_OPTIONS.map(opt => {

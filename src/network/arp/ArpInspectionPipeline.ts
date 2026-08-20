@@ -18,7 +18,7 @@
  */
 import type { IEventBus } from '@/events/EventBus';
 import type {
-  ArpAccessList, ArpInspectionConfig, ArpInspectionContext, ArpInspectionVerdict,
+  ArpAccessList, ArpDropReason, ArpInspectionConfig, ArpInspectionContext, ArpInspectionVerdict,
   ArpStats,
 } from './types';
 import type { DHCPSnoopingBinding } from '../dhcp/types';
@@ -38,10 +38,23 @@ export interface ArpInspectionHost {
   _isArpErrDisabled(port: string): boolean;
 }
 
+export interface DaiLogEntry {
+  port: string;
+  vlan: number;
+  senderMac: string;
+  senderIp: string;
+  numPkts: number;
+  reason: ArpDropReason;
+  lastSeenMs: number;
+}
+
+const DAI_LOG_BUFFER_SIZE = 32;
+
 export class ArpInspectionPipeline {
   private readonly engine = new ArpInspectionEngine();
   private readonly limiter = new ArpRateLimiter();
   private readonly stats: Map<string, ArpStats> = new Map();
+  private readonly log: DaiLogEntry[] = [];
 
   constructor(
     private readonly host: ArpInspectionHost,
@@ -72,7 +85,7 @@ export class ArpInspectionPipeline {
       const limit = cfg.rateLimits.get(port);
       if (limit && limit > 0) {
         const r = this.limiter.consume(port, limit, cfg.rateBurstSec);
-        if (!r.ok) {
+        if (r.ok === false) {
           s.dropped++;
           s.droppedRateLimit++;
           this.host._arpErrDisable(port);
@@ -87,6 +100,7 @@ export class ArpInspectionPipeline {
             `%SW_DAI-4-PACKET_RATE_EXCEEDED: ${port} exceeded ${r.limit} pps; err-disabled`,
             cfg.loggingEnabled,
           );
+          this.recordLogEntry(ctx, 'rate-limit');
           this.publish({ kind: 'drop', reason: 'rate-limit', detail: `>${r.limit} pps` }, ctx);
           return false;
         }
@@ -103,6 +117,7 @@ export class ArpInspectionPipeline {
       s.dropped++;
       this.bumpDropCounter(s, verdict);
       this.appendLog(this.formatDropLog(ctx, verdict), cfg.loggingEnabled);
+      this.recordLogEntry(ctx, verdict.reason);
       this.bus.publish({
         topic: 'arp.violation',
         payload: {
@@ -119,6 +134,10 @@ export class ArpInspectionPipeline {
 
   getStats(): Map<string, ArpStats> {
     return new Map(this.stats);
+  }
+
+  getLog(): DaiLogEntry[] {
+    return [...this.log];
   }
 
   getPortStats(port: string): ArpStats {
@@ -173,6 +192,24 @@ export class ArpInspectionPipeline {
         verdict: v.kind, reason: v.reason,
       },
     });
+  }
+
+  private recordLogEntry(ctx: ArpInspectionContext, reason: ArpDropReason): void {
+    const senderMac = ctx.senderMac.toString().toLowerCase();
+    const senderIp = ctx.senderIp.toString();
+    const existing = this.log.find((e) =>
+      e.port === ctx.ingressPort && e.vlan === ctx.vlan &&
+      e.senderMac === senderMac && e.senderIp === senderIp && e.reason === reason);
+    if (existing) {
+      existing.numPkts++;
+      existing.lastSeenMs = Date.now();
+      return;
+    }
+    this.log.push({
+      port: ctx.ingressPort, vlan: ctx.vlan, senderMac, senderIp,
+      numPkts: 1, reason, lastSeenMs: Date.now(),
+    });
+    if (this.log.length > DAI_LOG_BUFFER_SIZE) this.log.shift();
   }
 
   private formatDropLog(ctx: ArpInspectionContext, v: ArpInspectionVerdict): string {

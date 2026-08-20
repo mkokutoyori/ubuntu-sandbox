@@ -7,14 +7,25 @@ import {
   createDefaultDot1xConfig, defaultPortRuntime, isAuthorizedState,
   ETHERTYPE_EAPOL, EAPOL_PAE_GROUP_MAC,
 } from './types';
+import { eapPacketToWireHex, eapPacketFromWireHex } from '../radius/eap';
+import { parseAuthorization, type RadiusAuthorization } from '../radius/authorization';
+import type { EapRoundOutcome } from '../radius/RadiusClientAgent';
 import {
   MACAddress,
   type EthernetFrame,
 } from '../core/types';
 import { Logger } from '../core/Logger';
 
+/**
+ * RADIUS EAP relay backend (RFC 3579) — one round per call, matching
+ * `RadiusClientAgent.sendEapRound`; a router's real RADIUS client satisfies
+ * this structurally, no adapter needed.
+ */
 export interface Dot1xRadiusBackend {
-  authenticate(username: string, password: string): Promise<boolean>;
+  sendEapRound(
+    username: string, eapMessageHex: string, state: string | null,
+    nas: { callingStationId?: string; calledStationId?: string },
+  ): Promise<EapRoundOutcome>;
 }
 
 export interface Dot1xHost {
@@ -25,6 +36,8 @@ export interface Dot1xHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   onDot1xPortAuthorized?(portName: string, authorized: boolean): void;
+  /** RFC 3580 §3.31 dynamic VLAN assignment from a RADIUS Access-Accept — actually moving the port is left to the caller. */
+  onDot1xVlanAssigned?(portName: string, vlanId: number): void;
 }
 
 export class Dot1xAgent {
@@ -73,6 +86,21 @@ export class Dot1xAgent {
     else if (mode === 'disabled') newState = 'authorized';
     else newState = 'unauthorized';
     this.transition(rt, newState, 'config');
+  }
+
+  /**
+   * Quiet period — how long a port stays `held` after too many failed
+   * rounds before it will listen again. Applies to ports configured
+   * from now on, and to the named port immediately when given one.
+   */
+  setHoldTime(ms: number, portName?: string): void {
+    if (portName === undefined) {
+      this.config.defaultHoldMs = ms;
+      for (const rt of this.config.ports.values()) rt.holdMs = ms;
+      return;
+    }
+    const rt = this.config.ports.get(portName);
+    if (rt) rt.holdMs = ms;
   }
 
   addLocalUser(username: string, password: string): void {
@@ -162,51 +190,95 @@ export class Dot1xAgent {
     if (eap.eapType === 'identity') {
       const identity = eap.payload ?? '';
       rt.identity = identity;
+      rt.radiusState = null;
       this.transition(rt, 'authenticating', 'eap-response');
-      this.verifyIdentity(rt, identity);
+      this.startAuth(rt, eap, identity);
+    } else if ((eap.eapType === 'md5-challenge' || eap.eapType === 'tls'
+        || eap.eapType === 'peap' || eap.eapType === 'ttls')
+        && rt.identity !== null && rt.radiusState !== null) {
+      this.continueRadiusEap(rt, eap);
     }
   }
 
-  private verifyIdentity(rt: Dot1xPortRuntime, identity: string): void {
-    const local = this.config.localUsers.get(identity);
-    const handle = (accepted: boolean,
-                    reason: 'local-accept' | 'local-reject-unknown-user' | 'local-reject-bad-password' | 'radius-accept' | 'radius-reject') => {
-      this.getBus().publish({
-        topic: 'dot1x.auth.outcome',
-        payload: {
-          deviceId: this.host.id, hostname: this.host.getHostname(),
-          port: rt.port, identity, accepted, reason,
-        },
-      });
-      const successOrFailure: EapPacket = {
-        type: 'eap', code: accepted ? 'success' : 'failure',
-        identifier: (rt.pendingEapId ?? 0),
-      };
-      this.sendEapol(rt, 'eap-packet', successOrFailure);
-      if (accepted) {
-        this.transition(rt, 'authorized', 'auth-success');
-      } else {
-        rt.reauthCount++;
-        if (rt.reauthCount >= rt.maxReauthReq) {
-          rt.holdUntilMs = Date.now() + rt.holdMs;
-          this.transition(rt, 'held', 'auth-failure');
-        } else {
-          this.transition(rt, 'unauthorized', 'auth-failure');
-        }
-      }
-    };
+  /** Local user table short-circuits (no RADIUS round-trip); otherwise relay the EAP-Response/Identity as the first RADIUS EAP round (RFC 3579). */
+  private startAuth(rt: Dot1xPortRuntime, eap: EapPacket, identity: string): void {
+    if (this.config.localUsers.has(identity)) {
+      this.finishAuth(rt, true, identity, 'local-accept');
+      return;
+    }
+    if (!this.radius) {
+      this.finishAuth(rt, false, identity, 'local-reject-unknown-user');
+      return;
+    }
+    this.radius.sendEapRound(identity, eapPacketToWireHex(eap), null, this.nasAttrsFor(rt))
+      .then((outcome) => this.handleRadiusOutcome(rt, identity, outcome))
+      .catch(() => this.finishAuth(rt, false, identity, 'radius-reject'));
+  }
 
-    if (local) {
-      handle(true, 'local-accept');
+  /** Relay the supplicant's EAP-Response/MD5-Challenge as the next RADIUS round, echoing the State from the Access-Challenge that carried the original challenge. */
+  private continueRadiusEap(rt: Dot1xPortRuntime, eap: EapPacket): void {
+    const identity = rt.identity!;
+    const state = rt.radiusState;
+    if (!this.radius) { this.finishAuth(rt, false, identity, 'radius-reject'); return; }
+    this.radius.sendEapRound(identity, eapPacketToWireHex(eap), state, this.nasAttrsFor(rt))
+      .then((outcome) => this.handleRadiusOutcome(rt, identity, outcome))
+      .catch(() => this.finishAuth(rt, false, identity, 'radius-reject'));
+  }
+
+  private nasAttrsFor(rt: Dot1xPortRuntime): { callingStationId?: string; calledStationId?: string } {
+    return {
+      callingStationId: rt.lastSupplicantMac ?? undefined,
+      calledStationId: this.host.getPort(rt.port)?.getMAC().toString(),
+    };
+  }
+
+  private handleRadiusOutcome(rt: Dot1xPortRuntime, identity: string, outcome: EapRoundOutcome): void {
+    if (outcome.kind === 'challenge') {
+      const eapRequest = eapPacketFromWireHex(outcome.eapMessageHex);
+      if (!eapRequest) { this.finishAuth(rt, false, identity, 'radius-reject'); return; }
+      rt.radiusState = outcome.state;
+      rt.pendingEapId = eapRequest.identifier;
+      this.sendEapol(rt, 'eap-packet', eapRequest); // relay the server's EAP-Request/MD5-Challenge to the supplicant
       return;
     }
-    if (this.radius) {
-      const promise = this.radius.authenticate(identity, '');
-      promise.then((accepted) => handle(accepted, accepted ? 'radius-accept' : 'radius-reject'))
-             .catch(() => handle(false, 'radius-reject'));
+    if (outcome.kind === 'accept') {
+      this.finishAuth(rt, true, identity, 'radius-accept', parseAuthorization(outcome.attributes));
       return;
     }
-    handle(false, 'local-reject-unknown-user');
+    this.finishAuth(rt, false, identity, 'radius-reject');
+  }
+
+  private finishAuth(
+    rt: Dot1xPortRuntime, accepted: boolean, identity: string,
+    reason: 'local-accept' | 'local-reject-unknown-user' | 'local-reject-bad-password' | 'radius-accept' | 'radius-reject',
+    authorization?: RadiusAuthorization,
+  ): void {
+    rt.radiusState = null;
+    this.getBus().publish({
+      topic: 'dot1x.auth.outcome',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        port: rt.port, identity, accepted, reason,
+        vlanId: authorization?.vlanId, sessionTimeoutSec: authorization?.sessionTimeoutSec,
+      },
+    });
+    const successOrFailure: EapPacket = {
+      type: 'eap', code: accepted ? 'success' : 'failure',
+      identifier: (rt.pendingEapId ?? 0),
+    };
+    this.sendEapol(rt, 'eap-packet', successOrFailure);
+    if (accepted) {
+      this.transition(rt, 'authorized', 'auth-success');
+      if (authorization?.vlanId !== undefined) this.host.onDot1xVlanAssigned?.(rt.port, authorization.vlanId);
+    } else {
+      rt.reauthCount++;
+      if (rt.reauthCount >= rt.maxReauthReq) {
+        rt.holdUntilMs = Date.now() + rt.holdMs;
+        this.transition(rt, 'held', 'auth-failure');
+      } else {
+        this.transition(rt, 'unauthorized', 'auth-failure');
+      }
+    }
   }
 
   private sendEapol(rt: Dot1xPortRuntime, packetType: EapolPacket['packetType'], eap?: EapPacket): void {

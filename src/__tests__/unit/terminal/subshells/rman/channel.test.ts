@@ -32,7 +32,7 @@ describe('ReactiveChannelPool', () => {
     pool.allocate(); // ORA_DISK has parallelism=1 by default
     const r = pool.allocate();
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('NO_CHANNEL_AVAILABLE');
+    if (r.ok === false) expect(r.error.code).toBe('NO_CHANNEL_AVAILABLE');
   });
 
   it('release frees the slot and emits CHANNEL_RELEASED', () => {

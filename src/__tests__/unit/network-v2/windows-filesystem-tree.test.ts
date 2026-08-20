@@ -108,7 +108,7 @@ describe('Group 1: Windows filesystem has realistic files', () => {
 describe('Group 2: tree command /F flag', () => {
 
   it('FS-11: tree without /F shows only directories', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('tree C:\\Windows\\System32\\drivers');
 
     expect(output).toContain('etc');
@@ -118,7 +118,7 @@ describe('Group 2: tree command /F flag', () => {
   });
 
   it('FS-12: tree /F shows files and directories', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('tree /F C:\\Windows\\System32\\drivers');
 
     expect(output).toContain('etc');
@@ -142,7 +142,7 @@ describe('Group 2: tree command /F flag', () => {
   });
 
   it('FS-14: tree /F with user profile shows user files', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('tree /F C:\\Users\\User');
 
     expect(output).toContain('Desktop');
@@ -151,7 +151,7 @@ describe('Group 2: tree command /F flag', () => {
   });
 
   it('FS-15: tree command handles current directory', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('tree');
 
     // Default cwd is C:\Users\User, should show subdirectories
@@ -210,7 +210,7 @@ describe('Group 3: tree output structure is correct', () => {
   });
 
   it('FS-19: type command reads hosts file correctly', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('type C:\\Windows\\System32\\drivers\\etc\\hosts');
 
     expect(output).toContain('localhost');
@@ -218,7 +218,7 @@ describe('Group 3: tree output structure is correct', () => {
   });
 
   it('FS-20: dir shows files with sizes', async () => {
-    const pc = new WindowsPC('PC1', 100, 100);
+    const pc = new WindowsPC('windows-pc', 'PC1', 100, 100);
     const output = await pc.executeCommand('dir C:\\Windows\\System32\\drivers\\etc');
 
     expect(output).toContain('hosts');

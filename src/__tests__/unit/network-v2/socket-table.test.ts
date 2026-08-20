@@ -521,24 +521,24 @@ describe('SP-11 — Linux netstat: dynamic output from socket table', () => {
     expect(out).toContain('nginx');
   });
 
-  it('netstat -u shows UDP sockets (port 53)', async () => {
+  it('netstat -uan shows UDP server sockets (port 53)', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const out = await pc.executeCommand('netstat -u');
+    const out = await pc.executeCommand('netstat -uan');
     expect(out).toContain(':53');
   });
 
-  it('netstat -u does not show TCP port 22', async () => {
+  it('netstat -uan does not show TCP port 22', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const out = await pc.executeCommand('netstat -u');
+    const out = await pc.executeCommand('netstat -uan');
     expect(out).not.toContain(':22');
   });
 
-  it('netstat -t only shows TCP rows (no `udp` proto)', async () => {
+  it('netstat -ta only shows TCP rows (no `udp` proto)', async () => {
     // Real systemd-resolved listens on 127.0.0.53:53 over BOTH tcp and
-    // udp — so port 53 is legitimately present in `netstat -t`. The
+    // udp — so port 53 is legitimately present in `netstat -ta`. The
     // correct guard is on the Proto column: no UDP rows must appear.
     const pc = new LinuxPC('linux-pc', 'PC1');
-    const out = await pc.executeCommand('netstat -t');
+    const out = await pc.executeCommand('netstat -ta');
     expect(out).not.toMatch(/^udp/m);
   });
 
@@ -628,7 +628,7 @@ describe('SP-13 — Windows netstat: dynamic output from socket table', () => {
 describe('SP-14 — Linux ss -s: summary from the real socket table', () => {
 
   it('counts match the live socket table, not canned figures', async () => {
-    const pc = new LinuxServer('srv', 'S1');
+    const pc = new LinuxServer('linux-server', 'S1');
     const table = pc.getSocketTable();
     const all = table.getAll();
     const tcp = all.filter(s => s.protocol === 'tcp').length;
@@ -642,7 +642,7 @@ describe('SP-14 — Linux ss -s: summary from the real socket table', () => {
   });
 
   it('reflects a new listener after a daemon binds a port', async () => {
-    const pc = new LinuxServer('srv', 'S1');
+    const pc = new LinuxServer('linux-server', 'S1');
     const before = await pc.executeCommand('ss -s');
     const tcpBefore = Number(/TCP:\s+(\d+)/.exec(before)?.[1]);
 

@@ -9,17 +9,40 @@
 
 import type { PSProviders } from './PSProviders';
 import { SimulatedFileSystem } from './SimulatedFileSystem';
+import { JobProvider } from './JobProvider';
 
 export const NULL_PROVIDERS: PSProviders = {
+  identity: null,
   filesystem:     new SimulatedFileSystem(),
   registry:       null,
   services:       null,
   network:        null,
   processes:      null,
+  jobs:           new JobProvider(),
   users:          null,
   eventLog:       null,
   vpn:            null,
   scheduledTasks: null,
   disks:          null,
   environment:    null,
+  remoting:       null,
+  roles:          null,
+  smb:            null,
+  ad:             null,
+  computer:       null,
+  dns:            null,
+  dhcp:           null,
+  nps:            null,
+  gpo:            null,
+  iis:            null,
+  exchange:       null,
+  adcs:           null,
+  pki:            null,
+  dfs:            null,
+  rdp:            null,
+  cluster:        null,
+  wsus:           null,
+  windowsUpdate:  null,
+  print:          null,
+  licensing:      null,
 };

@@ -21,6 +21,9 @@ import { PSParserError } from '@/powershell/parser/PSParserError';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
+import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { parseCredentialArg } from '@/powershell/cmdlets/core/RemotingCmdlets';
+import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
 
 /**
  * Tokens that bypass the interpreter and go straight to the legacy
@@ -56,6 +59,8 @@ export class PowerShellSubShell implements ISubShell {
    * shared fields (terminal_gap.md §7.x).
    */
   private session: WindowsShellSession | null = null;
+  /** Set for a sub-shell pushed by `Enter-PSSession` — prefixes every prompt with `[computername]: `. */
+  private promptPrefix = '';
 
   private constructor(device: Equipment) {
     this.device = device;
@@ -66,18 +71,9 @@ export class PowerShellSubShell implements ISubShell {
     // executor. createWindowsPSProviders picks them up directly from the
     // device. Non-Windows devices keep the default NULL_PROVIDERS.
     this.interp = device instanceof WindowsPC
-      ? new PSInterpreter(createWindowsPSProviders(device, {
-          registry: device.registry,
-          eventLog: device.eventLog,
-          network: {
-            extraIPs:             device.extraIPs,
-            extraRoutes:          device.extraRoutes,
-            adapterOverrides:     device.adapterOverrides,
-            dynamicFirewallRules: device.dynamicFirewallRules,
-            networkProfiles:      device.networkProfiles,
-          },
-          vpn: { vpnConnections: device.vpnConnections },
-        }))
+      ? new PSInterpreter(
+          createWindowsPSProviders(device), { edition: device.getWindowsEdition() },
+        )
       : new PSInterpreter();
   }
 
@@ -94,10 +90,11 @@ export class PowerShellSubShell implements ISubShell {
    */
   static create(
     device: Equipment,
-    opts?: { initialCwd?: string; session?: WindowsShellSession | null },
+    opts?: { initialCwd?: string; session?: WindowsShellSession | null; promptPrefix?: string },
   ): { subShell: PowerShellSubShell; banner: string[] } {
     const subShell = new PowerShellSubShell(device);
     subShell.session = opts?.session ?? null;
+    subShell.promptPrefix = opts?.promptPrefix ?? '';
     // Prefer the caller-provided cwd (per-terminal session); fall back to
     // the device's shared cwd so legacy call sites still work.
     const startCwd = opts?.initialCwd ?? opts?.session?.cwd ?? (device as any).getCwd();
@@ -113,7 +110,7 @@ export class PowerShellSubShell implements ISubShell {
   }
 
   getPrompt(): string {
-    return this.psExecutor.getPrompt();
+    return this.promptPrefix + this.psExecutor.getPrompt();
   }
 
   handleKey(e: KeyEvent): boolean {
@@ -140,6 +137,9 @@ export class PowerShellSubShell implements ISubShell {
     const readHostHit = await this.tryReadHostIntercept(trimmed);
     if (readHostHit) return readHostHit;
 
+    const getCredentialHit = await this.tryGetCredentialIntercept(trimmed);
+    if (getCredentialHit) return getCredentialHit;
+
     // Track history for Get-History
     if (trimmed) {
       this.commandHistory.push(trimmed);
@@ -159,6 +159,15 @@ export class PowerShellSubShell implements ISubShell {
         // The session detects this via a special marker
         _enterCmd: true,
       } as SubShellResult & { _enterCmd: boolean };
+    }
+
+    // "Enter-PSSession" / "etsn" — real network reachability + auth over
+    // TCP/5985 (PRD-Windows-Server.md §5 P4), then the session pushes a
+    // nested PowerShellSubShell bound to the remote device (its prompt
+    // prefixed "[computername]: ", matching real WinRM).
+    const enterPsMatch = /^(?:enter-pssession|etsn)\b(.*)$/i.exec(trimmed);
+    if (enterPsMatch) {
+      return this.tryEnterPSSession(enterPsMatch[1]);
     }
 
     // cls / clear-host / clear → clear screen
@@ -186,11 +195,67 @@ export class PowerShellSubShell implements ISubShell {
       ? result.split('\n')
       : [];
 
+    // Le seul endroit par lequel passe une commande PowerShell exécutée
+    // sur cette machine — donc le seul où la journaliser une fois, ni
+    // plus ni moins. Les deux stratégies décident ; celle-ci ne fait
+    // qu'annoncer.
+    if (this.device instanceof WindowsPC) {
+      this.device.recordPowerShellExecution(trimmed, output.join('\n'));
+    }
+
     return {
       output,
       exit: false,
-      prompt: this.psExecutor.getPrompt(),
+      prompt: this.getPrompt(),
     };
+  }
+
+  /**
+   * `Enter-PSSession -ComputerName X [-Credential user[:password]]` — real
+   * TCP/5985 dial + auth (PRD-Windows-Server.md §5 P4). On success returns
+   * a marker the host terminal session uses to push a nested
+   * PowerShellSubShell bound to the remote device.
+   */
+  private tryEnterPSSession(argsStr: string): SubShellResult {
+    const compMatch = /-ComputerName\s+(\S+)/i.exec(argsStr);
+    const bareMatch = !compMatch ? /^\s*(\S+)/.exec(argsStr) : null;
+    const computerName = (compMatch?.[1] ?? bareMatch?.[1] ?? '').replace(/^["']|["']$/g, '');
+    const credMatch = /-Credential\s+(\S+)/i.exec(argsStr);
+
+    if (!computerName) {
+      return { output: ['Enter-PSSession : Cannot bind argument to parameter \'ComputerName\' because it is an empty string.'], exit: false, prompt: this.getPrompt() };
+    }
+    if (!(this.device instanceof WindowsPC)) {
+      return { output: [`Enter-PSSession : Connecting to remote server ${computerName} failed.`], exit: false, prompt: this.getPrompt() };
+    }
+
+    const fail = () => ({
+      output: [
+        `Enter-PSSession : Connecting to remote server ${computerName} failed with the following error message: ` +
+        `WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer ` +
+        `is accessible over the network, and that a firewall exception for the WinRM service is enabled and allows ` +
+        `access from this computer.`,
+      ],
+      exit: false,
+      prompt: this.getPrompt(),
+    });
+
+    const targetIp = this.device.resolveHostnameSync(computerName);
+    if (!targetIp) return fail();
+    const found = findHostByAddress(targetIp.toString());
+    if (!found || found.poweredOff || found.interfaceDown) return fail();
+
+    const credential = credMatch ? parseCredentialArg(credMatch[1]) : { username: this.device.getUserManager().currentUser, password: '' };
+    const dial = this.device.dialWinRm(targetIp.toString(), credential.username, credential.password);
+    if (!dial.ok) return fail();
+
+    const hostname = (found.device as unknown as { getHostname?: () => string }).getHostname?.() ?? computerName;
+    return {
+      output: [],
+      exit: false,
+      prompt: '',
+      _enterRemotePS: { device: found.device, promptPrefix: `[${hostname}]: ` },
+    } as SubShellResult & { _enterRemotePS: { device: Equipment; promptPrefix: string } };
   }
 
   /**
@@ -413,6 +478,40 @@ export class PowerShellSubShell implements ISubShell {
       prompt: this.getPrompt(),
     };
   }
+
+  /**
+   * `Get-Credential` (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.7/P13) — same
+   * subshell-level string interception as `Read-Host` above (the tree-walking
+   * interpreter has no async/interactive-broker access, so neither cmdlet
+   * has a normal `ICmdlet` — both are handled here, before the interpreter
+   * ever sees the line). Prompts for a user name (unless `-UserName`/a bare
+   * positional was given) then a masked password, and binds a real
+   * `PSCredentialValue` — not a plain string — to the target variable.
+   */
+  private async tryGetCredentialIntercept(line: string): Promise<SubShellResult | null> {
+    if (!this._broker) return null;
+    if (!this._broker.capabilities().interactive) return null;
+    const parsed = parseGetCredential(line);
+    if (!parsed) return null;
+
+    let userName = parsed.userName;
+    if (!userName) {
+      const namePrompt = parsed.message ? `${parsed.message}\nUser name:` : 'User name:';
+      const entered = await this._broker.ask(namePrompt);
+      if (entered === null) return { output: [], exit: false, prompt: this.getPrompt() };
+      userName = entered;
+    }
+
+    const password = await this._broker.password(`Password for user ${userName}:`);
+    if (password === null) return { output: [], exit: false, prompt: this.getPrompt() };
+
+    const cred = makePSCredential(userName, password);
+    if (parsed.bindTo) {
+      this.interp.setVariable(parsed.bindTo, cred);
+      return { output: [], exit: false, prompt: this.getPrompt() };
+    }
+    return { output: formatPSCredentialTable(cred), exit: false, prompt: this.getPrompt() };
+  }
 }
 
 interface ParsedReadHost {
@@ -436,6 +535,28 @@ function parseReadHost(line: string): ParsedReadHost | null {
     if (i === 0 && !t.startsWith('-')) { prompt = t; continue; }
   }
   return { bindTo: m[1] ?? null, prompt, secure };
+}
+
+interface ParsedGetCredential {
+  bindTo: string | null;
+  userName: string | null;
+  message: string | null;
+}
+
+function parseGetCredential(line: string): ParsedGetCredential | null {
+  const m = line.match(/^\s*(?:\$([A-Za-z_][A-Za-z_0-9]*)\s*=\s*)?Get-Credential\b(.*)$/i);
+  if (!m) return null;
+  const tail = m[2].trim();
+  let userName: string | null = null;
+  let message: string | null = null;
+  const tokens = tokenizePS(tail);
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^-UserName$/i.test(t) && i + 1 < tokens.length) { userName = tokens[++i]; continue; }
+    if (/^-Message$/i.test(t) && i + 1 < tokens.length) { message = tokens[++i]; continue; }
+    if (i === 0 && !t.startsWith('-')) { userName = t; continue; }
+  }
+  return { bindTo: m[1] ?? null, userName, message };
 }
 
 function tokenizePS(line: string): string[] {

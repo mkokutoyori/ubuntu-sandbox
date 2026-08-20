@@ -24,7 +24,12 @@ export type DisconnectReason =
   | 'host_key_rejected'
   | 'protocol_error'
   | 'admin_disconnect'
-  | 'throttled';
+  /** La ligne a expiré faute d'activité — l'`exec-timeout` d'une VTY. */
+  | 'exec_timeout'
+  | 'throttled'
+  | 'client-alive-timeout'
+  | 'reset'
+  | 'closed';
 
 /**
  * Specific reason an auth attempt failed. Used by both the syslogger
@@ -39,6 +44,8 @@ export type AuthFailureReason =
   | 'empty_password_disabled'
   | 'invalid_user'
   | 'throttled'
+  | 'account_expired'
+  | 'password_expired'
   | 'unknown';
 
 export type SshServerEvent =
@@ -71,11 +78,45 @@ export type SshServerEvent =
       timestamp?: number;
     }
   | {
+      // Emitted when StrictModes refuses ~/.ssh or ~/.ssh/authorized_keys
+      // before even looking at the offered key. Real sshd writes this as
+      // `Authentication refused: bad ownership or modes for file <path>`.
+      kind: 'auth_strict_modes_refused';
+      user: string;
+      ip: string;
+      path: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
+      // Emitted when sshdAcceptsLogin rejects on policy grounds before
+      // any auth method runs. `reason` carries the human-readable
+      // motive: `PermitRootLogin no`, `not in AllowUsers`, `DenyUsers
+      // match`, etc.
+      kind: 'auth_policy_refused';
+      user: string;
+      ip: string;
+      reason: string;
+      port?: number;
+      timestamp?: number;
+    }
+  | {
       kind: 'auth_throttled';
       ip: string;
       failuresInWindow: number;
       windowSeconds: number;
       blockUntil: number;
+      timestamp?: number;
+    }
+  | {
+      // Supplementary PAM account-phase line emitted alongside an
+      // `auth_failure` (reason: 'password_expired') — real `pam_unix`
+      // writes a distinct `expired password for user <u>` line in
+      // addition to the generic authentication-failure line.
+      kind: 'auth_account_phase';
+      user: string;
+      ip: string;
+      port?: number;
       timestamp?: number;
     }
   | { kind: 'channel_opened'; user: string; channelType: ChannelType }

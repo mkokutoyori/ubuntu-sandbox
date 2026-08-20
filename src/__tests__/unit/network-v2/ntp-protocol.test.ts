@@ -62,8 +62,8 @@ describe('NTP — client / server exchange', () => {
     const client = new CiscoRouter('NTP-CLI');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     server.setEventBus(bus); client.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(server, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(client, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0');
 
@@ -91,8 +91,8 @@ describe('NTP — client / server exchange', () => {
     const client = new CiscoRouter('NTP-CLI');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     server.setEventBus(bus); client.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(server, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(client, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0');
 
@@ -128,8 +128,8 @@ describe('NTP — wire format', () => {
     server.setEventBus(bus); client.setEventBus(bus); sw.setEventBus(bus);
     const ca = new Cable('a'); const cb = new Cable('b');
     ca.setEventBus(bus); cb.setEventBus(bus);
-    ca.connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    cb.connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    ca.connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cb.connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(server, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(client, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0');
 
@@ -163,8 +163,8 @@ describe('NTP — show commands', () => {
     const client = new CiscoRouter('NTP-CLI');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     server.setEventBus(bus); client.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(server, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(client, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0');
     await server.executeCommand('enable');
@@ -180,14 +180,18 @@ describe('NTP — show commands', () => {
     expect(status).toMatch(/stratum 9/);
   });
 
-  it('show ntp lists the configured association', async () => {
+  it('show ntp associations lists the configured association', async () => {
     const r = new CiscoRouter('R1');
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
     await r.executeCommand('ntp server 10.0.0.1');
     await r.executeCommand('end');
-    const out = await r.executeCommand('show ntp');
-    expect(out).toMatch(/10\.0\.0\.1/);
+    // Lot N1 : ce cas tapait `show ntp` tout court, qui ne rendait le
+    // tableau que parce qu'un greedy avalait toute la queue de la
+    // commande -- le meme greedy qui faisait repondre la meme chose a
+    // `show ntp packets`. IOS veut une sous-commande.
+    expect(await r.executeCommand('show ntp associations')).toMatch(/10\.0\.0\.1/);
+    expect(await r.executeCommand('show ntp')).toMatch(/% Incomplete command|% Invalid input/);
   });
 
   it('running-config emits ntp server lines', async () => {
@@ -197,9 +201,14 @@ describe('NTP — show commands', () => {
     await r.executeCommand('ntp server 10.0.0.1 prefer');
     await r.executeCommand('ntp master 5');
     await r.executeCommand('end');
-    const cfg = r.getNtpAgent().runningConfigLines();
+    // Lot N1 : ce cas lisait `runningConfigLines()`, un SECOND rendu de
+    // configuration que rien n'appelait et qui contredisait celui que la
+    // machine rend vraiment (`ntp master` sans son stratum). Il est
+    // supprime ; l'assertion porte desormais sur le rendu reel, celui
+    // que `show running-config` traverse.
+    const cfg = r.getNtpAgent().asRunningConfigLines();
     expect(cfg).toContain('ntp server 10.0.0.1 prefer');
-    expect(cfg).toContain('ntp master');
+    expect(cfg).toContain('ntp master 5');
   });
 });
 
@@ -210,8 +219,8 @@ describe('NTP — Cisco↔Huawei interop', () => {
     const huawei = new HuaweiRouter('HW1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cisco.setEventBus(bus); huawei.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(cisco, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(huawei, 'GE0/0/0', '10.0.0.2', '255.255.255.0');
 
@@ -232,8 +241,8 @@ describe('NTP — agent clock', () => {
     const client = new CiscoRouter('NTP-CLI');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     server.setEventBus(bus); client.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(server.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(client.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     configIp(server, 'GigabitEthernet0/0', '10.0.0.1', '255.255.255.0');
     configIp(client, 'GigabitEthernet0/0', '10.0.0.2', '255.255.255.0');
 

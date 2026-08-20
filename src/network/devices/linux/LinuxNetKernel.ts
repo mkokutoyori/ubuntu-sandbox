@@ -18,9 +18,12 @@
 
 import type { Port } from '../../hardware/Port';
 import type { IPAddress, IPv6Address, SubnetMask, MACAddress, IPv4Packet } from '../../core/types';
-import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, PingResult } from '../EndHost';
+import type { ARPEntry, HostRouteEntry, HostIPv6RouteEntry, HostPolicyRule, PingResult } from '../EndHost';
 import type { DHCPClient } from '../../dhcp/DHCPClient';
-import type { DnsWireResponse } from '../../dns/DnsWire';
+import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
+import type { TcpStack } from '../../tcp/TcpStack';
+import type { TcpdumpDeps } from './network/tcpdump/TcpdumpRunner';
+import type { IScheduler } from '@/events/Scheduler';
 
 export interface TracerouteProbe {
   /** True if this probe got a response (Time Exceeded, echo-reply, Port Unreachable, …). */
@@ -52,6 +55,14 @@ export interface LinuxNetKernel {
   /** Ordered map of port name → Port, as seen by `ip`, `ifconfig`, `arp`. */
   getPorts(): ReadonlyMap<string, Port>;
 
+  /**
+   * Stable ifindex for an interface, assigned once when the name is first
+   * seen and never recomputed from list position. `lo` is always 1.
+   */
+  getIfIndex(name: string): number;
+
+  buildTcpdumpDeps(): TcpdumpDeps;
+
   /** Configure IPv4 address + mask on an interface. */
   configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean;
 
@@ -64,27 +75,61 @@ export interface LinuxNetKernel {
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
 
+  /** Configure an IPv6 address on an interface, inserting its connected route. */
+  configureIPv6Interface(name: string, address: IPv6Address, prefixLength: number): boolean;
+
   // ─── Routing ─────────────────────────────────────────────────────
   getRoutingTable(): HostRouteEntry[];
   getIPv6RoutingTable(): HostIPv6RouteEntry[];
   addStaticRoute(network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
-  removeRoute(network: IPAddress, mask: SubnetMask): boolean;
+  addDeviceRoute(network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
+  removeRoute(
+    network: IPAddress,
+    mask: SubnetMask,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): boolean;
   setDefaultGateway(gw: IPAddress): void;
   getDefaultGateway(): IPAddress | null;
   clearDefaultGateway(): void;
 
+  // ─── Policy routing (`ip rule` + `ip route ... table <ID>`) ──────
+  getRoutingTableFor(tableId: number): HostRouteEntry[];
+  addStaticRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, gw: IPAddress, metric?: number): boolean;
+  addDeviceRouteToTable(tableId: number, network: IPAddress, mask: SubnetMask, iface: string, metric?: number): boolean;
+  removeRouteFromTable(
+    tableId: number,
+    network: IPAddress,
+    mask: SubnetMask,
+    filter?: { nextHop?: IPAddress | null; metric?: number },
+  ): boolean;
+  addPolicyRule(rule: HostPolicyRule): void;
+  removePolicyRule(priority: number): boolean;
+  getPolicyRules(): HostPolicyRule[];
+  resolveRouteFromTable(
+    targetIP: IPAddress,
+    fromIP: IPAddress | null,
+  ): { iface: string; nextHopIP: IPAddress; table: number } | null;
+
   // ─── ARP ─────────────────────────────────────────────────────────
   getArpTable(): ReadonlyMap<string, ARPEntry>;
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void;
-  deleteARP(ip: string): boolean;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
+  deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;
+  /** RFC 5227 gratuitous ARP broadcast (`arping -A`/`-U`). False if the interface has no cable. */
+  sendGratuitousArp(iface: string, ip: IPAddress, mode: 'request' | 'reply'): boolean;
 
   // ─── L3 probes ───────────────────────────────────────────────────
+  /** True if the kernel has a route (default or specific) to reach `target`. */
+  hasRoute(target: IPAddress): boolean;
+
+  getScheduler(): IScheduler;
+
   pingSequence(
     target: IPAddress,
     count: number,
     timeoutMs?: number,
     ttl?: number,
+    opts?: { dataSize?: number; df?: boolean },
   ): Promise<PingResult[]>;
 
   /** ICMPv6 echo through the real NDP/route resolution path (`ping6`). */
@@ -94,11 +139,39 @@ export interface LinuxNetKernel {
     timeoutMs?: number,
   ): Promise<PingResult[]>;
 
-  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number): Promise<TracerouteHop[]>;
+  traceroute(target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number, timeoutMs?: number): Promise<TracerouteHop[]>;
+
+  /** Emit a single locally-originated UDP probe (for UDP-mode traceroute and the like). */
+  sendUdpProbe(target: IPAddress, destinationPort: number, sourcePort: number): boolean;
+
+  /**
+   * Synchronous TCP handshake probe used by nc / nmap-style service
+   * discovery. Accepts an IPv4 dotted string OR an IPv6 literal.
+   */
+  tcpProbe(target: string, port: number): boolean;
+
+  tcpConnectOutcome(target: string, port: number): 'open' | 'refused' | 'timeout';
+
+  /** Le service systemd-resolved de l'hôte (stub, cache, config par lien). */
+  getResolvedService(): import('./net/ResolvedService').ResolvedService;
+  /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */
+  publishResolvedState(): void;
+  /** Ouvre ou ferme les ports LLMNR/mDNS selon la configuration courante. */
+  syncLinkLocalResponders(): void;
+  /** L'agent mDNS de l'hôte — parcours et résolution DNS-SD. */
+  getMdnsAgent(): import('@/network/mdns/MdnsAgent').MdnsAgent;
+
+  /** Voisins LLDP découverts sur le câble, tous ports ou un seul. */
+  getLldpNeighbors(iface?: string): import('../../lldp/LldpAgent').LldpNeighbor[];
 
   // ─── DHCP client ─────────────────────────────────────────────────
   getDhcpClient(): DHCPClient;
   autoDiscoverDHCPServers(): void;
+  /** Real DHCPv6 SOLICIT->ADVERTISE->REQUEST->REPLY exchange (RFC 8415). */
+  requestDhcpv6Lease(iface: string, verbose?: boolean): string;
+
+  /** DHCPv6 sans etat : INFORMATION-REQUEST, configuration sans adresse. */
+  requestDhcpv6Information(iface: string, verbose?: boolean): string;
 
   // ─── Forwarding / NAT (router-layer) ─────────────────────────────
   setIpForward(enabled: boolean): void;
@@ -122,12 +195,24 @@ export interface LinuxNetKernel {
    */
   resolveHostname(name: string): Promise<IPAddress | null>;
 
+  /** IPv6 counterpart of `resolveHostname` — same NSS `hosts` lookup,
+   *  filtered to AF_INET6 records, for `ping6`/`ping -6`. */
+  resolveHostname6(name: string): Promise<IPv6Address | null>;
+
   /**
-   * Send a raw DNS query to a server over UDP/53 through the simulated
-   * network. Used by dig/nslookup/host. Resolves to null on timeout.
+   * Synchronous variant of the same NSS `hosts: files dns` lookup —
+   * `curl`/`wget` (PRD-Windows-Server.md §5 P11) need a real hostname
+   * resolution step before dialing, but their own TCP round trip is
+   * synchronous in this simulator, so a Promise-returning API would just
+   * add an artificial microtask hop for no benefit.
    */
-  queryDns(serverIP: string, name: string, qtype: string, timeoutMs?: number): Promise<DnsWireResponse | null>;
+  resolveHostnameSync(name: string): IPAddress | null;
+
+  queryDns: DnsQueryFn;
 
   /** Read a file from the virtual filesystem (returns null if not found). */
   readFile(path: string): string | null;
+
+  /** Raw TCP stack access for client protocols hosted at this layer (HTTP dial for curl/wget). */
+  getTcpStack(): TcpStack;
 }

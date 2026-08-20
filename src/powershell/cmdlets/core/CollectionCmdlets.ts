@@ -13,7 +13,9 @@ import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { formatTable as renderTable, formatList as renderList } from '@/network/devices/windows/PSPipeline';
+import { formatTable as renderTable, formatList as renderList, type PSObject } from '@/network/devices/windows/PSPipeline';
+
+const GROUP_KEY_DELIMITER = '\u0000';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -355,11 +357,24 @@ export class SelectObjectCmdlet implements ICmdlet {
     }
 
     if (expandProp) {
-      return items.map(item => {
+      // Real PowerShell's output stream enumerates a collection-valued
+      // property automatically — `Select -ExpandProperty ArrayProp` on a
+      // single input object emits each array element as its own pipeline
+      // object (not one object wrapping the whole array), so a further
+      // `| Select-Object ...` stage downstream sees the individual items.
+      const expanded = items.flatMap(item => {
         const src = item as Record<string, PSValue>;
         const key = Object.keys(src).find(k => k.toLowerCase() === expandProp.toLowerCase()) ?? expandProp;
-        return src[key] ?? null;
+        const val = src[key] ?? null;
+        return Array.isArray(val) ? val : [val];
       });
+      // A pipeline that ends up with exactly one object on it is that one
+      // object, not a 1-element collection (same convention already
+      // applied to other single-result pipeline/output paths in
+      // PSRuntime.ts) — otherwise `$x = ... | Select -ExpandProperty Foo`
+      // followed by `$x -eq "bar"` compares an array to a string and
+      // always reports false, even though `$x` prints as "bar".
+      return expanded.length === 1 ? expanded[0] : expanded;
     }
 
     if (rawProps.length === 0) return items;
@@ -469,7 +484,7 @@ export class SortObjectCmdlet implements ICmdlet {
     if (uniq) {
       const seen = new Set<string>();
       result = sorted.filter(item => {
-        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join('');
+        const key = keyArgs.map(k => psValueToString(keyVal(item, k))).join(GROUP_KEY_DELIMITER);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -601,24 +616,60 @@ export class TeeObjectCmdlet implements ICmdlet {
 
 // ─── Compare-Object ───────────────────────────────────────────────────────
 
+function flattenPropertyNames(raw: PSValue): string[] {
+  return toArray(raw).map(v => psValueToString(v)).filter(n => n.length > 0);
+}
+
+function propertyKey(v: PSValue, props: string[]): string {
+  const src = (v ?? {}) as Record<string, PSValue>;
+  return props
+    .map(p => {
+      const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
+      return psValueToString(src[key] ?? null);
+    })
+    .join(GROUP_KEY_DELIMITER);
+}
+
+function projectProperties(v: PSValue, props: string[]): Record<string, PSValue> {
+  const src = (v ?? {}) as Record<string, PSValue>;
+  const out: Record<string, PSValue> = {};
+  for (const p of props) {
+    const key = Object.keys(src).find(k => k.toLowerCase() === p.toLowerCase()) ?? p;
+    out[key] = src[key] ?? null;
+  }
+  return out;
+}
+
 export class CompareObjectCmdlet implements ICmdlet {
   readonly name = 'compare-object';
   readonly parameters = ['ReferenceObject', 'DifferenceObject', 'Property', 'IncludeEqual', 'ExcludeDifferent', 'PassThru', 'CaseSensitive'] as const;
   readonly aliases = ['diff', 'compare'] as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const ref          = toArray(ctx.named['referenceobject']);
-    const diff         = toArray(ctx.named['differenceobject'] ?? ctx.positional[0]);
-    const includeEqual = isTruthy(ctx.named['includeequal'] ?? false);
+    const ref             = toArray(ctx.named['referenceobject']);
+    const diff            = toArray(ctx.named['differenceobject'] ?? ctx.positional[0]);
+    const includeEqual    = isTruthy(ctx.named['includeequal'] ?? false);
+    const excludeDifferent = isTruthy(ctx.named['excludedifferent'] ?? false);
+    const passThru        = isTruthy(ctx.named['passthru'] ?? false);
+    const props           = ctx.named['property'] !== undefined ? flattenPropertyNames(ctx.named['property']) : [];
+
+    const keyOf = (v: PSValue): string => props.length > 0 ? propertyKey(v, props) : psValueToString(v);
+    const project = (v: PSValue, side: string): Record<string, PSValue> => {
+      if (props.length === 0) return { InputObject: v, SideIndicator: side };
+      const base = passThru ? (v ?? {}) as Record<string, PSValue> : projectProperties(v, props);
+      return { ...base, SideIndicator: side };
+    };
 
     const out: Record<string, PSValue>[] = [];
-    const refSet  = new Set(ref.map(v => psValueToString(v)));
-    const diffSet = new Set(diff.map(v => psValueToString(v)));
+    const refSet  = new Set(ref.map(keyOf));
+    const diffSet = new Set(diff.map(keyOf));
 
-    for (const v of ref)  if (!diffSet.has(psValueToString(v))) out.push({ InputObject: v, SideIndicator: '<=' });
-    for (const v of diff) if (!refSet.has(psValueToString(v)))  out.push({ InputObject: v, SideIndicator: '=>' });
+    if (!excludeDifferent) {
+      for (const v of ref)  if (!diffSet.has(keyOf(v))) out.push(project(v, '<='));
+      for (const v of diff) if (!refSet.has(keyOf(v)))  out.push(project(v, '=>'));
+    }
     if (includeEqual) {
-      for (const v of ref) if (diffSet.has(psValueToString(v))) out.push({ InputObject: v, SideIndicator: '==' });
+      for (const v of ref) if (diffSet.has(keyOf(v))) out.push(project(v, '=='));
     }
     return out;
   }
@@ -689,7 +740,7 @@ export class FormatTableCmdlet implements ICmdlet {
             ? it as Record<string, PSValue>
             : { Value: it } as Record<string, PSValue>);
     const autoSize = ctx.named['autosize'] === true || ctx.named['autosize'] === 'true';
-    const rendered = renderTable(objects as Array<Record<string, unknown>>, autoSize ? '-AutoSize' : '');
+    const rendered = renderTable(objects as unknown as PSObject[], autoSize ? '-AutoSize' : '');
     if (ctx.named['hidetableheaders'] === true) {
       return rendered.split('\n').slice(2).join('\n');
     }
@@ -726,7 +777,7 @@ export class FormatListCmdlet implements ICmdlet {
         for (const c of cols) rec[c.name] = c.get(item) ?? '';
         return rec;
       });
-    return renderList(objects as Array<Record<string, unknown>>, '');
+    return renderList(objects as unknown as PSObject[], '');
   }
 }
 

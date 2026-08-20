@@ -92,7 +92,7 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     );
     return success
       ? ok(undefined)
-      : err({ kind: 'IO_ERROR', message: `${path}: write failed` });
+      : err({ kind: 'IO_ERROR', message: `Couldn't open remote file: Permission denied` });
   }
 
   mkdir(path: string): Result<void> {
@@ -135,6 +135,43 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     return this.vfs.chown(path, uid, gid)
       ? ok(undefined)
       : err({ kind: 'IO_ERROR', message: `${path}: chown failed` });
+  }
+
+  // ── ACLs ────────────────────────────────────────────────────────────
+  // `PermissionCheckingFSDecorator` asks its base for these, optionally.
+  // Only the client-side `VfsSftpFileSystem` answered, so a `setfacl`
+  // deny stopped a transfer resolved in memory and let the same one
+  // through over the wire — the server is where it has to be enforced.
+
+  checkAclAccess(path: string, user: string, groups: readonly string[], need: number): boolean | null {
+    return this.vfs.checkAclAccess?.(path, user, groups, need) ?? null;
+  }
+
+  hasAcl(path: string): boolean {
+    return this.vfs.hasAcl?.(path) ?? false;
+  }
+
+  // ── symlinks (optional capability) ──────────────────────────────────
+
+  createSymlink(linkPath: string, targetPath: string): Result<void> {
+    const success = this.vfs.createSymlink(linkPath, targetPath, this.defaultUid, this.defaultGid);
+    return success
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${linkPath}: symlink failed` });
+  }
+
+  readSymlink(path: string): Result<string> {
+    const inode = this.vfs.lstat(path);
+    if (!inode) return err({ kind: 'IO_ERROR', message: `${path}: no such file` });
+    if (inode.type !== 'symlink') return err({ kind: 'IO_ERROR', message: `${path}: not a symlink` });
+    return ok(inode.target);
+  }
+
+  createHardLink(newPath: string, existingPath: string): Result<void> {
+    const success = this.vfs.createHardLink(newPath, existingPath);
+    return success
+      ? ok(undefined)
+      : err({ kind: 'IO_ERROR', message: `${newPath}: hard link to ${existingPath} failed` });
   }
 }
 

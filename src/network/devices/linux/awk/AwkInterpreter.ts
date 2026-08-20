@@ -561,6 +561,7 @@ export class AwkInterpreter {
       case 'log': return Math.log(toNum(this.eval(args[0])));
       case 'sqrt': return Math.sqrt(toNum(this.eval(args[0])));
       case 'int': return Math.trunc(toNum(this.eval(args[0])));
+      case 'strtonum': return this.biStrtonum(args);
       case 'rand': return this.rand();
       case 'srand': return this.srand(args);
       case 'system': return 0;
@@ -587,6 +588,22 @@ export class AwkInterpreter {
     if (m < 1) { if (hasLen) len += (m - 1); m = 1; }
     if (len < 0) len = 0;
     return s.substr(m - 1, len);
+  }
+
+  /** gawk `strtonum(str)` — parse a hex (`0x…`), octal (`0…`), or decimal
+   *  string as a C-language numeric constant, unlike the looser coercion
+   *  ordinary string-to-number context uses (which never treats "0x..."
+   *  as hex). Common in scripts decoding /proc/net/{tcp,udp}'s hex ports. */
+  private biStrtonum(args: Expr[]): Cell {
+    const raw = toStr(this.eval(args[0]), this.convfmt()).trim();
+    const m = /^([+-]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)/.exec(raw);
+    if (!m) return 0;
+    const sign = m[1] === '-' ? -1 : 1;
+    const body = m[2];
+    const value = /^0[xX]/.test(body) ? parseInt(body, 16)
+      : /^0[0-7]+$/.test(body) ? parseInt(body, 8)
+      : parseFloat(body);
+    return sign * value;
   }
 
   private biIndex(args: Expr[]): Cell {
@@ -670,6 +687,11 @@ export class AwkInterpreter {
     const s = toStr(this.eval(args[0]), this.convfmt());
     const ere = args[1].kind === 'regex' ? args[1].value : toStr(this.eval(args[1]), this.convfmt());
     const m = compileEre(ere).exec(s);
+    if (args.length > 2) {
+      const arr = this.getArray((args[2] as { name: string }).name);
+      arr.clear();
+      if (m) m.forEach((g, i) => arr.set(String(i), new StrNum(g ?? '')));
+    }
     if (!m) { this.globals.set('RSTART', 0); this.globals.set('RLENGTH', -1); return 0; }
     this.globals.set('RSTART', m.index + 1);
     this.globals.set('RLENGTH', m[0].length);

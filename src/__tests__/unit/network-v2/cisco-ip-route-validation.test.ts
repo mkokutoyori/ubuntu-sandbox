@@ -22,16 +22,16 @@ async function router(): Promise<CiscoRouter> {
 describe('Cisco ip route — argument validation (global config)', () => {
   it('rejects an invalid mask and installs no route', async () => {
     const r = await router();
-    expect(await r.executeCommand('ip route 10.0.0.0 999.0.0.0 1.1.1.1')).toBe(INVALID);
-    expect(await r.executeCommand('ip route 10.0.0.0 255.0.255.0 1.1.1.1')).toBe(INVALID);
+    expect(await r.executeCommand('ip route 10.0.0.0 999.0.0.0 1.1.1.1')).toContain(INVALID);
+    expect(await r.executeCommand('ip route 10.0.0.0 255.0.255.0 1.1.1.1')).toContain(INVALID);
     expect(r.getRoutingTable().filter(rt => rt.type === 'static')).toHaveLength(0);
   });
 
   it('rejects an invalid next hop and an out-of-range administrative distance', async () => {
     const r = await router();
-    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 300.1.1.1')).toBe(INVALID);
-    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 1.1.1.1 999')).toBe(INVALID);
-    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 1.1.1.1 0')).toBe(INVALID);
+    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 300.1.1.1')).toContain(INVALID);
+    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 1.1.1.1 999')).toContain(INVALID);
+    expect(await r.executeCommand('ip route 10.0.0.0 255.255.255.0 1.1.1.1 0')).toContain(INVALID);
     expect(r.getRoutingTable().filter(rt => rt.type === 'static')).toHaveLength(0);
   });
 

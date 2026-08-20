@@ -64,6 +64,7 @@ const STANDARD_DEFINITIONS: ReadonlyArray<Omit<ServicePortDefinition, 'aliases'>
   { name: 'ldap', port: 389, protocol: 'tcp', comment: 'Lightweight Directory Access Protocol' },
   { name: 'https', port: 443, protocol: 'tcp', comment: 'HTTP protocol over TLS/SSL' },
   { name: 'microsoft-ds', port: 445, protocol: 'tcp', comment: 'Microsoft Directory Services (SMB)' },
+  { name: 'smtps', port: 465, protocol: 'tcp', aliases: ['submissions', 'ssmtp'], comment: 'SMTP over TLS (implicit)' },
   { name: 'isakmp', port: 500, protocol: 'udp', comment: 'IPsec ISAKMP / IKE' },
   { name: 'syslog', port: 514, protocol: 'udp', comment: 'Syslog' },
   { name: 'submission', port: 587, protocol: 'tcp', comment: 'Mail Message Submission' },

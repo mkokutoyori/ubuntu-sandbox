@@ -511,6 +511,7 @@ export function buildHuaweiIKEPeerCommands(
       if (peer.preSharedKey) {
         eng(ctx).addPreSharedKey(peer.address, peer.preSharedKey);
       }
+      eng(ctx).rebindIkePeerAddress(peerName, peer.address);
     }
     return '';
   });
@@ -636,6 +637,8 @@ export function buildHuaweiIPSecProposalCommands(
     const algoMap: Record<string, string> = {
       'des': 'esp-des', '3des': 'esp-3des',
       'aes-128': 'esp-aes', 'aes-192': 'esp-aes 192', 'aes-256': 'esp-aes 256',
+      'gcm-128': 'esp-gcm', 'aes-128-gcm': 'esp-gcm',
+      'gcm-256': 'esp-gcm 256', 'aes-256-gcm': 'esp-gcm 256',
     };
     const raw = args[0]?.toLowerCase() || 'aes-128';
     const transform = algoMap[raw] || `esp-${raw}`;
@@ -683,7 +686,9 @@ export function buildHuaweiIPSecPolicyCommands(
     if (!name || seq === null) return 'Error: No IPSec policy selected.';
     const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
     const peerName = args[0] || '';
-    entry.peers = [peerName];
+    entry.ikePeerName = peerName;
+    const peer = eng(ctx).getOrCreateIKEv2Keyring('default').peers.get(peerName);
+    entry.peers = peer && peer.address !== '0.0.0.0' ? [peer.address] : [];
     return '';
   });
 
@@ -691,6 +696,14 @@ export function buildHuaweiIPSecPolicyCommands(
     const name = ctx.getSelectedIPSecPolicy();
     const seq = ctx.getSelectedIPSecPolicySeq();
     if (!name || seq === null) return 'Error: No IPSec policy selected.';
+    if (seq === 0) {
+      // Entered via 'ipsec profile NAME' (tunnel-protection profile), not a
+      // numbered crypto-map entry — real VRP 'ipsec policy' sequence numbers
+      // start at 1, so seq 0 is the profile-mode sentinel set by that command.
+      const profile = eng(ctx).getOrCreateIPSecProfile(name);
+      profile.transformSetName = args.filter(a => a.trim())[0] || '';
+      return '';
+    }
     const entry = eng(ctx).getOrCreateCryptoMapEntry(name, seq);
     entry.transformSets = args.filter(a => a.trim());
     return '';
@@ -1143,7 +1156,11 @@ export function registerHuaweiIPSecDisplayCommands(
     return lines.join('\n');
   });
 
-  trie.register('display ikev2 sa', 'Display IKEv2 SAs', () => 'Info: No IKEv2 SAs.');
+  trie.register('display ikev2 sa', 'Display IKEv2 SAs', () => {
+    const e = engOrNull(getRouter());
+    if (!e) return 'Info: No IKEv2 SAs.';
+    return e.showCryptoIKEv2SA?.() ?? 'Info: No IKEv2 SAs.';
+  });
 
   trie.register('display ipsec sa verbose', 'Display detailed IPSec SAs', () => {
     const e = engOrNull(getRouter());
@@ -1217,15 +1234,6 @@ export function registerHuaweiIPSecDisplayCommands(
     return 'Info: IPSec debugging is off.';
   });
 
-  trie.register('undo debugging all', 'Disable all debugging', () => {
-    const e = engOrNull(getRouter());
-    if (e) {
-      e.setDebug('isakmp', false);
-      e.setDebug('ipsec', false);
-      e.setDebug('ikev2', false);
-    }
-    return 'Info: All debugging turned off.';
-  });
 
   // ── IKEv2 display commands ────────────────────────────────────
 

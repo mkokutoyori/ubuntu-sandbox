@@ -37,6 +37,17 @@ export class PrivilegeEnforcer {
 
   private get currentUser(): string { return this.context.currentUser; }
 
+  /**
+   * The roles the session has enabled, or `null` when every granted role
+   * counts. Read from the live session so a `SET ROLE` issued mid-session
+   * takes effect on the very next statement.
+   */
+  private get enabledRoles(): ReadonlySet<string> | null {
+    const session = this.context.session as
+      { getEnabledRoles?: () => ReadonlySet<string> | null } | undefined;
+    return session?.getEnabledRoles?.() ?? null;
+  }
+
   /** Throws ORA-01031 if the current user lacks every one of the listed system privileges. */
   requireSystemPrivilege(...privileges: string[]): void {
     const user = this.currentUser;
@@ -48,7 +59,7 @@ export class PrivilegeEnforcer {
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
     for (const p of privileges) {
-      if (engine.privileges.hasSystemPrivilege(user, p)) return;
+      if (engine.privileges.hasSystemPrivilege(user, p, this.enabledRoles)) return;
     }
     throw new OracleError(1031, 'insufficient privileges');
   }
@@ -64,7 +75,7 @@ export class PrivilegeEnforcer {
     if (targetSchema.toUpperCase() === user) return; // own schema
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
-    if (!engine.privileges.hasSystemPrivilege(user, anyPrivilege)) {
+    if (!engine.privileges.hasSystemPrivilege(user, anyPrivilege, this.enabledRoles)) {
       throw new OracleError(1031, 'insufficient privileges');
     }
   }
@@ -83,13 +94,52 @@ export class PrivilegeEnforcer {
     if (targetUpper === user) return;
     const engine = this.catalog.getSecurityEngine();
     if (!engine) return;
-    if (engine.privileges.hasSystemPrivilege(user, `${operation} ANY TABLE`)) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.hasSystemPrivilege(user, `${operation} ANY TABLE`, enabled)) return;
     const objNameUpper = objectName.toUpperCase();
-    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper)) return;
+    if (engine.privileges.hasObjectPrivilege(user, operation, targetUpper, objNameUpper, enabled)) return;
     const hasAnyObjectPriv = OBJECT_PRIVILEGE_KINDS.some(op =>
-      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper));
+      engine.privileges.hasObjectPrivilege(user, op, targetUpper, objNameUpper, enabled));
     if (hasAnyObjectPriv) throw new OracleError(1031, 'insufficient privileges');
     throw new OracleError(942, 'table or view does not exist');
+  }
+
+  /**
+   * The columns the current user may touch for `operation` on the object,
+   * or `null` when no column-level restriction applies. Callers use the
+   * `null` answer to skip building a column list at all, so the ordinary
+   * owner/DBA/table-privilege path stays exactly as cheap as before.
+   */
+  columnRestriction(
+    targetSchema: string, objectName: string, operation: DmlOperation,
+  ): ReadonlySet<string> | null {
+    const user = this.currentUser;
+    if (user === 'SYS') return null;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return null;
+    return engine.privileges.getColumnRestriction(
+      user, operation, targetSchema.toUpperCase(), objectName.toUpperCase(), this.enabledRoles);
+  }
+
+  /**
+   * Throws ORA-01031 when the statement touches a column the current user
+   * was not granted. A table-level grant covers every column, a column
+   * grant only its own, and the two add up — so the whole check collapses
+   * to "is every requested column inside the restriction set".
+   *
+   * Oracle refuses the statement as a whole: a single ungranted column in
+   * an otherwise-permitted list is enough, and nothing is silently pruned.
+   */
+  requireColumnAccess(
+    targetSchema: string, objectName: string, operation: DmlOperation, columns: Iterable<string>,
+  ): void {
+    const granted = this.columnRestriction(targetSchema, objectName, operation);
+    if (granted === null) return;
+    for (const col of columns) {
+      if (!granted.has(col.toUpperCase())) {
+        throw new OracleError(1031, 'insufficient privileges');
+      }
+    }
   }
 
   /**
@@ -124,6 +174,67 @@ export class PrivilegeEnforcer {
   }
 
   /**
+   * Throws ORA-01031 unless the current user may hand out every listed
+   * system privilege or role: SYS, DBA, `GRANT ANY PRIVILEGE`/`GRANT ANY
+   * ROLE`, or — the point of this check — holding that very privilege or
+   * role `WITH ADMIN OPTION`. Delegation is per privilege: the option on
+   * one says nothing about another.
+   */
+  requireGrantableSystemPrivileges(names: string[]): void {
+    const user = this.currentUser;
+    if (user === 'SYS') return;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.isDba(user, enabled)) return;
+
+    for (const name of names) {
+      const upper = name.toUpperCase();
+      const isRole = this.catalog.roleExists(upper);
+      const blanket = isRole ? 'GRANT ANY ROLE' : 'GRANT ANY PRIVILEGE';
+      if (engine.privileges.hasSystemPrivilege(user, blanket, enabled)) continue;
+      const delegated = isRole
+        ? this.catalog.getRoleGrants().some(
+          rg => rg.grantee === user && rg.role === upper && rg.adminOption)
+        : this.catalog.getSysPrivilegeGrants().some(
+          p => p.grantee === user && p.privilege === upper && p.grantable);
+      if (!delegated) throw new OracleError(1031, 'insufficient privileges');
+    }
+  }
+
+  /**
+   * Throws ORA-01927 unless the current user may take back the listed
+   * object privileges from `grantees`. Oracle lets you revoke only what
+   * you granted yourself, short of `GRANT ANY OBJECT PRIVILEGE`.
+   */
+  requireRevokableObjectPrivileges(
+    schema: string, objectName: string, privileges: string[], grantees: string[],
+  ): void {
+    const user = this.currentUser;
+    if (user === 'SYS') return;
+    const engine = this.catalog.getSecurityEngine();
+    if (!engine) return;
+    const enabled = this.enabledRoles;
+    if (engine.privileges.isDba(user, enabled)) return;
+    if (engine.privileges.hasSystemPrivilege(user, 'GRANT ANY OBJECT PRIVILEGE', enabled)) return;
+
+    const sch = schema.toUpperCase();
+    const obj = objectName.toUpperCase();
+    const rows = this.catalog.getTablePrivilegeGrants();
+    for (const grantee of grantees) {
+      const g = grantee.toUpperCase();
+      for (const priv of privileges) {
+        const p = priv.toUpperCase();
+        const row = rows.find(r =>
+          r.grantee === g && r.privilege === p && r.objectSchema === sch && r.objectName === obj);
+        if (row && (row.grantor ?? 'SYS') !== user) {
+          throw new OracleError(1927, 'cannot REVOKE privileges you did not grant');
+        }
+      }
+    }
+  }
+
+  /**
    * Throws ORA-01031 unless the current user may grant the listed object
    * privileges on `schema.objectName`: owner, SYS, DBA, or holder of every
    * privilege WITH GRANT OPTION.
@@ -132,7 +243,7 @@ export class PrivilegeEnforcer {
     const user = this.currentUser;
     if (user === 'SYS' || schema === user) return;
     const engine = this.catalog.getSecurityEngine();
-    if (!engine || engine.privileges.isDba(user)) return;
+    if (!engine || engine.privileges.isDba(user, this.enabledRoles)) return;
     const tabPrivs = this.catalog.getTablePrivilegeGrants();
     const holdsAllWithGrantOption = privileges.every(priv =>
       tabPrivs.some(p =>

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, beforeEach } from 'vitest';
 import {
   SshdServerConfig,
   type SshdAddressFamily,
@@ -254,7 +254,7 @@ describe('§R — SshHostKeyMaterial faithfully models a server host key', () =>
 describe('§R2 — SshHostKeyset manages multiple algorithms per device', () => {
   test('default keyset ships ed25519 + rsa + ecdsa', () => {
     const ks = SshHostKeyset.defaults('r1');
-    expect(ks.algorithms().sort()).toEqual<SshHostKeyAlgorithm[]>(
+    expect([...ks.algorithms()].sort()).toEqual<SshHostKeyAlgorithm[]>(
       ['ecdsa-sha2-nistp256', 'ssh-ed25519', 'ssh-rsa'].sort() as SshHostKeyAlgorithm[],
     );
     expect(ks.get('ssh-ed25519')?.algorithm).toBe('ssh-ed25519');
@@ -560,7 +560,7 @@ describe('§U — Router & LinuxMachine expose a CrossVendorSshHost facade', () 
     const r = new CiscoRouter('r1', 0, 0);
     await r.executeCommand('enable');
     await r.executeCommand('configure terminal');
-    await r.executeCommand('banner motd # AUTH NOTICE #');
+    await r.executeCommand('banner motd #AUTH NOTICE#');
     await r.executeCommand('end');
     expect(r.getSshHost().banner).toBe('AUTH NOTICE');
   });

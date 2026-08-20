@@ -9,10 +9,15 @@
 import type { ICLIDevice } from '@/network';
 import { CLITerminalSession } from './CLITerminalSession';
 import { TerminalTheme, SessionType, withTimeout, DeviceOfflineError } from './TerminalSession';
-import { HuaweiFlowBuilder } from '@/terminal/flows/HuaweiFlowBuilder';
 import type { InteractiveStep } from '@/terminal/core/types';
 import { Router } from '@/network/devices/Router';
-import type { CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import { Switch } from '@/network/devices/Switch';
+import type { CliLineKind, CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
+import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
+import type { AsyncJobHandle } from '@/terminal/async';
+import type { TerminalDebugSource } from '@/network/devices/diag/DebugBroadcast';
+import type { LoggingMonitorSource } from '@/network/devices/inspection/config/LoggingConfig';
+import { VRP_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDialect';
 
 const HUAWEI_THEME: TerminalTheme = {
   sessionType: 'huawei',
@@ -34,11 +39,11 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
-    if (device instanceof Router) {
+    if (device instanceof Router || device instanceof Switch) {
       this.vty = device.openVtySession();
       this.registerTearDown(() => {
         const s = this.vty;
-        if (s && device instanceof Router) device.closeVtySession(s);
+        if (s && (device instanceof Router || device instanceof Switch)) device.closeVtySession(s);
         this.vty = null;
       });
     }
@@ -47,13 +52,56 @@ export class HuaweiTerminalSession extends CLITerminalSession {
   getSessionType(): SessionType { return 'huawei'; }
   getTheme(): TerminalTheme { return HUAWEI_THEME; }
 
+  /** Real VRP cycles ambiguous candidates on repeated Tab (unlike IOS). */
+  protected override completionPolicy(): CompletionPolicy {
+    return new CyclingPolicy();
+  }
+
+  /**
+   * `?` inline help must read the vty's own swapped-in mode, exactly like
+   * Tab completion and the prompt already do — otherwise, right after
+   * entering `system-view`, `interface ?` falls back to the device's
+   * shared (pre-swap) state and wrongly answers "Unrecognized command"
+   * even though the vty's own mode is correct and Tab-completion on the
+   * exact same input works.
+   */
+  protected override resolveCliHelp(currentInput: string): string {
+    const dev = this.device;
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
+      return dev.cliHelpForVty(currentInput, this.vty);
+    }
+    return super.resolveCliHelp(currentInput);
+  }
+
+  protected override resolveCliTabCandidates(input: string): string[] {
+    const dev = this.device;
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
+      return dev.cliTabCandidatesForVty(input, this.vty);
+    }
+    return super.resolveCliTabCandidates(input);
+  }
+
+  protected override sshInteractiveVerbs(): string[] { return ['ssh', 'stelnet']; }
+
+  protected override onLineAssigned(kind: CliLineKind, index: number, recordId: string): void {
+    this.vty?.assignLine(kind, index, recordId);
+  }
+
+  protected override prepareAsRemoteUser(_user: string): void {
+    if (this.vty) {
+      this.vty.state.privilegeLevel = 15;
+    }
+    this.isBooting = false;
+    this.updatePrompt();
+  }
+
   protected override async executeOnDevice(
     command: string,
     timeoutMs?: number,
   ): Promise<string> {
     const dev = this.device;
     if (!dev.getIsPoweredOn()) throw new DeviceOfflineError(dev.getName());
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       const p = dev.executeCommandInVty(command, this.vty);
       return timeoutMs != null ? withTimeout(p, timeoutMs) : p;
     }
@@ -62,7 +110,7 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   override updatePrompt(): void {
     const dev = this.device;
-    if (this.vty && dev instanceof Router) {
+    if (this.vty && (dev instanceof Router || dev instanceof Switch)) {
       this.prompt = dev.getPromptForVty(this.vty);
     } else {
       this.prompt = this.cliDevice.getPrompt();
@@ -84,6 +132,16 @@ export class HuaweiTerminalSession extends CLITerminalSession {
 
   protected getCtrlZCommand(): string { return 'return'; }
   protected getPagerIndicator(): string { return '  ---- More ----'; }
+
+  protected getTelnetDialect(): TelnetDialect { return VRP_TELNET; }
+
+  protected isTopLevelExit(line: string): boolean {
+    const w = line.trim().toLowerCase();
+    if (w === 'logout') return true;
+    if (w !== 'quit') return false;
+    const mode = this.vty?.state.mode;
+    return mode === 'user' || mode === 'user-view';
+  }
 
   getInfoBarContent() {
     const deviceType = this.device.getType();
@@ -111,27 +169,78 @@ export class HuaweiTerminalSession extends CLITerminalSession {
     ];
   }
 
-  /**
-   * Huawei VRP interactive commands:
-   * - save → asks Are you sure to continue? [Y/N]
-   * - reset saved-configuration → warns and asks [Y/N]
-   * - reboot → confirms reboot [Y/N]
-   */
-  protected buildInteractiveFlow(command: string): InteractiveStep[] | null {
-    const lower = command.toLowerCase().trim();
+  // Interactive commands (save / reset saved-configuration / reboot) are
+  // declared by the VRP shells themselves (huaweiInteractionPlanFor) —
+  // the generic planner-driven buildInteractiveFlow in CLITerminalSession
+  // renders them. Nothing vendor-specific remains here.
 
-    if (lower === 'save') {
-      return HuaweiFlowBuilder.saveConfiguration();
+  private debugJob: AsyncJobHandle | null = null;
+  private debugUnsubscribe: (() => void) | null = null;
+  private monitorJob: AsyncJobHandle | null = null;
+  private monitorUnsubscribe: (() => void) | null = null;
+
+  protected override afterCommandExecuted(_command: string): void {
+    this.reconcileDebugSubscription();
+    this.reconcileTerminalMonitor();
+  }
+
+  private reconcileTerminalMonitor(): void {
+    const on = this.vty?.state.terminalMonitor ?? false;
+    if (!on && !this.monitorJob) return;
+    const src = (this.device as unknown as { getLoggingConfig?: () => LoggingMonitorSource | null }).getLoggingConfig?.();
+    if (on && src && !this.monitorJob) {
+      this.startMonitorSubscription(src);
+    } else if ((!on || !src) && this.monitorJob) {
+      this.monitorJob.cancel();
+      this.monitorJob = null;
     }
+  }
 
-    if (lower === 'reset saved-configuration') {
-      return HuaweiFlowBuilder.resetSavedConfiguration();
+  private startMonitorSubscription(src: LoggingMonitorSource): void {
+    this.monitorJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal monitor',
+      label: 'syslog monitor',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.monitorUnsubscribe = src.subscribeMonitor((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.monitorUnsubscribe?.();
+          this.monitorUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
+  }
+
+  private reconcileDebugSubscription(): void {
+    const svc = (this.device as unknown as { getHuaweiDebugService?: () => TerminalDebugSource }).getHuaweiDebugService?.();
+    if (!svc) return;
+    const wantSubscription = svc.hasAnyFlag() && (this.vty?.state.terminalDebugging ?? false);
+    if (wantSubscription && !this.debugJob) {
+      this.startDebugSubscription(svc);
+    } else if (!wantSubscription && this.debugJob) {
+      this.debugJob.cancel();
+      this.debugJob = null;
     }
+  }
 
-    if (lower === 'reboot') {
-      return HuaweiFlowBuilder.rebootConfirmation();
-    }
-
-    return null;
+  private startDebugSubscription(svc: TerminalDebugSource): void {
+    this.debugJob = this.startAsyncCommand({
+      mode: 'background',
+      kind: 'subscription',
+      command: 'terminal debugging',
+      label: 'VRP debug output',
+      run: (ctx) => new Promise<void>((resolve) => {
+        if (ctx.cancelled()) { resolve(); return; }
+        this.debugUnsubscribe = svc.subscribe((line) => ctx.sink.line(line));
+        ctx.onCancel(() => {
+          this.debugUnsubscribe?.();
+          this.debugUnsubscribe = null;
+          resolve();
+        });
+      }),
+    });
   }
 }

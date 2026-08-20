@@ -79,7 +79,7 @@ describe('InMemoryRmanCatalog — writer', () => {
   it('expirePiece on unknown key returns err BACKUP_KEY_NOT_FOUND', () => {
     const r = cat.expirePiece({ _tag: 'BackupKey', bsKey: 999, bpKey: 999, copy: 1 });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('BACKUP_KEY_NOT_FOUND');
+    if (r.ok === false) expect(r.error.code).toBe('BACKUP_KEY_NOT_FOUND');
   });
 
   it('deleteBackupSet removes both the set and its pieces, emits DELETE', () => {

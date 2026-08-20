@@ -10,21 +10,33 @@
  */
 
 import { SshSession, type SshSessionInit } from './SshSession';
+import type { UtmpSync } from './UtmpSync';
 
 export class SshSessionTable {
   private active = new Map<string, SshSession>();
   private history: SshSession[] = [];
   private nextPts = 0;
+  private sync: UtmpSync | null = null;
 
-  /** Open a new SSH session — returns the entity. */
+  attachUtmp(sync: UtmpSync): void { this.sync = sync; }
+
+  private toRecord(s: SshSession): { user: string; tty: string; fromIp: string; fromHost?: string; loginAt: number; closedAt?: number | null; shellPid?: number; uid?: number } {
+    return {
+      user: s.user, tty: s.tty, fromIp: s.fromIp, fromHost: s.fromHost,
+      loginAt: s.loginAt.getTime(),
+      closedAt: (s as unknown as { closedAt?: Date | null }).closedAt?.getTime() ?? null,
+      shellPid: s.shellPid, uid: s.uid,
+    };
+  }
+
   open(init: Omit<SshSessionInit, 'tty'> & { tty?: string }): SshSession {
     const tty = init.tty ?? this.allocateTty();
     const session = new SshSession({ ...init, tty });
     this.active.set(this.key(session), session);
+    this.sync?.openSession(this.toRecord(session));
     return session;
   }
 
-  /** Close (logout) a session by tty or session key. */
   close(ttyOrKey: string, reason: string = 'normal'): boolean {
     const key = ttyOrKey.includes('@') ? ttyOrKey : `${ttyOrKey}@*`;
     let removed = false;
@@ -33,10 +45,15 @@ export class SshSessionTable {
         s.close(reason);
         this.history.push(s);
         this.active.delete(k);
+        this.sync?.closeSession(s.tty, new Date());
         removed = true;
       }
     }
     return removed;
+  }
+
+  recordFailedLogin(user: string, fromIp: string): void {
+    this.sync?.appendFailure({ user, tty: 'ssh:notty', fromIp, at: Date.now() });
   }
 
   /** Sessions currently open. */

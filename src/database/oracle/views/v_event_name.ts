@@ -40,8 +40,10 @@ export const EVENT_CATALOGUE: ReadonlyArray<{
   // Other
   { id: 70, name: 'os thread startup', waitClass: 'Other', waitClassId: 0, params: ['', '', ''] },
   { id: 71, name: 'asynch descriptor resize', waitClass: 'Other', waitClassId: 0, params: ['outstanding #aio', 'current aio limit', 'new aio limit'] },
-  // Cluster (would be active on RAC)
+  // Cluster (active on RAC)
   { id: 80, name: 'gc current block 2-way', waitClass: 'Cluster', waitClassId: 3, params: ['', '', ''] },
+  { id: 81, name: 'gc cr request', waitClass: 'Cluster', waitClassId: 3, params: ['file#', 'block#', ''] },
+  { id: 82, name: 'gc buffer busy', waitClass: 'Cluster', waitClassId: 3, params: ['file#', 'block#', ''] },
 ];
 
 registerView({

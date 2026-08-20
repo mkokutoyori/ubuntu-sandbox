@@ -104,8 +104,8 @@ describe('NetFlow — export end-to-end', () => {
     const collector = new CiscoRouter('COL');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
 
@@ -145,8 +145,8 @@ describe('NetFlow — export end-to-end', () => {
         }
       }
     });
-    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cable.connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
 
@@ -167,8 +167,8 @@ describe('NetFlow — export end-to-end', () => {
     const collector = new CiscoRouter('COL');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
 
@@ -212,8 +212,8 @@ describe('NetFlow — flowSequence increments monotonically', () => {
     const collector = new CiscoRouter('COL');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
     r.getNetFlowAgent().setEnabled(true);
@@ -237,8 +237,8 @@ describe('NetFlow — Cisco↔Huawei interop', () => {
     const collector = new CiscoRouter('COL');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r.setEventBus(bus); collector.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(collector.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     collector.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.50'), new SubnetMask('255.255.255.0'));
 

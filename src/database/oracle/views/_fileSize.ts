@@ -30,3 +30,6 @@ export const DEFAULT_BLOCK_SIZE = 8192;
 export function bytesToBlocks(bytes: number, blockSize: number = DEFAULT_BLOCK_SIZE): number {
   return Math.floor(bytes / blockSize);
 }
+
+export const UNLIMITED_DATAFILE_BYTES = 34359721984;
+export const ROW_FOOTPRINT_BYTES = 200;

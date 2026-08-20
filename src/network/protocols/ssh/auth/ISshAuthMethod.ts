@@ -8,6 +8,11 @@ import type { Result } from '../Result';
 
 export type AuthMethodType = 'password' | 'publickey' | 'keyboard-interactive';
 
+/** Result of the PAM-equivalent account-phase check run after credentials verify. */
+export type AccountLifecycleVerdict =
+  | { ok: true }
+  | { ok: false; kind: 'account-expired' | 'password-expired' };
+
 /**
  * ISshAuthContext — server-side capabilities exposed to client auth methods.
  *
@@ -21,6 +26,12 @@ export interface ISshAuthContext {
   checkPublicKeyAsync?(user: string, publicKey: string): Promise<boolean>;
   getAttemptsRemaining(): number;
   getAvailableMethods(): readonly AuthMethodType[];
+  /**
+   * PAM account phase, consulted after credentials verify successfully
+   * (any auth method) but before the session is granted. Optional so
+   * non-Linux contexts (router/switch AAA) are unaffected.
+   */
+  checkAccountLifecycle?(user: string): AccountLifecycleVerdict;
 }
 
 /**

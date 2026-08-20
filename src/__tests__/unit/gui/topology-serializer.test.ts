@@ -30,19 +30,19 @@ beforeEach(() => {
 });
 
 describe('topology round-trip — end-host L3 configuration', () => {
-  it('preserves the default gateway of a PC', () => {
+  it('preserves the default gateway of a PC', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
     pc.setDefaultGateway(new IPAddress('192.168.1.1'));
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
-    const result = roundTrip(devices);
+    const result = await roundTrip(devices);
 
     const restored = [...result.deviceInstances.values()][0] as LinuxPC;
     expect(restored.getDefaultGateway()?.toString()).toBe('192.168.1.1');
   });
 
-  it('preserves static routes of a PC, including the metric', () => {
+  it('preserves static routes of a PC, including the metric', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
     expect(pc.addStaticRoute(
@@ -51,7 +51,7 @@ describe('topology round-trip — end-host L3 configuration', () => {
     )).toBe(true);
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
-    const result = roundTrip(devices);
+    const result = await roundTrip(devices);
 
     const restored = [...result.deviceInstances.values()][0] as LinuxPC;
     const statics = restored.getRoutingTable().filter(r => r.type === 'static');
@@ -62,7 +62,7 @@ describe('topology round-trip — end-host L3 configuration', () => {
     expect(statics[0].metric).toBe(42);
   });
 
-  it('preserves static routes of a router', () => {
+  it('preserves static routes of a router', async () => {
     const r1 = new CiscoRouter('R1');
     r1.configureInterface('GigabitEthernet0/0', new IPAddress('10.0.2.1'), new SubnetMask('255.255.255.252'));
     expect(r1.addStaticRoute(
@@ -71,7 +71,7 @@ describe('topology round-trip — end-host L3 configuration', () => {
     )).toBe(true);
     const devices = new Map<string, Equipment>([[r1.getId(), r1]]);
 
-    const result = roundTrip(devices);
+    const result = await roundTrip(devices);
 
     const restored = [...result.deviceInstances.values()][0] as CiscoRouter;
     const statics = restored.getRoutingTable().filter(r => r.type === 'static');
@@ -80,44 +80,44 @@ describe('topology round-trip — end-host L3 configuration', () => {
     expect(statics[0].nextHop?.toString()).toBe('10.0.2.2');
   });
 
-  it('does not duplicate connected routes on import', () => {
+  it('does not duplicate connected routes on import', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
-    const result = roundTrip(devices);
+    const result = await roundTrip(devices);
 
     const restored = [...result.deviceInstances.values()][0] as LinuxPC;
     const connected = restored.getRoutingTable().filter(r => r.type === 'connected');
     expect(connected.filter(r => r.iface === 'eth0')).toHaveLength(1);
   });
 
-  it('imports legacy files without the new optional fields', () => {
+  it('imports legacy files without the new optional fields', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
     const exported = JSON.parse(JSON.stringify(exportTopology('legacy', devices, []))) as TopologyExport;
     for (const d of exported.devices) {
-      delete (d as Record<string, unknown>).defaultGateway;
-      delete (d as Record<string, unknown>).staticRoutes;
+      delete (d as unknown as Record<string, unknown>).defaultGateway;
+      delete (d as unknown as Record<string, unknown>).staticRoutes;
     }
 
-    expect(() => importTopology(exported)).not.toThrow();
+    await expect(importTopology(exported)).resolves.toBeDefined();
   });
 
-  it('skips malformed routes/gateways instead of failing the whole import', () => {
+  it('skips malformed routes/gateways instead of failing the whole import', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     pc.configureInterface('eth0', new IPAddress('192.168.1.10'), new SubnetMask('255.255.255.0'));
     const devices = new Map<string, Equipment>([[pc.getId(), pc]]);
 
     const exported = JSON.parse(JSON.stringify(exportTopology('bad', devices, []))) as TopologyExport;
-    (exported.devices[0] as Record<string, unknown>).defaultGateway = 'not-an-ip';
-    (exported.devices[0] as Record<string, unknown>).staticRoutes = [
+    (exported.devices[0] as unknown as Record<string, unknown>).defaultGateway = 'not-an-ip';
+    (exported.devices[0] as unknown as Record<string, unknown>).staticRoutes = [
       { network: '999.999.0.0', mask: '255.255.0.0', nextHop: '192.168.1.254' },
     ];
 
-    const result = importTopology(exported);
+    const result = await importTopology(exported);
     const restored = [...result.deviceInstances.values()][0] as LinuxPC;
     expect(restored.getDefaultGateway()).toBeNull();
     expect(restored.getRoutingTable().filter(r => r.type === 'static')).toHaveLength(0);

@@ -13,6 +13,17 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { ProcessInfo, IProcessProvider } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { isPSCredential, getNetworkCredential } from '@/powershell/credential/PSCredential';
+import { parseCredentialArg } from './RemotingCmdlets';
+
+/** Accepts a real `PSCredentialValue` (from `Get-Credential`) or the legacy `"user:password"` string form. */
+function credentialOf(ctx: CmdletContext): { userName: string; password: string } | null {
+  const raw = ctx.named['credential'];
+  if (raw === undefined) return null;
+  if (isPSCredential(raw)) return getNetworkCredential(raw);
+  const { username, password } = parseCredentialArg(psValueToString(raw));
+  return { userName: username, password };
+}
 
 function requireProcesses(ctx: CmdletContext): IProcessProvider {
   if (!ctx.providers.processes) {
@@ -179,7 +190,7 @@ function emitMsg(ctx: CmdletContext, msg: string): void {
 export class StartProcessCmdlet implements ICmdlet {
   readonly name = 'start-process';
   readonly aliases = ['saps'] as const;
-  readonly parameters = ['FilePath', 'ArgumentList', 'WorkingDirectory', 'NoNewWindow', 'Wait', 'PassThru', 'Verb', 'WindowStyle'] as const;
+  readonly parameters = ['FilePath', 'ArgumentList', 'WorkingDirectory', 'NoNewWindow', 'Wait', 'PassThru', 'Verb', 'WindowStyle', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const filePath = psValueToString(
@@ -189,6 +200,25 @@ export class StartProcessCmdlet implements ICmdlet {
       ctx.emitError('Start-Process requires -FilePath');
       return null;
     }
+
+    // -Credential (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.7/P14): the
+    // PowerShell counterpart of `runas` — the process launches under the
+    // named identity only once its password has actually been checked,
+    // not merely accepted at face value.
+    let runAsUser: string | undefined;
+    const credential = credentialOf(ctx);
+    if (credential) {
+      const verified = ctx.providers.processes?.checkCredential?.(credential.userName, credential.password) ?? false;
+      if (!verified) {
+        ctx.emitError(
+          'Start-Process : This command cannot be executed due to the error: ' +
+          'The user name or password is incorrect.',
+        );
+        return null;
+      }
+      runAsUser = credential.userName;
+    }
+
     const argList = ctx.named['argumentlist'] ?? ctx.named['arguments'];
     const argString = argList === undefined ? undefined
       : Array.isArray(argList) ? argList.map(psValueToString).join(' ')
@@ -196,7 +226,7 @@ export class StartProcessCmdlet implements ICmdlet {
     // Derive a Windows-style image name from a bare command or a full path.
     const leaf = filePath.replace(/^["']|["']$/g, '').split(/[\\/]/).pop() ?? filePath;
     const imageName = /\.exe$/i.test(leaf) ? leaf : `${leaf}.exe`;
-    const proc = ctx.providers.processes?.startProcess?.(imageName, { arguments: argString });
+    const proc = ctx.providers.processes?.startProcess?.(imageName, { arguments: argString, user: runAsUser });
     if (ctx.named['passthru'] === true) {
       return proc
         ? { Id: proc.pid, Name: proc.name, Path: filePath } as Record<string, PSValue>

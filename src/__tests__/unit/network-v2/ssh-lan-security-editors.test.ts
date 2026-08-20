@@ -179,14 +179,17 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
 
   // SE16
   it('SE16 — appending an iptables rule via SSH is visible from local list', async () => {
+    // iptables requires root on real Ubuntu — `user` is in the sudo group
+    // (see LinuxCommandExecutor's default provisioning) but still needs an
+    // explicit `sudo` to elevate, matching real behaviour.
     await sshExec(
       lan.pc1,
       PC2_IP,
-      'iptables -A INPUT -p tcp --dport 80 -j ACCEPT',
+      'sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT',
     );
-    const local = await lan.pc2.executeCommand('iptables -L INPUT');
+    const local = await lan.pc2.executeCommand('sudo iptables -L INPUT');
     expect(local).toContain('tcp');
-    expect(local).toMatch(/dpt:80|80/);
+    expect(local).toMatch(/dpt:http\b/);
   });
 
   // SE17
@@ -194,12 +197,12 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
     await sshExec(
       lan.pc1,
       PC2_IP,
-      'iptables -A INPUT -p tcp --dport 22 -j ACCEPT',
+      'sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT',
     );
     // Per-chain packet/byte counters [N:M] change between two runs.
     const norm = (s: string) =>
       stripTrailing(s.replace(/\[\d+:\d+\]/g, '[*:*]'));
-    await expectStrict(lan, 'iptables-save', norm);
+    await expectStrict(lan, 'sudo iptables-save', norm);
   });
 
   // SE18
@@ -207,10 +210,10 @@ describe('SSH LAN — security, firewalls, editors, Oracle CLIs', () => {
     await sshExec(
       lan.pc1,
       PC2_IP,
-      'iptables -A INPUT -p tcp --dport 22 -j ACCEPT',
+      'sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT',
     );
-    await sshExec(lan.pc1, PC2_IP, 'iptables -F');
-    const out = await lan.pc2.executeCommand('iptables -L INPUT');
+    await sshExec(lan.pc1, PC2_IP, 'sudo iptables -F');
+    const out = await lan.pc2.executeCommand('sudo iptables -L INPUT');
     expect(out).not.toContain('dpt:22');
   });
 

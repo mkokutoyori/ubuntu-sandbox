@@ -25,6 +25,7 @@ import {
   parseSshArgs,
 } from '@/terminal/sessions/sshArgs';
 import { SshDynamicForwarder } from '@/network/protocols/ssh/SshDynamicForwarder';
+import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
   buildLan,
   assignIps,
@@ -39,7 +40,7 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
     resetCounters();
     MACAddress.resetCounter();
     Logger.reset();
-    Equipment.clearRegistry();
+    EquipmentRegistry.getInstance().clear();
     lan = buildLan();
     await assignIps(lan);
   });
@@ -161,9 +162,12 @@ describe('SSH LAN — dynamic forwarding (`ssh -D`)', () => {
       host: 'example.com',
       port: 80,
     });
-    // Server response starts with version 5 + status 0x00 (succeeded).
+    // The reply reports the far leg, and this forwarder has no tunnel end
+    // to dial from — so REP=0x05, "connection refused". It used to answer
+    // "succeeded" while bridging nothing at all (GAP.md §7.3); the relay
+    // case with a real server is in ssh-L-interactif-relaie.test.ts.
     expect(conn.lastWrite!.charCodeAt(0)).toBe(0x05);
-    expect(conn.lastWrite!.charCodeAt(1)).toBe(0x00);
+    expect(conn.lastWrite!.charCodeAt(1)).toBe(0x05);
   });
 });
 

@@ -14,6 +14,7 @@
 
 import { VirtualFileSystem } from './VirtualFileSystem';
 import { uptimeHeader } from './system/SystemInfo';
+import { loadSudoPolicy } from './iam/SudoPolicyEngine';
 import type { IEventBus } from '@/events/EventBus';
 import { GecosInfo } from './iam/GecosInfo';
 import {
@@ -26,6 +27,14 @@ import type { LinuxIamDomainEvent } from './iam/events';
 import { LoginDefs } from './iam/fs/LoginDefs';
 import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
+import { IAM_PATHS } from './iam/fs/IamPaths';
+import { parseAccountDatabase, SIMULATED_HASH_PREFIX } from './iam/fs/AccountDatabaseParser';
+import {
+  parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF,
+} from './nss/NssConfig';
+import type { NssSourceSpec, NssResult } from './nss/types';
+import { startNssWalk, type NssMerge } from './nss/chainWalk';
+import { SYNTH_PASSWD, SYNTH_GROUP } from './nss/SystemdNssSource';
 import { PasswordPolicy } from './iam/policy/PasswordPolicy';
 import type { PasswordQualityPolicyInit } from './iam/policy/PasswordQualityPolicy';
 import type { PasswordAgingPolicyInit } from './iam/policy/PasswordAgingPolicy';
@@ -82,11 +91,6 @@ export class LinuxUserManager {
   private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
   private passwords: Map<string, string> = new Map();
-  /** UID/GID allocation cursors — seeded from the {@link LoginDefs} policy. */
-  private nextUid: number;
-  private nextGid: number;
-  private nextSystemUid: number;
-  private nextSystemGid: number;
   currentUser = 'root';
   currentUid = 0;
   currentGid = 0;
@@ -113,10 +117,6 @@ export class LinuxUserManager {
     this.useraddDefaults = UseraddDefaults.defaults();
     this.iamFs = new IamFilesystem(vfs);
     this.passwordPolicy = PasswordPolicy.defaults();
-    this.nextUid = this.loginDefs.uidMin;
-    this.nextGid = this.loginDefs.gidMin;
-    this.nextSystemUid = this.loginDefs.sysUidMin;
-    this.nextSystemGid = this.loginDefs.sysGidMin;
     this.initDefaults();
   }
 
@@ -150,9 +150,14 @@ export class LinuxUserManager {
 
   private initDefaults(): void {
     // System users
+    // root's secret is written in the SAME shape `passwd` uses, so it
+    // round-trips through `/etc/shadow` like any other account's. Storing
+    // it only in memory (with a bare `x` on disk) made root the one account
+    // the file could not describe — and it silently lost its password the
+    // moment anything re-read the database.
     this.addUser(new LinuxUserAccount({
       username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
-      password: 'x', locked: false, systemAccount: true,
+      password: `${SIMULATED_HASH_PREFIX}admin`, locked: false, systemAccount: true,
     }));
     this.passwords.set('root', 'admin');
     this.addUser(new LinuxUserAccount({
@@ -187,17 +192,307 @@ export class LinuxUserManager {
 
   private addUser(u: LinuxUserAccount): void {
     this.users.set(u.username, u);
-    if (u.uid >= this.nextUid && u.uid < 65534) this.nextUid = u.uid + 1;
   }
 
   private addGroup(g: LinuxGroup): void {
     this.groups.set(g.name, g);
-    if (g.gid >= this.nextGid && g.gid < 65534) this.nextGid = g.gid + 1;
   }
 
   // ─── Public API ─────────────────────────────────────────────────
 
+  // ─── Allocating a new id ──────────────────────────────────────────────
+  //
+  // shadow-utils' `find_new_uid()`, and the two halves of it really are
+  // different searches:
+  //
+  //   - a REGULAR account takes the highest id already used inside
+  //     [UID_MIN, UID_MAX] and adds one, falling back to the lowest free id
+  //     only once that runs past the ceiling;
+  //   - a SYSTEM account (`useradd -r`) searches DOWNWARD from SYS_UID_MAX
+  //     and takes the highest free id it finds.
+  //
+  // The directions are opposite on purpose: the two ranges are adjacent
+  // (…999 | 1000…), so growing them towards each other would have them
+  // collide as soon as either fills up. Growing them apart keeps the gap
+  // between them, which is why a real Debian box hands out 999, 998, 997…
+  // to daemons while users climb 1000, 1001, 1002…
+  //
+  // The important part is WHERE the answer comes from. A stored cursor that
+  // only ever moved forward could not see an id an operator freed (or took)
+  // by editing `/etc/passwd` directly, so the next `useradd` would either
+  // skip a free id or, worse, hand out one already in the file. Scanning the
+  // live database means the allocation is always a fact about the current
+  // file, which is the only way the two can agree.
+
+  private allocateId(
+    taken: Iterable<number>, min: number, max: number, downward: boolean,
+  ): number | null {
+    const used = new Set(taken);
+    if (downward) {
+      for (let id = max; id >= min; id--) if (!used.has(id)) return id;
+      return null;
+    }
+    let candidate = min;
+    for (const id of used) {
+      if (id >= min && id <= max && id >= candidate) candidate = id + 1;
+    }
+    if (candidate <= max) return candidate;
+    for (let id = min; id <= max; id++) if (!used.has(id)) return id;
+    return null;
+  }
+
+  /** Next free UID, or null when the range is exhausted. */
+  private allocateUid(system: boolean): number | null {
+    this.reloadIfChanged();
+    return this.allocateId(
+      [...this.users.values()].map((u) => u.uid),
+      system ? this.loginDefs.sysUidMin : this.loginDefs.uidMin,
+      system ? this.loginDefs.sysUidMax : this.loginDefs.uidMax,
+      system,
+    );
+  }
+
+  /** Next free GID, or null when the range is exhausted. */
+  private allocateGid(system: boolean): number | null {
+    this.reloadIfChanged();
+    return this.allocateId(
+      [...this.groups.values()].map((g) => g.gid),
+      system ? this.loginDefs.sysGidMin : this.loginDefs.gidMin,
+      system ? this.loginDefs.sysGidMax : this.loginDefs.gidMax,
+      system,
+    );
+  }
+
+  // ─── The files ARE the account database ───────────────────────────────
+  //
+  // `/etc/passwd` and friends are not a rendering of the in-memory maps:
+  // they are the store, and the maps are a cache of them. Every read below
+  // first calls `reloadIfChanged()`, which re-parses the four files whenever
+  // their text differs from what this manager last wrote or read.
+  //
+  // That is what makes the two directions genuinely agree. `useradd` /
+  // `passwd` / `usermod` still write the files, and now `vim /etc/passwd`,
+  // `sed -i`, `rm /etc/shadow` or `cp /etc/passwd- /etc/passwd` change the
+  // ACCOUNTS — because the next lookup reads them back. Deleting the file
+  // does not need a special case any more: parsing nothing yields nothing,
+  // which is exactly what NSS does with no source to answer from.
+  //
+  // The comparison is on content, not a timer, so a machine nobody edits
+  // pays one string compare per lookup and never re-parses.
+
+  /**
+   * The source list nsswitch declares for a database, actions included.
+   *
+   * nsswitch governs the whole C library — `id`, `su`, every permission
+   * check — not just `getent`, so this manager has to walk the same chain.
+   * An absent nsswitch.conf falls back to glibc's compiled-in default,
+   * which lists `files`: a missing file does not disable name resolution.
+   */
+  private nssSpecs(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): NssSourceSpec[] {
+    const conf = this.vfs.readFile(IAM_PATHS.nsswitchConf) ?? DEFAULT_NSSWITCH_CONF;
+    return sourcesFor(parseNsswitchConf(conf), database);
+  }
+
+  /** `compat` is the historical spelling that also reads the files. */
+  private static isFilesSource(name: string): boolean {
+    return name === 'files' || name === 'compat';
+  }
+
+  private filesSourceEnabled(database: 'passwd' | 'group' | 'shadow' | 'gshadow'): boolean {
+    return this.nssSpecs(database).some((s) => LinuxUserManager.isFilesSource(s.name));
+  }
+
+  /**
+   * Build a database's table by walking the nsswitch chain once per name.
+   *
+   * The walk itself is `startNssWalk()` — the very same object `getent`
+   * drives. That is the whole point: the account model and the name
+   * service must answer identically, and they can only be relied on to do
+   * so if they run the same code rather than two readings of the same man
+   * page.
+   *
+   * The distinction that actually bites is UNAVAIL vs NOTFOUND, and it is
+   * why `entriesFrom` returns null rather than an empty map for a source
+   * that cannot answer at all: a MISSING `/etc/passwd` makes the files
+   * source UNAVAILABLE, whereas a present file that simply lacks the name
+   * is NOTFOUND. So `passwd: files [NOTFOUND=return] systemd` still lets
+   * systemd synthesise root once the file has been deleted — the
+   * `NOTFOUND=return` never fires, because files never got as far as "not
+   * found". Collapsing the two would lock that machine out for good.
+   *
+   * @param entriesFrom what a source provides, or null when it cannot answer.
+   * @param merge       how two answers for one name combine under
+   *                    `[SUCCESS=merge]`.
+   */
+  private walkNssChain<T>(
+    database: 'passwd' | 'group',
+    entriesFrom: (source: string) => Map<string, T> | null,
+    merge?: NssMerge<T>,
+  ): Map<string, T> {
+    const specs = this.nssSpecs(database);
+    // Each source is consulted once for its whole table, then the per-name
+    // walk reads out of that — the sources are files and in-memory tables
+    // here, so asking them per name would re-parse for nothing.
+    const tables = specs.map((spec) => entriesFrom(spec.name));
+
+    const names = new Set<string>();
+    for (const table of tables) {
+      if (table) for (const name of table.keys()) names.add(name);
+    }
+
+    const out = new Map<string, T>();
+    for (const name of names) {
+      const walk = startNssWalk<T>(merge);
+      let settled: NssResult<T> | null = null;
+      for (let i = 0; i < specs.length && settled === null; i++) {
+        const table = tables[i];
+        const r: NssResult<T> = table === null
+          ? { status: 'UNAVAIL' }
+          : table.has(name)
+            ? { status: 'SUCCESS', entry: table.get(name) }
+            : { status: 'NOTFOUND' };
+        settled = walk.step(specs[i], r);
+      }
+      const result = settled ?? walk.finish();
+      if (result.status === 'SUCCESS' && result.entry !== undefined) {
+        out.set(name, result.entry);
+      }
+    }
+    return out;
+  }
+
+  /** The accounts nss-systemd(8) synthesises, as live account objects. */
+  private static systemdUsers(): Map<string, LinuxUserAccount> {
+    const out = new Map<string, LinuxUserAccount>();
+    for (const e of Object.values(SYNTH_PASSWD)) {
+      out.set(e.name, new LinuxUserAccount({
+        username: e.name, uid: e.uid, gid: e.gid, gecos: e.gecos,
+        home: e.dir, shell: e.shell,
+        // Synthesised, never authenticated against: these records carry no
+        // secret, so `id root` answers on a machine with no /etc/passwd
+        // while `su root` still fails.
+        password: '*', locked: true, systemAccount: true,
+      }));
+    }
+    return out;
+  }
+
+  private static systemdGroups(): Map<string, LinuxGroup> {
+    const out = new Map<string, LinuxGroup>();
+    for (const e of Object.values(SYNTH_GROUP)) {
+      out.set(e.name, new LinuxGroup({ name: e.name, gid: e.gid, systemGroup: true }));
+    }
+    return out;
+  }
+
+  /**
+   * The four files exactly as they sit on disk — no nsswitch filtering.
+   * `null` means the file is absent, which the chain reads as UNAVAIL for
+   * the `files` source, distinct from a present-but-silent file.
+   */
+  private accountDbText(): {
+    passwd: string | null; shadow: string | null; group: string | null; gshadow: string | null;
+  } {
+    return {
+      passwd: this.vfs.readFile(IAM_PATHS.passwd),
+      shadow: this.vfs.readFile(IAM_PATHS.shadow),
+      group: this.vfs.readFile(IAM_PATHS.group),
+      gshadow: this.vfs.readFile(IAM_PATHS.gshadow),
+    };
+  }
+
+  /**
+   * What the cache is keyed on. `/etc/nsswitch.conf` is part of it because
+   * it decides which of the files above are consulted at all — editing it
+   * has to invalidate the cache just as editing `/etc/passwd` does.
+   */
+  private currentStamp(): string {
+    const t = this.accountDbText();
+    const nss = this.vfs.readFile(IAM_PATHS.nsswitchConf);
+    return [t.passwd, t.shadow, t.group, t.gshadow, nss]
+      .map((v) => (v === null ? '\u0001' : v))
+      .join('\u0000');
+  }
+
+  /** Content of the database as this manager last wrote or read it. */
+  private lastKnownStamp: string | null = null;
+  /** Guards against re-entering the parser from inside a write. */
+  private reloading = false;
+
+  /**
+   * Re-read the account database when the files have changed underneath us.
+   * Called by every read path, so an external edit takes effect on the very
+   * next lookup — the same latency a real NSS cache has.
+   */
+  private reloadIfChanged(): void {
+    if (this.reloading) return;
+    const stamp = this.currentStamp();
+    if (stamp === this.lastKnownStamp) return;
+
+    this.reloading = true;
+    try {
+      const text = this.accountDbText();
+      // The shadow secrets are only readable when the `shadow:` chain
+      // still names the files source; otherwise PAM has nothing to compare
+      // against, exactly as when the file itself is gone.
+      const parsed = parseAccountDatabase({
+        passwd: text.passwd ?? '',
+        shadow: this.filesSourceEnabled('shadow') ? text.shadow ?? '' : '',
+        group: text.group ?? '',
+        gshadow: text.gshadow ?? '',
+      }, {
+        users: [...this.users.values()],
+        groups: [...this.groups.values()],
+      });
+      const fromFiles = {
+        users: new Map(parsed.users.map((u) => [u.username, u])),
+        groups: new Map(parsed.groups.map((g) => [g.name, g])),
+      };
+
+      this.users = this.walkNssChain('passwd', (source) => {
+        if (LinuxUserManager.isFilesSource(source)) {
+          return text.passwd === null ? null : fromFiles.users;
+        }
+        return source === 'systemd' ? LinuxUserManager.systemdUsers() : null;
+      });
+      this.groups = this.walkNssChain('group', (source) => {
+        if (LinuxUserManager.isFilesSource(source)) {
+          return text.group === null ? null : fromFiles.groups;
+        }
+        return source === 'systemd' ? LinuxUserManager.systemdGroups() : null;
+      }, (existing, incoming) => {
+        // `[SUCCESS=merge]` on the group database unions the member lists,
+        // which is the one thing glibc implements it for.
+        existing.setMembers([...new Set([...existing.members, ...incoming.members])]);
+        return existing;
+      });
+
+      // Only accounts whose stored secret still yields a cleartext keep a
+      // usable password. A hand-edited hash therefore stops authenticating,
+      // which is the real consequence of editing one. A name the chain did
+      // not keep cannot authenticate either.
+      this.passwords = new Map(
+        [...parsed.cleartext].filter(([name]) => this.users.has(name)),
+      );
+      this.lastKnownStamp = stamp;
+    } finally {
+      this.reloading = false;
+    }
+  }
+
+
+  /** True when `/etc/passwd` is absent — no source for NSS to answer from. */
+  isAccountDatabaseMissing(): boolean {
+    return this.vfs.readFile(IAM_PATHS.passwd) === null;
+  }
+
+  /** Same question for the password database (`/etc/shadow`). */
+  isShadowDatabaseMissing(): boolean {
+    return this.vfs.readFile(IAM_PATHS.shadow) === null;
+  }
+
   getUser(username: string): UserEntry | undefined {
+    this.reloadIfChanged();
     return this.users.get(username);
   }
 
@@ -207,6 +502,7 @@ export class LinuxUserManager {
   }
 
   getGroup(name: string): GroupEntry | undefined {
+    this.reloadIfChanged();
     return this.groups.get(name);
   }
 
@@ -215,6 +511,7 @@ export class LinuxUserManager {
   }
 
   getUserByUid(uid: number): UserEntry | undefined {
+    this.reloadIfChanged();
     for (const u of this.users.values()) {
       if (u.uid === uid) return u;
     }
@@ -222,6 +519,7 @@ export class LinuxUserManager {
   }
 
   getGroupByGid(gid: number): GroupEntry | undefined {
+    this.reloadIfChanged();
     for (const g of this.groups.values()) {
       if (g.gid === gid) return g;
     }
@@ -237,6 +535,7 @@ export class LinuxUserManager {
   }
 
   resolveUid(name: string): number {
+    this.reloadIfChanged();
     return this.users.get(name)?.uid ?? -1;
   }
 
@@ -245,6 +544,7 @@ export class LinuxUserManager {
   }
 
   getAllUsers(): UserEntry[] {
+    this.reloadIfChanged();
     return [...this.users.values()];
   }
 
@@ -254,6 +554,7 @@ export class LinuxUserManager {
 
   /** Get all groups a user belongs to */
   getUserGroups(username: string): GroupEntry[] {
+    this.reloadIfChanged();
     const user = this.users.get(username);
     if (!user) return [];
     const result: GroupEntry[] = [];
@@ -268,7 +569,8 @@ export class LinuxUserManager {
   // ─── User operations ──────────────────────────────────────────────
 
   useradd(username: string, opts: UseraddOptions = {}): string {
-    if (this.users.has(username)) return `useradd: user '${username}' already exists`;
+    // Through `getUser`, so a name added to /etc/passwd by hand is seen.
+    if (this.getUser(username)) return `useradd: user '${username}' already exists`;
 
     // UID — explicit (`-u`) or auto-allocated. Uniqueness enforced unless `-o`.
     let uid: number;
@@ -277,11 +579,12 @@ export class LinuxUserManager {
         return `useradd: UID ${opts.u} is not unique`;
       }
       uid = opts.u;
-      if (uid >= this.nextUid && uid < 65534) this.nextUid = uid + 1;
-    } else if (opts.r) {
-      uid = this.nextSystemUid++;
     } else {
-      uid = this.nextUid++;
+      const allocated = this.allocateUid(opts.r === true);
+      if (allocated === null) {
+        return 'useradd: can\'t get unique UID (no more available UIDs on the system)';
+      }
+      uid = allocated;
     }
 
     // Primary group resolution.
@@ -296,7 +599,11 @@ export class LinuxUserManager {
     } else {
       // Create a user-private group with the same name. System accounts get
       // their group from the system GID range too.
-      gid = opts.r ? this.nextSystemGid++ : this.nextGid++;
+      const allocatedGid = this.allocateGid(opts.r === true);
+      if (allocatedGid === null) {
+        return 'useradd: can\'t get unique GID (no more available GIDs on the system)';
+      }
+      gid = allocatedGid;
       const pg = new LinuxGroup({ name: username, gid, userPrivateGroup: true });
       this.addGroup(pg);
       userPrivateGroupCreated = true;
@@ -375,7 +682,7 @@ export class LinuxUserManager {
     return undefined;
   }
 
-  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; L?: boolean; U?: boolean; g?: string }): string {
+  usermod(username: string, opts: { s?: string; d?: string; m?: boolean; aG?: string; G?: string; L?: boolean; U?: boolean; g?: string }): string {
     const user = this.users.get(username);
     if (!user) return `usermod: user '${username}' does not exist`;
 
@@ -396,6 +703,33 @@ export class LinuxUserManager {
     if (opts.U && user.locked) {
       user.unlock();
       this.publish({ topic: 'linux.iam.user.lock-state-changed', payload: { deviceId: this.deviceId, username, uid: user.uid, locked: false } });
+    }
+
+    if (opts.G !== undefined) {
+      // `-G` (without `-a`) *replaces* the supplementary-group list: drop
+      // membership from every group not named here (the primary group is
+      // untouched — it isn't a supplementary membership at all).
+      const wanted = new Set(opts.G.split(',').map((g) => g.trim()).filter(Boolean));
+      for (const grp of this.groups.values()) {
+        if (grp.gid === user.gid) continue;
+        if (grp.hasMember(username) && !wanted.has(grp.name) && grp.removeMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'removed' },
+          });
+        }
+      }
+      for (const gName of wanted) {
+        const grp = this.groups.get(gName);
+        if (grp && grp.addMember(username)) {
+          changed.push('groups');
+          this.publish({
+            topic: 'linux.iam.group.membership-changed',
+            payload: { deviceId: this.deviceId, groupName: grp.name, gid: grp.gid, username, action: 'added' },
+          });
+        }
+      }
     }
 
     if (opts.aG) {
@@ -586,10 +920,25 @@ export class LinuxUserManager {
    * publishes a `linux.iam.user.locked-out` event.
    */
   checkPassword(username: string, password: string): boolean {
+    // Nothing file-specific to check here any more: with no /etc/shadow the
+    // reload simply yields no recoverable secret for anyone, so every
+    // password is refused — while the accounts themselves still parse out
+    // of /etc/passwd, which is why `id` keeps working and SSH public-key
+    // authentication (which never consults shadow) keeps letting people in.
+    // That dissociation is §F7.4, and it now falls out of the data.
+    this.reloadIfChanged();
+    const account = this.users.get(username);
+    // `usermod -L` / `passwd -l` prefixes the shadow hash with `!` —
+    // no password, however correct, authenticates against it until
+    // unlocked. Distinct from (and checked ahead of) the faillock tally.
+    if (account?.locked) return false;
+    // pam_faillock denies every attempt — even the correct password — once
+    // an account has tripped the lockout threshold, until it's reset.
+    if (account && this.isAccountLockedOut(username)) return false;
+
     const stored = this.passwords.get(username);
     const correct = stored !== undefined && stored === password;
 
-    const account = this.users.get(username);
     if (account) {
       if (correct) {
         account.recordLogin();
@@ -628,10 +977,19 @@ export class LinuxUserManager {
   isAccountLockedOut(username: string): boolean {
     const account = this.users.get(username);
     if (!account) return false;
-    return this.passwordPolicy.lockout.shouldLockOut(
+    const lockout = this.passwordPolicy.lockout;
+    const stillLocked = lockout.shouldLockOut(
       account.failedLoginCount,
       account.uid === 0,
+      account.lastFailedLoginAt,
     );
+    // unlock_time elapsed — pam_faillock clears the tally itself, not just
+    // the gate, so a later failure starts counting from zero again.
+    if (!stillLocked && account.failedLoginCount >= lockout.deny) {
+      account.failedLoginCount = 0;
+      account.lastFailedLoginAt = null;
+    }
+    return stillLocked;
   }
 
   passwdStatus(username: string): string {
@@ -687,6 +1045,62 @@ export class LinuxUserManager {
       });
     }
     return '';
+  }
+
+  /**
+   * PAM-equivalent account/password expiry gate consulted on every SSH
+   * login attempt (after credentials are verified), mirroring the real
+   * `pam_unix` account phase: an absolute account expiry (`chage -E`) or
+   * an inactivity grace period exceeded past password expiry (`chage
+   * -I`) both resolve to `account-expired` (real `pam_unix` logs both
+   * identically as `PAM_ACCT_EXPIRED`); a password past its maximum age
+   * with no inactivity expiry yet resolves to `password-expired`.
+   */
+  accountLifecycleGate(
+    username: string,
+    now: number = this.daysSinceEpoch(),
+  ): { ok: true } | { ok: false; kind: 'account-expired' | 'password-expired' } {
+    const user = this.users.get(username);
+    if (!user) return { ok: true };
+
+    if (user.expireDate >= 0 && user.expireDate < now) {
+      return { ok: false, kind: 'account-expired' };
+    }
+
+    const passwordNeverExpires = user.maxDays >= PASSWORD_NEVER_EXPIRES || user.maxDays < 0;
+    if (!passwordNeverExpires && user.lastChange > 0) {
+      const passwordExpiresAt = user.lastChange + user.maxDays;
+      if (passwordExpiresAt < now) {
+        if (user.inactiveDays >= 0 && passwordExpiresAt + user.inactiveDays < now) {
+          return { ok: false, kind: 'account-expired' };
+        }
+        return { ok: false, kind: 'password-expired' };
+      }
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Days remaining until password expiry, when inside the `chage -W`
+   * warning window — the real `pam_unix` login banner ("Warning: your
+   * password will expire in N day(s)") shown on an otherwise-successful
+   * login. Returns null outside the warning window (too early, already
+   * expired — accountLifecycleGate handles that case — or never expires).
+   */
+  passwordExpiryWarningDays(
+    username: string,
+    now: number = this.daysSinceEpoch(),
+  ): number | null {
+    const user = this.users.get(username);
+    if (!user) return null;
+    const passwordNeverExpires = user.maxDays >= PASSWORD_NEVER_EXPIRES || user.maxDays < 0;
+    if (passwordNeverExpires || user.lastChange <= 0 || user.warnDays <= 0) return null;
+
+    const passwordExpiresAt = user.lastChange + user.maxDays;
+    const daysLeft = passwordExpiresAt - now;
+    if (daysLeft < 0 || daysLeft > user.warnDays) return null;
+    return daysLeft;
   }
 
   /** Render the faithful `chage -l` aging report for an account. */
@@ -825,8 +1239,15 @@ export class LinuxUserManager {
   // ─── Group operations ─────────────────────────────────────────────
 
   groupadd(name: string, opts: { g?: number } = {}): string {
-    if (this.groups.has(name)) return `groupadd: group '${name}' already exists`;
-    const gid = opts.g ?? this.nextGid++;
+    if (this.getGroup(name)) return `groupadd: group '${name}' already exists`;
+    let gid = opts.g;
+    if (gid === undefined) {
+      const allocated = this.allocateGid(false);
+      if (allocated === null) {
+        return 'groupadd: can\'t get unique GID (no more available GIDs on the system)';
+      }
+      gid = allocated;
+    }
     const group = new LinuxGroup({ name, gid });
     this.addGroup(group);
     this.syncToFilesystem();
@@ -922,8 +1343,18 @@ export class LinuxUserManager {
 
   id(username?: string): string {
     const name = username || this.currentUser;
+    this.reloadIfChanged();
     const user = this.users.get(name);
-    if (!user) return `id: '${name}': no such user`;
+    if (!user) {
+      // The ids the kernel gave THIS process outlive the database: a
+      // session already running keeps its uid/gid even when nothing can
+      // name them any more, so `id` prints the bare numbers rather than
+      // failing (docs/PRD-Pannes.md §F7.3). Asking about someone else is a
+      // pure lookup, and that does fail.
+      if (name !== this.currentUser) return `id: '${name}': no such user`;
+      const gids = this.getUserGroups(name).map((g) => g.gid).join(',');
+      return `uid=${this.currentUid} gid=${this.currentGid} groups=${gids || this.currentGid}`;
+    }
     const groups = this.getUserGroups(name);
     const primaryGroup = this.getGroupByGid(user.gid);
     const groupsStr = groups.map(g => `${g.gid}(${g.name})`).join(',');
@@ -940,7 +1371,7 @@ export class LinuxUserManager {
     opts: { u?: boolean; g?: boolean; G?: boolean; n?: boolean; r?: boolean },
   ): string {
     const name = username || this.currentUser;
-    const user = this.users.get(name);
+    const user = this.getUser(name) ? this.users.get(name) : undefined;
     if (!user) return `id: '${name}': no such user`;
 
     const selectors = [opts.u, opts.g, opts.G].filter(Boolean).length;
@@ -963,12 +1394,17 @@ export class LinuxUserManager {
   }
 
   whoami(): string {
+    // `whoami` is `getpwuid(geteuid())`. When the lookup finds nothing it
+    // fails naming the numeric id rather than inventing a name.
+    if (!this.getUserByUid(this.currentUid)) {
+      return `whoami: cannot find name for user ID ${this.currentUid}`;
+    }
     return this.currentUser;
   }
 
   groupsCmd(username?: string): string {
     const name = username || this.currentUser;
-    const user = this.users.get(name);
+    const user = this.getUser(name) ? this.users.get(name) : undefined;
     if (!user) return `groups: '${name}': no such user`;
     const groups = this.getUserGroups(name);
     const groupNames = groups.map(g => g.name).join(' ');
@@ -994,26 +1430,19 @@ export class LinuxUserManager {
     return '';
   }
 
+  /** Real sudoers-rule resolution (aliases, host/runas matching, fail-
+   *  closed on a broken chain) — not a substring search over raw files. */
   sudoList(username: string): string {
     const user = this.users.get(username);
     if (!user) return `User ${username} is not allowed to run sudo`;
-    const groups = this.getUserGroups(username);
-    const isSudo = groups.some(g => g.name === 'sudo');
-    if (isSudo || username === 'root') {
-      return `User ${username} may run the following commands on this host:\n    (ALL : ALL) ALL`;
+    const hostname = (this.vfs.readFile('/etc/hostname') ?? 'localhost').trim();
+    const actor = { user: username, groups: this.getUserGroups(username).map((g) => g.name) };
+    const load = loadSudoPolicy(this.vfs);
+    if (!load.ok || !load.engine || !load.engine.hasAnyAccess(actor, hostname, [])) {
+      return `User ${username} is not allowed to run sudo`;
     }
-    // Check sudoers.d
-    const sudoersDir = this.vfs.listDirectory('/etc/sudoers.d');
-    if (sudoersDir) {
-      for (const entry of sudoersDir) {
-        if (entry.name === '.' || entry.name === '..') continue;
-        const content = this.vfs.readFile(`/etc/sudoers.d/${entry.name}`);
-        if (content && content.includes(username)) {
-          return `User ${username} may run the following commands on this host:\n    ${content.trim()}`;
-        }
-      }
-    }
-    return `User ${username} is not allowed to run sudo`;
+    const lines = load.engine.renderMatchingRules(actor, hostname, []);
+    return `User ${username} may run the following commands on ${hostname}:\n${lines.map((l) => `    ${l}`).join('\n')}`;
   }
 
   who(): string {
@@ -1134,6 +1563,9 @@ export class LinuxUserManager {
       [...this.users.values()],
       [...this.groups.values()],
     );
+    // Record what we just wrote, so the next read does not mistake our own
+    // projection for an operator's edit and re-parse it needlessly.
+    this.lastKnownStamp = this.currentStamp();
   }
 }
 

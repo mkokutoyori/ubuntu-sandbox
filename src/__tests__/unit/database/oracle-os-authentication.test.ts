@@ -49,7 +49,7 @@ describe('engine — OS group gate on privileged connections', () => {
   let db: OracleDatabase;
   beforeEach(() => {
     db = new OracleDatabase();
-    db.instance.startup('OPEN');
+    db.instance.startup();
   });
 
   it('refuses SYSDBA for an OS user outside the dba group', () => {

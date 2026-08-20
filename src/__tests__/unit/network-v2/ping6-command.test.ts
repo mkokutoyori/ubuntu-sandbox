@@ -11,6 +11,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPv6Address, MACAddress, resetCounters } from '@/network/core/types';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock } from '../../support/fastPing';
 
 describe('ping6 command (real ICMPv6 path)', () => {
   beforeEach(() => {
@@ -30,7 +31,7 @@ describe('ping6 command (real ICMPv6 path)', () => {
 
   it('ping6 reaches an on-link IPv6 neighbour through real NDP', async () => {
     const { pc1 } = v6Pair();
-    const out = await pc1.executeCommand('ping6 -c 2 2001:db8::2');
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 2 2001:db8::2');
     expect(out).toContain('PING 2001:db8::2(2001:db8::2) 56 data bytes');
     expect(out).toContain('icmp_seq=1');
     expect(out).toContain('2 packets transmitted, 2 received, 0% packet loss');
@@ -38,8 +39,8 @@ describe('ping6 command (real ICMPv6 path)', () => {
 
   it('ping -6 and a literal IPv6 target use the same v6 path', async () => {
     const { pc1 } = v6Pair();
-    const viaFlag = await pc1.executeCommand('ping -6 -c 1 2001:db8::2');
-    const viaLiteral = await pc1.executeCommand('ping -c 1 2001:db8::2');
+    const viaFlag = await pingOnSimulatedClock(pc1, 'ping -6 -c 1 2001:db8::2');
+    const viaLiteral = await pingOnSimulatedClock(pc1, 'ping -c 1 2001:db8::2');
     for (const out of [viaFlag, viaLiteral]) {
       expect(out).toContain('56 data bytes');
       expect(out).toContain('1 packets transmitted, 1 received');
@@ -49,20 +50,41 @@ describe('ping6 command (real ICMPv6 path)', () => {
   it('reports unreachable honestly when no route exists', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     pc1.configureIPv6Interface('eth0', new IPv6Address('2001:db8::1'), 64);
-    const out = await pc1.executeCommand('ping6 -c 1 2001:db8:ffff::9');
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 1 2001:db8:ffff::9');
     expect(out).toContain('connect: Network is unreachable');
   });
 
   it('rejects an unresolvable name like iputils', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
-    const out = await pc1.executeCommand('ping6 -c 1 not-a-host');
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 1 not-a-host');
     expect(out).toBe('ping6: not-a-host: Name or service not known');
   });
 
   it('pings its own address without touching the wire', async () => {
     const pc1 = new LinuxPC('PC1', 0, 0);
     pc1.configureIPv6Interface('eth0', new IPv6Address('2001:db8::1'), 64);
-    const out = await pc1.executeCommand('ping6 -c 1 2001:db8::1');
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 1 2001:db8::1');
     expect(out).toContain('1 packets transmitted, 1 received');
+  });
+
+  it('resolves hostnames from /etc/hosts, not just literal addresses (localhost -> ::1)', async () => {
+    const pc1 = new LinuxPC('PC1', 0, 0);
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 1 localhost');
+    expect(out).toContain('PING localhost(::1) 56 data bytes');
+    expect(out).toContain('1 packets transmitted, 1 received');
+    expect(out).not.toContain('Name or service not known');
+  });
+
+  it('resolves ip6-localhost (the other /etc/hosts alias for ::1) too', async () => {
+    const pc1 = new LinuxPC('PC1', 0, 0);
+    const out = await pingOnSimulatedClock(pc1, 'ping6 -c 1 ip6-localhost');
+    expect(out).toContain('64 bytes from ::1');
+    expect(out).not.toContain('Name or service not known');
+  });
+
+  it('ping -6 <hostname> resolves via /etc/hosts too, same as ping6', async () => {
+    const pc1 = new LinuxPC('PC1', 0, 0);
+    const out = await pingOnSimulatedClock(pc1, 'ping -6 -c 1 localhost');
+    expect(out).toContain('64 bytes from ::1');
   });
 });

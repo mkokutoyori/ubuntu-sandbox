@@ -78,7 +78,7 @@ describe('RmanSession — lifecycle', () => {
     const session = new RmanSession(new RmanSessionOptionsBuilder().build(), ctx());
     const r = session.processLine('LIST BACKUP');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.code).toBe('RMAN_03002');
+    if (r.ok === false) expect(r.error.code).toBe('RMAN_03002');
   });
 
   it('processLine BACKUP DATABASE drives the full sequence', () => {

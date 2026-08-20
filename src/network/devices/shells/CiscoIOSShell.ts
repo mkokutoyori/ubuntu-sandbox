@@ -17,11 +17,23 @@
  *   config-crypto-map, config-ipsec-profile, config-ikev2-*
  */
 
+import type { ExecScope } from './cisco/CiscoExecScope';
+import type { CommandSpec } from '@/cli/CommandTable';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
+import { dhcpClientFamily, type DhcpClientLeaseView } from '@/cli/commands/dhcp/dhcpClientFamily';
+import type { DebugPair } from '@/cli/commands/debug/debugFamily';
+import { ALL_TUNNEL } from '@/cli/commands/tunnel/tunnelFamily';
+import { CLEAR_CRYPTO_FAMILY } from '@/cli/commands/clear/clearCrypto';
+import { SHOW_CRYPTO_FAMILY } from '@/cli/commands/show/showCrypto';
 import type { Router } from '../Router';
 import type { IRouterShell } from './IRouterShell';
 import { CiscoShellBase } from './CiscoShellBase';
-import { CommandTrie } from './CommandTrie';
-import { IPAddress } from '../../core/types';
+import { CommandTrie, setInvalidInputPromptWidth, formatInvalidInput, formatInvalidInputAt } from './CommandTrie';
+import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
+import { isValidIPv4 } from '../../core/ip';
+import { parsePingArgs, formatCiscoPing, looksLikeIPv6 } from './cisco/ciscoPing';
+import { CliInvalidInput } from './cli/CliDiagnostic';
+import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import type { PromptMap } from './PromptBuilder';
 import { CISCO_IOS_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_IOS_MODES } from './CLIStateMachine';
@@ -36,37 +48,45 @@ import {
   buildBfdInterfaceCommands, registerBfdShowCommands,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands,
+  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
   buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  pimShowSpecs,
 } from './cisco/CiscoPimCommands';
 import {
   buildVxlanInterfaceCommands, registerVxlanShowCommands,
 } from './cisco/CiscoVxlanCommands';
-import {
-  buildTrackSlaConfig, registerTrackSlaShow,
-} from './cisco/CiscoTrackSlaCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
-import { TrackRepository } from '../inspection/config/TrackRepository';
+import { buildTrackConfigCommands, registerTrackShowCommands } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
-import { IpSlaRepository } from '../inspection/config/IpSlaRepository';
+import {
+  buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
+} from './cisco/CiscoIpSlaCommands';
+import {
+  ipSlaShowSpecs, ipSlaClearSpecs, ipSlaDebugPairs,
+} from './cisco/CiscoIpSlaShowCommands';
+import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
+import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  buildPolicyConfig, registerPolicyShow,
+  buildPolicyConfig, registerPolicyShow, policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
+import { showProcessesCpu } from './cisco/CiscoCommonShow';
+import { showNATTranslations, showNATStatistics } from './cisco/CiscoNATCommands';
+import { showIpOspfNeighbor } from './cisco/CiscoOspfCommands';
 import {
   type CiscoShellMode, type CiscoShellContext,
   buildConfigCommands, buildConfigIfCommands,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands,
+  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
   buildConfigDhcpClassCommands,
   buildConfigIpv6DhcpCommands,
-  registerDhcpShowCommands,
+  registerDhcpShowCommands, dhcpIpv6ShowSpecs,
   registerDhcpPrivilegedCommands,
 } from './cisco/CiscoDhcpCommands';
 import {
@@ -76,7 +96,8 @@ import {
   registerKeyChainShowCommands,
 } from './cisco/CiscoKeyChainCommands';
 import {
-  buildRoutingProtoConfig, registerRoutingProtoShow,
+  buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
+  routingProtoShowSpecs,
 } from './cisco/CiscoRoutingProtoCommands';
 import { RoutingConfigRepository } from '../inspection/config/RoutingConfigRepository';
 import {
@@ -84,15 +105,18 @@ import {
   buildACLConfigCommands, buildACLInterfaceCommands,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands, buildIPv6ACLModeCommands,
-  registerACLShowCommands,
+  registerACLShowCommands, aclShowSpecs,
 } from './cisco/CiscoAclCommands';
 import {
   registerOSPFConfigCommands, buildConfigRouterOSPFCommands,
   buildConfigRouterOSPFv3Commands,
-  registerOSPFInterfaceCommands, registerOSPFShowCommands,
+  registerOSPFInterfaceCommands, registerOSPFShowCommands, ospfShowSpecs, ospfClearSpecs,
+  ospfIpv6ShowSpecs,
+  setOspfv3InterfaceParams, enableOspfv3OnInterface, disableOspfv3OnInterface,
+  setOspfv3InterfaceAuthentication,
 } from './cisco/CiscoOspfCommands';
 import {
-  buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands,
+  buildIPSecGlobalCommands, buildISAKMPPolicyCommands, buildISAKMPProfileCommands, buildISAKMPKeyringCommands,
   buildTransformSetCommands, buildCryptoMapEntryCommands,
   buildIPSecProfileCommands, buildIPSecIfCommands,
   buildIPSecPrivilegedCommands,
@@ -102,7 +126,10 @@ import {
   buildIKEv2PolicyCommands, buildIKEv2KeyringCommands,
   buildIKEv2KeyringPeerCommands, buildIKEv2ProfileCommands,
 } from './cisco/CiscoIPSecIKEv2Commands';
-import { registerIPSecShowCommands } from './cisco/CiscoIPSecShowCommands';
+import {
+  buildGdoiGlobalCommands, buildGdoiGroupCommands,
+} from './cisco/CiscoGdoiCommands';
+import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
   buildSecurityConfigCommands, buildSecurityInterfaceCommands,
   buildSecuritySubmodeCommands, buildSecurityShowCommands,
@@ -115,21 +142,574 @@ import {
 } from './cisco/CiscoEemNetflowArchiveCommands';
 import {
   buildNATConfigCommands, buildNATInterfaceCommands,
-  registerNATPrivilegedCommands, registerNATShowCommands,
+  registerNATPrivilegedCommands, registerNATShowCommands, natShowSpecs,
 } from './cisco/CiscoNATCommands';
+import { iosShortInterfaceName } from '@/network/devices/inspection/InterfaceStatusView';
+import { SOCLE, ROUTEUR_SEUL, appliquerContinuations } from './cisco/ciscoContinuations';
+
+const HORS_PLATEFORME_ISR: ReadonlySet<string> = new Set(['vxlan', 'nve', 'mls']);
+
+import { routerOnlyDebugPairs, type RouterDebugHost } from '@/cli/commands/debug/routerDebugPairs';
+import { getGlobalConfig } from '../router/config/CiscoGlobalConfig';
 
 export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShell, CiscoShellContext, CiscoACLShellContext {
+  versionText(): string {
+    return Show.showVersion(this.d(), this.getChassisProfile(),
+      this.fs().renderConfigRegisterLine());
+  }
+
+  runningConfigText(): string {
+    return this.filtrerConfigurationParNiveau(Show.showRunningConfig(this.d()));
+  }
+
+  runningConfigInterfaceText(argument: string): string {
+    if (argument.trim().length === 0) return '% Incomplete command.';
+    const ifName = resolveInterfaceName(this.d(), argument);
+    if (!ifName) return '% Invalid interface';
+    return Show.showRunningConfigInterface(this.d(), ifName);
+  }
+
+  protected override debugPairs(): DebugPair[] {
+    return [
+      ...super.debugPairs(),
+      ...ipSlaDebugPairs(this),
+      ...routerOnlyDebugPairs(() => this.r() as unknown as RouterDebugHost),
+    ];
+  }
+
+  private multicastShowContext(): {
+    r: () => Router;
+    resolveInterfaceName: (input: string) => string | null;
+  } {
+    return {
+      r: () => this.d(),
+      resolveInterfaceName: (input: string) => this.resolveInterfaceName(input),
+    };
+  }
+
+  private ipv6ExecSpecs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    const routeur = () => this.d();
+    const nomInterface = (brut: string): string | null =>
+      this.resolveInterfaceName(brut);
+
+    return [
+      {
+        id: 'show-ipv6-interface',
+        path: ['show', 'ipv6', 'interface', {
+          name: 'cible', type: 'WORD', optional: true,
+          description: 'Interface name, or brief',
+          alternatives: [
+            { keyword: 'WORD', description: 'Interface name' },
+            { keyword: 'brief', description: 'Brief summary' },
+          ],
+        }],
+        description: 'Display IPv6 interface state',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          const cible = String(args.cible ?? '').trim();
+          if (cible === '' || cible.toLowerCase() === 'brief') {
+            return Show.showIpv6InterfaceBrief(routeur());
+          }
+          const nom = nomInterface(cible);
+          if (!nom) throw new CliInvalidInput({ token: cible });
+          return Show.showIpv6Interface(routeur(), nom);
+        },
+      },
+      {
+        id: 'show-ipv6-neighbors',
+        path: ['show', 'ipv6', 'neighbors', {
+          name: 'interface', type: 'WORD', optional: true,
+          description: 'Interface name',
+        }],
+        description: 'Display IPv6 neighbour cache',
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          const cible = String(args.interface ?? '').trim();
+          if (cible === '') return Show.showIpv6Neighbors(routeur());
+          const nom = nomInterface(cible);
+          if (!nom) throw new CliInvalidInput({ token: cible });
+          return Show.showIpv6Neighbors(routeur(), nom);
+        },
+      },
+      {
+        id: 'show-ipv6-traffic',
+        path: ['show', 'ipv6', 'traffic'],
+        description: 'Display IPv6 traffic statistics',
+        modes: exec, minPrivilege: 1,
+        run: () => Show.showIpv6Traffic(routeur()),
+      },
+      {
+        id: 'show-ipv6-static',
+        path: ['show', 'ipv6', 'static'],
+        description: 'Display IPv6 static routes',
+        modes: exec, minPrivilege: 1,
+        run: () => Show.showIpv6Static(routeur()),
+      },
+    ];
+  }
+
+  protected override socleSpecs(): readonly CommandSpec[] {
+    return [
+      ...super.socleSpecs(),
+      ...dhcpClientFamily(),
+      ...this.ipv6ExecSpecs(),
+      ...dhcpPoolSpecs(this),
+      ...ospfIpv6ShowSpecs(() => this.d()),
+      ...dhcpIpv6ShowSpecs(() => this.d()),
+      ...pimShowSpecs(this.multicastShowContext()),
+      ...aclShowSpecs(() => this.d()),
+      ...policyShowSpecs(this.policy),
+      ...igmpShowSpecs(this.multicastShowContext()),
+      ...ipSlaShowSpecs(this),
+      ...ospfShowSpecs(() => this.d()),
+      ...natShowSpecs(() => this.d()),
+      ...cryptoShowSpecs(() => this.d()),
+      ...routingProtoShowSpecs(this, this.routingCfg),
+      ...ospfClearSpecs(() => this.d()),
+      ...ipSlaClearSpecs(this),
+      ...ALL_TUNNEL, ...CLEAR_CRYPTO_FAMILY, ...SHOW_CRYPTO_FAMILY,
+      ...this.ipv6NdSpecs(), ...this.ipv6OspfSpecs(), ...this.ipv6ReglagesSpecs(),
+      ...this.clearIpv6Specs(),
+    ];
+  }
+
+  private clearIpv6Specs(): CommandSpec[] {
+    const exec = ['user', 'privileged'];
+    const vue = (
+      keyword: string, description: string, effacer: () => void,
+    ): CommandSpec => ({
+      id: `clear-ipv6-${keyword}`, path: ['clear', 'ipv6', keyword], description,
+      modes: exec, minPrivilege: 15,
+      run: () => { effacer(); return ''; },
+    });
+
+    return [
+      vue('neighbors', 'Clear IPv6 neighbour cache', () => this.d()._clearNeighborCache()),
+      vue('traffic', 'Clear IPv6 traffic statistics', () => this.d()._clearIpv6Counters()),
+    ];
+  }
+
+  private ipv6ReglagesSpecs(): CommandSpec[] {
+    const port = () => {
+      const iface = this.selectedInterfaceName();
+      return iface ? this.d().getPort(iface) : undefined;
+    };
+    const effacerMtu = (): string => {
+      const p = port() as unknown as { ipv6Mtu?: number } | undefined;
+      if (p) delete p.ipv6Mtu;
+      return '';
+    };
+    const effacerFiltre = (): string => {
+      const iface = this.selectedInterfaceName();
+      if (iface) delete getSecurityConfig(this.d()).ifaceFlags(iface).ipv6TrafficFilter;
+      return '';
+    };
+
+    return [
+      {
+        id: 'ipv6-mtu-undo',
+        path: ['ipv6', 'mtu'],
+        description: 'Set IPv6 MTU',
+        undoDescription: 'Restore the default IPv6 MTU',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: effacerMtu, undo: effacerMtu,
+      },
+      {
+        id: 'ipv6-traffic-filter-undo',
+        path: ['ipv6', 'traffic-filter'],
+        description: 'Apply IPv6 ACL',
+        undoDescription: 'Remove the IPv6 ACL from this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        existsOnlyNegated: true,
+        run: effacerFiltre, undo: effacerFiltre,
+      },
+      {
+        id: 'ipv6-unicast-routing',
+        path: ['ipv6', 'unicast-routing'],
+        description: 'Enable IPv6 unicast routing',
+        undoDescription: 'Disable IPv6 unicast routing',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { this.d().enableIPv6Routing(); return ''; },
+        undo: () => { this.d().disableIPv6Routing(); return ''; },
+      },
+      {
+        id: 'ipv6-cef',
+        path: ['ipv6', 'cef'],
+        description: 'Enable IPv6 CEF',
+        undoDescription: 'Disable IPv6 CEF',
+        modes: ['config'], minPrivilege: 15,
+        run: () => { getSecurityConfig(this.d()).ipv6Cef = true; return ''; },
+        undo: () => { getSecurityConfig(this.d()).ipv6Cef = false; return ''; },
+      },
+      {
+        id: 'ipv6-enable',
+        path: ['ipv6', 'enable'],
+        description: 'Enable IPv6 on interface',
+        undoDescription: 'Disable IPv6 on interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => { port()?.enableIPv6(); return ''; },
+        undo: () => {
+          const p = port();
+          if (p && !p.getIPv6Addresses().some(e => e.origin === 'static')) p.disableIPv6();
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-mtu',
+        path: ['ipv6', 'mtu', {
+          name: 'octets', type: 'INT', range: [1280, 9216],
+          description: 'IPv6 MTU, in bytes',
+        }],
+        description: 'Set IPv6 MTU',
+        undoDescription: 'Restore the default IPv6 MTU',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const p = port() as unknown as { ipv6Mtu?: number } | undefined;
+          if (p) p.ipv6Mtu = parseInt(args.octets, 10);
+          return '';
+        },
+        undo: effacerMtu,
+      },
+      {
+        id: 'ipv6-traffic-filter',
+        path: ['ipv6', 'traffic-filter',
+          { name: 'liste', type: 'WORD', description: 'Access-list name' },
+          {
+            name: 'sens', type: 'ENUM', description: 'Direction the filter applies to',
+            values: [
+              { keyword: 'in', description: 'Filter incoming packets' },
+              { keyword: 'out', description: 'Filter outgoing packets' },
+            ],
+          }],
+        description: 'Apply IPv6 ACL',
+        undoDescription: 'Remove the IPv6 ACL from this interface',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const iface = this.selectedInterfaceName();
+          if (iface) {
+            getSecurityConfig(this.d()).ifaceFlags(iface).ipv6TrafficFilter = {
+              name: args.liste, direction: args.sens === 'out' ? 'out' : 'in',
+            };
+          }
+          return '';
+        },
+        undo: effacerFiltre,
+      },
+    ];
+  }
+
+  protected override socleLegends(): ReadonlyArray<[readonly string[], string]> {
+    return [
+      ...super.socleLegends(),
+      [['ipv6'], 'IPv6 interface subcommands'],
+      [['ipv6', 'nd'], 'IPv6 neighbor discovery'],
+      [['ipv6', 'ospf'], 'OSPFv3 interface commands'],
+      [['ipv6', 'nd', 'ra'], 'Router advertisement control'],
+      [['show', 'crypto'], 'Encryption module'],
+      [['show', 'crypto', 'engine'], 'Show crypto engine info'],
+      [['show', 'crypto', 'engine', 'connections'], 'Show crypto engine connections'],
+      [['show', 'crypto', 'pki'], 'Show PKI information'],
+      [['show', 'crypto', 'pki', 'certificates'], 'Show certificates'],
+      [['show', 'crypto', 'ikev2'], 'Show IKEv2 information'],
+      [['show', 'crypto', 'ipsec'], 'Show IPsec information'],
+      [['show', 'crypto', 'isakmp'], 'Show ISAKMP information'],
+      [['show', 'crypto', 'key'], 'Show crypto keys'],
+      [['show', 'crypto', 'key', 'mypubkey'], 'Show public keys of this router'],
+      [['show', 'ip'], 'IP information'],
+      [['show', 'ip', 'bgp'], 'BGP information'],
+      [['show', 'ipv6', 'dhcp'], 'Dynamic Host Configuration Protocol'],
+      [['show', 'ipv6', 'eigrp'], 'Enhanced Interior Gateway Routing Protocol'],
+      [['show', 'ip', 'pim'], 'PIM information'],
+      [['show', 'ip', 'pim', 'rp'], 'PIM Rendezvous Point information'],
+      [['show', 'ip', 'igmp'], 'IGMP information'],
+      [['show', 'ip', 'eigrp'], 'IP-EIGRP information'],
+      [['show', 'eigrp'], 'EIGRP information'],
+      [['show', 'eigrp', 'address-family'], 'Address family'],
+      [['show', 'eigrp', 'address-family', 'ipv4'], 'IPv4 address family'],
+      [['show', 'ip', 'nat'], 'Network Address Translation'],
+      [['show', 'ip', 'nat', 'nvi'], 'NAT Virtual Interface'],
+    ];
+  }
+
+  private ipv6OspfSpecs(): CommandSpec[] {
+    const reglage = (
+      keyword: string, description: string, argument: ArgumentSpec,
+      champ: string,
+    ): CommandSpec => ({
+      id: `ipv6-ospf-${keyword}`,
+      path: ['ipv6', 'ospf', keyword, argument],
+      description,
+      modes: ['config-if', 'config-subif'], minPrivilege: 15,
+      run: (_session, args) => this.appliquerOspfv3({
+        [champ]: argument.type === 'INT' ? parseInt(args[argument.name], 10)
+          : args[argument.name].toLowerCase(),
+      }),
+    });
+
+    return [
+      reglage('cost', 'Set OSPFv3 cost', {
+        name: 'cout', type: 'INT', range: [1, 65535], description: 'Cost',
+      }, 'cost'),
+      reglage('priority', 'Set OSPFv3 priority', {
+        name: 'priorite', type: 'INT', range: [0, 255], description: 'Priority',
+      }, 'priority'),
+      reglage('hello-interval', 'Set OSPFv3 hello interval', {
+        name: 'secondes', type: 'INT', range: [1, 65535], description: 'Seconds',
+      }, 'helloInterval'),
+      reglage('dead-interval', 'Set OSPFv3 dead interval', {
+        name: 'secondes', type: 'INT', range: [1, 65535], description: 'Seconds',
+      }, 'deadInterval'),
+      reglage('network', 'Set OSPFv3 network type', {
+        name: 'type', type: 'ENUM', description: 'Network type',
+        values: [
+          { keyword: 'broadcast', description: 'Specify OSPFv3 broadcast multi-access network' },
+          { keyword: 'non-broadcast', description: 'Specify OSPFv3 NBMA network' },
+          { keyword: 'point-to-multipoint', description: 'Specify OSPFv3 point-to-multipoint network' },
+          { keyword: 'point-to-point', description: 'Specify OSPFv3 point-to-point network' },
+        ],
+      }, 'networkType'),
+      {
+        id: 'ipv6-ospf-authentication-ipsec',
+        path: ['ipv6', 'ospf', 'authentication', 'ipsec', 'spi',
+          {
+            name: 'spi', type: 'INT', range: [256, 4294967295],
+            description: 'Security Policy Index',
+          },
+          {
+            name: 'algorithme', type: 'ENUM', description: 'Authentication algorithm',
+            values: [
+              { keyword: 'md5', description: 'Use MD5 authentication' },
+              { keyword: 'sha1', description: 'Use SHA-1 authentication' },
+            ],
+          },
+          {
+            name: 'cle', type: 'REST',
+            description: 'Key (32 hex digits for MD5, 40 for SHA-1)',
+            alternatives: [
+              { keyword: '0', description: 'The key is unencrypted' },
+              { keyword: '7', description: 'The key is hidden' },
+              { keyword: 'WORD', description: 'The key itself' },
+            ],
+          }],
+        description: 'Enable authentication',
+        undoDescription: 'Disable authentication',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, true);
+          return '';
+        },
+        undo: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, false);
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-ospf-authentication-null',
+        path: ['ipv6', 'ospf', 'authentication', 'null'],
+        description: 'Use no authentication',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) setOspfv3InterfaceAuthentication(this.d(), iface, false);
+          return '';
+        },
+      },
+      {
+        id: 'ipv6-ospf-area',
+        path: ['ipv6', 'ospf',
+          {
+            name: 'processus', type: 'INT', range: [1, 65535],
+            description: 'Process ID',
+          },
+          'area',
+          {
+            name: 'aire', type: 'WORD',
+            description: 'OSPFv3 area ID as a decimal value or as an IP address',
+          }],
+        description: 'Enable OSPFv3 on this interface',
+        undoDescription: 'Remove this interface from the OSPFv3 process',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) => {
+          const iface = this.selectedInterfaceName();
+          if (iface) {
+            enableOspfv3OnInterface(
+              this.d(), iface, parseInt(args.processus, 10), args.aire);
+          }
+          return '';
+        },
+        undo: () => {
+          const iface = this.selectedInterfaceName();
+          if (iface) disableOspfv3OnInterface(this.d(), iface);
+          return '';
+        },
+      },
+    ];
+  }
+
+  private appliquerOspfv3(patch: Record<string, unknown>): string {
+    const iface = this.selectedInterfaceName();
+    if (iface) setOspfv3InterfaceParams(this.d(), iface, patch);
+    return '';
+  }
+
+
+  /**
+   * `ipv6 nd …` — les controles de l'annonce de routeur.
+   *
+   * Declares ICI et non dans la base : `setRaParams` est une methode du
+   * ROUTEUR, et un commutateur de ce depot n'annonce rien. Les declarer
+   * dans la base les ferait paraitre sur une machine qui ne peut pas y
+   * repondre.
+   */
+  private ipv6NdSpecs(): CommandSpec[] {
+    const drapeau = (
+      path: readonly string[], description: string, undoDescription: string,
+      poser: (valeur: boolean) => Record<string, unknown>,
+    ): CommandSpec => ({
+      id: path.join('-'), path: [...path], description,
+      modes: ['config-if', 'config-subif'], minPrivilege: 15,
+      run: () => this.appliquerRa(poser(true)),
+      undo: () => this.appliquerRa(poser(false)),
+      undoDescription,
+    });
+
+    return [
+      drapeau(['ipv6', 'nd', 'managed-config-flag'],
+        'Set the M flag in router advertisements', 'Clear the M flag',
+        (valeur) => ({ managedFlag: valeur })),
+      drapeau(['ipv6', 'nd', 'other-config-flag'],
+        'Set the O flag in router advertisements', 'Clear the O flag',
+        (valeur) => ({ otherConfigFlag: valeur })),
+      {
+        id: 'ipv6-nd-ra-suppress',
+        // `suppress` tait l'annonce spontanee ; `suppress all` tait aussi
+        // la reponse a une sollicitation. La distinction est celle
+        // d'IOS, et elle est OBSERVABLE : sous `suppress` seul, un hote
+        // qui arrive s'autoconfigure quand meme, parce qu'il sollicite.
+        path: ['ipv6', 'nd', 'ra', 'suppress', {
+          name: 'portee', type: 'ENUM', optional: true,
+          description: 'Extent of the suppression',
+          values: [{ keyword: 'all', description: 'Also suppress solicited advertisements' }],
+        }],
+        description: 'Suppress router advertisements',
+        undoDescription: 'Resume router advertisements',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.appliquerRa({ enabled: false, suppressAll: args.portee === 'all' }),
+        undo: () => this.appliquerRa({ enabled: true, suppressAll: false }),
+      },
+      {
+        id: 'ipv6-nd-ra-lifetime',
+        // Une duree de vie NULLE ne coupe pas l'autoconfiguration
+        // (RFC 4861 §4.2) : l'hote garde son adresse et ne pose pas de
+        // route par defaut. Zero est donc une valeur, pas une absence.
+        path: ['ipv6', 'nd', 'ra', 'lifetime', {
+          name: 'secondes', type: 'INT', range: [0, 9000],
+          description: 'Router lifetime advertised, in seconds',
+        }],
+        description: 'Set the router lifetime advertised in RAs',
+        modes: ['config-if', 'config-subif'], minPrivilege: 15,
+        run: (_session, args) =>
+          this.appliquerRa({ routerLifetime: parseInt(args.secondes, 10) }),
+      },
+    ];
+  }
+
+  private appliquerRa(patch: Record<string, unknown>): string {
+    const iface = this.selectedInterfaceName();
+    if (!iface) return '';
+    (this.d() as unknown as {
+      setRaParams?: (iface: string, patch: Record<string, unknown>) => void;
+    }).setRaParams?.(iface, patch);
+    return '';
+  }
+
+  selectedInterfaceName(): string | null {
+    return this.selectedInterface ?? null;
+  }
+
+  dhcpClientEnable(iface: string, line: string): void {
+    this.d().getDhcpClientAgent().enable(iface, line);
+  }
+
+  dhcpClientDisable(iface: string): boolean {
+    return this.d().getDhcpClientAgent().disable(iface);
+  }
+
+  dhcpClientRelease(iface: string): boolean {
+    return this.d().getDhcpClientAgent().release(iface);
+  }
+
+  dhcpClientRenew(iface: string): boolean {
+    return this.d().getDhcpClientAgent().renew(iface);
+  }
+
+  dhcpClientLeases(): DhcpClientLeaseView[] {
+    return this.d().getDhcpClientAgent().leases().map(l => ({
+      iface: l.iface,
+      ipAddress: l.ipAddress,
+      subnetMask: l.subnetMask,
+      serverIdentifier: l.serverIdentifier,
+      leaseDuration: l.leaseDuration,
+      renewalTime: l.renewalTime,
+      rebindingTime: l.rebindingTime,
+    }));
+  }
+
+  dhcpClientResolveInterface(name: string): string | null {
+    return this.resolveInterfaceNameForDebug(name);
+  }
+
+  pendingInterfaceConfig(iface: string): Record<string, unknown> {
+    const extra = this.d()._getOSPFExtraConfig();
+    const pending = extra.pendingIfConfig.get(iface) ?? {};
+    extra.pendingIfConfig.set(iface, pending);
+    return pending as Record<string, unknown>;
+  }
+
+  ipsecShow(method: string): string {
+    const engine = this.d()._getIPSecEngineInternal() as unknown as
+      Record<string, (() => string) | undefined> | null;
+    return engine?.[method]?.() ?? 'IPSec not configured.';
+  }
+
+  clearAllSecurityAssociations(): void {
+    this.d()._getIPSecEngineInternal()?.clearAllSAs();
+  }
+
+  clearSecurityAssociationsForPeer(peer: string): void {
+    this.d()._getIPSecEngineInternal()?.clearSAsForPeer(peer);
+  }
+
+  setTunnelProtection(iface: string, profile: string, shared: boolean): void {
+    this.d()._getIPSecEngineInternal()?.setTunnelProtection(iface, profile, shared);
+  }
+
+  removeTunnelProtection(iface: string): void {
+    this.d()._getIPSecEngineInternal()?.removeTunnelProtection(iface);
+  }
+
+  onTunnelModeSet(iface: string, mode: string): void {
+    if (mode.toLowerCase() === 'gre multipoint') {
+      this.d().getDmvpnService().registerTunnel({ ifName: iface, role: 'hub', phase: 3 });
+    }
+  }
+
   // ─── Router-specific state ───────────────────────────────────────
   private selectedInterface: string | null = null;
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private readonly fhrp = new FhrpRepository();
   private readonly keyChains = new KeyChainRepository();
   getKeyChains(): KeyChainRepository { return this.keyChains; }
-  /** Real config-driven object-tracking & IP SLA state. */
-  private readonly track = new TrackRepository();
-  private readonly ipsla = new IpSlaRepository();
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
+  /** Lu par le sérialiseur de configuration (`showRunningConfig`). */
+  getRoutingConfig(): RoutingConfigRepository { return this.routingCfg; }
+  getPolicyRepo(): PolicyRepository { return this.policy; }
   private selectedRoutingProto: { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null = null;
   getSelectedRoutingProto(): { proto: 'rip' | 'eigrp' | 'bgp'; asn?: number } | null {
     return this.selectedRoutingProto;
@@ -153,6 +733,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // IPSec selection state
   private selectedISAKMPPriority: number | null = null;
   private selectedISAKMPProfile: string | null = null;
+  private selectedISAKMPKeyring: string | null = null;
   private selectedTransformSet: string | null = null;
   private selectedCryptoMap: string | null = null;
   private selectedCryptoMapSeq: number | null = null;
@@ -163,6 +744,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private selectedIKEv2Keyring: string | null = null;
   private selectedIKEv2KeyringPeer: string | null = null;
   private selectedIKEv2Profile: string | null = null;
+  private selectedGdoiGroup: string | null = null;
 
   // ─── FSM (router-specific mode hierarchy) ────────────────────────
   protected readonly fsm = new CLIStateMachine<CiscoShellMode>('user', CISCO_IOS_MODES, 'user', 'privileged');
@@ -171,7 +753,21 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configDhcpTrie = new CommandTrie();
   private configDhcpPoolClassTrie = new CommandTrie();
   private configTrackTrie = new CommandTrie();
+  private configVrfTrie = new CommandTrie();
+  private selectedVRF: string | null = null;
+  private selectedVLAN: number | null = null;
   private configIpSlaTrie = new CommandTrie();
+  private configIpSlaHttpRawTrie = new CommandTrie();
+  private readonly configIpSlaTypeTries: Record<string, CommandTrie> = {
+    'config-ipsla-echo': new CommandTrie(),
+    'config-ipsla-icmpjitter': new CommandTrie(),
+    'config-ipsla-jitter': new CommandTrie(),
+    'config-ipsla-udp': new CommandTrie(),
+    'config-ipsla-tcp': new CommandTrie(),
+    'config-ipsla-http': new CommandTrie(),
+    'config-ipsla-dns': new CommandTrie(),
+    'config-ipsla-pathecho': new CommandTrie(),
+  };
   private configRouteMapTrie = new CommandTrie();
   private configRouterTrie = new CommandTrie();
   private configRouterOspfTrie = new CommandTrie();
@@ -182,6 +778,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // IPSec sub-mode tries
   private configIsakmpTrie = new CommandTrie();
   private configIsakmpProfileTrie = new CommandTrie();
+  private configKeyringTrie = new CommandTrie();
   private configTfsetTrie = new CommandTrie();
   private configCryptoMapTrie = new CommandTrie();
   private configIpsecProfileTrie = new CommandTrie();
@@ -190,6 +787,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   private configIkev2KeyringTrie = new CommandTrie();
   private configIkev2KeyringPeerTrie = new CommandTrie();
   private configIkev2ProfileTrie = new CommandTrie();
+  private configGdoiGroupTrie = new CommandTrie();
   private configTimeRangeTrie = new CommandTrie();
   private configCmapTrie = new CommandTrie();
   private configPmapTrie = new CommandTrie();
@@ -268,13 +866,45 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   constructor() {
     super();
     this.initializeCommands();
+    // `registerShowCommands` est appelé pour plusieurs tries ; le debug
+    // est privilégié seulement, donc enregistré ici une seule fois.
+    // Les suites d'un noeud glouton sont DECLAREES, plus derivees du
+    // texte source de son gestionnaire. Les arbres sont releves sur
+    // l'objet lui-meme : les nommer a la main en aurait oublie, et un
+    // arbre oublie est un mode entier prive de ses suites.
+    appliquerContinuations(this.tousLesArbres(), SOCLE, ROUTEUR_SEUL);
+    // Après TOUS les enregistrements : `describeArgs` attache les
+    // spécifications à des nœuds existants, il n'en crée pas.
+    describeCiscoArguments({
+      config: this.configTrie,
+      configIf: this.configIfTrie,
+      configLine: this.configLineTrie,
+      configDhcp: this.configDhcpTrie,
+      configRouter: this.configRouterTrie,
+      configRouterOspf: this.configRouterOspfTrie,
+      configStdNacl: this.configStdNaclTrie,
+      configExtNacl: this.configExtNaclTrie,
+      privileged: this.privilegedTrie,
+      configRouteMap: this.configRouteMapTrie,
+      configTimeRange: this.configTimeRangeTrie,
+      configTrack: this.configTrackTrie,
+      configRouterOnly: this.configTrie,
+    });
   }
 
   // ─── IRouterShell ────────────────────────────────────────────────
 
   getOSType(): string { return 'cisco-ios'; }
 
+  private ipSlaOwner: Router | null = null;
+
   execute(router: Router, rawInput: string): string | Promise<string> {
+    this.ipSlaOwner = router;
+    setInvalidInputPromptWidth(this.buildDevicePrompt(router).length);
+    router.setRouteTrackResolver((trackId) =>
+      router.getTrackService().isUp(parseInt(trackId, 10)));
+    this.attachDebugSource((router as unknown as { getDebugService?: () => { subscribe(l: (line: string) => void): () => void } }).getDebugService?.());
+    if (rawInput.trim() === '' && !this.isCollectingBanner()) return this.drainDebugConsole();
     return this.executeOnDevice(router, rawInput);
   }
 
@@ -295,6 +925,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   getSelectedDHCPPool(): string | null { return this.selectedDHCPPool; }
   setSelectedDHCPPool(pool: string | null): void { this.selectedDHCPPool = pool; }
+  setSelectedVRF(name: string | null): void { this.selectedVRF = name; }
+  setSelectedVLAN(id: number | null): void { this.selectedVLAN = id; }
 
   resolveInterfaceName(input: string): string | null {
     return resolveInterfaceName(this.r(), input);
@@ -310,6 +942,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setSelectedISAKMPPriority(p: number | null): void { this.selectedISAKMPPriority = p; }
   getSelectedISAKMPProfile(): string | null { return this.selectedISAKMPProfile; }
   setSelectedISAKMPProfile(p: string | null): void { this.selectedISAKMPProfile = p; }
+  getSelectedISAKMPKeyring(): string | null { return this.selectedISAKMPKeyring; }
+  setSelectedISAKMPKeyring(k: string | null): void { this.selectedISAKMPKeyring = k; }
   getSelectedTransformSet(): string | null { return this.selectedTransformSet; }
   setSelectedTransformSet(ts: string | null): void { this.selectedTransformSet = ts; }
   getSelectedCryptoMap(): string | null { return this.selectedCryptoMap; }
@@ -330,6 +964,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   setSelectedIKEv2KeyringPeer(p: string | null): void { this.selectedIKEv2KeyringPeer = p; }
   getSelectedIKEv2Profile(): string | null { return this.selectedIKEv2Profile; }
   setSelectedIKEv2Profile(p: string | null): void { this.selectedIKEv2Profile = p; }
+  getSelectedGdoiGroup(): string | null { return this.selectedGdoiGroup; }
+  setSelectedGdoiGroup(g: string | null): void { this.selectedGdoiGroup = g; }
 
   // ─── Per-vty state snapshot / swap (§5.1 of terminal_gap.md) ─────
 
@@ -350,6 +986,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return {
       mode: this.mode,
       selectedInterface: this.selectedInterface,
+      selectedInterfaceRange: [],
+      selectedVlan: null,
+      selectedArpAcl: null,
+      selectedAccessMap: null,
+      selectedMqcName: null,
+      selectedPortGroup: null,
       selectedRoutingProto: this.selectedRoutingProto,
       selectedTrack: this.selectedTrack,
       selectedIpSla: this.selectedIpSla,
@@ -370,15 +1012,27 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       selectedIKEv2Profile: this.selectedIKEv2Profile,
       terminalLength: this.terminalLength,
       terminalWidth: this.terminalWidth,
-      privilegeLevel: this.mode === 'user' ? 1 : 15,
-      historySize: 10,
-      cmdHistory: this.cmdHistory,
+      terminalMonitor: this.terminalMonitor,
+      terminalMonitorExplicit: this.terminalMonitorExplicit,
+      // Cisco IOS has no separate "terminal debugging" toggle — `terminal
+      // monitor` alone gates whether debug/log output reaches this vty
+      // (unlike Huawei VRP, which distinguishes the two). Mirror it here
+      // purely to satisfy the shared VtySnapshot shape.
+      terminalDebugging: this.terminalMonitor,
+      privilegeLevel: this.currentPrivilegeLevel,
+      activeParserView: this.activeParserView,
+      sessionUser: this.utilisateurDeSession(),
+      historySize: this.terminalHistorySize,
+      cmdHistory: [...this.cmdHistory],
     };
   }
 
   /** Apply a session's snapshot onto this shell instance. */
   applyVtyState(s: import('./vty/CliShellSession').VtySnapshot): void {
     this.mode = s.mode as CiscoShellMode;
+    this.currentPrivilegeLevel = s.privilegeLevel;
+    this.activeParserView = s.activeParserView ?? null;
+    this.adopterUtilisateurDeSession(s.sessionUser ?? null);
     this.selectedInterface = s.selectedInterface;
     this.selectedRoutingProto = s.selectedRoutingProto as typeof this.selectedRoutingProto;
     this.selectedTrack = s.selectedTrack;
@@ -400,7 +1054,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.selectedIKEv2Profile = s.selectedIKEv2Profile;
     this.terminalLength = s.terminalLength;
     this.terminalWidth = s.terminalWidth;
-    this.cmdHistory = s.cmdHistory;
+    this.terminalMonitor = s.terminalMonitor;
+    this.terminalMonitorExplicit = s.terminalMonitorExplicit ?? false;
+    this.terminalHistorySize = s.historySize;
+    this.terminalHistoryEnabled = s.historySize > 0;
+    this.cmdHistory = [...s.cmdHistory];
   }
 
   // ─── Abstract Method Implementations ─────────────────────────────
@@ -411,24 +1069,100 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return 'router-isr2911';
   }
 
-  /** Real saved configuration (null until first `write memory`). */
-  private startupConfig: string | null = null;
+  private startupAliases: ReturnType<typeof this.aliases.snapshot> | null = null;
+
+  /** `show running-config` text — source for `write memory`/NVRAM (Router.getRunningConfig). */
+  getRunningConfigText(router: Router): string {
+    return Show.showRunningConfig(router);
+  }
+
+  /** Re-apply saved config text onto live router state (`copy start run`, `reload`). */
+  applyConfigText(router: Router, text: string): void {
+    let curIface: string | null = null;
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || line === '!' ||
+          line.startsWith('Building config') || line.startsWith('Current configuration')) continue;
+      let g: RegExpMatchArray | null;
+      if (!/^\s/.test(raw)) {
+        curIface = null;
+        if ((g = line.match(/^hostname\s+(\S+)/))) {
+          router._setHostnameInternal(g[1]);
+        } else if ((g = line.match(/^interface\s+(\S+)/))) {
+          curIface = g[1];
+        } else if ((g = line.match(/^ip route\s+(\S+)\s+(\S+)\s+(\S+)/))) {
+          try {
+            const mask = new SubnetMask(g[2]);
+            const nextHop = new IPAddress(g[3]);
+            if (g[1] === '0.0.0.0' && g[2] === '0.0.0.0') router.setDefaultRoute(nextHop);
+            else router.addStaticRoute(new IPAddress(g[1]), mask, nextHop);
+          } catch { /* malformed saved line — skip like real IOS would reject it */ }
+        }
+        continue;
+      }
+      if (!curIface) continue;
+      if ((g = line.match(/^description\s+(.+)/))) {
+        router.setInterfaceDescription(curIface, g[1]);
+      } else if ((g = line.match(/^ip address\s+(\S+)\s+(\S+)(\s+secondary)?/))) {
+        try {
+          router.configureInterface(curIface, new IPAddress(g[1]), new SubnetMask(g[2]), !!g[3]);
+        } catch { /* malformed saved line — skip */ }
+      } else if (line === 'shutdown') {
+        router.getPort(curIface)?.setAdminShutdown(true);
+      } else if (line === 'no shutdown') {
+        router.getPort(curIface)?.setAdminShutdown(false);
+      }
+    }
+  }
 
   protected onSave(): string {
-    // Snapshot the REAL running-config so `show startup-config`
-    // reflects exactly what was saved (no fabricated content).
-    this.startupConfig = Show.showRunningConfig(this.d());
+    this.d().writeMemory();
+    (this.d() as unknown as { _noteNvramWrite?: (u: string) => void })
+      ._noteNvramWrite?.(this.configSessionLabel);
+    this.startupAliases = this.aliases.snapshot();
+    this.archiveAfterSave();
     return 'Building configuration...\n[OK]';
   }
 
-  protected override cmdExit(): string {
-    // Router: exit at user mode returns '' (no "Connection closed." like switch)
-    this.fsm.mode = this.mode;
-    const { newMode, fieldsToCllear } = this.fsm.exit();
-    this.mode = newMode;
-    this.clearFields(fieldsToCllear);
-    return '';
+  protected override onErase(): void {
+    super.onErase();
+    this.startupAliases = null;
   }
+
+  /**
+   * Le démarrage relit `nvram:` — sauf quand le registre le lui interdit.
+   * `ignoreStartupConfig()` était écrite, documentée, et appelée par
+   * personne : `config-register 0x2142` puis `reload` rechargeait la
+   * configuration sauvegardée comme si le bit n'existait pas, donc la
+   * moitié du chapitre « mot de passe oublié » ne pouvait pas se faire.
+   * La sauvegarde est INTACTE dans `nvram:` — c'est le point de la
+   * manœuvre : elle est là, elle n'est simplement pas chargée, et c'est
+   * pourquoi on la relit ensuite par `copy startup-config running-config`.
+   */
+  private reloadFromNvram(device: Router): void {
+    device._resetConfigurableStateForReload();
+    if (this.bootIgnoresStartupConfig(device)) return;
+    device._restoreStartupConfig();
+  }
+
+  protected override performImmediateReload(): string {
+    const out = super.performImmediateReload();
+    this.reloadFromNvram(this.d());
+    if (this.startupAliases) this.aliases.restore(this.startupAliases);
+    return out;
+  }
+
+  protected override performScheduledReload(device: Router): void {
+    super.performScheduledReload(device);
+    this.reloadFromNvram(device);
+    if (this.startupAliases) this.aliases.restore(this.startupAliases);
+  }
+
+  // `cmdExit` n'est PAS redefinie ici : la copie qui s'y trouvait ne
+  // differait de celle de la base que par une conversion de type, et
+  // c'est elle qui a fait diverger les deux plateformes le jour ou la
+  // base a appris qu'`exit` depuis le mode privilegie ferme la session.
+  // Le switch fermait, le routeur ne faisait rien.
 
   protected getActiveTrie(): CommandTrie {
     switch (this.mode) {
@@ -436,13 +1170,27 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'privileged': return this.privilegedTrie;
       case 'config': return this.configTrie;
       case 'config-if': return this.configIfTrie;
+      case 'config-subif': return this.configIfTrie;
       case 'config-line': return this.configLineTrie;
+      case 'config-view': return this.configViewTrie;
       case 'config-dhcp': return this.configDhcpTrie;
       case 'config-dhcp-pool-class': return this.configDhcpPoolClassTrie;
       case 'config-track': return this.configTrackTrie;
+      case 'config-vrf': return this.configVrfTrie;
       case 'config-ipsla': return this.configIpSlaTrie;
+      case 'config-ipsla-http-raw': return this.configIpSlaHttpRawTrie;
+      case 'config-ipsla-echo':
+      case 'config-ipsla-icmpjitter':
+      case 'config-ipsla-jitter':
+      case 'config-ipsla-udp':
+      case 'config-ipsla-tcp':
+      case 'config-ipsla-http':
+      case 'config-ipsla-dns':
+      case 'config-ipsla-pathecho':
+        return this.configIpSlaTypeTries[this.mode];
       case 'config-route-map': return this.configRouteMapTrie;
       case 'config-router': return this.configRouterTrie;
+      case 'config-router-af': return this.configRouterTrie;
       case 'config-router-ospf': return this.configRouterOspfTrie;
       case 'config-router-ospfv3': return this.configRouterOspfv3Trie;
       case 'config-std-nacl': return this.configStdNaclTrie;
@@ -450,6 +1198,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ipv6-nacl': return this.configIpv6NaclTrie;
       case 'config-isakmp': return this.configIsakmpTrie;
       case 'config-isakmp-profile': return this.configIsakmpProfileTrie;
+      case 'config-keyring': return this.configKeyringTrie;
       case 'config-tfset': return this.configTfsetTrie;
       case 'config-crypto-map': return this.configCryptoMapTrie;
       case 'config-ipsec-profile': return this.configIpsecProfileTrie;
@@ -458,6 +1207,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       case 'config-ikev2-keyring': return this.configIkev2KeyringTrie;
       case 'config-ikev2-keyring-peer': return this.configIkev2KeyringPeerTrie;
       case 'config-ikev2-profile': return this.configIkev2ProfileTrie;
+      case 'config-gdoi-group': return this.configGdoiGroupTrie;
       case 'config-time-range': return this.configTimeRangeTrie;
       case 'config-cmap': return this.configCmapTrie;
       case 'config-pmap': return this.configPmapTrie;
@@ -483,17 +1233,38 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
   }
 
+  /**
+   * Une entrée `ip sla <n>` quittée SANS type d'opération n'existe pas
+   * sur IOS : la configuration est abandonnée. La garder produisait une
+   * opération « not configured » qui survivait dans `show ip sla
+   * summary`, `configuration` et la running-config — et qui, au passage,
+   * cassait l'alignement du tableau du résumé.
+   */
+  private discardUnconfiguredIpSla(): void {
+    // `exit` est traité AVANT que `executeOnDevice` ne pose la référence
+    // d'équipement, d'où cette référence posée par `execute` : `d()`
+    // lèverait ici.
+    const router = this.ipSlaOwner;
+    if (this.selectedIpSla === null || !router) return;
+    const engine = router.getIpSlaEngine();
+    const runtime = engine.getOperation(this.selectedIpSla);
+    if (runtime && runtime.config.type === 'unknown') engine.removeOperation(this.selectedIpSla);
+  }
+
   protected clearFields(fields: string[]): void {
     for (const f of fields) {
       if (f === 'selectedInterface') this.selectedInterface = null;
+      if (f === 'selectedParserView') this.selectedParserView = null;
       if (f === 'selectedDHCPPool') this.selectedDHCPPool = null;
       if (f === 'selectedTrack') this.selectedTrack = null;
-      if (f === 'selectedIpSla') this.selectedIpSla = null;
+      if (f === 'selectedIpSla') { this.discardUnconfiguredIpSla(); this.selectedIpSla = null; }
       if (f === 'selectedRouteMap') this.selectedRouteMap = null;
       if (f === 'selectedRoutingProto') this.selectedRoutingProto = null;
       if (f === 'selectedACL') { this.selectedACL = null; this.selectedACLType = null; }
       if (f === 'selectedACLType') this.selectedACLType = null;
       if (f === 'selectedISAKMPPriority') this.selectedISAKMPPriority = null;
+      if (f === 'selectedISAKMPProfile') this.selectedISAKMPProfile = null;
+      if (f === 'selectedISAKMPKeyring') this.selectedISAKMPKeyring = null;
       if (f === 'selectedTransformSet') this.selectedTransformSet = null;
       if (f === 'selectedCryptoMap') { this.selectedCryptoMap = null; this.selectedCryptoMapSeq = null; this.selectedCryptoMapIsDynamic = false; }
       if (f === 'selectedCryptoMapSeq') this.selectedCryptoMapSeq = null;
@@ -503,6 +1274,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (f === 'selectedIKEv2Keyring') this.selectedIKEv2Keyring = null;
       if (f === 'selectedIKEv2KeyringPeer') this.selectedIKEv2KeyringPeer = null;
       if (f === 'selectedIKEv2Profile') this.selectedIKEv2Profile = null;
+      if (f === 'selectedGdoiGroup') this.selectedGdoiGroup = null;
       if (f === 'selectedTimeRange') this.selectedTimeRange = null;
       if (f === 'selectedKeyChain') this.selectedKeyChain = null;
       if (f === 'selectedKeyChainKey') this.selectedKeyChainKey = null;
@@ -530,9 +1302,28 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     this.userTrie.registerGreedy('ping', 'Send echo messages', (args) => {
       return this._handlePing(args);
     });
+    // Le protocole se choisit AVANT la cible, les options viennent
+    // APRÈS : `ping ip 1.1.1.1` et `ping 1.1.1.1 repeat 5` existent,
+    // `ping 1.1.1.1 ip` non. Et seules les options que `parsePingArgs`
+    // accepte vraiment sont annoncées.
+    this.userTrie.addCompletionKeywords('ping', [
+      { keyword: 'ip', description: 'IP echo', leadingOnly: true },
+      { keyword: 'ipv6', description: 'IPv6 echo', leadingOnly: true },
+      { keyword: 'repeat', description: 'Repeat count' },
+      { keyword: 'size', description: 'Datagram size' },
+      { keyword: 'source', description: 'Source address or interface' },
+      { keyword: 'timeout', description: 'Timeout in seconds' },
+    ]);
     this.userTrie.registerGreedy('traceroute', 'Trace route to destination', (args) => {
       return this._handleTraceroute(args);
     });
+    this.userTrie.addCompletionKeywords('traceroute', [
+      { keyword: 'ip', description: 'IP Trace', leadingOnly: true },
+      { keyword: 'ipv6', description: 'IPv6 Trace', leadingOnly: true },
+      { keyword: 'probe', description: 'Probe count' },
+      { keyword: 'timeout', description: 'Timeout in seconds' },
+      { keyword: 'ttl', description: 'Minimum and maximum time to live' },
+    ]);
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
@@ -558,19 +1349,49 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       r: () => this.d(),
     });
     buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
-    buildVxlanInterfaceCommands(this.configIfTrie, {
-      selectedInterface: () => this.getSelectedInterface(),
-      resolveInterfaceName: (s) => this.resolveInterfaceName(s),
-      r: () => this.d(),
-    });
+    if (this.hasVxlanHardware()) {
+      buildVxlanInterfaceCommands(this.configIfTrie, {
+        selectedInterface: () => this.getSelectedInterface(),
+        resolveInterfaceName: (s) => this.resolveInterfaceName(s),
+        r: () => this.d(),
+      });
+    }
     buildPolicyConfig(this.configTrie, this.configRouteMapTrie, this, this.policy);
-    buildTrackSlaConfig(this.configTrie, this.configTrackTrie,
-      this.configIpSlaTrie, this, this.track, this.ipsla);
+    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
+    buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
+      this.configIpSlaHttpRawTrie, this);
+    registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
     buildACLConfigCommands(this.configTrie, this);
     buildACLInterfaceCommands(this.configIfTrie, this);
     // NAT
     buildNATConfigCommands(this.configTrie, this);
     buildNATInterfaceCommands(this.configIfTrie, this);
+    this.configIfTrie.registerGreedy('ip vrf forwarding', 'Bind interface to a VRF', (args) => {
+      if (args.length < 1) return '% Incomplete command.';
+      const vrfName = args[0];
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      if (!router._vrfs?.has(vrfName)) return `% VRF ${vrfName} not configured`;
+      router._vrfs.get(vrfName)!.interfaces.add(ifName);
+      (router._ifaceVrf ??= new Map()).set(ifName, vrfName);
+      for (const [name, vrf] of router._vrfs) {
+        if (name !== vrfName) vrf.interfaces.delete(ifName);
+      }
+      return '';
+    });
+    this.configIfTrie.registerGreedy('no ip vrf forwarding', 'Unbind interface from VRF', (args) => {
+      const ifName = this.getSelectedInterface?.();
+      if (!ifName) return '% No interface selected.';
+      const router = this.d() as unknown as { _vrfs?: Map<string, { name: string; interfaces: Set<string> }>; _ifaceVrf?: Map<string, string> };
+      const bound = router._ifaceVrf?.get(ifName);
+      if (bound) {
+        router._vrfs?.get(bound)?.interfaces.delete(ifName);
+        router._ifaceVrf?.delete(ifName);
+      }
+      void args;
+      return '';
+    });
     buildConfigDhcpCommands(this.configDhcpTrie, this);
     buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
     buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
@@ -581,6 +1402,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerKeyChainShowCommands(this.privilegedTrie, this);
     registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
+    this.configRouterTrie.setCompletionFilter((path, keyword) =>
+      routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
+        this.selectedRoutingProto?.proto ?? 'rip'));
     buildNamedStdACLCommands(this.configStdNaclTrie, this);
     buildNamedExtACLCommands(this.configExtNaclTrie, this);
     buildIPv6ACLGlobalCommands(this.configTrie, this);
@@ -590,11 +1414,31 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerOSPFInterfaceCommands(this.configIfTrie, this);
     buildConfigRouterOSPFCommands(this.configRouterOspfTrie, this);
     buildConfigRouterOSPFv3Commands(this.configRouterOspfv3Trie, this);
+
+    this.configVrfTrie.registerGreedy('rd', 'Route distinguisher', (args) => {
+      const rd = args.join(' ').trim();
+      const m = /^(\d+):(\d+)$/.exec(rd);
+      if (!m) return "% Invalid input detected at '^' marker.";
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b) || a > 4294967295 || b > 4294967295) {
+        return "% Invalid input detected at '^' marker.";
+      }
+      const r = this.d() as unknown as { _vrfs?: Map<string, { name: string; rd?: string }> };
+      if (this.selectedVRF != null) {
+        const v = r._vrfs?.get(this.selectedVRF);
+        if (v) v.rd = rd;
+      }
+      return '';
+    });
+    this.configVrfTrie.registerGreedy('route-target', 'Route target', () => '');
+    this.configVrfTrie.registerGreedy('description', 'Description', () => '');
     // IPSec
     buildIPSecGlobalCommands(this.configTrie, this);
     buildIPSecIfCommands(this.configIfTrie, this);
     buildISAKMPPolicyCommands(this.configIsakmpTrie, this);
     buildISAKMPProfileCommands(this.configIsakmpProfileTrie, this);
+    buildISAKMPKeyringCommands(this.configKeyringTrie, this);
     buildTransformSetCommands(this.configTfsetTrie, this);
     buildCryptoMapEntryCommands(this.configCryptoMapTrie, this);
     buildIPSecProfileCommands(this.configIpsecProfileTrie, this);
@@ -604,6 +1448,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIKEv2KeyringCommands(this.configIkev2KeyringTrie, this);
     buildIKEv2KeyringPeerCommands(this.configIkev2KeyringPeerTrie, this);
     buildIKEv2ProfileCommands(this.configIkev2ProfileTrie, this);
+    buildGdoiGlobalCommands(this.configTrie, this);
+    buildGdoiGroupCommands(this.configGdoiGroupTrie, this);
 
     buildSecurityConfigCommands(this.configTrie, this);
     buildSecurityInterfaceCommands(this.configIfTrie, this);
@@ -644,15 +1490,14 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     registerHsrpShowCommands(trie, this, this.fhrp);
     registerVrrpGlbpShowCommands(trie, this, this.fhrp);
     registerBfdShowCommands(trie, { r: () => this.d() });
-    registerIgmpShowCommands(trie, { r: () => this.d() });
-    registerPimShowCommands(trie, { r: () => this.d() });
-    registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerTrackSlaShow(trie, this, this.track, this.ipsla);
+    registerIgmpShowCommands(trie, this.multicastShowContext());
+    registerPimShowCommands(trie, this.multicastShowContext());
+    if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
+    registerTrackShowCommands(trie, this);
     registerPolicyShow(trie, this.policy);
+    trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
 
-    // `show logging` — projects the real LoggingConfig (router).
-    trie.registerGreedy('show logging', 'Display syslog state', () =>
-      this.logging.render());
+
 
     // `show tech-support` — real aggregation of the key show outputs.
     trie.register('show tech-support', 'Aggregate diagnostic output', () => {
@@ -660,67 +1505,58 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const section = (title: string, body: string) =>
         `------------------ ${title} ------------------\n${body}`;
       return [
-        section('show version', Show.showVersion(r, this.getChassisProfile())),
+        section('show version', Show.showVersion(r, this.getChassisProfile(),
+          this.fs().renderConfigRegisterLine())),
         section('show running-config', Show.showRunningConfig(r)),
         section('show ip interface brief', Show.showIpIntBrief(r)),
         section('show ip route', Show.showIpRoute(r)),
         section('show interfaces', Show.showInterfacesAll(r)),
         section('show ip protocols', Show.showIpProtocols(r)),
+        section('show processes cpu', showProcessesCpu()),
+        section('show ip nat translations', showNATTranslations(getRouter())),
+        section('show ip nat statistics', showNATStatistics(getRouter())),
+        section('show ip ospf neighbor', showIpOspfNeighbor(getRouter())),
+        section('show ip dhcp binding', getRouter()._getDHCPServerInternal().formatBindingsShow()),
         section('show logging', this.logging.render()),
       ].join('\n\n');
     });
 
-    trie.register('show ip route', 'Display IP routing table', () => Show.showIpRoute(getRouter()));
     trie.register('show bfd summary', 'Display BFD summary', () => ' No BFD sessions configured.');
     trie.register('show table-map', 'Display table-maps', () => ' No table-maps configured.');
-    trie.registerGreedy('show mls qos', 'Display MLS QoS', () => ' MLS QoS is disabled.');
     trie.register('show ip nbar protocol-discovery', 'Display NBAR discovery', () => ' NBAR protocol discovery is not enabled.');
     trie.registerGreedy('show queueing interface', 'Display interface queueing', () => ' Interface uses FIFO queueing.');
-    trie.registerGreedy('show interfaces', 'Display interface info', (args, raw) => {
-      const tail = args[args.length - 1]?.toLowerCase();
-      const router = getRouter();
-      if (tail === 'rate-limit') return ' Rate limiting is not configured on this interface.';
-      const ifName = Show.resolveInterfaceName?.(router, args.join(' ')) ?? args.join(' ');
-      const sub = args[args.length - 1]?.toLowerCase();
-      if (sub === 'accounting') return `${args.slice(0, -1).join(' ')}\n  No accounting protocols configured.`;
-      if (sub === 'switchport') return Show.showInterfaceSwitchport(router, ifName);
-      return Show.showInterface(router, ifName);
-    });
     trie.registerGreedy('show traffic-shape', 'Display traffic shaping', (args) => {
       if (args[0]?.toLowerCase() === 'statistics') return ' No traffic shaping statistics.';
       return ' No traffic shaping configured.';
     });
     trie.register('show ip policy', 'Display PBR bindings', () => {
       const r = getRouter() as any;
-      const m = r._ciscoIfacePolicyRouteMap as Map<string, string> | undefined;
-      const local = r._ciscoLocalPolicyRouteMap;
+      const local = getGlobalConfig(r).localPolicyRouteMap;
+      const m = new Map<string, string>();
+      for (const port of getRouter().getPorts()) {
+        const rm = port.getPolicyRouteMap();
+        if (rm) m.set(port.getName(), rm);
+      }
+      // Une colonne alignée sur l'en-tête, et le nom abrégé qu'IOS emploie
+      // ici : les lignes commençaient par une espace et débordaient de la
+      // colonne annoncée, donc rien ne s'alignait sur l'en-tête.
+      const COL = 15;
+      const head = `${'Interface'.padEnd(COL)}Route map`;
       const rows: string[] = [];
-      if (local) rows.push(` Local            ${local}`);
-      if (m) for (const [iface, rm] of m) rows.push(` ${iface.padEnd(16)} ${rm}`);
-      if (rows.length === 0) return 'Interface        Route map';
-      return ['Interface        Route map', ...rows].join('\n');
+      if (local) rows.push(`${'Local'.padEnd(COL)}${local}`);
+      for (const [iface, rm] of m) {
+        rows.push(`${iosShortInterfaceName(iface).padEnd(COL)}${rm}`);
+      }
+      return [head, ...rows].join('\n');
     });
     trie.register('show ip static route', 'Display static routes', () => Show.showIpRoute(getRouter()));
-    trie.registerGreedy('show interfaces accounting', 'Display interface accounting', () => {
-      const router = getRouter();
-      const ports = router.getPortNames();
-      const out: string[] = [];
-      for (const p of ports) out.push(`${p}\n  No accounting protocols configured.`);
-      return out.join('\n');
-    });
     trie.register('show ip interface brief', 'Display interface status summary', () => Show.showIpIntBrief(getRouter()));
-    trie.register('show running-config', 'Display running configuration', () => Show.showRunningConfig(getRouter()));
-    trie.register('show startup-config', 'Display saved configuration', () =>
-      this.startupConfig ?? '% startup-config is not present');
-    trie.register('show configuration', 'Display saved configuration', () =>
-      this.startupConfig ?? '% startup-config is not present');
-    trie.register('show ip rip database', 'Display RIP database', () => Show.showIpRipDatabase(getRouter()));
-    trie.registerGreedy('show ip cef', 'Display CEF FIB', () => Show.showIpCef(getRouter()));
+    trie.register('show ip rip database', 'Display RIP database',
+      () => Show.showIpRipDatabase(getRouter(), this.routingCfg.rip.autoSummary));
     // BGP/EIGRP/RIP-extras + show ip protocols come from the
     // RoutingConfigRepository (registerRoutingProtoShow), so they
     // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
-    trie.register('show ip traffic', 'Display IP traffic statistics', () => Show.showCounters(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
 
     // DHCP show commands
@@ -738,15 +1574,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // NAT show commands
     registerNATShowCommands(trie, getRouter);
 
-    // show running-config interface <name>
-    trie.registerGreedy('show running-config interface', 'Display interface running config', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid interface`;
-      return Show.showRunningConfigInterface(getRouter(), ifName);
-    });
-
-    trie.register('show version', 'Display system hardware and software status', () => Show.showVersion(getRouter(), this.getChassisProfile()));
 
     // `show interface[s] [<name>|description|status|summary]`.
     // Registered under both the singular and plural IOS spellings;
@@ -755,29 +1582,33 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       const sub = (args[0] || '').toLowerCase();
       if (args.length === 0) return Show.showInterfacesAll(getRouter());
       if (sub === 'description') return Show.showInterfacesDescription(getRouter());
-      if (sub === 'status') return Show.showInterfacesStatus(getRouter());
       if (sub === 'summary') return Show.showInterfacesSummary(getRouter());
-      if (sub === 'trunk') return Show.showInterfacesTrunk(getRouter());
+      // Sans interface nommée, IOS rend la vue pour TOUTES : proposer le
+      // mot-clé et refuser sa forme nue serait une aide qui ment.
+      if (args.length === 1 && (sub === 'stats' || sub === 'accounting' || sub === 'rate-limit')) {
+        const vue = sub === 'stats' ? Show.showInterfaceStats
+          : sub === 'accounting' ? Show.showInterfaceAccounting
+            : Show.showInterfaceRateLimit;
+        return [...getRouter()._getPortsInternal().keys()]
+          .map((n) => vue(getRouter(), n)).join('\n');
+      }
       const last = args[args.length - 1]?.toLowerCase();
-      const isViewModifier = last === 'accounting' || last === 'stats' || last === 'switchport';
+      const isViewModifier = last === 'accounting' || last === 'stats' || last === 'rate-limit';
       const ifPart = isViewModifier ? args.slice(0, -1).join(' ') : args.join(' ');
       const ifName = resolveInterfaceName(getRouter(), ifPart);
-      if (!ifName) return `% Invalid input detected at '^' marker.\nshow interface ${args.join(' ')}\n     ^`;
+      if (!ifName) {
+        // `ifPart` (the invalid argument) always starts right after the
+        // fixed "show interface " prefix, regardless of the view modifier.
+        const marker = ' '.repeat('show interface '.length) + '^';
+        return formatInvalidInputAt(marker);
+      }
       if (last === 'accounting') return Show.showInterfaceAccounting(getRouter(), ifName);
       if (last === 'stats') return Show.showInterfaceStats(getRouter(), ifName);
-      if (last === 'switchport') return Show.showInterfaceSwitchport(getRouter(), ifName);
+      if (last === 'rate-limit') return Show.showInterfaceRateLimit(getRouter(), ifName);
       return Show.showInterface(getRouter(), ifName);
     };
     trie.registerGreedy('show interfaces', 'Display interface status', showInterfaceCmd);
     trie.register('show vlans', 'Display VLANs (router)', () => Show.showVlansRouter(getRouter()));
-    trie.registerGreedy('show ipv6 interface', 'Display IPv6 interface state', (args) => {
-      const sub = (args[0] || '').toLowerCase();
-      if (sub === '' || sub === 'brief') return Show.showIpv6InterfaceBrief(getRouter());
-      const ifName = resolveInterfaceName(getRouter(), args.join(' '));
-      if (!ifName) return `% Invalid input detected at '^' marker.`;
-      return Show.showIpv6Interface(getRouter(), ifName);
-    });
-
     // `show ip interface[s] [brief|<name>]` — verbose/all + brief.
     const showIpInterfaceCmd = (args: string[]): string => {
       const sub = (args[0] || '').toLowerCase();
@@ -785,7 +1616,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       if (sub === 'brief') return Show.showIpIntBrief(getRouter());
       const ifName = resolveInterfaceName(getRouter(), args.join(' '));
       if (!ifName) return `% Invalid input detected at '^' marker.`;
-      return Show.showInterface(getRouter(), ifName);
+      // `show ip interface <nom>` rendait le bloc de `show interfaces`,
+      // c'est-à-dire l'AUTRE commande : le traitement IP de l'interface
+      // n'était affichable que pour toutes les interfaces à la fois.
+      return Show.showIpInterfaceOne(getRouter(), ifName);
     };
     trie.registerGreedy('show ip interface', 'Display IP interface status', showIpInterfaceCmd);
   }
@@ -793,65 +1627,46 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   // ─── Ping Command ────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
-    if (args.length === 0) {
-      return '% Ping requires a target IP address.';
-    }
+    const parsed = parsePingArgs(args);
+    if (parsed.error) return parsed.error;
 
-    let target = '';
-    let count = 5;
-    let timeoutMs = 2000;
-    let sourceIP: string | null = null;
-
-    let i = 0;
-    target = args[i++]?.trim() || '';
-
-    while (i < args.length) {
-      const kw = args[i]?.toLowerCase();
-      if (kw === 'source' && args[i + 1]) {
-        sourceIP = args[i + 1];
-        i += 2;
-      } else if (kw === 'repeat' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) count = n;
-        i += 2;
-      } else if (kw === 'timeout' && args[i + 1]) {
-        const n = parseInt(args[i + 1], 10);
-        if (!isNaN(n) && n > 0) timeoutMs = n * 1000;
-        i += 2;
-      } else if (kw === 'size' && args[i + 1]) {
-        i += 2;
-      } else {
-        i++;
-      }
-    }
-
-    if (!target) {
-      return '% Ping requires a target IP address.';
-    }
-
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) {
-      return `% Unrecognized host or address, or protocol not running.`;
-    }
-
+    const router = this.d();
+    let sourceIP = parsed.sourceIP;
     if (sourceIP) {
-      const router = this.d();
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
     }
 
-    const targetIP = new IPAddress(target);
-    const router = this.d();
+    if (parsed.protocol === 'ipv6') {
+      this._pendingAsync = router
+        .executePing6Sequence(
+          new IPv6Address(parsed.target), parsed.count, parsed.timeoutMs,
+          sourceIP ?? undefined, { sizeBytes: parsed.sizeBytes },
+        )
+        .then(results => formatCiscoPing(
+          parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+      return '';
+    }
 
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
-      return this._formatCiscoPing(target, count, timeoutMs, results);
+    this._pendingAsync = this.resoudreCible(router, parsed.target).then((adresse) => {
+      if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
+      return router
+        .executePingSequence(
+          new IPAddress(adresse), parsed.count, parsed.timeoutMs, sourceIP ?? undefined)
+        .then(results => formatCiscoPing(
+          adresse, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
     });
 
     return '';
+  }
+
+  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
+    if (isValidIPv4(cible)) return Promise.resolve(cible);
+    const svc = (appareil as {
+      getDnsService?: () => { resolve(n: string): Promise<string | null> };
+    }).getDnsService?.();
+    if (!svc) return Promise.resolve(null);
+    return svc.resolve(cible);
   }
 
   private _handleTraceroute(args: string[]): string {
@@ -865,6 +1680,12 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     let probesPerHop = 3;
 
     let i = 0;
+    let ipv6 = false;
+    const first = args[0]?.trim().toLowerCase();
+    if (first === 'ipv6' || first === 'ip') {
+      ipv6 = first === 'ipv6';
+      i++;
+    }
     target = args[i++]?.trim() || '';
 
     while (i < args.length) {
@@ -888,16 +1709,22 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     if (!target) return '% Traceroute requires a target IP address.';
 
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) return `% Unrecognized host or address, or protocol not running.`;
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) return `% Unrecognized host or address, or protocol not running.`;
+    if (ipv6 || looksLikeIPv6(target)) {
+      if (!looksLikeIPv6(target)) {
+        return `% Unrecognized host or address, or protocol not running.`;
+      }
+      this._pendingAsync = this.d()
+        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatCiscoTraceroute(target, maxHops, hops));
+      return '';
+    }
 
-    const targetIP = new IPAddress(target);
     const router = this.d();
-
-    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs, probesPerHop).then(hops => {
-      return this._formatCiscoTraceroute(target, maxHops, hops);
+    this._pendingAsync = this.resoudreCible(router, target).then((adresse) => {
+      if (!adresse) return `% Unrecognized host or address, or protocol not running.`;
+      return router
+        .executeTraceroute(new IPAddress(adresse), maxHops, timeoutMs, probesPerHop)
+        .then(hops => this._formatCiscoTraceroute(adresse, maxHops, hops));
     });
 
     return '';
@@ -966,37 +1793,5 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       }
     }
     return null;
-  }
-
-  private _formatCiscoPing(
-    target: string,
-    count: number,
-    timeoutMs: number,
-    results: Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>,
-  ): string {
-    const lines: string[] = [];
-    lines.push(`Type escape sequence to abort.`);
-    lines.push(`Sending ${count}, 100-byte ICMP Echos to ${target}, timeout is ${timeoutMs / 1000} seconds:`);
-
-    const chars = results.map(r => r.success ? '!' : '.');
-    if (results.length === 0) {
-      for (let i = 0; i < count; i++) chars.push('.');
-    }
-    lines.push(chars.join(''));
-
-    const successes = results.filter(r => r.success).length;
-    const total = results.length || count;
-    const pct = Math.round((successes / total) * 100);
-    lines.push(`Success rate is ${pct} percent (${successes}/${total})`);
-
-    if (successes > 0) {
-      const rtts = results.filter(r => r.success).map(r => r.rttMs);
-      const min = Math.min(...rtts);
-      const max = Math.max(...rtts);
-      const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
-      lines[lines.length - 1] += `, round-trip min/avg/max = ${min.toFixed(0)}/${avg.toFixed(0)}/${max.toFixed(0)} ms`;
-    }
-
-    return lines.join('\n');
   }
 }

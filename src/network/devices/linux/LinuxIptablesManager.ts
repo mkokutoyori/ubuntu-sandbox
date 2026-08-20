@@ -16,7 +16,7 @@
  */
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
-import { IPAddress } from '../../core/types';
+import { IPAddress, IPv6Address } from '../../core/types';
 
 // ─── Packet filtering types (shared with UFW) ───────────────────────
 
@@ -99,14 +99,31 @@ export interface NatResult {
 }
 
 const VALID_TABLES = new Set<string>(['filter', 'nat', 'mangle', 'raw']);
-const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'all']);
+const VALID_PROTOCOLS = new Set<string>(['tcp', 'udp', 'icmp', 'icmpv6', 'ipv6-icmp', 'all']);
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
-const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN']);
+const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
+
+// Real netfilter's xt_nat hook mask (verified against a real `iptables`
+// binary, not assumed): DNAT/REDIRECT only take effect before a routing
+// decision is made (PREROUTING for network-arriving traffic, OUTPUT for
+// locally-generated traffic); SNAT/MASQUERADE only after one (POSTROUTING),
+// with SNAT additionally valid in INPUT for a packet already decided as
+// locally-destined. `-A INPUT -j DNAT` is rejected on real Linux, not
+// silently accepted — this table is what lets that rejection be real here.
+const NAT_TARGET_HOOKS: Record<string, string[]> = {
+  DNAT: ['PREROUTING', 'OUTPUT'],
+  REDIRECT: ['PREROUTING', 'OUTPUT'],
+  SNAT: ['POSTROUTING', 'INPUT'],
+  MASQUERADE: ['POSTROUTING'],
+};
 
 // ─── Manager ─────────────────────────────────────────────────────────
 
+export type IptablesServiceResolver = (port: number, proto: string) => string | null;
+
 export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
+  private resolveService: IptablesServiceResolver | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
   // Rate limiting state for limit match extension: key = "srcIP:ruleKey" → timestamps
   private rateLimitHits: Map<string, number[]> = new Map();
@@ -114,10 +131,61 @@ export class LinuxIptablesManager {
   // Used for state/conntrack match extensions
   private conntrack: Map<string, number> = new Map();
   private readonly CONNTRACK_TIMEOUT = 300_000; // 5 minutes
+  // `--reject-with` of the rule that produced the most recent 'reject'
+  // verdict from filterPacket(), if any — read by the caller immediately
+  // after filterPacket() to pick the right ICMP error / TCP RST.
+  private lastRejectWith: string | null = null;
+  private logCallback: ((prefix: string, pkt: PacketInfo) => void) | null = null;
+  // `--set-mark`/`--set-xmark` of the most recent `-j MARK` match, if any
+  // — MARK is non-terminal. Consumption by policy routing (`ip rule`) is
+  // out of scope (PRD-Iptables-UFW.md §2.2); this only makes the mark
+  // itself observable.
+  private lastMark: string | null = null;
 
-  constructor(vfs?: VirtualFileSystem) {
+  readonly family: 4 | 6;
+
+  constructor(
+    vfs?: VirtualFileSystem,
+    resolveService?: IptablesServiceResolver,
+    opts?: { family?: 4 | 6 },
+  ) {
     if (vfs) this.vfs = vfs;
+    if (resolveService) this.resolveService = resolveService;
+    this.family = opts?.family ?? 4;
     this.initializeTables();
+  }
+
+  setLogCallback(cb: (prefix: string, pkt: PacketInfo) => void): void {
+    this.logCallback = cb;
+  }
+
+  hasDropOnInputPort(port: number, protocol: 'tcp' | 'udp' = 'tcp'): boolean {
+    const filter = this.tables.get('filter');
+    const input = filter?.chains.get('INPUT');
+    if (!input) return false;
+    for (const rule of input.rules) {
+      if (rule.target !== 'DROP' && rule.target !== 'REJECT') continue;
+      if (rule.protocol && rule.protocol !== protocol) continue;
+      if (rule.dport !== String(port)) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Wipe all tables/chains/rules back to the fresh-boot default (built-in
+   * chains only, ACCEPT policy, no rules) — real netfilter state does not
+   * survive a reboot; only persistence units (`ufw`, `netfilter-persistent`)
+   * reconstruct it afterwards from disk. Used by the `reboot`/`shutdown`
+   * command handler, before those units' boot-time lifecycle events fire.
+   */
+  resetAll(): void {
+    this.initializeTables();
+  }
+
+  /** Whether a chain currently exists in the given table. */
+  hasChain(tableName: TableName, chainName: string): boolean {
+    return this.tables.get(tableName)?.chains.has(chainName) ?? false;
   }
 
   private initializeTables(): void {
@@ -151,6 +219,8 @@ export class LinuxIptablesManager {
    * Supports INPUT, OUTPUT, and FORWARD chains based on pkt.direction.
    */
   filterPacket(pkt: PacketInfo): FirewallVerdict {
+    this.lastRejectWith = null;
+    this.lastMark = null;
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT'
                     : pkt.direction === 'out' ? 'OUTPUT'
@@ -167,10 +237,33 @@ export class LinuxIptablesManager {
   }
 
   /**
-   * Evaluate nat table for a packet (PREROUTING or POSTROUTING).
-   * Returns DNAT/SNAT/MASQUERADE target info or null.
+   * `--reject-with` of the rule that produced the 'reject' verdict from the
+   * most recent `filterPacket()` call, if any. Callers read this
+   * immediately after `filterPacket()` returns 'reject' to pick the right
+   * ICMP error (or TCP RST for `tcp-reset`).
    */
-  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'POSTROUTING'): NatResult | null {
+  getLastRejectWith(): string | null {
+    return this.lastRejectWith;
+  }
+
+  /**
+   * `--set-mark`/`--set-xmark` value of the most recent `-j MARK` match
+   * from the last `filterPacket()` call, if any. PRD-Iptables-UFW.md
+   * Phase 8 (objectif F.15) — consumption by policy routing is out of
+   * scope; this only exposes the mark itself.
+   */
+  getLastMark(): string | null {
+    return this.lastMark;
+  }
+
+  /**
+   * Evaluate nat table for a packet (PREROUTING, OUTPUT, or POSTROUTING —
+   * OUTPUT is a locally-generated packet's own DNAT/REDIRECT hook, real on
+   * Linux exactly like PREROUTING's, just before that host's own outbound
+   * routing decision instead of an arriving one).
+   * Returns DNAT/SNAT/MASQUERADE/REDIRECT target info or null.
+   */
+  evaluateNat(pkt: PacketInfo, hook: 'PREROUTING' | 'OUTPUT' | 'POSTROUTING'): NatResult | null {
     const natTable = this.tables.get('nat');
     if (!natTable) return null;
     const chain = natTable.chains.get(hook);
@@ -207,6 +300,64 @@ export class LinuxIptablesManager {
 
   // ─── Connection tracking ──────────────────────────────────────
 
+  // ─── Lecture de la table, pour `conntrack -L` / `-S` ────────────
+  //
+  // La table existait et faisait déjà marcher `iptables -m state`, mais
+  // rien ne la nommait : encore un moteur sans porte. Ce qui suit ne
+  // fabrique aucun état, il expose celui qui décide déjà du sort des
+  // paquets.
+
+  /** Compteurs réels de `conntrack -S`, incrémentés aux vrais points. */
+  readonly conntrackStats = { insert: 0, found: 0, invalid: 0, drop: 0 };
+
+  /**
+   * Les flux vivants, une entrée par CONNEXION (pas par direction).
+   *
+   * La table indexe les deux sens séparément — c'est ce dont
+   * `isEstablished` a besoin. `conntrack -L`, lui, montre un flux avec
+   * ses deux tuples, donc on les réunit ici : le sens ORIGINAL est celui
+   * dont le tuple inverse existe aussi, et l'absence de retour est
+   * exactement ce que le vrai binaire marque `[UNREPLIED]`.
+   */
+  listConntrack(): Array<{
+    protocol: string; srcIP: string; srcPort: number;
+    dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+  }> {
+    const now = Date.now();
+    const vus = new Set<string>();
+    const flux: Array<{
+      protocol: string; srcIP: string; srcPort: number;
+      dstIP: string; dstPort: number; ageMs: number; replied: boolean;
+    }> = [];
+    for (const [cle, ts] of this.conntrack) {
+      if (now - ts > this.CONNTRACK_TIMEOUT) continue;
+      const p = cle.split(':');
+      if (p.length < 5) continue;
+      const [protocol, srcIP, srcPort, dstIP, dstPort] = p;
+      const inverse = `${protocol}:${dstIP}:${dstPort}:${srcIP}:${srcPort}`;
+      if (vus.has(cle) || vus.has(inverse)) continue;
+      vus.add(cle);
+      flux.push({
+        protocol,
+        srcIP, srcPort: parseInt(srcPort, 10) || 0,
+        dstIP, dstPort: parseInt(dstPort, 10) || 0,
+        ageMs: now - ts,
+        replied: this.conntrack.has(inverse),
+      });
+    }
+    return flux;
+  }
+
+  /** Le délai d'expiration, ce que `conntrack -L` décompte par flux. */
+  conntrackTimeoutSec(): number { return this.CONNTRACK_TIMEOUT / 1000; }
+
+  /** `conntrack -F` — vide la table, et rend le nombre d'entrées jetées. */
+  flushConntrack(): number {
+    const n = this.conntrack.size;
+    this.conntrack.clear();
+    return n;
+  }
+
   /** Track a connection for state/conntrack matching (ESTABLISHED,RELATED) */
   private trackConnection(pkt: PacketInfo): void {
     // Track the reply direction: so the reply (dst→src) is ESTABLISHED
@@ -214,6 +365,7 @@ export class LinuxIptablesManager {
     this.conntrack.set(replyKey, Date.now());
     // Also track original direction
     const origKey = `${pkt.protocol}:${pkt.srcIP}:${pkt.srcPort}:${pkt.dstIP}:${pkt.dstPort}`;
+    if (!this.conntrack.has(origKey)) this.conntrackStats.insert++;
     this.conntrack.set(origKey, Date.now());
     // Periodically clean old entries (keep it simple — clean on every 50th insert)
     if (this.conntrack.size > 200) this.cleanConntrack();
@@ -228,6 +380,7 @@ export class LinuxIptablesManager {
       this.conntrack.delete(key);
       return false;
     }
+    this.conntrackStats.found++;
     return true;
   }
 
@@ -282,9 +435,17 @@ export class LinuxIptablesManager {
         switch (rule.target) {
           case 'ACCEPT': return 'accept';
           case 'DROP': return 'drop';
-          case 'REJECT': return 'reject';
+          case 'REJECT':
+            this.lastRejectWith = rule.targetOptions['--reject-with'] ?? null;
+            return 'reject';
           case 'RETURN': return null; // return to calling chain
-          case 'LOG': continue; // LOG doesn't terminate; continue to next rule
+          case 'LOG':
+            this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
+            continue; // LOG doesn't terminate; continue to next rule
+          case 'MARK': // MARK doesn't terminate
+            this.lastMark = rule.targetOptions['--set-mark'] ?? rule.targetOptions['--set-xmark'] ?? this.lastMark;
+            continue;
+          case 'NOTRACK': continue; // NOTRACK doesn't terminate
           default: continue;
         }
       }
@@ -297,7 +458,10 @@ export class LinuxIptablesManager {
   private ruleMatchesPacket(rule: IptablesRule, pkt: PacketInfo): boolean {
     // Protocol check
     if (rule.protocol && rule.protocol !== 'all') {
-      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17 : rule.protocol === 'icmp' ? 1 : -1;
+      const protoNum = rule.protocol === 'tcp' ? 6 : rule.protocol === 'udp' ? 17
+        : rule.protocol === 'icmp' ? 1
+        : (rule.protocol === 'icmpv6' || rule.protocol === 'ipv6-icmp') ? 58
+        : -1;
       const matches = pkt.protocol === protoNum;
       if (rule.negProtocol ? matches : !matches) return false;
     }
@@ -411,6 +575,7 @@ export class LinuxIptablesManager {
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
+    if (this.family === 6) return this.ip6MatchesSpec(ip, spec);
     if (!spec.includes('/')) return ip === spec;
     const [network, prefixStr] = spec.split('/');
     const prefix = parseInt(prefixStr);
@@ -422,8 +587,32 @@ export class LinuxIptablesManager {
     return (ipNum & mask) === (netNum & mask);
   }
 
+  private ip6MatchesSpec(ip: string, spec: string): boolean {
+    const slashIdx = spec.lastIndexOf('/');
+    const network = slashIdx === -1 ? spec : spec.slice(0, slashIdx);
+    const prefix = slashIdx === -1 ? 128 : parseInt(spec.slice(slashIdx + 1), 10);
+    if (isNaN(prefix) || prefix < 0 || prefix > 128) return false;
+    const ipAddr = this.tryParseV6(ip);
+    const netAddr = this.tryParseV6(network);
+    if (!ipAddr || !netAddr) return false;
+    return ipAddr.isInSameSubnet(netAddr, prefix);
+  }
+
+  private tryParseV6(addr: string): IPv6Address | null {
+    try { return new IPv6Address(addr); } catch { return null; }
+  }
+
   private ipToNumber(ip: string): number | null {
     return IPAddress.tryParse(ip)?.toUint32() ?? null;
+  }
+
+  /** Unsigned lexicographic comparison of two IPv6 addresses (hextet by hextet). */
+  private compareV6(a: IPv6Address, b: IPv6Address): number {
+    const ah = a.getHextets(), bh = b.getHextets();
+    for (let i = 0; i < 8; i++) {
+      if (ah[i] !== bh[i]) return ah[i] - bh[i];
+    }
+    return 0;
   }
 
   private portMatchesSpec(port: number, spec: string): boolean {
@@ -441,6 +630,13 @@ export class LinuxIptablesManager {
   private ipInRange(ip: string, range: string): boolean {
     const parts = range.split('-');
     if (parts.length !== 2) return false;
+    if (this.family === 6) {
+      const ipAddr = this.tryParseV6(ip);
+      const startAddr = this.tryParseV6(parts[0].trim());
+      const endAddr = this.tryParseV6(parts[1].trim());
+      if (!ipAddr || !startAddr || !endAddr) return false;
+      return this.compareV6(ipAddr, startAddr) >= 0 && this.compareV6(ipAddr, endAddr) <= 0;
+    }
     const ipNum = this.ipToNumber(ip);
     const startNum = this.ipToNumber(parts[0].trim());
     const endNum = this.ipToNumber(parts[1].trim());
@@ -638,7 +834,7 @@ export class LinuxIptablesManager {
       const opt = '--  ';
       const src = this.fmtAddr(r.source, r.negSource, numeric);
       const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
-      const extra = this.fmtRuleExtras(r);
+      const extra = this.fmtRuleExtras(r, numeric);
 
       if (verbose) {
         const pkts = String(r.pkts).padStart(5);
@@ -659,15 +855,60 @@ export class LinuxIptablesManager {
     return `${n}${addr}`;
   }
 
-  private fmtRuleExtras(r: IptablesRule): string {
+  private fmtRuleExtras(r: IptablesRule, numeric: boolean): string {
     const parts: string[] = [];
-    if (r.dport) parts.push(`${r.protocol} dpt:${r.dport}`);
-    if (r.sport) parts.push(`${r.protocol} spt:${r.sport}`);
+    if (r.dport) parts.push(`${r.protocol} ${r.dport.includes(':') ? 'dpts' : 'dpt'}:${this.portLabel(r.dport, r.protocol, numeric)}`);
+    if (r.sport) parts.push(`${r.protocol} ${r.sport.includes(':') ? 'spts' : 'spt'}:${this.portLabel(r.sport, r.protocol, numeric)}`);
     for (const m of r.matches) {
-      for (const [opt, val] of m.options) parts.push(`${opt.replace('--', '')}:${val}`);
+      const s = this.fmtMatch(m);
+      if (s) parts.push(s);
     }
-    for (const [opt, val] of Object.entries(r.targetOptions)) parts.push(`${opt.replace('--', '')} ${val}`);
+    const t = this.fmtTargetExtras(r.targetOptions);
+    if (t) parts.push(t);
     return parts.length > 0 ? ' ' + parts.join(' ') : '';
+  }
+
+  private portLabel(spec: string, proto: string, numeric: boolean): string {
+    if (numeric || !this.resolveService || !/^\d+$/.test(spec)) return spec;
+    return this.resolveService(parseInt(spec, 10), proto || 'tcp') ?? spec;
+  }
+
+  private fmtMatch(m: MatchExtension): string {
+    const o = m.options;
+    switch (m.module) {
+      case 'tcp': case 'udp': case 'icmp': return '';
+      case 'state':     return o.get('--state') ? `state ${o.get('--state')}` : '';
+      case 'conntrack': return o.get('--ctstate') ? `ctstate ${o.get('--ctstate')}` : '';
+      case 'multiport':
+        if (o.get('--dports')) return `multiport dports ${o.get('--dports')}`;
+        if (o.get('--sports')) return `multiport sports ${o.get('--sports')}`;
+        if (o.get('--ports'))  return `multiport ports ${o.get('--ports')}`;
+        return 'multiport';
+      case 'comment':   return `/* ${o.get('--comment') ?? ''} */`;
+      case 'limit':     return `limit: avg ${o.get('--limit') ?? ''} burst ${o.get('--limit-burst') ?? '5'}`;
+      case 'mac':       return o.get('--mac-source') ? `MAC ${o.get('--mac-source')}` : '';
+      default: {
+        const parts: string[] = [];
+        for (const [k, v] of o) parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, ''));
+        return parts.join(' ');
+      }
+    }
+  }
+
+  private fmtTargetExtras(opts: TargetOptions): string {
+    const parts: string[] = [];
+    for (const [k, v] of Object.entries(opts)) {
+      switch (k) {
+        case '--to-destination': case '--to-source': parts.push(`to:${v}`); break;
+        case '--to-ports':       parts.push(`redir ports ${v}`); break;
+        case '--reject-with':    parts.push(`reject-with ${v}`); break;
+        case '--log-prefix':     parts.push(`LOG flags 0 level 4 prefix "${v}"`); break;
+        case '--log-level':      break;
+        case '--set-mark': case '--set-xmark': parts.push(`MARK set ${v}`); break;
+        default:                 parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')); break;
+      }
+    }
+    return parts.join(' ');
   }
 
   private countRefs(name: string, table: IptablesTable): number {
@@ -759,8 +1000,30 @@ export class LinuxIptablesManager {
     if (r.target && !VALID_TARGETS.has(r.target) && !table.chains.has(r.target)) {
       return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
     }
+    const natErr = this.natTargetChainError(table, cn, r.target, 'RULE_APPEND');
+    if (natErr) return { output: natErr, exitCode: 4 };
     ch.rules.push(r);
     return { output: '', exitCode: 0 };
+  }
+
+  /**
+   * Reject a nat-table target in a built-in chain its real netfilter hook
+   * mask doesn't cover (see NAT_TARGET_HOOKS) — e.g. `-A INPUT -j DNAT`.
+   * A jump into a user-defined chain isn't traced back to which built-in
+   * chain(s) can reach it, so only direct rules on a built-in chain are
+   * checked here, matching the scope already accepted elsewhere in this
+   * manager for chain-reachability analysis.
+   */
+  private natTargetChainError(
+    table: IptablesTable, chainName: string, target: string,
+    op: 'RULE_APPEND' | 'RULE_INSERT' | 'RULE_REPLACE',
+  ): string | null {
+    if (table.name !== 'nat') return null;
+    const allowedChains = NAT_TARGET_HOOKS[target];
+    if (!allowedChains) return null;
+    if (!TABLE_BUILTIN_CHAINS.nat.includes(chainName)) return null;
+    if (allowedChains.includes(chainName)) return null;
+    return `iptables v1.8.7 (nf_tables):  ${op} failed (Invalid argument): rule in chain ${chainName}`;
   }
 
   // ─── -D ────────────────────────────────────────────────────────
@@ -807,6 +1070,8 @@ export class LinuxIptablesManager {
 
     const r = this.parseRule(ruleArgs);
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrI = this.natTargetChainError(table, cn, r.target, 'RULE_INSERT');
+    if (natErrI) return { output: natErrI, exitCode: 4 };
     ch.rules.splice(Math.min(pos - 1, ch.rules.length), 0, r);
     return { output: '', exitCode: 0 };
   }
@@ -822,6 +1087,8 @@ export class LinuxIptablesManager {
     if (isNaN(num) || num < 1 || num > ch.rules.length) return { output: 'iptables: Index of replacement too big.', exitCode: 1 };
     const r = this.parseRule(args.slice(2));
     if (typeof r === 'string') return { output: r, exitCode: 1 };
+    const natErrR = this.natTargetChainError(table, cn, r.target, 'RULE_REPLACE');
+    if (natErrR) return { output: natErrR, exitCode: 4 };
     ch.rules[num - 1] = r;
     return { output: '', exitCode: 0 };
   }
@@ -957,6 +1224,116 @@ export class LinuxIptablesManager {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // nft list ruleset — the nftables view onto the same live tables
+  // (Ubuntu's iptables-nft backend and nft share one netfilter state).
+  // ═══════════════════════════════════════════════════════════════════
+
+  listRuleset(): string {
+    const fam = this.family === 6 ? 'ip6' : 'ip';
+    const lines: string[] = [];
+    for (const [tn, table] of this.tables) {
+      const hasContent = [...table.chains.values()].some(
+        (c) => c.rules.length > 0 || (c.policy !== null && c.policy !== 'ACCEPT'),
+      );
+      if (!hasContent) continue;
+
+      lines.push(`table ${fam} ${tn} {`);
+      for (const [, ch] of table.chains) {
+        if (ch.rules.length === 0 && (ch.policy === null || ch.policy === 'ACCEPT')) continue;
+        lines.push(`\tchain ${ch.name} {`);
+        const hookLine = this.nftHookLine(tn, ch.name, ch.policy);
+        if (hookLine) lines.push(`\t\t${hookLine}`);
+        for (const r of ch.rules) lines.push(`\t\t${this.fmtNftRule(r)}`);
+        lines.push('\t}');
+      }
+      lines.push('}');
+    }
+    return lines.join('\n');
+  }
+
+  private static readonly NFT_HOOKS: Record<string, { hook: string; prio: number }> = {
+    'filter:INPUT': { hook: 'input', prio: 0 },
+    'filter:FORWARD': { hook: 'forward', prio: 0 },
+    'filter:OUTPUT': { hook: 'output', prio: 0 },
+    'nat:PREROUTING': { hook: 'prerouting', prio: -100 },
+    'nat:INPUT': { hook: 'input', prio: 100 },
+    'nat:OUTPUT': { hook: 'output', prio: -100 },
+    'nat:POSTROUTING': { hook: 'postrouting', prio: 100 },
+    'mangle:PREROUTING': { hook: 'prerouting', prio: -150 },
+    'mangle:INPUT': { hook: 'input', prio: -150 },
+    'mangle:FORWARD': { hook: 'forward', prio: -150 },
+    'mangle:OUTPUT': { hook: 'output', prio: -150 },
+    'mangle:POSTROUTING': { hook: 'postrouting', prio: -150 },
+    'raw:PREROUTING': { hook: 'prerouting', prio: -300 },
+    'raw:OUTPUT': { hook: 'output', prio: -300 },
+  };
+
+  private nftHookLine(tableName: TableName, chainName: string, policy: BuiltinPolicy | null): string {
+    if (policy === null) return '';
+    const spec = LinuxIptablesManager.NFT_HOOKS[`${tableName}:${chainName}`];
+    if (!spec) return '';
+    const type = tableName === 'nat' ? 'nat' : 'filter';
+    return `type ${type} hook ${spec.hook} priority ${spec.prio}; policy ${policy.toLowerCase()};`;
+  }
+
+  private fmtNftRule(r: IptablesRule): string {
+    const fam = this.family === 6 ? 'ip6' : 'ip';
+    const parts: string[] = [];
+    if (r.source) parts.push(`${fam} saddr ${r.negSource ? '!= ' : ''}${r.source}`);
+    if (r.destination) parts.push(`${fam} daddr ${r.negDestination ? '!= ' : ''}${r.destination}`);
+    if (r.inInterface) parts.push(`iifname ${r.negInInterface ? '!= ' : ''}"${r.inInterface}"`);
+    if (r.outInterface) parts.push(`oifname ${r.negOutInterface ? '!= ' : ''}"${r.outInterface}"`);
+    if (r.protocol && r.protocol !== 'all') {
+      if (r.sport) parts.push(`${r.protocol} sport ${r.sport}`);
+      if (r.dport) parts.push(`${r.protocol} dport ${r.dport}`);
+      if (!r.sport && !r.dport) parts.push(`meta l4proto ${r.protocol}`);
+    }
+    for (const m of r.matches) {
+      const s = this.fmtNftMatch(m);
+      if (s) parts.push(s);
+    }
+    parts.push(`counter packets ${r.pkts} bytes ${r.bytes}`);
+    const action = this.fmtNftAction(r);
+    if (action) parts.push(action);
+    return parts.join(' ');
+  }
+
+  private fmtNftMatch(m: MatchExtension): string {
+    const o = m.options;
+    switch (m.module) {
+      case 'state': return o.get('--state') ? `ct state ${(o.get('--state') ?? '').toLowerCase()}` : '';
+      case 'conntrack': return o.get('--ctstate') ? `ct state ${(o.get('--ctstate') ?? '').toLowerCase()}` : '';
+      case 'comment': return o.get('--comment') ? `comment "${o.get('--comment')}"` : '';
+      case 'limit': return o.get('--limit') ? `limit rate ${o.get('--limit')}` : '';
+      case 'mac': return o.get('--mac-source') ? `ether saddr ${o.get('--mac-source')}` : '';
+      default: return '';
+    }
+  }
+
+  private fmtNftAction(r: IptablesRule): string {
+    switch (r.target) {
+      case 'ACCEPT': return 'accept';
+      case 'DROP': return 'drop';
+      case 'REJECT': {
+        const w = r.targetOptions['--reject-with'];
+        if (w === 'tcp-reset') return 'reject with tcp reset';
+        if (w) return `reject with icmp type ${w.replace(/^icmp-/, '')}`;
+        return 'reject';
+      }
+      case 'RETURN': return 'return';
+      case 'LOG': {
+        const prefix = r.targetOptions['--log-prefix'];
+        return prefix ? `log prefix "${prefix}"` : 'log';
+      }
+      case 'MASQUERADE': return 'masquerade';
+      case 'DNAT': return `dnat to ${r.targetOptions['--to-destination'] ?? ''}`;
+      case 'SNAT': return `snat to ${r.targetOptions['--to-source'] ?? ''}`;
+      case 'REDIRECT': return `redirect to :${r.targetOptions['--to-port'] ?? r.targetOptions['--to-ports'] ?? ''}`;
+      default: return `jump ${r.target}`;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // Rule parsing & validation
   // ═══════════════════════════════════════════════════════════════════
 
@@ -1070,6 +1447,7 @@ export class LinuxIptablesManager {
   // ─── Validation helpers ────────────────────────────────────────
 
   private validateIPSpec(spec: string): boolean {
+    if (this.family === 6) return this.validateIPv6Spec(spec);
     if (spec.includes('/')) {
       const [ip, prefix] = spec.split('/');
       const p = parseInt(prefix);
@@ -1077,6 +1455,16 @@ export class LinuxIptablesManager {
       return this.ipToNumber(ip) !== null;
     }
     return this.ipToNumber(spec) !== null;
+  }
+
+  private validateIPv6Spec(spec: string): boolean {
+    const slashIdx = spec.lastIndexOf('/');
+    const addr = slashIdx === -1 ? spec : spec.slice(0, slashIdx);
+    if (slashIdx !== -1) {
+      const p = parseInt(spec.slice(slashIdx + 1), 10);
+      if (isNaN(p) || p < 0 || p > 128) return false;
+    }
+    return this.tryParseV6(addr) !== null;
   }
 
   private validatePortSpec(spec: string): boolean {

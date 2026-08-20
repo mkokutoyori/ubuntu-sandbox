@@ -187,13 +187,28 @@ describe('sc description — exact output', () => {
 });
 
 describe('sc qfailure — exact output', () => {
-  it('should show failure recovery actions', async () => {
+  it('shows no recovery actions until `sc failure` configures them', async () => {
     const pc = createPC();
+    const output = await pc.executeCommand('sc qfailure Dhcp');
+    expect(output).toContain('[SC] QueryServiceConfig2 SUCCESS');
+    expect(output).toContain('RESET_PERIOD (in seconds)    : 0');
+    expect(output).toContain('FAILURE_ACTIONS              : NONE');
+  });
+
+  it('reflects the actions configured via `sc failure`', async () => {
+    const pc = createPC();
+    pc.setCurrentUser('Administrator');
+    await pc.executeCommand(
+      'sc failure Dhcp reset= 86400 actions= restart/120000/restart/300000/run/0 command= "notify.exe"',
+    );
     const output = await pc.executeCommand('sc qfailure Dhcp');
     expect(output).toContain('[SC] QueryServiceConfig2 SUCCESS');
     expect(output).toContain('RESET_PERIOD (in seconds)    : 86400');
     expect(output).toContain('FAILURE_ACTIONS');
     expect(output).toContain('RESTART -- Delay = 120000 milliseconds');
+    expect(output).toContain('RESTART -- Delay = 300000 milliseconds');
+    expect(output).toContain('RUN PROCESS -- Delay = 0 milliseconds');
+    expect(output).toContain('notify.exe');
   });
 });
 

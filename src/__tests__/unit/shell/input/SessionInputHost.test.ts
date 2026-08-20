@@ -34,7 +34,7 @@ describe('SessionInputHost + LinuxTerminalSession', () => {
     expect(session.currentInputMode.type).toBe('normal');
   });
 
-  it('switches into password mode when password() is used and echoes asterisks', async () => {
+  it('switches into password mode when password() is used and hides the typed secret', async () => {
     const { session, broker } = makeSession();
     const promise = broker.password('Pwd: ');
     await flush();
@@ -43,7 +43,9 @@ describe('SessionInputHost + LinuxTerminalSession', () => {
     session.setPasswordBuf('hunter2');
     session.handleKey(key('Enter'));
     expect(await promise).toBe('hunter2');
-    expect(session.lines.some(l => l.text === '*******')).toBe(true);
+    expect(session.lines.some(l => l.text.includes('hunter2'))).toBe(false);
+    expect(session.lines.some(l => l.text.includes('*'))).toBe(false);
+    expect(session.lines.some(l => l.promptText === 'Pwd: ')).toBe(true);
   });
 
   it('Ctrl+C cancels a pending prompt and resolves with null', async () => {

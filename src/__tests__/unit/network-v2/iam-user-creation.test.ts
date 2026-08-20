@@ -31,13 +31,22 @@ import {
 import { LinuxGroup } from '@/network/devices/linux/iam/LinuxGroup';
 import { parseUseraddArgs } from '@/network/devices/linux/iam/useraddOptions';
 import { parseAdduserArgs } from '@/network/devices/linux/iam/adduserOptions';
-import { LinuxFlowBuilder } from '@/terminal/flows/LinuxFlowBuilder';
+import { buildLinuxInteractionPlan } from '@/network/devices/linux/interaction/LinuxInteractionPlanner';
+
+/** Compat shim over the device-layer planner (ex-LinuxFlowBuilder API). */
+const buildFlow = (
+  cmd: string, user: string, uid: number, device: unknown,
+) => buildLinuxInteractionPlan(
+  cmd, { currentUser: user, currentUid: uid },
+  device as import('@/network/devices/linux/interaction/LinuxInteractionPlanner').LinuxPlannerDevice,
+)?.steps ?? null;
+
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { EventBus } from '@/events/EventBus';
 import type { DomainEvent } from '@/events/types';
-import type { InteractiveStep } from '@/terminal/core/types';
+import type { InteractionStep } from '@/shell/interaction/CommandInteraction';
 
 // ═══════════════════════════════════════════════════════════════════
 // GecosInfo
@@ -294,8 +303,8 @@ function createMockDevice(overrides?: Record<string, unknown>) {
 }
 
 /** Count how many steps of a given type a flow contains. */
-function countSteps(steps: InteractiveStep[], type: string): number {
-  return steps.filter((s) => s.type === type).length;
+function countSteps(steps: readonly InteractionStep[], kind: string): number {
+  return steps.filter((s) => s.kind === kind).length;
 }
 
 /** Type-safe extraction of a domain-event payload by topic. */
@@ -306,19 +315,19 @@ function payloadOf<T extends DomainEvent['topic']>(
   const event = events.find(
     (e): e is Extract<DomainEvent, { topic: T }> => e.topic === topic,
   );
-  return event?.payload;
+  return event?.payload as any;
 }
 
 describe('LinuxFlowBuilder — useradd is non-interactive (faithful)', () => {
   it('never builds a flow for `useradd` as root', () => {
     const device = createMockDevice();
-    expect(LinuxFlowBuilder.build('useradd bob', 'root', 0, device)).toBeNull();
-    expect(LinuxFlowBuilder.build('useradd -m -s /bin/bash bob', 'root', 0, device)).toBeNull();
+    expect(buildFlow('useradd bob', 'root', 0, device)).toBeNull();
+    expect(buildFlow('useradd -m -s /bin/bash bob', 'root', 0, device)).toBeNull();
   });
 
   it('`sudo useradd` only authenticates sudo — no password/GECOS capture', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('sudo useradd bob', 'user', 1000, device);
+    const steps = buildFlow('sudo useradd bob', 'user', 1000, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(1); // sudo password only
     expect(countSteps(steps!, 'text')).toBe(0);
@@ -329,7 +338,7 @@ describe('LinuxFlowBuilder — useradd is non-interactive (faithful)', () => {
 describe('LinuxFlowBuilder — adduser (root)', () => {
   it('builds an interactive flow for a plain user creation', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser bob', 'root', 0, device);
+    const steps = buildFlow('adduser bob', 'root', 0, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(2);   // new + retype
     expect(countSteps(steps!, 'text')).toBe(5);       // 5 GECOS fields
@@ -338,7 +347,7 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
 
   it('skips the GECOS prompts when --gecos is supplied (quote-aware)', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser --gecos "Bob Martin" bob', 'root', 0, device);
+    const steps = buildFlow('adduser --gecos "Bob Martin" bob', 'root', 0, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(2);
     expect(countSteps(steps!, 'text')).toBe(0);
@@ -346,7 +355,7 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
 
   it('skips the password prompts with --disabled-password', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('adduser --disabled-password bob', 'root', 0, device);
+    const steps = buildFlow('adduser --disabled-password bob', 'root', 0, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(0);
     expect(countSteps(steps!, 'text')).toBe(5);
@@ -354,29 +363,29 @@ describe('LinuxFlowBuilder — adduser (root)', () => {
 
   it('returns null for the add-to-group overload', () => {
     const device = createMockDevice();
-    expect(LinuxFlowBuilder.build('adduser bob sudo', 'root', 0, device)).toBeNull();
+    expect(buildFlow('adduser bob sudo', 'root', 0, device)).toBeNull();
   });
 
   it('returns null for the create-group overload', () => {
     const device = createMockDevice();
-    expect(LinuxFlowBuilder.build('adduser --group dev', 'root', 0, device)).toBeNull();
+    expect(buildFlow('adduser --group dev', 'root', 0, device)).toBeNull();
   });
 
   it('returns null for a --system account (non-interactive)', () => {
     const device = createMockDevice();
-    expect(LinuxFlowBuilder.build('adduser --system svc', 'root', 0, device)).toBeNull();
+    expect(buildFlow('adduser --system svc', 'root', 0, device)).toBeNull();
   });
 
   it('returns null when the account already exists', () => {
     const device = createMockDevice({ userExists: vi.fn().mockReturnValue(true) });
-    expect(LinuxFlowBuilder.build('adduser bob', 'root', 0, device)).toBeNull();
+    expect(buildFlow('adduser bob', 'root', 0, device)).toBeNull();
   });
 });
 
 describe('LinuxFlowBuilder — sudo adduser', () => {
   it('prepends a sudo password step to the creation flow', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('sudo adduser bob', 'user', 1000, device);
+    const steps = buildFlow('sudo adduser bob', 'user', 1000, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(3); // sudo + new + retype
     expect(countSteps(steps!, 'text')).toBe(5);
@@ -384,7 +393,7 @@ describe('LinuxFlowBuilder — sudo adduser', () => {
 
   it('only authenticates sudo for the add-to-group overload', () => {
     const device = createMockDevice();
-    const steps = LinuxFlowBuilder.build('sudo adduser bob sudo', 'user', 1000, device);
+    const steps = buildFlow('sudo adduser bob sudo', 'user', 1000, device);
     expect(steps).not.toBeNull();
     expect(countSteps(steps!, 'password')).toBe(1);
     expect(countSteps(steps!, 'text')).toBe(0);

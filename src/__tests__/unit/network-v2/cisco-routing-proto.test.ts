@@ -42,8 +42,11 @@ describe('Cisco RIP submode — full knob set, real state', () => {
     expect(proto).toMatch(/Routing Protocol is "rip"/);
     expect(proto).toMatch(/Automatic network summarization is not in effect/);
     expect(proto).toContain('192.168.1.0');
-    expect(proto).toMatch(/Distance: 120/);
-    expect(await r.executeCommand('show ip rip database')).toContain('192.168.1.0');
+    expect(proto).toMatch(/Distance: \(default is 120\)/);
+    // La base RIP decrit des ROUTES : ce routeur ne porte aucune adresse,
+    // donc elle est vide — les instructions `network` sont dans la vue
+    // ci-dessus, pas ici.
+    expect(await r.executeCommand('show ip rip database')).toBe('');
   });
 });
 
@@ -69,7 +72,19 @@ describe('Cisco EIGRP — config-driven real state (no engine ⇒ honest)', () =
     const nbr = await r.executeCommand('show ip eigrp neighbors');
     expect(nbr).not.toMatch(/Invalid input/);
     expect(nbr).toMatch(/AS\(100\)/);
-    expect(await r.executeCommand('show ip eigrp topology')).toContain('10.0.0.0');
+    // Aucune interface ne porte encore d'adresse : la table de topologie
+    // est VIDE, comme sur une vraie machine. Y faire figurer l'instruction
+    // `network` elle-même décrirait un préfixe que rien n'annonce.
+    const vide = await r.executeCommand('show ip eigrp topology');
+    expect(vide).toContain('EIGRP-IPv4 Topology Table for AS(100)/ID(1.1.1.1)');
+    expect(vide).not.toContain('P 10.0.0.0');
+
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('interface GigabitEthernet0/1');
+    await r.executeCommand('ip address 10.0.1.1 255.255.255.0');
+    await r.executeCommand('no shutdown');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show ip eigrp topology')).toContain('P 10.0.1.0/24');
   });
 });
 

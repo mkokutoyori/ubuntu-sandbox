@@ -85,6 +85,7 @@ import './product_component_version';
 import './dict_columns';
 import './v_active_instances';
 import './v_active_session_history';
+import './v_cluster_interconnects';
 import './v_archive_dest';
 import './v_archive_dest_status';
 import './v_archive_gap';
@@ -385,6 +386,7 @@ import './dba_dv_command_rule';
 import './dba_dv_factor';
 import './proxy_users';
 import './audit_unified_policies';
+import './audit_unified_enabled_policies';
 import './dba_audit_mgmt_config_params';
 import './dba_audit_mgmt_last_arch_ts';
 

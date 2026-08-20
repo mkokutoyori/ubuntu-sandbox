@@ -49,6 +49,7 @@ export interface OSServiceInit {
   restart?: RestartPolicy;
   loadedFrom?: string;
   wantedBy?: string[];
+  wants?: string[];
   after?: string[];
   before?: string[];
   requires?: string[];
@@ -118,6 +119,7 @@ export class OSService {
 
   // ─── dependency graph ──────────────────────────────────────────────
   wantedBy: string[];
+  wants: string[];
   requiredBy: string[] = [];
   after: string[];
   before: string[];
@@ -199,6 +201,7 @@ export class OSService {
     this.restart = init.restart ?? 'on-failure';
     this.loadedFrom = init.loadedFrom ?? `/lib/systemd/system/${init.name}.service`;
     this.wantedBy = init.wantedBy ?? ['multi-user.target'];
+    this.wants = init.wants ?? [];
     this.after = init.after ?? [];
     this.before = init.before ?? [];
     this.requires = init.requires ?? [];

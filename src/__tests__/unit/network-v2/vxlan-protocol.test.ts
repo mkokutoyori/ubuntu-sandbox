@@ -91,8 +91,8 @@ describe('VXLAN — encap/decap end-to-end', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -122,8 +122,8 @@ describe('VXLAN — encap/decap end-to-end', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -159,8 +159,8 @@ describe('VXLAN — encap/decap end-to-end', () => {
         }
       }
     });
-    cable.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    cable.connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 
@@ -182,8 +182,8 @@ describe('VXLAN — MAC learning', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     r1.getVxlanAgent().bindVni('GigabitEthernet0/0', 5000, '10.0.0.1');
@@ -206,9 +206,9 @@ describe('VXLAN — MAC learning', () => {
     const r3 = new CiscoRouter('R3');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); r3.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-    new Cable('c').connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+    new Cable('c').connect(r3.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/3')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     r3.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.3'), new SubnetMask('255.255.255.0'));
@@ -235,8 +235,8 @@ describe('VXLAN — MAC learning', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
     r1.getVxlanAgent().bindVni('GigabitEthernet0/0', 5000, '10.0.0.1');
@@ -280,8 +280,8 @@ describe('VXLAN — Cisco↔Huawei interop', () => {
     const huawei = new HuaweiRouter('HW');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
     cisco.setEventBus(bus); huawei.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(cisco.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(huawei.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/2')!);
     cisco.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
     huawei.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
 

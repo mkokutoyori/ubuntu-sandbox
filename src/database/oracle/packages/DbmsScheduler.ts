@@ -1,5 +1,14 @@
 import { builtinPackageRegistry, type IPackageRoutine, type PackageCallContext } from './PackageRegistry';
 import type { SchedulerManager } from '../scheduler/SchedulerManager';
+import type { JobType } from '../scheduler/SchedulerJob';
+
+const JOB_TYPES: readonly JobType[] = ['PLSQL_BLOCK', 'STORED_PROCEDURE', 'EXECUTABLE'];
+
+/** Normalise the job_type argument to a known DBMS_SCHEDULER job type. */
+function coerceJobType(raw: string | undefined): JobType {
+  const t = (raw ?? 'PLSQL_BLOCK').toUpperCase();
+  return (JOB_TYPES as readonly string[]).includes(t) ? (t as JobType) : 'PLSQL_BLOCK';
+}
 
 function mgr(ctx: PackageCallContext): SchedulerManager | null {
   return ctx.services.scheduler ?? null;
@@ -16,7 +25,7 @@ class CreateJob implements IPackageRoutine {
   invoke(args: string[], ctx: PackageCallContext): string | null {
     const m = mgr(ctx); if (!m) return null;
     const { owner, jobName } = parseOwnerJob(args[0] ?? '', ctx);
-    const jobType = (args[1] ?? 'PLSQL_BLOCK').toUpperCase() as 'PLSQL_BLOCK';
+    const jobType = coerceJobType(args[1]);
     const jobAction = args[2] ?? '';
     const startDate = args[3] ? new Date(args[3]) : null;
     const repeatInterval = args[4] ?? null;

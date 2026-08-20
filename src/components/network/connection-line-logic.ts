@@ -60,6 +60,25 @@ export function getConnectionDash(type: ConnectionType): string {
   }
 }
 
+/** Colour of a link carrying nothing — the cable's own colour says only what it is. */
+export const DEAD_LINK_COLOR = '#ef4444';
+/** Dash of a link carrying nothing, so colour is not the only signal. */
+export const DEAD_LINK_DASH = '6,6';
+
+/**
+ * A drawn cable is not a working link: the far end may be shut down or
+ * switched off, and the operator has no other way to see it from the
+ * canvas. Down wins over the cable's own type, since the question
+ * "does this carry?" outranks "what kind of wire is it?".
+ */
+export function getLinkAppearance(
+  type: ConnectionType,
+  operational: boolean,
+): { color: string; dash: string } {
+  if (operational) return { color: getConnectionColor(type), dash: getConnectionDash(type) };
+  return { color: DEAD_LINK_COLOR, dash: DEAD_LINK_DASH };
+}
+
 export interface LabelPositions {
   source: Point;
   target: Point;

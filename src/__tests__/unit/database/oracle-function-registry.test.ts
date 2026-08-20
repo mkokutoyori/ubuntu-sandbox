@@ -15,7 +15,7 @@ function scalar(sql: string) {
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   executor = db.connectAsSysdba().executor;
 });
 

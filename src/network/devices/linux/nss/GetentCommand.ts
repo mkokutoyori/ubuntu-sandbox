@@ -40,6 +40,7 @@ import { GetentFormatter } from './GetentFormatter';
 import type {
   NssEnumResult, NssResult,
   NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
@@ -71,10 +72,24 @@ const USAGE = [
  * Parse the argument list. Returns `{ ok, options, args }` or
  * `{ ok: false, message }` on malformed input.
  */
+interface ParsedServiceOverride {
+  global: string | null;
+  perDb: Map<string, string>;
+}
+
+function applyServiceConfig(config: string, into: ParsedServiceOverride): void {
+  const colon = config.indexOf(':');
+  if (colon === -1) {
+    into.global = config.toLowerCase();
+  } else {
+    into.perDb.set(config.slice(0, colon).toLowerCase(), config.slice(colon + 1).toLowerCase());
+  }
+}
+
 function parseArgs(argv: string[]):
-  | { ok: true; serviceOverride: string | null; database: string; keys: string[] }
+  | { ok: true; service: ParsedServiceOverride; database: string; keys: string[] }
   | { ok: false; output: string; exitCode: number } {
-  let serviceOverride: string | null = null;
+  const service: ParsedServiceOverride = { global: null, perDb: new Map() };
   let i = 0;
   while (i < argv.length) {
     const a = argv[i];
@@ -92,12 +107,12 @@ function parseArgs(argv: string[]):
       if (i + 1 >= argv.length) {
         return { ok: false, output: USAGE, exitCode: 1 };
       }
-      serviceOverride = argv[i + 1];
+      applyServiceConfig(argv[i + 1], service);
       i += 2;
       continue;
     }
     if (a.startsWith('--service=')) {
-      serviceOverride = a.slice('--service='.length);
+      applyServiceConfig(a.slice('--service='.length), service);
       i++;
       continue;
     }
@@ -112,7 +127,7 @@ function parseArgs(argv: string[]):
   }
   const database = argv[i].toLowerCase();
   const keys = argv.slice(i + 1);
-  return { ok: true, serviceOverride, database, keys };
+  return { ok: true, service, database, keys };
 }
 
 /**
@@ -125,23 +140,28 @@ export function runGetent(
   fallbackFilesSource: FilesNssSource,
 ): GetentResult {
   const parsed = parseArgs(argv);
-  if (!parsed.ok) return { output: parsed.output, exitCode: parsed.exitCode };
+  if (parsed.ok === false) return { output: parsed.output, exitCode: parsed.exitCode };
 
-  // `-s files` overrides the nsswitch.conf-declared chain: we narrow the
-  // resolver scope to just that source.
+  const overrideFor = (database: string): string | null =>
+    parsed.service.perDb.get(database) ?? parsed.service.global;
+
+  // The resolver caches per (database, key); handlers pass no key of
+  // their own, so the invocation's own argv plus the position of the
+  // call in the (deterministic) call sequence identifies it exactly.
+  const invocation = argv.join(' ');
+  let callSeq = 0;
+
   const resolveSingle = <T>(database: string, fn: (s: INssSource) => NssResult<T> | undefined): NssResult<T> => {
-    if (parsed.serviceOverride === 'files') {
-      const r = fn(fallbackFilesSource);
-      return r ?? { status: 'UNAVAIL' };
-    }
-    return nss.lookup<T>(database, fn);
+    const ov = overrideFor(database);
+    if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL' };
+    if (ov) return nss.lookupVia<T>(ov, fn);
+    return nss.lookup<T>(database, fn, `${invocation}#${callSeq++}`);
   };
   const resolveEnum = <T>(database: string, fn: (s: INssSource) => NssEnumResult<T> | undefined): NssEnumResult<T> => {
-    if (parsed.serviceOverride === 'files') {
-      const r = fn(fallbackFilesSource);
-      return r ?? { status: 'UNAVAIL', entries: [] };
-    }
-    return nss.enumerate<T>(database, fn);
+    const ov = overrideFor(database);
+    if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL', entries: [] };
+    if (ov) return nss.enumerateVia<T>(ov, fn);
+    return nss.enumerate<T>(database, fn, `${invocation}#${callSeq++}`);
   };
 
   switch (parsed.database) {
@@ -149,10 +169,11 @@ export function runGetent(
     case 'group':     return handleGroup(resolveSingle, resolveEnum, parsed.keys);
     case 'shadow':    return handleShadow(resolveSingle, resolveEnum, parsed.keys);
     case 'gshadow':   return handleGshadow(resolveSingle, resolveEnum, parsed.keys);
-    case 'hosts':     return handleHosts(resolveSingle, resolveEnum, parsed.keys);
-    case 'ahosts':    return handleAhosts(resolveSingle, resolveEnum, parsed.keys);
-    case 'ahostsv4':  return handleAhostsFamily(resolveSingle, resolveEnum, parsed.keys, 2);
-    case 'ahostsv6':  return handleAhostsFamily(resolveSingle, resolveEnum, parsed.keys, 10);
+    case 'hosts':
+    case 'ahosts':
+    case 'ahostsv4':
+    case 'ahostsv6':
+      return handleHostsDb(resolveSingle, resolveEnum, parsed.database, parsed.keys);
     case 'services':  return handleServices(resolveSingle, resolveEnum, parsed.keys);
     case 'protocols': return handleProtocols(resolveSingle, resolveEnum, parsed.keys);
     case 'networks':  return handleNetworks(resolveSingle, resolveEnum, parsed.keys);
@@ -160,17 +181,58 @@ export function runGetent(
     case 'rpc':       return handleRpc(resolveSingle, resolveEnum, parsed.keys);
     case 'netgroup':  return handleNetgroup(resolveSingle, resolveEnum, parsed.keys);
     case 'initgroups':return handleInitgroups(resolveSingle, parsed.keys);
-    case 'aliases':
-      // /etc/aliases — mail aliases. Real getent supports it; the
-      // simulator has no mail subsystem, return UNAVAIL → empty.
-      return { output: '', exitCode: 2 };
+    case 'aliases':   return handleAliases(resolveSingle, resolveEnum, parsed.keys);
     default:
-      return { output: `Unknown database: ${parsed.database}`, exitCode: 2 };
+      return { output: `Unknown database: ${parsed.database}`, exitCode: 1 };
   }
+}
+
+const HOST_DATABASES = new Set(['hosts', 'ahosts', 'ahostsv4', 'ahostsv6']);
+
+/**
+ * Le vrai `getent`. Seule la base `hosts` a besoin d'attendre — valider
+ * (DNSSEC) ou chiffrer (DoT) demande des allers-retours qui ne peuvent
+ * pas tenir dans la pile d'appel de l'appelant. Toutes les autres bases
+ * se lisent dans le VFS et repartent sur {@link runGetent} inchangé.
+ */
+export async function runGetentAsync(
+  nss: NameServiceSwitch,
+  argv: string[],
+  fallbackFilesSource: FilesNssSource,
+): Promise<GetentResult> {
+  const parsed = parseArgs(argv);
+  if (parsed.ok === false) return { output: parsed.output, exitCode: parsed.exitCode };
+  if (!HOST_DATABASES.has(parsed.database)) {
+    return runGetent(nss, argv, fallbackFilesSource);
+  }
+
+  const overrideFor = (database: string): string | null =>
+    parsed.service.perDb.get(database) ?? parsed.service.global;
+
+  const resolveSingle = async <T>(
+    database: string,
+    fn: (s: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+  ): Promise<NssResult<T>> => {
+    const ov = overrideFor(database);
+    if (ov === 'files') return await fn(fallbackFilesSource) ?? { status: 'UNAVAIL' };
+    if (ov) return nss.lookupViaAsync<T>(ov, fn);
+    return nss.lookupAsync<T>(database, fn);
+  };
+  const resolveEnum = <T>(database: string, fn: (s: INssSource) => NssEnumResult<T> | undefined): NssEnumResult<T> => {
+    const ov = overrideFor(database);
+    if (ov === 'files') return fn(fallbackFilesSource) ?? { status: 'UNAVAIL', entries: [] };
+    if (ov) return nss.enumerateVia<T>(ov, fn);
+    return nss.enumerate<T>(database, fn);
+  };
+
+  return handleHostsDbAsync(resolveSingle, resolveEnum, parsed.database, parsed.keys);
 }
 
 type SingleFn = <T>(db: string, fn: (s: INssSource) => NssResult<T> | undefined) => NssResult<T>;
 type EnumFn   = <T>(db: string, fn: (s: INssSource) => NssEnumResult<T> | undefined) => NssEnumResult<T>;
+type AsyncSingleFn = <T>(
+  db: string, fn: (s: INssSource) => NssResult<T> | Promise<NssResult<T>> | undefined,
+) => Promise<NssResult<T>>;
 
 function handlePasswd(single: SingleFn, enumerate: EnumFn, keys: string[]): GetentResult {
   if (keys.length === 0) {
@@ -241,67 +303,95 @@ function handleGshadow(single: SingleFn, enumerate: EnumFn, keys: string[]): Get
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
 }
 
-function handleHosts(single: SingleFn, enumerate: EnumFn, keys: string[]): GetentResult {
-  if (keys.length === 0) {
-    const r = enumerate<NssHostEntry>('hosts', s => s.enumHosts?.());
+/**
+ * La base `hosts` est la seule qui puisse partir sur le réseau, donc la
+ * seule à exister en deux versions : synchrone et asynchrone. Pour que
+ * les deux ne divergent jamais, tout ce qui décide — quelle recherche
+ * pour quelle clé, ce qui compte comme trouvé, le code de retour, le
+ * rendu — vit ici, et les deux pilotes ci-dessous ne font qu'attendre,
+ * ou pas.
+ */
+type HostLookupSpec = {
+  /** La recherche à faire pour cette clé. */
+  invoke: (s: INssSource) => NssResult<NssHostEntry | NssHostEntry[]> | undefined;
+  /** Sa contrepartie qui a le droit d'attendre. */
+  invokeAsync: (s: INssSource) => Promise<NssResult<NssHostEntry | NssHostEntry[]>> | undefined;
+};
+
+function hostsSpec(database: string, key: string): HostLookupSpec {
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(key) || key.includes(':');
+  if (database === 'hosts' && isIp) {
+    return {
+      invoke: (s) => s.gethostbyaddr?.(key),
+      invokeAsync: (s) => s.gethostbyaddrAsync?.(key),
+    };
+  }
+  const family = database === 'ahostsv4' ? 2 : database === 'ahostsv6' ? 10 : undefined;
+  return {
+    invoke: (s) => s.gethostbyname?.(key, family),
+    invokeAsync: (s) => s.gethostbynameAsync?.(key, family),
+  };
+}
+
+/** Les lignes rendues pour une clé, ou null quand rien n'a été trouvé. */
+function hostLines(
+  r: NssResult<NssHostEntry | NssHostEntry[]>,
+  format: (h: NssHostEntry) => string | string[],
+): string[] | null {
+  if (r.status !== 'SUCCESS' || r.entry === undefined) return null;
+  const entries = Array.isArray(r.entry) ? r.entry : [r.entry];
+  const lines = entries.flatMap((h) => {
+    const rendered = format(h);
+    return Array.isArray(rendered) ? rendered : [rendered];
+  });
+  return lines;
+}
+
+function hostsFormatter(database: string): (h: NssHostEntry) => string | string[] {
+  return database === 'hosts' ? GetentFormatter.host : GetentFormatter.ahosts;
+}
+
+function enumerateHosts(enumerate: EnumFn, database: string): GetentResult {
+  const r = enumerate<NssHostEntry>(database, s => s.enumHosts?.());
+  if (database === 'hosts') {
     return { output: r.entries.map(GetentFormatter.host).join('\n'), exitCode: 0 };
   }
-  const out: string[] = [];
-  let allOk = true;
-  for (const k of keys) {
-    const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(k) || k.includes(':');
-    if (isIp) {
-      const r = single<NssHostEntry>('hosts', s => s.gethostbyaddr?.(k));
-      if (r.status === 'SUCCESS' && r.entry) out.push(GetentFormatter.host(r.entry));
-      else allOk = false;
-    } else {
-      const r = single<NssHostEntry[]>('hosts', s => s.gethostbyname?.(k));
-      if (r.status === 'SUCCESS' && r.entry) {
-        out.push(...r.entry.map(GetentFormatter.host));
-      } else allOk = false;
-    }
-  }
-  return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
+  const family = database === 'ahostsv4' ? 2 : database === 'ahostsv6' ? 10 : null;
+  const out = r.entries
+    .filter(h => family === null || h.addressFamily === family)
+    .flatMap(GetentFormatter.ahosts);
+  return { output: out.join('\n'), exitCode: out.length ? 0 : 1 };
 }
 
-/** ahosts — one line per family per address. */
-function handleAhosts(single: SingleFn, _enumerate: EnumFn, keys: string[]): GetentResult {
-  if (keys.length === 0) return { output: '', exitCode: 1 };
-  const out: string[] = [];
-  let allOk = true;
-  for (const k of keys) {
-    const r = single<NssHostEntry[]>('ahosts', s => s.gethostbyname?.(k));
-    if (r.status === 'SUCCESS' && r.entry) {
-      for (const h of r.entry) {
-        const fam = h.addressFamily === 10 ? 'INET6' : 'INET';
-        out.push(`${h.address.padEnd(40)}STREAM ${h.canonicalName}`);
-        out.push(`${h.address.padEnd(40)}DGRAM `);
-        out.push(`${h.address.padEnd(40)}RAW   `);
-        void fam;
-      }
-    } else allOk = false;
-  }
-  return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
-}
-
-function handleAhostsFamily(
-  single: SingleFn, _enumerate: EnumFn, keys: string[], family: 2 | 10,
+function handleHostsDb(
+  single: SingleFn, enumerate: EnumFn, database: string, keys: string[],
 ): GetentResult {
-  if (keys.length === 0) return { output: '', exitCode: 1 };
+  if (keys.length === 0) return enumerateHosts(enumerate, database);
+  const format = hostsFormatter(database);
   const out: string[] = [];
   let allOk = true;
   for (const k of keys) {
-    const r = single<NssHostEntry[]>(
-      family === 2 ? 'ahostsv4' : 'ahostsv6',
-      s => s.gethostbyname?.(k, family),
+    const r = single<NssHostEntry | NssHostEntry[]>(database, hostsSpec(database, k).invoke);
+    const lines = hostLines(r, format);
+    if (lines) out.push(...lines); else allOk = false;
+  }
+  return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
+}
+
+async function handleHostsDbAsync(
+  single: AsyncSingleFn, enumerate: EnumFn, database: string, keys: string[],
+): Promise<GetentResult> {
+  if (keys.length === 0) return enumerateHosts(enumerate, database);
+  const format = hostsFormatter(database);
+  const out: string[] = [];
+  let allOk = true;
+  for (const k of keys) {
+    const spec = hostsSpec(database, k);
+    const r = await single<NssHostEntry | NssHostEntry[]>(
+      database, (s) => spec.invokeAsync(s) ?? spec.invoke(s),
     );
-    if (r.status === 'SUCCESS' && r.entry) {
-      for (const h of r.entry) {
-        out.push(`${h.address.padEnd(40)}STREAM ${h.canonicalName}`);
-        out.push(`${h.address.padEnd(40)}DGRAM `);
-        out.push(`${h.address.padEnd(40)}RAW   `);
-      }
-    } else allOk = false;
+    const lines = hostLines(r, format);
+    if (lines) out.push(...lines); else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
 }
@@ -409,6 +499,21 @@ function handleNetgroup(single: SingleFn, enumerate: EnumFn, keys: string[]): Ge
   for (const k of keys) {
     const r = single<NssNetgroupEntry>('netgroup', s => s.getnetgrent?.(k));
     if (r.status === 'SUCCESS' && r.entry) out.push(GetentFormatter.netgroup(r.entry));
+    else allOk = false;
+  }
+  return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };
+}
+
+function handleAliases(single: SingleFn, enumerate: EnumFn, keys: string[]): GetentResult {
+  if (keys.length === 0) {
+    const r = enumerate<NssAliasEntry>('aliases', s => s.enumAliases?.());
+    return { output: r.entries.map(GetentFormatter.alias).join('\n'), exitCode: 0 };
+  }
+  const out: string[] = [];
+  let allOk = true;
+  for (const k of keys) {
+    const r = single<NssAliasEntry>('aliases', s => s.getaliasbyname?.(k));
+    if (r.status === 'SUCCESS' && r.entry) out.push(GetentFormatter.alias(r.entry));
     else allOk = false;
   }
   return { output: out.join('\n'), exitCode: allOk && out.length ? 0 : 2 };

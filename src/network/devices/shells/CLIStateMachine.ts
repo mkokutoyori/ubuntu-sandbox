@@ -106,11 +106,31 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'privileged':                { parent: 'user' },
   'config':                    { parent: 'privileged' },
   'config-if':                 { parent: 'config', clearOnExit: ['selectedInterface'] },
+  'config-subif':              { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-line':               { parent: 'config' },
+  // La vue en cours de declaration est oubliee en sortant, comme le pool
+  // DHCP ou l'ACL selectionnee : sans quoi un `secret` tape plus tard
+  // atterrirait dans une vue qu'on croyait avoir quittee.
+  'config-view':               { parent: 'config', clearOnExit: ['selectedParserView'] },
   'config-dhcp':               { parent: 'config', clearOnExit: ['selectedDHCPPool'] },
   'config-router':             { parent: 'config', clearOnExit: ['selectedRoutingProto'] },
+  'config-router-af':          { parent: 'config-router' },
+  'config-vrf':                { parent: 'config', clearOnExit: ['selectedVRF'] },
+  'config-vlan':               { parent: 'config', clearOnExit: ['selectedVLAN'] },
   'config-track':              { parent: 'config', clearOnExit: ['selectedTrack'] },
   'config-ipsla':              { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  // Une fois le type d'opération choisi, IOS descend dans un sous-mode
+  // propre à ce type et le prompt change. `exit` en remonte jusqu'à
+  // `config` : le type ne se rejoue pas.
+  'config-ipsla-echo':         { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-icmpjitter':   { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-jitter':       { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-udp':          { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-tcp':          { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-http':         { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-dns':          { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-pathecho':     { parent: 'config', clearOnExit: ['selectedIpSla'] },
+  'config-ipsla-http-raw':     { parent: 'config-ipsla-http', clearOnExit: [] },
   'config-route-map':          { parent: 'config', clearOnExit: ['selectedRouteMap'] },
   'config-router-ospf':        { parent: 'config' },
   'config-router-ospfv3':      { parent: 'config' },
@@ -119,6 +139,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ipv6-nacl':          { parent: 'config', clearOnExit: ['selectedACL', 'selectedACLType'] },
   'config-isakmp':             { parent: 'config', clearOnExit: ['selectedISAKMPPriority'] },
   'config-isakmp-profile':     { parent: 'config', clearOnExit: ['selectedISAKMPProfile'] },
+  'config-keyring':            { parent: 'config', clearOnExit: ['selectedISAKMPKeyring'] },
   'config-tfset':              { parent: 'config', clearOnExit: ['selectedTransformSet'] },
   'config-crypto-map':         { parent: 'config', clearOnExit: ['selectedCryptoMap', 'selectedCryptoMapSeq'] },
   'config-ipsec-profile':      { parent: 'config', clearOnExit: ['selectedIPSecProfile'] },
@@ -127,6 +148,7 @@ export const CISCO_IOS_MODES: ModeHierarchy = {
   'config-ikev2-keyring':      { parent: 'config', clearOnExit: ['selectedIKEv2Keyring'] },
   'config-ikev2-keyring-peer': { parent: 'config-ikev2-keyring', clearOnExit: ['selectedIKEv2KeyringPeer'] },
   'config-ikev2-profile':      { parent: 'config', clearOnExit: ['selectedIKEv2Profile'] },
+  'config-gdoi-group':         { parent: 'config', clearOnExit: ['selectedGdoiGroup'] },
   'config-time-range':         { parent: 'config', clearOnExit: ['selectedTimeRange'] },
   'config-cmap':               { parent: 'config', clearOnExit: ['selectedClassMap'] },
   'config-pmap':               { parent: 'config', clearOnExit: ['selectedPolicyMap'] },
@@ -161,7 +183,23 @@ export const CISCO_SWITCH_MODES: ModeHierarchy = {
   'config-vlan': { parent: 'config', clearOnExit: ['selectedVlan'] },
   'config-mst':  { parent: 'config' },
   'config-line': { parent: 'config' },
+  // La vue en cours de declaration est oubliee en sortant, comme le pool
+  // DHCP ou l'ACL selectionnee : sans quoi un `secret` tape plus tard
+  // atterrirait dans une vue qu'on croyait avoir quittee.
+  'config-view': { parent: 'config', clearOnExit: ['selectedParserView'] },
   'config-acl':  { parent: 'config', clearOnExit: ['selectedAcl'] },
+  'config-dhcp': { parent: 'config', clearOnExit: ['selectedDhcpPool'] },
+  'config-access-map': { parent: 'config', clearOnExit: ['selectedAccessMap'] },
+  'config-archive':     { parent: 'config' },
+  'config-archive-log': { parent: 'config-archive' },
+  // Les trois sous-modes de la famille identite. Sans eux, un `exit`
+  // depuis `config-tacacs-server` ne remontait nulle part : le shell y
+  // restait, et TOUT ce qui suivait etait juge dans un mode ou seules
+  // `address`/`key`/`timeout` existent — donc refuse, y compris
+  // `aaa new-model`.
+  'config-radius-server': { parent: 'config', clearOnExit: ['selectedRadiusServer'] },
+  'config-tacacs-server': { parent: 'config', clearOnExit: ['selectedTacacsServer'] },
+  'config-aaa-group':     { parent: 'config', clearOnExit: ['selectedAaaGroup'] },
 };
 
 // ─── Huawei VRP Mode Hierarchy ────────────────────────────────────

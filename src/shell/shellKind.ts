@@ -16,7 +16,7 @@ export function primaryShellKindFor(dev: { getOSType?: () => string }): PrimaryS
     case 'windows': return 'cmd';
     case 'cisco-ios': return 'cisco-ios';
     case 'huawei-vrp': return 'huawei-vrp';
-    // 'linux', 'generic' and anything unknown get a POSIX shell.
+    // 'linux' and anything unknown get a POSIX shell.
     default: return 'bash';
   }
 }

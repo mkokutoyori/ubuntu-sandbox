@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-cli-basics
-Generated: 2026-06-12T11:48:22.530Z
+Generated: 2026-08-19T07:02:59.148Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP router view nav, display family, pipes, undo, save
 Total steps: 304
@@ -27,8 +27,8 @@ Total steps: 304
   R1 uptime is 0 days, 0 hours, 0 minutes
 
 [3/304] r1 <R1> display clock
-  2026-06-12 11:48:22
-  Friday
+  2026-08-19 07:02:59
+  Wednesday
   Time Zone(UTC) : UTC
 
 [4/304] r1 <R1> display device
@@ -43,8 +43,7 @@ Total steps: 304
   -------------------------------------------------------------------------------
 
 [5/304] r1 <R1> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
@@ -59,13 +58,13 @@ Total steps: 304
 [7/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:48:22
+  CPU Usage Stat. Time : 2026-08-19 07:02:59
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [8/304] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:48:22
+  Memory utilization statistics at 2026-08-19 07:02:59
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -74,6 +73,8 @@ Total steps: 304
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -86,30 +87,30 @@ Total steps: 304
   interface GigabitEthernet0/0/3
    shutdown
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [10/304] r1 <R1> display saved-configuration
-  #
-  sysname R1
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  #
+  Error: The configuration file doesn't exist.
 
 [11/304] r1 <R1> display this
   #
   sysname R1
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -122,6 +123,19 @@ Total steps: 304
   interface GigabitEthernet0/0/3
    shutdown
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [12/304] r1 <R1> display startup
@@ -141,37 +155,37 @@ Total steps: 304
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [14/304] r1 <R1> display interface
-  GE0/0/0 current state : UP
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
@@ -180,11 +194,11 @@ Total steps: 304
 
 [15/304] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
 
 [16/304] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
@@ -229,16 +243,16 @@ Total steps: 304
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 2
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 2
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
 
 [23/304] r1 <R1> display ospf peer
   Error: OSPF is not configured.
@@ -256,7 +270,8 @@ Total steps: 304
   Total 0 ACL(s)
 
 [28/304] r1 <R1> display nat session all
-  Info: No NAT session is found.
+  NAT Session Table Information:
+   No active NAT sessions
 
 [29/304] r1 <R1> display ip pool
   No DHCP pools configured.
@@ -288,7 +303,15 @@ Total steps: 304
 [35/304] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:02:59.231  Aug 19 2026(EE2FD3A3.3B22D0E5)
 
 [36/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
@@ -298,12 +321,16 @@ Total steps: 304
 
 [38/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 4
+  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [39/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -360,23 +387,24 @@ Total steps: 304
 
 [47/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      0      0            N      -
+    130    VTY 1           -        -      0      0            N      -
+    131    VTY 2           -        -      0      0            N      -
+    132    VTY 3           -        -      0      0            N      -
+    133    VTY 4           -        -      0      0            N      -
 
 [48/304] r1 <R1> display port
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+  Error: Unrecognized command found at '^' position.
+  display port
+          ^
 
 [49/304] r1 <R1> display interface description
   Interface                     PHY     Protocol Description
-  GE0/0/0                       up      up       
-  GE0/0/1                       up      up       
-  GE0/0/2                       down    down     
-  GE0/0/3                       down    down     
+  GigabitEthernet0/0/0          up      up
+  GigabitEthernet0/0/1          up      up
+  GigabitEthernet0/0/2          down    down
+  GigabitEthernet0/0/3          down    down
 
 [50/304] r1 <R1> display health
   R1 system health:
@@ -430,112 +458,124 @@ Total steps: 304
   No DNS server configured.
 
 [59/304] r1 <R1> ?
-    system-view    Enter system view
-    stelnet        stelnet client
-    ssh            ssh client
-    display        display
-    save           Save current configuration
-    reboot         Reboot device
-    reset          reset
-    commit         Commit candidate configuration
-    screen-length  Set terminal screen length
-    header         Configure login/shell banner
-    terminal       terminal
-    undo           Undo configuration
-    debugging      Enable debugging
-    screen-width   Set terminal screen width
-    ip             ip
-    rip            Configure RIP routing
     bgp            Configure BGP routing
+    commit         Commit candidate configuration
+    compare        Compare function
+    debugging      Enable system debugging functions
+    display        Display current system information
+    free
+    header         Configure login/shell banner
+    ip             Internet Protocol
     isis           Configure IS-IS routing
-    tracert        Trace route to destination
+    kill
     ping           Send ICMP echo messages
+    quit           Exit from current command view
+    reboot         Reboot device
+    reset          Reset operation
+    rip            Configure RIP routing
+    save           Save current configuration
+    screen-length  Set terminal screen length
+    screen-width   Set terminal screen width
+    ssh            ssh client
+    startup        Startup configuration
+    stelnet        stelnet client
+    system-view    Enter system view
     telnet         Open Telnet session
-    compare        compare
-    startup        startup
+    terminal       Set the terminal line characteristics
+    tracert        Trace route to destination
+    undo           Undo configuration
 
 [60/304] r1 <R1> display ?
-    version                 Display version information
-    ip                      ip
-    icmp                    icmp
-    arp                     Display ARP table
-    current-configuration   Display running configuration
-    traffic-filter          traffic-filter
-    saved-configuration     Display saved configuration
-    startup                 Display startup configuration
-    history-command         Display CLI history
-    alarm                   Display alarm records
-    aaa                     aaa
-    user-interface          Display user interface info
-    dhcp                    Display DHCP snooping
-    nat                     nat
-    vrrp                    Display VRRP groups
-    bfd                     bfd
-    qos                     qos
-    traffic                 traffic
-    ssh                     Display SSH server status
-    stelnet                 stelnet
-    telnet                  telnet
-    snmp-agent              Display SNMP agent info
-    ntp-service             Display NTP status
-    info-center             Display info-center configuration
-    sflow                   Display sFlow configuration
-    lldp                    Display LLDP
-    bgp                     bgp
-    isis                    isis
-    rip                     Display RIP information
-    counters                Display traffic counters
-    router                  router
-    fib                     Display forwarding table
-    ipv6                    ipv6
-    debugging               Display active debugging flags
-    interface               Display interface information
-    clock                   Display system clock
-    cpu-usage               Display CPU usage
-    memory-usage            Display memory usage
-    users                   Display user sessions
-    device                  Display device status
-    elabel                  Display electronic label
-    license                 Display license information
-    logbuffer               Display log buffer
-    trapbuffer              Display trap buffer
-    patch-information       Display patch information
-    diagnostic-information  Collect diagnostic information
-    local-user              Display local users
-    port-security           Display port security
-    ospf                    ospf
-    ospfv3                  ospfv3
-    ike                     ike
-    ipsec                   ipsec
-    ikev2                   ikev2
+    aaa                     Authentication, Authorization and Accounting
     acl                     Display ACL configuration
-    vxlan                   vxlan
-    health                  Display device health
-    temperature             temperature
-    fan                     Display fan status
-    power                   Display power supply status
-    environment             Display environment status
-    tcp                     tcp
-    sockets                 Display open sockets
-    dns                     dns
-    dhcp-server             dhcp-server
-    dhcp-snooping           dhcp-snooping
-    dhcpv6                  dhcpv6
-    route-policy            Display a route-policy
-    traffic-policy          traffic-policy
-    nqa                     nqa
+    alarm                   Display alarm records
+    arp                     Display ARP table
+    bfd                     Bidirectional Forwarding Detection
+    bgp                     Border Gateway Protocol
+    channel                 Display information channels
+    clock                   Display system clock
+    counters                Display traffic counters
+    cpu-defend              CPU defend policy configuration
+    cpu-usage               Display CPU usage
+    current-configuration   Display running configuration
+    debugging               Display active debugging flags
+    device                  Display device status
+    dhcp                    Display DHCP snooping
+    dhcp-server             DHCP server configuration
+    dhcp-snooping           DHCP snooping configuration
+    dhcpv6                  DHCPv6 configuration
+    diagnostic-information  Collect diagnostic information
+    dns                     Domain Name System
     domain                  Display AAA domains
-    radius-server           radius-server
-    hwtacacs-server         hwtacacs-server
-    rsa                     rsa
-    time-range              time-range
-    cpu-defend              cpu-defend
-    firewall                firewall
-    channel                 Display info-center channels
+    elabel                  Display electronic label
+    environment             Display environment status
+    fan                     Display fan status
+    fib                     Display forwarding table
+    firewall                Firewall configuration
+    health                  Display device health
+    history-command         Display CLI history
+    hwtacacs-server
+    icmp                    Internet Control Message Protocol
+    icmpv6                  ICMPv6 information
+    igmp                    Internet Group Management Protocol
+    ike                     Internet Key Exchange
+    ikev2                   Internet Key Exchange version 2
+    info-center             Display info-center configuration
+    interface               Display interface information
+    ip                      Internet Protocol
+    ipsec                   IP Security
+    ipv6                    Internet Protocol version 6
+    isis                    Intermediate System to Intermediate System
+    license                 Display license information
+    lldp                    Display LLDP
+    local-user              Display local users
+    logbuffer               Display log buffer
+    memory-usage            Display memory usage
+    multicast               IP multicast
+    nat                     Network Address Translation
+    nqa                     Network Quality Analysis
+    nqa-server              Display the NQA server status
+    ntp-service             Display NTP status
+    ospf                    Open Shortest Path First
+    ospfv3                  OSPF version 3 (IPv6)
+    patch-information       Display patch information
+    pim                     Protocol Independent Multicast
+    power                   Display power supply status
+    qos                     Quality of Service
+    radius-server
+    rip                     Display RIP information
+    route-policy            Display a route-policy
+    router                  Router configuration information
+    rsa                     RSA key pair
+    saved-configuration     Display saved configuration
+    sflow                   Display sFlow configuration
+    snmp-agent              Display SNMP agent info
+    sockets                 Display open sockets
+    ssh                     Display SSH server status
+    startup                 Display startup configuration
+    stelnet                 Secure Telnet (SSH-based)
+    tcp                     Transmission Control Protocol
+    telnet                  Telnet protocol
+    temperature             Display device temperature
     this                    Display current view configuration
+    time-range              Time range configuration
+    traffic                 Display traffic statistics
+    traffic-filter          Traffic filter configuration
+    traffic-policy          Traffic policy configuration
+    trapbuffer              Display trap buffer
+    user-interface          Display user interface info
+    users                   Display user sessions
+    version                 Display version information
+    vrrp                    Display VRRP groups
+    vxlan                   Virtual Extensible LAN
 
 [61/304] r1 <R1> ping 10.0.0.2
   PING 10.0.0.2: 56  data bytes, press CTRL_C to break
+  Request timeout
+  Request timeout
+  Request timeout
+  Request timeout
+  Request timeout
   
   --- 10.0.0.2 ping statistics ---
   5 packet(s) transmitted, 0 packet(s) received, 100% packet loss
@@ -568,13 +608,13 @@ Total steps: 304
 [69/304] r1 [R1-CORE] interface GigabitEthernet0/0/0
 <empty>
 
-[70/304] r1 [R1-CORE-GE0/0/0] display this
+[70/304] r1 [R1-CORE-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[71/304] r1 [R1-CORE-GE0/0/0] quit
+[71/304] r1 [R1-CORE-GigabitEthernet0/0/0] quit
 <empty>
 
 [72/304] r1 [R1-CORE] interface LoopBack0
@@ -584,6 +624,8 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
 
 [74/304] r1 [R1-CORE-LoopBack0] quit
@@ -631,6 +673,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -645,15 +689,31 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
   #
 
 [86/304] r1 [R1-CORE-bgp-65000] quit
@@ -666,6 +726,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -680,15 +742,32 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
-  #
   #
   rip 1
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [89/304] r1 [R1-CORE-isis-1] quit
@@ -699,31 +778,7 @@ Total steps: 304
 
 [91/304] r1 [R1-CORE-acl-basic-2000] display this
   #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
+  acl number 2000
   #
 
 [92/304] r1 [R1-CORE-acl-basic-2000] quit
@@ -734,31 +789,7 @@ Total steps: 304
 
 [94/304] r1 [R1-CORE-acl-basic-MGMT] display this
   #
-  sysname R1-CORE
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
+  acl name MGMT basic
   #
 
 [95/304] r1 [R1-CORE-acl-basic-MGMT] quit
@@ -780,33 +811,19 @@ Total steps: 304
 
 [100/304] r1 [R1-CORE-aaa] display this
   #
-  sysname R1-CORE
-  #
-  ip pool LAN
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
   #
 
 [101/304] r1 [R1-CORE-aaa] quit
@@ -819,6 +836,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -835,15 +854,36 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
   #
   ospf 1
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [104/304] r1 [R1-CORE-ui-vtyconsole0] quit
@@ -856,6 +896,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -872,10 +914,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -883,6 +930,22 @@ Total steps: 304
   ospf 1
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [107/304] r1 [R1-CORE-ui-vty0 4] quit
@@ -895,6 +958,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -911,10 +976,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -922,6 +992,22 @@ Total steps: 304
   ospf 1
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [110/304] r1 [R1-CORE-route-policy-RP-10] quit
@@ -934,6 +1020,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -950,10 +1038,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -963,8 +1056,25 @@ Total steps: 304
   ike proposal 1
    authentication-algorithm sha
    dh group1
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [113/304] r1 [R1-CORE-ike-proposal-1] quit
@@ -977,6 +1087,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -993,10 +1105,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1009,8 +1126,25 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
   #
 
 [116/304] r1 [R1-CORE-ipsec-proposal-P1] quit
@@ -1029,6 +1163,8 @@ Total steps: 304
   #
   sysname R1-CORE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1045,10 +1181,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1061,8 +1202,27 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
 
@@ -1077,6 +1237,8 @@ Total steps: 304
   #
   sysname R1-EDGE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1093,10 +1255,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1109,63 +1276,50 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
 [124/304] r1 [R1-EDGE] int g0/0/0
-  Error: Wrong parameter found at '^' position.
+<empty>
 
-[125/304] r1 [R1-EDGE] dis th
-  #
-  sysname R1-EDGE
-  #
-  ip pool LAN
+[125/304] r1 [R1-EDGE-GigabitEthernet0/0/0] dis th
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-  ike proposal 1
-   authentication-algorithm sha
-   dh group1
-  #
-  ipsec proposal P1
-   encapsulation-mode tunnel
-  user-interface vty 0 4
-  #
-  #
 
-[126/304] r1 [R1-EDGE] q
+[126/304] r1 [R1-EDGE-GigabitEthernet0/0/0] q
 <empty>
 
-[127/304] r1 <R1-EDGE> return
+[127/304] r1 [R1-EDGE] return
 <empty>
 
 [128/304] r1 <R1-EDGE> dis cu
   #
   sysname R1-EDGE
   #
+  dns resolve
+  #
   ip pool LAN
   #
   interface GigabitEthernet0/0/0
@@ -1182,10 +1336,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1198,8 +1357,27 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
 [129/304] r1 <R1-EDGE> dis ip int b
@@ -1207,18 +1385,18 @@ Total steps: 304
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 4
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 4
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack0                         unassigned           DOWN       DOWN
-  Tunnel0/0/0                       unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 [130/304] r1 <R1-EDGE> dis ip rou
   Route Flags: R - relay, D - download to fib
@@ -1234,85 +1412,97 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [132/304] r1 [R1-EDGE] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [133/304] r1 [R1-EDGE] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [134/304] r1 [R1-EDGE] ospf ?
-    WORD  Configure OSPF protocol
-    <cr>  
+    <1-65535>  Process ID
+    <cr>
 
 [135/304] r1 [R1-EDGE] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [136/304] r1 [R1-EDGE] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [137/304] r1 [R1-EDGE] aaa ?
-    <cr>  
+    <cr>
 
 [138/304] r1 [R1-EDGE] snmp-agent ?
     WORD  Toggle: snmp-agent
-    <cr>  
+    <cr>
 
 [139/304] r1 [R1-EDGE] ntp-service ?
     enable  Toggle: ntp-service enable
-    <cr>    
+    <cr>
 
 [140/304] r1 [R1-EDGE] rip ?
     WORD  Enter RIP view or configure RIP
-    <cr>  
+    <cr>
 
 [141/304] r1 [R1-EDGE] bgp ?
     WORD  Configure BGP routing
-    <cr>  
+    <cr>
 
 [142/304] r1 [R1-EDGE] interface GigabitEthernet0/0/0
 <empty>
 
-[143/304] r1 [R1-EDGE-GE0/0/0] ip ?
+[143/304] r1 [R1-EDGE-GigabitEthernet0/0/0] ip ?
     address           Configure IP address
+    forward-protocol  Protocols to forward
     helper-address    Set DHCP relay helper address
-    forward-protocol  forward-protocol
     urpf              Configure URPF mode
 
-[144/304] r1 [R1-EDGE-GE0/0/0] ip address ?
-    WORD  Configure IP address
-    <cr>  
+[144/304] r1 [R1-EDGE-GigabitEthernet0/0/0] ip address ?
+    A.B.C.D  IP address
 
-[145/304] r1 [R1-EDGE-GE0/0/0] quit
+[145/304] r1 [R1-EDGE-GigabitEthernet0/0/0] quit
 <empty>
 
 [146/304] r1 [R1-EDGE] return
@@ -1374,19 +1564,19 @@ Total steps: 304
 [164/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[165/304] r1 [Huawei-GE0/0/0] description WAN-LINK
+[165/304] r1 [Huawei-GigabitEthernet0/0/0] description WAN-LINK
 <empty>
 
-[166/304] r1 [Huawei-GE0/0/0] undo description
+[166/304] r1 [Huawei-GigabitEthernet0/0/0] undo description
 <empty>
 
-[167/304] r1 [Huawei-GE0/0/0] shutdown
+[167/304] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[168/304] r1 [Huawei-GE0/0/0] undo shutdown
+[168/304] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[169/304] r1 [Huawei-GE0/0/0] quit
+[169/304] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [170/304] r1 [Huawei] return
@@ -1399,9 +1589,14 @@ Total steps: 304
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
   ipsec proposal P1
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
 
 [172/304] r1 <Huawei> display current-configuration | exclude #
   sysname Huawei
+  dns resolve
   dhcp enable
   ip pool LAN
   interface GigabitEthernet0/0/0
@@ -1414,8 +1609,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
+  acl number 2000
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   rip 1
    version 2
@@ -1426,6 +1625,22 @@ Total steps: 304
   ipsec proposal P1
    encapsulation-mode tunnel
   user-interface vty 0 4
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  bgp 65000
+  isis 1
+  undo info-center enable
 
 [173/304] r1 <Huawei> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
@@ -1442,10 +1657,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1459,26 +1679,40 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
 [174/304] r1 <Huawei> display ip routing-table | include Direct
 <empty>
 
 [175/304] r1 <Huawei> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 [176/304] r1 <Huawei> display interface | include line protocol
-  Line protocol current state : UP
-  Line protocol current state : UP
-  Line protocol current state : DOWN
-  Line protocol current state : DOWN
-  Line protocol current state : UP
-  Line protocol current state : UP
+<empty>
 
 
 --- [177] § user-interface / screen ---
@@ -1545,6 +1779,8 @@ Total steps: 304
   #
   sysname Huawei
   #
+  dns resolve
+  #
   dhcp enable
   #
   ip pool LAN
@@ -1563,10 +1799,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
+  acl number 2000
+  #
+  acl name MGMT basic
   ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
   #
   rip 1
@@ -1580,15 +1821,35 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
 [195/304] r1 <Huawei> reset saved-configuration
-  Info: Succeeded in clearing the configuration in the device.
+  Warning: The action will delete the saved configuration on the device.
 
 [196/304] r1 <Huawei> compare configuration
   Info: The current configuration is the same as the saved configuration.
@@ -1597,34 +1858,38 @@ Total steps: 304
   Info: Succeeded in setting the file for booting system.
 
 [198/304] r1 <Huawei> reboot fast
-  Info: This operation will reboot the system. Continue? [Y/N]:
+  Info: The system is rebooting ...
+  System restart completed.
 
-[199/304] r1 <Huawei> reboot
-  Info: This operation will reboot the system. Continue? [Y/N]:
+[199/304] r1 <R1> reboot
+  Info: The system is rebooting ...
+  System restart completed.
 
 
 --- [200] § regression: display family ---
-[200/304] r1 <Huawei> display version
+[200/304] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  Huawei uptime is 0 days, 0 hours, 0 minutes
+  R1 uptime is 0 days, 0 hours, 0 minutes
 
-[201/304] r1 <Huawei> display version
+[201/304] r1 <R1> display version
   Huawei Versatile Routing Platform Software
   VRP (R) software, Version 5.170 (AR2220 V200R009C00SPC500)
   Copyright (C) 2000-2025 HUAWEI TECH CO., LTD
   
   BOARD TYPE:          AR2220
   BootROM Version:     1.0
-  Huawei uptime is 0 days, 0 hours, 0 minutes
+  R1 uptime is 0 days, 0 hours, 0 minutes
 
-[202/304] r1 <Huawei> display current-configuration
+[202/304] r1 <R1> display current-configuration
   #
-  sysname Huawei
+  sysname R1
+  #
+  dns resolve
   #
   dhcp enable
   #
@@ -1644,11 +1909,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -1661,104 +1930,81 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
-[203/304] r1 <Huawei> display saved-configuration
-  #
-  sysname Huawei
-  #
-  dhcp enable
-  #
-  ip pool LAN
-  #
-  interface GigabitEthernet0/0/0
-   shutdown
-  #
-  interface GigabitEthernet0/0/1
-   shutdown
-  #
-  interface GigabitEthernet0/0/2
-   shutdown
-  #
-  interface GigabitEthernet0/0/3
-   shutdown
-  #
-  interface LoopBack0
-   shutdown
-  #
-  interface Tunnel0/0/0
-   shutdown
-  #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
-  #
-  rip 1
-   version 2
-  #
-  ospf 1
-  #
-  ike proposal 1
-   authentication-algorithm sha
-   dh group1
-  #
-  ipsec proposal P1
-   encapsulation-mode tunnel
-  user-interface vty 0 4
-   authentication-mode aaa
-   idle-timeout 5 0
-   protocol inbound ssh
-  #
-  #
+[203/304] r1 <R1> display saved-configuration
+  Error: The configuration file doesn't exist.
 
-[204/304] r1 <Huawei> display ip interface brief
+[204/304] r1 <R1> display ip interface brief
   *down: administratively down
   ^down: standby
   (l): loopback
   (s): spoofing
-  The number of interface that is UP in Physical is 0
-  The number of interface that is DOWN in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  The number of interface that is DOWN in Protocol is 0
+  The number of interface that is UP in Physical is 4
+  The number of interface that is DOWN in Physical is 2
+  The number of interface that is UP in Protocol is 4
+  The number of interface that is DOWN in Protocol is 2
   
   Interface                         IP Address/Mask      Physical   Protocol
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
-  GE0/0/2                           unassigned           DOWN       DOWN
-  GE0/0/3                           unassigned           DOWN       DOWN
-  LoopBack0                         unassigned           DOWN       DOWN
-  Tunnel0/0/0                       unassigned           DOWN       DOWN
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  GigabitEthernet0/0/2              unassigned           down       down
+  GigabitEthernet0/0/3              unassigned           down       down
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
-[205/304] r1 <Huawei> display interface
-  GE0/0/0 current state : UP
+[205/304] r1 <R1> display interface
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/1 current state : UP
+  GigabitEthernet0/0/1 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/2 current state : DOWN
+  GigabitEthernet0/0/2 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
-  GE0/0/3 current state : DOWN
+  GigabitEthernet0/0/3 current state : DOWN
   Line protocol current state : DOWN
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
   LoopBack0 current state : UP
-  Line protocol current state : UP
+  Line protocol current state : UP (spoofing)
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
@@ -1770,40 +2016,38 @@ Total steps: 304
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[206/304] r1 <Huawei> display ip routing-table
+[206/304] r1 <R1> display ip routing-table
   Route Flags: R - relay, D - download to fib
   ------------------------------------------------------------------------------
   Routing Tables: Public
-           Destinations : 1        Routes : 1
+           Destinations : 0        Routes : 0
   
   Destination/Mask    Proto   Pre  Cost  Flags NextHop         Interface
-  1.1.1.0/24          Static  60   0     RD    10.0.0.2        
 
-[207/304] r1 <Huawei> display ip routing-table statistics
+[207/304] r1 <R1> display ip routing-table statistics
   Proto     route
   --------------------
-  Static    1
   --------------------
-  Total     1
+  Total     0
 
-[208/304] r1 <Huawei> display arp
+[208/304] r1 <R1> display arp
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[209/304] r1 <Huawei> display arp all
+[209/304] r1 <R1> display arp all
   IP ADDRESS      MAC ADDRESS     EXPIRE(M)  TYPE      INTERFACE
   No ARP entries found.
 
-[210/304] r1 <Huawei> display ospf peer
+[210/304] r1 <R1> display ospf peer
   OSPF Process with Router ID 0.0.0.0
                    Neighbor Brief Information
   
    Area ID    Interface       Neighbor ID     State
 
-[211/304] r1 <Huawei> display ospf interface
+[211/304] r1 <R1> display ospf interface
 <empty>
 
-[212/304] r1 <Huawei> display ospf routing
+[212/304] r1 <R1> display ospf routing
   OSPF Process 1 with Router ID 0.0.0.0
            Routing Tables
   
@@ -1813,17 +2057,17 @@ Total steps: 304
    Total Nets: 0
    Intra Area: 0  Inter Area: 0  ASE: 0  NSSA: 0
 
-[213/304] r1 <Huawei> display ospf lsdb
+[213/304] r1 <R1> display ospf lsdb
            OSPF Process 1 with Router ID 0.0.0.0
                     Link State Database
   
 
-[214/304] r1 <Huawei> display ospf brief
+[214/304] r1 <R1> display ospf brief
   OSPF Process 1 with Router ID 0.0.0.0
   
    Area    Type   Intf    Adj   LSA
 
-[215/304] r1 <Huawei> display rip
+[215/304] r1 <R1> display rip
   RIP process 1
     Version: 2
     Update timer: 30s
@@ -1833,11 +2077,8 @@ Total steps: 304
     Networks:
   
     Routes: 0
-  #
-  bgp 65000
-  isis 1
 
-[216/304] r1 <Huawei> display rip 1 route
+[216/304] r1 <R1> display rip 1 route
   RIP process 1
     Version: 2
     Update timer: 30s
@@ -1847,28 +2088,27 @@ Total steps: 304
     Networks:
   
     Routes: 0
-  #
-  bgp 65000
-  isis 1
 
-[217/304] r1 <Huawei> display bgp peer
+[217/304] r1 <R1> display bgp peer
   BGP local router ID : 0.0.0.0
   Local AS number : 65000
   Total number of peers : 0              Peers in established state : 0
     Peer            V          AS  MsgRcvd  MsgSent  OutQ  Up/Down       State PrefRcv
 
-[218/304] r1 <Huawei> display bgp routing-table
+[218/304] r1 <R1> display bgp routing-table
   BGP Local router ID : 0.0.0.0
    Total Number of Routes: 0
    Network            NextHop         MED        LocPrf    PrefVal Path/Ogn
 
-[219/304] r1 <Huawei> display nat session all
-  Info: No NAT session is found.
+[219/304] r1 <R1> display nat session all
+  NAT Session Table Information:
+   No active NAT sessions
 
-[220/304] r1 <Huawei> display nat address-group
-  No NAT address pools configured.
+[220/304] r1 <R1> display nat address-group
+  NAT Address Group Information:
+   (no address groups configured)
 
-[221/304] r1 <Huawei> display ip pool
+[221/304] r1 <R1> display ip pool
   Pool-name      : LAN
   Pool-No        : 0
   Position       : Local
@@ -1880,10 +2120,14 @@ Total steps: 304
   Domain-name    : not configured
   Lease          : 1 day(s)
 
-[222/304] r1 <Huawei> display acl all
-  Total 0 ACL(s)
+[222/304] r1 <R1> display acl all
+  Basic ACL 2000, 0 rule(s)
+  ACL's step is 5
+  Basic ACL MGMT, 0 rule(s)
+  ACL's step is 5
+  Total 2 ACL(s)
 
-[223/304] r1 <Huawei> display dhcp server statistics
+[223/304] r1 <R1> display dhcp server statistics
   DHCP server packets statistics:
     Receive total: 0
     Send total: 0
@@ -1893,30 +2137,31 @@ Total steps: 304
     Inform: 0        Decline: 0
   Pool number: 1
 
-[224/304] r1 <Huawei> display vrrp
+[224/304] r1 <R1> display vrrp
   Info: No VRRP backup group is configured.
 
-[225/304] r1 <Huawei> display vrrp brief
-  Total: 0     Master: 0     Backup: 0     Non-active: 0
-  VRID  State        Interface                Type     Virtual IP
+[225/304] r1 <R1> display vrrp brief
+  Total:0     Master:0     Backup:0     Non-active:0
+    VRID    State         Interface          Type      Virtual IP
+    ------  ------------  -----------------  --------  ----------
 
-[226/304] r1 <Huawei> display ike sa
+[226/304] r1 <R1> display ike sa
   IPv4 Crypto ISAKMP SA
   dst             src             state          conn-id status
   
   There are no IKEv1 SAs (no SA established)
 
-[227/304] r1 <Huawei> display ipsec sa
+[227/304] r1 <R1> display ipsec sa
   No IPSec SAs established.
 
-[228/304] r1 <Huawei> display ipsec policy
+[228/304] r1 <R1> display ipsec policy
   No crypto maps configured.
 
-[229/304] r1 <Huawei> display ipsec proposal
+[229/304] r1 <R1> display ipsec proposal
   Transform set P1: {  }
      will negotiate = { Tunnel },
 
-[230/304] r1 <Huawei> display ike proposal
+[230/304] r1 <R1> display ike proposal
   Global IKE policy
   Protection suite of priority 1
   	encryption algorithm:   DES
@@ -1931,49 +2176,57 @@ Total steps: 304
   	Diffie-Hellman group:   #1 (768 bit)
   	lifetime:               86400 seconds, no volume limit
 
-[231/304] r1 <Huawei> display ike peer
+[231/304] r1 <R1> display ike peer
   Info: No IKE peers configured.
 
-[232/304] r1 <Huawei> display snmp-agent sys-info
+[232/304] r1 <R1> display snmp-agent sys-info
   Contact: <not set>
   Location: <not set>
   Chassis-id: <not set>
 
-[233/304] r1 <Huawei> display ntp status
+[233/304] r1 <R1> display ntp status
   Clock status: unsynchronized
   Clock stratum: 16
-  Reference clock ID: .INIT.
+  Reference clock ID: none
+  Nominal frequency: 100.0000 Hz
+  Actual frequency: 100.0000 Hz
+  Clock precision: 2^17
+  Clock offset: 0.0000 ms
+  Root delay: 0.00 ms
+  Root dispersion: 16000.00 ms
+  Peer dispersion: 16000.00 ms
+  Reference time: 07:03:00.449  Aug 19 2026(EE2FD3A4.72F1A9FB)
 
-[234/304] r1 <Huawei> display ntp session
-  No NTP associations
+[234/304] r1 <R1> display ntp session
+  Info: No NTP session exists.
 
-[235/304] r1 <Huawei> display clock
-  2026-06-12 11:48:22
-  Friday
+[235/304] r1 <R1> display clock
+  2026-08-19 07:03:00
+  Wednesday
   Time Zone(UTC) : UTC
 
-[236/304] r1 <Huawei> display lldp neighbor
+[236/304] r1 <R1> display lldp neighbor
   Info: No LLDP neighbor is found.
 
-[237/304] r1 <Huawei> display lldp neighbor brief
+[237/304] r1 <R1> display lldp neighbor brief
   Local Intf    Neighbor Dev    Neighbor Intf    Exptime(s)
 
-[238/304] r1 <Huawei> display cpu-usage
+[238/304] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-06-12 11:48:22
+  CPU Usage Stat. Time : 2026-08-19 07:03:00
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
-[239/304] r1 <Huawei> display memory-usage
-  Memory utilization statistics at 2026-06-12 11:48:22
+[239/304] r1 <R1> display memory-usage
+  Memory utilization statistics at 2026-08-19 07:03:00
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
 
-[240/304] r1 <Huawei> display device
-  Huawei's Device status:
+[240/304] r1 <R1> display device
+  R1's Device status:
   -------------------------------------------------------------------------------
   Slot  Sub  Type            Online    Power    Register     Status   Role
   -------------------------------------------------------------------------------
@@ -1983,13 +2236,12 @@ Total steps: 304
   3     -    4FE             Absent    Off      -            -        -
   -------------------------------------------------------------------------------
 
-[241/304] r1 <Huawei> display users
-    User-Intf    Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
-  + 0    CON 0   00:00:00                              pass            no
+[241/304] r1 <R1> display users
+    User-Intf  Delay    Type   Network Address      AuthenStatus    AuthorcmdFlag
   
   Wait     : Wait for the user to press ENTER.
 
-[242/304] r1 <Huawei> display history-command
+[242/304] r1 <R1> display history-command
   display ntp status
   display ntp session
   display clock
@@ -2001,16 +2253,25 @@ Total steps: 304
   display users
   display history-command
 
-[243/304] r1 <Huawei> display logbuffer
+[243/304] r1 <R1> display logbuffer
   Logging buffer configuration and contents: enabled
-  Allowed max buffer size : 4096
-  Actual buffer size : 4096
+  Allowed max buffer size : 512
+  Actual buffer size : 512
   Channel number : 4 , Channel name : logbuffer
   Dropped messages : 0
   Overwritten messages : 0
-  Current messages : 0
+  Current messages : 9
+  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-08-19 07:02:59 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:02:59 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:00 %01NTP/4/WARNINGS: System clock unsynchronized (admin-disabled)
+  2026-08-19 07:03:00 %01LINK/5/NOTIFICATIONS: Interface GE0/0/0, changed state to administratively down
+  2026-08-19 07:03:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to down
+  2026-08-19 07:03:00 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-08-19 07:03:00 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
-[244/304] r1 <Huawei> display trapbuffer
+[244/304] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
   Allowed max buffer size : 256
   Actual buffer size : 256
@@ -2018,10 +2279,10 @@ Total steps: 304
   Dropped messages : 0
   Current messages : 0
 
-[245/304] r1 <Huawei> display alarm all
+[245/304] r1 <R1> display alarm all
   Info: There is no alarm record.
 
-[246/304] r1 <Huawei> display startup
+[246/304] r1 <R1> display startup
   MainBoard:
     Configured startup system software:    flash:/vrp.cc
     Startup system software:                flash:/vrp.cc
@@ -2033,39 +2294,39 @@ Total steps: 304
     Startup patch package:                  NULL
     Next startup patch package:             NULL
 
-[247/304] r1 <Huawei> display patch-information
+[247/304] r1 <R1> display patch-information
   Info: No patch exists.
 
-[248/304] r1 <Huawei> display elabel
+[248/304] r1 <R1> display elabel
   /$[ARCHIVES INFO VERSION]
   /$ArchivesInfoVersion=3.0;
   
   [Slot_1]
   /$[Board Integrated Component]
   /$BoardType=AR2220;
-  /$BarCode=210305HUAWEI;
+  /$BarCode=210305R1;
   /$Item=02113965;
   /$Description=Huawei AR2220 Enterprise Router;
   /$Manufactured=2024-01-01;
   /$VendorName=Huawei;
 
-[249/304] r1 <Huawei> display license
+[249/304] r1 <R1> display license
    Active License : default
    License State  : Trial
    Trial Days Left: 60
 
-[250/304] r1 <Huawei> display interface brief
+[250/304] r1 <R1> display interface brief
   PHY: Physical   *down: administratively down
-  Interface                   PHY     Protocol  InUti OutUti   inErrors  outErrors
-  GE0/0/0                     up      up        0%    0%       0          0
-  GE0/0/1                     up      up        0%    0%       0          0
-  GE0/0/2                     down    down      0%    0%       0          0
-  GE0/0/3                     down    down      0%    0%       0          0
-  LoopBack0                   down    down      0%    0%       0          0
-  Tunnel0/0/0                 down    down      0%    0%       0          0
+  Interface                   PHY   Protocol  InUti OutUti   inErrors  outErrors
+  GigabitEthernet0/0/0        up    up           0%     0%          0          0
+  GigabitEthernet0/0/1        up    up           0%     0%          0          0
+  GigabitEthernet0/0/2        down  down         0%     0%          0          0
+  GigabitEthernet0/0/3        down  down         0%     0%          0          0
+  LoopBack0                   up    up           0%     0%          0          0
+  Tunnel0/0/0                 up    up           0%     0%          0          0
 
-[251/304] r1 <Huawei> display ip interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+[251/304] r1 <R1> display ip interface GigabitEthernet0/0/0
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is unassigned
   Broadcast address : 0.0.0.0
@@ -2077,17 +2338,19 @@ Total steps: 304
       Input:  0 packets, 0 bytes
       Output: 0 packets, 0 bytes
 
-[252/304] r1 <Huawei> display interface GigabitEthernet0/0/0
-  GE0/0/0 current state : UP
+[252/304] r1 <R1> display interface GigabitEthernet0/0/0
+  GigabitEthernet0/0/0 current state : UP
   Line protocol current state : UP
   Internet Address is not configured
   The Maximum Transmit Unit is 1500
   Input:  0 packets, 0 bytes
   Output: 0 packets, 0 bytes
 
-[253/304] r1 <Huawei> display this
+[253/304] r1 <R1> display this
   #
-  sysname Huawei
+  sysname R1
+  #
+  dns resolve
   #
   dhcp enable
   #
@@ -2107,11 +2370,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -2124,19 +2391,39 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
-[254/304] r1 <Huawei> display diagnostic-information
+[254/304] r1 <R1> display diagnostic-information
   Info: It will take several minutes to save diagnostic information,
   please wait.....................
   Info: Diagnostic information collected.
 
-[255/304] r1 <Huawei> display aaa configuration
+[255/304] r1 <R1> display aaa configuration
     Domain Name           : default
     Domain State          : Active
     Authentication-scheme : default
@@ -2146,13 +2433,13 @@ Total steps: 304
     RADIUS-server-template: -
     HWTACACS-server-template: -
 
-[256/304] r1 <Huawei> display aaa online-fail-record
+[256/304] r1 <R1> display aaa online-fail-record
   Info: No online-fail record.
 
-[257/304] r1 <Huawei> display ssh server status
+[257/304] r1 <R1> display ssh server status
   SSH server: Disabled
 
-[258/304] r1 <Huawei> display ssh user-information
+[258/304] r1 <R1> display ssh user-information
   SSH version                     : 2.0
   SSH connection timeout          : 60 seconds
   SSH server key generating interval : 0 hours
@@ -2160,31 +2447,33 @@ Total steps: 304
   SFTP server                     : Disable
   STELNET server                  : Enable
 
-[259/304] r1 <Huawei> display user-interface
+[259/304] r1 <R1> display user-interface
     Idx    Type            Tx/Rx    Modem  Privi  ActualPrivi  Auth   Int
-  + 0      CON 0           9600     -      0      0            N      -
-    34     VTY 0           -        -      0      0            N      -
-    35     VTY 1           -        -      0      0            N      -
-    36     VTY 2           -        -      0      0            N      -
-    37     VTY 3           -        -      0      0            N      -
-    38     VTY 4           -        -      0      0            N      -
+    0      CON 0           9600     -      15     15           N      -
+    129    VTY 0           -        -      15     15           A      -
+    130    VTY 1           -        -      15     15           A      -
+    131    VTY 2           -        -      15     15           A      -
+    132    VTY 3           -        -      15     15           A      -
+    133    VTY 4           -        -      15     15           A      -
   
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
 
-[260/304] r1 <Huawei> display port-security
-  Port-security is enabled on the following interfaces:
-   (configuration is recorded per interface; see display this)
+[260/304] r1 <R1> display port-security
+  Error: Unrecognized command found at '^' position.
+  display port-security
+          ^
 
 
 --- [261] § regression: pipe filters ---
-[261/304] r1 <Huawei> display current-configuration | include ospf
+[261/304] r1 <R1> display current-configuration | include ospf
   ospf 1
 
-[262/304] r1 <Huawei> display current-configuration | begin interface
+[262/304] r1 <R1> display current-configuration | begin interface
   interface GigabitEthernet0/0/0
    shutdown
   #
@@ -2199,11 +2488,15 @@ Total steps: 304
   #
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   #
   interface Tunnel0/0/0
    shutdown
   #
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  acl number 2000
+  #
+  acl name MGMT basic
   #
   rip 1
    version 2
@@ -2216,15 +2509,36 @@ Total steps: 304
   #
   ipsec proposal P1
    encapsulation-mode tunnel
+  #
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
   #
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  #
+  bgp 65000
+  isis 1
+  #
+  undo info-center enable
   #
 
-[263/304] r1 <Huawei> display current-configuration | exclude #
-  sysname Huawei
+[263/304] r1 <R1> display current-configuration | exclude #
+  sysname R1
+  dns resolve
   dhcp enable
   ip pool LAN
   interface GigabitEthernet0/0/0
@@ -2237,9 +2551,12 @@ Total steps: 304
    shutdown
   interface LoopBack0
    shutdown
+   mtu 1514
+   bandwidth 8000000
   interface Tunnel0/0/0
    shutdown
-  ip route-static 1.1.1.0 255.255.255.0 10.0.0.2
+  acl number 2000
+  acl name MGMT basic
   rip 1
    version 2
   ospf 1
@@ -2250,78 +2567,95 @@ Total steps: 304
    encapsulation-mode tunnel
   user-interface vty 0 4
    authentication-mode aaa
+   user privilege level 15
    idle-timeout 5 0
    protocol inbound ssh
+  aaa
+   local-user alice password irreversible-cipher VV7a59tMk2A3Ln+JO1OhFp/4+M5jAWNxaZocI3BM9PaNK+CTBQncTA
+   local-user alice privilege level 1
+   local-user alice service-type ssh
+   local-user bob password irreversible-cipher MxgT2dyN2ScVAMO6/qJu6YD+R6ODzvlnUwICZ8k8XaQ8i/Bi0Uk08g
+   local-user bob privilege level 1
+   local-user bob service-type ssh
+   local-user carl password irreversible-cipher z5XkODv0eIwjxdvTbpvaedWUqMjb6qBfBf5/k4B2u/E67OItEKqsvQ
+   local-user carl privilege level 1
+   local-user carl service-type ssh
+   local-user dave password irreversible-cipher gF5fQ3l68YLfjRccbWxMzaAQF2nO1hQ302jzBdHkBNrSCGLBvOhXGg
+   local-user dave privilege level 1
+   local-user dave service-type ssh
+  bgp 65000
+  isis 1
+  undo info-center enable
 
-[264/304] r1 <Huawei> display ip routing-table | include Direct
+[264/304] r1 <R1> display ip routing-table | include Direct
 <empty>
 
-[265/304] r1 <Huawei> display ip interface brief | include up
-  The number of interface that is UP in Physical is 0
-  The number of interface that is UP in Protocol is 0
-  GE0/0/0                           unassigned           UP         UP
-  GE0/0/1                           unassigned           UP         UP
+[265/304] r1 <R1> display ip interface brief | include up
+  GigabitEthernet0/0/0              unassigned           up         up
+  GigabitEthernet0/0/1              unassigned           up         up
+  LoopBack0                         unassigned           up         up(s)
+  Tunnel0/0/0                       unassigned           up         up
 
 
 --- [266] § regression: view nav + undo ---
-[266/304] r1 <Huawei> system-view
+[266/304] r1 <R1> system-view
   Enter system view, return user view with return command.
 
-[267/304] r1 [Huawei] ip routing-table limit 1000
+[267/304] r1 [R1] ip routing-table limit 1000
 <empty>
 
-[268/304] r1 [Huawei] undo ip routing-table limit 1000
+[268/304] r1 [R1] undo ip routing-table limit 1000
 <empty>
 
-[269/304] r1 [Huawei] dhcp enable
+[269/304] r1 [R1] dhcp enable
 <empty>
 
-[270/304] r1 [Huawei] undo dhcp enable
+[270/304] r1 [R1] undo dhcp enable
 <empty>
 
-[271/304] r1 [Huawei] snmp-agent
+[271/304] r1 [R1] snmp-agent
 <empty>
 
-[272/304] r1 [Huawei] undo snmp-agent
+[272/304] r1 [R1] undo snmp-agent
 <empty>
 
-[273/304] r1 [Huawei] ftp server enable
+[273/304] r1 [R1] ftp server enable
 <empty>
 
-[274/304] r1 [Huawei] undo ftp server enable
+[274/304] r1 [R1] undo ftp server enable
 <empty>
 
-[275/304] r1 [Huawei] telnet server enable
+[275/304] r1 [R1] telnet server enable
 <empty>
 
-[276/304] r1 [Huawei] undo telnet server enable
+[276/304] r1 [R1] undo telnet server enable
 <empty>
 
-[277/304] r1 [Huawei] info-center enable
+[277/304] r1 [R1] info-center enable
 <empty>
 
-[278/304] r1 [Huawei] undo info-center enable
+[278/304] r1 [R1] undo info-center enable
 <empty>
 
-[279/304] r1 [Huawei] lldp enable
+[279/304] r1 [R1] lldp enable
 <empty>
 
-[280/304] r1 [Huawei] undo lldp enable
+[280/304] r1 [R1] undo lldp enable
 <empty>
 
-[281/304] r1 [Huawei] ntp-service enable
+[281/304] r1 [R1] ntp-service enable
 <empty>
 
-[282/304] r1 [Huawei] undo ntp-service enable
+[282/304] r1 [R1] undo ntp-service enable
 <empty>
 
-[283/304] r1 [Huawei] undo terminal monitor
+[283/304] r1 [R1] undo terminal monitor
   Info: Current terminal monitor is off.
 
-[284/304] r1 [Huawei] undo terminal monitor
+[284/304] r1 [R1] undo terminal monitor
   Info: Current terminal monitor is off.
 
-[285/304] r1 [Huawei] sysname TEST
+[285/304] r1 [R1] sysname TEST
 <empty>
 
 [286/304] r1 [TEST] undo sysname TEST
@@ -2330,19 +2664,19 @@ Total steps: 304
 [287/304] r1 [Huawei] interface GigabitEthernet0/0/0
 <empty>
 
-[288/304] r1 [Huawei-GE0/0/0] display this
+[288/304] r1 [Huawei-GigabitEthernet0/0/0] display this
   #
   interface GigabitEthernet0/0/0
    shutdown
   #
 
-[289/304] r1 [Huawei-GE0/0/0] shutdown
+[289/304] r1 [Huawei-GigabitEthernet0/0/0] shutdown
 <empty>
 
-[290/304] r1 [Huawei-GE0/0/0] undo shutdown
+[290/304] r1 [Huawei-GigabitEthernet0/0/0] undo shutdown
 <empty>
 
-[291/304] r1 [Huawei-GE0/0/0] quit
+[291/304] r1 [Huawei-GigabitEthernet0/0/0] quit
 <empty>
 
 [292/304] r1 [Huawei] ospf 1
@@ -2371,47 +2705,60 @@ Total steps: 304
   Enter system view, return user view with return command.
 
 [299/304] r1 [Huawei] interface ?
-    WORD  Enter interface view
-    <cr>  
+    Eth-Trunk        Ethernet-Trunk interface
+    GigabitEthernet  GigabitEthernet interface
+    LoopBack         LoopBack interface
+    NULL             NULL interface
+    Nve              NVE interface
+    Tunnel           Tunnel interface
+    Vlanif           Vlanif interface
 
 [300/304] r1 [Huawei] ip ?
     host           Configure a static host entry
-    route-static   Configure static route
-    pool           Enter DHCP pool view
-    routing        Enable IP routing
     ip-prefix      Configure an IPv4 prefix list
     ipv6-prefix    Configure an IPv6 prefix list
-    routing-table  routing-table
+    pool           Enter DHCP pool view
+    route-static   Configure static route
+    routing        Enable IP routing
+    routing-table  Routing table configuration
 
 [301/304] r1 [Huawei] undo ?
-    terminal       terminal
-    debugging      Disable debugging
-    lldp           Disable LLDP
+    acl            Delete Access Control List
+    bfd            Disable BFD globally
+    bgp            Remove BGP
     command-alias  Disable CLI alias
-    ip             ip
-    local-user     Remove a local user
-    screen-length  Restore default screen length
-    screen-width   Restore default screen width
+    debugging      Disable system debugging functions
+    dns            Domain Name System
+    firewall       Firewall configuration
+    ike            Internet Key Exchange
+    ikev2          Internet Key Exchange version 2
+    info-center    Information center configuration
+    ip             Internet Protocol
+    ipsec          IP Security
     ipv6           Disable IPv6
+    isis           Remove IS-IS
+    lldp           Disable LLDP
+    local-user     Remove a local user
+    multicast      Disable multicast routing
+    nat            Network Address Translation
+    nqa            Network Quality Analysis
+    nqa-server     Remove an NQA server binding
+    ntp-service    Remove NTP service configuration
     ospf           Remove OSPF protocol configuration
     ospfv3         Remove OSPFv3 protocol configuration
-    bgp            Remove BGP
-    bfd            Disable BFD globally
-    isis           Remove IS-IS
-    ike            ike
-    ipsec          ipsec
-    ikev2          ikev2
-    acl            Delete Access Control List
-    nat            nat
     route-policy   Remove a route-policy
-    traffic        traffic
-    nqa            nqa
-    firewall       firewall
-    <cr>           
+    screen-length  Restore default screen length
+    screen-width   Restore default screen width
+    terminal       Set the terminal line characteristics
+    traffic        Display traffic statistics
+    <cr>
 
 [302/304] r1 [Huawei] acl ?
-    WORD  Configure Access Control List
-    <cr>  
+    advanced  Advanced ACL (3000-3999)
+    basic     Basic ACL (2000-2999)
+    name      Named ACL
+    number    ACL number
+    <cr>
 
 [303/304] r1 [Huawei] return
 <empty>

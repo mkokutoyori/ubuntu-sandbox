@@ -193,6 +193,8 @@ export interface PlsqlHost {
   callBuiltin(name: string, rawArgsText: string, evaluatedArgs: PlsqlValue[]): boolean;
   /** Server-side file I/O backing the UTL_FILE package, when available. */
   utlFile?: UtlFileApi;
+  beginAutonomousScope?(): void;
+  endAutonomousScope?(): void;
 }
 
 /**

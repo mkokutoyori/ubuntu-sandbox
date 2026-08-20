@@ -16,15 +16,15 @@
  */
 
 import type { ARPEntry } from '../EndHost';
-import { MACAddress } from '../../core/types';
+import { IPAddress, MACAddress } from '../../core/types';
 
 export interface LinuxArpContext {
   /** ARP table: IP string → ARPEntry */
   arpTable: Map<string, ARPEntry>;
   /** Add a static ARP entry */
-  addStaticARP(ip: string, mac: MACAddress, iface: string): void;
+  addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   /** Delete an ARP entry by IP. Returns true if deleted. */
-  deleteARP(ip: string): boolean;
+  deleteARP(ip: IPAddress): boolean;
   /** Default interface name (first port) */
   defaultIface: string;
 }
@@ -35,6 +35,7 @@ interface ArpFlags {
   show: boolean;         // -a or default
   numeric: boolean;      // -n
   tabular: boolean;      // -e
+  verbose: boolean;      // -v
   delete: boolean;       // -d
   addStatic: boolean;    // -s
   help: boolean;         // --help
@@ -49,6 +50,7 @@ function parseFlags(args: string[]): ArpFlags {
     show: false,
     numeric: false,
     tabular: false,
+    verbose: false,
     delete: false,
     addStatic: false,
     help: false,
@@ -98,6 +100,7 @@ function parseFlags(args: string[]): ArpFlags {
           case 'a': flags.show = true; break;
           case 'n': flags.numeric = true; break;
           case 'e': flags.tabular = true; break;
+          case 'v': flags.verbose = true; break;
           case 'i':
             // -i needs the next argument
             if (i + 1 < args.length) {
@@ -169,8 +172,6 @@ function formatBSD(entries: [string, ARPEntry][]): string {
 }
 
 function formatTabular(entries: [string, ARPEntry][]): string {
-  if (entries.length === 0) return '';
-
   const header = 'Address                  HWtype  HWaddress           Flags Mask            Iface';
   const lines = [header];
   for (const [ip, entry] of entries) {
@@ -196,7 +197,10 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
     if (!flags.filterIP) {
       return HELP_TEXT;
     }
-    const deleted = ctx.deleteARP(flags.filterIP);
+    let ip: IPAddress;
+    try { ip = new IPAddress(flags.filterIP); }
+    catch { return `arp: invalid IP address: ${flags.filterIP}`; }
+    const deleted = ctx.deleteARP(ip);
     if (!deleted) {
       return `SIOCDARP(dontpub): No ARP entry for ${flags.filterIP}`;
     }
@@ -209,18 +213,22 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
       return HELP_TEXT;
     }
     let mac: MACAddress;
+    let ip: IPAddress;
+    try { ip = new IPAddress(flags.filterIP); }
+    catch { return `arp: invalid IP address: ${flags.filterIP}`; }
     try {
       mac = new MACAddress(flags.staticMAC);
     } catch {
       return `arp: invalid hardware address: ${flags.staticMAC}`;
     }
     const iface = flags.filterIface || ctx.defaultIface;
-    ctx.addStaticARP(flags.filterIP, mac, iface);
+    ctx.addStaticARP(ip, mac, iface);
     return '';
   }
 
   // ─── Display mode (default) ──────────────────────────────────
-  let entries = Array.from(ctx.arpTable.entries());
+  let entries = Array.from(ctx.arpTable.entries())
+    .filter(([, e]) => e.type !== 'failed');
 
   // Filter by IP
   if (flags.filterIP) {
@@ -232,13 +240,16 @@ export function linuxArp(ctx: LinuxArpContext, args: string[]): string {
     entries = entries.filter(([, e]) => e.iface === flags.filterIface);
   }
 
-  if (entries.length === 0) return '';
+  const verboseSuffix = flags.verbose ? `\narp: in ${entries.length} entries` : '';
 
-  // -n or -e forces tabular format
-  if (flags.numeric || flags.tabular) {
-    return formatTabular(entries);
+  // -n or -e forces tabular format; -v alone also defaults to it since
+  // there is no BSD "verbose" variant.
+  if (flags.numeric || flags.tabular || (flags.verbose && !flags.show)) {
+    return formatTabular(entries) + verboseSuffix;
   }
 
+  if (entries.length === 0) return flags.verbose ? verboseSuffix.trimStart() : '';
+
   // Default: BSD format
-  return formatBSD(entries);
+  return formatBSD(entries) + verboseSuffix;
 }

@@ -13,36 +13,53 @@
 
 import { Equipment } from '@/network';
 import { primaryShellKindFor } from '@/shell/shellKind';
+import { SSH_PASSWORD_PROMPTS } from '@/shell/sshLauncher';
 import {
   TerminalSession, TerminalTheme, SessionType, KeyEvent, nextLineId,
   withTimeout, DeviceOfflineError,
   type InputMode,
 } from './TerminalSession';
+import { createSessionForDevice } from './sessionFactory';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
-import type { PingResult } from '@/network/devices/EndHost';
+import { formatWinTracertHeader, formatWinTracertHop } from '@/network/devices/windows/WinTracert';
+import {
+  parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
+  newRateState, GET_COUNTER_HELP,
+} from '@/network/devices/windows/GetCounter';
+import {
+  parseWinPathpingArgs,
+  formatPathpingHeader,
+  formatPathpingDiscoveryHop,
+  formatPathpingComputing,
+  formatPathpingTableHeader,
+  formatPathpingTable,
+  formatPathpingTrailer,
+  pathpingDurationSeconds,
+  type PathpingStatsRow,
+} from '@/network/devices/windows/WinPathping';
+import type { PingResult, TracerouteHopResult } from '@/network/devices/EndHost';
+import { IPAddress } from '@/network/core/types';
+import { openWireSshConnection, silentConnectIo } from '@/terminal/ssh/wireSshLogin';
+import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { AsyncJobContext } from '@/terminal/async';
 import type { WindowsShellSession } from '@/network/devices/windows/shell/WindowsShellSession';
 import { PlainOutputFormatter, type IOutputFormatter } from '@/terminal/core/OutputFormatter';
-import { completeInputCaseInsensitive } from '@/terminal/core/TabCompletionHelper';
+import { classifyWindowsLines } from '@/terminal/core/windowsOutputStyle';
+import { CompletionController, ReadlinePolicy, CyclingPolicy, LastWordSource, ghostRemainder } from '@/terminal/completion';
 import type { ISubShell, SubShellResult } from '@/terminal/subshells/ISubShell';
-import {
-  RemoteDeviceSubShell,
-  LinuxPromptStrategy,
-  CiscoPromptStrategy, strategyForShellKind,
-  HuaweiPromptStrategy,
-  WindowsPromptStrategy,
-  type RemotePromptStrategy,
-} from '@/terminal/subshells/RemoteDeviceSubShell';
+import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
+import { launchTelnet } from '@/terminal/subshells/telnetLaunch';
+import { WINDOWS_TELNET } from '@/terminal/subshells/telnetDialect';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { installDefaultShells } from '@/shell/registerDefaults';
 import { PromiseInputBroker as PromiseInputBrokerCtor } from '@/shell/input';
 import { ShellFactory } from '@/shell/ShellFactory';
-import { CrossVendorRemoteShell } from '@/shell/CrossVendorRemoteShell';
 import { ShellSubShellAdapter } from '@/shell/ShellSubShellAdapter';
 import type { IShell } from '@/shell/IShell';
 import { SshConnectionRequest } from '@/network/protocols/ssh/server/SshConnectionRequest';
-import { SshKnownHostsFile } from '@/network/protocols/ssh/SshKnownHostsFile';
+import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
+import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -61,20 +78,9 @@ export class WindowsTerminalSession extends TerminalSession {
   bannerCleared: boolean = false;
   tabSuggestions: string[] | null = null;
 
-  /**
-   * Active Tab-completion cycle (PowerShell classic console behaviour:
-   * repeated Tab walks the candidate list, replacing the token inline;
-   * Shift+Tab walks backwards). Reset whenever a non-Tab key is pressed
-   * or the input no longer matches what we last inserted.
-   */
-  private completion: {
-    candidates: string[];
-    index: number;
-    /** Input text before the token being replaced. */
-    prefix: string;
-    /** The full _inputBuf we last wrote (to detect "Tab again"). */
-    applied: string;
-  } | null = null;
+  private readonly rootCompletion =
+    new CompletionController(new ReadlinePolicy({ caseInsensitive: true }));
+  private readonly subShellCompletion = new CompletionController(new CyclingPolicy());
 
   private readonly _flowFormatter = new PlainOutputFormatter();
   private _onRequestClose?: () => void;
@@ -140,6 +146,17 @@ export class WindowsTerminalSession extends TerminalSession {
   getTheme(): TerminalTheme { return WINDOWS_THEME; }
   protected getFlowFormatter(): IOutputFormatter { return this._flowFormatter; }
 
+  protected override prepareAsRemoteUser(user: string): void {
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return;
+    if (this.shell) dev.closeShellSession(this.shell);
+    this.shell = dev.openShellSession({ user, cwd: `C:\\Users\\${user}` });
+  }
+
+  protected override getFlowUser(): string {
+    return this.shell?.user ?? super.getFlowUser();
+  }
+
   /**
    * Current shell mode — derived from the active sub-shell type.
    * Used by UI components (TerminalModal, TerminalView) for display.
@@ -153,6 +170,23 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   /**
+   * True when the current input line is being driven from either the
+   * root cmd.exe loop or the PowerShell sub-shell — the two contexts
+   * where a NATIVE Windows binary (ping, tracert, pathping, netstat)
+   * behaves identically on real Windows and should stream identically
+   * here too. False for every other sub-shell (sqlplus, rman, sftp,
+   * nested SSH, …), where a bare `ping` typed inside them is not a
+   * native-command invocation at all.
+   *
+   * This is the SINGLE gate the streaming interceptors below share —
+   * exactly one implementation of "is native-command streaming valid
+   * right now", reused instead of re-derived per command per shell.
+   */
+  private isNativeCommandStreamContext(): boolean {
+    return !this.activeSubShell || this.shellMode === 'powershell';
+  }
+
+  /**
    * Shell stack depth — used by TerminalView to decide whether to show the CMD banner.
    * Returns an array-like with a length property for compatibility.
    */
@@ -161,6 +195,7 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   getPrompt(): string {
+    if (this.hasActiveChild) return this.foreground.getPrompt();
     if (this.activeSubShell) {
       return this.activeSubShell.getPrompt();
     }
@@ -181,8 +216,12 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   override get currentInputMode(): InputMode {
+    if (this.hasActiveChild) return this.foreground.currentInputMode;
     if (this.inputHostImpl.hasPendingRequest()
         && (this.inputMode.type === 'password' || this.inputMode.type === 'interactive-text')) {
+      return this.inputMode;
+    }
+    if ((this.pendingSshPush || this.pendingRunas) && this.inputMode.type === 'password') {
       return this.inputMode;
     }
     // A sub-shell that asked for a password challenge takes priority over
@@ -194,6 +233,10 @@ export class WindowsTerminalSession extends TerminalSession {
         : { type: 'interactive-text', promptText: p.promptText };
     }
     if (this.activeSubShell) {
+      // A foreground async stream owns the tty — hide the sub-shell prompt
+      // input so the host renders the opacity-0 capture input instead and
+      // Ctrl+C reaches the runtime's interrupt path.
+      if (this.hasForegroundAsyncJob) return { type: 'normal' };
       return { type: 'interactive-text', promptText: this.activeSubShell.getPrompt() };
     }
     return this.inputMode;
@@ -215,6 +258,8 @@ export class WindowsTerminalSession extends TerminalSession {
   handleKey(e: KeyEvent): boolean {
     if (this.disposed) return false;
 
+    if (this.hasActiveChild) return this.foreground.handleKey(e);
+
     if (this.inputHostImpl.hasPendingRequest()) {
       if (this.handleBrokerKey(e)) return true;
     }
@@ -227,7 +272,7 @@ export class WindowsTerminalSession extends TerminalSession {
       if (e.key === 'Enter') {
         const pw = this.getPasswordBuf();
         this.setPasswordBuf('');
-        this.submitSshPassword(pw);
+        void this.submitSshPassword(pw);
         return true;
       }
       if (e.key === 'c' && e.ctrlKey) {
@@ -241,6 +286,27 @@ export class WindowsTerminalSession extends TerminalSession {
       }
       // Let the view drive the character-by-character input into the
       // masked password buffer.
+      return false;
+    }
+
+    // `runas` password challenge — same masked-input pattern as the SSH
+    // one above, but a single attempt (no retry): real runas.exe fails
+    // immediately on a wrong password rather than re-prompting.
+    if (this.pendingRunas && this.inputMode.type === 'password') {
+      if (e.key === 'Enter') {
+        const pw = this.getPasswordBuf();
+        this.setPasswordBuf('');
+        void this.submitRunasPassword(pw);
+        return true;
+      }
+      if (e.key === 'c' && e.ctrlKey) {
+        this.pendingRunas = null;
+        this.setPasswordBuf('');
+        this.inputMode = { type: 'normal' };
+        this.addLine('^C');
+        this.notify();
+        return true;
+      }
       return false;
     }
 
@@ -319,11 +385,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -334,7 +398,7 @@ export class WindowsTerminalSession extends TerminalSession {
 
   private tryStartWinPingStream(commandLine: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
-    if (this.shellMode !== 'cmd' || this.activeSubShell) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC)) return false;
     const toks = commandLine.trim().split(/\s+/);
@@ -360,7 +424,7 @@ export class WindowsTerminalSession extends TerminalSession {
           ttl: parsed.ttl,
           timeoutMs: 2000,
           intervalMs: 1000,
-          onResolved: (ip) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size)); },
+          onResolved: (ip, hostname) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size, hostname)); },
           onResult: (r) => { results.push(r); ctx.sink.line(formatWinPingReplyLine(r, parsed.size)); },
           shouldStop: () => ctx.cancelled(),
           sleep: (ms) => ctx.delay(ms),
@@ -379,7 +443,357 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  protected onEnter(): void {
+  private tryStartWinTracertStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'tracert') return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    if (toks.includes('/?') || toks.includes('/help')) return false;
+
+    let targetStr = '';
+    let maxHops = 30;
+    const rest = toks.slice(1);
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i].toLowerCase();
+      if (a === '-h' && rest[i + 1]) { maxHops = parseInt(rest[i + 1], 10) || 30; i++; }
+      else if ((a === '-w' || a === '-j' || a === '-s') && rest[i + 1]) { i++; }
+      else if (!a.startsWith('-') && !a.startsWith('/')) { targetStr = rest[i]; }
+    }
+    if (!targetStr) return false;
+
+    let hopCount = 0;
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const outcome = await dev.tracerouteStreamInSession(targetStr, {
+          maxHops,
+          timeoutMs: 2000,
+          onResolved: (ip, hostname) => {
+            for (const line of formatWinTracertHeader(ip, maxHops, hostname)) ctx.sink.line(line);
+          },
+          onHop: (hop) => { hopCount++; for (const l of formatWinTracertHop(hop).split('\n')) ctx.sink.line(l); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved || hopCount === 0) {
+          ctx.sink.error(`Unable to resolve target system name ${targetStr}.`);
+          return;
+        }
+        ctx.sink.line('');
+        ctx.sink.line('Trace complete.');
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartWinNetstatStream(commandLine: string): boolean {
+    if (!this.isNativeCommandStreamContext()) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'netstat') return false;
+    const last = toks[toks.length - 1];
+    if (toks.length < 2 || !/^[1-9]\d*$/.test(last)) return false;
+    const intervalMs = parseInt(last, 10) * 1000;
+    const rendered = ['netstat', ...toks.slice(1, -1)].join(' ');
+    const shell = this.shell;
+    return this.startScrollingMonitor({
+      commandLine,
+      intervalMs,
+      frame: () => dev.executeCommandInSession(rendered, shell),
+    });
+  }
+
+  private tryStartWinPathpingStream(commandLine: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (!this.isNativeCommandStreamContext()) return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&]/.test(commandLine)) return false;
+    const toks = commandLine.trim().split(/\s+/);
+    if (toks[0].toLowerCase() !== 'pathping') return false;
+    const parsed = parseWinPathpingArgs(toks.slice(1));
+    if (!parsed.targetStr) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: commandLine,
+      run: async (ctx) => {
+        const discovered: TracerouteHopResult[] = [];
+        let resolvedTarget: IPAddress | null = null;
+        const outcome = await dev.tracerouteStreamInSession(parsed.targetStr, {
+          maxHops: parsed.maxHops,
+          probesPerHop: 1,
+          timeoutMs: parsed.timeoutMs,
+          onResolved: (ip, hostname) => {
+            resolvedTarget = ip;
+            for (const line of formatPathpingHeader(ip, parsed.maxHops, hostname)) ctx.sink.line(line);
+          },
+          onHop: (hop) => { discovered.push(hop); },
+          shouldStop: () => ctx.cancelled(),
+        });
+        if (ctx.cancelled()) return;
+        if (!outcome.resolved || !resolvedTarget) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const sourceIp = dev.getEgressIPFor(resolvedTarget)?.toString();
+        const hopRows: PathpingStatsRow[] = [{
+          hop: 0,
+          ip: sourceIp ?? '0.0.0.0',
+          hostname: parsed.noResolve ? undefined : dev.getHostname(),
+          rttMs: undefined,
+          sourceLost: 0,
+          sourceSent: 0,
+          nodeLost: 0,
+          linkLost: 0,
+        }];
+        let hopNum = 0;
+        for (const hop of discovered) {
+          hopNum++;
+          if (!hop.ip) continue;
+          ctx.sink.line(formatPathpingDiscoveryHop(hopNum, hop.ip));
+          hopRows.push({
+            hop: hopNum,
+            ip: hop.ip,
+            hostname: undefined,
+            rttMs: undefined,
+            sourceLost: 0,
+            sourceSent: 0,
+            nodeLost: 0,
+            linkLost: 0,
+          });
+        }
+        if (hopRows.length <= 1) {
+          ctx.sink.error(`Unable to resolve target system name ${parsed.targetStr}.`);
+          return;
+        }
+
+        const durationSec = pathpingDurationSeconds(parsed, hopRows.length - 1);
+        for (const line of formatPathpingComputing(durationSec)) ctx.sink.line(line);
+
+        for (let i = 1; i < hopRows.length; i++) {
+          if (ctx.cancelled()) return;
+          const row = hopRows[i];
+          const rtts: number[] = [];
+          const results: PingResult[] = [];
+          await dev.pingStreamInSession(row.ip, {
+            count: parsed.queriesPerHop,
+            timeoutMs: parsed.timeoutMs,
+            intervalMs: parsed.periodMs,
+            onResult: (r) => { results.push(r); if (r.success) rtts.push(r.rttMs); },
+            shouldStop: () => ctx.cancelled(),
+            sleep: (ms) => ctx.delay(ms),
+          });
+          row.sourceSent = results.length;
+          row.sourceLost = results.filter((r) => !r.success).length;
+          if (rtts.length > 0) row.rttMs = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+        }
+        if (ctx.cancelled()) return;
+
+        for (let i = 1; i < hopRows.length; i++) {
+          const prev = hopRows[i - 1];
+          const cur = hopRows[i];
+          const prevLossRate = prev.sourceSent > 0 ? prev.sourceLost / prev.sourceSent : 0;
+          const curLossRate = cur.sourceSent > 0 ? cur.sourceLost / cur.sourceSent : 0;
+          cur.linkLost = Math.round(Math.max(0, curLossRate - prevLossRate) * cur.sourceSent);
+        }
+
+        ctx.sink.line('');
+        for (const line of formatPathpingTableHeader()) ctx.sink.line(line);
+        for (const line of formatPathpingTable(hopRows, parsed.queriesPerHop)) ctx.sink.line(line);
+        ctx.sink.line('');
+        ctx.sink.line(formatPathpingTrailer());
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartTestConnectionContinuous(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'test-connection') return false;
+
+    let target = '';
+    let continuous = false;
+    let delaySec = 1;
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-continuous') continuous = true;
+      else if (al === '-count' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (v === 0) continuous = true;
+      } else if (al === '-delay' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v > 0) delaySec = v;
+      } else if ((al === '-computername' || al === '-targetname') && toks[i + 1]) {
+        target = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !target) {
+        target = stripQuotes(a);
+      }
+    }
+    if (!continuous || !target) return false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        ctx.sink.line('');
+        ctx.sink.line('Source        Destination     IPV4Address      Bytes    Time(ms)');
+        ctx.sink.line('------        -----------     -----------      -----    --------');
+        while (!ctx.cancelled()) {
+          const ip = dev.resolveHostnameSync(target);
+          if (!ip) {
+            ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ''.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+          } else {
+            const ipStr = ip.toString();
+            const ping = dev.sendPingProbeSync(ip);
+            if (ping.success) {
+              const egress = dev.getEgressFor(ip);
+              const src = egress?.sourceIp.toString() ?? 'localhost';
+              ctx.sink.line(src.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + String(Math.max(1, Math.round(ping.rttMs))).padStart(8));
+            } else {
+              ctx.sink.line('localhost'.padEnd(13) + ' ' + target.padEnd(15) + ' ' + ipStr.padEnd(15) + '  ' + '32'.padStart(5) + '  ' + 'TimedOut'.padStart(8));
+            }
+          }
+          await ctx.delay(Math.max(100, delaySec * 1000));
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartGetContentWait(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC) || !this.shell) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0) return false;
+    const head = toks[0].toLowerCase();
+    if (head !== 'get-content' && head !== 'gc' && head !== 'cat' && head !== 'type') return false;
+
+    let wait = false;
+    let tail: number | null = null;
+    let rawPath = '';
+    for (let i = 1; i < toks.length; i++) {
+      const a = toks[i];
+      const al = a.toLowerCase();
+      if (al === '-wait') wait = true;
+      else if (al === '-tail' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v >= 0) tail = v;
+      } else if ((al === '-path' || al === '-literalpath') && toks[i + 1]) {
+        rawPath = stripQuotes(toks[++i]);
+      } else if (!al.startsWith('-') && !rawPath) {
+        rawPath = stripQuotes(a);
+      }
+    }
+    if (!wait || !rawPath) return false;
+
+    const fs = dev.getFileSystem();
+    const shell = this.shell;
+    const absPath = fs.normalizePath(rawPath, shell.cwd);
+    let lastLength = 0;
+    let primed = false;
+
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        while (!ctx.cancelled()) {
+          const r = fs.readFile(absPath);
+          if (r.ok && typeof r.content === 'string') {
+            const full = r.content;
+            if (!primed) {
+              primed = true;
+              const initial = tail !== null && tail >= 0
+                ? sliceTail(full, tail)
+                : full;
+              for (const ln of splitLines(initial)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length > lastLength) {
+              const fresh = full.slice(lastLength);
+              for (const ln of splitLines(fresh)) ctx.sink.line(ln);
+              lastLength = full.length;
+            } else if (full.length < lastLength) {
+              lastLength = 0;
+              primed = false;
+            }
+          }
+          await ctx.delay(1000);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  private tryStartGetCounter(line: string): boolean {
+    if (this.hasForegroundAsyncJob) return false;
+    if (this.shellMode !== 'powershell') return false;
+    const dev = this.device;
+    if (!(dev instanceof WindowsPC)) return false;
+    if (/[|<>&;]|=|\$|\(/.test(line)) return false;
+    const toks = line.trim().split(/\s+/);
+    if (toks.length === 0 || toks[0].toLowerCase() !== 'get-counter') return false;
+
+    const parsed = parseGetCounterArgs(toks.slice(1));
+    if (parsed.showHelp) { this.addLine(GET_COUNTER_HELP); this.notify(); return true; }
+    if (parsed.parseError) { this.addLine(parsed.parseError); this.notify(); return true; }
+
+    if (parsed.listSet) {
+      this.addLine(formatCounterSet(parsed.listSet));
+      this.notify();
+      return true;
+    }
+
+    const totalSamples = parsed.continuous ? -1 : Math.max(1, parsed.maxSamples);
+    const intervalMs = Math.max(100, parsed.sampleInterval * 1000);
+
+    if (totalSamples === 1) {
+      const snap = sampleCounterSet(parsed.counters, dev, newRateState());
+      for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) this.addLine(l);
+      this.notify();
+      return true;
+    }
+
+    const rate = newRateState();
+    const job = this.startAsyncCommand({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        let count = 0;
+        while (!ctx.cancelled() && (totalSamples < 0 || count < totalSamples)) {
+          const snap = sampleCounterSet(parsed.counters, dev, rate);
+          for (const l of formatCounterSnapshot(dev.getHostname(), snap).split('\n')) ctx.sink.line(l);
+          ctx.sink.line('');
+          count++;
+          if (totalSamples >= 0 && count >= totalSamples) break;
+          await ctx.delay(intervalMs);
+        }
+      },
+    });
+    return job !== null;
+  }
+
+  protected onEnter(): void | Promise<void> {
     if (this.hasForegroundAsyncJob) {
       this.input = '';
       this._inputBuf = '';
@@ -396,8 +810,9 @@ export class WindowsTerminalSession extends TerminalSession {
     // The 'input' record event is emitted by addEchoLine inside
     // executeCommand — recording here too would duplicate every typed
     // command in the session transcript.
-    this.executeCommand(cmd);
+    const done = this.executeCommand(cmd);
     this.notify();
+    return done;
   }
 
   private async executeCommand(cmd: string): Promise<void> {
@@ -408,8 +823,8 @@ export class WindowsTerminalSession extends TerminalSession {
 
     if (!trimmed) return;
 
-    // Handle exit at root level → close terminal
     if (trimmed.toLowerCase() === 'exit') {
+      if (this.endRemoteSession()) return;
       this._onRequestClose?.();
       return;
     }
@@ -423,15 +838,26 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    // cls
+    // `powershell <command>` / `powershell -Command <command>` — real
+    // powershell.exe treats an unswitched trailing argument as -Command,
+    // runs it non-interactively in a fresh process, prints the result and
+    // returns straight to cmd (no banner, no nested sub-shell).
+    const psExecMatch = /^(?:powershell(?:\.exe)?|pwsh(?:\.exe)?)\s+(.+)$/i.exec(trimmed);
+    if (psExecMatch) {
+      await this.runPowerShellOneShot(psExecMatch[1]);
+      return;
+    }
+
     if (lower === 'cls') {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return;
     }
 
     if (this.tryStartWinPingStream(trimmed)) return;
+    if (this.tryStartWinTracertStream(trimmed)) return;
+    if (this.tryStartWinNetstatStream(trimmed)) return;
+    if (this.tryStartWinPathpingStream(trimmed)) return;
 
     // SSH client info / unsupported forms — handled by the shared
     // launcher first so the OpenSSH usage / version line is uniform
@@ -465,11 +891,31 @@ export class WindowsTerminalSession extends TerminalSession {
       }
     }
 
+    // `telnet host [port]` opens a real session on the remote VTY, the
+    // same way `ssh` does — the device-level `cmdTelnet` only ever
+    // printed a banner (docs/PRD-VTY-Transport.md §2.1 item 6).
+    if (lower === 'telnet' || lower.startsWith('telnet ')) {
+      await this.enterTelnet(trimmed.split(/\s+/).slice(1));
+      return;
+    }
+
+    if (lower === 'runas' || lower.startsWith('runas ')) {
+      if (await this.tryStartRunasInteractive(trimmed)) {
+        this.notify();
+        return;
+      }
+    }
+
+    if (lower === 'nslookup') {
+      this.enterNslookup();
+      return;
+    }
+
     // Execute on device (root cmd)
     try {
       const result = await this.executeOnDevice(trimmed);
       if (result !== undefined && result !== null && result !== '') {
-        this.addMultiLine(result);
+        this.emitWindowsOutput(result);
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'DeviceOfflineError') {
@@ -535,32 +981,6 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   /**
-   * Pick the interactive prompt strategy from the remote device's class
-   * name — the same dispatch the Linux session uses, kept in sync so a
-   * Cisco IOS peer always gets `Router#` regardless of the client side.
-   */
-  private pickRemoteStrategy(eq: { getOSType?: () => string }): RemotePromptStrategy {
-    return strategyForShellKind(primaryShellKindFor(eq));
-  }
-
-  /** First configured IPv4 on the local Windows machine, or null. */
-  private firstLocalIp(): string | null {
-    for (const port of this.device.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip && port.getIsUp()) return ip.toString();
-    }
-    return null;
-  }
-
-  private firstDeviceIp(dev: Equipment): string | null {
-    for (const port of dev.getPorts()) {
-      const ip = port.getIPAddress();
-      if (ip) return ip.toString();
-    }
-    return null;
-  }
-
-  /**
    * Validate the target and, on success, push a {@link RemoteDeviceSubShell}
    * onto the Windows sub-shell stack so the user lands in an interactive
    * remote prompt (bash, IOS, VRP, cmd) — `exit` / `logout` / `quit` pops
@@ -586,9 +1006,19 @@ export class WindowsTerminalSession extends TerminalSession {
     const localUser = dev.userMgr?.currentUser ?? 'User';
     const user = parsed.user ?? localUser;
 
-    const found = findHostByAddress(host);
+    // Passing this.device as `from` restricts the search to what a real
+    // client can actually reach across the cable plant (docs/PRD-Link-
+    // State.md §2.1 P6) — a pulled cable stops the target from being
+    // found at all, not just from reporting a fake "interface down".
+    const found = findHostByAddress(host, undefined, this.device);
     if (!found) {
-      this.addLine(`ssh: Could not resolve hostname ${host}: Name or service not known`);
+      // A numeric IPv4 that nothing reachable owns is a routing failure
+      // ("No route to host"); a name that fails to resolve at all keeps
+      // the DNS-style error — matches the same distinction LinuxSshClient
+      // already draws for the non-interactive path.
+      this.addLine(IPAddress.isValid(host)
+        ? `ssh: connect to host ${host} port ${port}: No route to host`
+        : `ssh: Could not resolve hostname ${host}: Name or service not known`);
       return true;
     }
     if (found.poweredOff || found.interfaceDown) {
@@ -634,6 +1064,7 @@ export class WindowsTerminalSession extends TerminalSession {
       device: found.device,
       sourceIp,
       sourceHostname: dev.getHostname(),
+      localUser,
       quiet: parsed.quiet,
     };
     if (this.inputHostImpl.capabilities().interactive) {
@@ -665,12 +1096,12 @@ export class WindowsTerminalSession extends TerminalSession {
         recordSshLogin?: (u: string, fromIp: string, fromHost: string, accepted: boolean) => void;
       };
       if (ok) {
-        this.submitSshPassword(pw);
+        await this.submitSshPassword(pw);
         return;
       }
       this.sshPasswordAttempts++;
       remote.recordSshLogin?.(pending.user, pending.sourceIp, pending.sourceHostname, false);
-      if (this.sshPasswordAttempts >= WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+      if (this.sshPasswordAttempts >= SSH_PASSWORD_PROMPTS) {
         this.addLine(`${pending.user}@${pending.host}: Permission denied (publickey,password).`);
         this.pendingSshPush = null;
         this.sshPasswordAttempts = 0;
@@ -689,8 +1120,16 @@ export class WindowsTerminalSession extends TerminalSession {
   private pendingSshPush: {
     user: string; host: string; port: number;
     device: Equipment; sourceIp: string; sourceHostname: string;
-    quiet: boolean;
+    localUser: string; quiet: boolean;
   } | null = null;
+
+  /**
+   * Pending `runas` invocation waiting for the password challenge to
+   * complete. Set by {@link tryStartRunasInteractive} once the target
+   * account is confirmed to exist and be enabled — real `runas.exe`
+   * always prompts before checking the password (PRD-Nslookup-Dig-Rndc-Runas.md P11).
+   */
+  private pendingRunas: { userName: string; command: string; saveCred: boolean } | null = null;
 
   /**
    * Drive the SSH password challenge. Up to three attempts are allowed
@@ -698,9 +1137,8 @@ export class WindowsTerminalSession extends TerminalSession {
    * and surfaces as "Permission denied (publickey,password).".
    */
   private sshPasswordAttempts = 0;
-  private static readonly SSH_MAX_ATTEMPTS = 3;
 
-  private submitSshPassword(password: string): void {
+  private async submitSshPassword(password: string): Promise<void> {
     const pending = this.pendingSshPush;
     if (!pending) return;
 
@@ -717,7 +1155,7 @@ export class WindowsTerminalSession extends TerminalSession {
       remote.recordSshLogin?.(
         pending.user, pending.sourceIp, pending.sourceHostname, false,
       );
-      if (this.sshPasswordAttempts < WindowsTerminalSession.SSH_MAX_ATTEMPTS) {
+      if (this.sshPasswordAttempts < SSH_PASSWORD_PROMPTS) {
         this.addLine('Permission denied, please try again.');
         // Stay in password mode for the next attempt.
         this.notify();
@@ -731,57 +1169,60 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
 
-    remote.recordSshLogin?.(
-      pending.user, pending.sourceIp, pending.sourceHostname, true,
-    );
-    if (!pending.quiet) {
-      const banner = remote.sshBanner?.() ?? '';
-      for (const line of banner.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-      const remoteMotd = (pending.device as unknown as { getSshMotd?: () => string });
-      const motd = remoteMotd.getSshMotd?.() ?? '';
-      for (const line of motd.replace(/\n+$/, '').split('\n')) {
-        if (line.length > 0) this.addLine(line);
-      }
-    }
-    this.writeKnownHostsEntry(pending.device, pending.host, pending.user);
-
-    installDefaultShells();
-    const primaryKind = this.pickPrimaryShellKind(pending.device);
-    let activeShell: ISubShell;
-    if (ShellFactory.has(primaryKind)) {
-      // Compute the OpenSSH env strings so a remote `echo $SSH_CONNECTION`
-      // returns "<client_ip> <client_port> <server_ip> <server_port>"
-      // just like a real ssh login.
-      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
-      const serverIp = this.firstDeviceIp(pending.device) ?? pending.host;
-      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
-      const xshell = new CrossVendorRemoteShell({
-        device: pending.device,
-        user: pending.user,
-        remoteHost: pending.host,
-        primaryKind,
-        sshConnection: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
-        sshClient: `${clientIp} ${clientPort} ${pending.port}`,
-      });
-      activeShell = new ShellSubShellAdapter(xshell);
-    } else {
-      // Vendor without a new-layer Shell yet — fall back to the legacy
-      // RemoteDeviceSubShell with the vendor prompt strategy.
-      const strategy = this.pickRemoteStrategy(pending.device);
-      activeShell = new RemoteDeviceSubShell(
-        pending.device, pending.user, pending.host, strategy,
-      );
-    }
-
-    if (this.activeSubShell) this.subShellStack.push(this.activeSubShell);
-    this.activeSubShell = activeShell;
-    this.subShellHistory = [];
-    this.subShellHistoryIndex = -1;
     this.pendingSshPush = null;
     this.sshPasswordAttempts = 0;
     this.inputMode = { type: 'normal' };
+
+    // Credentials are already known-good (verified above) — open the REAL
+    // wire connection they belong to so the remote sees a genuine TCP+SSH
+    // session (auth.log, tcpdump) instead of nothing at all, then hand the
+    // interactive experience to the existing in-memory child session — the
+    // real wire session has served its purpose (proving reachability and
+    // producing a real accept/auth log entry) while the interactive
+    // experience is served by the in-memory child session below, since
+    // the child-session machinery (tab completion, editors, nested-ssh,
+    // foreground streaming) isn't yet ported onto the wire shell channel
+    // for every vendor.
+    //
+    // Two things this must NOT do, both because a single `ssh` is a
+    // single login and the remote's `/var/log/syslog` is read by the
+    // learner:
+    //   - ask for a shell channel it will never type into (the server
+    //     would open a login session and SIGHUP the `-bash` it spawned
+    //     a moment later),
+    //   - hang the connection up before the user logs out (the server
+    //     would narrate a disconnect for a session still on screen).
+    // So: connection only, held open for as long as the child lives.
+    const outcome = await openWireSshConnection({
+      device: this.device,
+      localUser: pending.localUser,
+      user: pending.user,
+      host: pending.host,
+      port: pending.port,
+      io: silentConnectIo(),
+      password,
+      // 'accept-new' — not 'no' — so a first-seen host key is actually
+      // recorded (NoVerificationStrategy accepts silently but never
+      // saves); matches the manual known_hosts write this replaced.
+      strict: 'accept-new',
+    });
+    const wire = outcome.kind === 'connected' ? outcome.session : null;
+
+    const child = createSessionForDevice(pending.device, `${this.id}>ssh`);
+    if (child) {
+      if (wire) child.registerTearDown(() => wire.disconnect());
+      const clientIp = this.firstLocalIp() ?? '0.0.0.0';
+      const serverIp = firstConfiguredIp(pending.device) ?? pending.host;
+      const clientPort = 50_000 + (pending.user.length * 7 % 10_000);
+      this.adoptRemoteChild(child, pending.user, pending.host, {
+        SSH_CONNECTION: `${clientIp} ${clientPort} ${serverIp} ${pending.port}`,
+        SSH_CLIENT: `${clientIp} ${clientPort} ${pending.port}`,
+      }, { quiet: pending.quiet });
+    } else {
+      // Nothing to attach the connection's lifetime to — let it go now
+      // rather than leak a socket the user can never close.
+      wire?.disconnect();
+    }
     this.notify();
   }
 
@@ -798,11 +1239,16 @@ export class WindowsTerminalSession extends TerminalSession {
     const dev = device as unknown as {
       checkPassword?: (u: string, p: string) => boolean;
       userMgr?: { checkPassword?: (u: string, p: string) => boolean };
+      tryDomainAuth?: (u: string, p: string) => { ok: boolean; sam: string; groups: string[] } | null;
       getSshHost?: () => {
         evaluate?: (req: unknown) => { outcome: string };
       };
       firstConfiguredIp?: () => string | null;
     };
+    if (typeof dev.tryDomainAuth === 'function') {
+      const domainResult = dev.tryDomainAuth(user, password);
+      if (domainResult !== null) return domainResult.ok;
+    }
     if (typeof dev.checkPassword === 'function') {
       return dev.checkPassword(user, password);
     }
@@ -835,38 +1281,188 @@ export class WindowsTerminalSession extends TerminalSession {
   }
 
   /**
-   * Pick the kind of primary shell for the remote's vendor — the shell
-   * the user would land in if they were seated at the remote's console.
+   * `runas [/netonly] [/savecred] /user:X program` — real runas.exe always
+   * prompts for the password (never leaks whether the account exists via
+   * that prompt), but this simulator's pre-P11 messages already
+   * distinguish "not recognized"/"disabled" before any prompt, and
+   * windows-access-cmd.test.ts already asserts those exact messages via
+   * the non-interactive `device.executeCommand()` path — so the
+   * interactive path here keeps the same ordering for consistency rather
+   * than hiding account existence.
+   *
+   * `/netonly` (PRD P12) never validates or prompts at all — real
+   * semantics simplified to "run as the caller" (PRD §2.2). `/savecred`
+   * skips the prompt on a subsequent invocation once a password has been
+   * saved for that account.
+   *
+   * Returns false for malformed input (missing /user:, no command) so the
+   * caller falls through to the device-level usage message.
    */
-  private writeKnownHostsEntry(remote: Equipment, host: string, user: string): void {
-    const localDev = this.device as unknown as {
-      fs?: {
-        readFile: (p: string) => { ok: boolean; content?: string };
-        createFile: (p: string, c: string) => { ok: boolean; error?: string };
-        exists: (p: string) => boolean;
-        mkdirp: (p: string) => void;
-      };
-    };
-    if (!localDev.fs) return;
-    const remoteAny = remote as unknown as {
-      getSshHostKey?: () => { type: string; publicKey: string };
-    };
-    const hk = remoteAny.getSshHostKey?.();
-    if (!hk) return;
-    const path = `C:\\Users\\${user}\\.ssh\\known_hosts`;
-    const dir = path.substring(0, path.lastIndexOf('\\'));
-    if (!localDev.fs.exists(dir)) localDev.fs.mkdirp(dir);
-    const existing = localDev.fs.readFile(path);
-    const body = existing.ok ? (existing.content ?? '') : '';
-    const file = SshKnownHostsFile.parse(body);
-    if (!file.find(host)) {
-      const updated = file.add({ hostnames: [host], keyType: hk.type, publicKey: hk.publicKey });
-      localDev.fs.createFile(path, updated.serialize());
+  private async tryStartRunasInteractive(line: string): Promise<boolean> {
+    const args = line.split(/\s+/).slice(1);
+    const parsed = parseRunasArgs(args);
+    if (parsed.ok === false) return false;
+    const { userName, command, netOnly, saveCred } = parsed.invocation;
+
+    if (netOnly) {
+      const dev = this.device as unknown as { runNetOnlyCommand?: (c: string) => Promise<string> };
+      const result = await dev.runNetOnlyCommand?.(command) ?? '';
+      if (result) this.emitWindowsOutput(result);
+      return true;
     }
+
+    const dev = this.device as unknown as RunasUserSource;
+    const domainQualified = userName.includes('\\') || userName.includes('@');
+    if (!domainQualified) {
+      const validation = validateRunasUser(dev, userName);
+      if (validation.ok === false) {
+        this.addLine(validation.error, 'error');
+        return true;
+      }
+    }
+
+    if (saveCred) {
+      const vault = this.device as unknown as {
+        getSavedRunasCredential?: (u: string) => string | null;
+        runAsUserVerified?: (u: string, c: string) => Promise<string>;
+      };
+      const saved = vault.getSavedRunasCredential?.(userName) ?? null;
+      if (saved !== null) {
+        const result = await vault.runAsUserVerified?.(userName, command) ?? '';
+        if (result) this.emitWindowsOutput(result);
+        return true;
+      }
+    }
+
+    this.pendingRunas = { userName, command, saveCred };
+    const promptText = `Enter the password for ${userName}:`;
+    this.inputMode = { type: 'password', promptText };
+    this.addLine(promptText, 'prompt');
+    return true;
+  }
+
+  /**
+   * `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) —
+   * the same interactive `>` REPL as Linux. Windows previously had no
+   * interactive mode at all; this reuses `NslookupSubShell` as-is (DRY)
+   * instead of writing a second, parallel implementation.
+   */
+  private async enterTelnet(args: string[]): Promise<void> {
+    const sub = await launchTelnet(args, {
+      device: this.device,
+      emit: (text, type) => this.addLine(text, type),
+      dialect: WINDOWS_TELNET,
+    });
+    if (!sub) { this.notify(); return; }
+
+    this.activeSubShell = sub;
+    this._inputBuf = '';
+    const opening = await sub.begin();
+    for (const line of opening.output) this.addLine(line);
+    if (opening.exit) { this.exitSubShell(); return; }
+    this.notify();
+  }
+
+  private enterNslookup(): void {
+    const dev = this.device instanceof WindowsPC ? this.device : null;
+    const deps = dev?.getInteractiveNslookupDeps() ?? null;
+    if (!deps) {
+      this.addLine("*** Can't find UnKnown: No DNS servers available", 'error');
+      this.addLine('The DNS Client (Dnscache) service is not running.', 'error');
+      this.notify();
+      return;
+    }
+    const shell = new NslookupSubShell(deps);
+    for (const line of shell.bannerLines()) this.addLine(line);
+    this.activeSubShell = shell;
+    this._inputBuf = '';
+    this.notify();
+  }
+
+  private async submitRunasPassword(password: string): Promise<void> {
+    const pending = this.pendingRunas;
+    this.pendingRunas = null;
+    this.inputMode = { type: 'normal' };
+    if (!pending) {
+      this.notify();
+      return;
+    }
+
+    const ok = this.verifyRemoteCredentials(this.device, pending.userName, password);
+    if (!ok) {
+      this.addLine(runasIncorrectPasswordMessage(pending.command), 'error');
+      this.notify();
+      return;
+    }
+
+    if (pending.saveCred) {
+      const vault = this.device as unknown as { saveRunasCredential?: (u: string, p: string) => void };
+      vault.saveRunasCredential?.(pending.userName, password);
+    }
+
+    const dev = this.device as unknown as { runAsUserVerified?: (u: string, c: string, p?: string) => Promise<string> };
+    const result = await dev.runAsUserVerified?.(pending.userName, pending.command, password) ?? '';
+    if (result) this.emitWindowsOutput(result);
+    this.notify();
   }
 
   private pickPrimaryShellKind(eq: Equipment): string {
     return primaryShellKindFor(eq);
+  }
+
+  /**
+   * `powershell <command>` from cmd — real powershell.exe treats an
+   * unswitched trailing argument (or the value of an explicit
+   * `-Command`/`-c`) as a one-shot script: it runs in a fresh process,
+   * prints the result, and exits without ever showing the interactive
+   * banner or leaving cmd's prompt. Mirrors that by driving a throwaway
+   * `WindowsPowerShellShell` through a single `processLine()` instead of
+   * pushing it onto the sub-shell stack.
+   */
+  private async runPowerShellOneShot(argsText: string): Promise<void> {
+    let command = argsText.trim();
+    const commandFlag = /^-(?:command|c)\b\s*(.*)$/is.exec(command);
+    if (commandFlag) command = commandFlag[1].trim();
+    if ((command.startsWith('"') && command.endsWith('"'))
+      || (command.startsWith("'") && command.endsWith("'"))) {
+      command = command.slice(1, -1);
+    }
+    if (!command) {
+      this.enterPowerShell();
+      return;
+    }
+
+    // Real powershell.exe doesn't buffer a child process's stdout until
+    // the whole one-shot invocation finishes — ping.exe's replies still
+    // stream to the console as they arrive, exactly like `powershell ping
+    // -t` interactively or plain `ping` at cmd. Route native streaming
+    // commands through the SAME interceptors used by both other entry
+    // points instead of letting them fall into the generic
+    // `shell.processLine()` below, which awaits to completion and prints
+    // everything at once.
+    if (this.tryStartWinPingStream(command)) return;
+    if (this.tryStartWinTracertStream(command)) return;
+    if (this.tryStartWinPathpingStream(command)) return;
+    if (this.tryStartWinNetstatStream(command)) return;
+
+    installDefaultShells();
+    const shell = ShellFactory.create('powershell', {
+      device: this.device,
+      user: 'User',
+      cwd: this.shell?.cwd,
+      extras: { windowsSession: this.shell },
+    });
+    shell.setInputHost?.(this.getInputHost());
+    shell.activate();
+    const result = await shell.processLine(command);
+    if (result.styledOutput && result.styledOutput.length > 0) {
+      for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
+    }
+    shell.deactivate();
+    shell.dispose();
+    this.notify();
   }
 
   // ── Sub-shell management ───────────────────────────────────────
@@ -893,7 +1489,7 @@ export class WindowsTerminalSession extends TerminalSession {
     this.subShellHistoryIndex = -1;
 
     for (const line of shell.getActivationBanner()) {
-      this.lines.push({ id: nextLineId(), text: line, type: 'ps-header' });
+      this.addLine(line, 'ps-header');
     }
     shell.activate();
     this._onShellModeChange?.('powershell');
@@ -936,11 +1532,11 @@ export class WindowsTerminalSession extends TerminalSession {
       return;
     }
     const result = await this.activeSubShell.handleInput(value);
-    if (result.clearScreen) { this.lines = []; this.bannerCleared = true; }
+    if (result.clearScreen) { this.clear(); this.bannerCleared = true; }
     if (result.styledOutput && result.styledOutput.length > 0) {
       for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
-    } else {
-      for (const line of result.output) this.addLine(line);
+    } else if (result.output.length > 0) {
+      this.emitWindowsOutput(result.output.join('\n'));
     }
     if (result.exit) { this.exitSubShell(); return; }
     if (result.childShell) { this.pushChildShell(result.childShell); return; }
@@ -1010,11 +1606,52 @@ export class WindowsTerminalSession extends TerminalSession {
         this.subShellHistory = [...this.subShellHistory.slice(-199), line];
       }
 
+      // Native commands (ping/tracert/pathping/netstat) stream identically
+      // whether they're typed at cmd.exe or inside powershell.exe on real
+      // Windows — reuse the SAME interceptors the root cmd loop uses
+      // instead of a PowerShell-specific reimplementation. PS-only
+      // constructs (Test-Connection -Continuous, Get-Content -Wait, …)
+      // keep their own checks right below, unaffected.
+      if (this.tryStartWinPingStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinTracertStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinPathpingStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartWinNetstatStream(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartTestConnectionContinuous(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartGetContentWait(line)) {
+        this.notify();
+        return true;
+      }
+      if (this.tryStartGetCounter(line)) {
+        this.notify();
+        return true;
+      }
+      if (line.trim() === 'runas' || line.trim().toLowerCase().startsWith('runas ')) {
+        if (parseRunasArgs(line.split(/\s+/).slice(1)).ok) {
+          void this.tryStartRunasInteractive(line).then(() => this.notify());
+          return true;
+        }
+      }
+
       const maybePromise = this.activeSubShell.processLine(line);
 
       const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
         if (result.clearScreen) {
-          this.lines = [];
+          this.clear();
           this.bannerCleared = true;
         }
 
@@ -1025,8 +1662,8 @@ export class WindowsTerminalSession extends TerminalSession {
           for (const styled of result.styledOutput) {
             this.addStyledLine(styled.segments, styled.lineType);
           }
-        } else {
-          for (const outputLine of result.output) this.addLine(outputLine);
+        } else if (result.output.length > 0) {
+          this.emitWindowsOutput(result.output.join('\n'));
         }
 
         if (result.exit) {
@@ -1114,8 +1751,10 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+C → cancel current input
+    // Ctrl+C → interrupt a running foreground async job first; otherwise
+    // cancel the current input buffer (PowerShell prompt semantics).
     if (e.key === 'c' && e.ctrlKey) {
+      if (this.asyncRuntime.interruptForeground()) return true;
       this._inputBuf = '';
       this.subShellHistoryIndex = -1;
       this.addLine(`${this.activeSubShell.getPrompt()}^C`);
@@ -1123,11 +1762,9 @@ export class WindowsTerminalSession extends TerminalSession {
       return true;
     }
 
-    // Ctrl+L → clear screen
     if (e.key === 'l' && e.ctrlKey) {
-      this.lines = [];
+      this.clear();
       this.bannerCleared = true;
-      this.notify();
       return true;
     }
 
@@ -1138,9 +1775,9 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     // Any non-Tab key ends a completion cycle and clears the suggestions.
-    if (this.tabSuggestions || this.completion) {
+    this.subShellCompletion.reset();
+    if (this.tabSuggestions) {
       this.tabSuggestions = null;
-      this.completion = null;
       this.notify();
     }
 
@@ -1157,76 +1794,90 @@ export class WindowsTerminalSession extends TerminalSession {
     // real PS console experience: Tab inserts the first match, repeated
     // Tab cycles forward, Shift+Tab cycles backward.
     if (sub && typeof sub.getCompletions === 'function') {
-      // Continuing an existing cycle? (Tab pressed again with no edits.)
-      if (this.completion && this.completion.applied === this._inputBuf
-          && this.completion.candidates.length > 1) {
-        const n = this.completion.candidates.length;
-        this.completion.index =
-          (this.completion.index + (reverse ? -1 : 1) + n) % n;
-        const next = this.completion.candidates[this.completion.index];
-        this._inputBuf = this.completion.prefix + next;
-        this.completion.applied = this._inputBuf;
-        this.tabSuggestions = this.completion.candidates.length > 1
-          ? this.completion.candidates : null;
-        this.notify();
-        return;
-      }
-
-      // Fresh completion.
-      const candidates = sub.getCompletions(this._inputBuf);
-      if (candidates.length === 0) { this.completion = null; return; }
-
-      // The token we replace is the trailing run of non-whitespace
-      // (matches how PowerShellSubShell.getCompletions tokenizes).
-      const m = /(\S*)$/.exec(this._inputBuf);
-      const prefix = this._inputBuf.slice(0, this._inputBuf.length - (m ? m[1].length : 0));
-
-      const first = reverse ? candidates[candidates.length - 1] : candidates[0];
-      this._inputBuf = prefix + first;
-      this.completion = {
-        candidates,
-        index: reverse ? candidates.length - 1 : 0,
-        prefix,
-        applied: this._inputBuf,
-      };
-      this.tabSuggestions = candidates.length > 1 ? candidates : null;
+      const source = new LastWordSource(
+        (line) => sub.getCompletions?.(line) ?? [],
+        { uniqueSpace: 'never' },
+      );
+      const out = this.subShellCompletion.handleTab(this._inputBuf, source, reverse);
+      if (!out.changed && out.suggestions === null) return;
+      this._inputBuf = out.input;
+      this.tabSuggestions =
+        out.suggestions && out.suggestions.length > 1 ? [...out.suggestions] : null;
       this.notify();
       return;
     }
 
     // Fall back to device completions for sub-shells without their own.
-    const completions = this.device.getCompletions(this._inputBuf);
-    if (completions.length === 0) return;
-
-    const result = completeInputCaseInsensitive(this._inputBuf, completions);
-    this._inputBuf = result.input;
-    this.tabSuggestions = result.suggestions;
+    const source = new LastWordSource(
+      (line) => this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+    const out = this.rootCompletion.handleTab(this._inputBuf, source, false);
+    if (!out.changed && out.suggestions === null) return;
+    this._inputBuf = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
   }
 
-  protected onTab(): void {
+  private rootCompletionSource(): LastWordSource {
     // Root cmd tab completion runs in the per-session context so path
     // completion uses *this* terminal's cwd, not the device-wide shared one
     // (terminal_gap.md §6).
     const dev = this.device;
-    const completions = (this.shell && dev instanceof WindowsPC)
-      ? dev.getCompletionsForSession(this.input, this.shell)
-      : this.device.getCompletions(this.input);
-    if (completions.length === 0) return;
+    return new LastWordSource(
+      (line) => (this.shell && dev instanceof WindowsPC)
+        ? dev.getCompletionsForSession(line, this.shell)
+        : this.device.getCompletions(line),
+      { uniqueSpace: 'first-word' },
+    );
+  }
 
-    const result = completeInputCaseInsensitive(this.input, completions);
-    this.input = result.input;
-    this.tabSuggestions = result.suggestions;
+  protected onTab(): void {
+    const out = this.rootCompletion.handleTab(this.input, this.rootCompletionSource(), false);
+    if (!out.changed && out.suggestions === null) return;
+    this.input = out.input;
+    this.tabSuggestions = out.suggestions ? [...out.suggestions] : null;
     this.notify();
+  }
+
+  protected override computeGhostSuggestion(): string | null {
+    if (this.activeSubShell || this.inputMode.type !== 'normal') return null;
+    return ghostRemainder(this.input, this.rootCompletionSource());
   }
 
   // ── Helpers ─────────────────────────────────────────────────────
 
-  private addMultiLine(text: string, type: string = 'normal'): void {
-    const lines = text.split('\n');
-    for (const line of lines) {
-      this.lines.push({ id: nextLineId(), text: line, type });
-    }
-    this.notify();
+  private isLocalWinShellOutput(): boolean {
+    const sub = this.activeSubShell;
+    if (!sub) return true;
+    return sub instanceof ShellSubShellAdapter
+      && (sub.inner.kind === 'powershell' || sub.inner.kind === 'cmd');
   }
+
+  private emitWindowsOutput(text: string): void {
+    const rows = this.isLocalWinShellOutput()
+      ? classifyWindowsLines(text)
+      : text.split('\n').map(t => ({ text: t, type: 'output' as const }));
+    for (const r of rows) this.addLine(r.text, r.type);
+  }
+}
+
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+function splitLines(content: string): string[] {
+  if (content.length === 0) return [];
+  const out = content.split(/\r?\n/);
+  if (out.length > 0 && out[out.length - 1] === '') out.pop();
+  return out;
+}
+
+function sliceTail(content: string, tail: number): string {
+  const lines = splitLines(content);
+  if (lines.length <= tail) return content;
+  return lines.slice(lines.length - tail).join('\n') + (content.endsWith('\n') ? '\n' : '');
 }

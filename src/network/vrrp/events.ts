@@ -34,8 +34,24 @@ export interface VrrpMasterChangedPayload extends VrrpDeviceRef {
   masterPriority: number;
 }
 
+/**
+ * Une annonce ECARTEE pour authentification.
+ *
+ * Le motif distingue le TYPE de la CLE parce que les deux envoient
+ * l'operateur a deux endroits : un type qui differe veut dire que les
+ * deux routeurs n'ont pas la meme commande, une cle qui differe qu'ils
+ * ne partagent pas le secret.
+ */
+export interface VrrpAuthRejectedPayload extends VrrpDeviceRef {
+  iface: string;
+  vrid: number;
+  fromIp: string;
+  reason: 'type' | 'key';
+}
+
 export type VrrpDomainEvent =
   | { topic: 'vrrp.packet.sent'; payload: VrrpPacketSentPayload }
   | { topic: 'vrrp.packet.received'; payload: VrrpPacketReceivedPayload }
   | { topic: 'vrrp.state.changed'; payload: VrrpStateChangedPayload }
-  | { topic: 'vrrp.master.changed'; payload: VrrpMasterChangedPayload };
+  | { topic: 'vrrp.master.changed'; payload: VrrpMasterChangedPayload }
+  | { topic: 'vrrp.auth.rejected'; payload: VrrpAuthRejectedPayload };

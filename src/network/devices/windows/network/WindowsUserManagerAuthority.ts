@@ -6,9 +6,6 @@ interface WindowsUserLike {
   enabled?: boolean;
   passwordRequired?: boolean;
   publicKeys?: string[];
-  lockedOut?: boolean;
-  accountExpires?: number | null;
-  passwordExpired?: boolean;
 }
 
 interface WindowsGroupLike {
@@ -21,6 +18,10 @@ interface WindowsUserManagerLike {
   getAllUsers?(): readonly WindowsUserLike[];
   getGroupsForUser?(name: string): readonly WindowsGroupLike[];
   checkPassword?(name: string, password: string): boolean;
+  /** LSA lockout state (`net accounts /lockoutthreshold`) — real field names on WindowsUserManager. */
+  isLockedOut?(name: string): boolean;
+  /** LSA password-age state (`net accounts /maxpwage`) — real field name on WindowsUserManager. */
+  passwordExpiresAt?(name: string): number | null;
 }
 
 export interface WindowsUserManagerAuthorityOptions {
@@ -48,6 +49,7 @@ export class WindowsUserManagerAuthority implements IAccountAuthority {
     const u = this.opts.userMgr.getUser(name);
     if (!u) return undefined;
     const groups = this.opts.userMgr.getGroupsForUser?.(u.name)?.map(g => g.name) ?? [];
+    const locked = this.opts.userMgr.isLockedOut?.(u.name) ?? false;
     return {
       name: u.name,
       secret: '',
@@ -56,11 +58,11 @@ export class WindowsUserManagerAuthority implements IAccountAuthority {
       groups: Object.freeze([...groups]),
       serviceTypes: Object.freeze([]),
       publicKeys: Object.freeze([...(u.publicKeys ?? [])]),
-      locked: u.lockedOut ?? false,
+      locked,
       disabled: u.enabled === false,
-      lockReason: u.lockedOut ? 'account locked' : null,
-      expireAt: u.accountExpires ?? null,
-      passwordExpireAt: u.passwordExpired ? 1 : null,
+      lockReason: locked ? 'account locked' : null,
+      expireAt: null,
+      passwordExpireAt: this.opts.userMgr.passwordExpiresAt?.(u.name) ?? null,
     };
   }
 

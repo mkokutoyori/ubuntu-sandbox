@@ -37,6 +37,19 @@ export class WindowsAccountsPolicy {
     return Object.freeze({ ...this.state });
   }
 
+  /**
+   * `gpupdate /force` applying a domain GPO's account policy (PRD-
+   * Windows-Server.md §5 P10) — real Windows writes GPO-sourced values
+   * straight into the effective local security policy `net accounts`
+   * reads, so this mutates the same state `apply()` (the `net accounts
+   * /flag:value` path) does, rather than layering a separate override.
+   */
+  applyGpoOverrides(overrides: Partial<Pick<WindowsAccountsPolicyState,
+    'minPasswordLength' | 'maxPasswordAge' | 'minPasswordAge' | 'passwordHistoryLength' |
+    'lockoutThreshold' | 'lockoutDurationMinutes' | 'lockoutWindowMinutes'>>): void {
+    this.state = { ...this.state, ...overrides };
+  }
+
   apply(flag: string, raw: string): string {
     const value = raw.trim();
     const numOrNever = (v: string): number => v.toLowerCase() === 'never' ? -1 : Number.parseInt(v, 10);

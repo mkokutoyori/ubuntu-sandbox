@@ -57,9 +57,9 @@ async function buildHsrpLan() {
   const r2 = new CiscoRouter('R2');
   const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
   const h1 = new LinuxPC('linux-pc', 'H1');
-  new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-  new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
-  new Cable('c').connect(h1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+  new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+  new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
+  new Cable('c').connect(h1.getPort('eth0')!, sw.getPort('FastEthernet0/3')!);
   await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.1.1', 1, '10.0.1.254', 200);
   await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.1.2', 1, '10.0.1.254', 100);
   await run(h1, [
@@ -95,9 +95,9 @@ describe('HSRP data plane', () => {
     // Second LAN behind both routers, host H2 replies via R1's real IP.
     const h2 = new LinuxPC('linux-pc', 'H2');
     const sw2 = new CiscoSwitch('switch-cisco', 'SW2', 8);
-    new Cable('d').connect(r1.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/0')!);
-    new Cable('e').connect(r2.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
-    new Cable('f').connect(h2.getPort('eth0')!, sw2.getPort('FastEthernet0/2')!);
+    new Cable('d').connect(r1.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/1')!);
+    new Cable('e').connect(r2.getPort('GigabitEthernet0/1')!, sw2.getPort('FastEthernet0/2')!);
+    new Cable('f').connect(h2.getPort('eth0')!, sw2.getPort('FastEthernet0/3')!);
     await run(r1, ['enable', 'configure terminal', 'interface GigabitEthernet0/1',
       'ip address 10.0.2.1 255.255.255.0', 'no shutdown', 'end']);
     await run(r2, ['enable', 'configure terminal', 'interface GigabitEthernet0/1',
@@ -141,8 +141,8 @@ describe('HSRP resign (RFC 2281 §5.4.3)', () => {
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
     r1.setEventBus(bus); r2.setEventBus(bus); sw.setEventBus(bus);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     await configureHsrp(r1, 'GigabitEthernet0/0', '10.0.1.1', 1, '10.0.1.254', 200);
     await configureHsrp(r2, 'GigabitEthernet0/0', '10.0.1.2', 1, '10.0.1.254', 100);
     expect(r1.getHsrpAgent().getGroup('GigabitEthernet0/0', 1)?.state).toBe('active');
@@ -171,8 +171,8 @@ describe('VRRP data plane (Huawei VRP)', () => {
     const r1 = new HuaweiRouter('HW1');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
     const h1 = new LinuxPC('linux-pc', 'H1');
-    new Cable('a').connect(r1.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(h1.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GE0/0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(h1.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GE0/0/0')!.configureIP(new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     const agent = r1.getVrrpAgent();
     agent.start();
@@ -194,8 +194,8 @@ describe('GLBP data plane', () => {
     const r1 = new CiscoRouter('R1');
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     await run(r1, ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
@@ -221,8 +221,8 @@ describe('GLBP data plane', () => {
     const r1 = new CiscoRouter('R1');
     const r2 = new CiscoRouter('R2');
     const sw = new CiscoSwitch('switch-cisco', 'SW', 8);
-    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/0')!);
-    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('a').connect(r1.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(r2.getPort('GigabitEthernet0/0')!, sw.getPort('FastEthernet0/2')!);
     r1.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.1.1'), new SubnetMask('255.255.255.0'));
     r2.getPort('GigabitEthernet0/0')!.configureIP(new IPAddress('10.0.1.2'), new SubnetMask('255.255.255.0'));
     await run(r1, ['enable', 'configure terminal', 'interface GigabitEthernet0/0',

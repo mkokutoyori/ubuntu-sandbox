@@ -34,6 +34,7 @@ import {
   MACAddress, type EthernetFrame, type DeviceType,
 } from '../core/types';
 import { Logger } from '../core/Logger';
+import { C2960_SOFTWARE, ciscoSoftwareDescriptor } from '../devices/shells/cisco/CiscoPlatform';
 
 export interface CdpHost {
   readonly id: string;
@@ -45,6 +46,7 @@ export interface CdpHost {
   sendFrame(portName: string, frame: EthernetFrame): void;
   /** Optional native VLAN for a port (switches only). */
   getNativeVlan?(portName: string): number | undefined;
+  getVoiceVlan?(portName: string): number | undefined;
 }
 
 /** Read-only view of a learned CDP neighbour (used by `show cdp`). */
@@ -138,6 +140,11 @@ export class CdpAgent extends ReactiveAgentBase {
     return Array.from(this.neighbors.values());
   }
 
+  holdtimeRemainingSec(n: CdpNeighbor): number {
+    const reste = (n.expiresAtMs - this.getScheduler().now()) / 1000;
+    return Math.max(0, Math.min(n.holdtimeSec, Math.ceil(reste)));
+  }
+
   getNeighborsOnPort(portName: string): CdpNeighbor[] {
     return Array.from(this.neighbors.values()).filter(n => n.localPort === portName);
   }
@@ -168,7 +175,7 @@ export class CdpAgent extends ReactiveAgentBase {
     if (!payload || payload.type !== 'cdp') return;
 
     const key = neighborKey(portName, payload.deviceId);
-    const now = Date.now();
+    const now = this.getScheduler().now();
     const expiresAtMs = now + payload.holdtimeSec * 1000;
     const existing = this.neighbors.get(key);
     const entry: CdpNeighborEntry = {
@@ -180,10 +187,12 @@ export class CdpAgent extends ReactiveAgentBase {
       remoteCapability: payload.capabilities[0] ?? 'Host',
       remoteAddresses: [...payload.addresses],
       remoteSoftwareVersion: payload.softwareVersion,
+      advertisementVersion: payload.version,
       learnedAtMs: now,
       holdtimeSec: payload.holdtimeSec,
       expiresAtMs,
       nativeVlan: payload.nativeVlan,
+      remoteVoiceVlan: payload.voiceVlan,
       duplex: payload.duplex,
     };
     this.neighbors.set(key, entry);
@@ -271,6 +280,7 @@ export class CdpAgent extends ReactiveAgentBase {
       platform: this.devicePlatform(),
       addresses: this.collectAddresses(),
       nativeVlan: this.host.getNativeVlan?.(portName),
+      voiceVlan: this.host.getVoiceVlan?.(portName),
       duplex: this.portDuplex(port),
     };
     const frame: EthernetFrame = {
@@ -311,6 +321,7 @@ export class CdpAgent extends ReactiveAgentBase {
   protected isEnabled(): boolean { return this.config.enabled; }
 
   protected armTimers(): void {
+    this.advertiseAll('periodic');
     this.scheduleInterval('advertise',
       () => this.advertiseAll('periodic'), this.config.timerSec * 1000);
     this.scheduleInterval('expiry', () => this.expireDue(), 1000);
@@ -325,7 +336,7 @@ export class CdpAgent extends ReactiveAgentBase {
   }
 
   private expireDue(): void {
-    const now = Date.now();
+    const now = this.getScheduler().now();
     for (const [key, n] of this.neighbors) {
       if (n.expiresAtMs <= now) {
         this.neighbors.delete(key);
@@ -401,7 +412,7 @@ export class CdpAgent extends ReactiveAgentBase {
   private softwareVersion(): string {
     const t = this.host.getType();
     if (t.startsWith('switch')) {
-      return 'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.2(7)E2';
+      return ciscoSoftwareDescriptor(C2960_SOFTWARE);
     }
     if (t.startsWith('router')) {
       return 'Cisco IOS Software, c2900 Software (C2900-UNIVERSALK9-M), Version 15.4(3)M';

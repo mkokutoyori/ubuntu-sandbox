@@ -27,6 +27,21 @@ export interface WinACE {
   permissions: string[];  // e.g. ['FullControl'], ['Read', 'Write']
 }
 
+/**
+ * Une entrée de SACL — la liste d'audit, distincte de la DACL.
+ *
+ * La DACL dit qui *peut* ; la SACL dit ce qu'on *journalise*. Les deux
+ * sont indépendantes, et c'est important ici : `checkAccess` ne lit que
+ * la DACL, si bien qu'auditer un objet ne change jamais qui y accède.
+ */
+export interface WinAuditACE {
+  principal: string;
+  /** Ce qui déclenche : un accès réussi, un accès refusé, ou les deux. */
+  flags: Array<'success' | 'failure'>;
+  /** Les droits surveillés — `ReadData`, `Delete`, `FullControl`… */
+  permissions: string[];
+}
+
 export interface WinFSEntry {
   name: string;                         // original-case name
   type: WinFileType;
@@ -39,6 +54,13 @@ export interface WinFSEntry {
   owner: string;                        // owner principal (e.g. "BUILTIN\\Administrators")
   acl: WinACE[];                        // discretionary ACL
   aclProtected?: boolean;              // true = inheritance disabled, only explicit ACEs apply
+  /**
+   * SACL — la liste d'audit. Héritée du parent à la création, comme sur
+   * un vrai NTFS : on pose une SACL sur un répertoire et tout ce qui y
+   * naît la reçoit, sans quoi auditer un dossier ne dirait rien de son
+   * contenu.
+   */
+  sacl?: WinAuditACE[];
 }
 
 export interface WinDirEntry {
@@ -376,7 +398,7 @@ export class WindowsFileSystem {
 
   // ─── Entry Creation ──────────────────────────────────────────────
 
-  private createEntry(name: string, type: WinFileType): WinFSEntry {
+  private createEntry(name: string, type: WinFileType, parent?: WinFSEntry): WinFSEntry {
     const now = this.now();
     // Mimic real Windows: newly created files get the archive bit set.
     const attributes = new Set<string>();
@@ -392,6 +414,12 @@ export class WindowsFileSystem {
       attributes,
       owner: 'BUILTIN\\Administrators',
       acl: [],
+      // Seule la SACL est héritée. La DACL ne l'est délibérément pas :
+      // `checkAccess` traite une DACL vide comme ouverte, et lui faire
+      // hériter des entrées du parent transformerait discrètement tout
+      // le modèle de permissions. L'audit, lui, n'ouvre ni ne ferme
+      // rien — il n'a donc pas cet effet de bord.
+      ...(parent?.sacl?.length ? { sacl: parent.sacl.map((a) => ({ ...a })) } : {}),
     };
   }
 
@@ -516,7 +544,7 @@ export class WindowsFileSystem {
     if (parent.children.has(key)) {
       return { ok: false, error: `A subdirectory or file ${childName} already exists.` };
     }
-    const entry = this.createEntry(childName, 'directory');
+    const entry = this.createEntry(childName, 'directory', parent);
     parent.children.set(key, entry);
     parent.mtime = this.now();
     return { ok: true };
@@ -539,7 +567,7 @@ export class WindowsFileSystem {
       const key = part.toLowerCase();
       let child = current.children.get(key);
       if (!child) {
-        child = this.createEntry(part, 'directory');
+        child = this.createEntry(part, 'directory', current);
         current.children.set(key, child);
         current.mtime = this.now();
       }
@@ -601,7 +629,7 @@ export class WindowsFileSystem {
     if (existing && existing.type === 'directory') {
       return { ok: false, error: 'Access is denied.' };
     }
-    const entry = this.createEntry(childName, 'file');
+    const entry = this.createEntry(childName, 'file', parent);
     entry.content = content;
     entry.size = content.length;
     parent.children.set(key, entry);
@@ -934,6 +962,44 @@ export class WindowsFileSystem {
     return true;
   }
 
+  /** La SACL effective d'un objet — vide quand rien n'est audité. */
+  getSacl(absPath: string): WinAuditACE[] {
+    return [...(this.resolve(absPath)?.sacl ?? [])];
+  }
+
+  /** Remplace la SACL d'un objet ; `Set-Acl` passe par là. */
+  setSacl(absPath: string, rules: WinAuditACE[]): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    entry.sacl = rules.map((r) => ({ ...r, flags: [...r.flags], permissions: [...r.permissions] }));
+    return true;
+  }
+
+  /**
+   * L'objet est-il audité pour cet accès ?
+   *
+   * Un droit surveillé couvre l'accès demandé s'il le nomme, ou s'il
+   * vaut `FullControl` — comme dans une DACL. `Everyone` couvre tout le
+   * monde, ce qui est la façon habituelle de poser une SACL.
+   */
+  isAudited(absPath: string, principal: string, access: string): boolean {
+    const sacl = this.resolve(absPath)?.sacl ?? [];
+    if (sacl.length === 0) return false;
+    const who = principal.toLowerCase();
+    const want = access.toLowerCase();
+    return sacl.some((a) => {
+      const p = a.principal.toLowerCase();
+      if (p !== 'everyone' && p !== who && !who.endsWith(`\\${p}`)) return false;
+      if (!a.flags.includes('success')) return false;
+      return a.permissions.some((r) => {
+        const lr = r.toLowerCase();
+        return lr === 'fullcontrol' || lr === want
+          || (want === 'readdata' && (lr === 'read' || lr === 'readandexecute'))
+          || (want === 'delete' && (lr === 'modify' || lr === 'write'));
+      });
+    });
+  }
+
   addACE(absPath: string, ace: WinACE): boolean {
     const entry = this.resolve(absPath);
     if (!entry) return false;
@@ -956,5 +1022,32 @@ export class WindowsFileSystem {
     const before = entry.acl.length;
     entry.acl = entry.acl.filter(a => a.principal.toLowerCase() !== principal.toLowerCase());
     return entry.acl.length !== before;
+  }
+
+  /**
+   * NTFS access check for `principal` (plus its group memberships),
+   * composed by the SMB layer with the share-level permission (real
+   * Windows takes the most-restrictive of the two). No other command
+   * in this simulator enforces `acl` today — an entry with an empty
+   * ACL is treated as fully open (matching that established, unenforced
+   * baseline) so this only becomes restrictive once ACEs are actually
+   * set, e.g. via `icacls` or a share created with explicit permissions.
+   * Deny entries win over allow entries, as in real NTFS.
+   */
+  checkAccess(absPath: string, principal: string, groups: string[], need: 'read' | 'write'): boolean {
+    const entry = this.resolve(absPath);
+    if (!entry) return false;
+    if (entry.acl.length === 0) return true;
+    const principals = new Set([principal.toLowerCase(), 'everyone', ...groups.map(g => g.toLowerCase())]);
+    const matches = (ace: WinACE) => principals.has(ace.principal.toLowerCase());
+    const grants = (perms: string[]) => perms.some((p) => {
+      const lp = p.toLowerCase();
+      if (lp === 'fullcontrol' || lp === 'modify') return true;
+      return need === 'read'
+        ? (lp === 'read' || lp === 'readandexecute')
+        : lp === 'write';
+    });
+    if (entry.acl.some(a => a.type === 'deny' && matches(a) && grants(a.permissions))) return false;
+    return entry.acl.some(a => a.type === 'allow' && matches(a) && grants(a.permissions));
   }
 }

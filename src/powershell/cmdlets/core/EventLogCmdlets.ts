@@ -13,6 +13,9 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { IEventLogProvider, EventLogEntryInfo } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import {
+  parseEventXPath, parseEventQueryList, type XPathChannelQuery,
+} from '@/network/devices/windows/WinEventXPath';
 
 function requireEventLog(ctx: CmdletContext): IEventLogProvider {
   if (!ctx.providers.eventLog) {
@@ -21,15 +24,34 @@ function requireEventLog(ctx: CmdletContext): IEventLogProvider {
   return ctx.providers.eventLog;
 }
 
+function shortEventTime(d: Date): string {
+  const p2 = (n: number) => n.toString().padStart(2, '0');
+  return `${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+function xmlEscape(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Real Windows events surface their structured payload as `<EventData><Data Name="...">value</Data>...</EventData>` — this is what `[xml]$_.ToXml()` scripts (Get-ADSecurityReport-style correlation) parse. */
+function buildEventXml(e: EventLogEntryInfo): string {
+  const dataXml = Object.entries(e.data ?? {})
+    .map(([k, v]) => `<Data Name="${xmlEscape(k)}">${xmlEscape(v)}</Data>`)
+    .join('');
+  return `<Event><System><EventID>${e.eventId}</EventID><TimeCreated SystemTime="${e.timeGenerated.toISOString()}"/><Provider Name="${xmlEscape(e.source)}"/></System><EventData>${dataXml}</EventData></Event>`;
+}
+
 function entryToPSObject(e: EventLogEntryInfo): Record<string, PSValue> {
   return {
     Index:         e.index,
-    Time:          e.timeGenerated,
+    Time:          shortEventTime(e.timeGenerated),
     EntryType:     e.entryType,
     Source:        e.source,
-    InstanceId:    e.eventId,
+    InstanceID:    e.eventId,
+    EventID:       e.eventId,
     Category:      e.category,
     Message:       e.message,
+    TimeGenerated: e.timeGenerated,
   };
 }
 
@@ -50,11 +72,25 @@ export class GetEventLogCmdlet implements ICmdlet {
         OverflowAction: 'OverwriteAsNeeded',
       } as Record<string, PSValue>)) as PSValue;
     }
-    // Entry queries — defer to the legacy executor whose formatted
-    // column-table layout (Index / Time / EntryType / Source / Message)
-    // is what the existing scripts and tests expect. We still own -List
-    // because that variant is just a small structured table.
-    throw new PSRuntimeError('Get-EventLog entry query is not recognized in this provider context');
+
+    // Entry query — real Get-EventLog returns EventLogEntry objects (rendered
+    // as a table by the default formatter, but with live properties like
+    // EventID / EntryType / Message so scripts can filter and project them).
+    const logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+    if (!logName) { ctx.emitError('Get-EventLog requires -LogName'); return null; }
+
+    const known = log.listLogs().some(l => l.logName.toLowerCase() === logName.toLowerCase());
+    if (!known) {
+      ctx.emitError(`The event log '${logName}' on computer '.' does not exist.`);
+      return null;
+    }
+
+    const opts: { newest?: number; entryType?: string; source?: string } = {};
+    if (ctx.named['newest'] !== undefined) opts.newest = Number(ctx.named['newest']);
+    if (ctx.named['entrytype'] !== undefined) opts.entryType = psValueToString(ctx.named['entrytype']);
+    if (ctx.named['source'] !== undefined) opts.source = psValueToString(ctx.named['source']);
+
+    return log.getEntries(logName, opts).map(entryToPSObject) as PSValue;
   }
 }
 
@@ -138,10 +174,17 @@ export class LimitEventLogCmdlet implements ICmdlet {
 
 // ── Get-WinEvent (modern API — same data behind it for the simulator) ─────
 
+function hashtableGet(h: Record<string, PSValue>, key: string): PSValue {
+  if (key in h) return h[key];
+  const found = Object.keys(h).find(k => k.toLowerCase() === key.toLowerCase());
+  return found !== undefined ? h[found] : undefined;
+}
+
 export class GetWinEventCmdlet implements ICmdlet {
   readonly name = 'get-winevent';
   readonly displayName = 'Get-WinEvent';
   readonly aliases = [] as const;
+  readonly parameters = ['LogName', 'FilterHashtable', 'FilterXml', 'FilterXPath', 'MaxEvents', 'ListLog', 'ListProvider'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const log = requireEventLog(ctx);
@@ -152,10 +195,71 @@ export class GetWinEventCmdlet implements ICmdlet {
         MaximumSizeInBytes: l.maxSizeKB * 1024,
       } as Record<string, PSValue>)) as PSValue;
     }
-    const logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
-    if (!logName) { ctx.emitError('Get-WinEvent requires -LogName or -ListLog'); return null; }
-    const max = ctx.named['maxevents'] ? Number(ctx.named['maxevents']) : undefined;
-    const entries = log.getEntries(logName, { newest: max });
+
+    // `-FilterXml` et `-FilterXPath` partagent l'évaluateur XPath de
+    // `wevtutil qe /q:` — un seul langage de filtre pour les deux
+    // surfaces, écrit une fois. Sans ce partage, les deux commandes
+    // finiraient par ne pas comprendre les mêmes requêtes.
+    const xmlFilter = ctx.named['filterxml'];
+    if (xmlFilter !== undefined && xmlFilter !== null) {
+      return this.byXml(ctx, log, psValueToString(xmlFilter));
+    }
+    const xpathFilter = ctx.named['filterxpath'];
+    if (xpathFilter !== undefined && xpathFilter !== null) {
+      const channel = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+      if (!channel) {
+        ctx.emitError('Get-WinEvent : -FilterXPath requires -LogName.');
+        return null;
+      }
+      const parsed = parseEventXPath(psValueToString(xpathFilter));
+      if (!parsed.predicate) {
+        ctx.emitError(`Get-WinEvent : ${parsed.error ?? 'The specified query is invalid.'}`);
+        return null;
+      }
+      return this.emit(ctx, log, [{ path: channel, predicate: parsed.predicate }]);
+    }
+
+    const filter = ctx.named['filterhashtable'];
+    let logName: string;
+    let ids: number[] | null = null;
+    let startTime: Date | null = null;
+    let endTime: Date | null = null;
+    let filterMaxEvents: number | undefined;
+
+    if (filter !== undefined && filter !== null && typeof filter === 'object' && !Array.isArray(filter) && !(filter instanceof Date)) {
+      const f = filter as Record<string, PSValue>;
+      logName = psValueToString(hashtableGet(f, 'LogName') ?? '');
+      const idVal = hashtableGet(f, 'Id');
+      if (idVal !== undefined) ids = (Array.isArray(idVal) ? idVal : [idVal]).map(v => Number(v));
+      const st = hashtableGet(f, 'StartTime');
+      if (st instanceof Date) startTime = st;
+      const et = hashtableGet(f, 'EndTime');
+      if (et instanceof Date) endTime = et;
+      const me = hashtableGet(f, 'MaxEvents');
+      if (me !== undefined) filterMaxEvents = Number(me);
+    } else {
+      logName = psValueToString(ctx.named['logname'] ?? ctx.positional[0] ?? '');
+    }
+    if (!logName) { ctx.emitError('Get-WinEvent requires -LogName, -FilterHashtable, or -ListLog'); return null; }
+
+    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : filterMaxEvents;
+    let entries = log.getEntries(logName, {});
+    if (ids) entries = entries.filter(e => ids!.includes(e.eventId));
+    if (startTime) entries = entries.filter(e => e.timeGenerated >= startTime!);
+    if (endTime) entries = entries.filter(e => e.timeGenerated <= endTime!);
+    if (max !== undefined) entries = entries.slice(0, max);
+
+    if (entries.length === 0) {
+      ctx.emitError('No events were found that match the specified selection criteria.');
+      return [];
+    }
+    // MachineName (docs/PRD-Wecutil.md §2.1 P4): the real source machine
+    // for an entry received via Windows Event Forwarding
+    // (`data.MachineName`, set by `WindowsPC.receiveForwardedEvent`), or
+    // this device's own hostname for every other (non-forwarded) log —
+    // a real Get-WinEvent always exposes this property, not just on
+    // ForwardedEvents.
+    const localHostname = ctx.providers.network?.getHostname() ?? '';
     return entries.map(e => ({
       LogName:        logName,
       Id:             e.eventId,
@@ -164,6 +268,61 @@ export class GetWinEventCmdlet implements ICmdlet {
       TimeCreated:    e.timeGenerated,
       Message:        e.message,
       RecordId:       e.index,
+      MachineName:    e.data?.MachineName ?? localHostname,
+      ToXml:          () => buildEventXml(e),
     } as Record<string, PSValue>)) as PSValue;
+  }
+
+  /** `-FilterXml` : un `<QueryList>` complet, canal(aux) compris. */
+  private byXml(ctx: CmdletContext, log: IEventLogProvider, xml: string): PSValue {
+    const parsed = parseEventQueryList(xml);
+    if (parsed.error) {
+      ctx.emitError(`Get-WinEvent : ${parsed.error}`);
+      return null;
+    }
+    return this.emit(ctx, log, parsed.queries);
+  }
+
+  /**
+   * Rend les événements retenus par une ou plusieurs requêtes de canal.
+   *
+   * Un canal inconnu est signalé plutôt qu'ignoré : une requête portant
+   * sur un journal qui n'existe pas doit le dire, sinon elle rend zéro
+   * événement et laisse croire que le filtre n'a rien trouvé.
+   */
+  private emit(
+    ctx: CmdletContext, log: IEventLogProvider, queries: XPathChannelQuery[],
+  ): PSValue {
+    const now = Date.now();
+    const localHostname = ctx.providers.network?.getHostname() ?? '';
+    const max = ctx.named['maxevents'] !== undefined ? Number(ctx.named['maxevents']) : undefined;
+    const known = new Set((log.listLogs() ?? []).map((l) => l.logName.toLowerCase()));
+
+    const rows: Array<Record<string, PSValue>> = [];
+    for (const q of queries) {
+      if (!known.has(q.path.toLowerCase())) {
+        ctx.emitError(`Get-WinEvent : There is not an event log on the localhost computer that matches "${q.path}".`);
+        return null;
+      }
+      for (const e of log.getEntries(q.path, {})) {
+        if (!q.predicate(e, now)) continue;
+        rows.push({
+          LogName: q.path,
+          Id: e.eventId,
+          Level: e.entryType,
+          ProviderName: e.source,
+          TimeCreated: e.timeGenerated,
+          Message: e.message,
+          RecordId: e.index,
+          MachineName: e.data?.MachineName ?? localHostname,
+          ToXml: () => buildEventXml(e),
+        } as Record<string, PSValue>);
+      }
+    }
+    if (rows.length === 0) {
+      ctx.emitError('No events were found that match the specified selection criteria.');
+      return [];
+    }
+    return (max !== undefined ? rows.slice(0, max) : rows) as PSValue;
   }
 }

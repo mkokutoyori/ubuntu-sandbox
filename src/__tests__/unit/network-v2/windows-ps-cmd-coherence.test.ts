@@ -102,9 +102,9 @@ describe('Group 1: Native commands produce same output in CMD and PS', () => {
     const pc2 = new LinuxPC('PC2', 200, 100);
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 150, 100);
     const cable1 = new Cable('c1');
-    cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc.executeCommand('netsh interface ipv4 set address name="Ethernet 0" static 192.168.1.10 255.255.255.0 192.168.1.1');
     await pc2.executeCommand('ifconfig eth0 192.168.1.20 netmask 255.255.255.0');
@@ -297,9 +297,9 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
     const pc2 = new LinuxPC('PC2', 200, 100);
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 150, 100);
     const cable1 = new Cable('c1');
-    cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/0')!);
+    cable1.connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
     const cable2 = new Cable('c2');
-    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    cable2.connect(pc2.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
 
     await pc.executeCommand('netsh interface ipv4 set address name="Ethernet 0" static 192.168.1.10 255.255.255.0 192.168.1.1');
     await pc2.executeCommand('ifconfig eth0 192.168.1.20 netmask 255.255.255.0');

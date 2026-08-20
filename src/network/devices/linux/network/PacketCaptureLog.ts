@@ -20,17 +20,26 @@ export interface CapturedPacket {
   readonly seq: number;
   readonly ack: number;
   readonly length: number;
+  readonly payload?: Uint8Array;
 }
 
 export class PacketCaptureLog {
   private readonly packets: CapturedPacket[] = [];
+  private readonly listeners = new Set<(pkt: CapturedPacket) => void>();
 
   constructor(private readonly capacity = 256) {}
+
+  /** Subscribe to live captures (tcpdump follow). Returns an unsubscribe. */
+  subscribe(listener: (pkt: CapturedPacket) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
 
   /** Append one packet, evicting the oldest once capacity is exceeded. */
   capture(pkt: CapturedPacket): void {
     this.packets.push(pkt);
     if (this.packets.length > this.capacity) this.packets.shift();
+    for (const listener of this.listeners) listener(pkt);
   }
 
   /**
@@ -45,6 +54,38 @@ export class PacketCaptureLog {
     this.capture({ at: new Date(t),     srcIp: src.ip, srcPort: src.port, dstIp: dst.ip, dstPort: dst.port, flags: 'S',  seq: 0, ack: 0, length: 0 });
     this.capture({ at: new Date(t + 1), srcIp: dst.ip, srcPort: dst.port, dstIp: src.ip, dstPort: src.port, flags: 'S.', seq: 0, ack: 1, length: 0 });
     this.capture({ at: new Date(t + 2), srcIp: src.ip, srcPort: src.port, dstIp: dst.ip, dstPort: dst.port, flags: '.',  seq: 1, ack: 1, length: 0 });
+  }
+
+  /**
+   * Record an outbound SYN that never received a SYN-ACK — the trace a
+   * real tcpdump shows when a transit ACL silently drops the handshake.
+   */
+  captureTcpSynDropped(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+  ): void {
+    this.capture({
+      at: new Date(),
+      srcIp: src.ip, srcPort: src.port,
+      dstIp: dst.ip, dstPort: dst.port,
+      flags: 'S', seq: 0, ack: 0, length: 0,
+    });
+  }
+
+  captureTcpData(
+    src: { ip: string; port: number },
+    dst: { ip: string; port: number },
+    payload: Uint8Array,
+    seq = 1,
+    ack = 1,
+  ): void {
+    this.capture({
+      at: new Date(),
+      srcIp: src.ip, srcPort: src.port,
+      dstIp: dst.ip, dstPort: dst.port,
+      flags: 'P.', seq, ack, length: payload.length,
+      payload,
+    });
   }
 
   /** Every packet captured so far, oldest first. */

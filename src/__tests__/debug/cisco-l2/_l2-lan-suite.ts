@@ -9,6 +9,7 @@ import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { pingOnSimulatedClock, isPingStep, canLendClock } from '../../support/fastPing';
 
 const OUTPUT_DIR = path.resolve(__dirname, '../../../../debug-output/cisco-l2');
 
@@ -22,7 +23,8 @@ export function resetSim(): void {
 export interface L2Step {
   readonly section?: string;
   readonly on?: string;
-  readonly cmd: string;
+  /** Omitted for a section-header-only entry (no command to run). */
+  readonly cmd?: string;
 }
 export type L2StepInput = string | L2Step;
 
@@ -74,7 +76,7 @@ export async function buildLan(opts: BuildOptions = {}): Promise<L2Lab> {
   wire('sw2-w2', w2, 'eth0', sw2, 'FastEthernet0/2');
   wire('sw2-srv2', srv2, 'eth0', sw2, 'FastEthernet0/3');
   wire('sw1-core', sw1, 'GigabitEthernet0/1', core, 'GigabitEthernet0/1');
-  wire('sw2-core', sw2, 'GigabitEthernet0/1', core, 'GigabitEthernet0/0');
+  wire('sw2-core', sw2, 'GigabitEthernet0/1', core, 'GigabitEthernet0/2');
 
   const trunkUp = async (sw: CiscoSwitch, ports: string[]) => {
     await sw.executeCommand('enable');
@@ -90,7 +92,7 @@ export async function buildLan(opts: BuildOptions = {}): Promise<L2Lab> {
   };
   await trunkUp(sw1, ['GigabitEthernet0/1']);
   await trunkUp(sw2, ['GigabitEthernet0/1']);
-  await trunkUp(core, ['GigabitEthernet0/0', 'GigabitEthernet0/1']);
+  await trunkUp(core, ['GigabitEthernet0/1', 'GigabitEthernet0/2']);
 
   if (opts.configureHostIps !== false) {
     const mask = '255.255.255.0';
@@ -159,7 +161,9 @@ export async function dumpL2(
 
     let out: string | null = null;
     try {
-      out = await dev.executeCommand(step.cmd);
+      out = isPingStep(step.cmd) && canLendClock(dev)
+        ? await pingOnSimulatedClock(dev as never, step.cmd)
+        : await dev.executeCommand(step.cmd);
     } catch (err) {
       lines.push(`<JS EXCEPTION> ${err instanceof Error ? err.message : String(err)}`);
       lines.push('');

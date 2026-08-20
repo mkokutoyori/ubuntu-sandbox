@@ -5,7 +5,7 @@ let db: OracleDatabase;
 
 beforeEach(() => {
   db = new OracleDatabase();
-  db.instance.startup('OPEN');
+  db.instance.startup();
   db.instance.startListener();
 });
 
