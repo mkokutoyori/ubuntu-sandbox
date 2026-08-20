@@ -10202,3 +10202,285 @@ Avant d'appeler quelqu'un ou d'ouvrir un ticket, passe ces huit points :
 **Huit questions.** Si tu peux répondre aux huit, tu sais où est le problème — ou tu sais qu'il n'est pas sur le pare-feu, ce qui est une réponse tout aussi utile.
 
 ---
+
+## 27. Aide-mémoire : toutes les commandes
+
+À imprimer, à garder ouvert, à consulter sans honte. Personne ne retient tout ça.
+
+### 27.1 La grammaire CLI
+
+```
+config <table>                   Entrer dans une table
+    edit <objet>                 Créer ou modifier un objet
+        set <attribut> <valeur>  Régler un attribut
+        unset <attribut>         Revenir à la valeur par défaut
+        get                      Valeurs effectives de l'objet
+        show                     Configuration de l'objet
+    next                         Valider l'objet, rester dans la table
+    delete <objet>               Supprimer
+    clone <a> to <b>             Dupliquer
+    rename <a> to <b>            Renommer
+    move <a> after|before <b>    Réordonner
+    purge                        🚨 Tout supprimer
+end                              Valider et sortir
+abort                            Sortir en annulant
+?                                Aide contextuelle, partout
+```
+
+### 27.2 Les cinq familles
+
+| Verbe | Rôle |
+|---|---|
+| `config` | Modifier la configuration |
+| `get` | Lire un **état** |
+| `show` | Afficher la **configuration** |
+| `execute` | Action immédiate |
+| `diagnose` | Diagnostic approfondi |
+
+### 27.3 Système
+
+```
+get system status                          Version, modèle, mode, HA
+get system performance status              Processeur, mémoire, sessions
+get system performance top 5 20            Processus les plus gourmands
+diagnose sys top 5 20                      Idem, plus détaillé
+get system session status                  Nombre de sessions
+diagnose hardware sysinfo memory           Mémoire détaillée
+diagnose hardware sysinfo conserve         🚨 Conserve mode
+diagnose sys logdisk usage                 Espace de journaux
+execute date                               Heure
+execute time                               Voir/régler l'heure
+diagnose sys ntp status                    Synchronisation NTP
+execute reboot                             Redémarrer
+execute shutdown                           Éteindre
+execute factoryreset                       🚨 Remise à zéro
+```
+
+### 27.4 Interfaces et routage
+
+```
+get system interface physical              État des interfaces
+diagnose ip address list                   Adresses IP
+show system interface <nom>                Configuration d'une interface
+get router info routing-table all          Table de routage (FIB)
+get router info routing-table database     Base de routage (RIB)
+get router info routing-table static       Routes statiques
+diagnose firewall proute list              Routes par politique
+diagnose sys link-monitor status           État du suivi de lien
+get router info ospf neighbor              Voisins OSPF
+get router info ospf database brief        Base OSPF
+get router info bgp summary                Résumé BGP
+get router info bgp neighbors <ip>         Détail d'un voisin BGP
+```
+
+### 27.5 Politiques et objets
+
+```
+show firewall policy                       Toutes les politiques
+show firewall policy <id>                  Une politique
+show firewall policy | grep -e "edit " -e "set name"    ⭐ L'ordre réel
+get firewall policy                        Compteurs par politique
+show firewall address                      Objets adresse
+show firewall addrgrp                      Groupes d'adresses
+show firewall service custom               Services personnalisés
+show firewall vip                          VIP
+diagnose firewall vip list                 VIP actifs
+show firewall ippool                       IP Pools
+diagnose firewall ippool-all stats         Utilisation des pools
+diagnose firewall fqdn list                ⭐ Résolution des objets FQDN
+diagnose sys checkused <table> <objet>     Qui référence cet objet
+```
+
+### 27.6 Sessions et NAT
+
+```
+diagnose sys session filter clear          Effacer le filtre
+diagnose sys session filter dst <ip>       Filtrer par destination
+diagnose sys session filter src <ip>       Filtrer par source
+diagnose sys session filter proto 6        Filtrer par protocole
+diagnose sys session filter                Voir le filtre courant
+diagnose sys session list                  ⭐ Lister les sessions
+diagnose sys session stat                  Statistiques
+diagnose sys session clear                 🚨 Vider (POSE UN FILTRE AVANT)
+```
+
+**Lire une session :**
+
+| Champ | Signification |
+|---|---|
+| `proto=6` | 1 = ICMP, 6 = TCP, 17 = UDP |
+| `policy_id=N` | ⭐ La politique qui a autorisé |
+| `hook=pre ... act=dnat` | NAT destination |
+| `hook=post ... act=snat` | NAT source |
+| `org=` / `reply=` | Octets aller / retour |
+
+### 27.7 Diagnostic
+
+```
+diagnose debug reset                            Repartir propre
+diagnose debug flow filter clear                Effacer le filtre
+diagnose debug flow filter addr <ip>            Filtrer
+diagnose debug flow filter saddr <ip>           Source uniquement
+diagnose debug flow filter daddr <ip>           Destination uniquement
+diagnose debug flow filter proto <n>            Protocole
+diagnose debug flow filter port <n>             Port
+diagnose debug flow show function-name enable   Afficher la fonction
+diagnose debug flow trace start <n>             Tracer n paquets
+diagnose debug enable                           ⭐ Démarrer
+diagnose debug disable                          🚨 ARRÊTER
+```
+
+```
+diagnose sniffer packet <if> '<bpf>' <niveau> <nb> [a]
+```
+
+| Niveau | Contenu |
+|---|---|
+| 1 | En-tête IP |
+| 2 | + données |
+| 3 | + en-tête Ethernet |
+| **4** | ⭐ En-tête + **nom de l'interface** |
+| 5 | Niveau 4 + données |
+| 6 | Tout |
+
+```
+diagnose sniffer packet any 'host 10.0.0.5' 4 20
+diagnose sniffer packet port1 'tcp port 443' 4 50
+diagnose sniffer packet any 'icmp' 4 20
+diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+```
+
+**Messages de `debug flow` :**
+
+| Message | Signification |
+|---|---|
+| `Allowed by Policy-N` | Autorisé par N |
+| `Denied by ... (policy 0)` | ⭐ **Aucune règle ne correspond** |
+| `Denied by ... (policy N)` | La règle N refuse |
+| `no route to destination` | Pas de route |
+| `reverse path check fail` | RPF |
+| `iprope_in_check() check failed` | Local-in refusé |
+
+### 27.8 Journaux
+
+```
+execute log filter reset                   ⭐ TOUJOURS commencer par là
+execute log filter category 0              Trafic
+execute log filter category 1              UTM
+execute log filter category 2              Événements
+execute log filter field srcip <ip>        Filtrer par source
+execute log filter field action deny       Filtrer par action
+execute log filter field policyid <n>      Filtrer par politique
+execute log filter field user <nom>        Filtrer par utilisateur
+execute log filter view-lines 20           Nombre de lignes
+execute log display                        Afficher
+```
+
+### 27.9 VPN
+
+```
+get vpn ipsec tunnel summary               ⭐ selectors(total,up)
+diagnose vpn ike gateway list              Passerelles IKE
+diagnose vpn tunnel list                   Détail des tunnels
+diagnose vpn ike gateway clear name <nom>  Forcer une renégociation
+diagnose vpn ike log filter clear          Effacer le filtre IKE
+diagnose debug application ike -1          Débogage IKE
+```
+
+### 27.10 Utilisateurs
+
+```
+diagnose firewall auth list                ⭐ Utilisateurs authentifiés
+diagnose firewall auth clear               Déconnecter tout le monde
+diagnose debug authd fsso list             Table FSSO
+diagnose test authserver ldap <srv> <user> <pass>      Tester LDAP
+diagnose test authserver radius <srv> pap <user> <pass>  Tester RADIUS
+```
+
+### 27.11 Sécurité et FortiGuard
+
+```
+diagnose autoupdate versions               ⭐ Version des bases
+get system fortiguard-service status       État des services
+execute update-now                         Forcer une mise à jour
+diagnose test application dnsproxy 3       Diagnostic DNS
+diagnose application-control list          Applications reconnues
+```
+
+### 27.12 HA et SD-WAN
+
+```
+get system ha status                       ⭐ État du cluster
+diagnose sys ha status                     Détail
+diagnose sys ha checksum cluster           ⭐ Synchronisation
+execute ha manage <index> admin            Se connecter à l'autre membre
+execute ha synchronize start               Forcer la synchronisation
+diagnose sys ha reset-uptime               Forcer une bascule
+
+diagnose sys sdwan member                  Membres
+diagnose sys sdwan health-check            ⭐ Qualité mesurée (sla_map)
+diagnose sys sdwan service                 Règles SD-WAN
+```
+
+### 27.13 DHCP et DNS
+
+```
+execute dhcp lease-list                    Baux DHCP
+execute dhcp lease-list <interface>        Baux d'une interface
+execute dhcp lease-clear <ip>              Libérer un bail
+show system dns                            DNS du pare-feu
+show system dns-database                   Zones locales
+```
+
+### 27.14 Sauvegarde
+
+```
+execute backup config tftp <fichier> <srv> [motdepasse]
+execute restore config tftp <fichier> <srv>
+execute restore image tftp <image> <srv>
+execute tac report                         Paquet pour le support
+```
+
+### 27.15 Les dix commandes à connaître par cœur
+
+Si tu ne devais en retenir que dix :
+
+```
+1.  get system status
+2.  get system interface physical
+3.  get router info routing-table all
+4.  show firewall policy | grep -e "edit " -e "set name"
+5.  diagnose sys session filter dst <ip> && diagnose sys session list
+6.  diagnose debug flow filter addr <ip> && diagnose debug flow trace start 20 && diagnose debug enable
+7.  diagnose debug disable && diagnose debug reset
+8.  diagnose sniffer packet any 'host <ip>' 4 20
+9.  execute log filter reset && execute log filter category 0 && execute log display
+10. get system performance status
+```
+
+### 27.16 Correspondance Cisco → FortiGate
+
+Pour qui vient du monde Cisco :
+
+| Cisco IOS | FortiOS |
+|---|---|
+| `show running-config` | `show` |
+| `show ip interface brief` | `get system interface physical` |
+| `show ip route` | `get router info routing-table all` |
+| `show access-lists` | `show firewall policy` |
+| `configure terminal` | `config <table>` |
+| `write memory` | *(implicite : `end` valide)* |
+| `no shutdown` | `set status up` |
+| `show version` | `get system status` |
+| `ping` | `execute ping` |
+| `traceroute` | `execute traceroute` |
+| `debug ip packet` | `diagnose debug flow` |
+| `show ip ospf neighbor` | `get router info ospf neighbor` |
+| `copy running-config tftp` | `execute backup config tftp` |
+| `reload` | `execute reboot` |
+
+> 💡 **La différence la plus déroutante** : sur IOS, on écrit `write memory` pour rendre la configuration persistante. **Sur FortiOS, le `end` enregistre immédiatement et définitivement.** Il n'y a pas de configuration « en cours » distincte de la configuration démarrée.
+>
+> C'est plus simple, et c'est plus dangereux : il n'y a pas de filet du type « je redémarre sans sauvegarder et tout revient ». D'où l'importance de `abort` (§5.3) et des sauvegardes (§25.1).
+
+---
