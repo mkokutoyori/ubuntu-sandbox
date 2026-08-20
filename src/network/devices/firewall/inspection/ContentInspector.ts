@@ -57,6 +57,7 @@ const MAGIC_NUMBERS: ReadonlyArray<readonly [string, string]> = Object.freeze([
   ['GIF8', 'gif'],
   ['PNG', 'png'],
   ['ÿØÿ', 'jpeg'],
+  ['ÐÏ\u0011à', 'msi'],
 ]);
 
 export function protocolOfFlow(

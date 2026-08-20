@@ -1,3 +1,4 @@
+import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
 import { newSession, type CliSession } from '../../../../../cli/CliSession';
@@ -43,6 +44,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['diagnose', 'sys', 'ntp'], 'NTP client diagnostics.'],
   [['diagnose', 'sys', 'top'], 'Show the running processes.'],
   [['diagnose', 'sys', 'checkused'], 'Find what references an object.'],
+  [['diagnose', 'autoupdate'], 'FortiGuard update facility.'],
   [['diagnose', 'test'], 'Application test facility.'],
   [['diagnose', 'test', 'application'], 'Test a daemon.'],
   [['execute', 'ping'], 'Send ICMP echo requests.'],
@@ -53,6 +55,7 @@ const LEGENDS: ReadonlyArray<readonly [readonly string[], string]> = Object.free
   [['execute'], 'Execute static commands.'],
   [['execute', 'log'], 'Log operations.'],
   [['execute', 'log', 'filter'], 'Set the log display filter.'],
+  [['execute', 'log', 'filter', 'category'], 'Restrict the display to one log category.'],
   [['get'], 'Get dynamic and system information.'],
   [['set'], 'Set a field value.'],
   [['unset'], 'Reset a field to its default.'],
@@ -239,6 +242,10 @@ export class FortiSocle {
       this.withArgument('diagnose sys checkused',
         ['diagnose', 'sys', 'checkused', rest('rest', '<path.object.mkey> <value>')],
         'Find what references an object.', run(['sys', 'checkused'])),
+      this.plain('diagnose autoupdate versions',
+        ['diagnose', 'autoupdate', 'versions'],
+        'Show the FortiGuard database versions.',
+        () => this.deps.diagnose(['autoupdate', 'versions'])),
       this.withArgument('diagnose test application',
         ['diagnose', 'test', 'application', rest('rest', '<daemon> <level>')],
         'Query a daemon.', run(['test', 'application'])),
@@ -254,6 +261,26 @@ export class FortiSocle {
       this.plain('diagnose sys ntp status',
         ['diagnose', 'sys', 'ntp', 'status'], 'Show the NTP synchronisation state.',
         () => this.deps.diagnose(['sys', 'ntp', 'status'])),
+      this.plain('execute log display', ['execute', 'log', 'display'],
+        'Display the filtered log records.',
+        () => this.deps.runExecute(['log', 'display'])),
+      this.plain('execute log delete-all', ['execute', 'log', 'delete-all'],
+        'Delete every stored log record.',
+        () => this.deps.runExecute(['log', 'delete-all'])),
+      this.withArgument('execute log filter',
+        ['execute', 'log', 'filter', rest('rest', 'Filter criterion.')],
+        'Set the log display filter.', run2(['log', 'filter'])),
+      this.withArgument('execute log filter category',
+        ['execute', 'log', 'filter', 'category', {
+          name: 'category', type: 'WORD', optional: true,
+          description: 'Log category.',
+          alternatives: LOG_CATEGORIES.map(entry => ({
+            keyword: String(entry.index), description: entry.name,
+          })),
+        }],
+        'Restrict the display to one log category.',
+        (_s, args) => this.deps.runExecute(
+          ['log', 'filter', 'category', ...(args.category ? [args.category] : [])])),
       this.withArgument('execute time',
         ['execute', 'time', rest('rest', 'New time, <hh:mm:ss>.')],
         'Display or set the system time.', run2(['time'])),

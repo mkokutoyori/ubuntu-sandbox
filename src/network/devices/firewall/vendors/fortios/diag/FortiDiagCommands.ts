@@ -36,6 +36,8 @@ import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
 import { renderSysTop } from './sysTopRenderer';
+import { renderAutoupdateVersions } from './fortiguardRenderer';
+import { describeLogCategories, resolveLogCategory } from '../log/logCategories';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -46,6 +48,12 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   if (family === 'test') return diagnoseTest(tail, deps);
+  if (family === 'autoupdate') {
+    if (tail[0] !== 'versions') {
+      return FortiMessages.unknownPath(`autoupdate ${tail.join(' ')}`);
+    }
+    return renderAutoupdateVersions();
+  }
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
@@ -130,6 +138,7 @@ export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): str
 
   const records = deps.fw.getLogStore().select({
     type: view.category,
+    subtype: view.subtype,
     level: view.level,
     fields: view.fields,
     viewLines: view.viewLines,
@@ -403,12 +412,15 @@ function setLogFilter(words: readonly string[], deps: FortiDiagDeps): string {
   if (name === 'reset') { deps.state.clearLogFilter(); return ''; }
 
   if (name === 'category') {
-    const category = tail[0];
-    if (category !== 'traffic' && category !== 'event' && category !== 'utm') {
-      return FortiMessages.valueError(category ?? '',
-        'known categories: traffic, event, utm.');
+    const raw = tail[0];
+    if (raw === '?') return describeLogCategories();
+    const category = raw === undefined ? undefined : resolveLogCategory(raw);
+    if (!category) {
+      return FortiMessages.valueError(raw ?? '',
+        `known categories:\n${describeLogCategories()}`);
     }
-    view.category = category;
+    view.category = category.type;
+    view.subtype = category.subtype;
     return '';
   }
   if (name === 'view-lines') {

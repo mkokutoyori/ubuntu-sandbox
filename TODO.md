@@ -97,6 +97,17 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [journaux] le tutoriel se trompe sur la categorie 1
+Le tutoriel ecrit que `execute log filter category 1` designe les
+journaux UTM. Sur une vraie machine la categorie 1 est `event` ; les
+journaux UTM sont numerotes par sous-type (2 virus, 3 webfilter,
+15 file-filter…). Le simulateur suit la MACHINE, et la sonde du TP 12
+lit donc la categorie 3.
+**Mesure** : `execute log filter category ?` rend les dix-sept
+categories reelles.
+**Report** : ce n'est pas un manquement du produit mais une erreur du
+document ; l'entree est ici pour qu'on pense a corriger le tutoriel.
+
 ### [dns] `dns-service default` : la semantique exacte n'est pas verifiee
 Trois valeurs existent — `local` (le pare-feu lui-meme), `default` (les
 serveurs de `config system dns`) et `specify` (ceux nommes sous le

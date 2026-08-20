@@ -212,6 +212,10 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
     enable('scan-archive-contents', 'Enable/disable archive contents scan.'),
     enable('log', 'Enable/disable file-filter logging.', true),
   ],
@@ -228,6 +232,25 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
       attributes: [
         text('comment', 'Comment.'),
         {
+          name: 'protocol',
+          help: 'Protocols to apply the rule to.',
+          quoted: false,
+          multiValue: true,
+          parts: [{
+            name: 'protocol', type: 'ENUM', description: 'Protocol.',
+            values: [
+              { keyword: 'http-get', description: 'HTTP downloads.' },
+              { keyword: 'http-post', description: 'HTTP uploads.' },
+              { keyword: 'ftp', description: 'FTP transfers.' },
+              { keyword: 'smtp', description: 'SMTP messages.' },
+              { keyword: 'imap', description: 'IMAP messages.' },
+              { keyword: 'pop3', description: 'POP3 messages.' },
+              { keyword: 'cifs', description: 'CIFS transfers.' },
+            ],
+          }],
+          defaultValue: [],
+        },
+        {
           name: 'file-type',
           help: 'Select file types recognised by their magic number.',
           quoted: true,
@@ -243,8 +266,14 @@ export const FILE_FILTER_PROFILE: FortiTableSpec = {
               { keyword: 'gif', description: 'GIF image.' },
               { keyword: 'png', description: 'PNG image.' },
               { keyword: 'jpeg', description: 'JPEG image.' },
+              { keyword: 'msi', description: 'Windows installer (OLE compound file).' },
+              { keyword: 'bat', description: 'Windows batch script.' },
             ],
           }],
+          unimplementedValues: {
+            bat: 'a batch script has no magic number; this build recognises a file '
+              + 'type by its leading bytes, so `bat` could never match.',
+          },
           defaultValue: [],
         },
         choice('action', 'Action taken for the matched file.', [

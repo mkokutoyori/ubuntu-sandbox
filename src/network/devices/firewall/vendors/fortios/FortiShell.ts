@@ -49,6 +49,8 @@ import type { FortiLogFormat } from './log/fortiLogFormat';
 import {
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
 } from './log/trafficLog';
+import { utmLog } from './log/utmLog';
+import { renderFortiguardServiceStatus } from './diag/fortiguardRenderer';
 
 export { FORTI_COMMAND_FAIL };
 
@@ -108,6 +110,9 @@ export class FortiShell {
           trafficCloseLog({ session, rule, now: this.fw.now() }, reason));
       },
       onDenied: (context) => {
+        const utm = context.utmVerdict === undefined
+          ? undefined : utmLog(context, context.utmVerdict, this.fw.now());
+        if (utm) { this.fw.getLogStore().append(utm); return; }
         const rule = context.matchedPolicy;
         if (rule?.implicit === true && !this.logsImplicitDeny()) return;
         if (rule !== undefined && rule.implicit === false
@@ -412,6 +417,9 @@ export class FortiShell {
       });
     }
 
+    if (path === 'system fortiguard-service status') {
+      return renderFortiguardServiceStatus();
+    }
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {

@@ -24,6 +24,7 @@ export interface FirewallLogDraft {
 
 export interface FirewallLogFilter {
   readonly type?: FirewallLogType;
+  readonly subtype?: string;
   readonly level?: FirewallLogLevel;
   readonly fields?: ReadonlyMap<string, string>;
   readonly viewLines?: number;
@@ -118,6 +119,7 @@ export class FirewallLogStore {
 
 function matches(record: FirewallLogRecord, filter: FirewallLogFilter): boolean {
   if (filter.type !== undefined && record.type !== filter.type) return false;
+  if (filter.subtype !== undefined && record.subtype !== filter.subtype) return false;
   if (filter.level !== undefined && !logLevelAtLeast(record.level, filter.level)) return false;
   if (filter.fields === undefined) return true;
 
