@@ -72,27 +72,28 @@ C:\Users\Lab>         ← invite d'un PC Windows du laboratoire
 ### Partie V — La sécurité applicative
 13. [Les modes d'inspection](#13-les-modes-dinspection)
 14. [Les profils de sécurité](#14-les-profils-de-sécurité)
-15. [L'inspection SSL/TLS](#15-linspection-ssltls)
+15. [⭐ Routeur + ACL contre pare-feu : la démonstration](#15--routeur--acl-contre-pare-feu--la-démonstration)
+16. [L'inspection SSL/TLS](#16-linspection-ssltls)
 
 ### Partie VI — Les utilisateurs
-16. [Authentification et gestion des utilisateurs](#16-authentification-et-gestion-des-utilisateurs)
+17. [Authentification et gestion des utilisateurs](#17-authentification-et-gestion-des-utilisateurs)
 
 ### Partie VII — Les VPN
-17. [VPN IPsec site-à-site](#17-vpn-ipsec-site-à-site)
-18. [Accès distant : IPsec dial-up](#18-accès-distant--ipsec-dial-up)
+18. [VPN IPsec site-à-site](#18-vpn-ipsec-site-à-site)
+19. [Accès distant : IPsec dial-up](#19-accès-distant--ipsec-dial-up)
 
 ### Partie VIII — Aller plus loin
-19. [Le routage dynamique](#19-le-routage-dynamique)
-20. [SD-WAN](#20-sd-wan)
-21. [La haute disponibilité](#21-la-haute-disponibilité)
+20. [Le routage dynamique](#20-le-routage-dynamique)
+21. [SD-WAN](#21-sd-wan)
+22. [La haute disponibilité](#22-la-haute-disponibilité)
 
 ### Partie IX — L'exploitation au quotidien
-22. [Journaux, FortiView et supervision](#22-journaux-fortiview-et-supervision)
-23. [Diagnostic et dépannage](#23-diagnostic-et-dépannage)
-24. [Sauvegarde, mise à jour et durcissement](#24-sauvegarde-mise-à-jour-et-durcissement)
-25. [Les erreurs classiques](#25-les-erreurs-classiques)
-26. [Aide-mémoire : toutes les commandes](#26-aide-mémoire--toutes-les-commandes)
-27. [Conclusion et pour aller plus loin](#27-conclusion-et-pour-aller-plus-loin)
+23. [Journaux, FortiView et supervision](#23-journaux-fortiview-et-supervision)
+24. [Diagnostic et dépannage](#24-diagnostic-et-dépannage)
+25. [Sauvegarde, mise à jour et durcissement](#25-sauvegarde-mise-à-jour-et-durcissement)
+26. [Les erreurs classiques](#26-les-erreurs-classiques)
+27. [Aide-mémoire : toutes les commandes](#27-aide-mémoire--toutes-les-commandes)
+28. [Conclusion et pour aller plus loin](#28-conclusion-et-pour-aller-plus-loin)
 
 ---
 
@@ -391,12 +392,80 @@ Il y en a deux, et **il faut connaître les deux**. Ce n'est pas une préférenc
 >
 > Je donnerai systématiquement le chemin GUI quand il existe, parce que c'est utile pour se repérer. Mais la référence, ce sera toujours la commande.
 
-### 2.10 Ce qu'on va construire ensemble
+### 2.10 « Mais un routeur fait déjà tout ça, non ? »
+
+C'est la question qu'on te posera le jour où tu proposeras d'acheter un pare-feu. Elle vient parfois d'un directeur financier, souvent d'un collègue, et elle est **légitime** — parce qu'en apparence, un routeur Cisco moderne sait déjà :
+
+- router entre les réseaux ✅
+- faire du NAT ✅
+- filtrer avec des **ACL** (*Access Control Lists*) ✅
+- journaliser ✅
+- monter des VPN IPsec ✅
+
+Cinq fonctions sur les cinq qu'on attend d'un pare-feu. Alors, où est la différence ?
+
+**Elle est réelle, elle est profonde, et elle tient en quatre points.**
+
+**① Une ACL classique n'a pas de mémoire**
+
+Une ACL standard ou étendue examine **chaque paquet isolément**. Elle ne sait pas qu'un paquet est la réponse à une requête sortante, parce qu'elle ne se souvient de rien.
+
+Conséquence directe : pour laisser tes utilisateurs naviguer, tu dois autoriser le trafic **entrant** correspondant. Et comme tu ne peux pas prédire quels ports sources ils utiliseront, tu finis par écrire quelque chose comme « autoriser tout le TCP entrant vers les ports hauts ». Ce qui, dit autrement, revient à **laisser une porte ouverte en permanence**.
+
+Un pare-feu à états, lui, se souvient (§1.6) : une seule règle sortante, et le retour est reconnu.
+
+**② Une ACL ne voit que des ports, jamais des applications**
+
+C'est tout l'argument du §2.5. Une ACL qui autorise le port 443 autorise **tout** ce qui passe par le 443 : ta banque comme le tunnel de contournement d'un utilisateur, comme le canal de commande d'un logiciel malveillant. Elle n'a aucun moyen de les distinguer, parce qu'elle ne regarde pas à l'intérieur.
+
+**③ Une ACL ne regarde jamais le contenu**
+
+Un routeur ne saura **jamais** te dire qu'un fichier téléchargé contient un virus, qu'une page est un site d'hameçonnage, ou qu'une requête est une tentative d'injection SQL. Ce n'est pas une faiblesse de configuration : il n'a ni les signatures, ni le moteur d'analyse, ni la puissance de calcul pour le faire.
+
+**④ Une ACL ne sait pas qui tu es**
+
+Une règle de routeur parle d'adresses IP. Elle ne sait pas que `192.168.10.47` est le poste d'un stagiaire plutôt que celui du directeur financier — et si les deux permutent de bureau, la règle protège la mauvaise personne. Un pare-feu sait raisonner en **utilisateurs** et en **groupes** (section 16).
+
+**Le tableau qui résume :**
+
+| Capacité | Routeur + ACL | Pare-feu NGFW |
+|---|---|---|
+| Filtrer par IP et par port | ✅ | ✅ |
+| **Suivre l'état d'une connexion** | ❌ | ✅ |
+| Reconnaître l'application | ❌ | ✅ |
+| Analyser le contenu (antivirus) | ❌ | ✅ |
+| Filtrer par catégorie de site | ❌ | ✅ |
+| Détecter une intrusion (IPS) | ❌ | ✅ |
+| Raisonner en **utilisateurs** | ❌ | ✅ |
+| Déchiffrer le TLS pour inspecter | ❌ | ✅ |
+| Journaliser un trafic **compréhensible** | ⚠️ Sommaire | ✅ |
+
+> ⚠️ **Attention — ne jette pas le routeur pour autant**
+> La conclusion n'est PAS « le routeur ne sert à rien ». Les deux équipements **coexistent** dans toutes les architectures sérieuses, et chacun fait ce qu'il fait le mieux :
+>
+> - Le **routeur** achemine à très grande vitesse, gère les protocoles de routage vers l'opérateur, et absorbe la première vague de bruit avec des ACL grossières.
+> - Le **pare-feu** applique la politique de sécurité, comprend les applications, inspecte le contenu et sait qui est l'utilisateur.
+>
+> Mettre une ACL sur le routeur de bordure **reste une bonne pratique** : elle élimine à moindre coût le trafic manifestement illégitime avant qu'il n'atteigne le pare-feu, qui a mieux à faire.
+
+> 💡 **Une nuance honnête, parce qu'elle existe**
+> Cisco propose des ACL **réflexives** (`reflect`/`evaluate`), le **CBAC** et surtout **Zone-Based Firewall** (ZBF), qui ajoutent une vraie gestion d'état à IOS. Ce n'est donc pas « Cisco ne sait pas faire de pare-feu » — Cisco vend d'ailleurs des pare-feux, les ASA et Firepower.
+>
+> Ce qui reste vrai malgré ces mécanismes : **l'inspection de contenu, la reconnaissance applicative et l'identité utilisateur ne sont pas dans un routeur**, et le prix de la fonction de pare-feu sur un routeur généraliste s'effondre en performance dès qu'on l'active sérieusement.
+>
+> On mesurera tout ça de nos propres mains à la **section 15**. Je ne te demande pas de me croire sur parole : on va essayer de protéger le réseau avec R1 seul, et regarder précisément ce qui casse.
+
+### 2.11 Ce qu'on va construire ensemble
 
 Pour te donner un cap, voici l'infrastructure qu'on aura montée à la fin de ce document :
 
 ```
                           Internet (simulé)
+                                 │
+                          ╔══════┴══════╗
+                          ║   R1-EDGE   ║  ← routeur Cisco de bordure
+                          ║  Cisco IOS  ║     (la passerelle par défaut)
+                          ╚══════╤══════╝
                                  │
                           ┌──────┴──────┐
                           │   FGT-01    │  ← ton pare-feu principal
@@ -411,6 +480,7 @@ Pour te donner un cap, voici l'infrastructure qu'on aura montée à la fin de ce
 ```
 
 Avec, dessus :
+- **la démonstration, chiffres en main, de ce que le routeur seul ne sait pas faire** ;
 - des politiques de sécurité propres et journalisées ;
 - du NAT sortant et un serveur publié depuis Internet ;
 - un serveur DHCP et une résolution DNS ;
@@ -529,9 +599,18 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
                     │  (ta box / le NAT   │
                     │   de l'hyperviseur) │
                     └──────────┬──────────┘
+                               │ Gi0/0  (DHCP)
+                    ╔══════════┴══════════╗
+                    ║      R1-EDGE        ║   ← ⭐ routeur Cisco
+                    ║   Cisco IOS         ║      routeur de bordure
+                    ║   ACL + NAT         ║      ET passerelle par défaut
+                    ╚══════════╤══════════╝
+                               │ Gi0/1 — 192.168.100.1/24
+                               │
+                               │  « le lien de transit »
                                │
                           port1 (WAN)
-                        DHCP ou 192.168.100.99/24
+                          192.168.100.99/24
                     ┌──────────┴──────────┐
                     │                     │
                     │      FGT-01         │
@@ -548,19 +627,35 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
             └──────────────┘   └──────────────┘
 ```
 
+> 🧠 **Pourquoi un routeur Cisco DEVANT le pare-feu ?**
+> Ce n'est pas de la décoration, et ce n'est pas non plus une lubie : **c'est la topologie réelle de la quasi-totalité des entreprises**. On ne branche presque jamais un pare-feu directement sur la fibre — il y a un routeur de bordure devant, souvent fourni par l'opérateur, souvent un Cisco.
+>
+> Mais surtout, ce routeur va nous servir de **contre-exemple pédagogique**. Il sait router. Il sait faire du NAT. Il sait filtrer avec des **ACL**. Bref, il ressemble beaucoup à un pare-feu.
+>
+> Alors pourquoi dépenser plusieurs milliers d'euros de plus pour un FortiGate derrière ? C'est **la** question que tout décideur pose, et c'est celle à laquelle tu dois savoir répondre. On ne va pas y répondre par un argumentaire commercial : on va **le démontrer en laboratoire**, à la section 15, en essayant de protéger le réseau avec R1 seul et en constatant précisément où ça casse.
+>
+> Retiens dès maintenant le principe : **R1 est ce que tu aurais SANS pare-feu.** C'est notre point de comparaison.
+
 ### 3.7 Le plan d'adressage
 
-| Réseau | Sous-réseau | Rôle | Interface FortiGate |
+| Réseau | Sous-réseau | Rôle | Qui porte quoi |
 |---|---|---|---|
-| WAN | 192.168.100.0/24 | Simule Internet | `port1` — 192.168.100.99 |
-| LAN | 192.168.10.0/24 | Postes utilisateurs | `port2` — 192.168.10.1 |
-| DMZ | 192.168.20.0/24 | Serveurs publiés | `port3` — 192.168.20.1 |
+| Internet | variable (DHCP) | Sortie réelle | `R1 Gi0/0` |
+| **Transit** | 192.168.100.0/24 | Lien R1 ↔ pare-feu | `R1 Gi0/1` = .1 — `FGT port1` = .99 |
+| LAN | 192.168.10.0/24 | Postes utilisateurs | `FGT port2` — 192.168.10.1 |
+| DMZ | 192.168.20.0/24 | Serveurs publiés | `FGT port3` — 192.168.20.1 |
 
 | Machine | Adresse | Passerelle | Rôle |
 |---|---|---|---|
-| FGT-01 | voir ci-dessus | 192.168.100.1 | Le pare-feu |
+| **R1-EDGE** | Gi0/0 en DHCP, Gi0/1 = 192.168.100.1 | celle de ta box | ⭐ Routeur de bordure Cisco — **la passerelle par défaut du pare-feu** |
+| FGT-01 | port1 = 192.168.100.99 | **192.168.100.1 (R1)** | Le pare-feu |
 | PC-LAN | 192.168.10.10/24 | 192.168.10.1 | Poste de test côté interne |
 | SRV-DMZ | 192.168.20.10/24 | 192.168.20.1 | Serveur web de test |
+
+> 💡 **Astuce — pourquoi un réseau de « transit » ?**
+> Le `192.168.100.0/24` entre R1 et le pare-feu ne contient aucun utilisateur : il ne sert qu'à faire dialoguer les deux équipements. On appelle ça un **réseau de transit**, et en production on lui donne souvent un `/30` (deux adresses utilisables, §1.2), parce qu'il n'y aura jamais que deux machines dessus.
+>
+> Je garde un `/24` ici uniquement pour que tu puisses y brancher facilement une troisième machine servant d'« attaquant externe » lors des TP de la section 15.
 
 > 🧠 **Comprendre : pourquoi une DMZ ?**
 > **DMZ** signifie *zone démilitarisée*. C'est un troisième réseau, ni tout à fait dedans ni tout à fait dehors, où l'on place les serveurs **accessibles depuis Internet** : site web, serveur de messagerie, VPN.
@@ -569,15 +664,84 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
 >
 > La DMZ ne protège pas le serveur. Elle protège **tout le reste** du serveur. C'est une nuance essentielle, et on la matérialisera concrètement au TP 9.
 
-### 3.8 Les besoins matériels de ta machine
+### 3.8 Comment obtenir le routeur Cisco
+
+Le FortiGate se télécharge (§3.5). Pour le Cisco, tu as **quatre voies**, et il n'est pas obligatoire de dépenser un centime.
+
+| Voie | Coût | Réalisme | Commentaire |
+|---|---|---|---|
+| **A. EVE-NG / GNS3 + image IOSv ou CSR1000v** | Gratuit (l'image demande un compte Cisco) | ⭐ Parfait | La meilleure option si tu montes déjà ton lab là |
+| **B. Routeur Cisco d'occasion** (1841, 2811, 2901…) | 20 à 80 € | Parfait | Un 2811 se trouve pour le prix d'un repas |
+| **C. Cisco Packet Tracer** | Gratuit | ⚠️ Limité | Ne se connecte pas à de vraies VM — voir ci-dessous |
+| **D. Un substitut Linux (VyOS, FRR, ou Debian)** | Gratuit | ⭐ Suffisant | ⭐ **Recommandé si tu n'as pas d'IOS** |
+
+> ⚠️ **Attention à Packet Tracer** : il est excellent pour apprendre IOS, mais c'est un simulateur **fermé** — il ne peut pas parler à ta FortiGate-VM. Tu ne pourras donc pas faire les TP de bout en bout avec. Garde-le pour t'entraîner aux commandes IOS séparément.
+
+> 💡 **Astuce — si tu n'as pas d'image Cisco, ne bloque pas ici**
+> Tout ce qu'on demande à R1, c'est de **router**, de faire du **NAT** et de porter une **ACL**. N'importe quel routeur Linux le fait. Je donnerai systématiquement les commandes IOS **et** leur équivalent Linux, pour que personne ne reste sur le bord de la route.
+>
+> La démonstration de la section 15 — « pourquoi une ACL ne suffit pas » — fonctionne **à l'identique** avec un routeur Linux, parce que le problème n'est pas propre à Cisco : il est propre au **concept même d'ACL sans état**. C'est justement ce qui rend la leçon universelle.
+
+**La configuration de base de R1** (on la posera au TP 1) :
+
+```cisco
+R1# configure terminal
+R1(config)# hostname R1-EDGE
+
+! L'interface vers Internet — DHCP depuis ta box
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip address dhcp
+R1-EDGE(config-if)# ip nat outside
+R1-EDGE(config-if)# no shutdown
+R1-EDGE(config-if)# exit
+
+! L'interface vers le pare-feu — le réseau de transit
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# ip address 192.168.100.1 255.255.255.0
+R1-EDGE(config-if)# ip nat inside
+R1-EDGE(config-if)# no shutdown
+R1-EDGE(config-if)# exit
+
+! Les routes vers les réseaux qui vivent DERRIÈRE le pare-feu
+R1-EDGE(config)# ip route 192.168.10.0 255.255.255.0 192.168.100.99
+R1-EDGE(config)# ip route 192.168.20.0 255.255.255.0 192.168.100.99
+
+! Le NAT vers Internet
+R1-EDGE(config)# access-list 10 permit 192.168.0.0 0.0.255.255
+R1-EDGE(config)# ip nat inside source list 10 interface GigabitEthernet0/0 overload
+R1-EDGE(config)# end
+R1-EDGE# write memory
+```
+
+> 🧠 **Comprendre les deux routes statiques**
+> R1 connaît directement `192.168.100.0/24` — il a une patte dessus. Mais `192.168.10.0/24` et `192.168.20.0/24` sont **derrière** le pare-feu : R1 n'a aucun moyen de les deviner.
+>
+> Sans ces deux routes, tout **sortirait** correctement (le LAN vers Internet passe par le pare-feu qui fait du NAT), mais rien ne pourrait **revenir** vers ces réseaux — et surtout, R1 ne pourrait jamais joindre le serveur de la DMZ que nous publierons au TP 8.
+>
+> C'est le rappel du §7.1 : **une route par réseau qui n'est pas directement connecté**, sinon le paquet meurt.
+
+**L'équivalent sous Linux**, si tu utilises un substitut (Debian, par exemple) :
+
+```bash
+root@r1-edge:~# echo 1 > /proc/sys/net/ipv4/ip_forward
+root@r1-edge:~# ip addr add 192.168.100.1/24 dev eth1
+root@r1-edge:~# ip link set eth1 up
+root@r1-edge:~# ip route add 192.168.10.0/24 via 192.168.100.99
+root@r1-edge:~# ip route add 192.168.20.0/24 via 192.168.100.99
+root@r1-edge:~# iptables -t nat -A POSTROUTING -s 192.168.0.0/16 -o eth0 -j MASQUERADE
+```
+
+### 3.9 Les besoins matériels de ta machine
 
 Sois réaliste avant de commencer :
 
 | Ce que tu veux faire | RAM totale | Disque | Processeur |
 |---|---|---|---|
-| Sections 1 à 16 (1 FortiGate + 2 PC) | **8 Gio** | 40 Gio | 4 cœurs |
-| Sections 17 à 18 (2 FortiGate, VPN) | **12 Gio** | 60 Gio | 4 cœurs |
-| Sections 19 à 21 (3 FortiGate, HA) | **16 Gio** | 80 Gio | 6 cœurs |
+| Sections 1 à 17 (1 FortiGate + R1 + 2 PC) | **8 Gio** | 40 Gio | 4 cœurs |
+| Sections 18 à 19 (2 FortiGate, VPN) | **12 Gio** | 60 Gio | 4 cœurs |
+| Sections 20 à 22 (3 FortiGate, HA) | **16 Gio** | 80 Gio | 6 cœurs |
+
+> 💡 **Astuce** : R1 est très peu gourmand. Un IOSv sous EVE-NG demande 512 Mio, un routeur Debian minimal 256 Mio. Ne le compte pas comme une charge sérieuse.
 
 > 💡 **Astuce pour économiser la RAM** : les « PC » du laboratoire n'ont pas besoin d'être des postes complets. Une VM **Alpine Linux** (128 Mio de RAM) ou une **Debian sans interface graphique** (256 Mio) suffit amplement — tu n'as besoin que de `ping`, `curl` et `ip`. Réserve la mémoire pour les FortiGate, qui en ont réellement besoin.
 >
@@ -595,11 +759,40 @@ Faire tourner une FortiGate-VM, se connecter à sa console, définir un mot de p
 **📋 Prérequis**
 - Un hyperviseur installé (VMware Workstation Player fait très bien l'affaire)
 - L'image FortiGate-VM 7.6 téléchargée et décompressée (§3.5)
+- Un routeur pour R1 : IOS, boîtier d'occasion ou substitut Linux (§3.8)
 - 4 Gio de RAM disponibles
 
 ---
 
 **🔧 Manipulation**
+
+**Étape 0 — Monter R1, la passerelle**
+
+On commence par le routeur, parce que c'est **lui** qui donnera l'accès Internet au pare-feu. Applique la configuration du §3.8, puis vérifie les trois points qui comptent :
+
+```cisco
+R1-EDGE# show ip interface brief
+```
+```
+Interface              IP-Address       OK? Method Status      Protocol
+GigabitEthernet0/0     192.168.1.42     YES DHCP   up          up
+GigabitEthernet0/1     192.168.100.1    YES manual up          up
+```
+
+```cisco
+R1-EDGE# ping 8.8.8.8
+R1-EDGE# show ip route
+```
+
+> ⚠️ **Attention** : si `Gi0/0` reste en `administratively down`, il te manque un `no shutdown`. C'est l'oubli numéro un sur IOS — Cisco démarre ses interfaces éteintes, contrairement à FortiOS qui les démarre allumées. Une différence de culture entre les deux constructeurs qu'il vaut mieux connaître.
+
+Avec un substitut Linux :
+
+```bash
+root@r1-edge:~# ip -brief addr show
+root@r1-edge:~# ping -c 3 8.8.8.8
+root@r1-edge:~# ip route show
+```
 
 **Étape 1 — Importer la machine virtuelle**
 
@@ -689,7 +882,9 @@ Pour l'instant, le pare-feu n'a aucune adresse. Donnons-lui-en une :
 ```
 FGT-01 # config system interface
 FGT-01 (interface) # edit port1
-FGT-01 (port1) # set mode dhcp
+FGT-01 (port1) # set alias "WAN-vers-R1"
+FGT-01 (port1) # set mode static
+FGT-01 (port1) # set ip 192.168.100.99 255.255.255.0
 FGT-01 (port1) # set allowaccess ping http https ssh
 FGT-01 (port1) # next
 FGT-01 (interface) # end
@@ -701,17 +896,37 @@ Ligne par ligne, parce que c'est ta toute première configuration :
 |---|---|
 | `config system interface` | « J'entre dans la table des interfaces » |
 | `edit port1` | « Je veux modifier l'interface port1 » |
-| `set mode dhcp` | « Prends ton adresse automatiquement » |
+| `set mode static` | « Je te donne une adresse fixe » |
+| `set ip 192.168.100.99 255.255.255.0` | L'adresse côté R1, selon le plan du §3.7 |
 | `set allowaccess ping http https ssh` | « Autorise qu'on t'administre par ces protocoles, sur cette interface » |
 | `next` | « J'ai fini avec port1, je reste dans la table » |
 | `end` | « J'ai fini avec la table, applique » |
+
+Et la route par défaut vers R1, sans laquelle le pare-feu ne sort de nulle part :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 1
+FGT-01 (1) # set gateway 192.168.100.1
+FGT-01 (1) # set device "port1"
+FGT-01 (1) # set comment "Vers R1-EDGE"
+FGT-01 (1) # next
+FGT-01 (static) # end
+
+FGT-01 # execute ping 192.168.100.1
+FGT-01 # execute ping 8.8.8.8
+```
+
+> 🧠 **Comprendre les deux pings** : le premier prouve que le **lien de transit** fonctionne. Le second prouve que **R1 route et fait du NAT** pour toi. Si le premier passe et pas le second, le problème est chez R1, pas sur ton pare-feu — tu viens de diviser le champ de recherche en deux.
+
+> 💡 **Astuce** : la fin de ce TP mentionnait `set mode dhcp`. On lui préfère désormais une adresse **fixe**, parce que R1 est notre passerelle et que l'adresse du pare-feu ne doit pas bouger — on la citera dans les routes statiques de R1 (§3.8) et dans les ACL de la section 15.
 
 > 🚨 **Danger — `allowaccess` sur une interface WAN**
 > Dans un laboratoire, autoriser l'administration sur `port1` est pratique. **En production, c'est une faute grave.** Cela expose l'interface d'administration de ton pare-feu à Internet entier, et les FortiGate exposés sont scannés en permanence.
 >
 > On corrigera ça proprement en section 24. Pour l'instant, tu es dans un réseau isolé, donc c'est acceptable — mais je veux que tu saches dès la première commande que c'en est une, plutôt que de le découvrir dans six mois.
 
-**Étape 6 — Retrouver l'adresse obtenue**
+**Étape 6 — Vérifier l'adressage**
 
 ```
 FGT-01 # get system interface physical
@@ -723,13 +938,15 @@ ou, plus lisible :
 FGT-01 # diagnose ip address list
 ```
 
-Note l'adresse de `port1` : c'est par là que tu accèderas à l'interface web.
+Tu dois voir `port1` en `192.168.100.99`. C'est par là que tu accèderas à l'interface web.
 
 ---
 
 **✅ Résultat attendu**
 
-Depuis un navigateur sur ta machine hôte, `http://<adresse-du-port1>` doit afficher la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
+- R1 pingue Internet, et le pare-feu pingue R1 ✅
+- `execute ping 8.8.8.8` depuis le pare-feu fonctionne ✅
+- Depuis un navigateur d'une machine du réseau de transit, `http://192.168.100.99` affiche la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
 
 > ⚠️ Rappel du §3.2 : avec la licence d'évaluation, utilise bien **`http://`** et non `https://`. C'est normal, ce n'est pas une erreur de ta part.
 
@@ -745,6 +962,7 @@ Beaucoup plus que « installer une VM », en réalité :
 2. **`get system status` est ton premier réflexe.** Sur n'importe quel FortiGate inconnu, c'est la première commande à taper : version, modèle, mode, HA, heure.
 3. **`allowaccess` contrôle l'administration par interface.** C'est un paramètre de sécurité de première importance, et il se règle interface par interface.
 4. **La numérotation des ports vient de l'hyperviseur**, pas de FortiOS. Un piège classique quand une VM se comporte bizarrement.
+5. **Ton pare-feu ne sort pas tout seul.** Il a fallu une route par défaut vers R1, et c'est R1 qui fait le NAT vers Internet. Deux équipements, deux rôles — et deux pings pour savoir lequel est en cause.
 
 ---
 
@@ -3726,5 +3944,3498 @@ Garde le VIP, on le réutilisera en section 14.
 4. **Dans cette politique, la destination est le VIP**, pas l'adresse interne. Tu es tombé dans le piège et tu en es sorti.
 5. **`set nat enable` sur une publication écrase l'adresse du visiteur** et rend les journaux applicatifs inutiles.
 6. **`hook=pre` = DNAT, `hook=post` = SNAT.** Deux mots qui te font gagner du temps à chaque diagnostic.
+
+---
+
+## 11. Le cheminement d'un paquet dans FortiOS
+
+Cette section n'ajoute aucune fonctionnalité. Elle t'apprend **dans quel ordre** le pare-feu fait ce qu'il fait — et c'est ce qui transforme un administrateur qui devine en un administrateur qui sait.
+
+Presque tous les problèmes qu'on croit inexplicables s'expliquent par l'ordre des étapes.
+
+### 11.1 Pourquoi l'ordre compte
+
+Trois questions qu'on entend tout le temps, et dont la réponse est uniquement dans l'ordre :
+
+- « Ma politique cite l'adresse publique ou l'adresse privée du serveur ? »
+- « Le routage se fait avant ou après le NAT ? »
+- « Mon antivirus voit-il le trafic avant ou après le filtrage ? »
+
+Sans la carte, on répond au hasard. Avec elle, on répond en une seconde.
+
+### 11.2 Le parcours, étape par étape
+
+Voici le cheminement d'un paquet qui **traverse** le pare-feu, dans l'ordre réel :
+
+```
+   ①  ARRIVÉE SUR L'INTERFACE
+              │
+   ②  VÉRIFICATION D'INTÉGRITÉ (en-têtes IP corrects ?)
+              │
+   ③  DoS POLICY  (protection contre les inondations)
+              │
+   ④  IP INTEGRITY / defense anti-spoofing (RPF)
+              │
+   ⑤  ══ DNAT / VIP ══         ← la destination est réécrite ICI
+              │
+   ⑥  SESSION EXISTANTE ?
+              │
+       ┌──────┴───────┐
+      OUI            NON
+       │              │
+       │      ⑦  ROUTAGE (par où sortir ?)
+       │              │
+       │      ⑧  ══ POLITIQUES DE SÉCURITÉ ══
+       │              │           accept / deny
+       │      ⑨  AUTHENTIFICATION (si exigée)
+       │              │
+       │      ⑩  CRÉATION DE LA SESSION
+       │              │
+       └──────┬───────┘
+              │
+   ⑪  PROFILS DE SÉCURITÉ (antivirus, filtrage web, IPS…)
+              │
+   ⑫  ══ SNAT ══              ← la source est réécrite ICI
+              │
+   ⑬  MISE EN FORME DU TRAFIC (traffic shaping)
+              │
+   ⑭  SORTIE PAR L'INTERFACE
+```
+
+### 11.3 🧠 Les cinq conséquences à retenir
+
+Le schéma est joli, mais ce sont ces cinq déductions qui te serviront vraiment.
+
+**① Le DNAT est AVANT les politiques (étape 5 avant 8)**
+
+Donc, quand la politique est évaluée, la destination a **déjà** été réécrite… mais le pare-feu garde la trace de l'adresse d'origine, et c'est celle-là qu'il compare. **C'est pour ça que la destination d'une politique de publication est le VIP** (§10.5). Tu as maintenant la vraie raison, pas seulement la règle.
+
+**② Le routage est AVANT les politiques (étape 7 avant 8)**
+
+Donc, si aucune route n'existe vers la destination, **le paquet meurt avant même d'être filtré**. C'est capital pour le diagnostic : quand un trafic ne passe pas, la question n'est pas seulement « ai-je la bonne politique ? » mais aussi « ai-je une route ? ».
+
+Et ça explique un message que tu verras au TP 9 :
+```
+no route to destination
+```
+Aucune politique n'est en cause. Il manque une route.
+
+**③ Le SNAT est APRÈS les politiques (étape 12 après 8)**
+
+Donc, dans une politique, la **source** est toujours l'adresse **privée d'origine**. Tu n'écris jamais l'adresse publique en `srcaddr`. Le SNAT n'a pas encore eu lieu au moment où la règle est lue.
+
+**④ Une session existante court-circuite tout (étape 6)**
+
+Si la session est déjà connue, le paquet **saute** le routage et les politiques. C'est pourquoi :
+- le trafic retour ne demande aucune politique (§1.6) ;
+- modifier une règle ne change rien aux sessions en cours (§9, TP 7 étape 7).
+
+Tu as maintenant l'explication mécanique de deux comportements que tu avais admis sur parole.
+
+**⑤ Les profils de sécurité sont APRÈS la décision d'autorisation (étape 11 après 8)**
+
+Donc l'antivirus et le filtrage web ne voient **que le trafic déjà autorisé**. Un profil de sécurité attaché à une politique qui refuse ne sert à rien : le paquet n'arrive jamais jusqu'à lui.
+
+### 11.4 Le RPF, ou pourquoi un paquet parfaitement valide est jeté
+
+L'étape 4 mérite qu'on s'y arrête, parce qu'elle provoque des diagnostics très frustrants.
+
+**RPF** signifie *Reverse Path Forwarding*. À la réception d'un paquet, le pare-feu se pose cette question :
+
+> « Si je devais répondre à cette adresse source, est-ce que je passerais par l'interface d'où le paquet arrive ? »
+
+Si la réponse est non, le paquet est jeté — parce que c'est la signature d'une adresse source usurpée.
+
+**L'exemple qui arrive vraiment :** ton pare-feu a une route vers `172.16.50.0/24` par `port2`. Un paquet venant de `172.16.50.10` arrive sur `port1`. Le pare-feu répondrait par `port2`, donc l'arrivée par `port1` est incohérente : il jette.
+
+Le message dans le journal de diagnostic est celui-ci, et il est déroutant tant qu'on ne connaît pas le mécanisme :
+
+```
+reverse path check fail, drop
+```
+
+**Quand est-ce un faux positif ?** Dans les réseaux à **routage asymétrique**, où l'aller et le retour empruntent légitimement des chemins différents — cas fréquent avec plusieurs opérateurs.
+
+Deux modes existent :
+
+```
+config system settings
+    set strict-src-check enable       ← mode strict : la route doit être LA meilleure
+end
+```
+
+Par défaut, FortiOS est en mode *loose* : il suffit qu'**une** route existe vers la source, peu importe l'interface. C'est le bon réglage dans presque tous les cas.
+
+> ⚠️ **Attention** : n'active `strict-src-check` que si tu sais exactement pourquoi. En environnement multi-opérateur, il casse des flux parfaitement légitimes, et le diagnostic est pénible parce que tout le reste semble correct.
+
+### 11.5 Flux d'entrée, flux de sortie, flux local
+
+Trois chemins différents, qu'il ne faut pas confondre :
+
+| Type de flux | Description | Politiques concernées |
+|---|---|---|
+| **Traversant** | Entre par une interface, sort par une autre | ⭐ Les politiques de sécurité |
+| **Local-in** | **Destiné au pare-feu lui-même** (administration, VPN, ping) | `config firewall local-in-policy` |
+| **Local-out** | **Émis par le pare-feu** (journaux, NTP, FortiGuard) | Aucune politique |
+
+> 🧠 **Comprendre — le trafic local-in est une catégorie à part**
+> Quand tu te connectes en SSH **sur** le pare-feu, ce trafic ne traverse rien : il s'arrête au pare-feu. Il n'est donc **pas** filtré par tes politiques de sécurité, mais par `allowaccess` (§6.2) et, si tu veux plus fin, par les **local-in policies**.
+>
+> C'est une source de confusion classique : « j'ai une règle qui interdit tout depuis Internet, et pourtant le pare-feu répond au ping depuis Internet ». Bien sûr : ce ping ne traverse pas, il est destiné au pare-feu. C'est `allowaccess` qui décide, pas tes politiques.
+
+Une local-in policy, pour restreindre finement l'administration :
+
+```
+config firewall local-in-policy
+    edit 1
+        set intf "port1"
+        set srcaddr "NET-Admin-Autorise"
+        set dstaddr "all"
+        set service "HTTPS" "SSH"
+        set action accept
+        set schedule "always"
+    next
+    edit 2
+        set intf "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "HTTPS" "SSH"
+        set action deny
+        set schedule "always"
+    next
+end
+```
+
+> 🚨 **Danger** : les local-in policies peuvent te couper l'accès instantanément et **sans confirmation**. Teste toujours depuis une seconde session ouverte, et garde la console de l'hyperviseur sous la main.
+
+---
+
+### 🧪 TP 9 — Voir le pare-feu penser avec `debug flow`
+
+**🎯 Objectif**
+Utiliser `diagnose debug flow`, l'outil de diagnostic le plus puissant de FortiOS. Tu vas **lire les décisions du pare-feu en temps réel**, sur un trafic qui marche puis sur un trafic qui ne marche pas.
+
+C'est le TP qui te rendra autonome en dépannage.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 8 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — La séquence de base**
+
+`debug flow` s'active toujours de la même façon, en cinq commandes. Apprends-les dans cet ordre :
+
+```
+FGT-01 # diagnose debug reset
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow show function-name enable
+FGT-01 # diagnose debug flow trace start 20
+FGT-01 # diagnose debug enable
+```
+
+| Commande | Rôle |
+|---|---|
+| `debug reset` | Repart d'un état propre |
+| `flow filter clear` | Efface un filtre précédent — **le plus oublié** |
+| `flow filter addr` | Ne trace que le trafic concernant cette adresse |
+| `show function-name enable` | Affiche la fonction interne, très utile |
+| `flow trace start 20` | Trace 20 paquets puis s'arrête tout seul |
+| `debug enable` | ⭐ **Démarre réellement l'affichage** |
+
+> 🚨 **Danger — TOUJOURS mettre un filtre**
+> Sans `flow filter addr`, tu traces **tout le trafic du pare-feu**. Sur une machine chargée, ça sature la console, ça consomme du processeur, et tu ne peux plus rien lire. Sur un pare-feu de production, c'est une façon de provoquer un incident en voulant en diagnostiquer un.
+>
+> **Le filtre d'abord, l'activation ensuite. Toujours.**
+
+**Étape 2 — Tracer un trafic qui fonctionne**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl http://192.168.20.10
+```
+
+Sur la console du pare-feu, tu vois défiler quelque chose comme :
+
+```
+id=65308 trace_id=1 func=print_pkt_detail line=5892 msg="vd-root:0 received a packet(proto=6,
+   192.168.10.10:47238->192.168.20.10:80) tun_id=0.0.0.0 from port2. flag [S], seq 2847..."
+id=65308 trace_id=1 func=init_ip_session_common line=6073 msg="allocate a new session-0000a1b2"
+id=65308 trace_id=1 func=vf_ip4_route_input_common line=2621 msg="find a route: flag=00000000
+   gw-192.168.20.10 via port3"
+id=65308 trace_id=1 func=fw_forward_handler line=881 msg="Allowed by Policy-2:"
+```
+
+**Lis les quatre lignes** — c'est exactement le §11.2 qui se déroule sous tes yeux :
+
+| Ligne | Étape du schéma |
+|---|---|
+| `received a packet ... from port2` | ① Arrivée |
+| `allocate a new session` | ⑩ Nouvelle session |
+| `find a route: ... via port3` | ⑦ Routage |
+| **`Allowed by Policy-2`** | ⑧ ⭐ **La décision, et par quelle règle** |
+
+> 💡 **`Allowed by Policy-N` est la ligne qui répond à 80 % des questions.** Elle te dit non seulement que ça passe, mais **quelle règle** l'a décidé.
+
+**Étape 3 — Tracer un trafic qui NE fonctionne PAS**
+
+Rappelle-toi : le service SSH n'est pas autorisé vers la DMZ (TP 7 étape 3).
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ssh user@192.168.20.10
+```
+
+Sur le pare-feu :
+
+```
+id=65308 trace_id=3 func=print_pkt_detail line=5892 msg="vd-root:0 received a packet(proto=6,
+   192.168.10.10:51022->192.168.20.10:22) from port2. flag [S], seq 918..."
+id=65308 trace_id=3 func=init_ip_session_common line=6073 msg="allocate a new session-0000a1c9"
+id=65308 trace_id=3 func=vf_ip4_route_input_common line=2621 msg="find a route: ... via port3"
+id=65308 trace_id=3 func=fw_forward_handler line=784 msg="Denied by forward policy check
+   (policy 0)"
+```
+
+**La ligne qui compte :**
+
+```
+Denied by forward policy check (policy 0)
+```
+
+> 🧠 **Comprendre — `policy 0`, c'est l'Implicit Deny**
+> La politique numéro 0 n'existe pas dans ta configuration. **C'est le nom interne de la règle implicite de refus.**
+>
+> Donc `Denied by forward policy check (policy 0)` se traduit par : « aucune de tes politiques n'a correspondu, le paquet est tombé au bout de la liste ».
+>
+> **Ce message signifie qu'il te manque une règle**, pas qu'une règle te bloque. La nuance est capitale : si le message citait `policy 5`, il faudrait aller corriger la politique 5. Là, il faut en **écrire** une.
+
+**Étape 4 — Arrêter le débogage (impératif)**
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug flow trace stop
+FGT-01 # diagnose debug reset
+```
+
+> 🚨 **Danger** : oublier d'arrêter le débogage laisse le pare-feu tracer en continu. Ça consomme du processeur, ça pollue les consoles, et sur un équipement chargé ça dégrade réellement les performances. **Prends le réflexe de terminer chaque session de diagnostic par ces trois commandes.**
+>
+> Astuce pour ne pas oublier : `diagnose debug flow trace start 20` s'arrête tout seul après 20 paquets. Mets toujours un nombre.
+
+**Étape 5 — Tracer une absence de route**
+
+Provoquons le cas du §11.3 ②. Essaie de joindre un réseau inexistant :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 10.99.99.99
+FGT-01 # diagnose debug flow trace start 5
+FGT-01 # diagnose debug enable
+FGT-01 # execute ping 10.99.99.99
+```
+
+Selon ta configuration, tu verras :
+
+```
+msg="no route to destination"
+```
+
+ou, si tu as une route par défaut, le paquet partira vers l'opérateur et se perdra plus loin.
+
+> 💡 **Astuce** : dans un réseau sans route par défaut, `no route to destination` est un message qui fait gagner un temps fou. Il dit clairement : **le problème n'est pas dans les politiques**.
+
+**Étape 6 — Filtrer plus finement**
+
+Le filtre accepte plusieurs critères, qui se combinent :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter saddr 192.168.10.10     ← source uniquement
+FGT-01 # diagnose debug flow filter daddr 192.168.20.10     ← destination uniquement
+FGT-01 # diagnose debug flow filter proto 6                 ← TCP (1=ICMP, 17=UDP)
+FGT-01 # diagnose debug flow filter port 80                 ← le port
+FGT-01 # diagnose debug flow filter
+```
+
+La dernière commande, sans argument, **affiche le filtre courant**. Prends l'habitude de la taper avant d'activer : c'est ce qui t'évite de tracer tout le pare-feu par erreur.
+
+**Étape 7 — La capture de paquets**
+
+`debug flow` montre les **décisions**. Parfois tu veux voir les **paquets** eux-mêmes. C'est `sniffer` :
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 10
+```
+
+Les quatre arguments, dans l'ordre :
+
+| Argument | Signification |
+|---|---|
+| `any` | L'interface (`any` = toutes, ou `port2`, `port3`…) |
+| `'host 192.168.20.10'` | Un filtre au format BPF, comme tcpdump |
+| `4` | Le niveau de détail (voir ci-dessous) |
+| `10` | Nombre de paquets, puis arrêt |
+
+**Les niveaux de détail :**
+
+| Niveau | Contenu |
+|---|---|
+| `1` | En-tête IP seulement |
+| `2` | En-tête + données |
+| `3` | En-tête + données + en-tête Ethernet |
+| **`4`** | ⭐ En-tête + **nom de l'interface** |
+| `5` | Niveau 4 + données |
+| `6` | Tout |
+
+> 💡 **Astuce professionnelle — le niveau 4 est celui qu'il faut retenir**
+> Parce qu'il affiche **par quelle interface** chaque paquet passe. Sur un pare-feu, c'est exactement l'information qu'on cherche : voir un paquet arriver sur `port2` et **ne pas** ressortir sur `port3` te dit immédiatement qu'il a été jeté à l'intérieur.
+
+Exemples de filtres BPF utiles :
+
+```
+FGT-01 # diagnose sniffer packet any 'icmp' 4 20
+FGT-01 # diagnose sniffer packet port1 'tcp port 443' 4 20
+FGT-01 # diagnose sniffer packet any 'host 192.168.10.10 and not port 22' 4 50
+FGT-01 # diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+```
+
+> 💡 **Astuce — exporter vers Wireshark**
+> Avec le niveau `3` ou `6`, la sortie contient les octets bruts. On peut la convertir en fichier `.pcap` avec le script `fgt2eth.pl` fourni par Fortinet, puis l'ouvrir dans Wireshark. Indispensable pour analyser un problème complexe.
+
+**Étape 8 — Choisir le bon outil**
+
+Récapitulons, parce que c'est le vrai enseignement du TP :
+
+| Ta question | L'outil |
+|---|---|
+| « Le paquet arrive-t-il seulement ? » | `diagnose sniffer packet` |
+| « Pourquoi est-il refusé ? » | `diagnose debug flow` |
+| « Quelle règle l'a autorisé ? » | `diagnose sys session list` (`policy_id`) |
+| « Quel est l'état de la connexion ? » | `diagnose sys session list` |
+| « Le NAT s'applique-t-il ? » | `diagnose sys session list` (`hook=pre/post`) |
+
+**Le raisonnement type d'un dépannage** :
+1. `sniffer` sur l'interface d'entrée → le paquet arrive-t-il ? **Non** → problème en amont (câble, VLAN, routage du client)
+2. Il arrive → `debug flow` → que décide le pare-feu ?
+3. `Denied by policy 0` → il manque une règle
+4. `Denied by policy N` → la règle N bloque, va la voir
+5. `Allowed by policy N` → le pare-feu laisse passer, le problème est **ailleurs** (côté serveur)
+
+---
+
+**✅ Résultat attendu**
+
+- Tu lis `Allowed by Policy-2` sur un trafic autorisé
+- Tu lis `Denied by forward policy check (policy 0)` sur un trafic refusé
+- Tu sais que `policy 0` = Implicit Deny = **règle manquante**
+- Tu captures des paquets avec `sniffer` niveau 4
+- Tu arrêtes proprement le débogage
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **L'ordre du traitement explique les règles** que tu appliquais sans les comprendre.
+2. **DNAT avant les politiques, SNAT après.** D'où le VIP en destination et l'adresse privée en source.
+3. **Le routage est avant les politiques** — pas de route, pas de filtrage, le paquet meurt avant.
+4. **`debug flow` te montre la décision, `sniffer` te montre le paquet.** Deux outils, deux questions.
+5. **`policy 0` veut dire « il manque une règle »**, pas « une règle bloque ».
+6. **On met toujours un filtre, et on arrête toujours le débogage.**
+
+---
+
+# Partie IV — Les services réseau
+
+---
+
+## 12. DHCP et DNS
+
+Un pare-feu ne fait pas que filtrer. Sur un site de petite ou moyenne taille, il rend aussi les deux services sans lesquels un réseau ne fonctionne pas : distribuer les adresses et résoudre les noms.
+
+### 12.1 Le serveur DHCP
+
+**DHCP** (*Dynamic Host Configuration Protocol*) attribue automatiquement aux machines leur adresse IP, leur masque, leur passerelle et leurs serveurs DNS. Sans lui, il faudrait configurer chaque poste à la main.
+
+```
+config system dhcp server
+    edit 1
+        set interface "port2"
+        set default-gateway 192.168.10.1
+        set netmask 255.255.255.0
+        set lease-time 604800
+        config ip-range
+            edit 1
+                set start-ip 192.168.10.100
+                set end-ip 192.168.10.199
+            next
+        end
+        set dns-service default
+        set status enable
+    next
+end
+```
+
+Décryptage des paramètres qui comptent :
+
+| Paramètre | Rôle |
+|---|---|
+| `interface` | Sur quelle interface le serveur écoute |
+| `default-gateway` | La passerelle annoncée aux clients — **presque toujours l'adresse de l'interface** |
+| `ip-range` | La plage distribuée |
+| `lease-time` | Durée du bail, en **secondes** (604800 = 7 jours) |
+| `dns-service` | `default` (ceux du pare-feu), `local` (le pare-feu lui-même) ou `specify` |
+
+> 🧠 **Comprendre — pourquoi la plage ne couvre pas tout le sous-réseau**
+> Note qu'on distribue `.100` à `.199`, pas `.1` à `.254`. Ce n'est pas de la timidité, c'est une méthode :
+> - `.1` est la passerelle
+> - `.2` à `.99` sont réservés aux **adresses fixes** : serveurs, imprimantes, bornes Wi-Fi, switchs
+> - `.100` à `.199` sont distribués par DHCP
+> - `.200` à `.254` restent libres pour un futur besoin
+>
+> Un plan d'adressage qui sépare le fixe du dynamique t'évite le jour où le DHCP attribue à un poste l'adresse que tu avais mise en dur sur une imprimante. Ce conflit-là est pénible à diagnostiquer parce qu'il est **intermittent** : il n'apparaît que quand les deux machines sont allumées en même temps.
+
+### 12.2 Les réservations DHCP
+
+Une **réservation** garantit qu'une machine reçoit toujours la même adresse, identifiée par sa MAC.
+
+```
+config system dhcp server
+    edit 1
+        config reserved-address
+            edit 1
+                set ip 192.168.10.50
+                set mac 00:0c:29:aa:bb:cc
+                set description "Imprimante comptabilite"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — réservation plutôt qu'adresse fixe**
+> C'est le meilleur des deux mondes : la machine est configurée en DHCP (donc rien à toucher sur elle), et tu contrôles son adresse **depuis le pare-feu**. Quand le plan d'adressage change, tu modifies une ligne au lieu de te déplacer devant chaque imprimante.
+
+### 12.3 Options DHCP et exclusions
+
+**Exclure des adresses** de la plage :
+
+```
+config system dhcp server
+    edit 1
+        config exclude-range
+            edit 1
+                set start-ip 192.168.10.150
+                set end-ip 192.168.10.160
+            next
+        end
+    next
+end
+```
+
+**Ajouter des options personnalisées** — utile pour les téléphones IP, les bornes Wi-Fi, le démarrage réseau :
+
+```
+config system dhcp server
+    edit 1
+        config options
+            edit 1
+                set code 66
+                set type string
+                set value "192.168.10.5"
+            next
+        end
+    next
+end
+```
+
+L'option 66 est le serveur TFTP — les téléphones IP y cherchent leur configuration.
+
+### 12.4 Observer et dépanner le DHCP
+
+```
+FGT-01 # execute dhcp lease-list
+FGT-01 # execute dhcp lease-list port2
+FGT-01 # execute dhcp lease-clear 192.168.10.101
+FGT-01 # diagnose sys dhcp lease list
+```
+
+> 💡 **Astuce de diagnostic** : si un client n'obtient pas d'adresse, la vraie question est « ses trames arrivent-elles ? ». Le DHCP fonctionne en **diffusion** (broadcast), donc :
+> ```
+> FGT-01 # diagnose sniffer packet port2 'udp port 67 or udp port 68' 4 20
+> ```
+> Si tu ne vois **rien**, le problème est physique ou de VLAN — le pare-feu n'est même pas sollicité. Si tu vois le `DISCOVER` mais pas d'`OFFER`, le problème est dans la configuration du serveur (plage épuisée, mauvaise interface).
+
+### 12.5 Le relais DHCP
+
+Quand le serveur DHCP est ailleurs (un contrôleur de domaine, typiquement), le pare-feu doit **relayer** les demandes — parce qu'une diffusion ne traverse pas un routeur.
+
+```
+config system interface
+    edit "port2"
+        set dhcp-relay-service enable
+        set dhcp-relay-ip "192.168.20.5"
+        set dhcp-relay-type regular
+    next
+end
+```
+
+> ⚠️ **Attention** : le serveur distant doit avoir une **étendue** correspondant au sous-réseau du client. Il reconnaît ce sous-réseau grâce au champ `giaddr` que le relais insère. Un relais qui fonctionne côté pare-feu et un serveur sans étendue pour ce réseau donnent le même symptôme qu'un relais cassé.
+
+### 12.6 Le DNS : trois rôles à ne pas confondre
+
+Le mot « DNS » recouvre **trois choses différentes** sur un FortiGate, et les mélanger est une source de confusion permanente.
+
+| Rôle | Qui interroge qui | Où ça se configure |
+|---|---|---|
+| **Client DNS** | Le pare-feu résout des noms pour **lui-même** | `config system dns` |
+| **Serveur DNS** | Les postes du réseau interrogent **le pare-feu** | `config system dns-server` |
+| **Filtrage DNS** | Le pare-feu **inspecte** les requêtes qui le traversent | Profil de sécurité (§14) |
+
+**Le client DNS** — le pare-feu a besoin de résoudre des noms pour ses propres besoins : contacter FortiGuard, résoudre un objet FQDN (§8.4), joindre un serveur NTP.
+
+```
+config system dns
+    set primary 9.9.9.9
+    set secondary 1.1.1.1
+    set protocol cleartext dot
+    set ssl-certificate "Fortinet_Factory"
+end
+```
+
+Vérification :
+
+```
+FGT-01 # execute ping www.fortinet.com
+FGT-01 # diagnose test application dnsproxy 3
+```
+
+> 💡 **Astuce** : FortiOS sait faire du **DNS over TLS** (`dot`). Ça chiffre les requêtes DNS du pare-feu, qui autrement circulent en clair et révèlent tout ce qu'il consulte. Fortinet fournit des serveurs compatibles, et Quad9 (`9.9.9.9`) aussi.
+
+**Le serveur DNS** — le pare-feu répond aux requêtes des postes :
+
+```
+config system dns-server
+    edit "port2"
+        set mode forward-only
+    next
+end
+```
+
+Trois modes :
+
+| Mode | Comportement |
+|---|---|
+| `recursive` | Le pare-feu résout lui-même depuis la racine |
+| `non-recursive` | Il ne répond que sur ses zones locales |
+| `forward-only` | ⭐ Il transmet aux serveurs du §client. Le plus courant |
+
+**Les zones locales** — pour résoudre des noms internes :
+
+```
+config system dns-database
+    edit "zone-interne"
+        set domain "lab.local"
+        set type primary
+        set view shadow
+        config dns-entry
+            edit 1
+                set hostname "srv-web"
+                set ip 192.168.20.10
+            next
+            edit 2
+                set hostname "fgt"
+                set ip 192.168.10.1
+            next
+        end
+    next
+end
+```
+
+Désormais, `srv-web.lab.local` résout vers `192.168.20.10` pour les postes internes.
+
+### 12.7 🧠 Comprendre : le DNS *split horizon*
+
+Voici un problème très courant et sa solution élégante.
+
+Ton serveur web est en `192.168.20.10` (privé) et publié sur `203.0.113.5` (public). Un visiteur d'Internet tape `www.entreprise.fr` et obtient `203.0.113.5` : parfait.
+
+Mais **un employé au bureau** tape la même adresse et obtient aussi `203.0.113.5`. Son paquet part vers le pare-feu, ressort vers Internet, revient… ou plus souvent échoue, parce que ce demi-tour (*hairpin NAT*) n'est pas toujours configuré.
+
+**La solution** : que le DNS réponde **différemment** selon qui demande. C'est le *split horizon* — ou *split-brain DNS*.
+
+```
+config system dns-database
+    edit "vue-interne"
+        set domain "entreprise.fr"
+        set type primary
+        set view shadow          ← ⭐ répond uniquement aux clients INTERNES
+        config dns-entry
+            edit 1
+                set hostname "www"
+                set ip 192.168.20.10      ← l'adresse PRIVÉE
+            next
+        end
+    next
+end
+```
+
+Le paramètre `view` fait tout le travail :
+
+| Valeur | Qui reçoit la réponse |
+|---|---|
+| `shadow` | Les clients **internes** uniquement |
+| `public` | Les clients **externes** |
+
+Résultat : l'employé obtient l'adresse privée et joint le serveur directement, le visiteur externe obtient l'adresse publique. Chacun emprunte le chemin le plus court, et le NAT en épingle devient inutile.
+
+---
+
+### 🧪 TP 10 — Rendre le réseau autonome
+
+**🎯 Objectif**
+Activer le DHCP sur le LAN, faire obtenir une adresse au PC, poser une réservation, configurer le pare-feu en serveur DNS avec une zone locale, et vérifier chaque étape en observant les paquets.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer le serveur DHCP**
+
+```
+FGT-01 # config system dhcp server
+FGT-01 (server) # edit 1
+FGT-01 (1) # set interface "port2"
+FGT-01 (1) # set default-gateway 192.168.10.1
+FGT-01 (1) # set netmask 255.255.255.0
+FGT-01 (1) # set lease-time 86400
+FGT-01 (1) # config ip-range
+FGT-01 (ip-range) # edit 1
+FGT-01 (1) # set start-ip 192.168.10.100
+FGT-01 (1) # set end-ip 192.168.10.199
+FGT-01 (1) # next
+FGT-01 (ip-range) # end
+FGT-01 (1) # set dns-service default
+FGT-01 (1) # set status enable
+FGT-01 (1) # next
+FGT-01 (server) # end
+```
+
+**Étape 2 — Observer une attribution en direct**
+
+C'est plus instructif que de regarder le résultat. Lance d'abord la capture :
+
+```
+FGT-01 # diagnose sniffer packet port2 'udp port 67 or udp port 68' 4 20
+```
+
+Puis, sur le PC du LAN, demande une adresse :
+
+```bash
+user@pc-lan:~$ sudo ip addr flush dev eth0
+user@pc-lan:~$ sudo dhclient -v eth0
+```
+
+Sur Windows :
+
+```cmd
+C:\Users\Lab> ipconfig /release
+C:\Users\Lab> ipconfig /renew
+```
+
+Sur la console du pare-feu, tu vois passer les quatre étapes du DHCP :
+
+```
+0.0.0.0.68 -> 255.255.255.255.67: udp 300     ← DISCOVER
+192.168.10.1.67 -> 255.255.255.255.68: udp 300 ← OFFER
+0.0.0.0.68 -> 255.255.255.255.67: udp 300     ← REQUEST
+192.168.10.1.67 -> 255.255.255.255.68: udp 300 ← ACK
+```
+
+> 💡 **Le moyen mnémotechnique** : **DORA** — *Discover, Offer, Request, Acknowledge*. Le client crie « quelqu'un ? », le serveur propose, le client accepte, le serveur confirme.
+>
+> Savoir **où** la séquence s'interrompt est tout le diagnostic DHCP :
+> - Pas de DISCOVER → problème physique ou VLAN
+> - DISCOVER sans OFFER → serveur mal configuré ou plage épuisée
+> - OFFER sans REQUEST → le client a reçu une autre offre (⚠️ serveur DHCP pirate !)
+
+**Étape 3 — Vérifier le bail**
+
+```
+FGT-01 # execute dhcp lease-list port2
+```
+```
+port2
+    IP              MAC-Address        Hostname       VCI   Expiry
+    192.168.10.100  00:0c:29:1a:2b:3c  pc-lan               Thu Aug 21 09:52:11 2026
+```
+
+Et côté client :
+
+```bash
+user@pc-lan:~$ ip addr show eth0
+user@pc-lan:~$ ip route show
+user@pc-lan:~$ cat /etc/resolv.conf
+```
+
+**Étape 4 — Poser une réservation**
+
+Note la MAC de ton PC, puis :
+
+```
+FGT-01 # config system dhcp server
+FGT-01 (server) # edit 1
+FGT-01 (1) # config reserved-address
+FGT-01 (reserved-address) # edit 1
+FGT-01 (1) # set ip 192.168.10.50
+FGT-01 (1) # set mac 00:0c:29:1a:2b:3c
+FGT-01 (1) # set description "Poste de test du LAN"
+FGT-01 (1) # next
+FGT-01 (reserved-address) # end
+FGT-01 (1) # next
+FGT-01 (server) # end
+```
+
+Force le renouvellement :
+
+```bash
+user@pc-lan:~$ sudo dhclient -r eth0 && sudo dhclient -v eth0
+user@pc-lan:~$ ip addr show eth0
+```
+
+Le PC obtient maintenant `192.168.10.50`, quelle que soit la plage.
+
+> ⚠️ **Attention** : si le client garde son ancienne adresse, c'est que son bail est toujours valide. Force-le côté pare-feu :
+> ```
+> FGT-01 # execute dhcp lease-clear 192.168.10.100
+> ```
+
+**Étape 5 — Configurer le client DNS du pare-feu**
+
+```
+FGT-01 # config system dns
+FGT-01 (dns) # set primary 9.9.9.9
+FGT-01 (dns) # set secondary 1.1.1.1
+FGT-01 (dns) # end
+
+FGT-01 # execute ping www.fortinet.com
+```
+
+**Étape 6 — Faire du pare-feu un serveur DNS**
+
+```
+FGT-01 # config system dns-server
+FGT-01 (dns-server) # edit "port2"
+FGT-01 (port2) # set mode forward-only
+FGT-01 (port2) # next
+FGT-01 (dns-server) # end
+```
+
+Autorise le DNS sur l'interface :
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port2
+FGT-01 (port2) # set allowaccess ping https ssh fgfm
+FGT-01 (port2) # next
+FGT-01 (interface) # end
+```
+
+> 💡 **Astuce** : le service DNS ne passe pas par `allowaccess` — il est activé par `config system dns-server`. C'est une exception à retenir : tous les services locaux ne se contrôlent pas au même endroit.
+
+**Étape 7 — Créer une zone DNS locale**
+
+```
+FGT-01 # config system dns-database
+FGT-01 (dns-database) # edit "lab-local"
+FGT-01 (lab-local) # set domain "lab.local"
+FGT-01 (lab-local) # set type primary
+FGT-01 (lab-local) # set view shadow
+FGT-01 (lab-local) # set authoritative disable
+FGT-01 (lab-local) # config dns-entry
+FGT-01 (dns-entry) # edit 1
+FGT-01 (1) # set hostname "srv-web"
+FGT-01 (1) # set ip 192.168.20.10
+FGT-01 (1) # next
+FGT-01 (dns-entry) # edit 2
+FGT-01 (2) # set hostname "fgt"
+FGT-01 (2) # set ip 192.168.10.1
+FGT-01 (2) # next
+FGT-01 (dns-entry) # end
+FGT-01 (lab-local) # next
+FGT-01 (dns-database) # end
+```
+
+**Étape 8 — Tester la résolution**
+
+Depuis le PC du LAN, en interrogeant explicitement le pare-feu :
+
+```bash
+user@pc-lan:~$ dig @192.168.10.1 srv-web.lab.local
+user@pc-lan:~$ nslookup srv-web.lab.local 192.168.10.1
+```
+
+Tu dois obtenir `192.168.20.10`.
+
+Et le test qui prouve que tout se combine :
+
+```bash
+user@pc-lan:~$ curl http://srv-web.lab.local
+```
+```html
+<h1>Serveur DMZ - lab FortiGate</h1>
+```
+
+**Le nom a été résolu par le pare-feu, la politique a laissé passer, le serveur a répondu.** Trois sections de tutoriel qui fonctionnent ensemble. 🎉
+
+**Étape 9 — Vérifier la résolution externe**
+
+```bash
+user@pc-lan:~$ dig @192.168.10.1 www.fortinet.com
+```
+
+Le pare-feu transmet aux serveurs du §Étape 5 et rend la réponse.
+
+**Étape 10 — Diagnostiquer le DNS**
+
+```
+FGT-01 # diagnose test application dnsproxy 3
+```
+
+Cette commande affiche les serveurs utilisés, leur temps de réponse et leur état. C'est **le** réflexe quand la résolution est lente ou erratique.
+
+```
+FGT-01 # diagnose sniffer packet any 'udp port 53' 4 20
+```
+
+---
+
+**✅ Résultat attendu**
+
+- Le PC obtient une adresse par DHCP, et tu as vu la séquence DORA
+- La réservation force l'adresse `192.168.10.50`
+- `execute dhcp lease-list` montre le bail
+- `dig @192.168.10.1 srv-web.lab.local` renvoie `192.168.20.10`
+- `curl http://srv-web.lab.local` affiche la page du serveur
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Un plan d'adressage sépare le fixe du dynamique**, sinon on récolte des conflits intermittents.
+2. **La réservation DHCP** contrôle l'adresse depuis le pare-feu, sans toucher à la machine.
+3. **DORA se lit dans une capture**, et l'endroit où la séquence s'arrête donne le diagnostic.
+4. **« DNS » désigne trois rôles distincts** sur un FortiGate : client, serveur, filtrage.
+5. **Le split horizon** fait répondre différemment selon qui demande, et supprime le besoin de NAT en épingle.
+6. **`diagnose test application dnsproxy 3`** est le réflexe du diagnostic DNS.
+
+---
+
+# Partie V — La sécurité applicative
+
+---
+
+## 13. Les modes d'inspection
+
+On entre dans ce qui fait d'un FortiGate un pare-feu **nouvelle génération** : l'inspection du contenu. Mais avant de configurer un antivirus ou un filtrage web, il faut comprendre une décision qui conditionne tout le reste — le **mode d'inspection**.
+
+C'est un réglage qu'on fait une fois et qui détermine ce qui sera possible ensuite. Le rater, c'est se retrouver avec des options grisées sans comprendre pourquoi.
+
+### 13.1 Les deux modes
+
+**Le mode *flow* (flux)**
+
+Le pare-feu examine les paquets **au fil de l'eau**, sans les retenir. Il applique des motifs de reconnaissance sur le flux qui passe, comme un contrôleur qui regarde défiler les wagons d'un train sans l'arrêter.
+
+- ✅ **Rapide** — latence quasi nulle, débit maximal
+- ✅ Bénéficie de l'accélération matérielle sur les boîtiers physiques
+- ❌ Ne peut pas voir un fichier **dans son ensemble**
+
+**Le mode *proxy***
+
+Le pare-feu **retient** le contenu, le reconstitue entièrement, l'examine, puis le retransmet. Le train est arrêté en gare, les wagons sont ouverts, puis le train repart.
+
+- ✅ **Analyse complète** — le fichier entier est reconstruit avant d'être jugé
+- ✅ Beaucoup plus de fonctions disponibles
+- ❌ Plus lent, consomme plus de mémoire
+- ❌ Ajoute de la latence
+
+### 13.2 🧠 Comprendre : pourquoi ça change ce qu'on peut faire
+
+Voici la raison profonde, et une fois qu'on l'a saisie, tout le reste découle.
+
+Imagine qu'un utilisateur télécharge un fichier de 50 Mo contenant un virus, et que la signature du virus se trouve **à cheval sur deux paquets réseau** : la moitié à la fin du paquet 1 200, l'autre au début du paquet 1 201.
+
+**En mode flow**, le pare-feu voit passer le paquet 1 200, puis le 1 201. Il a une mémoire tampon limitée. Reconnaître un motif coupé en deux est difficile, et reconnaître un motif dans une archive compressée est impossible — il faudrait décompresser, donc avoir le fichier entier.
+
+**En mode proxy**, le pare-feu accumule les 50 Mo, reconstitue le fichier, le décompresse s'il le faut, et l'analyse comme un antivirus classique le ferait sur un disque.
+
+**D'où le principe :**
+
+> Le mode **flow** protège contre ce qui se reconnaît **au passage**.
+> Le mode **proxy** protège contre ce qui ne se comprend qu'**en entier**.
+
+**Et la contrepartie**, qui n'est pas seulement une question de vitesse : en mode proxy, l'utilisateur ne reçoit **rien** tant que le fichier n'est pas entièrement analysé. Sur un gros téléchargement, son navigateur semble figé. FortiOS propose deux réponses à ce problème :
+
+| Réglage | Comportement |
+|---|---|
+| `client-comfort` | Envoie quelques octets régulièrement pour que le client ne coupe pas la connexion |
+| `oversize-limit` | Au-delà d'une certaine taille, le fichier n'est **pas** analysé |
+
+> ⚠️ **Attention — `oversize-limit` est un compromis de sécurité, pas un réglage de confort**
+> Un fichier qui dépasse la limite passe **sans être analysé**. C'est un trou connu, et les attaquants le connaissent aussi : gonfler artificiellement un fichier malveillant pour dépasser la limite est une technique documentée.
+>
+> Tu peux choisir de bloquer les fichiers trop gros plutôt que de les laisser passer :
+> ```
+> config antivirus profile
+>     edit "AV-Strict"
+>         set av-block-log enable
+>         config http
+>             set options scan avmonitor
+>         end
+>     next
+> end
+> ```
+> C'est plus sûr, et c'est plus pénible pour les utilisateurs. Comme souvent en sécurité, il faut choisir et assumer.
+
+### 13.3 Le tableau de décision
+
+| Fonction | Mode flow | Mode proxy |
+|---|---|---|
+| Antivirus (signatures) | ✅ | ✅ |
+| Antivirus dans une archive | ⚠️ Limité | ✅ |
+| Filtrage web par catégorie | ✅ | ✅ |
+| Filtrage web par mot-clé dans la page | ❌ | ✅ |
+| Contrôle applicatif | ✅ | ✅ |
+| IPS | ✅ | ✅ |
+| Filtrage DNS | ✅ | ✅ |
+| **DLP** (fuite de données) | ❌ | ✅ |
+| **Antispam** | ❌ | ✅ |
+| **Inspection ICAP** | ❌ | ✅ |
+| Remplacement de page (*block page*) riche | ⚠️ Basique | ✅ |
+| Authentification web | ⚠️ Limitée | ✅ |
+
+> 💡 **Astuce — la recommandation qui marche en pratique**
+> **Commence en mode flow.** C'est le défaut de FortiOS depuis plusieurs versions, c'est plus rapide, et ça couvre les besoins de la grande majorité des organisations.
+>
+> **Passe en proxy uniquement sur les politiques qui en ont besoin.** Le mode se règle **par politique**, pas globalement : tu peux avoir la navigation générale en flow et le trafic de messagerie en proxy pour l'antispam.
+>
+> Mélanger les deux n'est pas un défaut de conception : c'est la bonne façon de faire.
+
+### 13.4 Régler le mode
+
+**Par politique** — la méthode moderne, celle à retenir :
+
+```
+config firewall policy
+    edit 1
+        set inspection-mode flow      ← ou proxy
+    next
+end
+```
+
+**Le réglage global** — il existe encore, et il détermine le défaut :
+
+```
+config system settings
+    set inspection-mode flow
+end
+```
+
+> ⚠️ **Attention** : un **profil de sécurité** est lui aussi de type flow ou proxy (`set feature-set`). Le profil et la politique doivent **correspondre**. Si tu attaches un profil proxy à une politique flow, FortiOS affiche un avertissement et les fonctions propres au proxy **ne s'appliquent pas** — silencieusement du point de vue de l'utilisateur.
+>
+> Symptôme classique : « j'ai activé le filtrage par mot-clé et ça ne bloque rien ». Vérifie la correspondance des modes avant de chercher ailleurs.
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        set feature-set proxy         ← doit correspondre à la politique
+    next
+end
+```
+
+### 13.5 Où se voit la différence, concrètement
+
+```
+FGT-01 # diagnose sys session list
+```
+
+Sur une session inspectée en mode proxy, tu verras apparaître des indications de redirection vers le processus proxy (`proxy-id`, ou un état `may_dirty` accompagné d'un renvoi interne). En mode flow, la session ressemble à une session ordinaire.
+
+Et pour mesurer le coût :
+
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose sys top 5 20
+```
+
+`diagnose sys top` liste les processus les plus consommateurs. En mode proxy sous charge, tu verras `wad` (le démon proxy) grimper. C'est normal, et c'est le prix de l'analyse complète.
+
+---
+
+### 🧪 TP 11 — Comparer les deux modes
+
+**🎯 Objectif**
+Régler le mode d'inspection sur une politique, observer la différence de comportement, et provoquer volontairement l'incompatibilité profil/politique pour reconnaître son symptôme.
+
+**⏱️ Durée** : 20 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+> ⚠️ **Rappel du §2.7** : sans abonnement FortiGuard actif, les profils de sécurité se configurent et s'attachent, mais ne bloquent rien de réel. Ce TP porte sur le **mécanisme** et sur la façon de vérifier qu'il est en place — c'est ce qui te servira le jour où tu auras une vraie licence.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Voir le mode actuel**
+
+```
+FGT-01 # show firewall policy 1 | grep inspection
+```
+
+S'il n'y a aucune sortie, c'est que la politique est sur la valeur par défaut. Vérifie-la :
+
+```
+FGT-01 # show full-configuration firewall policy 1 | grep inspection-mode
+```
+```
+    set inspection-mode flow
+```
+
+**Étape 2 — Créer un profil de filtrage web en mode flow**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Flow"
+FGT-01 (WF-Flow) # set feature-set flow
+FGT-01 (WF-Flow) # set comment "Profil de test - mode flow"
+FGT-01 (WF-Flow) # next
+FGT-01 (profile) # end
+```
+
+**Étape 3 — L'attacher à la politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set utm-status enable
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Flow"
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+> 💡 **Astuce** : `set utm-status enable` est la case maîtresse. Sans elle, tes profils sont attachés mais **inactifs**. C'est un oubli fréquent — et le symptôme est le même que celui d'un profil mal configuré, ce qui envoie chercher au mauvais endroit.
+
+**Étape 4 — Provoquer l'incompatibilité**
+
+Crée maintenant un profil en mode **proxy** et attache-le à une politique en mode **flow** :
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Proxy"
+FGT-01 (WF-Proxy) # set feature-set proxy
+FGT-01 (WF-Proxy) # next
+FGT-01 (profile) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set webfilter-profile "WF-Proxy"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+Selon la version, FortiOS refuse ou accepte avec un avertissement. Dans la GUI, une **icône d'alerte** apparaît sur le profil avec une infobulle expliquant que les fonctions proxy ne s'appliquent pas.
+
+> 🧠 **Retiens ce symptôme.** « J'ai configuré la fonction, elle est bien attachée, et elle ne fait rien » a très souvent cette cause. La première vérification n'est pas la configuration de la fonction, c'est la **correspondance des modes**.
+
+**Étape 5 — Passer la politique en proxy**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set inspection-mode proxy
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+Maintenant, les deux correspondent. Vérifie :
+
+```
+FGT-01 # show firewall policy 1
+```
+
+**Étape 6 — Mesurer le coût**
+
+```
+FGT-01 # get system performance status
+```
+
+Puis génère du trafic depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ for i in $(seq 1 50); do curl -s -o /dev/null http://192.168.20.10; done
+```
+
+Et observe :
+
+```
+FGT-01 # diagnose sys top 5 20
+```
+
+Cherche le processus `wad`. En mode proxy, c'est lui qui traite le trafic.
+
+Appuie sur `q` pour quitter.
+
+**Étape 7 — Revenir en flow**
+
+Pour la suite du tutoriel, on reste en mode flow, plus léger sur une VM à 1 vCPU :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Flow"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 8 — Nettoyer**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # delete "WF-Proxy"
+FGT-01 (profile) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- Tu sais lire le mode d'inspection d'une politique
+- Un profil proxy sur une politique flow produit un avertissement
+- `set utm-status enable` conditionne l'activation des profils
+- `diagnose sys top` montre `wad` en mode proxy
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Flow inspecte au passage, proxy reconstitue avant d'inspecter.** C'est la seule différence, et elle explique tout le reste.
+2. **Le mode détermine les fonctions disponibles** — DLP et antispam n'existent qu'en proxy.
+3. **Le mode se règle par politique**, et les mélanger est la bonne pratique.
+4. **Profil et politique doivent être du même mode**, sinon la fonction ne s'applique pas silencieusement.
+5. **`utm-status enable` est la case maîtresse** que tout le monde oublie une fois.
+6. **`oversize-limit` est un trou de sécurité assumé**, pas un réglage de confort.
+
+---
+
+## 14. Les profils de sécurité
+
+C'est ici que le pare-feu cesse de regarder des adresses et commence à regarder **ce qui circule**. Six profils, six angles d'attaque différents.
+
+> ⚠️ **Rappel important** : les profils de cette section s'appuient sur les bases FortiGuard. **Sans abonnement, ils se configurent mais ne bloquent rien de réel.** Tu apprends ici la logique et les commandes — qui sont exactement les mêmes en production. Je signale au passage ce qui fonctionne quand même sans licence.
+
+### 14.1 La vue d'ensemble
+
+| Profil | Ce qu'il regarde | Sans licence FortiGuard ? |
+|---|---|---|
+| **Antivirus** | Le contenu des fichiers | ❌ Base de signatures figée |
+| **Web Filter** | Les sites web visités | ⚠️ Catégories non, listes locales **oui** |
+| **Application Control** | L'application utilisée | ❌ Base de signatures figée |
+| **IPS** | Les motifs d'attaque | ❌ Base de signatures figée |
+| **DNS Filter** | Les noms résolus | ⚠️ Catégories non, listes locales **oui** |
+| **File Filter** | Le **type** de fichier | ✅ **Fonctionne** |
+
+> 💡 **Astuce** : retiens que le **filtrage par liste locale** et le **filtrage par type de fichier** fonctionnent sans abonnement. Ce sont eux qui te permettront de faire des TP réellement bloquants dans ton laboratoire.
+
+### 14.2 L'antivirus
+
+```
+config antivirus profile
+    edit "AV-Standard"
+        set feature-set flow
+        set comment "Antivirus standard"
+        config http
+            set av-scan block
+            set archive-block encrypted corrupted
+        end
+        config https
+            set av-scan block
+        end
+        config ftp
+            set av-scan block
+        end
+        config smtp
+            set av-scan block
+        end
+    next
+end
+```
+
+Les valeurs de `av-scan` :
+
+| Valeur | Effet |
+|---|---|
+| `disable` | Aucune analyse |
+| `monitor` | Analyse et **journalise**, mais laisse passer |
+| `block` | ⭐ Analyse et **bloque** |
+
+> 💡 **Astuce professionnelle — commence toujours en `monitor`**
+> Quand tu déploies un antivirus sur un réseau existant, mets-le d'abord en `monitor` pendant une ou deux semaines. Tu vois **ce qui serait bloqué** sans rien casser. Puis tu examines les journaux, tu traites les faux positifs, et tu passes en `block` en connaissance de cause.
+>
+> Passer directement en `block` sur un réseau en production, c'est se garantir un lundi matin difficile.
+
+**Les options avancées qui comptent :**
+
+```
+config antivirus profile
+    edit "AV-Standard"
+        set analytics-db enable            ← utilise la base FortiSandbox
+        config http
+            set av-scan block
+            set outbreak-prevention block  ← protection zéro-jour par empreinte
+            set content-disarm enable      ← ⭐ voir ci-dessous
+        end
+    next
+end
+```
+
+> 🧠 **Comprendre — `content-disarm`, la fonction la plus sous-estimée**
+> Le *Content Disarm and Reconstruction* (CDR) ne cherche **pas** de virus. Il fait autre chose : il prend un document Office ou un PDF, en **retire tout le contenu actif** (macros, JavaScript, objets embarqués) et reconstruit un document propre.
+>
+> Pourquoi c'est puissant ? Parce que ça fonctionne **même contre un code malveillant inconnu**. Un antivirus ne détecte que ce qu'il connaît. Le CDR ne cherche rien : il supprime la capacité même d'exécuter du code. Une macro zéro-jour dans un fichier Word est neutralisée sans jamais avoir été identifiée.
+>
+> Le prix : le document arrive **modifié**. Si tes utilisateurs échangent de vrais classeurs Excel avec des macros métier, ils vont te le faire savoir. À réserver aux flux entrants depuis l'extérieur, typiquement la messagerie.
+
+### 14.3 Le filtrage web
+
+C'est le profil le plus visible pour les utilisateurs, et celui qui génère le plus de demandes au support. 😄
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        set feature-set flow
+        set comment "Filtrage web standard"
+        config ftgd-wf
+            unset options
+            config filters
+                edit 1
+                    set category 26          ← Malicious Websites
+                    set action block
+                next
+                edit 2
+                    set category 61          ← Phishing
+                    set action block
+                next
+                edit 3
+                    set category divers
+                    set action warning
+                next
+            end
+        end
+        set log-all-url enable
+    next
+end
+```
+
+**Les quatre actions possibles :**
+
+| Action | Effet |
+|---|---|
+| `allow` | Autorise, sans journal |
+| `monitor` | Autorise et **journalise** |
+| `warning` | Affiche un avertissement, l'utilisateur peut **continuer** |
+| `block` | Bloque et affiche la page de refus |
+| `authenticate` | Demande une authentification pour continuer |
+
+> 💡 **Astuce — `warning` est très souvent le bon choix**
+> Bloquer sèchement les réseaux sociaux crée un rapport de force avec les utilisateurs, et une file d'attente devant ton bureau. `warning` affiche « ce site n'entre pas dans le cadre professionnel, cliquez pour continuer », journalise le passage, et laisse la responsabilité à l'utilisateur.
+>
+> Dans la plupart des organisations, la consommation baisse fortement **sans aucun blocage** — parce que les gens savent que c'est tracé. C'est plus efficace et politiquement infiniment plus simple à défendre.
+
+**Le filtrage par URL locale — et celui-ci marche sans licence :**
+
+```
+config webfilter urlfilter
+    edit 1
+        set name "Liste-Locale"
+        config entries
+            edit 1
+                set url "exemple-interdit.com"
+                set type simple
+                set action block
+            next
+            edit 2
+                set url "*.reseaux-sociaux.fr"
+                set type wildcard
+                set action block
+            next
+            edit 3
+                set url ".*\\.(exe|bat|scr)$"
+                set type regex
+                set action block
+            next
+        end
+    next
+end
+```
+
+Puis on le rattache au profil :
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        config web
+            set urlfilter-table 1
+        end
+    next
+end
+```
+
+Les trois types :
+
+| Type | Syntaxe | Exemple |
+|---|---|---|
+| `simple` | Correspondance de sous-chaîne | `facebook.com` |
+| `wildcard` | Avec `*` | `*.facebook.com` |
+| `regex` | Expression régulière complète | `.*\.(exe\|bat)$` |
+
+> ⚠️ **Attention — l'ordre compte aussi ici**
+> La liste d'URL est évaluée de haut en bas, première correspondance gagnante — même logique que les politiques (§9.2). Une entrée `allow` sur `intranet.entreprise.fr` doit être **avant** l'entrée `block` sur `*.entreprise.fr`, sinon elle ne sert à rien.
+
+### 14.4 Le contrôle applicatif
+
+C'est le cœur du concept NGFW (§2.5). Il reconnaît **l'application** indépendamment du port.
+
+```
+config application list
+    edit "APP-Entreprise"
+        set comment "Controle applicatif standard"
+        config entries
+            edit 1
+                set category 2            ← P2P
+                set action block
+            next
+            edit 2
+                set application 15832     ← une application précise
+                set action block
+            next
+            edit 3
+                set category 6            ← Video/Audio
+                set action pass
+                set log enable
+            next
+        end
+        set other-application-action pass
+        set other-application-log enable
+        set unknown-application-action pass
+    next
+end
+```
+
+Trouver l'identifiant d'une application :
+
+```
+FGT-01 # diagnose application-control list | grep -i "bittorrent"
+```
+
+> 🧠 **Comprendre — pourquoi c'est plus fort qu'un filtrage de ports**
+> BitTorrent n'a pas de port fixe. Il utilise des ports aléatoires, sait passer en HTTPS sur le 443, et se camoufle. Un filtrage de ports ne l'attrapera jamais.
+>
+> Le contrôle applicatif reconnaît **la signature du protocole lui-même** — la façon dont les paquets sont structurés, la séquence des échanges. Peu importe le port utilisé.
+>
+> C'est exactement la promesse du §2.5 : « le 443 est ouvert, mais BitTorrent est refusé ».
+
+> ⚠️ **Attention** : `other-application-action` décide du sort des applications **reconnues mais non listées**, `unknown-application-action` de celles que le pare-feu **ne reconnaît pas du tout**. Mettre les deux en `block` donne une posture très stricte — et casse absolument tout ce que ta base d'applications ne connaît pas, y compris tes applications métier internes. À manier avec précaution.
+
+### 14.5 L'IPS
+
+L'**IPS** (*Intrusion Prevention System*) cherche des motifs d'**attaque** : tentatives d'exploitation de failles, scans, injections.
+
+```
+config ips sensor
+    edit "IPS-Standard"
+        set comment "Detection d intrusion"
+        config entries
+            edit 1
+                set severity high critical
+                set action block
+                set log enable
+                set status enable
+            next
+            edit 2
+                set severity medium
+                set action default
+                set log enable
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — filtrer par sévérité plutôt que d'activer toutes les signatures**
+> La base IPS contient des milliers de signatures. Les activer toutes coûte cher en processeur et génère beaucoup de bruit. Filtrer par `severity high critical` couvre l'essentiel du risque réel pour une fraction du coût.
+>
+> On peut aussi filtrer par système ciblé (`set os Linux Windows`) ou par application (`set application Apache`), pour ne charger que les signatures pertinentes pour ton parc. Un IPS ajusté vaut mieux qu'un IPS exhaustif que personne ne lit.
+
+### 14.6 Le filtrage DNS
+
+Il agit **avant** la connexion : la requête DNS est interceptée, et si le nom est interdit, l'adresse n'est jamais fournie.
+
+```
+config dnsfilter profile
+    edit "DNS-Standard"
+        config ftgd-dns
+            config filters
+                edit 1
+                    set category 26
+                    set action block
+                next
+            end
+        end
+        set block-botnet enable        ← ⭐ fonctionne bien et coûte peu
+        set log-all-domain enable
+    next
+end
+```
+
+> 🧠 **Comprendre — pourquoi filtrer au niveau DNS est très efficace**
+> Trois raisons qu'on n'apprécie qu'après coup :
+>
+> **1. C'est avant tout le reste.** Le poste n'obtient jamais l'adresse, donc aucune connexion n'est tentée. Rien à bloquer ensuite.
+>
+> **2. Ça marche même en HTTPS.** Le filtrage web classique doit inspecter le trafic chiffré pour connaître l'URL (section 15). La requête DNS, elle, est en clair — le filtrage DNS attrape ce que le filtrage web ne verrait qu'au prix d'un déchiffrement.
+>
+> **3. `block-botnet` est redoutablement rentable.** Un poste compromis contacte son serveur de commande par un nom de domaine. Bloquer ces noms **coupe le canal de commande** même si l'infection a déjà eu lieu. C'est la dernière ligne de défense, et elle fonctionne souvent quand tout le reste a échoué.
+
+### 14.7 Le filtrage de fichiers — et lui fonctionne sans licence
+
+```
+config file-filter profile
+    edit "FF-Standard"
+        set feature-set flow
+        set log enable
+        config rules
+            edit "Bloquer-Executables"
+                set protocol http-get http-post ftp
+                set action block
+                set direction any
+                set file-type "exe" "bat" "msi" "scr" "vbs" "js"
+            next
+            edit "Bloquer-Archives-Chiffrees"
+                set protocol http-get
+                set action block
+                set file-type "7z" "rar"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — c'est le type RÉEL, pas l'extension**
+> FortiOS identifie le type de fichier par sa **signature interne** (les premiers octets, ce qu'on appelle le *magic number*), pas par son extension. Renommer `virus.exe` en `photo.jpg` ne trompe personne : le pare-feu voit que le contenu est un exécutable Windows.
+>
+> C'est ce qui rend ce filtre bien plus solide qu'une simple liste d'extensions, et c'est une des rares protections sérieuses disponibles sans abonnement.
+
+---
+
+### 🧪 TP 12 — Bloquer pour de vrai, sans licence
+
+**🎯 Objectif**
+Construire un filtrage qui **fonctionne réellement dans ton laboratoire** : liste d'URL locale et filtrage de fichiers par type. Puis vérifier le blocage dans les journaux.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 11 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer une liste d'URL locale**
+
+```
+FGT-01 # config webfilter urlfilter
+FGT-01 (urlfilter) # edit 1
+FGT-01 (1) # set name "Liste-Locale-Lab"
+FGT-01 (1) # config entries
+FGT-01 (entries) # edit 1
+FGT-01 (1) # set url "example.com"
+FGT-01 (1) # set type simple
+FGT-01 (1) # set action block
+FGT-01 (1) # next
+FGT-01 (entries) # edit 2
+FGT-01 (2) # set url "*.example.org"
+FGT-01 (2) # set type wildcard
+FGT-01 (2) # set action block
+FGT-01 (2) # next
+FGT-01 (entries) # end
+FGT-01 (1) # next
+FGT-01 (urlfilter) # end
+```
+
+**Étape 2 — Créer le profil de filtrage web et l'y rattacher**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Lab"
+FGT-01 (WF-Lab) # set feature-set flow
+FGT-01 (WF-Lab) # set comment "Filtrage du laboratoire"
+FGT-01 (WF-Lab) # config web
+FGT-01 (web) # set urlfilter-table 1
+FGT-01 (web) # end
+FGT-01 (WF-Lab) # set log-all-url enable
+FGT-01 (WF-Lab) # next
+FGT-01 (profile) # end
+```
+
+**Étape 3 — L'attacher à la politique Internet**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set utm-status enable
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Lab"
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # set logtraffic all
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 4 — Tester**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -v http://example.com
+```
+
+Tu obtiens une page de blocage FortiGuard, ou une connexion coupée.
+
+> ⚠️ **Attention** : en HTTPS, le filtrage par URL ne voit que le **nom du serveur** (via le SNI), pas le chemin complet. Bloquer `example.com/page-precise` en HTTPS ne fonctionne **pas** sans inspection SSL profonde — c'est le sujet de la section 15. Teste en HTTP pour ce TP.
+
+**Étape 5 — Voir le blocage dans les journaux**
+
+```
+FGT-01 # execute log filter category 1
+FGT-01 # execute log filter field action "blocked"
+FGT-01 # execute log display
+```
+
+Tu vois l'événement, avec l'URL, l'utilisateur, la politique et l'heure.
+
+> 💡 **Astuce** : `category 1` correspond aux journaux **UTM**, `category 0` aux journaux de **trafic**. Cette distinction revient tout le temps :
+> ```
+> FGT-01 # execute log filter category ?
+> ```
+
+**Étape 6 — Créer un filtrage de fichiers**
+
+```
+FGT-01 # config file-filter profile
+FGT-01 (profile) # edit "FF-Lab"
+FGT-01 (FF-Lab) # set feature-set flow
+FGT-01 (FF-Lab) # set log enable
+FGT-01 (FF-Lab) # config rules
+FGT-01 (rules) # edit "Bloquer-Executables"
+FGT-01 (Bloquer-Executables) # set protocol http-get http-post
+FGT-01 (Bloquer-Executables) # set action block
+FGT-01 (Bloquer-Executables) # set direction any
+FGT-01 (Bloquer-Executables) # set file-type "exe" "bat" "msi"
+FGT-01 (Bloquer-Executables) # next
+FGT-01 (rules) # end
+FGT-01 (FF-Lab) # next
+FGT-01 (profile) # end
+```
+
+**Étape 7 — Le test qui prouve que c'est le TYPE, pas l'extension**
+
+Sur le serveur DMZ, fabrique un faux exécutable **avec une extension d'image** :
+
+```bash
+user@srv-dmz:~$ printf 'MZ\x90\x00\x03\x00\x00\x00\x04\x00' > photo.jpg
+user@srv-dmz:~$ head -c 2 photo.jpg
+MZ
+```
+
+> 🧠 `MZ` est la signature de tout exécutable Windows. Le fichier s'appelle `photo.jpg` mais son contenu dit « je suis un `.exe` ».
+
+Attache le profil à la politique LAN → DMZ :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set utm-status enable
+FGT-01 (2) # set inspection-mode flow
+FGT-01 (2) # set file-filter-profile "FF-Lab"
+FGT-01 (2) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (2) # set logtraffic all
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+Puis, depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -O http://192.168.20.10/photo.jpg
+```
+
+**Le téléchargement est bloqué**, malgré l'extension `.jpg`. Le pare-feu a lu les octets, pas le nom.
+
+```
+FGT-01 # execute log filter category 1
+FGT-01 # execute log display
+```
+
+**Étape 8 — Créer un profil antivirus (pour la forme)**
+
+```
+FGT-01 # config antivirus profile
+FGT-01 (profile) # edit "AV-Lab"
+FGT-01 (AV-Lab) # set feature-set flow
+FGT-01 (AV-Lab) # config http
+FGT-01 (http) # set av-scan monitor
+FGT-01 (http) # end
+FGT-01 (AV-Lab) # next
+FGT-01 (profile) # end
+```
+
+> 💡 **Astuce** : `monitor` plutôt que `block`, conformément au conseil du §14.2. Sans licence, la base est figée de toute façon — mais tu prends le bon réflexe.
+
+**Étape 9 — Vérifier l'état des bases FortiGuard**
+
+```
+FGT-01 # diagnose autoupdate versions
+FGT-01 # get system fortiguard-service status
+```
+
+Tu verras les dates des bases. Sans abonnement, elles sont anciennes — et tu sais maintenant **le vérifier**, ce qui est un réflexe d'audit utile en production.
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # unset file-filter-profile
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `curl http://example.com` est bloqué par la liste locale ✅
+- Le blocage apparaît dans les journaux UTM ✅
+- `photo.jpg` contenant un en-tête `MZ` est bloqué par le filtrage de fichiers ✅
+- `diagnose autoupdate versions` montre l'état des bases
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Six profils, six angles.** Fichier, site, application, attaque, nom résolu, type de fichier.
+2. **Listes locales et filtrage de type fonctionnent sans abonnement** — de quoi travailler en lab.
+3. **On déploie en `monitor` avant de passer en `block`.** Toujours.
+4. **Le contrôle applicatif reconnaît le protocole, pas le port.** C'est la promesse du NGFW.
+5. **Le filtrage DNS agit avant tout le reste**, et fonctionne même en HTTPS sans déchiffrement.
+6. **Le filtrage de fichiers lit les octets**, pas l'extension. Tu l'as prouvé toi-même.
+7. **En HTTPS, le filtrage d'URL ne voit que le nom du serveur** — ce qui amène directement la section suivante.
+
+---
+
+## 15. ⭐ Routeur + ACL contre pare-feu : la démonstration
+
+On a promis au §2.10 de ne pas se contenter d'un argumentaire. Cette section tient la promesse.
+
+On va **essayer sincèrement** de protéger le réseau avec R1 tout seul, comme si le FortiGate n'existait pas. On va y arriver partiellement. Puis on va buter, une par une, sur quatre limites — et à chaque fois, on montrera le pare-feu faire ce que le routeur ne sait pas faire.
+
+C'est la section la plus importante du tutoriel pour ta **carrière**, parce que c'est celle qui te permettra de justifier un budget devant quelqu'un qui n'est pas technicien.
+
+### 15.1 La règle du jeu
+
+Pour cette section, on fait comme si R1 était notre seule défense.
+
+```
+   Internet ────► [R1-EDGE + ACL] ────► [FGT-01 (transparent)] ────► LAN / DMZ
+                   ↑                     ↑
+            notre "pare-feu"      on l'ignore pour l'instant
+```
+
+**Objectif de sécurité**, celui de n'importe quelle PME :
+1. Les postes du LAN doivent pouvoir naviguer sur le web
+2. Rien ne doit pouvoir entrer depuis Internet, sauf vers le serveur web de la DMZ
+3. Les utilisateurs ne doivent pas faire de peer-to-peer
+4. Aucun fichier exécutable ne doit être téléchargé
+5. Le stagiaire n'a pas les mêmes droits que le directeur
+
+Cinq exigences banales. Voyons combien R1 peut en satisfaire.
+
+---
+
+### 15.2 🧠 Limite n°1 : une ACL n'a pas de mémoire
+
+C'est la limite fondamentale, celle dont découlent la moitié des autres.
+
+**Le problème, posé simplement.** Un poste du LAN consulte un site web :
+
+```
+Aller  : 192.168.10.10:54321  →  93.184.216.34:443
+Retour : 93.184.216.34:443    →  192.168.10.10:54321
+```
+
+Le paquet **retour** entre depuis Internet. Ton exigence n°2 dit « rien ne doit pouvoir entrer ». Si tu appliques littéralement cette règle sur R1, la navigation ne fonctionne plus.
+
+Alors tu es obligé d'ouvrir. Mais **quoi** ouvrir ? Tu ne connais pas à l'avance le port source qu'utilisera le poste (`54321` ici, autre chose la prochaine fois). Tu n'as qu'une possibilité :
+
+```cisco
+! L'ACL "naïve" qu'on est obligé d'écrire
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+Traduction : « laisse entrer **tout le TCP** venant de n'importe où vers **n'importe quel port au-dessus de 1023** de mon réseau ».
+
+> 🚨 **Mesure ce que tu viens d'écrire.**
+> Tu as ouvert **64 512 ports** sur **tout ton réseau interne**, en permanence, à **la Terre entière**. Un serveur RDP mal configuré sur le port 3389, un service de développement sur le 8080, une base de données sur le 5432 : tout est accessible.
+>
+> Ce n'est pas une caricature. C'est **la seule chose qu'une ACL sans état permet d'écrire** si l'on veut que la navigation fonctionne.
+
+### 15.3 La demi-solution de Cisco : le mot-clé `established`
+
+IOS propose un palliatif :
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 established
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+`established` ne laisse entrer que les paquets TCP dont le drapeau **ACK** ou **RST** est positionné — c'est-à-dire, en théorie, uniquement des paquets appartenant à une conversation déjà entamée.
+
+C'est nettement mieux. Et c'est **quand même insuffisant**, pour trois raisons précises :
+
+**① Ça ne vérifie rien.** `established` regarde **un bit dans l'en-tête**. Il ne consulte aucune table, il ne sait pas si une conversation existe vraiment. **N'importe qui peut fabriquer un paquet avec le bit ACK positionné.** C'est une technique de scan classique — l'*ACK scan* de `nmap` — qui traverse tranquillement ce type d'ACL.
+
+**② Ça ne marche que pour TCP.** UDP n'a pas de drapeau ACK. Le DNS, le NTP, la voix sur IP, QUIC — tout ce qui est UDP reste sans protection possible autrement qu'en ouvrant les ports en grand.
+
+**③ Ça ne protège pas ICMP.** Même problème.
+
+> 🧠 **La différence, dite en une phrase**
+> `established` demande : « **ce paquet ressemble-t-il** à une réponse ? »
+> Un pare-feu à états demande : « **ce paquet EST-il** la réponse à une conversation que j'ai moi-même autorisée, entre ces deux adresses, sur ces deux ports, dans le bon état TCP ? »
+>
+> La première question se répond en lisant un bit. La seconde exige une **mémoire** — la table de sessions du §9, TP 7 étape 6.
+
+### 15.4 Ce que Cisco propose au-delà
+
+Soyons complets, parce que dire « Cisco ne sait pas faire » serait faux :
+
+| Mécanisme | Ce qu'il apporte | Sa limite |
+|---|---|---|
+| **ACL réflexives** (`reflect`/`evaluate`) | Une vraie table d'état, créée dynamiquement | Pas de suivi applicatif, gestion pénible, pas de FTP actif |
+| **CBAC** (`ip inspect`) | Inspection avec état, quelques protocoles applicatifs | Obsolète, remplacé par ZBF |
+| **Zone-Based Firewall** (ZBF) | Un vrai pare-feu à états dans IOS | ⭐ Bon, mais voir ci-dessous |
+
+Une ACL réflexive, pour l'exemple :
+
+```cisco
+R1-EDGE(config)# ip access-list extended VERS-INTERNET
+R1-EDGE(config-ext-nacl)# permit tcp any any reflect TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# permit udp any any reflect TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# evaluate TRAFIC-SORTANT
+R1-EDGE(config-ext-nacl)# deny ip any any log
+```
+
+**Là, on a une vraie gestion d'état.** Honneur à qui de droit.
+
+> ⚠️ **Alors pourquoi acheter un pare-feu ?**
+> Parce que la gestion d'état n'était que **la première** des cinq exigences du §15.1. Le ZBF de Cisco résout le point n°1 et le n°2. Il ne résout **ni le 3, ni le 4, ni le 5** — et c'est là que la discussion se termine.
+>
+> Il y a aussi un argument de terrain qu'aucune fiche technique ne dit : activer sérieusement l'inspection d'état sur un routeur généraliste **effondre son débit**, parce que le traitement quitte le chemin accéléré matériel pour retomber sur le processeur principal. Un routeur qui acheminait 1 Gbit/s sans effort tombe à quelques centaines de Mbit/s. Sur un pare-feu, ce traitement **est** le métier, et le matériel est conçu pour.
+
+---
+
+### 🧪 TP 13 — Prouver l'absence de mémoire
+
+**🎯 Objectif**
+Écrire une ACL sur R1, constater qu'elle casse la navigation, la « réparer » en ouvrant les ports hauts, puis **mesurer le trou** qu'on vient de créer. Enfin, faire la même chose côté FortiGate et comparer.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 7 terminé, R1 opérationnel
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Poser l'ACL « sécurisée » sur R1**
+
+On applique l'exigence n°2 à la lettre : rien n'entre depuis Internet.
+
+```cisco
+R1-EDGE# configure terminal
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip access-group DEPUIS-INTERNET in
+R1-EDGE(config-if)# end
+```
+
+Sous Linux :
+
+```bash
+root@r1-edge:~# iptables -A FORWARD -i eth0 -j LOG --log-prefix "ACL-DENY: "
+root@r1-edge:~# iptables -A FORWARD -i eth0 -j DROP
+```
+
+**Étape 2 — Constater les dégâts**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -m 10 http://neverssl.com
+curl: (28) Connection timed out
+```
+
+**La navigation est morte.** Pourtant tu n'as rien bloqué en sortie : c'est le **retour** qui ne passe plus.
+
+Sur R1, regarde les compteurs :
+
+```cisco
+R1-EDGE# show ip access-lists DEPUIS-INTERNET
+```
+```
+Extended IP access list DEPUIS-INTERNET
+    10 deny ip any any log (247 matches)
+```
+
+247 paquets jetés — ce sont **les réponses aux requêtes de tes propres utilisateurs**.
+
+> 🧠 **Tu viens de vivre le problème du §1.6 depuis l'autre côté.** Sur le FortiGate, tu n'as jamais eu à y penser : la table de sessions s'en occupait. Ici, il n'y a pas de table.
+
+**Étape 3 — La « réparation » naïve**
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# no deny ip any any log
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# permit udp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# end
+```
+
+Depuis le PC :
+
+```bash
+user@pc-lan:~$ curl -m 10 -I http://neverssl.com
+HTTP/1.1 200 OK
+```
+
+**Ça remarche.** 🎉 … et c'est précisément le problème.
+
+**Étape 4 — Mesurer le trou**
+
+Depuis une machine du réseau de transit (qui joue « Internet »), lance un service quelconque sur le PC du LAN, puis essaie de l'atteindre.
+
+Sur le PC du LAN, ouvre un service sur un port haut :
+
+```bash
+user@pc-lan:~$ python3 -m http.server 8080
+```
+
+Depuis la machine « externe » :
+
+```bash
+attaquant@ext:~$ curl http://<adresse-publique-de-R1>:8080
+```
+
+> ⚠️ Selon ton NAT, tu devras peut-être tester depuis le réseau de transit directement vers `192.168.10.10:8080`. L'important est de constater que **l'ACL ne s'y oppose pas** : le port 8080 est > 1023, donc `permit`.
+
+**Un scan le montre encore mieux :**
+
+```bash
+attaquant@ext:~$ nmap -p 1024-10000 192.168.10.10
+```
+
+Tous les ports ouverts au-dessus de 1023 sont **visibles et joignables**. Ton ACL les autorise explicitement.
+
+**Étape 5 — Essayer `established`**
+
+```cisco
+R1-EDGE(config)# ip access-list extended DEPUIS-INTERNET
+R1-EDGE(config-ext-nacl)# no permit tcp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# no permit udp any 192.168.0.0 0.0.255.255 gt 1023
+R1-EDGE(config-ext-nacl)# permit tcp any 192.168.0.0 0.0.255.255 established
+R1-EDGE(config-ext-nacl)# deny ip any any log
+R1-EDGE(config-ext-nacl)# end
+```
+
+La navigation web fonctionne toujours, et le port 8080 n'est plus joignable par une connexion normale. **C'est un vrai progrès.**
+
+**Étape 6 — Contourner `established`**
+
+Maintenant, la démonstration. Depuis la machine externe :
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+```
+
+`-sA` est le **scan ACK** : `nmap` envoie des paquets dont le bit ACK est positionné, sans qu'aucune connexion n'existe.
+
+Ces paquets **traversent l'ACL**, parce qu'`established` ne regarde que ce bit. `nmap` peut ainsi cartographier ce que ton ACL filtre et ce qu'elle laisse passer — c'est exactement ce pour quoi ce mode de scan a été conçu.
+
+> 🧠 **Ce que tu viens de démontrer** : `established` juge sur l'**apparence** d'un paquet, pas sur la **réalité** d'une conversation. Un attaquant qui fabrique ses paquets n'est pas gêné.
+
+**Étape 7 — La même chose côté FortiGate**
+
+Retire tout de R1 :
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# no ip access-group DEPUIS-INTERNET in
+R1-EDGE(config-if)# end
+```
+
+Sur le FortiGate, tu n'as **rien à faire**. Aucune politique `port1 → port2` n'existe, donc rien n'entre. Et la navigation fonctionne, grâce à la seule politique `LAN → Internet` du TP 7.
+
+Refais le scan ACK :
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+```
+
+Cette fois, **rien ne passe**. Vérifie pourquoi :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.10.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Tu verras des messages du type :
+
+```
+msg="no session matched, drop"
+```
+ou
+```
+msg="Denied by forward policy check (policy 0)"
+```
+
+**Le pare-feu ne demande pas si le paquet ressemble à une réponse. Il demande s'il correspond à une session qu'il connaît.** Il n'y en a pas, donc il jette.
+
+N'oublie pas :
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+---
+
+**✅ Résultat attendu**
+
+| Test | R1 + ACL stricte | R1 + ports hauts | R1 + `established` | FortiGate |
+|---|---|---|---|---|
+| Navigation web | ❌ cassée | ✅ | ✅ | ✅ |
+| Port 8080 exposé | ✅ protégé | ❌ **ouvert** | ✅ protégé | ✅ protégé |
+| Scan ACK (`nmap -sA`) | ✅ bloqué | ❌ passe | ❌ **passe** | ✅ **bloqué** |
+| Nombre de règles écrites | 1 | 3 | 2 | **0** de plus |
+
+Lis la dernière ligne : sur le pare-feu, tu n'as écrit **aucune** règle supplémentaire. La protection est le **comportement par défaut**.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Une ACL sans état oblige à choisir** entre « la navigation marche » et « rien n'entre ». Les deux sont impossibles ensemble.
+2. **La « réparation » par les ports hauts ouvre 64 512 portes.** Ce n'est pas une mauvaise configuration : c'est la seule possible.
+3. **`established` juge sur un bit**, donc se contourne avec un paquet fabriqué.
+4. **Le pare-feu à états ne juge pas l'apparence mais l'appartenance à une session réelle.**
+5. **Et il le fait sans qu'on écrive quoi que ce soit** — c'est le défaut, pas une option.
+
+---
+
+### 15.5 🧠 Limite n°2 : le port n'est pas l'application
+
+Passons à l'exigence n°3 : **interdire le peer-to-peer**.
+
+**Avec R1**, tu vas chercher les ports de BitTorrent. La documentation dit 6881-6889. Tu écris :
+
+```cisco
+R1-EDGE(config)# ip access-list extended VERS-INTERNET
+R1-EDGE(config-ext-nacl)# deny tcp any any range 6881 6889
+R1-EDGE(config-ext-nacl)# permit ip any any
+```
+
+**Et ça ne sert à rien.** Voici pourquoi, et c'est instructif :
+
+| Ce que fait BitTorrent | Ce que ton ACL peut y faire |
+|---|---|
+| Utilise des ports **aléatoires** configurables | Rien — tu ne peux pas tous les bloquer |
+| Sait passer en **HTTPS sur le port 443** | Rien — tu ne vas pas bloquer le web |
+| Utilise **UDP** et le protocole µTP | Rien |
+| Chiffre son trafic (*protocol encryption*) | Rien |
+| Fonctionne en **DHT**, sans serveur central | Rien |
+
+Pour bloquer BitTorrent avec des ports, il faudrait **fermer tout Internet sauf une liste blanche**. Ce qui est une stratégie défendable dans un environnement industriel, et impraticable ailleurs.
+
+**Avec le FortiGate**, le contrôle applicatif (§14.4) reconnaît **la signature du protocole**, quel que soit le port :
+
+```
+config application list
+    edit "APP-Bloquer-P2P"
+        config entries
+            edit 1
+                set category 2          ← catégorie P2P entière
+                set action block
+                set log enable
+            next
+        end
+    next
+end
+```
+
+Une catégorie, une règle. Et elle attrape BitTorrent sur le port 443 chiffré aussi bien que sur le 6881.
+
+> 🧠 **La différence de nature**
+> R1 demande : « **par quelle porte** ce paquet passe-t-il ? »
+> Le FortiGate demande : « **qu'est-ce que** ce paquet transporte ? »
+>
+> La première question a une réponse que l'attaquant contrôle. La seconde, non.
+
+### 15.6 🧠 Limite n°3 : le contenu est invisible
+
+Exigence n°4 : **aucun exécutable téléchargé**.
+
+**Avec R1** : impossible. Point final. Un routeur achemine des paquets, il ne reconstitue pas de fichiers, il n'a pas de signatures antivirus, et il n'a pas la puissance de calcul pour analyser un flux. Il n'existe aucune configuration IOS qui réponde à cette exigence.
+
+Ce n'est pas une question de compétence de l'administrateur ni de version d'IOS : la fonction n'existe pas.
+
+**Avec le FortiGate** : c'est le TP 12, étape 7. Tu l'as déjà fait, et tu as même bloqué un exécutable déguisé en `.jpg` — parce que le pare-feu lit les octets, pas l'extension.
+
+| Menace | R1 | FortiGate |
+|---|---|---|
+| Virus dans un téléchargement | ❌ invisible | ✅ antivirus |
+| Site d'hameçonnage | ❌ invisible | ✅ filtrage web |
+| Exécutable déguisé | ❌ invisible | ✅ filtrage de fichiers |
+| Tentative d'injection SQL | ❌ invisible | ✅ IPS |
+| Poste contactant son serveur de commande | ❌ invisible | ✅ filtrage DNS botnet |
+
+### 15.7 🧠 Limite n°4 : une adresse IP n'est pas une personne
+
+Exigence n°5 : **le stagiaire n'a pas les droits du directeur**.
+
+**Avec R1**, ta règle parle d'adresses :
+
+```cisco
+R1-EDGE(config)# permit ip host 192.168.10.47 any
+```
+
+Cette règle protège **une prise réseau**, pas une personne. Elle se trompe dès que :
+- le stagiaire s'assoit au bureau du directeur ;
+- le DHCP attribue une autre adresse ;
+- quelqu'un configure son poste en adresse fixe ;
+- l'utilisateur se connecte en Wi-Fi plutôt qu'en filaire.
+
+**Avec le FortiGate**, la règle parle de personnes :
+
+```
+config firewall policy
+    edit 20
+        set groups "Direction"      ← un groupe d'utilisateurs
+        ...
+    next
+end
+```
+
+L'utilisateur s'authentifie (section 17), et la politique le suit **où qu'il se branche**. C'est le sujet de la partie VI.
+
+---
+
+### 🧪 TP 14 — Le bilan, exigence par exigence
+
+**🎯 Objectif**
+Reprendre les cinq exigences du §15.1 et établir, mesure à l'appui, ce que chaque équipement sait faire. C'est le tableau que tu montreras à ta direction.
+
+**⏱️ Durée** : 20 minutes
+
+**📋 Prérequis** : TP 13 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Exigence n°1 : la navigation fonctionne**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -s -o /dev/null -w "%{http_code}\n" http://neverssl.com
+200
+```
+
+✅ R1 sait faire. ✅ Le FortiGate aussi.
+
+**Étape 2 — Exigence n°2 : rien n'entre**
+
+```bash
+attaquant@ext:~$ sudo nmap -sA -p 1-1000 192.168.10.10
+attaquant@ext:~$ sudo nmap -sS -p 1-1000 192.168.10.10
+```
+
+⚠️ R1 : partiellement (échoue sur le scan ACK). ✅ Le FortiGate : oui.
+
+**Étape 3 — Exigence n°3 : pas de peer-to-peer**
+
+Simule un trafic sur un port non standard. Sur le serveur DMZ :
+
+```bash
+user@srv-dmz:~$ python3 -m http.server 6881
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -m 5 http://192.168.20.10:6881
+```
+
+Puis change de port et recommence sur `9999`. **Une ACL par port ne suivra jamais.**
+
+❌ R1 : non. ✅ Le FortiGate : oui, par signature applicative.
+
+**Étape 4 — Exigence n°4 : pas d'exécutable**
+
+Reprends le test du TP 12 étape 7, avec le faux `photo.jpg` :
+
+```bash
+user@pc-lan:~$ curl -O http://192.168.20.10/photo.jpg
+```
+
+❌ R1 : structurellement impossible. ✅ Le FortiGate : bloqué, tu l'as vu.
+
+**Étape 5 — Exigence n°5 : par utilisateur**
+
+```
+FGT-01 # diagnose firewall auth list
+```
+
+❌ R1 : ne connaît que des adresses. ✅ Le FortiGate : section 17.
+
+**Étape 6 — Le tableau de synthèse**
+
+Remplis-le toi-même à partir de tes propres mesures :
+
+| # | Exigence | R1 + ACL | R1 + ZBF | FortiGate |
+|---|---|---|---|---|
+| 1 | La navigation fonctionne | ✅ | ✅ | ✅ |
+| 2 | Rien n'entre depuis Internet | ⚠️ contournable | ✅ | ✅ |
+| 3 | Pas de peer-to-peer | ❌ | ❌ | ✅ |
+| 4 | Pas d'exécutable téléchargé | ❌ | ❌ | ✅ |
+| 5 | Droits par utilisateur | ❌ | ❌ | ✅ |
+| | **Score** | **1,5 / 5** | **2 / 5** | **5 / 5** |
+
+---
+
+**✅ Résultat attendu**
+
+Tu disposes d'un tableau **que tu as mesuré toi-même**, et non recopié d'une plaquette commerciale. C'est ce qui fait la différence quand quelqu'un te demande de justifier une dépense.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Un routeur avec des ACL couvre environ 30 % du besoin de sécurité d'une PME.** Ce n'est pas rien, et ce n'est pas assez.
+2. **Les trois exigences qu'il ne couvre pas sont précisément les menaces d'aujourd'hui** : applications qui se camouflent, contenu malveillant, usurpation d'identité.
+3. **Le ZBF de Cisco comble la première lacune**, pas les autres.
+4. **Le pare-feu protège par défaut**, là où l'ACL protège par énumération — et une énumération est toujours incomplète.
+
+---
+
+### 15.8 Alors, où mettre la frontière ?
+
+Terminons par ce qui se fait vraiment en entreprise, parce que la réponse n'est pas « jetez le routeur ».
+
+**L'architecture recommandée**, celle de notre laboratoire :
+
+```
+Internet ──► [Routeur de bordure] ──► [Pare-feu] ──► Réseaux internes
+                    │                      │
+            ACL grossière           Politique de sécurité
+            anti-bruit              complète + inspection
+```
+
+**Ce qu'on met sur le routeur :**
+- Le routage vers l'opérateur (BGP, routes statiques)
+- Une ACL **anti-bruit** : filtrage des adresses non routables (*bogons*), anti-usurpation (RFC 2827), blocage des protocoles manifestement illégitimes
+- Éventuellement une limitation de débit contre les inondations volumétriques
+
+**Ce qu'on met sur le pare-feu :**
+- Toute la politique de sécurité
+- Le NAT
+- Les profils d'inspection
+- L'identité des utilisateurs
+- Les VPN
+
+> 💡 **Astuce — pourquoi cette répartition et pas une autre**
+> Une ACL sur le routeur coûte presque **zéro** en performance et élimine une part importante du bruit de fond d'Internet. Faire filtrer ce même bruit par le pare-feu lui coûterait des sessions et du processeur pour du trafic qui n'avait aucune chance d'être légitime.
+>
+> Autrement dit : **le routeur fait le tri grossier à coût nul, le pare-feu fait le travail fin sur ce qui reste.** Chacun à son étage.
+
+**Une ACL anti-bruit type**, à poser sur R1 :
+
+```cisco
+R1-EDGE(config)# ip access-list extended ANTI-BRUIT
+ ! Anti-usurpation : personne sur Internet ne doit prétendre être chez nous
+R1-EDGE(config-ext-nacl)# deny ip 192.168.0.0 0.0.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 10.0.0.0 0.255.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 172.16.0.0 0.15.255.255 any log
+ ! Adresses qui n'ont rien à faire sur Internet
+R1-EDGE(config-ext-nacl)# deny ip 127.0.0.0 0.255.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 169.254.0.0 0.0.255.255 any log
+R1-EDGE(config-ext-nacl)# deny ip 224.0.0.0 15.255.255.255 any log
+ ! Le reste passe, le pare-feu prendra la suite
+R1-EDGE(config-ext-nacl)# permit ip any any
+R1-EDGE(config-ext-nacl)# exit
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip access-group ANTI-BRUIT in
+```
+
+> 🧠 **Comprendre l'anti-usurpation**
+> La première règle mérite qu'on s'y arrête. Un paquet qui **arrive d'Internet** en prétendant venir de `192.168.10.10` est forcément un mensonge : cette adresse est chez toi, à l'intérieur. Personne sur Internet ne peut légitimement l'utiliser comme source.
+>
+> C'est le principe de la **RFC 2827** (*Network Ingress Filtering*), et c'est l'une des rares mesures que tout opérateur devrait appliquer. Elle coûte trois lignes et elle élimine une famille entière d'attaques par usurpation.
+>
+> Note que c'est exactement ce que fait le **RPF** du §11.4 sur le FortiGate — mais l'appliquer aussi sur le routeur évite au pare-feu de traiter ces paquets du tout.
+
+### 15.9 Ce qu'il faut répondre quand on te pose la question
+
+Pour finir, la version courte, celle qui tient en réunion :
+
+> « Le routeur sait dire **d'où vient** un paquet et **où il va**. Le pare-feu sait dire **ce que c'est**, **qui l'envoie** et **s'il est dangereux**.
+>
+> Aujourd'hui, les menaces n'arrivent plus par des ports inhabituels : elles arrivent par le port 443, dans un fichier Word que quelqu'un a ouvert. Un routeur ne voit rien de tout ça — non pas parce qu'il est mal configuré, mais parce que ce n'est pas son métier.
+>
+> On garde le routeur : il achemine vite et il fait le tri grossier. On ajoute le pare-feu : il fait le travail que le routeur ne peut structurellement pas faire. »
+
+---
+
+## 16. L'inspection SSL/TLS
+
+Plus de 90 % du trafic web est aujourd'hui chiffré. Cela veut dire une chose simple et brutale : **sans inspection SSL, la moitié des profils de la section 14 ne voient presque rien**.
+
+C'est aussi le sujet le plus délicat du tutoriel, parce qu'il touche à la vie privée et qu'il casse des choses si on le déploie mal. On va donc être précis.
+
+### 16.1 Le problème
+
+Quand ton utilisateur consulte `https://exemple.com`, le pare-feu voit passer un flux chiffré. Il ne peut pas savoir :
+
+- quelle **page** est consultée (il voit `exemple.com`, pas `/page-interdite`) ;
+- quel **fichier** est téléchargé ;
+- si ce fichier contient un **virus** ;
+- si la requête est une **injection SQL**.
+
+Le chiffrement protège l'utilisateur des regards indiscrets — y compris celui de son propre pare-feu.
+
+### 16.2 Les deux niveaux d'inspection
+
+**① L'inspection de certificat** (*certificate-inspection*)
+
+Le pare-feu **ne déchiffre rien**. Il lit uniquement les parties **en clair** de la négociation TLS :
+- le **SNI** (*Server Name Indication*), c'est-à-dire le nom du site demandé ;
+- le **certificat** présenté par le serveur.
+
+| ✅ Ce qu'elle permet | ❌ Ce qu'elle ne permet pas |
+|---|---|
+| Filtrage web par **domaine** | Filtrage par URL complète |
+| Contrôle applicatif partiel | Antivirus |
+| Blocage de certificats invalides | IPS sur le contenu |
+| **Aucun impact sur la vie privée** | DLP |
+
+**② L'inspection profonde** (*deep-inspection*)
+
+Le pare-feu **déchiffre**, inspecte, puis **rechiffre**. Techniquement, il réalise une interception au milieu — un *man-in-the-middle* — mais **avec ton autorisation** et avec un certificat que tes postes ont appris à considérer comme fiable.
+
+```
+Poste ──TLS 1──► [FortiGate déchiffre / inspecte / rechiffre] ──TLS 2──► Serveur
+```
+
+| ✅ Ce qu'elle permet | ❌ Ce qu'elle coûte |
+|---|---|
+| **Tout** : antivirus, IPS, DLP, URL complète | Consommation processeur importante |
+| Visibilité totale sur le trafic | Déploiement d'un certificat sur tous les postes |
+| | Casse les applications à épinglage de certificat |
+| | **Questions juridiques et éthiques réelles** |
+
+### 16.3 🧠 Comprendre : comment ça marche vraiment
+
+Le mécanisme mérite d'être compris, parce qu'il explique tous les problèmes qu'on rencontre ensuite.
+
+**Sans inspection** : ton navigateur vérifie que le certificat de `exemple.com` est signé par une autorité de certification (AC) qu'il connaît. Si oui, cadenas vert.
+
+**Avec inspection profonde** :
+1. Ton navigateur demande `exemple.com`
+2. Le FortiGate intercepte, et va **lui-même** chercher le vrai certificat auprès du serveur
+3. Il vérifie ce certificat pour son propre compte
+4. Il **fabrique à la volée** un certificat pour `exemple.com`, qu'il signe **avec sa propre AC**
+5. Il présente ce faux certificat à ton navigateur
+
+**D'où la condition indispensable** : ton navigateur doit **faire confiance à l'AC du FortiGate**. Sinon il affiche une grosse alerte de sécurité — ce qui est exactement son travail.
+
+> ⚠️ **Attention — c'est la source n°1 des problèmes en déploiement**
+> Si tu actives l'inspection profonde **sans avoir d'abord déployé le certificat de l'AC** sur les postes, **tous tes utilisateurs reçoivent une alerte de sécurité sur tous les sites**. Le standard téléphonique explose en dix minutes.
+>
+> **L'ordre est impératif :**
+> 1. Déployer le certificat de l'AC sur les postes
+> 2. Vérifier sur quelques machines pilotes
+> 3. **Ensuite seulement** activer l'inspection
+
+### 16.4 L'épinglage de certificat : ce qui va casser
+
+Certaines applications **refusent** par principe tout certificat qui n'est pas celui qu'elles attendent, même signé par une AC de confiance. C'est le *certificate pinning*, et c'est une bonne pratique de sécurité — qui entre en collision frontale avec l'inspection.
+
+**Ce qui casse en général :**
+
+| Catégorie | Exemples |
+|---|---|
+| Banque et paiement | Applications bancaires, PayPal |
+| Systèmes d'exploitation | Windows Update, Apple, mises à jour Android |
+| Messageries | WhatsApp, Signal, Telegram |
+| Outils de développement | `git`, `npm`, `pip`, Docker |
+| Antivirus et sécurité | Leurs propres mises à jour |
+
+**La solution est l'exemption**, et FortiOS fournit une liste maintenue par Fortinet :
+
+```
+config firewall ssl-ssh-profile
+    edit "Inspection-Profonde"
+        set ssl-exempt-webserver enable
+        config ssl-exempt
+            edit 1
+                set type fortiguard-category
+                set fortiguard-category 31       ← Finance et banque
+            next
+            edit 2
+                set type address
+                set address "FQDN-Windows-Update"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce professionnelle** : commence toujours par exempter les catégories **Finance**, **Santé** et **Administration publique**. C'est à la fois une nécessité technique et, dans beaucoup de pays, une **obligation légale** — inspecter les échanges bancaires ou médicaux de tes salariés t'expose personnellement.
+
+### 16.5 ⚖️ Le volet juridique et éthique
+
+Je ne peux pas traiter cette section sans en parler, parce que c'est un sujet où un administrateur peut se mettre en tort sans le savoir.
+
+Déchiffrer le trafic de tes utilisateurs, c'est **lire leurs communications**. Dans la plupart des pays, y compris en France et dans l'Union européenne, cela implique :
+
+- **Informer** les utilisateurs, formellement et par écrit (charte informatique, note de service, règlement intérieur) ;
+- **Consulter** les instances représentatives du personnel quand elles existent ;
+- **Justifier** la mesure par un objectif de sécurité légitime et proportionné ;
+- **Exempter** ce qui relève de la vie privée et du secret : banque, santé, messageries personnelles, activité syndicale ;
+- **Documenter** le traitement (au titre du RGPD en Europe).
+
+> 🚨 **Danger** : activer l'inspection profonde sans ces précautions expose l'entreprise **et toi personnellement**. « J'ai fait ce qu'on m'a demandé » n'est pas une défense solide.
+>
+> Ce n'est pas une raison de ne pas le faire — c'est une raison de le faire **correctement**, avec une trace écrite de la décision. Demande la validation par écrit, et garde-la.
+
+### 16.6 Les profils prédéfinis
+
+FortiOS fournit deux profils prêts à l'emploi :
+
+| Profil | Ce qu'il fait |
+|---|---|
+| `certificate-inspection` | Inspection de certificat uniquement. ⭐ Le défaut sûr |
+| `deep-inspection` | Inspection profonde, avec les exemptions Fortinet de base |
+
+C'est `certificate-inspection` que tu as attaché à tes politiques depuis le TP 11 — ce qui explique pourquoi le filtrage d'URL du TP 12 ne fonctionnait qu'en HTTP.
+
+---
+
+### 🧪 TP 15 — Activer l'inspection profonde proprement
+
+**🎯 Objectif**
+Exporter l'AC du FortiGate, l'installer sur le PC, activer l'inspection profonde, vérifier qu'elle fonctionne, et observer le certificat substitué. Puis constater ce qui casse.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 12 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Voir l'AC du pare-feu**
+
+```
+FGT-01 # config vpn certificate local
+FGT-01 (local) # show | grep "edit"
+FGT-01 (local) # end
+```
+
+Tu trouves `Fortinet_CA_SSL`, l'autorité utilisée par défaut pour signer les certificats substitués.
+
+**Étape 2 — Exporter le certificat de l'AC**
+
+En CLI :
+
+```
+FGT-01 # execute vpn certificate local export tftp Fortinet_CA_SSL fortinet_ca.cer 192.168.10.10
+```
+
+Ou, bien plus simple, **par l'interface web** : `System → Certificates`, sélectionne `Fortinet_CA_SSL`, puis `Download`.
+
+> ⚠️ **Attention** : en production, **on n'utilise pas l'AC d'usine**. Chaque FortiGate sort avec la même, ce qui veut dire que n'importe qui possédant un FortiGate peut forger un certificat que tes postes accepteront. On génère sa propre AC, ou on utilise celle de son domaine Active Directory. C'est une différence majeure entre un lab et une production.
+
+**Étape 3 — Installer l'AC sur le PC**
+
+Sur Linux :
+
+```bash
+user@pc-lan:~$ sudo cp fortinet_ca.cer /usr/local/share/ca-certificates/fortinet_ca.crt
+user@pc-lan:~$ sudo update-ca-certificates
+```
+
+Sur Windows :
+
+```cmd
+C:\Users\Lab> certutil -addstore -f "Root" fortinet_ca.cer
+```
+
+> 💡 **Astuce en production** : on ne fait évidemment pas ça poste par poste. On déploie par **GPO** dans un domaine Active Directory, ou par la solution de gestion de parc. Sans automatisation, l'inspection profonde n'est pas déployable au-delà de vingt machines.
+
+**Étape 4 — Créer un profil d'inspection profonde**
+
+```
+FGT-01 # config firewall ssl-ssh-profile
+FGT-01 (ssl-ssh-profile) # edit "Deep-Lab"
+FGT-01 (Deep-Lab) # set comment "Inspection profonde du laboratoire"
+FGT-01 (Deep-Lab) # config https
+FGT-01 (https) # set ports 443
+FGT-01 (https) # set status deep-inspection
+FGT-01 (https) # end
+FGT-01 (Deep-Lab) # set server-cert-mode re-sign
+FGT-01 (Deep-Lab) # set caname "Fortinet_CA_SSL"
+FGT-01 (Deep-Lab) # set untrusted-caname "Fortinet_CA_Untrusted"
+FGT-01 (Deep-Lab) # next
+FGT-01 (ssl-ssh-profile) # end
+```
+
+**Étape 5 — Ajouter les exemptions indispensables**
+
+```
+FGT-01 # config firewall ssl-ssh-profile
+FGT-01 (ssl-ssh-profile) # edit "Deep-Lab"
+FGT-01 (Deep-Lab) # config ssl-exempt
+FGT-01 (ssl-exempt) # edit 1
+FGT-01 (1) # set type fortiguard-category
+FGT-01 (1) # set fortiguard-category 31
+FGT-01 (1) # next
+FGT-01 (ssl-exempt) # end
+FGT-01 (Deep-Lab) # next
+FGT-01 (ssl-ssh-profile) # end
+```
+
+**Étape 6 — L'attacher à la politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set ssl-ssh-profile "Deep-Lab"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 7 — Observer le certificat substitué**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ echo | openssl s_client -connect www.fortinet.com:443 2>/dev/null | openssl x509 -noout -issuer -subject
+```
+```
+issuer=C = US, ST = California, L = Sunnyvale, O = Fortinet, OU = Certificate Authority, CN = FortiGate CA
+subject=CN = www.fortinet.com
+```
+
+**Regarde bien l'émetteur.** Le sujet est bien `www.fortinet.com`, mais le certificat est signé par **ton FortiGate**, pas par l'autorité d'origine.
+
+**Tu viens de voir l'interception se produire.** Et ton navigateur l'accepte, parce que tu lui as appris à faire confiance à cette AC à l'étape 3.
+
+**Étape 8 — Vérifier que le filtrage HTTPS fonctionne maintenant**
+
+Reprends la liste d'URL du TP 12, mais teste en **HTTPS** cette fois :
+
+```bash
+user@pc-lan:~$ curl -m 10 https://example.com
+```
+
+Avec `certificate-inspection`, le blocage par domaine fonctionnait déjà. Avec `deep-inspection`, tu peux maintenant bloquer par **chemin complet** :
+
+```
+FGT-01 # config webfilter urlfilter
+FGT-01 (urlfilter) # edit 1
+FGT-01 (1) # config entries
+FGT-01 (entries) # edit 3
+FGT-01 (3) # set url "example.com/chemin-interdit"
+FGT-01 (3) # set type simple
+FGT-01 (3) # set action block
+FGT-01 (3) # next
+FGT-01 (entries) # end
+FGT-01 (1) # next
+FGT-01 (urlfilter) # end
+```
+
+**Étape 9 — Constater ce qui casse**
+
+Depuis le PC du LAN, essaie un outil à épinglage :
+
+```bash
+user@pc-lan:~$ git clone https://github.com/torvalds/linux.git --depth 1
+```
+```
+fatal: unable to access '...': SSL certificate problem: unable to get local issuer certificate
+```
+
+**C'est le §16.4 en direct.** `git` refuse le certificat substitué.
+
+Deux solutions, et l'une des deux est mauvaise :
+
+```bash
+# ✅ Bonne solution : faire confiance à l'AC (déjà fait à l'étape 3 pour le système,
+#    mais git peut avoir son propre magasin)
+user@pc-lan:~$ git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
+
+# ❌ Mauvaise solution, à ne JAMAIS faire en production
+user@pc-lan:~$ git config --global http.sslVerify false
+```
+
+> 🚨 **Danger** : `sslVerify false` désactive **toute** vérification, y compris contre une vraie attaque. C'est ce que font beaucoup de développeurs quand l'inspection les gêne — et c'est ainsi qu'une mesure de sécurité en détruit une autre.
+>
+> Si tes développeurs commencent à désactiver la vérification TLS partout, **exempte-les** plutôt : l'inspection qui pousse les gens à se rendre vulnérables est une inspection contre-productive.
+
+**Étape 10 — Mesurer le coût**
+
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose sys top 5 20
+```
+
+Génère du trafic HTTPS et observe la charge. Sur une VM à 1 vCPU, l'inspection profonde est très visible.
+
+**Étape 11 — Revenir à l'inspection de certificat**
+
+Pour la suite du tutoriel, on repasse au profil léger :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- L'AC du FortiGate est installée sur le PC
+- `openssl s_client` montre un certificat émis par **FortiGate CA**
+- Le blocage par URL complète fonctionne en HTTPS
+- `git clone` échoue, et tu sais pourquoi
+- La charge processeur monte visiblement
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Sans inspection SSL, l'antivirus et l'IPS ne voient presque rien** du trafic web moderne.
+2. **Deux niveaux** : certificat (léger, sans déchiffrement) et profond (tout voir, tout casser).
+3. **L'ordre de déploiement est impératif** : le certificat sur les postes AVANT l'activation.
+4. **L'épinglage casse**, et la liste des victimes est prévisible.
+5. **On n'utilise jamais l'AC d'usine en production.**
+6. **Il y a un volet juridique**, et il n'est pas optionnel.
+7. **Une inspection trop agressive pousse les gens à désactiver leur propre sécurité.**
+
+---
+
+# Partie VI — Les utilisateurs
+
+---
+
+## 17. Authentification et gestion des utilisateurs
+
+C'est la réponse à la limite n°4 du §15.7 : faire des règles qui parlent de **personnes** plutôt que d'adresses IP.
+
+### 17.1 Pourquoi c'est une rupture
+
+Une politique classique dit : « `192.168.10.47` peut accéder au serveur RH ». Cette règle protège **une prise réseau**. Elle se trompe dès que quelqu'un change de bureau, dès que le DHCP redistribue, dès qu'un poste passe en Wi-Fi.
+
+Une politique authentifiée dit : « les membres du groupe **RH** peuvent accéder au serveur RH ». La règle suit la personne, où qu'elle se branche et quel que soit son poste.
+
+C'est aussi ce qui rend les **journaux exploitables** : « `192.168.10.47` a téléchargé 40 Go » n'accuse personne ; « `marie.durand` a téléchargé 40 Go » est une information.
+
+### 17.2 Les sources d'identité
+
+| Source | Où vivent les comptes | Usage typique |
+|---|---|---|
+| **Local** | Sur le FortiGate | Petits sites, comptes de service, VPN |
+| **LDAP / Active Directory** | Sur un contrôleur de domaine | ⭐ Le cas d'entreprise standard |
+| **RADIUS** | Sur un serveur RADIUS | Wi-Fi 802.1X, VPN, NAC |
+| **FSSO** | AD, en **transparent** | ⭐ Voir §17.6 |
+| **SAML** | Fournisseur d'identité externe | Entra ID, Okta, authentification moderne |
+| **Certificat (PKI)** | Certificat client | Environnements à forte exigence |
+
+### 17.3 Les utilisateurs locaux
+
+```
+config user local
+    edit "marie.durand"
+        set type password
+        set passwd "MotDePasseSolide2026!"
+        set status enable
+    next
+end
+
+config user group
+    edit "GRP-Direction"
+        set member "marie.durand"
+    next
+end
+```
+
+> 💡 **Astuce** : les comptes locaux ne se gèrent pas au-delà d'une vingtaine d'utilisateurs. Ils restent utiles pour les **comptes de service**, les accès VPN d'un prestataire, et comme **solution de secours** quand l'annuaire est injoignable — ce dernier point est important : un pare-feu dont l'authentification dépend entièrement d'un AD en panne devient inadministrable au pire moment.
+
+### 17.4 L'intégration LDAP / Active Directory
+
+```
+config user ldap
+    edit "AD-Entreprise"
+        set server "192.168.10.5"
+        set cnid "sAMAccountName"
+        set dn "dc=entreprise,dc=local"
+        set type regular
+        set username "cn=svc-fortigate,ou=Services,dc=entreprise,dc=local"
+        set password "MotDePasseDuCompteDeService"
+        set secure ldaps
+        set port 636
+        set ca-cert "CA-Entreprise"
+    next
+end
+```
+
+Décryptage des paramètres qui posent problème :
+
+| Paramètre | Ce qu'il faut savoir |
+|---|---|
+| `cnid` | L'attribut d'identification. **`sAMAccountName` pour AD**, `uid` pour OpenLDAP |
+| `dn` | La racine de recherche. Une erreur ici et rien ne remonte |
+| `type regular` | Le pare-feu se connecte avec un compte de service pour **chercher** les utilisateurs |
+| `secure ldaps` | ⭐ Chiffre la connexion. **Sans ça, les mots de passe circulent en clair** |
+
+> 🚨 **Danger** : LDAP en clair (port 389) fait transiter les identifiants **en clair sur ton réseau**. N'importe qui avec un accès au segment peut les capturer. Utilise **toujours** `ldaps` (636) ou STARTTLS. Ce n'est pas une bonne pratique parmi d'autres : c'est la différence entre une authentification et une distribution de mots de passe.
+
+**Tester la connexion** — la commande qui économise des heures :
+
+```
+FGT-01 # diagnose test authserver ldap AD-Entreprise marie.durand SonMotDePasse
+```
+
+Elle te dit immédiatement si le problème vient de l'annuaire, du compte de service, du `dn` ou du mot de passe.
+
+**Importer un groupe de l'annuaire :**
+
+```
+config user group
+    edit "GRP-Direction-AD"
+        set member "AD-Entreprise"
+        config match
+            edit 1
+                set server-name "AD-Entreprise"
+                set group-name "CN=Direction,OU=Groupes,DC=entreprise,DC=local"
+            next
+        end
+    next
+end
+```
+
+### 17.5 RADIUS
+
+```
+config user radius
+    edit "RADIUS-NPS"
+        set server "192.168.10.6"
+        set secret "SecretPartage2026"
+        set auth-type auto
+        set nas-ip 192.168.10.1
+    next
+end
+```
+
+```
+FGT-01 # diagnose test authserver radius RADIUS-NPS pap marie.durand SonMotDePasse
+```
+
+> 💡 **Astuce** : RADIUS peut renvoyer des **attributs** en plus du verdict — notamment le groupe d'appartenance, via l'attribut `Fortinet-Group-Name`. C'est ainsi qu'on fait de l'attribution de droits dynamique sans dupliquer les groupes sur le pare-feu.
+
+### 17.6 🧠 FSSO : l'authentification que l'utilisateur ne voit pas
+
+C'est la fonction qui change le plus la vie des utilisateurs, et la moins comprise.
+
+**Le problème** : demander à quelqu'un de s'authentifier une deuxième fois sur le pare-feu, alors qu'il vient d'ouvrir sa session Windows, est mal vécu — et à juste titre.
+
+**La solution FSSO** (*Fortinet Single Sign-On*) : le pare-feu **apprend** qui est connecté sans jamais rien demander.
+
+**Comment ?** Un agent installé sur les contrôleurs de domaine surveille les **journaux d'ouverture de session** Active Directory. Quand `marie.durand` ouvre sa session sur le poste `192.168.10.47`, l'agent le voit et prévient le FortiGate : « l'adresse `192.168.10.47` est maintenant `marie.durand`, membre des groupes X, Y, Z ».
+
+Le pare-feu maintient alors une table adresse ↔ utilisateur, mise à jour en permanence.
+
+**Résultat** : tes politiques parlent de groupes AD, et l'utilisateur ne voit **jamais** de demande d'authentification.
+
+```
+config user fsso
+    edit "FSSO-Agent"
+        set server "192.168.10.5"
+        set password "SecretDeLAgent"
+    next
+end
+
+config user group
+    edit "GRP-FSSO-Direction"
+        set group-type fsso-service
+        set member "CN=Direction,OU=Groupes,DC=entreprise,DC=local"
+    next
+end
+```
+
+Vérifier ce que le pare-feu sait :
+
+```
+FGT-01 # diagnose debug authd fsso list
+FGT-01 # diagnose firewall auth list
+```
+
+> ⚠️ **Attention — deux limites de FSSO à connaître**
+> **① Il ne fonctionne que pour les machines du domaine.** Un téléphone, une tablette, un poste invité ne produisent aucun événement d'ouverture de session AD. Il faut prévoir un mécanisme complémentaire pour eux.
+>
+> **② Il fait confiance à l'adresse IP.** Si deux personnes utilisent successivement le même poste sans fermer proprement la session, ou si une adresse change de main rapidement, l'association peut être fausse pendant un moment. C'est un compromis assumé : la transparence contre une certitude absolue.
+
+### 17.7 L'authentification par portail captif
+
+Quand FSSO ne s'applique pas, le pare-feu peut **intercepter** la première requête web et présenter une page de connexion.
+
+```
+config firewall policy
+    edit 5
+        set name "Acces-authentifie"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "NET-LAN"
+        set dstaddr "all"
+        set groups "GRP-Direction"     ← ⭐ la politique devient authentifiée
+        set service "ALL"
+        set schedule "always"
+        set action accept
+        set nat enable
+    next
+end
+```
+
+> 🧠 **Comprendre** : dès qu'une politique contient `set groups`, elle **exige** une authentification. Un utilisateur non authentifié ne correspond pas à la règle — le paquet continue vers les politiques suivantes, et finit sur l'`Implicit Deny` s'il n'en trouve pas d'autre.
+>
+> C'est cohérent avec tout ce qu'on a appris au §9.2, et ça produit un symptôme reconnaissable : « certains utilisateurs passent, d'autres non, sans logique apparente ». La logique est là — les premiers sont authentifiés.
+
+Les réglages du portail :
+
+```
+config user setting
+    set auth-timeout 480
+    set auth-timeout-type idle-timeout
+    set auth-secure-http enable
+    set auth-on-demand implicitly
+end
+```
+
+| Paramètre | Rôle |
+|---|---|
+| `auth-timeout 480` | 480 **minutes** avant de redemander |
+| `auth-timeout-type` | `idle-timeout` (inactivité) ou `hard-timeout` (absolu) |
+| `auth-secure-http` | ⭐ Force le portail en HTTPS. **Indispensable** |
+
+---
+
+### 🧪 TP 16 — Une politique qui parle de personnes
+
+**🎯 Objectif**
+Créer des utilisateurs locaux et des groupes, écrire une politique authentifiée, se connecter par le portail captif, et observer la table d'authentification. Puis constater dans les journaux la différence entre une adresse et un nom.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 7 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer deux utilisateurs**
+
+```
+FGT-01 # config user local
+FGT-01 (local) # edit "marie.durand"
+FGT-01 (marie.durand) # set type password
+FGT-01 (marie.durand) # set passwd "Direction2026!"
+FGT-01 (marie.durand) # set status enable
+FGT-01 (marie.durand) # next
+FGT-01 (local) # edit "paul.stagiaire"
+FGT-01 (paul.stagiaire) # set type password
+FGT-01 (paul.stagiaire) # set passwd "Stagiaire2026!"
+FGT-01 (paul.stagiaire) # set status enable
+FGT-01 (paul.stagiaire) # next
+FGT-01 (local) # end
+```
+
+**Étape 2 — Créer deux groupes**
+
+```
+FGT-01 # config user group
+FGT-01 (group) # edit "GRP-Direction"
+FGT-01 (GRP-Direction) # set member "marie.durand"
+FGT-01 (GRP-Direction) # next
+FGT-01 (group) # edit "GRP-Stagiaires"
+FGT-01 (GRP-Stagiaires) # set member "paul.stagiaire"
+FGT-01 (GRP-Stagiaires) # next
+FGT-01 (group) # end
+```
+
+**Étape 3 — Rendre la politique Internet authentifiée**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set groups "GRP-Direction" "GRP-Stagiaires"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 4 — Régler le portail**
+
+```
+FGT-01 # config user setting
+FGT-01 (setting) # set auth-timeout 480
+FGT-01 (setting) # set auth-timeout-type idle-timeout
+FGT-01 (setting) # set auth-secure-http enable
+FGT-01 (setting) # end
+```
+
+**Étape 5 — Tester**
+
+Depuis le PC du LAN, ouvre un navigateur vers un site en **HTTP** (le portail intercepte plus facilement) :
+
+```bash
+user@pc-lan:~$ curl -m 10 -L http://neverssl.com
+```
+
+Tu es **redirigé vers le portail d'authentification** du FortiGate. Dans un vrai navigateur, tu verras la page de connexion.
+
+Connecte-toi avec `marie.durand`. La navigation reprend.
+
+**Étape 6 — Voir la table d'authentification**
+
+```
+FGT-01 # diagnose firewall auth list
+```
+```
+192.168.10.10, marie.durand
+        type: fw, id: 0, duration: 142, idled: 12
+        expire: 28658, allow-idle: 28800
+        flag(10): auth
+        packets: 214, bytes: 38121
+        group_id: 3
+        group_name: GRP-Direction
+```
+
+**Le pare-feu associe désormais une adresse IP à une PERSONNE.** C'est toute la différence avec le §15.7.
+
+**Étape 7 — Différencier les droits**
+
+Bloquons un service pour les stagiaires uniquement. Crée une règle plus spécifique **au-dessus** :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 4
+FGT-01 (4) # set name "Stagiaires-restreints"
+FGT-01 (4) # set srcintf "port2"
+FGT-01 (4) # set dstintf "port3"
+FGT-01 (4) # set srcaddr "NET-LAN"
+FGT-01 (4) # set dstaddr "NET-DMZ"
+FGT-01 (4) # set groups "GRP-Stagiaires"
+FGT-01 (4) # set service "PING"
+FGT-01 (4) # set schedule "always"
+FGT-01 (4) # set action deny
+FGT-01 (4) # set logtraffic all
+FGT-01 (4) # next
+FGT-01 (policy) # move 4 before 2
+FGT-01 (policy) # end
+```
+
+> 🧠 Souviens-toi du §9.2 : cette règle doit être **avant** la règle générale `LAN-vers-DMZ`, sinon elle ne sera jamais lue. Tu appliques ici, sans y penser, ce que le TP 7 t'a appris.
+
+**Étape 8 — Vérifier la différence**
+
+Déconnecte l'utilisateur courant :
+
+```
+FGT-01 # diagnose firewall auth clear
+```
+
+Puis, depuis le PC, authentifie-toi en **stagiaire** et teste :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10       ← doit être bloqué
+```
+
+Recommence en **Direction** :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10       ← doit passer
+```
+
+**La même machine, la même adresse IP, deux comportements différents selon qui est connecté.** C'est exactement ce qu'un routeur ne saura jamais faire.
+
+**Étape 9 — Lire les journaux**
+
+```
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field user "paul.stagiaire"
+FGT-01 # execute log display
+```
+
+Le champ `user` apparaît dans chaque entrée. Compare avec les journaux du TP 7, où il n'y avait qu'une adresse.
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # delete 4
+FGT-01 (policy) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # unset groups
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `diagnose firewall auth list` associe l'adresse à un nom
+- La même machine se comporte différemment selon l'utilisateur connecté
+- Les journaux portent le champ `user`
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **`set groups` transforme une politique en politique authentifiée**, et un non-authentifié n'y correspond simplement pas.
+2. **La règle suit la personne**, pas la prise réseau.
+3. **FSSO authentifie sans rien demander**, en lisant les ouvertures de session AD.
+4. **LDAP doit être en LDAPS.** Sinon tu distribues des mots de passe.
+5. **`diagnose test authserver`** te dit d'où vient un échec d'authentification.
+6. **Les journaux nommés sont exploitables**, les journaux d'adresses ne le sont pas.
+
+---
+
+# Partie VII — Les VPN
+
+---
+
+## 18. VPN IPsec site-à-site
+
+Relier deux sites distants par un tunnel chiffré à travers Internet. C'est l'usage historique du VPN, et il reste le plus courant.
+
+### 18.1 Le principe
+
+```
+   Site A (Paris)                              Site B (Lyon)
+   192.168.10.0/24                             192.168.50.0/24
+        │                                            │
+   ┌────┴─────┐                                ┌─────┴────┐
+   │  FGT-01  │═══════ tunnel chiffré ═════════│  FGT-02  │
+   └────┬─────┘        à travers Internet      └─────┬────┘
+        │                                            │
+    R1-EDGE ──────────── Internet ──────────────── R2-EDGE
+```
+
+Les postes de Paris joignent ceux de Lyon **comme s'ils étaient sur le même réseau**, alors que le trafic traverse Internet — chiffré, authentifié, et illisible pour quiconque l'intercepte.
+
+### 18.2 🧠 Comprendre : les deux phases d'IPsec
+
+IPsec négocie en **deux temps**, et savoir lequel échoue est 80 % du diagnostic.
+
+**Phase 1 (IKE) — « qui es-tu ? »**
+
+Les deux pare-feux s'authentifient mutuellement et établissent un canal sécurisé pour discuter. Ils se mettent d'accord sur :
+
+| Paramètre | Rôle |
+|---|---|
+| Méthode d'authentification | Clé partagée (PSK) ou certificat |
+| Chiffrement | AES-256, AES-128… |
+| Hachage | SHA-256, SHA-512… |
+| Groupe Diffie-Hellman | 14, 19, 20… — la robustesse de l'échange de clés |
+| Durée de vie | 86400 s par défaut |
+
+**Phase 2 (IPsec) — « que transporte-t-on ? »**
+
+Une fois qu'ils se font confiance, ils négocient le tunnel de données lui-même :
+
+| Paramètre | Rôle |
+|---|---|
+| Sélecteurs | **Quels réseaux** passent dans le tunnel |
+| Chiffrement / hachage | Ceux du transport |
+| PFS | Renégocie une clé neuve à chaque renouvellement |
+| Durée de vie | 43200 s par défaut |
+
+> 🧠 **La règle d'or du diagnostic IPsec**
+> **Les deux côtés doivent être d'accord sur TOUT.** Un seul paramètre qui diffère et le tunnel ne monte pas.
+>
+> Et surtout : **savoir quelle phase échoue divise le problème en deux.**
+> - La **phase 1** échoue → problème d'**authentification** ou de **joignabilité** : clé partagée différente, identifiants qui ne correspondent pas, UDP/500 filtré.
+> - La **phase 2** échoue → problème de **sélecteurs** ou d'algorithmes de transport : les réseaux déclarés ne correspondent pas de part et d'autre.
+>
+> Ne cherche jamais au hasard : regarde d'abord **où** ça casse.
+
+### 18.3 Les ports à laisser passer
+
+| Port / protocole | Rôle |
+|---|---|
+| **UDP 500** | IKE — la négociation |
+| **UDP 4500** | NAT-Traversal — quand un routeur NAT est sur le chemin |
+| **Protocole IP 50** | ESP — les données chiffrées |
+
+> ⚠️ **Attention** : dans notre laboratoire, R1 fait du NAT (§3.8). Le trafic IPsec devra donc utiliser **NAT-T** (UDP 4500), qui encapsule ESP dans de l'UDP — parce qu'ESP est un protocole IP à part entière, sans numéro de port, et qu'un NAT ne sait pas quoi en faire.
+>
+> C'est la cause n°1 des tunnels qui montent en laboratoire mais pas en production, ou l'inverse. FortiOS active NAT-T automatiquement quand il détecte un NAT, mais il faut que le routeur laisse passer UDP 4500.
+
+### 18.4 La configuration, côté Paris
+
+**Phase 1 :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-vers-Lyon"
+        set interface "port1"
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 14
+        set remote-gw 203.0.113.50
+        set psksecret "UneCleTresLongueEtAleatoire2026!"
+        set dpd on-idle
+        set dpd-retryinterval 60
+    next
+end
+```
+
+**Phase 2 :**
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-vers-Lyon-P2"
+        set phase1name "VPN-vers-Lyon"
+        set proposal aes256-sha256
+        set pfs enable
+        set dhgrp 14
+        set src-subnet 192.168.10.0 255.255.255.0
+        set dst-subnet 192.168.50.0 255.255.255.0
+        set auto-negotiate enable
+    next
+end
+```
+
+**La route vers le site distant :**
+
+```
+config router static
+    edit 10
+        set dst 192.168.50.0 255.255.255.0
+        set device "VPN-vers-Lyon"
+        set comment "Reseau de Lyon via le tunnel"
+    next
+end
+```
+
+**Et les politiques — dans les DEUX sens :**
+
+```
+config firewall policy
+    edit 20
+        set name "Paris-vers-Lyon"
+        set srcintf "port2"
+        set dstintf "VPN-vers-Lyon"
+        set srcaddr "NET-LAN"
+        set dstaddr "NET-LYON"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+    edit 21
+        set name "Lyon-vers-Paris"
+        set srcintf "VPN-vers-Lyon"
+        set dstintf "port2"
+        set srcaddr "NET-LYON"
+        set dstaddr "NET-LAN"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+end
+```
+
+> ⚠️ **Attention — ici, DEUX politiques sont nécessaires**
+> Ça semble contredire la règle d'or du §1.6. Ce n'est pas le cas, et la nuance est importante.
+>
+> La table de sessions gère le **retour d'une connexion ouverte**. Mais dans un VPN site-à-site, **les deux sites initient des connexions** : Paris consulte un serveur de Lyon, et Lyon consulte un serveur de Paris. Ce sont deux **ouvertures** distinctes, pas un aller-retour.
+>
+> Si tu n'écris que `Paris → Lyon`, un utilisateur de Lyon ne pourra rien ouvrir vers Paris. **Une politique par sens d'ouverture**, toujours.
+
+> 🚨 **Danger — n'active JAMAIS le NAT sur une politique VPN**
+> `set nat enable` réécrirait les adresses source, et le site distant verrait tout le trafic arriver depuis l'adresse du pare-feu. Les sélecteurs de phase 2 ne correspondraient plus, et le tunnel rejetterait le trafic. Laisse `nat disable`.
+
+### 18.5 Côté Lyon : le miroir exact
+
+Tout est symétrique. `remote-gw` pointe vers Paris, et les sous-réseaux de phase 2 sont **inversés** :
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-vers-Paris-P2"
+        set src-subnet 192.168.50.0 255.255.255.0     ← inversé
+        set dst-subnet 192.168.10.0 255.255.255.0     ← inversé
+    next
+end
+```
+
+> ⚠️ **C'est l'erreur n°1 des tunnels qui ne montent pas en phase 2.** Les sélecteurs doivent être **le miroir exact** l'un de l'autre. Si Paris déclare `src=10.0/24, dst=50.0/24`, Lyon doit déclarer `src=50.0/24, dst=10.0/24`. Une inversion oubliée, et la phase 1 monte parfaitement pendant que la phase 2 échoue — ce qui déroute, parce que « le tunnel est up » dans l'affichage.
+
+### 18.6 Le diagnostic IPsec
+
+Les commandes, dans l'ordre où on les utilise :
+
+```
+FGT-01 # get vpn ipsec tunnel summary
+FGT-01 # diagnose vpn ike gateway list
+FGT-01 # diagnose vpn tunnel list
+```
+
+Et le débogage détaillé, quand rien ne monte :
+
+```
+FGT-01 # diagnose vpn ike log filter clear
+FGT-01 # diagnose vpn ike log filter dst-addr4 203.0.113.50
+FGT-01 # diagnose debug application ike -1
+FGT-01 # diagnose debug enable
+```
+
+Puis on force la négociation :
+
+```
+FGT-01 # diagnose vpn ike gateway clear name VPN-vers-Lyon
+```
+
+Et on arrête, **toujours** :
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+**Les messages qu'on rencontre le plus, et ce qu'ils veulent dire :**
+
+| Message | Cause réelle |
+|---|---|
+| `no SA proposal chosen` | Les propositions de chiffrement ne correspondent pas |
+| `probable pre-shared secret mismatch` | La clé partagée diffère |
+| `peer SA proposal not match local policy` | Sélecteurs de phase 2 non miroir |
+| `negotiation timeout` | Le pair ne répond pas — UDP/500 filtré, adresse fausse |
+| `IPsec SA connect... failure` | Phase 1 réussie, phase 2 échouée |
+
+---
+
+### 🧪 TP 17 — Monter un tunnel entre deux sites
+
+**🎯 Objectif**
+Créer un second FortiGate, monter le tunnel, faire communiquer les deux LAN, puis **casser volontairement** un paramètre pour apprendre à lire un échec.
+
+**⏱️ Durée** : 60 minutes
+
+**📋 Prérequis** : un second FortiGate (§2.7 sur les licences), les deux joignables entre eux
+
+> 💡 **Astuce** : si tu ne peux avoir qu'un seul FortiGate, lis ce TP sans l'exécuter — mais **fais absolument l'étape 8**, qui t'apprend à lire un journal IKE. C'est ce qu'on te demandera en entretien.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Préparer FGT-02**
+
+Configure un second pare-feu selon le même schéma : `port1` vers le transit, `port2` en `192.168.50.1/24`.
+
+```
+FGT-02 # config system global
+FGT-02 (global) # set hostname FGT-02
+FGT-02 (global) # end
+
+FGT-02 # config system interface
+FGT-02 (interface) # edit port2
+FGT-02 (port2) # set alias "LAN-Lyon"
+FGT-02 (port2) # set ip 192.168.50.1 255.255.255.0
+FGT-02 (port2) # set allowaccess ping https ssh
+FGT-02 (port2) # next
+FGT-02 (interface) # end
+```
+
+**Étape 2 — Vérifier la joignabilité AVANT de configurer le VPN**
+
+```
+FGT-01 # execute ping <adresse-port1-de-FGT-02>
+```
+
+> 🧠 **Ne saute pas cette étape.** Un tunnel ne peut pas monter si les deux extrémités ne se voient pas. Vérifier d'abord évite de chercher un problème IPsec là où il n'y a qu'un problème de routage.
+
+**Étape 3 — Les objets adresse**
+
+Sur FGT-01 :
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-LYON"
+FGT-01 (NET-LYON) # set subnet 192.168.50.0 255.255.255.0
+FGT-01 (NET-LYON) # next
+FGT-01 (address) # end
+```
+
+Sur FGT-02, l'équivalent pour `NET-PARIS` en `192.168.10.0/24`.
+
+**Étape 4 — Phase 1 sur FGT-01**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Lyon"
+FGT-01 (VPN-Lyon) # set interface "port1"
+FGT-01 (VPN-Lyon) # set ike-version 2
+FGT-01 (VPN-Lyon) # set peertype any
+FGT-01 (VPN-Lyon) # set net-device disable
+FGT-01 (VPN-Lyon) # set proposal aes256-sha256
+FGT-01 (VPN-Lyon) # set dhgrp 14
+FGT-01 (VPN-Lyon) # set remote-gw <adresse-port1-de-FGT-02>
+FGT-01 (VPN-Lyon) # set psksecret "CleLabFortiGate2026!"
+FGT-01 (VPN-Lyon) # set dpd on-idle
+FGT-01 (VPN-Lyon) # next
+FGT-01 (phase1-interface) # end
+```
+
+**Étape 5 — Phase 2 sur FGT-01**
+
+```
+FGT-01 # config vpn ipsec phase2-interface
+FGT-01 (phase2-interface) # edit "VPN-Lyon-P2"
+FGT-01 (VPN-Lyon-P2) # set phase1name "VPN-Lyon"
+FGT-01 (VPN-Lyon-P2) # set proposal aes256-sha256
+FGT-01 (VPN-Lyon-P2) # set pfs enable
+FGT-01 (VPN-Lyon-P2) # set dhgrp 14
+FGT-01 (VPN-Lyon-P2) # set src-subnet 192.168.10.0 255.255.255.0
+FGT-01 (VPN-Lyon-P2) # set dst-subnet 192.168.50.0 255.255.255.0
+FGT-01 (VPN-Lyon-P2) # set auto-negotiate enable
+FGT-01 (VPN-Lyon-P2) # next
+FGT-01 (phase2-interface) # end
+```
+
+**Étape 6 — Le miroir sur FGT-02**
+
+Identique, sauf `remote-gw` (qui pointe vers FGT-01) et les sous-réseaux **inversés**. La clé partagée doit être **rigoureusement identique**.
+
+**Étape 7 — Route et politiques**
+
+Sur FGT-01 :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 10
+FGT-01 (10) # set dst 192.168.50.0 255.255.255.0
+FGT-01 (10) # set device "VPN-Lyon"
+FGT-01 (10) # next
+FGT-01 (static) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 20
+FGT-01 (20) # set name "Paris-vers-Lyon"
+FGT-01 (20) # set srcintf "port2"
+FGT-01 (20) # set dstintf "VPN-Lyon"
+FGT-01 (20) # set srcaddr "NET-LAN"
+FGT-01 (20) # set dstaddr "NET-LYON"
+FGT-01 (20) # set action accept
+FGT-01 (20) # set schedule "always"
+FGT-01 (20) # set service "ALL"
+FGT-01 (20) # set logtraffic all
+FGT-01 (20) # next
+FGT-01 (policy) # edit 21
+FGT-01 (21) # set name "Lyon-vers-Paris"
+FGT-01 (21) # set srcintf "VPN-Lyon"
+FGT-01 (21) # set dstintf "port2"
+FGT-01 (21) # set srcaddr "NET-LYON"
+FGT-01 (21) # set dstaddr "NET-LAN"
+FGT-01 (21) # set action accept
+FGT-01 (21) # set schedule "always"
+FGT-01 (21) # set service "ALL"
+FGT-01 (21) # set logtraffic all
+FGT-01 (21) # next
+FGT-01 (policy) # end
+```
+
+Fais l'équivalent, en miroir, sur FGT-02.
+
+**Étape 8 — Monter le tunnel et le lire**
+
+```
+FGT-01 # diagnose vpn ike gateway clear name VPN-Lyon
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' 203.0.113.50:0  selectors(total,up): 1/1  rx(pkt,err): 24/0  tx(pkt,err): 24/0
+```
+
+`selectors(total,up): 1/1` signifie que la phase 2 est établie. C'est **la ligne à regarder**.
+
+```
+FGT-01 # diagnose vpn tunnel list
+```
+
+Tu obtiens le détail : algorithmes retenus, compteurs, durée de vie restante.
+
+**Étape 9 — Tester de bout en bout**
+
+```bash
+user@pc-lan:~$ ping -c 5 192.168.50.10
+```
+
+**Le trafic traverse Internet, chiffré.** 🎉
+
+Vérifie-le :
+
+```
+FGT-01 # diagnose sniffer packet port1 'udp port 4500 or esp' 4 20
+```
+
+Tu vois passer des paquets **chiffrés** — impossible d'y lire les adresses internes ou le contenu.
+
+**Étape 10 — Casser volontairement, et diagnostiquer**
+
+Change la clé partagée sur **un seul** côté :
+
+```
+FGT-02 # config vpn ipsec phase1-interface
+FGT-02 (phase1-interface) # edit "VPN-Paris"
+FGT-02 (VPN-Paris) # set psksecret "MauvaiseCle"
+FGT-02 (VPN-Paris) # next
+FGT-02 (phase1-interface) # end
+```
+
+Sur FGT-01 :
+
+```
+FGT-01 # diagnose vpn ike log filter clear
+FGT-01 # diagnose debug application ike -1
+FGT-01 # diagnose debug enable
+FGT-01 # diagnose vpn ike gateway clear name VPN-Lyon
+```
+
+Tu vois défiler les tentatives, avec un message parlant de secret partagé ou d'échec d'authentification.
+
+**Tu viens d'apprendre à reconnaître un échec de phase 1.**
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+**Étape 11 — Casser la phase 2 (le plus instructif)**
+
+Remets la bonne clé, puis change un **sélecteur** :
+
+```
+FGT-02 # config vpn ipsec phase2-interface
+FGT-02 (phase2-interface) # edit "VPN-Paris-P2"
+FGT-02 (VPN-Paris-P2) # set dst-subnet 192.168.99.0 255.255.255.0
+FGT-02 (VPN-Paris-P2) # next
+FGT-02 (phase2-interface) # end
+```
+
+```
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' 203.0.113.50:0  selectors(total,up): 1/0
+```
+
+**Regarde bien : `1/0`.** La phase 1 est montée — la passerelle est là, authentifiée — mais **aucun sélecteur n'est établi**.
+
+> 🧠 **C'est le cas qui déroute tout le monde.** La GUI peut afficher le tunnel comme « up » parce que la phase 1 fonctionne, et pourtant rien ne passe. La ligne `selectors(total,up)` est la seule qui dise la vérité.
+>
+> Retiens : **`x/0` = phase 2 en échec = sélecteurs non miroir.**
+
+Remets la bonne valeur.
+
+---
+
+**✅ Résultat attendu**
+
+- `get vpn ipsec tunnel summary` affiche `selectors(total,up): 1/1`
+- Un ping traverse le tunnel entre les deux LAN
+- Une capture sur `port1` ne montre que du chiffré
+- Tu reconnais un échec de phase 1 et un échec de phase 2
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Deux phases, deux familles de pannes.** Savoir laquelle échoue divise le problème en deux.
+2. **Les sélecteurs de phase 2 doivent être le miroir exact.**
+3. **`selectors(total,up): x/0` est le symptôme du tunnel qui a l'air up et ne transporte rien.**
+4. **Un VPN site-à-site demande une politique par sens d'ouverture** — ce n'est pas une contradiction avec le §1.6.
+5. **Jamais de NAT sur une politique VPN.**
+6. **On vérifie la joignabilité avant de soupçonner IPsec.**
 
 ---
