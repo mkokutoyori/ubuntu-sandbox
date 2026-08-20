@@ -72,27 +72,28 @@ C:\Users\Lab>         ← invite d'un PC Windows du laboratoire
 ### Partie V — La sécurité applicative
 13. [Les modes d'inspection](#13-les-modes-dinspection)
 14. [Les profils de sécurité](#14-les-profils-de-sécurité)
-15. [L'inspection SSL/TLS](#15-linspection-ssltls)
+15. [⭐ Routeur + ACL contre pare-feu : la démonstration](#15--routeur--acl-contre-pare-feu--la-démonstration)
+16. [L'inspection SSL/TLS](#16-linspection-ssltls)
 
 ### Partie VI — Les utilisateurs
-16. [Authentification et gestion des utilisateurs](#16-authentification-et-gestion-des-utilisateurs)
+17. [Authentification et gestion des utilisateurs](#17-authentification-et-gestion-des-utilisateurs)
 
 ### Partie VII — Les VPN
-17. [VPN IPsec site-à-site](#17-vpn-ipsec-site-à-site)
-18. [Accès distant : IPsec dial-up](#18-accès-distant--ipsec-dial-up)
+18. [VPN IPsec site-à-site](#18-vpn-ipsec-site-à-site)
+19. [Accès distant : IPsec dial-up](#19-accès-distant--ipsec-dial-up)
 
 ### Partie VIII — Aller plus loin
-19. [Le routage dynamique](#19-le-routage-dynamique)
-20. [SD-WAN](#20-sd-wan)
-21. [La haute disponibilité](#21-la-haute-disponibilité)
+20. [Le routage dynamique](#20-le-routage-dynamique)
+21. [SD-WAN](#21-sd-wan)
+22. [La haute disponibilité](#22-la-haute-disponibilité)
 
 ### Partie IX — L'exploitation au quotidien
-22. [Journaux, FortiView et supervision](#22-journaux-fortiview-et-supervision)
-23. [Diagnostic et dépannage](#23-diagnostic-et-dépannage)
-24. [Sauvegarde, mise à jour et durcissement](#24-sauvegarde-mise-à-jour-et-durcissement)
-25. [Les erreurs classiques](#25-les-erreurs-classiques)
-26. [Aide-mémoire : toutes les commandes](#26-aide-mémoire--toutes-les-commandes)
-27. [Conclusion et pour aller plus loin](#27-conclusion-et-pour-aller-plus-loin)
+23. [Journaux, FortiView et supervision](#23-journaux-fortiview-et-supervision)
+24. [Diagnostic et dépannage](#24-diagnostic-et-dépannage)
+25. [Sauvegarde, mise à jour et durcissement](#25-sauvegarde-mise-à-jour-et-durcissement)
+26. [Les erreurs classiques](#26-les-erreurs-classiques)
+27. [Aide-mémoire : toutes les commandes](#27-aide-mémoire--toutes-les-commandes)
+28. [Conclusion et pour aller plus loin](#28-conclusion-et-pour-aller-plus-loin)
 
 ---
 
@@ -391,12 +392,80 @@ Il y en a deux, et **il faut connaître les deux**. Ce n'est pas une préférenc
 >
 > Je donnerai systématiquement le chemin GUI quand il existe, parce que c'est utile pour se repérer. Mais la référence, ce sera toujours la commande.
 
-### 2.10 Ce qu'on va construire ensemble
+### 2.10 « Mais un routeur fait déjà tout ça, non ? »
+
+C'est la question qu'on te posera le jour où tu proposeras d'acheter un pare-feu. Elle vient parfois d'un directeur financier, souvent d'un collègue, et elle est **légitime** — parce qu'en apparence, un routeur Cisco moderne sait déjà :
+
+- router entre les réseaux ✅
+- faire du NAT ✅
+- filtrer avec des **ACL** (*Access Control Lists*) ✅
+- journaliser ✅
+- monter des VPN IPsec ✅
+
+Cinq fonctions sur les cinq qu'on attend d'un pare-feu. Alors, où est la différence ?
+
+**Elle est réelle, elle est profonde, et elle tient en quatre points.**
+
+**① Une ACL classique n'a pas de mémoire**
+
+Une ACL standard ou étendue examine **chaque paquet isolément**. Elle ne sait pas qu'un paquet est la réponse à une requête sortante, parce qu'elle ne se souvient de rien.
+
+Conséquence directe : pour laisser tes utilisateurs naviguer, tu dois autoriser le trafic **entrant** correspondant. Et comme tu ne peux pas prédire quels ports sources ils utiliseront, tu finis par écrire quelque chose comme « autoriser tout le TCP entrant vers les ports hauts ». Ce qui, dit autrement, revient à **laisser une porte ouverte en permanence**.
+
+Un pare-feu à états, lui, se souvient (§1.6) : une seule règle sortante, et le retour est reconnu.
+
+**② Une ACL ne voit que des ports, jamais des applications**
+
+C'est tout l'argument du §2.5. Une ACL qui autorise le port 443 autorise **tout** ce qui passe par le 443 : ta banque comme le tunnel de contournement d'un utilisateur, comme le canal de commande d'un logiciel malveillant. Elle n'a aucun moyen de les distinguer, parce qu'elle ne regarde pas à l'intérieur.
+
+**③ Une ACL ne regarde jamais le contenu**
+
+Un routeur ne saura **jamais** te dire qu'un fichier téléchargé contient un virus, qu'une page est un site d'hameçonnage, ou qu'une requête est une tentative d'injection SQL. Ce n'est pas une faiblesse de configuration : il n'a ni les signatures, ni le moteur d'analyse, ni la puissance de calcul pour le faire.
+
+**④ Une ACL ne sait pas qui tu es**
+
+Une règle de routeur parle d'adresses IP. Elle ne sait pas que `192.168.10.47` est le poste d'un stagiaire plutôt que celui du directeur financier — et si les deux permutent de bureau, la règle protège la mauvaise personne. Un pare-feu sait raisonner en **utilisateurs** et en **groupes** (section 16).
+
+**Le tableau qui résume :**
+
+| Capacité | Routeur + ACL | Pare-feu NGFW |
+|---|---|---|
+| Filtrer par IP et par port | ✅ | ✅ |
+| **Suivre l'état d'une connexion** | ❌ | ✅ |
+| Reconnaître l'application | ❌ | ✅ |
+| Analyser le contenu (antivirus) | ❌ | ✅ |
+| Filtrer par catégorie de site | ❌ | ✅ |
+| Détecter une intrusion (IPS) | ❌ | ✅ |
+| Raisonner en **utilisateurs** | ❌ | ✅ |
+| Déchiffrer le TLS pour inspecter | ❌ | ✅ |
+| Journaliser un trafic **compréhensible** | ⚠️ Sommaire | ✅ |
+
+> ⚠️ **Attention — ne jette pas le routeur pour autant**
+> La conclusion n'est PAS « le routeur ne sert à rien ». Les deux équipements **coexistent** dans toutes les architectures sérieuses, et chacun fait ce qu'il fait le mieux :
+>
+> - Le **routeur** achemine à très grande vitesse, gère les protocoles de routage vers l'opérateur, et absorbe la première vague de bruit avec des ACL grossières.
+> - Le **pare-feu** applique la politique de sécurité, comprend les applications, inspecte le contenu et sait qui est l'utilisateur.
+>
+> Mettre une ACL sur le routeur de bordure **reste une bonne pratique** : elle élimine à moindre coût le trafic manifestement illégitime avant qu'il n'atteigne le pare-feu, qui a mieux à faire.
+
+> 💡 **Une nuance honnête, parce qu'elle existe**
+> Cisco propose des ACL **réflexives** (`reflect`/`evaluate`), le **CBAC** et surtout **Zone-Based Firewall** (ZBF), qui ajoutent une vraie gestion d'état à IOS. Ce n'est donc pas « Cisco ne sait pas faire de pare-feu » — Cisco vend d'ailleurs des pare-feux, les ASA et Firepower.
+>
+> Ce qui reste vrai malgré ces mécanismes : **l'inspection de contenu, la reconnaissance applicative et l'identité utilisateur ne sont pas dans un routeur**, et le prix de la fonction de pare-feu sur un routeur généraliste s'effondre en performance dès qu'on l'active sérieusement.
+>
+> On mesurera tout ça de nos propres mains à la **section 15**. Je ne te demande pas de me croire sur parole : on va essayer de protéger le réseau avec R1 seul, et regarder précisément ce qui casse.
+
+### 2.11 Ce qu'on va construire ensemble
 
 Pour te donner un cap, voici l'infrastructure qu'on aura montée à la fin de ce document :
 
 ```
                           Internet (simulé)
+                                 │
+                          ╔══════┴══════╗
+                          ║   R1-EDGE   ║  ← routeur Cisco de bordure
+                          ║  Cisco IOS  ║     (la passerelle par défaut)
+                          ╚══════╤══════╝
                                  │
                           ┌──────┴──────┐
                           │   FGT-01    │  ← ton pare-feu principal
@@ -411,6 +480,7 @@ Pour te donner un cap, voici l'infrastructure qu'on aura montée à la fin de ce
 ```
 
 Avec, dessus :
+- **la démonstration, chiffres en main, de ce que le routeur seul ne sait pas faire** ;
 - des politiques de sécurité propres et journalisées ;
 - du NAT sortant et un serveur publié depuis Internet ;
 - un serveur DHCP et une résolution DNS ;
@@ -529,9 +599,18 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
                     │  (ta box / le NAT   │
                     │   de l'hyperviseur) │
                     └──────────┬──────────┘
+                               │ Gi0/0  (DHCP)
+                    ╔══════════┴══════════╗
+                    ║      R1-EDGE        ║   ← ⭐ routeur Cisco
+                    ║   Cisco IOS         ║      routeur de bordure
+                    ║   ACL + NAT         ║      ET passerelle par défaut
+                    ╚══════════╤══════════╝
+                               │ Gi0/1 — 192.168.100.1/24
+                               │
+                               │  « le lien de transit »
                                │
                           port1 (WAN)
-                        DHCP ou 192.168.100.99/24
+                          192.168.100.99/24
                     ┌──────────┴──────────┐
                     │                     │
                     │      FGT-01         │
@@ -548,19 +627,35 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
             └──────────────┘   └──────────────┘
 ```
 
+> 🧠 **Pourquoi un routeur Cisco DEVANT le pare-feu ?**
+> Ce n'est pas de la décoration, et ce n'est pas non plus une lubie : **c'est la topologie réelle de la quasi-totalité des entreprises**. On ne branche presque jamais un pare-feu directement sur la fibre — il y a un routeur de bordure devant, souvent fourni par l'opérateur, souvent un Cisco.
+>
+> Mais surtout, ce routeur va nous servir de **contre-exemple pédagogique**. Il sait router. Il sait faire du NAT. Il sait filtrer avec des **ACL**. Bref, il ressemble beaucoup à un pare-feu.
+>
+> Alors pourquoi dépenser plusieurs milliers d'euros de plus pour un FortiGate derrière ? C'est **la** question que tout décideur pose, et c'est celle à laquelle tu dois savoir répondre. On ne va pas y répondre par un argumentaire commercial : on va **le démontrer en laboratoire**, à la section 15, en essayant de protéger le réseau avec R1 seul et en constatant précisément où ça casse.
+>
+> Retiens dès maintenant le principe : **R1 est ce que tu aurais SANS pare-feu.** C'est notre point de comparaison.
+
 ### 3.7 Le plan d'adressage
 
-| Réseau | Sous-réseau | Rôle | Interface FortiGate |
+| Réseau | Sous-réseau | Rôle | Qui porte quoi |
 |---|---|---|---|
-| WAN | 192.168.100.0/24 | Simule Internet | `port1` — 192.168.100.99 |
-| LAN | 192.168.10.0/24 | Postes utilisateurs | `port2` — 192.168.10.1 |
-| DMZ | 192.168.20.0/24 | Serveurs publiés | `port3` — 192.168.20.1 |
+| Internet | variable (DHCP) | Sortie réelle | `R1 Gi0/0` |
+| **Transit** | 192.168.100.0/24 | Lien R1 ↔ pare-feu | `R1 Gi0/1` = .1 — `FGT port1` = .99 |
+| LAN | 192.168.10.0/24 | Postes utilisateurs | `FGT port2` — 192.168.10.1 |
+| DMZ | 192.168.20.0/24 | Serveurs publiés | `FGT port3` — 192.168.20.1 |
 
 | Machine | Adresse | Passerelle | Rôle |
 |---|---|---|---|
-| FGT-01 | voir ci-dessus | 192.168.100.1 | Le pare-feu |
+| **R1-EDGE** | Gi0/0 en DHCP, Gi0/1 = 192.168.100.1 | celle de ta box | ⭐ Routeur de bordure Cisco — **la passerelle par défaut du pare-feu** |
+| FGT-01 | port1 = 192.168.100.99 | **192.168.100.1 (R1)** | Le pare-feu |
 | PC-LAN | 192.168.10.10/24 | 192.168.10.1 | Poste de test côté interne |
 | SRV-DMZ | 192.168.20.10/24 | 192.168.20.1 | Serveur web de test |
+
+> 💡 **Astuce — pourquoi un réseau de « transit » ?**
+> Le `192.168.100.0/24` entre R1 et le pare-feu ne contient aucun utilisateur : il ne sert qu'à faire dialoguer les deux équipements. On appelle ça un **réseau de transit**, et en production on lui donne souvent un `/30` (deux adresses utilisables, §1.2), parce qu'il n'y aura jamais que deux machines dessus.
+>
+> Je garde un `/24` ici uniquement pour que tu puisses y brancher facilement une troisième machine servant d'« attaquant externe » lors des TP de la section 15.
 
 > 🧠 **Comprendre : pourquoi une DMZ ?**
 > **DMZ** signifie *zone démilitarisée*. C'est un troisième réseau, ni tout à fait dedans ni tout à fait dehors, où l'on place les serveurs **accessibles depuis Internet** : site web, serveur de messagerie, VPN.
@@ -569,15 +664,84 @@ Voici ce qu'on va monter. Garde ce schéma sous la main, on y reviendra à chaqu
 >
 > La DMZ ne protège pas le serveur. Elle protège **tout le reste** du serveur. C'est une nuance essentielle, et on la matérialisera concrètement au TP 9.
 
-### 3.8 Les besoins matériels de ta machine
+### 3.8 Comment obtenir le routeur Cisco
+
+Le FortiGate se télécharge (§3.5). Pour le Cisco, tu as **quatre voies**, et il n'est pas obligatoire de dépenser un centime.
+
+| Voie | Coût | Réalisme | Commentaire |
+|---|---|---|---|
+| **A. EVE-NG / GNS3 + image IOSv ou CSR1000v** | Gratuit (l'image demande un compte Cisco) | ⭐ Parfait | La meilleure option si tu montes déjà ton lab là |
+| **B. Routeur Cisco d'occasion** (1841, 2811, 2901…) | 20 à 80 € | Parfait | Un 2811 se trouve pour le prix d'un repas |
+| **C. Cisco Packet Tracer** | Gratuit | ⚠️ Limité | Ne se connecte pas à de vraies VM — voir ci-dessous |
+| **D. Un substitut Linux (VyOS, FRR, ou Debian)** | Gratuit | ⭐ Suffisant | ⭐ **Recommandé si tu n'as pas d'IOS** |
+
+> ⚠️ **Attention à Packet Tracer** : il est excellent pour apprendre IOS, mais c'est un simulateur **fermé** — il ne peut pas parler à ta FortiGate-VM. Tu ne pourras donc pas faire les TP de bout en bout avec. Garde-le pour t'entraîner aux commandes IOS séparément.
+
+> 💡 **Astuce — si tu n'as pas d'image Cisco, ne bloque pas ici**
+> Tout ce qu'on demande à R1, c'est de **router**, de faire du **NAT** et de porter une **ACL**. N'importe quel routeur Linux le fait. Je donnerai systématiquement les commandes IOS **et** leur équivalent Linux, pour que personne ne reste sur le bord de la route.
+>
+> La démonstration de la section 15 — « pourquoi une ACL ne suffit pas » — fonctionne **à l'identique** avec un routeur Linux, parce que le problème n'est pas propre à Cisco : il est propre au **concept même d'ACL sans état**. C'est justement ce qui rend la leçon universelle.
+
+**La configuration de base de R1** (on la posera au TP 1) :
+
+```cisco
+R1# configure terminal
+R1(config)# hostname R1-EDGE
+
+! L'interface vers Internet — DHCP depuis ta box
+R1-EDGE(config)# interface GigabitEthernet0/0
+R1-EDGE(config-if)# ip address dhcp
+R1-EDGE(config-if)# ip nat outside
+R1-EDGE(config-if)# no shutdown
+R1-EDGE(config-if)# exit
+
+! L'interface vers le pare-feu — le réseau de transit
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# ip address 192.168.100.1 255.255.255.0
+R1-EDGE(config-if)# ip nat inside
+R1-EDGE(config-if)# no shutdown
+R1-EDGE(config-if)# exit
+
+! Les routes vers les réseaux qui vivent DERRIÈRE le pare-feu
+R1-EDGE(config)# ip route 192.168.10.0 255.255.255.0 192.168.100.99
+R1-EDGE(config)# ip route 192.168.20.0 255.255.255.0 192.168.100.99
+
+! Le NAT vers Internet
+R1-EDGE(config)# access-list 10 permit 192.168.0.0 0.0.255.255
+R1-EDGE(config)# ip nat inside source list 10 interface GigabitEthernet0/0 overload
+R1-EDGE(config)# end
+R1-EDGE# write memory
+```
+
+> 🧠 **Comprendre les deux routes statiques**
+> R1 connaît directement `192.168.100.0/24` — il a une patte dessus. Mais `192.168.10.0/24` et `192.168.20.0/24` sont **derrière** le pare-feu : R1 n'a aucun moyen de les deviner.
+>
+> Sans ces deux routes, tout **sortirait** correctement (le LAN vers Internet passe par le pare-feu qui fait du NAT), mais rien ne pourrait **revenir** vers ces réseaux — et surtout, R1 ne pourrait jamais joindre le serveur de la DMZ que nous publierons au TP 8.
+>
+> C'est le rappel du §7.1 : **une route par réseau qui n'est pas directement connecté**, sinon le paquet meurt.
+
+**L'équivalent sous Linux**, si tu utilises un substitut (Debian, par exemple) :
+
+```bash
+root@r1-edge:~# echo 1 > /proc/sys/net/ipv4/ip_forward
+root@r1-edge:~# ip addr add 192.168.100.1/24 dev eth1
+root@r1-edge:~# ip link set eth1 up
+root@r1-edge:~# ip route add 192.168.10.0/24 via 192.168.100.99
+root@r1-edge:~# ip route add 192.168.20.0/24 via 192.168.100.99
+root@r1-edge:~# iptables -t nat -A POSTROUTING -s 192.168.0.0/16 -o eth0 -j MASQUERADE
+```
+
+### 3.9 Les besoins matériels de ta machine
 
 Sois réaliste avant de commencer :
 
 | Ce que tu veux faire | RAM totale | Disque | Processeur |
 |---|---|---|---|
-| Sections 1 à 16 (1 FortiGate + 2 PC) | **8 Gio** | 40 Gio | 4 cœurs |
-| Sections 17 à 18 (2 FortiGate, VPN) | **12 Gio** | 60 Gio | 4 cœurs |
-| Sections 19 à 21 (3 FortiGate, HA) | **16 Gio** | 80 Gio | 6 cœurs |
+| Sections 1 à 17 (1 FortiGate + R1 + 2 PC) | **8 Gio** | 40 Gio | 4 cœurs |
+| Sections 18 à 19 (2 FortiGate, VPN) | **12 Gio** | 60 Gio | 4 cœurs |
+| Sections 20 à 22 (3 FortiGate, HA) | **16 Gio** | 80 Gio | 6 cœurs |
+
+> 💡 **Astuce** : R1 est très peu gourmand. Un IOSv sous EVE-NG demande 512 Mio, un routeur Debian minimal 256 Mio. Ne le compte pas comme une charge sérieuse.
 
 > 💡 **Astuce pour économiser la RAM** : les « PC » du laboratoire n'ont pas besoin d'être des postes complets. Une VM **Alpine Linux** (128 Mio de RAM) ou une **Debian sans interface graphique** (256 Mio) suffit amplement — tu n'as besoin que de `ping`, `curl` et `ip`. Réserve la mémoire pour les FortiGate, qui en ont réellement besoin.
 >
@@ -595,11 +759,40 @@ Faire tourner une FortiGate-VM, se connecter à sa console, définir un mot de p
 **📋 Prérequis**
 - Un hyperviseur installé (VMware Workstation Player fait très bien l'affaire)
 - L'image FortiGate-VM 7.6 téléchargée et décompressée (§3.5)
+- Un routeur pour R1 : IOS, boîtier d'occasion ou substitut Linux (§3.8)
 - 4 Gio de RAM disponibles
 
 ---
 
 **🔧 Manipulation**
+
+**Étape 0 — Monter R1, la passerelle**
+
+On commence par le routeur, parce que c'est **lui** qui donnera l'accès Internet au pare-feu. Applique la configuration du §3.8, puis vérifie les trois points qui comptent :
+
+```cisco
+R1-EDGE# show ip interface brief
+```
+```
+Interface              IP-Address       OK? Method Status      Protocol
+GigabitEthernet0/0     192.168.1.42     YES DHCP   up          up
+GigabitEthernet0/1     192.168.100.1    YES manual up          up
+```
+
+```cisco
+R1-EDGE# ping 8.8.8.8
+R1-EDGE# show ip route
+```
+
+> ⚠️ **Attention** : si `Gi0/0` reste en `administratively down`, il te manque un `no shutdown`. C'est l'oubli numéro un sur IOS — Cisco démarre ses interfaces éteintes, contrairement à FortiOS qui les démarre allumées. Une différence de culture entre les deux constructeurs qu'il vaut mieux connaître.
+
+Avec un substitut Linux :
+
+```bash
+root@r1-edge:~# ip -brief addr show
+root@r1-edge:~# ping -c 3 8.8.8.8
+root@r1-edge:~# ip route show
+```
 
 **Étape 1 — Importer la machine virtuelle**
 
@@ -689,7 +882,9 @@ Pour l'instant, le pare-feu n'a aucune adresse. Donnons-lui-en une :
 ```
 FGT-01 # config system interface
 FGT-01 (interface) # edit port1
-FGT-01 (port1) # set mode dhcp
+FGT-01 (port1) # set alias "WAN-vers-R1"
+FGT-01 (port1) # set mode static
+FGT-01 (port1) # set ip 192.168.100.99 255.255.255.0
 FGT-01 (port1) # set allowaccess ping http https ssh
 FGT-01 (port1) # next
 FGT-01 (interface) # end
@@ -701,17 +896,37 @@ Ligne par ligne, parce que c'est ta toute première configuration :
 |---|---|
 | `config system interface` | « J'entre dans la table des interfaces » |
 | `edit port1` | « Je veux modifier l'interface port1 » |
-| `set mode dhcp` | « Prends ton adresse automatiquement » |
+| `set mode static` | « Je te donne une adresse fixe » |
+| `set ip 192.168.100.99 255.255.255.0` | L'adresse côté R1, selon le plan du §3.7 |
 | `set allowaccess ping http https ssh` | « Autorise qu'on t'administre par ces protocoles, sur cette interface » |
 | `next` | « J'ai fini avec port1, je reste dans la table » |
 | `end` | « J'ai fini avec la table, applique » |
+
+Et la route par défaut vers R1, sans laquelle le pare-feu ne sort de nulle part :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 1
+FGT-01 (1) # set gateway 192.168.100.1
+FGT-01 (1) # set device "port1"
+FGT-01 (1) # set comment "Vers R1-EDGE"
+FGT-01 (1) # next
+FGT-01 (static) # end
+
+FGT-01 # execute ping 192.168.100.1
+FGT-01 # execute ping 8.8.8.8
+```
+
+> 🧠 **Comprendre les deux pings** : le premier prouve que le **lien de transit** fonctionne. Le second prouve que **R1 route et fait du NAT** pour toi. Si le premier passe et pas le second, le problème est chez R1, pas sur ton pare-feu — tu viens de diviser le champ de recherche en deux.
+
+> 💡 **Astuce** : la fin de ce TP mentionnait `set mode dhcp`. On lui préfère désormais une adresse **fixe**, parce que R1 est notre passerelle et que l'adresse du pare-feu ne doit pas bouger — on la citera dans les routes statiques de R1 (§3.8) et dans les ACL de la section 15.
 
 > 🚨 **Danger — `allowaccess` sur une interface WAN**
 > Dans un laboratoire, autoriser l'administration sur `port1` est pratique. **En production, c'est une faute grave.** Cela expose l'interface d'administration de ton pare-feu à Internet entier, et les FortiGate exposés sont scannés en permanence.
 >
 > On corrigera ça proprement en section 24. Pour l'instant, tu es dans un réseau isolé, donc c'est acceptable — mais je veux que tu saches dès la première commande que c'en est une, plutôt que de le découvrir dans six mois.
 
-**Étape 6 — Retrouver l'adresse obtenue**
+**Étape 6 — Vérifier l'adressage**
 
 ```
 FGT-01 # get system interface physical
@@ -723,13 +938,15 @@ ou, plus lisible :
 FGT-01 # diagnose ip address list
 ```
 
-Note l'adresse de `port1` : c'est par là que tu accèderas à l'interface web.
+Tu dois voir `port1` en `192.168.100.99`. C'est par là que tu accèderas à l'interface web.
 
 ---
 
 **✅ Résultat attendu**
 
-Depuis un navigateur sur ta machine hôte, `http://<adresse-du-port1>` doit afficher la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
+- R1 pingue Internet, et le pare-feu pingue R1 ✅
+- `execute ping 8.8.8.8` depuis le pare-feu fonctionne ✅
+- Depuis un navigateur d'une machine du réseau de transit, `http://192.168.100.99` affiche la page de connexion FortiGate. Connecte-toi avec `admin` et ton nouveau mot de passe.
 
 > ⚠️ Rappel du §3.2 : avec la licence d'évaluation, utilise bien **`http://`** et non `https://`. C'est normal, ce n'est pas une erreur de ta part.
 
@@ -745,6 +962,7 @@ Beaucoup plus que « installer une VM », en réalité :
 2. **`get system status` est ton premier réflexe.** Sur n'importe quel FortiGate inconnu, c'est la première commande à taper : version, modèle, mode, HA, heure.
 3. **`allowaccess` contrôle l'administration par interface.** C'est un paramètre de sécurité de première importance, et il se règle interface par interface.
 4. **La numérotation des ports vient de l'hyperviseur**, pas de FortiOS. Un piège classique quand une VM se comporte bizarrement.
+5. **Ton pare-feu ne sort pas tout seul.** Il a fallu une route par défaut vers R1, et c'est R1 qui fait le NAT vers Internet. Deux équipements, deux rôles — et deux pings pour savoir lequel est en cause.
 
 ---
 
