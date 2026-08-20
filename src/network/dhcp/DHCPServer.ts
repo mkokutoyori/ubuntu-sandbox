@@ -433,6 +433,16 @@ export class DHCPServer implements IProtocolEngine {
     return { ok: true };
   }
 
+  /** Is this address reserved for this very client, in any pool? */
+  private isReservedFor(clientMAC: string, ipAddress: string): boolean {
+    const mac = clientMAC.toLowerCase();
+    for (const bindings of this.staticBindings.values()) {
+      if (bindings.some(binding => binding.ipAddress === ipAddress
+        && binding.clientId.toLowerCase() === mac)) return true;
+    }
+    return false;
+  }
+
   /** Get all static bindings for a pool */
   getStaticBindings(poolName: string): DHCPStaticBinding[] {
     return this.staticBindings.get(poolName) || [];
@@ -660,7 +670,8 @@ export class DHCPServer implements IProtocolEngine {
     this.stats.requests++;
 
     // RFC compliance: Check if the requested IP is in an excluded range
-    if (this.isExcluded(params.requestedIP)) {
+    if (this.isExcluded(params.requestedIP)
+      && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
       this.stats.naks++;
       return null;
     }
@@ -771,7 +782,8 @@ export class DHCPServer implements IProtocolEngine {
     this.stats.requests++;
 
     // Check excluded
-    if (this.isExcluded(params.requestedIP)) {
+    if (this.isExcluded(params.requestedIP)
+      && !this.isReservedFor(params.clientMAC, params.requestedIP)) {
       this.stats.naks++;
       return {
         type: 'NAK',

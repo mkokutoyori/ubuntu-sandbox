@@ -97,6 +97,19 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [dns] `dns-service default` : la semantique exacte n'est pas verifiee
+Trois valeurs existent — `local` (le pare-feu lui-meme), `default` (les
+serveurs de `config system dns`) et `specify` (ceux nommes sous le
+serveur DHCP). `local` et `specify` sont sans ambiguite ; `default` est
+implemente comme « les serveurs systeme », mais la documentation
+Fortinet accessible depuis ce reseau ne dit pas si un vrai FortiGate
+distribue plutot sa PROPRE adresse quand le role de serveur DNS est
+active sur l'interface.
+**Mesure** : le laboratoire du TP 10 doit poser `dns-service local` pour
+que le poste resolve la zone locale.
+**Report** : trancher demande une vraie machine ; choisir au jugé
+donnerait un comportement plausible et invérifiable.
+
 ### [politique] `get firewall policy` ne compte pas
 Le tutoriel ecrit que cette commande affiche les octets et les paquets de
 chaque politique. Elle rend la liste `== [ N ]` des cles, qui est la

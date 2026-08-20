@@ -11,6 +11,15 @@ import type {
 } from '../../../logging/SyslogCollectors';
 import type { NtpSettings } from '../../../mgmt/FirewallNtp';
 import type { FirewallDnsSettings } from '../../../l3/FirewallDnsClient';
+import type { DnsServerInterface } from '../../../l3/FirewallDnsServer';
+
+export interface FortiDnsZonePatch {
+  readonly name: string;
+  readonly domain: string;
+  readonly type: string;
+  readonly authoritative: boolean;
+  readonly entries: ReadonlyArray<{ hostname: string; ip: string }>;
+}
 import type {
   BgpConfiguration, OspfConfiguration, RipConfiguration,
 } from '../../../routing/DynamicRoutingTypes';
@@ -210,6 +219,10 @@ export interface FortiCommitDevice {
   applyGlobalSettings(settings: FortiGlobalSettings): void;
   applyHostname(hostname: string): void;
   applyDnsSettings(settings: FirewallDnsSettings): void;
+  applyDnsServerInterface(entry: DnsServerInterface): void;
+  removeDnsServerInterface(iface: string): void;
+  applyDnsZone(zone: FortiDnsZonePatch): void;
+  removeDnsZone(name: string): void;
   resolveFqdnNow(fqdn: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;

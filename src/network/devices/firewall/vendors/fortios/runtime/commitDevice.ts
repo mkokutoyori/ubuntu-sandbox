@@ -110,6 +110,18 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
         fw.getDnsClient().forget(fqdn);
         fw.getDnsClient().query(fqdn);
       },
+      applyDnsServerInterface(entry) {
+        fw.getDnsServer().applyInterface(entry);
+      },
+      removeDnsServerInterface(iface) {
+        fw.getDnsServer().removeInterface(iface);
+      },
+      applyDnsZone(zone) {
+        fw.getDnsServer().applyZone(zone);
+      },
+      removeDnsZone(name) {
+        fw.getDnsServer().removeZone(name);
+      },
       applyHostname(hostname) {
         if (hostname.length > 0) fw.setName(hostname);
       },

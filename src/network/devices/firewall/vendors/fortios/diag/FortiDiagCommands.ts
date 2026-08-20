@@ -34,6 +34,7 @@ import {
 import { renderHaChecksum, renderHaStatus } from './haRenderer';
 import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
+import { renderDnsProxy } from './dnsProxyRenderer';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -43,6 +44,7 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'sniffer') return diagnoseSniffer(tail, deps);
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
+  if (family === 'test') return diagnoseTest(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
@@ -62,6 +64,15 @@ function diagnoseCheckused(rest: readonly string[], deps: FortiDiagDeps): string
     return found.join('\n');
   }
   return FortiMessages.unknownPath(datasource);
+}
+
+function diagnoseTest(rest: readonly string[], deps: FortiDiagDeps): string {
+  if (rest[0] !== 'application') {
+    return FortiMessages.unknownPath(`test ${rest.join(' ')}`);
+  }
+  if (rest[1] === 'dnsproxy') return renderDnsProxy(deps.fw, deps.vdom());
+  return FortiMessages.unimplemented(`test application ${rest[1] ?? ''}`,
+    'only the `dnsproxy` application is modelled in this simulator.');
 }
 
 function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {

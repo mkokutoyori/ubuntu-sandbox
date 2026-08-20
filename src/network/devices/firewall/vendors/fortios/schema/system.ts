@@ -288,6 +288,110 @@ export const SYSTEM_DNS: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_DNS_SERVER: FortiTableSpec = {
+  path: ['system', 'dns-server'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 61,
+  help: 'Configure DNS servers.',
+  attributes: [
+    {
+      ...reference('name', 'DNS server name.', ['system interface']),
+      readOnly: true,
+    },
+    choice('mode', 'DNS server mode.', [
+      { keyword: 'recursive', description: 'Answer from the local zones, then recurse.' },
+      { keyword: 'non-recursive', description: 'Answer from the local zones only.' },
+      { keyword: 'forward-only', description: 'Forward what the local zones do not hold.' },
+    ], 'recursive'),
+    enable('dnsfilter-profile', 'Enable/disable the DNS filter profile.', false),
+  ],
+  onCommit(object, context) {
+    context.device.applyDnsServerInterface({
+      iface: object.key,
+      mode: object.effective('mode')[0] ?? 'recursive',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDnsServerInterface(key);
+  },
+};
+
+export const SYSTEM_DNS_DATABASE: FortiTableSpec = {
+  path: ['system', 'dns-database'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'sysgrp',
+  renderOrder: 62,
+  help: 'Configure DNS databases.',
+  attributes: [
+    { ...word('name', 'Zone name.'), readOnly: true },
+    enable('status', 'Enable/disable this DNS zone.', true),
+    word('domain', 'Domain name.'),
+    choice('type', 'Zone type.', [
+      { keyword: 'primary', description: 'Primary zone.' },
+      { keyword: 'secondary', description: 'Secondary zone.' },
+    ], 'primary'),
+    choice('view', 'Zone view.', [
+      { keyword: 'shadow', description: 'Answer only clients of this FortiGate.' },
+      { keyword: 'public', description: 'Answer any client.' },
+    ], 'shadow'),
+    enable('authoritative', 'Enable/disable authoritative answers.', true),
+    address('ip-primary', 'IP address of the primary DNS server.'),
+    word('primary-name', 'Domain name of the default DNS server for this zone.'),
+    word('contact', 'Email address of the administrator for this zone.'),
+  ],
+  children: [
+    {
+      path: ['dns-entry'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 63,
+      help: 'DNS entry.',
+      attributes: [
+        { ...word('id', 'Entry identifier.'), readOnly: true },
+        enable('status', 'Enable/disable this entry.', true),
+        choice('type', 'Resource record type.', [
+          { keyword: 'A', description: 'IPv4 address record.' },
+          { keyword: 'AAAA', description: 'IPv6 address record.' },
+          { keyword: 'CNAME', description: 'Canonical name record.' },
+          { keyword: 'MX', description: 'Mail exchange record.' },
+          { keyword: 'NS', description: 'Name server record.' },
+        ], 'A'),
+        word('hostname', 'Name of the host.'),
+        address('ip', 'IPv4 address of the host.'),
+        count('ttl', 'Time-to-live in seconds.', 0, 2147483647, 0),
+      ],
+    },
+  ],
+  onCommit(object, context) {
+    context.device.applyDnsZone({
+      name: object.key,
+      domain: object.effective('domain')[0] ?? '',
+      type: object.effective('type')[0] ?? 'primary',
+      authoritative: object.effective('authoritative')[0] !== 'disable',
+      entries: object.childEntries('dns-entry')
+        .filter(entry => entry.effective('status')[0] !== 'disable'
+          && (entry.effective('type')[0] ?? 'A') === 'A')
+        .map(entry => ({
+          hostname: entry.effective('hostname')[0] ?? '',
+          ip: entry.effective('ip')[0] ?? '0.0.0.0',
+        })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeDnsZone(key);
+  },
+};
+
 export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
   path: ['system', 'dhcp', 'server'],
   kind: 'table',
@@ -308,10 +412,39 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
     address('default-gateway', 'Default gateway IP address assigned by the DHCP server.'),
     address('netmask', 'Netmask assigned by the DHCP server.'),
     count('lease-time', 'Lease time in seconds, 0 means unlimited.', 0, 8640000, 604800),
+    choice('dns-service', 'Options for assigning DNS servers to DHCP clients.', [
+      { keyword: 'local', description: 'Use the FortiGate as the DNS server.' },
+      { keyword: 'default', description: 'Use the system DNS servers.' },
+      { keyword: 'specify', description: 'Use the servers named below.' },
+    ], 'specify'),
     address('dns-server1', 'DNS server 1.'),
+    address('dns-server2', 'DNS server 2.'),
     word('domain', 'Domain name suffix for the IP addresses that the DHCP server assigns.'),
   ],
   children: [
+    {
+      path: ['reserved-address'],
+      kind: 'table',
+      keyType: 'integer',
+      ordered: false,
+      scope: 'vdom',
+      accessGroup: 'sysgrp',
+      renderOrder: 72,
+      help: 'Options for the DHCP server to assign IP settings to specific MAC addresses.',
+      attributes: [
+        { ...word('id', 'Reservation identifier.'), readOnly: true },
+        address('ip', 'IP address to be reserved for the MAC address.'),
+        {
+          name: 'mac', help: 'MAC address of the client that will get the reserved IP.',
+          quoted: false,
+          parts: [{
+            name: 'mac', type: 'MAC_ADDR',
+            description: 'MAC address of the client.',
+          }],
+        },
+        text('description', 'Description.'),
+      ],
+    },
     {
       path: ['ip-range'],
       kind: 'table',
@@ -335,8 +468,16 @@ export const SYSTEM_DHCP_SERVER: FortiTableSpec = {
       iface: object.effective('interface')[0] ?? '',
       defaultGateway: object.effective('default-gateway')[0] ?? '0.0.0.0',
       netmask: object.effective('netmask')[0] ?? '0.0.0.0',
-      dnsServers: [object.effective('dns-server1')[0] ?? '']
-        .filter(server => server.length > 0 && server !== '0.0.0.0'),
+      dnsService: object.effective('dns-service')[0] ?? 'specify',
+      dnsServers: [
+        object.effective('dns-server1')[0] ?? '',
+        object.effective('dns-server2')[0] ?? '',
+      ].filter(server => server.length > 0 && server !== '0.0.0.0'),
+      reservations: object.childEntries('reserved-address').map(entry => ({
+        ip: entry.effective('ip')[0] ?? '0.0.0.0',
+        mac: entry.effective('mac')[0] ?? '',
+        description: entry.effective('description')[0] ?? '',
+      })),
       domain: object.effective('domain')[0] ?? '',
       leaseTimeSec: Number.parseInt(object.effective('lease-time')[0] ?? '604800', 10),
       ranges: object.childEntries('ip-range').map(range => ({
@@ -408,6 +549,8 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_INTERFACE,
   SYSTEM_ZONE,
   SYSTEM_DNS,
+  SYSTEM_DNS_SERVER,
+  SYSTEM_DNS_DATABASE,
   SYSTEM_DHCP_SERVER,
   SYSTEM_NTP,
 ]);

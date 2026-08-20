@@ -515,6 +515,11 @@ export class FortiShell {
     if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
       return renderDhcpLeases(this.fw.getDhcp().leases());
     }
+    if (rest[0] === 'dhcp' && rest[1] === 'lease-clear') {
+      if (rest.length < 3) return FortiMessages.incomplete('an IP address');
+      return this.fw.getDhcp().clearLease(rest[2])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[2]}.`);
+    }
     if (rest[0] === 'traceroute') {
       if (rest.length < 2) return FortiMessages.incomplete('a destination');
       return this.fw.runTraceroute(rest[1]);

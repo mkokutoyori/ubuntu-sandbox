@@ -4,12 +4,14 @@ import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
   IPAddress,
+  IP_PROTO_UDP,
   MACAddress,
   SubnetMask,
   type ARPPacket,
   type DeviceType,
   type EthernetFrame,
   type IPv4Packet,
+  type UDPPacket,
 } from '../../core/types';
 import { SystemClock } from '../../core/SystemClock';
 import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
@@ -79,8 +81,9 @@ import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
 import { buildEchoRequest } from './l3/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
-  FirewallDnsClient, dnsQueryDatagram,
+  DNS_PORT, FirewallDnsClient, dnsQueryDatagram,
 } from './l3/FirewallDnsClient';
+import { FirewallDnsServer, udpReplyDatagram } from './l3/FirewallDnsServer';
 import type { SdwanService } from './sdwan/SdwanService';
 import { ETHERTYPE_FGCP, type HaAgent } from './ha/HaAgent';
 import { serialNumberOf, type FirewallHa } from './ha/FirewallHa';
@@ -330,6 +333,11 @@ export class Firewall extends Equipment {
       },
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
+      systemDnsServers: () => {
+        const settings = this.dnsClient.getSettings();
+        return [settings.primary, settings.secondary]
+          .filter(server => server.length > 0 && server !== '0.0.0.0');
+      },
     });
 
     this.l3 = l3;
@@ -404,6 +412,19 @@ export class Firewall extends Equipment {
   });
 
   getDnsClient(): FirewallDnsClient { return this.dnsClient; }
+
+  private readonly dnsServer = new FirewallDnsServer({
+    resolveExternal: (name) => this.dnsClient.resolve(name),
+    reply: (iface, to, port, payload) => {
+      const source = this.interfaces.get(iface)?.ip;
+      if (source === undefined) return;
+      this.forward(iface,
+        udpReplyDatagram(source, to, DNS_PORT, port, payload),
+        this.getVdom().routes.resolveNextHop(to)?.nextHop);
+    },
+  });
+
+  getDnsServer(): FirewallDnsServer { return this.dnsServer; }
 
   listL3Interfaces(): readonly import('./l3/InterfaceTable').L3Interface[] {
     return this.interfaces.all();
@@ -809,6 +830,11 @@ export class Firewall extends Equipment {
       observedBySdwan: (p) => this.dnsClient.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
         || this.sdwan.observeReply(p),
+      answeredByDnsServer: (iface, p) => {
+        if (p.protocol !== IP_PROTO_UDP) return false;
+        const udp = p.payload as UDPPacket | undefined;
+        return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
+      },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
       admitsTcp: (iface, p) => this.management.admitsTcp(iface, p),
       allowsPing: (iface) => this.allowsAccess(iface, 'ping'),

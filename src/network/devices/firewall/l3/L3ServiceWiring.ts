@@ -26,6 +26,7 @@ export interface L3ServiceHost {
   emitFrame(iface: string, frame: EthernetFrame): void;
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
+  systemDnsServers?(): readonly string[];
 }
 
 export interface L3Services {
@@ -62,6 +63,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
       if (gateway) host.routes().addDefault(gateway, { id: `dhcp:${iface}` });
     },
     leaseLost: (iface) => { host.routes().removeStaticById(`dhcp:${iface}`); },
+    systemDnsServers: () => host.systemDnsServers?.() ?? [],
   });
 
   const sdwan = new SdwanService({
