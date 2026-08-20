@@ -600,6 +600,9 @@ export function displayCurrentConfig(
   const mqc = router.getTrafficPolicyStore().renderHuawei();
   if (mqc.length > 0) lines.push(...mqc);
 
+  const trLignes = vrpTimeRangeLines(router);
+  if (trLignes.length > 0) { lines.push(...trLignes); lines.push('#'); }
+
   const aclAvant = runningConfigACL(router);
   if (aclAvant.length > 0) lines.push(...aclAvant);
   const natAvant = vrpNatGlobalLines(router);
@@ -1118,6 +1121,9 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('ssh server enable');
     if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
   }
+  if (router.isFtpServerEnabled()) { lines.push('#'); lines.push('ftp server enable'); }
+  if (router._getGlobalToggle('telnet server')) { lines.push('#'); lines.push('telnet server enable'); }
+
   const snmpLines = mgmt.snmpRunningConfigLines();
   if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }
   // Lot N2 : ces lignes sortaient d'un sac de chaines brutes, donc elles
@@ -1205,6 +1211,31 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
  * rendait AUCUNE, celui par interface les rendait toutes. Les mettre ici
  * est ce qui rend le desaccord impossible plutot que rattrape.
  */
+const JOURS_VERS_VRP: Record<string, string> = {
+  daily: 'daily', weekdays: 'working-day', weekend: 'off-day',
+  Monday: 'Mon', Tuesday: 'Tue', Wednesday: 'Wed', Thursday: 'Thu',
+  Friday: 'Fri', Saturday: 'Sat', Sunday: 'Sun',
+};
+
+export function vrpTimeRangeLines(router: Router): string[] {
+  const sec = (router as unknown as {
+    [s: symbol]: { timeRanges?: Map<string, {
+      name: string;
+      periodic: Array<{ days: string; startHour: number; startMinute: number; endHour: number; endMinute: number }>;
+    }> } | undefined;
+  })[Symbol.for('CiscoSecurityConfig')];
+  const deuxChiffres = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const out: string[] = [];
+  for (const tr of sec?.timeRanges?.values() ?? []) {
+    for (const p of tr.periodic) {
+      const jours = p.days.split(' ').map((j) => JOURS_VERS_VRP[j] ?? j).join(' ');
+      out.push(`time-range ${tr.name} ${deuxChiffres(p.startHour)}:${deuxChiffres(p.startMinute)}`
+        + ` to ${deuxChiffres(p.endHour)}:${deuxChiffres(p.endMinute)} ${jours}`);
+    }
+  }
+  return out;
+}
+
 export function vrpNatInterfaceLines(router: Router, portName: string): string[] {
   const engine = (router as any)._getNATEngine?.();
   if (!engine) return [];
@@ -1328,6 +1359,10 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   }
   lines.push(...runningConfigInterfaceACL(router, portName));
   lines.push(...vrpNatInterfaceLines(router, portName));
+  for (const app of router.getTrafficPolicyStore().listApplications()) {
+    if (app.iface !== portName) continue;
+    lines.push(` traffic-policy ${app.policy} ${app.direction}`);
+  }
   if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
   if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
   if (typeof port.isProxyArpExplicit === 'function' && port.isProxyArpExplicit() && port.isProxyArpEnabled?.()) {

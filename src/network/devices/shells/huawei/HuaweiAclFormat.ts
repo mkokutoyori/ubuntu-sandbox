@@ -31,6 +31,9 @@ export function formatHuaweiAclEntry(entry: ACLEntry, opts: { showCounts?: boole
   }
   if (entry.srcPortSpec) parts.push('source-port', ...formatPortSpecTokens(entry.srcPortSpec));
   if (entry.dstPortSpec) parts.push('destination-port', ...formatPortSpecTokens(entry.dstPortSpec));
+  if (entry.fragments) parts.push('fragment');
+  if (entry.timeRange) parts.push('time-range', entry.timeRange);
+  if (entry.log) parts.push('logging');
   let line = parts.join(' ');
   if (opts.showCounts !== false && entry.matchCount > 0) {
     line += ` (${entry.matchCount} matche${entry.matchCount === 1 ? '' : 's'})`;

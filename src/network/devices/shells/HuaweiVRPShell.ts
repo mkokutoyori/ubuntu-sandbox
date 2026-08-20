@@ -118,6 +118,35 @@ import {
 import { collectListeningSockets } from '../router/management/SocketInventory';
 import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
 import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
+import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+
+const JOURS_VRP: Record<string, string> = {
+  daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
+  mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday',
+  fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+};
+
+function analyserHeureVrp(mot: string | undefined): { h: number; m: number } | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(mot ?? '');
+  if (!m) return null;
+  const h = Number(m[1]); const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return { h, m: min };
+}
+
+function analyserPeriodeVrp(args: string[]): import('../router/security/CiscoSecurityConfig').TimeRangePeriodic | null {
+  const debut = analyserHeureVrp(args[0]);
+  if (!debut || args[1]?.toLowerCase() !== 'to') return null;
+  const fin = analyserHeureVrp(args[2]);
+  if (!fin) return null;
+  const jours = args.slice(3).map((j) => JOURS_VRP[j.toLowerCase()]).filter(Boolean);
+  if (args.length > 3 && jours.length !== args.length - 3) return null;
+  return {
+    days: jours.length > 0 ? jours.join(' ') : 'daily',
+    startHour: debut.h, startMinute: debut.m,
+    endHour: fin.h, endMinute: fin.m,
+  };
+}
 
 function renderHuaweiTcpStatus(router: Router): string {
   const tcp = collectListeningSockets(router).filter((s) => s.protocol === 'tcp');
@@ -1981,10 +2010,17 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
     this.buildAaaSubmodes(aaa);
 
-    t.registerGreedy('time-range', 'Define a time-range', (args, raw) => {
-      const r = vrpStores(this.r());
-      const trs = r._huaweiTimeRanges ??= new Map<string, VrpTimeRange>();
-      if (args[0]) trs.set(args[0], { name: args[0], spec: raw ?? args.join(' ') });
+    t.registerGreedy('time-range', 'Define a time-range', (args) => {
+      const nom = args[0];
+      if (!nom) return HUAWEI_ERRORS.INCOMPLETE(`time-range ${args.join(' ')}`);
+      const periode = analyserPeriodeVrp(args.slice(1));
+      if (!periode) return HUAWEI_ERRORS.WRONG(`time-range ${args.join(' ')}`);
+      const tr = getSecurityConfig(this.r()).ensureTimeRange(nom);
+      tr.periodic.push(periode);
+      return '';
+    });
+    t.registerGreedy('undo time-range', 'Remove a time-range', (args) => {
+      if (args[0]) getSecurityConfig(this.r()).timeRanges.delete(args[0]);
       return '';
     });
 
@@ -2271,19 +2307,13 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    const isisIf = (key: string) => (args: string[]) => {
-      const ifName = this.selectedInterface;
-      if (!ifName) return '';
-      vrpSetInterfaceAttr(this.r(), '_huaweiIsisIfExtras', ifName, key, args.join(' '));
-      return '';
-    };
-    t.registerGreedy('isis enable', 'Enable IS-IS on interface', isisIf('processId'));
-    t.registerGreedy('isis circuit-level', 'Set IS-IS circuit level', isisIf('circuitLevel'));
-    t.registerGreedy('isis cost', 'Set IS-IS cost', isisIf('cost'));
-    t.registerGreedy('isis circuit-type', 'Set IS-IS circuit type', isisIf('circuitType'));
-    t.registerGreedy('isis timer hello', 'IS-IS hello timer', isisIf('helloTimer'));
-    t.registerGreedy('isis timer holding-multiplier', 'IS-IS holding multiplier', isisIf('holdMultiplier'));
-    t.registerGreedy('isis authentication-mode', 'IS-IS authentication mode', isisIf('auth'));
+    const isisAbsent = (nom: string) => (args: string[]) =>
+      "Error: This simulator has no IS-IS engine, so `isis " + nom + '` would be '
+      + `stored without effect.\nisis ${nom} ${args.join(' ')}`.trimEnd();
+    for (const nom of ['enable', 'circuit-level', 'cost', 'circuit-type',
+      'timer hello', 'timer holding-multiplier', 'authentication-mode']) {
+      t.registerGreedy(`isis ${nom}`, `IS-IS ${nom} on interface`, isisAbsent(nom));
+    }
 
     t.registerGreedy('traffic-policy', 'Apply traffic policy on interface', (args) => {
       const name = args[0]; const dir = (args[1] || 'inbound').toLowerCase();

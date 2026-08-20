@@ -5674,7 +5674,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   setInterfaceACL(ifName: string, direction: 'in' | 'out', aclRef: number | string) { this.aclEngine.setInterfaceACL(ifName, direction, aclRef); }
   removeInterfaceACL(ifName: string, direction: 'in' | 'out') { this.aclEngine.removeInterfaceACL(ifName, direction); }
   getInterfaceACL(ifName: string, direction: 'in' | 'out') { return this.aclEngine.getInterfaceACL(ifName, direction); }
-  evaluateACLByName(name: string, ipPkt: IPv4Packet) { return this.aclEngine.evaluateACLByName(name, ipPkt); }
+  evaluateACLByName(name: string, ipPkt: IPv4Packet, now: Date = new Date()) {
+    return this.aclEngine.evaluateACLByName(name, ipPkt, now);
+  }
 
   _ensureNamedAccessList(name: string, type: 'standard' | 'extended') { this.aclEngine.ensureNamedAccessList(name, type); }
   _aclHasSequence(name: string, seq: number) { return this.aclEngine.hasSequence(name, seq); }
