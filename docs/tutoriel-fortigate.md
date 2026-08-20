@@ -1907,3 +1907,422 @@ FGT-01 (interface) # end
 5. **L'`Implicit Deny` est le fondement du pare-feu.** Tout ce qui n'est pas autorisé est refusé, et c'est ce qui distingue un pare-feu d'un routeur.
 
 ---
+
+## 7. Le routage sur FortiGate
+
+Avant de filtrer un paquet, le pare-feu doit savoir **où l'envoyer**. C'est le travail de la table de routage, et c'est une étape qu'on oublie souvent dans le diagnostic : on cherche une politique manquante alors que le problème est qu'il n'y a pas de route.
+
+### 7.1 Ce qu'est une table de routage
+
+C'est la liste des réseaux que le pare-feu sait joindre, et par où. Chaque ligne dit : « pour aller vers **ce réseau-là**, sors par **cette interface**, en confiant le paquet à **ce voisin** ».
+
+```
+FGT-01 # get router info routing-table all
+```
+```
+Codes: K - kernel, C - connected, S - static, R - RIP, B - BGP
+       O - OSPF, IA - OSPF inter area
+       * - candidate default
+
+S*    0.0.0.0/0 [10/0] via 192.168.100.1, port1
+C     192.168.10.0/24 is directly connected, port2
+C     192.168.20.0/24 is directly connected, port3
+C     192.168.100.0/24 is directly connected, port1
+```
+
+Lecture ligne par ligne :
+
+| Élément | Signification |
+|---|---|
+| `S*` | Route **statique**, et candidate par défaut |
+| `C` | Route **connectée** — créée automatiquement par l'adressage d'une interface |
+| `0.0.0.0/0` | « Tout le reste » — la route par défaut |
+| `[10/0]` | `[distance/métrique]` |
+| `via 192.168.100.1` | Le prochain saut |
+| `port1` | L'interface de sortie |
+
+> 💡 **Astuce** : les routes `C` apparaissent **toutes seules** dès qu'une interface a une adresse et qu'elle est active. Tu n'as jamais à les créer. Corollaire utile en diagnostic : **si une route connectée manque, c'est que l'interface est down ou sans adresse** — le problème est là, pas dans le routage.
+
+### 7.2 La route par défaut
+
+C'est la route la plus importante de toutes : celle qui dit « pour tout ce que je ne connais pas, va par là ». Sans elle, pas d'Internet.
+
+```
+config router static
+    edit 1
+        set dst 0.0.0.0 0.0.0.0
+        set gateway 192.168.100.1
+        set device "port1"
+        set distance 10
+        set comment "Route par defaut - operateur principal"
+    next
+end
+```
+
+> 💡 **Astuce** : `set dst 0.0.0.0 0.0.0.0` est souvent omis, parce que c'est la valeur par défaut d'une route statique. Ces deux blocs créent la même route :
+> ```
+> edit 1
+>     set gateway 192.168.100.1
+>     set device "port1"
+> next
+> ```
+> Je te conseille quand même de l'écrire : une configuration explicite se relit mieux, et tu ne te demanderas pas six mois plus tard si l'omission était volontaire.
+
+### 7.3 Les routes statiques
+
+Pour un réseau qui n'est pas directement connecté et qu'on atteint par un routeur interne :
+
+```
+config router static
+    edit 2
+        set dst 172.16.50.0 255.255.255.0
+        set gateway 192.168.10.254
+        set device "port2"
+        set comment "Reseau du site distant via le routeur interne"
+    next
+end
+```
+
+**Traduction** : « pour atteindre `172.16.50.0/24`, sors par `port2` et donne le paquet à `192.168.10.254` ».
+
+> ⚠️ **Attention — la passerelle doit être joignable directement**
+> Le prochain saut doit se trouver sur un réseau **directement connecté** au pare-feu. Écrire `set gateway 8.8.8.8` sur une interface en `192.168.10.1/24` ne fonctionne pas : le pare-feu n'a aucun moyen de joindre `8.8.8.8` autrement qu'en passant par… la route qu'il est en train de définir. FortiOS refusera généralement, ou la route restera inactive.
+
+### 7.4 🧠 Comprendre : distance administrative et priorité
+
+Ce sont **deux notions différentes** que tout le monde confond, et la confusion coûte cher en diagnostic. Prenons le temps de bien les séparer.
+
+**La distance administrative (`distance`) — quelle route entre dans la table ?**
+
+Quand plusieurs sources proposent une route vers le même réseau, FortiOS ne garde que celle dont la distance est **la plus faible**. Les autres n'entrent même pas dans la table de routage : elles restent en réserve.
+
+| Source | Distance par défaut |
+|---|---|
+| Connecté | 0 |
+| Statique | 10 |
+| eBGP | 20 |
+| OSPF | 110 |
+| RIP | 120 |
+| iBGP | 200 |
+
+> 📖 **Le sais-tu ?** La distance statique par défaut de FortiOS est **10**, alors que chez Cisco c'est **1**. Une différence à connaître si tu viens du monde Cisco : une route statique FortiOS est moins « prioritaire » qu'une statique Cisco face à un protocole dynamique de distance intermédiaire.
+
+**La priorité (`priority`) — quelle route est utilisée quand elles sont à égalité ?**
+
+Si deux routes ont la **même** destination et la **même** distance, elles entrent **toutes les deux** dans la table, et FortiOS répartit le trafic entre elles (ECMP). La `priority` départage : **la plus faible gagne**.
+
+**La différence concrète, avec deux opérateurs :**
+
+```
+config router static
+    edit 1
+        set gateway 192.168.100.1
+        set device "port1"
+        set distance 10
+        set priority 5              ← chemin préféré
+        set comment "Operateur principal"
+    next
+    edit 2
+        set gateway 192.168.101.1
+        set device "port4"
+        set distance 10             ← MEME distance
+        set priority 10             ← moins prioritaire
+        set comment "Operateur de secours"
+    next
+end
+```
+
+Les deux routes sont dans la table. Le trafic emprunte l'opérateur principal. Si `port1` tombe, l'autre prend le relais **instantanément**, sans recalcul.
+
+Compare avec l'autre approche :
+
+```
+    edit 2
+        set distance 20             ← distance PLUS GRANDE
+```
+
+Ici, la route de secours n'est **pas** dans la table du tout. Elle y entre seulement quand la première disparaît. C'est ce qu'on appelle une **route flottante**.
+
+| Approche | Les deux routes sont-elles dans la table ? | Comportement |
+|---|---|---|
+| Même distance, priorités différentes | ✅ Oui | Bascule immédiate, ECMP possible |
+| Distances différentes | ❌ Non, une seule | La secondaire attend que la première tombe |
+
+> ⚠️ **Attention — le piège de l'égalité parfaite**
+> Si tu crées deux routes par défaut avec **la même distance ET la même priorité**, FortiOS fait de l'**ECMP** : il répartit les sessions entre les deux opérateurs.
+>
+> Ça semble idéal — deux fois plus de débit ! — mais ça casse des choses en pratique : les sessions d'un même utilisateur partent alternativement par deux adresses publiques différentes, et beaucoup de sites web (banques, services d'authentification) invalident la session quand l'adresse source change en cours de route. Tes utilisateurs seront déconnectés au hasard.
+>
+> Pour faire de la répartition proprement, **utilise le SD-WAN** (section 20), qui a été inventé exactement pour ça et sait maintenir une session sur un même lien.
+
+### 7.5 Le routage par politique (Policy Route)
+
+La table de routage décide en fonction de **la destination uniquement**. Parfois, ça ne suffit pas.
+
+Exemple réel : « le trafic de la comptabilité doit sortir par l'opérateur A, celui du reste de l'entreprise par l'opérateur B ». La destination est la même (Internet) ; c'est la **source** qui doit décider. Une route statique ne sait pas faire ça.
+
+Le **routage par politique** (*policy route*, aussi appelé PBR) le permet :
+
+```
+config router policy
+    edit 1
+        set input-device "port2"
+        set srcaddr "Reseau-Compta"
+        set dstaddr "all"
+        set protocol 6
+        set start-port 443
+        set end-port 443
+        set output-device "port4"
+        set gateway 192.168.101.1
+        set comment "La compta sort par l operateur B"
+    next
+end
+```
+
+> ⚠️ **Attention — les routes par politique passent AVANT tout le reste**
+> C'est le point capital, et la source d'un diagnostic classique : **une route par politique est évaluée avant la table de routage**. Si une politique de routage correspond au paquet, la table de routage n'est **jamais consultée**.
+>
+> Le symptôme typique : « ma route statique est bien là, `get router info routing-table` la montre, et le trafic part quand même ailleurs ». Réflexe à avoir :
+> ```
+> FGT-01 # show router policy
+> FGT-01 # diagnose firewall proute list
+> ```
+> C'est presque toujours une route par politique oubliée.
+
+### 7.6 Le suivi de lien (Link Monitor)
+
+Une route statique a un défaut grave : elle reste active tant que **l'interface** est up. Or l'interface peut être parfaitement up alors que l'opérateur est en panne trois routeurs plus loin. Résultat : ton pare-feu continue d'envoyer tout le trafic dans un trou noir.
+
+Le **link monitor** corrige ça en testant réellement la connectivité :
+
+```
+config system link-monitor
+    edit "surveillance-wan1"
+        set srcintf "port1"
+        set server "8.8.8.8" "1.1.1.1"
+        set protocol ping
+        set gateway-ip 192.168.100.1
+        set interval 5
+        set timeout 2
+        set failtime 3
+        set recoverytime 3
+        set update-cascade-interface enable
+        set update-static-route enable
+        set status enable
+    next
+end
+```
+
+Décryptage :
+
+| Paramètre | Rôle |
+|---|---|
+| `server` | Les cibles à tester. **Mets-en plusieurs** — si tu n'en surveilles qu'une et qu'elle tombe, tu bascules pour rien |
+| `interval` | Un test toutes les 5 secondes |
+| `failtime 3` | 3 échecs consécutifs → le lien est déclaré mort |
+| `recoverytime 3` | 3 succès consécutifs → il est déclaré revenu |
+| `update-static-route enable` | ⭐ **Retire les routes statiques** de cette interface quand le lien est mort |
+
+C'est `update-static-route` qui fait tout le travail : la route par défaut de `port1` disparaît, la route de secours prend le relais.
+
+Vérification :
+
+```
+FGT-01 # diagnose sys link-monitor status
+```
+
+> 💡 **Astuce** : `failtime 3` avec `interval 5` donne une détection en 15 secondes. Descendre trop bas (`failtime 1`) rend le système nerveux : la moindre perte de paquet fait basculer tout le trafic. Trois échecs sur cinq secondes est un bon compromis en production.
+
+---
+
+### 🧪 TP 5 — Router, casser, observer
+
+**🎯 Objectif**
+Créer une route par défaut, vérifier la table, ajouter une route de secours, puis **provoquer une panne** et observer la bascule. C'est le TP qui t'apprend le plus sur le routage, parce qu'on ne comprend une route de secours qu'en la voyant prendre le relais.
+
+**⏱️ Durée** : 30 minutes
+
+**📋 Prérequis** : TP 4 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Observer l'état initial**
+
+```
+FGT-01 # get router info routing-table all
+```
+
+Tu vois tes routes connectées. Si `port1` est en DHCP, tu as peut-être déjà une route par défaut apprise automatiquement.
+
+```
+FGT-01 # get router info routing-table static
+```
+
+**Étape 2 — Regarder la base de routage complète**
+
+Il existe une vue plus riche que la table : la **RIB**, qui contient aussi les routes candidates non retenues.
+
+```
+FGT-01 # get router info routing-table database
+```
+```
+Codes: K - kernel, C - connected, S - static
+       > - selected route, * - FIB route
+
+S    *> 0.0.0.0/0 [10/0] via 192.168.100.1, port1
+C    *> 192.168.10.0/24 is directly connected, port2
+C    *> 192.168.20.0/24 is directly connected, port3
+```
+
+> 🧠 **Comprendre — RIB et FIB**
+> La **RIB** (*Routing Information Base*) est **tout ce que le pare-feu sait** : toutes les routes apprises, retenues ou non.
+> La **FIB** (*Forwarding Information Base*) est **ce qu'il utilise vraiment** pour acheminer les paquets.
+>
+> Le `>` marque les routes sélectionnées, le `*` celles qui sont dans la FIB. Une route présente dans la RIB sans `*` est connue mais inutilisée — typiquement une route flottante qui attend son heure.
+>
+> C'est une distinction précieuse en diagnostic : elle te dit si ta route est **absente** (problème de configuration) ou **présente mais non retenue** (problème de distance).
+
+**Étape 3 — Créer explicitement la route par défaut**
+
+Si `port1` est en statique, ou pour la maîtriser :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 1
+FGT-01 (1) # set dst 0.0.0.0 0.0.0.0
+FGT-01 (1) # set gateway 192.168.100.1
+FGT-01 (1) # set device "port1"
+FGT-01 (1) # set distance 10
+FGT-01 (1) # set priority 5
+FGT-01 (1) # set comment "Defaut - operateur principal"
+FGT-01 (1) # next
+FGT-01 (static) # end
+```
+
+> ⚠️ **Attention** : adapte `192.168.100.1` à la passerelle réelle de ton réseau « WAN ». Si `port1` est en DHCP, retrouve-la avec :
+> ```
+> FGT-01 # get system interface port1 | grep gateway
+> ```
+
+**Étape 4 — Tester depuis le pare-feu**
+
+```
+FGT-01 # execute ping 8.8.8.8
+```
+
+Si ça répond, ta route par défaut fonctionne.
+
+Si ça ne répond pas, teste par étapes — c'est la bonne méthode de diagnostic :
+
+```
+FGT-01 # execute ping 192.168.100.1      ← la passerelle répond-elle ?
+FGT-01 # get router info routing-table all   ← la route est-elle là ?
+FGT-01 # execute traceroute 8.8.8.8      ← où ça s'arrête ?
+```
+
+**Étape 5 — Ajouter une route flottante**
+
+On simule un second opérateur. Même si tu n'as qu'une seule sortie, l'exercice fonctionne :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 2
+FGT-01 (2) # set dst 0.0.0.0 0.0.0.0
+FGT-01 (2) # set gateway 192.168.10.254
+FGT-01 (2) # set device "port2"
+FGT-01 (2) # set distance 20
+FGT-01 (2) # set comment "Defaut - secours (fictif)"
+FGT-01 (2) # next
+FGT-01 (static) # end
+```
+
+**Étape 6 — Vérifier qu'elle n'est PAS utilisée**
+
+```
+FGT-01 # get router info routing-table all
+```
+
+Tu ne vois **qu'une seule** route par défaut : celle de distance 10.
+
+```
+FGT-01 # get router info routing-table database
+```
+
+Là, tu vois **les deux**, mais seule celle de distance 10 porte le `*>`.
+
+> 🧠 C'est exactement la démonstration du §7.4. La route de secours existe, elle est connue, elle n'est pas utilisée. Elle attend.
+
+**Étape 7 — Provoquer la panne**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set status down
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+> 🚨 **Danger** : si tu administres le pare-feu **par `port1`**, tu viens de te couper l'accès. Fais cette étape depuis la **console de l'hyperviseur**, ou depuis un poste du LAN branché sur `port2`. Je te préviens sérieusement : c'est la façon la plus courante de perdre la main sur un pare-feu.
+
+**Étape 8 — Observer la bascule**
+
+```
+FGT-01 # get router info routing-table all
+```
+
+La route par défaut de `port1` a **disparu** (son interface est down), et celle de distance 20 a pris sa place.
+
+```
+FGT-01 # get router info routing-table database
+```
+
+Le `*>` s'est déplacé sur la route de secours.
+
+**Tu viens d'observer une bascule automatique.** C'est le mécanisme qui, en production, maintient une entreprise connectée quand son opérateur principal tombe.
+
+**Étape 9 — Rétablir**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set status up
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+
+FGT-01 # get router info routing-table all
+```
+
+La route principale revient et reprend la main. Ce retour automatique s'appelle le *failback*.
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config router static
+FGT-01 (static) # delete 2
+FGT-01 (static) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `get router info routing-table all` montre les connectées et la route par défaut
+- `execute ping 8.8.8.8` répond (si ton lab a Internet)
+- La route de distance 20 est **dans la base** mais **pas dans la table**
+- L'extinction de `port1` fait basculer la route par défaut
+- La remise en service la fait revenir
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Les routes connectées sont automatiques.** Leur absence signale une interface morte, pas un problème de routage.
+2. **RIB et FIB sont deux choses différentes.** `routing-table database` montre ce que le pare-feu sait, `routing-table all` ce qu'il utilise.
+3. **La distance décide qui entre dans la table ; la priorité départage les ex æquo.**
+4. **Une route flottante est un vrai mécanisme de secours**, et tu l'as vue fonctionner.
+5. **Une route disparaît quand son interface tombe** — d'où l'utilité du link monitor quand l'interface reste up mais que l'opérateur est mort.
+6. **Le routage ne suffit pas à faire passer le trafic.** Ton PC-LAN ne joint toujours pas la DMZ, alors que les routes sont parfaites. Il manque les politiques : c'est la section 9.
+
+---
