@@ -747,3 +747,278 @@ Beaucoup plus que « installer une VM », en réalité :
 4. **La numérotation des ports vient de l'hyperviseur**, pas de FortiOS. Un piège classique quand une VM se comporte bizarrement.
 
 ---
+
+# Partie II — Premiers pas
+
+---
+
+## 4. Premier démarrage et prise en main
+
+Ton FortiGate tourne. Avant d'écrire la moindre règle, on va faire ce que fait tout administrateur devant un équipement neuf : **le rendre présentable et identifiable**. Hostname, heure, comptes, licence. C'est du travail de plomberie, mais chacun de ces points a une conséquence réelle que je vais t'expliquer — notamment l'heure, dont tu ne soupçonnes probablement pas l'importance.
+
+### 4.1 Le tour du propriétaire : l'interface web
+
+Connecte-toi sur `http://<adresse-port1>`. Voici la carte des lieux.
+
+**Le menu de gauche**, dans l'ordre où tu l'utiliseras :
+
+| Menu | Ce qu'on y fait | Section du tutoriel |
+|---|---|---|
+| **Dashboard** | Vue d'ensemble, licences, ressources | Ici |
+| **Network** | Interfaces, routage, DNS, DHCP | 6, 7, 12 |
+| **Policy & Objects** | ⭐ Politiques, adresses, services, NAT | 8, 9, 10 |
+| **Security Profiles** | Antivirus, filtrage web, IPS, contrôle applicatif | 13, 14, 15 |
+| **VPN** | IPsec et accès distant | 17, 18 |
+| **User & Authentication** | Utilisateurs, LDAP, RADIUS | 16 |
+| **WiFi & Switch Controller** | Bornes et switchs Fortinet | Hors périmètre |
+| **Log & Report** | Journaux, FortiView | 22 |
+| **System** | Administrateurs, heure, mises à jour, HA | Ici, 21, 24 |
+
+> 💡 **Astuce** : le menu que tu passeras 80 % de ton temps à utiliser est **Policy & Objects**. C'est le cœur du métier. Les autres sont des services autour.
+
+**Le tableau de bord** t'affiche des widgets. Ceux qui comptent vraiment :
+
+- **System Information** — modèle, version, temps de fonctionnement
+- **Licenses** — l'état de tes abonnements FortiGuard (probablement en rouge, c'est normal)
+- **Security Fabric** — l'état de la coopération entre équipements
+- **CPU / Memory** — la charge. Un FortiGate en mémoire saturée bascule en *conserve mode*, ce qui change son comportement (§23)
+
+### 4.2 🧠 Comprendre : pourquoi l'heure est un sujet de sécurité
+
+C'est le paramètre que tout le monde néglige et qui coûte le plus cher. Alors on prend deux minutes.
+
+Une heure fausse sur un pare-feu casse **quatre choses**, et pas des petites :
+
+**1. Les journaux deviennent inexploitables.** Le jour où tu dois répondre à « que s'est-il passé le 14 mars à 3 h 12 ? », tu compares les logs du pare-feu, du serveur et du proxy. Si les horloges divergent de vingt minutes, tu ne peux **pas corréler** les événements. L'enquête s'arrête là. C'est le cas d'usage numéro un de la journalisation, et il tombe sur un décalage d'horloge.
+
+**2. Les certificats cessent de fonctionner.** Un certificat TLS est valide **entre deux dates**. Si ton pare-feu croit qu'on est en 2019, tout certificat émis depuis est « pas encore valide » — et il refusera l'inspection SSL (section 15) et les tunnels VPN qui s'authentifient par certificat.
+
+**3. Les règles horaires ne s'appliquent pas.** Une politique « accès Internet de 8 h à 18 h » sur une horloge décalée bloque les gens en pleine journée de travail. Bon courage pour le diagnostic.
+
+**4. La corrélation avec les autres équipements échoue.** Même problème que le point 1, mais à l'échelle du SIEM.
+
+**La bonne pratique, universelle et non négociable : synchroniser via NTP.** C'est deux commandes, et FortiOS le fait par défaut vers les serveurs Fortinet — encore faut-il que le pare-feu ait accès à Internet, ce qui n'est pas toujours le cas.
+
+### 4.3 Les comptes d'administration
+
+FortiOS a un compte `admin` par défaut, qui est un **super-administrateur**. Dans la vraie vie, on ne travaille pas comme ça :
+
+- Chaque administrateur a **son propre compte nominatif**. Sinon, quand quelque chose casse, les journaux disent « admin » et tu ne sais pas qui.
+- On attribue des **profils de droits** (*admin profiles*) : le support de niveau 1 a besoin de lire les journaux, pas de modifier les politiques.
+- Le compte `admin` générique est réservé aux urgences.
+
+Les profils prédéfinis :
+
+| Profil | Droits |
+|---|---|
+| `super_admin` | Tout, y compris créer des administrateurs |
+| `prof_admin` | Tout dans un VDOM, mais pas la configuration globale |
+| **Personnalisé** | Ce que tu définis, catégorie par catégorie |
+
+### 4.4 La licence d'évaluation
+
+Sur une VM, le bandeau rouge du tableau de bord signale une licence non enregistrée. Pour obtenir la licence d'évaluation permanente :
+
+1. Va dans **Dashboard → Status**, widget **Licenses** (ou le bandeau d'avertissement)
+2. Clique sur l'invitation à enregistrer la VM
+3. Choisis **Evaluation License**
+4. Saisis les identifiants de ton compte FortiCare gratuit
+5. La licence est générée et appliquée automatiquement
+
+> ⚠️ **Attention** : une seule licence d'évaluation par compte FortiCare. Si tu veux plusieurs FortiGate simultanés (sections 17 à 21), il te faudra **plusieurs comptes**, ou passer par des boîtiers physiques. C'est une contrainte réelle qu'il vaut mieux découvrir maintenant qu'au moment de monter le VPN site-à-site.
+
+---
+
+### 🧪 TP 2 — Rendre ton FortiGate identifiable et à l'heure
+
+**🎯 Objectif**
+Configurer hostname, fuseau horaire, NTP, un compte d'administration nominatif et un délai d'expiration de session. Autrement dit : transformer une VM anonyme en équipement administrable.
+
+**⏱️ Durée** : 20 minutes
+
+**📋 Prérequis** : TP 1 terminé, accès CLI (console ou SSH)
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Nommer le pare-feu**
+
+```
+FortiGate-VM64 # config system global
+FortiGate-VM64 (global) # set hostname FGT-01
+FGT-01 (global) # end
+```
+
+> 💡 **Astuce** : remarque que l'invite change **immédiatement**, avant même le `end`. FortiOS applique certains paramètres à la volée. Ce n'est pas le cas partout — la plupart des tables n'appliquent qu'au `end`.
+
+**Étape 2 — Régler le fuseau horaire**
+
+D'abord, trouve ton fuseau. La liste est longue et numérotée :
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set timezone ?
+```
+
+Tu obtiens une liste de plusieurs centaines d'entrées. Pour Paris :
+
+```
+FGT-01 (global) # set timezone 04
+FGT-01 (global) # end
+```
+
+> ⚠️ **Attention** : les numéros de fuseau changent selon les versions de FortiOS. **Ne recopie pas un numéro trouvé sur un blog** — utilise le `?` sur *ta* machine et lis la liste. Depuis 7.4, FortiOS accepte aussi les noms normalisés :
+> ```
+> FGT-01 (global) # set timezone "Europe/Paris"
+> ```
+> Préfère cette forme quand elle est disponible : elle est lisible et ne dépend pas d'une numérotation interne.
+
+**Étape 3 — Activer NTP**
+
+```
+FGT-01 # config system ntp
+FGT-01 (ntp) # set ntpsync enable
+FGT-01 (ntp) # set type custom
+FGT-01 (ntp) # config ntpserver
+FGT-01 (ntpserver) # edit 1
+FGT-01 (1) # set server "fr.pool.ntp.org"
+FGT-01 (1) # next
+FGT-01 (ntpserver) # end
+FGT-01 (ntp) # set syncinterval 60
+FGT-01 (ntp) # end
+```
+
+Décryptage :
+
+| Commande | Traduction |
+|---|---|
+| `set ntpsync enable` | « Synchronise-toi » |
+| `set type custom` | « J'indique moi-même les serveurs » (l'autre valeur, `fortiguard`, utilise ceux de Fortinet) |
+| `config ntpserver` | Une table **imbriquée** dans la table NTP — on y reviendra en §5 |
+| `set syncinterval 60` | Interroge le serveur toutes les 60 minutes |
+
+**Étape 4 — Vérifier l'heure**
+
+```
+FGT-01 # get system status | grep "System time"
+```
+
+ou, plus complet :
+
+```
+FGT-01 # execute time
+FGT-01 # execute date
+```
+
+Et pour vérifier que la synchronisation fonctionne vraiment :
+
+```
+FGT-01 # diagnose sys ntp status
+```
+
+> 💡 **Astuce** : `execute time` **affiche** l'heure, mais permet aussi de la **régler** manuellement (`execute time 14:30:00`). C'est utile quand ton lab n'a pas d'accès Internet et donc pas de NTP.
+
+**Étape 5 — Créer un administrateur nominatif**
+
+```
+FGT-01 # config system admin
+FGT-01 (admin) # edit "jdupont"
+FGT-01 (jdupont) # set accprofile "super_admin"
+FGT-01 (jdupont) # set password "MotDePasseSolide2026!"
+FGT-01 (jdupont) # set comments "Administrateur reseau - J. Dupont"
+FGT-01 (jdupont) # next
+FGT-01 (admin) # end
+```
+
+**Étape 6 — Restreindre les adresses de connexion (bonne pratique)**
+
+Un administrateur ne devrait pouvoir se connecter que depuis un poste d'administration :
+
+```
+FGT-01 # config system admin
+FGT-01 (admin) # edit "jdupont"
+FGT-01 (jdupont) # set trusthost1 192.168.10.0 255.255.255.0
+FGT-01 (jdupont) # next
+FGT-01 (admin) # end
+```
+
+> 🚨 **Danger — le piège du `trusthost`**
+> Dès que tu définis **un seul** `trusthost` sur un compte, **toutes les autres adresses sont refusées** pour ce compte. C'est le comportement voulu, mais il se retourne contre toi très facilement.
+>
+> **Le scénario classique** : tu es connecté en SSH depuis `192.168.100.50`, tu poses `set trusthost1 192.168.10.0/24` sur ton propre compte, tu valides… et ta session suivante est refusée. Tu viens de t'enfermer dehors.
+>
+> **La règle** : configure le `trusthost` d'abord sur un compte **de test**, vérifie que tu peux te connecter avec, **et seulement ensuite** applique-le à ton compte principal. Garde toujours un accès console — sur une VM, la console de l'hyperviseur ne peut pas être filtrée par `trusthost`, c'est ta porte de secours.
+
+**Étape 7 — Régler le délai d'expiration des sessions**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set admintimeout 30
+FGT-01 (global) # end
+```
+
+Trente minutes d'inactivité et la session d'administration se ferme. Par défaut c'est 5 minutes, ce qui est très court quand on apprend et qu'on lit un tutoriel entre deux commandes.
+
+> ⚠️ **Attention** : en production, **ne monte pas ce délai inutilement**. Une session d'administration oubliée sur un poste non verrouillé est une porte ouverte. Trente minutes en lab, cinq à dix en production.
+
+**Étape 8 — Vérifier l'ensemble**
+
+```
+FGT-01 # show system global
+```
+
+Tu ne verras que les paramètres **différents de la valeur par défaut**. C'est une caractéristique majeure de FortiOS, expliquée en détail au §5.6.
+
+Pour tout voir, y compris les valeurs par défaut :
+
+```
+FGT-01 # show full-configuration system global
+```
+
+Prépare-toi : c'est très long. 😄
+
+---
+
+**✅ Résultat attendu**
+
+- L'invite affiche `FGT-01 #`
+- `get system status` montre l'heure correcte de ton fuseau
+- `diagnose sys ntp status` indique une synchronisation
+- Tu peux te connecter avec le compte `jdupont`
+- `show system global` fait apparaître `hostname`, `timezone`, `admintimeout`
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **`config system global` est le fourre-tout des réglages généraux.** Hostname, fuseau, délais, langue de l'interface. Tu y reviendras souvent.
+2. **Les tables peuvent être imbriquées** (`config ntpserver` à l'intérieur de `config system ntp`). Structure fréquente dans FortiOS.
+3. **`show` n'affiche que ce qui diffère du défaut.** C'est ce qui rend une configuration FortiGate lisible : ce que tu vois est **exactement** ce que quelqu'un a décidé de changer.
+4. **`trusthost` est puissant et dangereux.** Il sécurise vraiment, et il enferme dehors vraiment.
+5. **L'heure n'est pas un détail cosmétique.** Journaux corrélables, certificats valides, règles horaires opérationnelles.
+
+---
+
+### 4.5 Les quatre familles de commandes FortiOS
+
+Avant de plonger dans la CLI, voici la carte mentale. **Toutes** les commandes FortiOS appartiennent à l'une de ces quatre familles, et savoir laquelle t'indique déjà ce qu'elle fait :
+
+| Famille | Rôle | Modifie la config ? | Exemple |
+|---|---|---|---|
+| `config` | **Modifier** la configuration | ✅ Oui | `config firewall policy` |
+| `get` | **Lire** un état ou des valeurs | ❌ Non | `get system status` |
+| `show` | **Afficher** la configuration en texte | ❌ Non | `show firewall policy` |
+| `execute` | **Faire** une action immédiate | Selon l'action | `execute ping 8.8.8.8` |
+| `diagnose` | **Diagnostiquer** en profondeur | ❌ Non (sauf exceptions) | `diagnose sniffer packet` |
+
+> 💡 **Astuce — la distinction `get` / `show` déroute tous les débutants**
+> Sur la même chose, elles ne répondent pas à la même question :
+> - **`show`** dit : « quelle est la **configuration** ? » → la réponse est un texte que tu pourrais recoller pour reconstruire l'équipement.
+> - **`get`** dit : « quel est l'**état actuel** ? » → la réponse inclut des choses que personne n'a configurées (adresse obtenue en DHCP, état du lien, compteurs).
+>
+> Sur une interface en DHCP, `show system interface port1` te dira `set mode dhcp` — c'est ce qui est configuré. `get system interface port1` te dira en plus **l'adresse réellement obtenue**. Les deux sont vraies, elles répondent à deux questions différentes.
+
+C'est le sujet de la section suivante, et c'est la section la plus rentable de tout ce tutoriel. 🎯
+
+---
