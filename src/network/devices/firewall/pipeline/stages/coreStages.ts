@@ -511,6 +511,7 @@ function natDestinationStage(services: FirewallServices): PipelineStage {
 
       context.packet = outcome.packet;
       context.destinationTranslated = true;
+      context.destinationNatRuleId = outcome.matchedRuleId;
       pendingTranslations.set(context, outcome.translation);
       return proceed(context, 'nat-destination', outcome.matchedRuleId);
     },
@@ -652,6 +653,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
           ...transportPorts(policyDestination(context, packet, services)),
           application: context.identifiedApplication,
           destinationTranslated: context.destinationTranslated === true,
+          destinationNatRuleId: context.destinationNatRuleId,
         },
         packet.totalLength,
       );

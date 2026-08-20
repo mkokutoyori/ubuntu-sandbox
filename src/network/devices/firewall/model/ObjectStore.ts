@@ -194,6 +194,24 @@ export class ObjectStore {
     return names.some(name => this.matchesAddress(name, candidate));
   }
 
+  namesVipRule(names: readonly string[], natRuleId: string): boolean {
+    return names.some(name => this.reachesVipRule(name, natRuleId, 0, new Set()));
+  }
+
+  private reachesVipRule(
+    name: string, natRuleId: string, depth: number, seen: Set<string>,
+  ): boolean {
+    if (depth > this.maxNesting || seen.has(name)) return false;
+    seen.add(name);
+
+    if (this.addresses.get(name)?.natRuleId === natRuleId) return true;
+
+    const group = this.addressGroups.get(name);
+    if (!group) return false;
+    return group.members.some(
+      member => this.reachesVipRule(member, natRuleId, depth + 1, seen));
+  }
+
   matchesService(name: string, probe: ServiceProbe): boolean {
     return this.matchServiceWithDepth(name, probe, 0, new Set());
   }

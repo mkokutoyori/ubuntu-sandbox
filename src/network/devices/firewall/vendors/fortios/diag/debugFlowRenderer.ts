@@ -29,6 +29,7 @@ const FUNCTIONS: Readonly<Record<string, { name: string; line: number }>> = Obje
   translate: { name: '__ip_session_run_tuple', line: 3546 },
   reverse: { name: 'ipd_post_route_handler', line: 490 },
   dropped: { name: 'fw_forward_dirty_handler', line: 401 },
+  noroute: { name: 'vf_ip4_route_input_common', line: 2611 },
 });
 
 export function makeDebugFlowState(): DebugFlowState {
@@ -131,9 +132,14 @@ function renderOne(
 
 function renderDenial(
   context: PacketContext,
-  say: (key: 'denied' | 'dropped', message: string) => void,
+  say: (key: 'denied' | 'dropped' | 'noroute', message: string) => void,
 ): string[] {
   const reason = context.verdict?.reason;
+
+  if (reason === 'no-route') {
+    say('noroute', 'no route to destination');
+    return [];
+  }
 
   if (reason === 'policy-deny' || reason === 'implicit-deny') {
     say('denied', 'Denied by forward policy check (policy '

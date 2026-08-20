@@ -254,9 +254,25 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(rest.join(' '));
 }
 
+function renderFlowFilter(deps: FortiDiagDeps): string {
+  const filter = deps.state.debugFlow.filter;
+  const shown = (value: unknown, fallback: string): string =>
+    value === undefined || value === null || Number.isNaN(value)
+      ? fallback : String(value);
+
+  return [
+    'vd: any',
+    `addr: ${shown(filter.addr, '0.0.0.0')}`,
+    `saddr: ${shown(filter.saddr, '0.0.0.0')}`,
+    `daddr: ${shown(filter.daddr, '0.0.0.0')}`,
+    `port: ${shown(filter.port, '0')}`,
+    `proto: ${shown(filter.proto, '0')}`,
+  ].join('\n');
+}
+
 function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
   const [name, value] = words;
-  if (name === undefined) return renderSessionFilter(deps);
+  if (name === undefined) return renderFlowFilter(deps);
   if (name === 'clear') { deps.state.debugFlow.filter = {}; return ''; }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
 

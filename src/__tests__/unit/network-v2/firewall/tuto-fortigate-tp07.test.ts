@@ -120,7 +120,7 @@ describe('TP 7 — la premiere politique, et lever le blocage', () => {
     await srvDmz.executeCommand('systemctl start ssh');
     await politiqueDmz(fgt);
 
-    const ssh = await pcLan.executeCommand('curl -sS --max-time 2 https://192.168.20.10/');
+    const ssh = await pcLan.executeCommand('curl -sS https://192.168.20.10/');
     expect(ssh).not.toContain('Welcome to nginx!');
   });
 

@@ -141,7 +141,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
     await vip(fgt);
     propre(await politiqueFausse(fgt));
 
-    expect(await pcWan.executeCommand('curl -sS --max-time 2 http://192.168.100.200/'))
+    expect(await pcWan.executeCommand('curl -sS http://192.168.100.200/'))
       .not.toContain('Welcome to nginx!');
   });
 
@@ -222,7 +222,7 @@ describe('TP 8 — publier un serveur et observer le NAT', () => {
       'set action accept', 'set nat disable', 'next', 'end',
     ]);
 
-    expect(await pcWan.executeCommand('curl -sS --max-time 2 http://192.168.100.200/'))
+    expect(await pcWan.executeCommand('curl -sS http://192.168.100.200/'))
       .not.toContain('Welcome to nginx!');
   });
 

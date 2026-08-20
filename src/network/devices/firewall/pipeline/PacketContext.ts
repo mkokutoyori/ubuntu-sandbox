@@ -77,6 +77,7 @@ export interface PacketContext {
 
   matchedPolicy?: SecurityRule;
   destinationTranslated?: boolean;
+  destinationNatRuleId?: string;
   policyRouteId?: string;
   policyRouteGateway?: string;
 

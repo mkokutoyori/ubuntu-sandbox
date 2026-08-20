@@ -75,7 +75,8 @@ import { ManagementPlane } from './mgmt/ManagementPlane';
 import type { ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing } from './diag/FirewallPing';
+import { FirewallPing, type FirewallPingEgress } from './diag/FirewallPing';
+import { buildEchoRequest } from './l3/IcmpEcho';
 import { FirewallTraceroute } from './diag/FirewallTraceroute';
 import {
   FirewallDnsClient, dnsQueryDatagram,
@@ -352,14 +353,7 @@ export class Firewall extends Equipment {
   getSdwan(): SdwanService { return this.sdwan; }
 
   private readonly ping = new FirewallPing({
-    resolve: (destination) => {
-      const route = this.getVdom().routes.resolveNextHop(destination);
-      const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
-      if (iface === undefined) return null;
-      const source = this.interfaces.get(iface)?.ip;
-      if (source === undefined) return null;
-      return { iface, gateway: route?.nextHop, source };
-    },
+    resolve: (destination) => this.resolveEgress(destination),
     send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
     onReply: (payload) => {
       this.getBus().publish({
@@ -371,15 +365,29 @@ export class Firewall extends Equipment {
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
 
+  private resolveEgress(destination: string): FirewallPingEgress | null {
+    const route = this.getVdom().routes.resolveNextHop(destination);
+    const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
+    const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
+    if (iface === undefined || source === undefined) {
+      this.rememberUnroutable(destination);
+      return null;
+    }
+    return { iface, gateway: route?.nextHop, source };
+  }
+
+  private rememberUnroutable(destination: string): void {
+    const context = makePacketContext({
+      ingressPort: 'local',
+      packet: buildEchoRequest('0.0.0.0', destination, 0, 0),
+      arrivedAt: this.services.now(),
+    });
+    context.verdict = { action: 'drop', reason: 'no-route', stage: 'route-lookup' };
+    this.traces.remember(context);
+  }
+
   private readonly traceroute = new FirewallTraceroute({
-    resolve: (destination) => {
-      const route = this.getVdom().routes.resolveNextHop(destination);
-      const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
-      if (iface === undefined) return null;
-      const source = this.interfaces.get(iface)?.ip;
-      if (source === undefined) return null;
-      return { iface, gateway: route?.nextHop, source };
-    },
+    resolve: (destination) => this.resolveEgress(destination),
     send: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
   });
 
@@ -387,12 +395,10 @@ export class Firewall extends Equipment {
 
   private readonly dnsClient = new FirewallDnsClient({
     send: (destination, sourcePort, payload) => {
-      const route = this.getVdom().routes.resolveNextHop(destination);
-      const iface = route?.iface ?? this.interfaces.interfaceForDestination(destination);
-      const source = iface === undefined ? undefined : this.interfaces.get(iface)?.ip;
-      if (iface === undefined || source === undefined) return false;
-      this.forward(iface,
-        dnsQueryDatagram(source, destination, sourcePort, payload), route?.nextHop);
+      const egress = this.resolveEgress(destination);
+      if (!egress) return false;
+      this.forward(egress.iface,
+        dnsQueryDatagram(egress.source, destination, sourcePort, payload), egress.gateway);
       return true;
     },
   });

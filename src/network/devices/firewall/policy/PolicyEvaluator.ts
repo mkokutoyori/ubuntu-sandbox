@@ -1,5 +1,8 @@
 import type { ObjectStore } from '../model/ObjectStore';
-import { IMPLICIT_RULE_ID, makeRule, type RuleAction, type SecurityRule } from '../model/SecurityRule';
+import {
+  IMPLICIT_RULE_ID, isDenyAction, makeRule,
+  type RuleAction, type SecurityRule,
+} from '../model/SecurityRule';
 import type { PolicyProbe } from './PolicyProbe';
 
 export type PolicyKeyedBy = 'zone' | 'interface';
@@ -26,6 +29,12 @@ export interface PolicyEvaluatorDeps {
   userOf?: (ip: string) => string | undefined;
   userGroupsOf?: (user: string) => readonly string[];
   now?: () => number;
+}
+
+const VIP_RULE_PREFIX = 'vip:';
+
+function catchesVipWithoutNaming(rule: SecurityRule): boolean {
+  return isDenyAction(rule.action) && rule.matchTranslatedDestination !== false;
 }
 
 const ANY = 'any';
@@ -123,8 +132,17 @@ export class PolicyEvaluator {
     const sourceHit = this.objects.matchesAnyAddress(rule.source, probe.sourceIP);
     if (sourceHit === rule.sourceNegated) return false;
 
-    const destHit = this.objects.matchesAnyAddress(rule.destination, probe.destIP);
+    const destHit = this.matchesDestination(rule, probe);
     return destHit !== rule.destinationNegated;
+  }
+
+  private matchesDestination(rule: SecurityRule, probe: PolicyProbe): boolean {
+    const vipRule = probe.destinationNatRuleId;
+    if (vipRule !== undefined && vipRule.startsWith(VIP_RULE_PREFIX)
+      && !catchesVipWithoutNaming(rule)) {
+      return this.objects.namesVipRule(rule.destination, vipRule);
+    }
+    return this.objects.matchesAnyAddress(rule.destination, probe.destIP);
   }
 
   private matchesService(rule: SecurityRule, probe: PolicyProbe): boolean {
