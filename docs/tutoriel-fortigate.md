@@ -3260,3 +3260,471 @@ Quelques principes qui font la différence entre une configuration qu'on maintie
 **6. Date la revue.** Un jeu de règles se relit une fois par an. Sans quoi tu accumules des autorisations pour des projets terminés depuis longtemps — et c'est exactement là que les attaquants trouvent leur chemin.
 
 ---
+
+## 10. Le NAT : SNAT, IP Pool et VIP
+
+Le NAT est le sujet qui embrouille le plus les débutants, parce qu'on lui donne un seul nom alors qu'il désigne **deux opérations opposées**. On va commencer par les séparer proprement, et tout deviendra simple.
+
+### 10.1 🧠 Comprendre : NAT source et NAT destination
+
+**NAT signifie *Network Address Translation*** — la réécriture des adresses dans les paquets. Il y a deux façons de le faire, et elles répondent à deux besoins qui n'ont rien à voir.
+
+**Le NAT source (SNAT) — pour SORTIR**
+
+Ton PC en `192.168.10.10` veut joindre `8.8.8.8`. Problème : `192.168.10.10` est une adresse **privée** (RFC 1918). Elle n'existe pas sur Internet, aucun routeur du monde ne sait la joindre. Si le paquet partait tel quel, la réponse n'aurait aucun moyen de revenir.
+
+Le pare-feu réécrit donc l'**adresse source** :
+
+```
+Départ du PC   : source 192.168.10.10:54321  →  destination 8.8.8.8:443
+Après le SNAT  : source 203.0.113.5:61000    →  destination 8.8.8.8:443
+                        ↑ l'adresse publique du pare-feu
+```
+
+Le serveur répond à `203.0.113.5:61000`, le pare-feu retrouve dans sa table à qui ça correspond, et remet l'adresse d'origine.
+
+**Le NAT destination (DNAT) — pour ENTRER**
+
+Un visiteur sur Internet veut joindre ton serveur web, qui est en `192.168.20.10` — adresse privée, injoignable de l'extérieur. Il se connecte donc à ton **adresse publique**, et le pare-feu réécrit l'**adresse destination** :
+
+```
+Arrivée sur le FGT : source 198.51.100.7  →  destination 203.0.113.5:443
+Après le DNAT      : source 198.51.100.7  →  destination 192.168.20.10:443
+                                                       ↑ le vrai serveur
+```
+
+**Le tableau qui résume tout :**
+
+| | SNAT | DNAT |
+|---|---|---|
+| **Sens** | Interne → Externe | Externe → Interne |
+| **Ce qui est réécrit** | L'adresse **source** | L'adresse **destination** |
+| **À quoi ça sert** | Sortir sur Internet | Publier un serveur |
+| **Objet FortiOS** | `set nat enable` + IP Pool | **VIP** (*Virtual IP*) |
+| **Qui initie** | Ton utilisateur | Quelqu'un de l'extérieur |
+
+> 💡 **Le moyen mnémotechnique** : SNAT réécrit la **S**ource, pour **S**ortir. DNAT réécrit la **D**estination, pour **D**escendre chez toi.
+
+### 10.2 Le SNAT le plus simple
+
+C'est celui que tu as déjà fait au TP 7 sans le savoir :
+
+```
+config firewall policy
+    edit 1
+        set name "LAN-vers-Internet"
+        ...
+        set nat enable          ← ⭐ c'est ça
+    next
+end
+```
+
+`set nat enable` sans autre précision veut dire : « réécris la source avec **l'adresse de l'interface de sortie** ». Dans le jargon, on appelle ça le mode *Use Outgoing Interface Address*.
+
+C'est ce qu'on veut dans 90 % des cas, et ça n'exige aucune configuration supplémentaire.
+
+> 🧠 **Comprendre — pourquoi un seul port ne suffirait pas**
+> Si le pare-feu ne réécrivait que l'adresse, cent utilisateurs deviendraient tous `203.0.113.5` et il ne saurait plus à qui renvoyer les réponses.
+>
+> Il réécrit donc aussi le **port source**, en attribuant un numéro unique à chaque session. C'est pour ça qu'on parle souvent de **PAT** (*Port Address Translation*) ou de **NAT overload** : des milliers de machines derrière une seule adresse publique, distinguées par leur port.
+>
+> Conséquence pratique : une adresse publique offre environ 64 000 ports. Un pare-feu très chargé peut les épuiser — le symptôme est alors « certaines connexions échouent au hasard aux heures de pointe ». La commande qui le montre :
+> ```
+> FGT-01 # diagnose firewall ippool-all stats
+> ```
+
+### 10.3 Les IP Pools : choisir l'adresse de sortie
+
+Parfois, tu ne veux **pas** que le trafic sorte avec l'adresse de l'interface. Par exemple : ton opérateur t'a donné un bloc `203.0.113.0/29`, et tu veux que les serveurs sortent avec `203.0.113.10` pendant que les postes sortent avec `203.0.113.5`.
+
+C'est le rôle d'un **IP Pool**.
+
+**Type `overload`** — le plus courant, plusieurs machines derrière une adresse :
+
+```
+config firewall ippool
+    edit "POOL-Serveurs"
+        set type overload
+        set startip 203.0.113.10
+        set endip 203.0.113.10
+        set comments "Adresse de sortie des serveurs"
+    next
+end
+```
+
+Puis on l'utilise dans la politique :
+
+```
+config firewall policy
+    edit 5
+        ...
+        set nat enable
+        set ippool enable
+        set poolname "POOL-Serveurs"
+    next
+end
+```
+
+**Les quatre types d'IP Pool**, parce qu'ils répondent à des besoins différents :
+
+| Type | Comportement | Quand l'utiliser |
+|---|---|---|
+| `overload` | Plusieurs internes → une externe, distingués par port | Le cas normal |
+| `one-to-one` | Une interne ↔ une externe, sans traduction de port | Quand un serveur doit toujours sortir avec la même adresse |
+| `fixed-port-range` | Une plage de ports fixe par interne | Traçabilité (exigences légales) |
+| `port-block-allocation` | Blocs de ports attribués par machine | Opérateurs, CGN |
+
+> 💡 **Astuce — `one-to-one` a une propriété qu'on oublie**
+> Un pool `one-to-one` crée aussi une correspondance **entrante** : l'adresse externe devient joignable et redirigée vers l'interne. C'est pratique, et c'est un trou si tu ne l'avais pas prévu — il faut quand même une politique entrante pour que ça passe, mais la traduction, elle, existe.
+
+### 10.4 Les VIP : publier un serveur
+
+Un **VIP** (*Virtual IP*) est l'objet qui réalise le DNAT. Il dit : « l'adresse publique X correspond en réalité au serveur interne Y ».
+
+**Publication simple** — toute l'adresse est redirigée :
+
+```
+config firewall vip
+    edit "VIP-Serveur-Web"
+        set extip 192.168.100.200
+        set extintf "port1"
+        set mappedip "192.168.20.10"
+        set comment "Publication du serveur web de la DMZ"
+    next
+end
+```
+
+**Publication d'un seul port** (redirection de port) — c'est le cas le plus fréquent :
+
+```
+config firewall vip
+    edit "VIP-Web-443"
+        set extip 192.168.100.200
+        set extintf "port1"
+        set mappedip "192.168.20.10"
+        set portforward enable
+        set protocol tcp
+        set extport 443
+        set mappedport 443
+    next
+end
+```
+
+> 💡 **Astuce — traduire aussi le port**
+> `extport` et `mappedport` peuvent différer. Un grand classique : exposer le port 443 vers Internet alors que le serveur écoute en 8443 :
+> ```
+> set extport 443
+> set mappedport 8443
+> ```
+> Le monde extérieur voit du HTTPS standard, le serveur reste sur son port applicatif.
+
+### 10.5 ⚠️ Le piège du VIP : la destination, c'est le VIP
+
+C'est **l'erreur numéro un** sur les VIP, et elle bloque tout le monde au moins une fois.
+
+Un VIP tout seul **ne fait rien**. Il faut une politique qui l'utilise. Et dans cette politique, la destination n'est **pas** l'adresse interne du serveur : c'est **le VIP lui-même**.
+
+❌ **Ce qui ne marche pas :**
+```
+config firewall policy
+    edit 10
+        set srcintf "port1"
+        set dstintf "port3"
+        set srcaddr "all"
+        set dstaddr "HOST-SRV-DMZ"     ← ❌ FAUX
+        ...
+```
+
+✅ **Ce qui marche :**
+```
+config firewall policy
+    edit 10
+        set name "Publication-Web"
+        set srcintf "port1"
+        set dstintf "port3"
+        set srcaddr "all"
+        set dstaddr "VIP-Web-443"      ← ✅ le VIP
+        set service "HTTPS"
+        set schedule "always"
+        set action accept
+        set logtraffic all
+    next
+end
+```
+
+> 🧠 **Comprendre — pourquoi ?**
+> Parce que le DNAT a lieu **avant** l'évaluation des politiques (on verra l'ordre exact en section 11), mais les politiques sont écrites du point de vue de **ce que le paquet contenait en arrivant**. Le paquet qui arrive porte l'adresse publique. Le pare-feu attend donc que tu nommes cette adresse — c'est-à-dire le VIP.
+>
+> Une fois qu'on l'a compris, c'est logique. Avant de le comprendre, on tourne en rond.
+
+> ⚠️ **Attention — et n'active PAS le NAT sur cette politique**
+> Sur une politique de publication, `set nat enable` ferait du **SNAT** en plus du DNAT. Conséquence : le serveur verrait toutes les connexions arriver depuis l'adresse du pare-feu, et non depuis l'adresse réelle du visiteur.
+>
+> Tes journaux applicatifs deviendraient inutilisables, ton blocage d'adresses malveillantes aussi, et tes statistiques de fréquentation afficheraient un seul visiteur. Laisse `set nat disable`.
+
+### 10.6 Le NAT central : un autre modèle
+
+FortiOS propose **deux façons** de gérer le NAT, et il faut savoir que la seconde existe même si on ne l'utilise pas — parce que tomber dessus sans le savoir est déroutant.
+
+**Le NAT par politique** (le défaut, celui de ce tutoriel) — chaque politique porte son propre `set nat enable`. Le NAT est décidé règle par règle.
+
+**Le NAT central** — le NAT est sorti des politiques et centralisé dans une table dédiée :
+
+```
+config system settings
+    set central-nat enable
+end
+```
+
+À partir de là, **la case NAT disparaît des politiques**, et le SNAT se configure uniquement ici :
+
+```
+config firewall central-snat-map
+    edit 1
+        set srcintf "port2"
+        set dstintf "port1"
+        set orig-addr "NET-LAN"
+        set dst-addr "all"
+        set nat enable
+        set nat-ippool "POOL-Serveurs"
+    next
+end
+```
+
+| | NAT par politique | NAT central |
+|---|---|---|
+| Où se décide le NAT | Dans chaque politique | Dans une table à part |
+| Lisibilité | Tout est au même endroit | Il faut regarder deux tables |
+| Souplesse | Suffisante presque toujours | Meilleure pour des règles NAT complexes |
+| Qui l'utilise | La grande majorité | Environnements exigeants, migrations depuis d'autres marques |
+
+> 🚨 **Danger** : activer `central-nat` **modifie les politiques existantes** et retire leur configuration NAT. Ce n'est pas un basculement anodin, et le retour arrière n'est pas propre non plus.
+>
+> **Le conseil qui compte : choisis un modèle et n'en change pas.** Mélanger les deux modèles mentaux est la meilleure façon de créer des bugs de NAT incompréhensibles. Ce tutoriel reste en NAT par politique, qui est le défaut et qui convient à l'immense majorité des cas.
+
+---
+
+### 🧪 TP 8 — Publier un serveur et observer le NAT
+
+**🎯 Objectif**
+Vérifier le SNAT existant, créer un VIP, publier le serveur de la DMZ, et **observer la traduction dans la table de sessions**. Puis tomber volontairement dans le piège du §10.5 pour ne plus jamais y retomber.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 7 terminé, serveur web actif sur SRV-DMZ
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Observer le SNAT déjà en place**
+
+Depuis le PC du LAN, lance un trafic vers Internet :
+
+```bash
+user@pc-lan:~$ ping -c 20 8.8.8.8
+```
+
+Pendant ce temps, sur le pare-feu :
+
+```
+FGT-01 # diagnose sys session filter dst 8.8.8.8
+FGT-01 # diagnose sys session list
+```
+
+Cherche la ligne `hook=post` :
+
+```
+hook=post dir=org act=snat 192.168.10.10:1→192.168.100.99:60417
+```
+
+**Lis-la bien** : `act=snat`, puis `192.168.10.10` (le PC) devient `192.168.100.99` (le pare-feu). **Tu vois la traduction se produire.** C'est ce que fait `set nat enable`, en clair.
+
+**Étape 2 — Vérifier depuis le PC**
+
+```bash
+user@pc-lan:~$ curl -s https://ifconfig.me
+```
+
+Si ton lab a Internet, tu vois l'adresse publique de ta connexion, pas `192.168.10.10`. Le monde extérieur ne voit jamais ton adresse privée.
+
+**Étape 3 — Créer le VIP**
+
+On publie le serveur de la DMZ sur une adresse du réseau WAN. Choisis une adresse libre de ton réseau `192.168.100.0/24` :
+
+```
+FGT-01 # config firewall vip
+FGT-01 (vip) # edit "VIP-Serveur-Web"
+FGT-01 (VIP-Serveur-Web) # set extip 192.168.100.200
+FGT-01 (VIP-Serveur-Web) # set extintf "port1"
+FGT-01 (VIP-Serveur-Web) # set mappedip "192.168.20.10"
+FGT-01 (VIP-Serveur-Web) # set portforward enable
+FGT-01 (VIP-Serveur-Web) # set protocol tcp
+FGT-01 (VIP-Serveur-Web) # set extport 80
+FGT-01 (VIP-Serveur-Web) # set mappedport 80
+FGT-01 (VIP-Serveur-Web) # set comment "Publication du serveur web DMZ"
+FGT-01 (VIP-Serveur-Web) # next
+FGT-01 (vip) # end
+```
+
+**Étape 4 — Tomber dans le piège (exprès)**
+
+Écris la politique **fausse**, avec l'adresse interne en destination :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 3
+FGT-01 (3) # set name "Publication-Web-FAUSSE"
+FGT-01 (3) # set srcintf "port1"
+FGT-01 (3) # set dstintf "port3"
+FGT-01 (3) # set srcaddr "all"
+FGT-01 (3) # set dstaddr "HOST-SRV-DMZ"
+FGT-01 (3) # set service "HTTP"
+FGT-01 (3) # set schedule "always"
+FGT-01 (3) # set action accept
+FGT-01 (3) # set logtraffic all
+FGT-01 (3) # next
+FGT-01 (policy) # end
+```
+
+Depuis une machine du réseau WAN (ou ta machine hôte) :
+
+```bash
+curl http://192.168.100.200
+```
+
+**Ça ne marche pas.** Connexion refusée ou expirée.
+
+> 🧠 **Comprendre** : le paquet arrive avec `192.168.100.200` en destination. La politique cherche `192.168.20.10`. Elles ne correspondent pas, donc la politique ne s'applique pas, donc `Implicit Deny`.
+
+**Étape 5 — Corriger**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 3
+FGT-01 (3) # set name "Publication-Web"
+FGT-01 (3) # set dstaddr "VIP-Serveur-Web"
+FGT-01 (3) # set nat disable
+FGT-01 (3) # next
+FGT-01 (policy) # end
+```
+
+Retente :
+
+```bash
+curl http://192.168.100.200
+```
+```html
+<h1>Serveur DMZ - lab FortiGate</h1>
+```
+
+**Ton serveur est publié.** 🎉
+
+**Étape 6 — Observer le DNAT**
+
+```
+FGT-01 # diagnose sys session filter dst 192.168.100.200
+FGT-01 # diagnose sys session list
+```
+
+Tu vois maintenant :
+
+```
+hook=pre dir=org act=dnat 192.168.100.50:52134→192.168.100.200:80(192.168.20.10:80)
+```
+
+`act=dnat`, et la destination `192.168.100.200:80` devient `192.168.20.10:80`. **La traduction inverse de l'étape 1.**
+
+> 💡 **Astuce — retiens ces deux mots**
+> `hook=pre` → **avant** le routage : c'est le **DNAT**
+> `hook=post` → **après** le routage : c'est le **SNAT**
+>
+> Cette distinction n'est pas cosmétique : elle explique l'ordre de traitement de la section 11, et elle te dira du premier coup d'œil quel type de NAT s'applique à une session.
+
+**Étape 7 — Vérifier que l'adresse source est préservée**
+
+C'est le point du §10.5. Sur le serveur DMZ, regarde les journaux du serveur Python :
+
+```
+192.168.100.50 - - [20/Aug/2026 09:41:03] "GET / HTTP/1.1" 200 -
+```
+
+Tu vois l'adresse **réelle** du client, pas `192.168.20.1` (le pare-feu). C'est parce que tu as mis `set nat disable`.
+
+Fais l'expérience inverse pour bien comprendre :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 3
+FGT-01 (3) # set nat enable
+FGT-01 (3) # next
+FGT-01 (policy) # end
+```
+
+Refais un `curl`, et regarde de nouveau les journaux du serveur :
+
+```
+192.168.20.1 - - [20/Aug/2026 09:42:15] "GET / HTTP/1.1" 200 -
+```
+
+**Toutes les connexions semblent venir du pare-feu.** Tes journaux applicatifs ne servent plus à rien. Remets `set nat disable`.
+
+**Étape 8 — Restreindre la publication (bonne pratique)**
+
+`set srcaddr "all"` expose le serveur au monde entier. Restreignons :
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-Autorise-Externe"
+FGT-01 (NET-Autorise-Externe) # set subnet 192.168.100.0 255.255.255.0
+FGT-01 (NET-Autorise-Externe) # next
+FGT-01 (address) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 3
+FGT-01 (3) # set srcaddr "NET-Autorise-Externe"
+FGT-01 (3) # next
+FGT-01 (policy) # end
+```
+
+> 💡 **Astuce** : en production, quand le service ne concerne qu'un pays, on ajoute un objet géographique (§8.5). Ça n'arrête pas une attaque ciblée, mais ça supprime l'essentiel du bruit de scan automatisé — et donc du bruit dans tes journaux.
+
+**Étape 9 — Voir tous les VIP**
+
+```
+FGT-01 # show firewall vip
+FGT-01 # diagnose firewall vip list
+```
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # delete 3
+FGT-01 (policy) # end
+```
+
+Garde le VIP, on le réutilisera en section 14.
+
+---
+
+**✅ Résultat attendu**
+
+- `act=snat` visible sur une session sortante
+- `curl http://192.168.100.200` renvoie la page du serveur DMZ ✅
+- `act=dnat` visible sur la session entrante
+- Les journaux du serveur montrent l'adresse **réelle** du client avec `nat disable`
+- Ils montrent l'adresse du **pare-feu** avec `nat enable` — et tu as vu la différence
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **SNAT et DNAT sont deux opérations opposées.** L'une pour sortir, l'autre pour entrer.
+2. **`set nat enable` fait du SNAT avec l'adresse de l'interface de sortie.** C'est le cas courant.
+3. **Un VIP fait du DNAT**, et il ne fait rien tout seul : il faut une politique.
+4. **Dans cette politique, la destination est le VIP**, pas l'adresse interne. Tu es tombé dans le piège et tu en es sorti.
+5. **`set nat enable` sur une publication écrase l'adresse du visiteur** et rend les journaux applicatifs inutiles.
+6. **`hook=pre` = DNAT, `hook=post` = SNAT.** Deux mots qui te font gagner du temps à chaque diagnostic.
+
+---
