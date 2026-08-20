@@ -7439,3 +7439,2433 @@ Remets la bonne valeur.
 6. **On vérifie la joignabilité avant de soupçonner IPsec.**
 
 ---
+
+## 19. Accès distant : IPsec dial-up
+
+Connecter un télétravailleur au réseau de l'entreprise. C'est le besoin le plus demandé, et c'est **le sujet où la documentation d'Internet est la plus périmée** — pour la raison expliquée au §2.6.
+
+### 19.1 Rappel : pourquoi pas le SSL VPN ?
+
+| Version de FortiOS | État du SSL VPN tunnel |
+|---|---|
+| ≤ 7.4 | Fonctionne, c'était la méthode standard |
+| 7.6.0 | **Retiré** des modèles à 2 Go de RAM et des G d'entrée de gamme |
+| **7.6.3 et au-delà** | **Retiré de TOUS les modèles**, remplacé par IPsec |
+
+La solution officielle est le **VPN IPsec en mode dial-up**, configurable pour écouter sur **TCP 443** — précisément pour traverser les réseaux d'hôtel et de café qui ne laissent sortir que le web, ce qui était l'argument principal du SSL VPN.
+
+> 🚨 **Si tu administres un parc**
+> La migration se fait **AVANT** la montée en 7.6.3. Mettre à jour un pare-feu dont les télétravailleurs dépendent du SSL VPN les met tous dehors — et toi avec, si c'était ton accès distant.
+
+### 19.2 Ce que « dial-up » veut dire
+
+Dans un VPN site-à-site (§18), les deux extrémités ont une adresse **connue et fixe**. Chacune sait où joindre l'autre.
+
+Pour un télétravailleur, c'est impossible : il est chez lui, dans un train, à l'hôtel — son adresse change constamment. On configure donc un tunnel **dial-up** :
+
+- le pare-feu **écoute** et n'initie jamais ;
+- il accepte les connexions venant de **n'importe quelle adresse** (`set remote-gw 0.0.0.0`) ;
+- il **attribue** une adresse au client depuis une réserve, exactement comme un DHCP.
+
+### 19.3 La configuration
+
+**Phase 1 en mode dial-up :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set type dynamic                       ← ⭐ dial-up
+        set interface "port1"
+        set ike-version 2
+        set peertype dialup
+        set net-device disable
+        set mode-cfg enable                    ← ⭐ attribue une adresse au client
+        set proposal aes256-sha256
+        set dhgrp 14
+        set authusrgrp "GRP-Teletravailleurs"  ← ⭐ authentification par utilisateur
+        set psksecret "CleDuGroupeTeletravail2026!"
+        set ipv4-start-ip 192.168.200.10
+        set ipv4-end-ip 192.168.200.50
+        set ipv4-netmask 255.255.255.0
+        set ipv4-split-include "GRP-Reseaux-Internes"
+        set ipv4-dns-server1 192.168.10.1
+        set dpd on-idle
+    next
+end
+```
+
+Les paramètres décisifs :
+
+| Paramètre | Rôle |
+|---|---|
+| `type dynamic` | Le pare-feu accepte des pairs à adresse inconnue |
+| `mode-cfg enable` | Attribue adresse, masque et DNS au client |
+| `ipv4-start-ip` / `end-ip` | La réserve d'adresses des clients VPN |
+| `authusrgrp` | ⭐ Le groupe autorisé — **chaque utilisateur s'authentifie** |
+| `ipv4-split-include` | ⭐ Le *split tunneling* — voir §19.5 |
+
+**Phase 2 :**
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-Teletravail-P2"
+        set phase1name "VPN-Teletravail"
+        set proposal aes256-sha256
+        set pfs enable
+        set dhgrp 14
+    next
+end
+```
+
+**La politique :**
+
+```
+config firewall policy
+    edit 30
+        set name "Teletravail-vers-LAN"
+        set srcintf "VPN-Teletravail"
+        set dstintf "port2"
+        set srcaddr "NET-VPN-Clients"
+        set dstaddr "NET-LAN"
+        set groups "GRP-Teletravailleurs"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+end
+```
+
+> 🧠 **Comprendre** : ici, **une seule** politique suffit — parce que c'est toujours le télétravailleur qui **ouvre** la connexion. Personne au bureau n'initie une session vers son poste. C'est la différence avec le site-à-site du §18.4.
+
+### 19.4 Faire écouter le VPN sur le port 443
+
+C'est ce qui remplace l'avantage du SSL VPN :
+
+```
+config system settings
+    set ike-tcp-port 443
+end
+```
+
+Puis, côté phase 1 :
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set transport tcp
+    next
+end
+```
+
+> ⚠️ **Attention** : si tu publies déjà un serveur web en 443 sur la même adresse (§10.4), il y a **conflit**. Utilise une adresse publique distincte, ou un port différent. C'est une contrainte à anticiper dans le plan d'adressage, pas au moment du déploiement.
+
+### 19.5 🧠 Le split tunneling : la décision qui compte
+
+C'est le choix le plus structurant du VPN distant, et il n'a pas de bonne réponse universelle.
+
+**Sans split tunneling** (`ipv4-split-include` absent) — **tout** le trafic du client passe par le tunnel, y compris sa navigation personnelle sur Internet.
+
+| ✅ Avantages | ❌ Inconvénients |
+|---|---|
+| Tout le trafic est **inspecté** par le pare-feu | Consomme la bande passante de l'entreprise |
+| La politique de sécurité s'applique partout | Ajoute de la latence sur tout |
+| Aucun contournement possible | La visioconférence en souffre beaucoup |
+
+**Avec split tunneling** — seuls les réseaux de l'entreprise passent par le tunnel, le reste sort directement chez le client.
+
+| ✅ Avantages | ❌ Inconvénients |
+|---|---|
+| Performance nettement meilleure | Le trafic Internet **n'est pas inspecté** |
+| Économise la bande passante du site | Le poste est exposé, et il est **connecté au LAN** |
+| Visio fluide | Un poste compromis devient un pont vers l'entreprise |
+
+> 🧠 **Comment trancher, en pratique**
+> La question n'est pas « lequel est le mieux » mais « **que protège le poste quand il n'est pas dans le tunnel ?** »
+>
+> - Si les postes ont un **EDR** ou un client de sécurité géré (FortiClient, ou équivalent) et sont maintenus à jour : **split tunneling**, la performance vaut le compromis.
+> - Si les postes sont peu maîtrisés, ou s'il s'agit de matériel personnel : **tunnel complet**, parce que le pare-feu est alors la seule protection.
+>
+> Et la solution mixte, qui est celle des organisations matures : split tunneling **plus** une exigence de conformité du poste avant l'accès. Ce n'est plus un choix binaire.
+
+### 19.6 Renforcer l'authentification
+
+Une clé partagée de groupe plus un mot de passe utilisateur, c'est le minimum. En 2026, ce n'est plus suffisant pour un accès depuis Internet.
+
+**Les certificats plutôt que la clé partagée :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set authmethod signature
+        set certificate "Certificat-VPN"
+        set peer "Groupe-PKI-Utilisateurs"
+    next
+end
+```
+
+**Le second facteur (MFA)** via FortiToken ou un serveur RADIUS :
+
+```
+config user local
+    edit "marie.durand"
+        set two-factor fortitoken
+        set fortitoken "FTKMOB0000000000"
+    next
+end
+```
+
+> 🚨 **Danger — les VPN sont une cible de premier plan**
+> Les accès VPN sans second facteur sont **systématiquement** attaqués par pulvérisation de mots de passe (*password spraying*) et exploitation d'identifiants volés. Plusieurs compromissions majeures de ces dernières années sont entrées exactement par là.
+>
+> **Un accès VPN sans MFA en 2026 est une porte d'entrée, pas une protection.** Si tu ne dois retenir qu'une recommandation de sécurité de tout ce tutoriel, c'est celle-là.
+
+---
+
+### 🧪 TP 18 — Un accès télétravailleur
+
+**🎯 Objectif**
+Monter un VPN dial-up, connecter un client, vérifier l'adresse attribuée, tester l'accès au LAN, puis observer la différence entre split tunneling et tunnel complet.
+
+**⏱️ Durée** : 45 minutes
+
+**📋 Prérequis** : TP 16 (utilisateurs) terminé, une machine « externe » pour jouer le télétravailleur
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Le groupe et l'objet d'adresses**
+
+```
+FGT-01 # config user group
+FGT-01 (group) # edit "GRP-Teletravailleurs"
+FGT-01 (GRP-Teletravailleurs) # set member "marie.durand"
+FGT-01 (GRP-Teletravailleurs) # next
+FGT-01 (group) # end
+
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-VPN-Clients"
+FGT-01 (NET-VPN-Clients) # set subnet 192.168.200.0 255.255.255.0
+FGT-01 (NET-VPN-Clients) # next
+FGT-01 (address) # end
+```
+
+**Étape 2 — Phase 1 dial-up**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Teletravail"
+FGT-01 (VPN-Teletravail) # set type dynamic
+FGT-01 (VPN-Teletravail) # set interface "port1"
+FGT-01 (VPN-Teletravail) # set ike-version 2
+FGT-01 (VPN-Teletravail) # set peertype dialup
+FGT-01 (VPN-Teletravail) # set net-device disable
+FGT-01 (VPN-Teletravail) # set mode-cfg enable
+FGT-01 (VPN-Teletravail) # set proposal aes256-sha256
+FGT-01 (VPN-Teletravail) # set dhgrp 14
+FGT-01 (VPN-Teletravail) # set authusrgrp "GRP-Teletravailleurs"
+FGT-01 (VPN-Teletravail) # set psksecret "CleLabTeletravail2026!"
+FGT-01 (VPN-Teletravail) # set ipv4-start-ip 192.168.200.10
+FGT-01 (VPN-Teletravail) # set ipv4-end-ip 192.168.200.50
+FGT-01 (VPN-Teletravail) # set ipv4-netmask 255.255.255.0
+FGT-01 (VPN-Teletravail) # set ipv4-split-include "NET-LAN"
+FGT-01 (VPN-Teletravail) # set ipv4-dns-server1 192.168.10.1
+FGT-01 (VPN-Teletravail) # set dpd on-idle
+FGT-01 (VPN-Teletravail) # next
+FGT-01 (phase1-interface) # end
+```
+
+**Étape 3 — Phase 2**
+
+```
+FGT-01 # config vpn ipsec phase2-interface
+FGT-01 (phase2-interface) # edit "VPN-Teletravail-P2"
+FGT-01 (VPN-Teletravail-P2) # set phase1name "VPN-Teletravail"
+FGT-01 (VPN-Teletravail-P2) # set proposal aes256-sha256
+FGT-01 (VPN-Teletravail-P2) # set pfs enable
+FGT-01 (VPN-Teletravail-P2) # set dhgrp 14
+FGT-01 (VPN-Teletravail-P2) # next
+FGT-01 (phase2-interface) # end
+```
+
+**Étape 4 — La politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 30
+FGT-01 (30) # set name "Teletravail-vers-LAN"
+FGT-01 (30) # set srcintf "VPN-Teletravail"
+FGT-01 (30) # set dstintf "port2"
+FGT-01 (30) # set srcaddr "NET-VPN-Clients"
+FGT-01 (30) # set dstaddr "NET-LAN"
+FGT-01 (30) # set groups "GRP-Teletravailleurs"
+FGT-01 (30) # set action accept
+FGT-01 (30) # set schedule "always"
+FGT-01 (30) # set service "ALL"
+FGT-01 (30) # set logtraffic all
+FGT-01 (30) # next
+FGT-01 (policy) # end
+```
+
+**Étape 5 — Connecter un client**
+
+Avec **FortiClient** (Windows, macOS, Linux) : créer une connexion IPsec, saisir l'adresse du pare-feu, la clé partagée et les identifiants de `marie.durand`.
+
+Avec **strongSwan** sous Linux, dans `/etc/ipsec.conf` :
+
+```
+conn teletravail
+    keyexchange=ikev2
+    right=<adresse-publique-du-FortiGate>
+    rightid=%any
+    rightsubnet=192.168.10.0/24
+    leftsourceip=%config
+    leftauth=psk
+    rightauth=psk
+    leftauth2=eap
+    auto=start
+```
+
+**Étape 6 — Vérifier côté pare-feu**
+
+```
+FGT-01 # diagnose vpn ike gateway list name VPN-Teletravail
+FGT-01 # get vpn ipsec tunnel summary
+FGT-01 # diagnose vpn tunnel list
+```
+
+Et la liste des utilisateurs connectés :
+
+```
+FGT-01 # diagnose vpn ike gateway list | grep -e "name" -e "assigned"
+FGT-01 # execute vpn sslvpn list
+```
+
+**Étape 7 — Vérifier l'adresse attribuée**
+
+Sur le client :
+
+```bash
+teletravailleur@portable:~$ ip addr show
+```
+
+Une nouvelle interface porte une adresse de la réserve `192.168.200.x`. **Le pare-feu vient de faire du DHCP à travers Internet.**
+
+**Étape 8 — Tester l'accès**
+
+```bash
+teletravailleur@portable:~$ ping -c 3 192.168.10.10
+teletravailleur@portable:~$ ping -c 3 192.168.10.1
+```
+
+**Étape 9 — Observer le split tunneling**
+
+C'est l'observation la plus parlante du TP :
+
+```bash
+teletravailleur@portable:~$ ip route show
+```
+
+Tu vois une route vers `192.168.10.0/24` par l'interface du tunnel, et **la route par défaut inchangée**. Autrement dit : le trafic de l'entreprise passe par le tunnel, le reste sort directement.
+
+```bash
+teletravailleur@portable:~$ traceroute 192.168.10.10     ← par le tunnel
+teletravailleur@portable:~$ traceroute 8.8.8.8           ← direct, hors tunnel
+```
+
+**Deux chemins différents, sur la même machine, au même instant.** C'est exactement le §19.5.
+
+**Étape 10 — Passer en tunnel complet**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Teletravail"
+FGT-01 (VPN-Teletravail) # unset ipv4-split-include
+FGT-01 (VPN-Teletravail) # next
+FGT-01 (phase1-interface) # end
+```
+
+Reconnecte le client, puis :
+
+```bash
+teletravailleur@portable:~$ ip route show
+teletravailleur@portable:~$ traceroute 8.8.8.8
+```
+
+**La route par défaut passe maintenant par le tunnel.** Tout le trafic remonte à l'entreprise.
+
+> ⚠️ **Attention** : en tunnel complet, il faut une politique **VPN → Internet** avec NAT pour que le client puisse encore naviguer. Sinon tu viens de couper Internet à ton télétravailleur — panne classique et très mal vécue.
+> ```
+> config firewall policy
+>     edit 31
+>         set name "Teletravail-vers-Internet"
+>         set srcintf "VPN-Teletravail"
+>         set dstintf "port1"
+>         set srcaddr "NET-VPN-Clients"
+>         set dstaddr "all"
+>         set action accept
+>         set schedule "always"
+>         set service "ALL"
+>         set nat enable
+>     next
+> end
+> ```
+
+---
+
+**✅ Résultat attendu**
+
+- Le client obtient une adresse de la réserve VPN
+- Il joint le LAN de l'entreprise
+- En split tunneling, deux chemins coexistent — tu l'as vu au `traceroute`
+- En tunnel complet, tout remonte à l'entreprise
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Dial-up = le pare-feu écoute et attribue**, parce que le client n'a pas d'adresse fixe.
+2. **`mode-cfg` fait du DHCP à travers Internet.**
+3. **Une seule politique suffit**, contrairement au site-à-site : un seul côté ouvre.
+4. **Le split tunneling est un arbitrage entre performance et visibilité**, et il dépend de la protection du poste.
+5. **En tunnel complet, il faut une politique vers Internet** — sinon on coupe Internet au télétravailleur.
+6. **Un VPN sans second facteur est une porte d'entrée.**
+
+---
+
+# Partie VIII — Aller plus loin
+
+---
+
+## 20. Le routage dynamique
+
+Au TP 5, tu as écrit des routes statiques à la main. Ça marche jusqu'à ce que le réseau grandisse — et là, comme l'explique le tutoriel OSPF de ce dépôt, ça devient ingérable.
+
+Un FortiGate parle **OSPF**, **BGP**, **RIP** et **IS-IS**. Voyons les deux qui comptent.
+
+### 20.1 Quand passer au dynamique
+
+| Situation | Statique | Dynamique |
+|---|---|---|
+| 2 ou 3 réseaux, une seule sortie | ✅ Suffit | Inutile |
+| 10 sites reliés en VPN | ❌ Cauchemar | ✅ OSPF |
+| Plusieurs opérateurs, adresses publiques | ❌ Impossible | ✅ BGP |
+| Un lien peut tomber, il faut basculer | ⚠️ Route flottante | ✅ Convergence automatique |
+
+### 20.2 OSPF sur FortiGate
+
+```
+config router ospf
+    set router-id 10.255.255.1
+    config area
+        edit 0.0.0.0
+        next
+    end
+    config ospf-interface
+        edit "vers-LAN"
+            set interface "port2"
+            set network-type point-to-point
+            set authentication md5
+            config md5-keys
+                edit 1
+                    set key "CleOspf2026"
+                next
+            end
+        next
+    end
+    config network
+        edit 1
+            set prefix 192.168.10.0 255.255.255.0
+            set area 0.0.0.0
+        next
+        edit 2
+            set prefix 192.168.100.0 255.255.255.0
+            set area 0.0.0.0
+        next
+    end
+    set passive-interface "port3"
+end
+```
+
+Les points qui comptent :
+
+**`router-id`** — l'identité du routeur dans OSPF. **Fixe-le explicitement**, avec une adresse de boucle locale (§6.1). Si tu le laisses se choisir tout seul, il prendra l'adresse la plus haute d'une interface — et changera si cette interface tombe, ce qui fait s'effondrer toutes les adjacences au pire moment.
+
+**`passive-interface`** — l'interface participe au routage (son réseau est annoncé) mais **n'envoie aucun message Hello**. C'est ce qu'on met sur toutes les interfaces où il n'y a pas d'autre routeur.
+
+> 🚨 **Danger** : une interface OSPF non passive côté LAN **annonce l'existence de ton routeur** à quiconque est branché dessus. N'importe qui peut alors tenter de former une adjacence et injecter des routes. Rends passive **toute** interface sans voisin légitime, et **authentifie** les adjacences. Ce sont deux lignes, et elles ferment une attaque réelle.
+
+**Vérification :**
+
+```
+FGT-01 # get router info ospf neighbor
+FGT-01 # get router info ospf interface
+FGT-01 # get router info ospf database brief
+FGT-01 # get router info routing-table ospf
+```
+
+> 💡 **Astuce** : `get router info ospf neighbor` doit montrer l'état **FULL**. Tout autre état durable (`INIT`, `EXSTART`, `2-WAY` sur un lien point-à-point) signale un problème : incompatibilité de MTU, de temporisateurs, d'aire, ou d'authentification. C'est le même diagnostic que sur un routeur Cisco — OSPF est un standard, et c'est tout son intérêt.
+
+### 20.3 BGP sur FortiGate
+
+BGP sert à dialoguer avec les opérateurs, et à porter des routes entre sites en grand nombre.
+
+```
+config router bgp
+    set as 65001
+    set router-id 10.255.255.1
+    set ebgp-multipath enable
+    config neighbor
+        edit "203.0.113.1"
+            set remote-as 65100
+            set description "Operateur principal"
+            set soft-reconfiguration enable
+            set connect-timer 10
+        next
+    end
+    config network
+        edit 1
+            set prefix 192.0.2.0 255.255.255.0
+        next
+    end
+end
+```
+
+**Vérification :**
+
+```
+FGT-01 # get router info bgp summary
+FGT-01 # get router info bgp neighbors 203.0.113.1
+FGT-01 # get router info bgp network
+```
+
+> ⚠️ **Attention — filtre TOUJOURS ce que tu annonces**
+> Un BGP mal filtré peut **réannoncer** vers un opérateur les routes reçues d'un autre. Ton entreprise devient alors, sans le vouloir, un opérateur de transit — et se retrouve à absorber du trafic qui n'a rien à y faire, jusqu'à saturation.
+>
+> Ce n'est pas théorique : c'est ce qu'on appelle une fuite de routes (*route leak*), et il s'en produit régulièrement, y compris chez de gros acteurs.
+>
+> ```
+> config router route-map
+>     edit "SORTANT-STRICT"
+>         config rule
+>             edit 1
+>                 set match-ip-address "NOS-PREFIXES-A-NOUS"
+>                 set action permit
+>             next
+>             edit 2
+>                 set action deny
+>             next
+>         end
+>     next
+> end
+> ```
+
+### 20.4 Le routage dynamique dans un VPN
+
+C'est le vrai cas d'usage d'OSPF sur un pare-feu : au lieu d'écrire une route statique par site distant (§18.4), on laisse OSPF découvrir.
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Lyon"
+        set net-device disable
+        set add-route disable          ← on laisse OSPF gérer les routes
+    next
+end
+
+config router ospf
+    config ospf-interface
+        edit "vers-Lyon"
+            set interface "VPN-Lyon"
+            set network-type point-to-point
+            set cost 100
+        next
+    end
+end
+```
+
+> 💡 **Astuce** : `set network-type point-to-point` sur une interface de tunnel. Un tunnel n'est pas un réseau à diffusion : il n'y a pas d'élection de routeur désigné à faire, et forcer ce type évite une attente inutile à chaque montée de tunnel.
+
+---
+
+### 🧪 TP 19 — OSPF entre le pare-feu et R1
+
+**🎯 Objectif**
+Faire dialoguer FGT-01 et R1 en OSPF, remplacer les routes statiques, puis provoquer une panne et observer la convergence.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 5 terminé, R1 opérationnel
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — OSPF sur R1**
+
+```cisco
+R1-EDGE# configure terminal
+R1-EDGE(config)# interface Loopback0
+R1-EDGE(config-if)# ip address 10.255.255.254 255.255.255.255
+R1-EDGE(config-if)# exit
+R1-EDGE(config)# router ospf 1
+R1-EDGE(config-router)# router-id 10.255.255.254
+R1-EDGE(config-router)# network 192.168.100.0 0.0.0.255 area 0
+R1-EDGE(config-router)# passive-interface GigabitEthernet0/0
+R1-EDGE(config-router)# default-information originate always
+R1-EDGE(config-router)# end
+```
+
+> 🧠 `default-information originate always` fait annoncer par R1 **la route par défaut** en OSPF. Le pare-feu n'aura donc plus besoin de sa route statique vers R1 : il l'apprendra.
+
+**Étape 2 — OSPF sur le FortiGate**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit "lo-ospf"
+FGT-01 (lo-ospf) # set vdom "root"
+FGT-01 (lo-ospf) # set type loopback
+FGT-01 (lo-ospf) # set ip 10.255.255.1 255.255.255.255
+FGT-01 (lo-ospf) # next
+FGT-01 (interface) # end
+
+FGT-01 # config router ospf
+FGT-01 (ospf) # set router-id 10.255.255.1
+FGT-01 (ospf) # config area
+FGT-01 (area) # edit 0.0.0.0
+FGT-01 (0.0.0.0) # next
+FGT-01 (area) # end
+FGT-01 (ospf) # config network
+FGT-01 (network) # edit 1
+FGT-01 (1) # set prefix 192.168.100.0 255.255.255.0
+FGT-01 (1) # set area 0.0.0.0
+FGT-01 (1) # next
+FGT-01 (network) # edit 2
+FGT-01 (2) # set prefix 192.168.10.0 255.255.255.0
+FGT-01 (2) # set area 0.0.0.0
+FGT-01 (2) # next
+FGT-01 (network) # edit 3
+FGT-01 (3) # set prefix 192.168.20.0 255.255.255.0
+FGT-01 (3) # set area 0.0.0.0
+FGT-01 (3) # next
+FGT-01 (network) # end
+FGT-01 (ospf) # set passive-interface "port2" "port3"
+FGT-01 (ospf) # end
+```
+
+**Étape 3 — Vérifier l'adjacence**
+
+```
+FGT-01 # get router info ospf neighbor
+```
+```
+OSPF process 0, VRF 0:
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+10.255.255.254    1   Full/DR          00:00:35   192.168.100.1   port1
+```
+
+**`Full`** : l'adjacence est complète. 🎉
+
+Côté R1 :
+
+```cisco
+R1-EDGE# show ip ospf neighbor
+R1-EDGE# show ip route ospf
+```
+
+R1 apprend `192.168.10.0/24` et `192.168.20.0/24` **sans qu'on lui ait écrit de route statique**. Tu peux d'ailleurs supprimer celles du §3.8 :
+
+```cisco
+R1-EDGE(config)# no ip route 192.168.10.0 255.255.255.0 192.168.100.99
+R1-EDGE(config)# no ip route 192.168.20.0 255.255.255.0 192.168.100.99
+```
+
+**Étape 4 — Vérifier côté pare-feu**
+
+```
+FGT-01 # get router info routing-table ospf
+```
+```
+O*E2  0.0.0.0/0 [110/10] via 192.168.100.1, port1, 00:02:14
+```
+
+La route par défaut est apprise **dynamiquement**. Tu peux retirer la statique du TP 5 :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # delete 1
+FGT-01 (static) # end
+
+FGT-01 # execute ping 8.8.8.8
+```
+
+Ça marche toujours — mais plus aucune route n'a été écrite à la main.
+
+**Étape 5 — Observer une convergence**
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# shutdown
+```
+
+Sur le pare-feu :
+
+```
+FGT-01 # get router info ospf neighbor
+FGT-01 # get router info routing-table all
+```
+
+L'adjacence tombe, la route par défaut disparaît. Remets en service :
+
+```cisco
+R1-EDGE(config-if)# no shutdown
+```
+
+Et regarde l'adjacence se reformer, puis la route revenir. **Sans intervention humaine.** C'est tout l'intérêt du dynamique.
+
+**Étape 6 — Authentifier (bonne pratique)**
+
+```
+FGT-01 # config router ospf
+FGT-01 (ospf) # config ospf-interface
+FGT-01 (ospf-interface) # edit "vers-R1"
+FGT-01 (vers-R1) # set interface "port1"
+FGT-01 (vers-R1) # set authentication md5
+FGT-01 (vers-R1) # config md5-keys
+FGT-01 (md5-keys) # edit 1
+FGT-01 (1) # set key "CleOspfLab2026"
+FGT-01 (1) # next
+FGT-01 (md5-keys) # end
+FGT-01 (vers-R1) # next
+FGT-01 (ospf-interface) # end
+FGT-01 (ospf) # end
+```
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# ip ospf authentication message-digest
+R1-EDGE(config-if)# ip ospf message-digest-key 1 md5 CleOspfLab2026
+```
+
+> 🧠 **Observe l'ordre** : tant que **les deux** côtés ne sont pas configurés, l'adjacence **tombe**. C'est normal et c'est voulu. En production, ça implique de prévoir une courte coupure, ou d'utiliser une fenêtre de maintenance. Un administrateur qui active l'authentification d'un seul côté en pleine journée coupe le site.
+
+---
+
+**✅ Résultat attendu**
+
+- `get router info ospf neighbor` affiche `Full`
+- R1 apprend les réseaux internes sans route statique
+- Le pare-feu apprend la route par défaut en `O*E2`
+- Une coupure fait converger automatiquement
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **OSPF supprime les routes écrites à la main**, et se reconfigure tout seul.
+2. **`router-id` doit être fixé explicitement**, sur une boucle locale.
+3. **`passive-interface` sur toute interface sans voisin légitime** — sinon on annonce son routeur à qui veut l'entendre.
+4. **L'authentification est indispensable**, et elle coupe l'adjacence tant que les deux côtés ne l'ont pas.
+5. **`Full` est le seul état acceptable durablement.**
+
+---
+
+## 21. SD-WAN
+
+Le SD-WAN est la réponse propre au problème qu'on a effleuré au §7.4 : **utiliser intelligemment plusieurs liens Internet**.
+
+### 21.1 Le problème qu'il résout
+
+Tu as deux opérateurs. Avec du routage classique, tu as le choix entre deux mauvaises options :
+
+| Approche | Problème |
+|---|---|
+| Route flottante (distances différentes) | Le second lien ne sert **jamais**. Tu payes un abonnement pour rien |
+| ECMP (distances égales) | Les sessions d'un même utilisateur partent alternativement par deux adresses publiques, et **les sites qui vérifient l'adresse te déconnectent** |
+
+**Le SD-WAN résout les deux** : il utilise les deux liens, en gardant chaque session sur un seul, et il choisit le lien selon la **qualité mesurée** plutôt que selon une métrique statique.
+
+### 21.2 Les trois briques
+
+**① Les membres** — les interfaces qui participent :
+
+```
+config system sdwan
+    set status enable
+    config zone
+        edit "SDWAN-INTERNET"
+        next
+    end
+    config members
+        edit 1
+            set interface "port1"
+            set zone "SDWAN-INTERNET"
+            set gateway 192.168.100.1
+            set priority 1
+        next
+        edit 2
+            set interface "port4"
+            set zone "SDWAN-INTERNET"
+            set gateway 192.168.101.1
+            set priority 2
+        next
+    end
+end
+```
+
+**② Les moniteurs de performance** — ce qui **mesure** la qualité de chaque lien :
+
+```
+config system sdwan
+    config health-check
+        edit "Qualite-Internet"
+            set server "8.8.8.8" "1.1.1.1"
+            set protocol ping
+            set interval 500
+            set failtime 5
+            set recoverytime 5
+            set members 1 2
+            config sla
+                edit 1
+                    set latency-threshold 150
+                    set jitter-threshold 30
+                    set packetloss-threshold 2
+                next
+            end
+        next
+    end
+end
+```
+
+> 🧠 **C'est ici que le SD-WAN devient intéressant.** Il ne se contente pas de savoir si le lien est *up* : il mesure la **latence**, la **gigue** et la **perte de paquets**, en continu. Un lien peut être parfaitement actif et néanmoins inutilisable pour de la voix sur IP — 300 ms de latence, 5 % de perte. Le routage classique n'a aucun moyen de le voir.
+
+**③ Les règles** — quel trafic emprunte quel lien :
+
+```
+config system sdwan
+    config service
+        edit 1
+            set name "Voix-vers-lien-de-qualite"
+            set mode sla
+            set dst "all"
+            set src "NET-LAN"
+            set protocol 17
+            set start-port 5060
+            set end-port 5061
+            config sla
+                edit "Qualite-Internet"
+                    set id 1
+                next
+            end
+            set priority-members 1 2
+        next
+        edit 2
+            set name "Web-en-repartition"
+            set mode load-balance
+            set dst "all"
+            set src "NET-LAN"
+            set load-balance-mode source-ip-based
+        next
+    end
+end
+```
+
+### 21.3 Les modes de sélection
+
+| Mode | Comportement |
+|---|---|
+| `auto` | Suit la priorité des membres |
+| `manual` | Toujours le même membre |
+| `priority` | Le membre le mieux classé selon un critère mesuré |
+| **`sla`** | ⭐ Le premier membre qui **respecte le contrat de qualité** |
+| `load-balance` | Répartit selon un algorithme |
+
+Et les algorithmes de répartition :
+
+| Algorithme | Effet |
+|---|---|
+| `source-ip-based` | ⭐ Une même source garde le même lien — **évite le problème du §7.4** |
+| `weight-based` | Répartition proportionnelle |
+| `usage-based` | Selon la bande passante consommée |
+| `session` | Par session, en tourniquet |
+
+> 💡 **Astuce** : `source-ip-based` est le choix par défaut raisonnable. Un utilisateur donné sort toujours par le même lien, donc toujours par la même adresse publique — et les sites qui lient une session à une adresse cessent de le déconnecter.
+
+### 21.4 Vérifier
+
+```
+FGT-01 # diagnose sys sdwan member
+FGT-01 # diagnose sys sdwan health-check
+FGT-01 # diagnose sys sdwan service
+FGT-01 # get router info routing-table all
+```
+
+`diagnose sys sdwan health-check` est **la** commande à connaître :
+
+```
+Health Check(Qualite-Internet):
+Seq(1 port1): state(alive), packet-loss(0.000%) latency(12.456), jitter(1.234) sla_map=0x1
+Seq(2 port4): state(alive), packet-loss(3.500%) latency(180.221), jitter(45.100) sla_map=0x0
+```
+
+**Lis `sla_map`** : `0x1` signifie que le contrat n°1 est respecté, `0x0` qu'il ne l'est pas. Ici, `port4` a 3,5 % de perte et 180 ms de latence — il est vivant mais il **ne respecte pas le contrat**, donc le trafic sensible ne l'empruntera pas.
+
+> 🚨 **Danger — l'erreur qui casse tout un déploiement SD-WAN**
+> Quand une interface devient membre du SD-WAN, elle **ne peut plus être utilisée directement** dans les politiques et les routes statiques. Il faut référencer la **zone SD-WAN**.
+>
+> Toutes tes politiques existantes qui citent `port1` doivent être modifiées **avant** d'activer le SD-WAN. FortiOS refusera l'ajout du membre tant que des références subsistent — même protection qu'au §5, TP 3 étape 7, et c'est heureux.
+>
+> **La bonne méthode** : créer la zone, modifier les politiques pour qu'elles citent la zone, **puis** ajouter les membres.
+
+---
+
+### 🧪 TP 20 — Un SD-WAN à deux liens
+
+**🎯 Objectif**
+Créer une zone SD-WAN, y placer deux liens, mesurer leur qualité, écrire une règle avec contrat de service, puis **dégrader volontairement un lien** et observer la bascule.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 7 terminé, une seconde interface WAN (`port4`) — même sans vrai second opérateur
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Libérer les politiques**
+
+```
+FGT-01 # show firewall policy | grep -B3 "port1"
+```
+
+Note les politiques qui citent `port1`. On va devoir les modifier.
+
+**Étape 2 — Créer la zone et le premier membre**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # set status enable
+FGT-01 (sdwan) # config zone
+FGT-01 (zone) # edit "SDWAN-INTERNET"
+FGT-01 (SDWAN-INTERNET) # next
+FGT-01 (zone) # end
+FGT-01 (sdwan) # end
+```
+
+Si FortiOS refuse à cause de références sur `port1`, modifie d'abord les politiques :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set dstintf "SDWAN-INTERNET"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 3 — Ajouter les membres**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config members
+FGT-01 (members) # edit 1
+FGT-01 (1) # set interface "port1"
+FGT-01 (1) # set zone "SDWAN-INTERNET"
+FGT-01 (1) # set gateway 192.168.100.1
+FGT-01 (1) # set priority 1
+FGT-01 (1) # next
+FGT-01 (members) # edit 2
+FGT-01 (2) # set interface "port4"
+FGT-01 (2) # set zone "SDWAN-INTERNET"
+FGT-01 (2) # set gateway 192.168.101.1
+FGT-01 (2) # set priority 2
+FGT-01 (2) # next
+FGT-01 (members) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 4 — Le moniteur de qualité**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config health-check
+FGT-01 (health-check) # edit "Qualite"
+FGT-01 (Qualite) # set server "8.8.8.8" "1.1.1.1"
+FGT-01 (Qualite) # set protocol ping
+FGT-01 (Qualite) # set interval 500
+FGT-01 (Qualite) # set failtime 5
+FGT-01 (Qualite) # set recoverytime 5
+FGT-01 (Qualite) # set members 1 2
+FGT-01 (Qualite) # config sla
+FGT-01 (sla) # edit 1
+FGT-01 (1) # set latency-threshold 150
+FGT-01 (1) # set jitter-threshold 30
+FGT-01 (1) # set packetloss-threshold 2
+FGT-01 (1) # next
+FGT-01 (sla) # end
+FGT-01 (Qualite) # next
+FGT-01 (health-check) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 5 — Observer les mesures**
+
+```
+FGT-01 # diagnose sys sdwan health-check
+```
+
+Tu vois la latence, la gigue et la perte **mesurées en temps réel** sur chaque lien. C'est ce qu'aucune route statique ne peut savoir.
+
+**Étape 6 — La route par défaut du SD-WAN**
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 1
+FGT-01 (1) # set dst 0.0.0.0 0.0.0.0
+FGT-01 (1) # set device "SDWAN-INTERNET"
+FGT-01 (1) # next
+FGT-01 (static) # end
+
+FGT-01 # get router info routing-table all
+```
+
+**Étape 7 — Une règle avec contrat de service**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config service
+FGT-01 (service) # edit 1
+FGT-01 (1) # set name "Trafic-critique"
+FGT-01 (1) # set mode sla
+FGT-01 (1) # set dst "all"
+FGT-01 (1) # set src "NET-LAN"
+FGT-01 (1) # config sla
+FGT-01 (sla) # edit "Qualite"
+FGT-01 (Qualite) # set id 1
+FGT-01 (Qualite) # next
+FGT-01 (sla) # end
+FGT-01 (1) # set priority-members 1 2
+FGT-01 (1) # next
+FGT-01 (service) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 8 — Dégrader un lien volontairement**
+
+C'est l'étape qui apprend le plus. Sur R1, dégrade artificiellement le lien vers `port1` :
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# shutdown
+```
+
+Ou, sous Linux, ajoute de la latence et de la perte :
+
+```bash
+root@r1-edge:~# tc qdisc add dev eth1 root netem delay 300ms loss 10%
+```
+
+Puis observe :
+
+```
+FGT-01 # diagnose sys sdwan health-check
+```
+
+`sla_map` passe à `0x0` pour ce membre : il **ne respecte plus le contrat**.
+
+```
+FGT-01 # diagnose sys sdwan service
+```
+
+Le service bascule sur le membre 2.
+
+**Le trafic vient de changer de chemin non pas parce qu'un lien est tombé, mais parce qu'il est devenu MAUVAIS.** C'est toute la différence avec le routage classique.
+
+Rétablis :
+
+```bash
+root@r1-edge:~# tc qdisc del dev eth1 root netem
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `diagnose sys sdwan health-check` affiche latence, gigue et perte par lien
+- `sla_map` reflète le respect du contrat
+- Une dégradation fait basculer le trafic **sans coupure de lien**
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Le SD-WAN mesure la qualité**, là où le routage ne connaît que « up » ou « down ».
+2. **`sla_map` est la ligne à lire** pour savoir si un lien respecte son contrat.
+3. **`source-ip-based` évite le problème des sessions qui changent d'adresse publique.**
+4. **Un membre du SD-WAN ne peut plus être cité directement** dans les politiques — modifie-les avant.
+5. **Un lien peut être vivant et inutilisable.** C'est le cas que le SD-WAN existe pour traiter.
+
+---
+
+## 22. La haute disponibilité
+
+Ton pare-feu est le point de passage obligé de tout le trafic. S'il tombe, **l'entreprise s'arrête**. La haute disponibilité (HA) consiste à en mettre deux, pour qu'une panne ne se voie pas.
+
+### 22.1 Les deux modes
+
+**Actif-passif (A-P)** — un pare-feu travaille, l'autre attend en miroir. Si le premier tombe, le second prend la main en quelques secondes.
+
+- ✅ Simple, prévisible, facile à diagnostiquer
+- ✅ **C'est ce qu'on déploie dans 90 % des cas**
+- ❌ Le second équipement ne sert à rien tant que tout va bien
+
+**Actif-actif (A-A)** — les deux traitent du trafic, la charge est répartie.
+
+- ✅ Utilise les deux machines
+- ❌ Plus complexe, la répartition ne concerne en pratique que le trafic inspecté
+- ❌ Diagnostic plus difficile
+
+> 💡 **Astuce** : si tu hésites, prends **actif-passif**. Le gain de performance de l'actif-actif est plus limité qu'on ne le croit — le trafic à état reste traité par le maître — et la complexité supplémentaire coûte cher le jour où quelque chose ne va pas.
+
+### 22.2 Le protocole FGCP
+
+Fortinet utilise son propre protocole, **FGCP** (*FortiGate Clustering Protocol*), qui gère :
+
+- l'**élection** du maître ;
+- la **synchronisation** de la configuration ;
+- la **synchronisation des sessions**, pour qu'une bascule ne coupe pas les connexions en cours ;
+- la **surveillance** des liens et des équipements.
+
+### 22.3 La configuration
+
+```
+config system ha
+    set group-name "CLUSTER-PARIS"
+    set mode a-p
+    set password "MotDePasseHA2026"
+    set hbdev "port5" 50 "port6" 100
+    set session-pickup enable
+    set session-pickup-connectionless enable
+    set ha-mgmt-status enable
+    config ha-mgmt-interfaces
+        edit 1
+            set interface "port7"
+            set gateway 192.168.99.254
+        next
+    end
+    set override disable
+    set priority 200
+    set monitor "port1" "port2" "port3"
+end
+```
+
+Les paramètres décisifs, un par un :
+
+| Paramètre | Rôle |
+|---|---|
+| `group-name` | Doit être **identique** sur les deux |
+| `password` | Idem — c'est ce qui authentifie le cluster |
+| `hbdev` | ⭐ Les interfaces de **battement de cœur**, avec leur priorité |
+| `session-pickup` | ⭐ Synchronise les sessions — sans lui, la bascule **coupe** toutes les connexions |
+| `priority` | La plus **haute** devient maître |
+| `override` | Voir l'avertissement ci-dessous |
+| `monitor` | ⭐ Les interfaces surveillées : si l'une tombe, le cluster bascule |
+| `ha-mgmt-interfaces` | Une interface d'administration **par équipement**, indépendante du cluster |
+
+> 🚨 **Danger — `set override enable` est un piège**
+> Avec `override disable` (le défaut), quand le maître tombé revient, **il reste esclave**. Le cluster ne bouge plus.
+>
+> Avec `override enable`, le maître d'origine **reprend la main** dès son retour — ce qui provoque une **seconde bascule**, donc une seconde micro-coupure, pour rien.
+>
+> **Laisse `override disable`.** Un équipement qui vient de redémarrer n'a aucune raison de reprendre la main immédiatement : s'il redémarre en boucle, `override enable` fait basculer le cluster à chaque cycle. On appelle ça un *flapping*, et c'est bien pire qu'une panne franche.
+
+> ⚠️ **Attention — `monitor` est indispensable, et il est dangereux mal réglé**
+> Sans lui, le pare-feu maître peut perdre son interface WAN et **rester maître** : le cluster est en parfaite santé, et plus personne n'a Internet.
+>
+> Mais ne surveille **que** les interfaces réellement critiques. Surveiller une interface de laboratoire débranchée fait basculer le cluster en permanence.
+
+### 22.4 🧠 Comprendre : le split-brain
+
+C'est le pire scénario d'un cluster, et il faut savoir ce que c'est.
+
+Si **tous** les liens de battement de cœur tombent alors que les deux équipements fonctionnent, chacun croit que l'autre est mort. Chacun se déclare maître. **Deux équipements prennent la même adresse IP et la même adresse MAC virtuelle** sur le réseau.
+
+Résultat : conflits d'adresses, table MAC du switch qui oscille, trafic erratique. **C'est pire qu'une panne**, parce que rien n'est franchement cassé et que le diagnostic est difficile.
+
+**Comment l'éviter :**
+
+- **Deux liens de battement de cœur minimum**, sur des interfaces physiques différentes (`set hbdev "port5" 50 "port6" 100`) ;
+- Les relier en **direct**, sans passer par un switch, quand c'est possible ;
+- Si un switch est nécessaire, éviter que les deux liens passent par le **même** switch.
+
+> 💡 **Astuce** : c'est exactement la raison pour laquelle `hbdev` accepte plusieurs interfaces avec une priorité. Ce n'est pas une redondance décorative : c'est la protection contre le split-brain.
+
+### 22.5 Vérifier et exploiter
+
+```
+FGT-01 # get system ha status
+FGT-01 # diagnose sys ha status
+FGT-01 # diagnose sys ha checksum cluster
+FGT-01 # execute ha manage 1 admin
+```
+
+`diagnose sys ha checksum cluster` mérite une explication : il compare les **empreintes de configuration** des membres. Si elles diffèrent, la synchronisation a échoué — et un cluster désynchronisé bascule vers une configuration qui n'est pas celle que tu crois.
+
+```
+FGT-01 # diagnose sys ha checksum cluster
+```
+```
+================== FGVMEV0000000001 ==================
+is_manage_master()=1, is_root_master()=1
+debugzone
+global: a1b2c3d4 e5f6a7b8 ...
+root: 1a2b3c4d 5e6f7a8b ...
+
+================== FGVMEV0000000002 ==================
+is_manage_master()=0, is_root_master()=0
+debugzone
+global: a1b2c3d4 e5f6a7b8 ...     ← doit être IDENTIQUE
+root: 1a2b3c4d 5e6f7a8b ...       ← doit être IDENTIQUE
+```
+
+> 💡 **Astuce — `execute ha manage`** permet de se connecter au **membre esclave** depuis le maître, sans avoir à s'y brancher physiquement. Indispensable pour vérifier son état.
+
+**Forcer une bascule pour tester :**
+
+```
+FGT-01 # diagnose sys ha reset-uptime
+```
+
+> ⚠️ **Attention** : c'est la bonne façon de tester une bascule, mais **teste-la en fenêtre de maintenance**. Un cluster HA se teste avant la panne — un basculement jamais éprouvé est un basculement dont personne ne sait s'il fonctionne.
+
+---
+
+### 🧪 TP 21 — Monter un cluster et le faire basculer
+
+**🎯 Objectif**
+Créer un cluster actif-passif, vérifier la synchronisation, provoquer une panne du maître, et **mesurer si les sessions survivent**.
+
+**⏱️ Durée** : 45 minutes
+
+**📋 Prérequis** : deux FortiGate identiques (même version, même modèle)
+
+> ⚠️ **Attention** : les deux membres doivent avoir **la même version de FortiOS** et le **même modèle**. Un cluster entre versions différentes ne se forme pas, ou se forme mal.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Préparer les interfaces de battement de cœur**
+
+Sur les deux équipements, réserve deux interfaces dédiées. Elles ne doivent porter **aucune configuration IP** : FGCP s'en charge.
+
+**Étape 2 — Configurer le maître**
+
+```
+FGT-01 # config system ha
+FGT-01 (ha) # set group-name "CLUSTER-LAB"
+FGT-01 (ha) # set mode a-p
+FGT-01 (ha) # set password "HALab2026!"
+FGT-01 (ha) # set hbdev "port5" 50 "port6" 100
+FGT-01 (ha) # set session-pickup enable
+FGT-01 (ha) # set priority 200
+FGT-01 (ha) # set override disable
+FGT-01 (ha) # set monitor "port1" "port2"
+FGT-01 (ha) # end
+```
+
+> ⚠️ La session se coupe brièvement : le pare-feu recalcule ses adresses MAC virtuelles. C'est normal.
+
+**Étape 3 — Configurer le second**
+
+Identique, à une seule différence — la priorité :
+
+```
+FGT-02 # config system ha
+FGT-02 (ha) # set group-name "CLUSTER-LAB"
+FGT-02 (ha) # set mode a-p
+FGT-02 (ha) # set password "HALab2026!"
+FGT-02 (ha) # set hbdev "port5" 50 "port6" 100
+FGT-02 (ha) # set session-pickup enable
+FGT-02 (ha) # set priority 100
+FGT-02 (ha) # set override disable
+FGT-02 (ha) # set monitor "port1" "port2"
+FGT-02 (ha) # end
+```
+
+**Étape 4 — Vérifier la formation du cluster**
+
+```
+FGT-01 # get system ha status
+```
+```
+HA Health Status: OK
+Model: FortiGate-VM64
+Mode: HA A-P
+Group: CLUSTER-LAB
+Debug: 0
+Cluster Uptime: 0 days 0:3:12
+...
+Master: FGT-01, FGVMEV0000000001, HA cluster index = 0
+Slave : FGT-02, FGVMEV0000000002, HA cluster index = 1
+```
+
+**`HA Health Status: OK`** et deux membres listés : le cluster est formé. 🎉
+
+**Étape 5 — Vérifier la synchronisation**
+
+```
+FGT-01 # diagnose sys ha checksum cluster
+```
+
+Les empreintes doivent être **identiques** entre les deux membres.
+
+> 🧠 Si elles diffèrent, force une resynchronisation :
+> ```
+> FGT-01 # execute ha synchronize start
+> ```
+
+**Étape 6 — Se connecter à l'esclave**
+
+```
+FGT-01 # execute ha manage 1 admin
+```
+
+Tu es maintenant sur FGT-02. Vérifie qu'il porte bien la configuration du maître :
+
+```
+FGT-02 # show firewall policy | grep "set name"
+```
+
+**La configuration a été copiée automatiquement.** Tu n'as rien fait pour ça.
+
+```
+FGT-02 # exit
+```
+
+**Étape 7 — Lancer un trafic continu**
+
+Depuis le PC du LAN, quelque chose de mesurable :
+
+```bash
+user@pc-lan:~$ ping -i 0.2 192.168.20.10
+```
+
+Laisse tourner. C'est ce qui va nous dire combien de temps dure la bascule.
+
+**Étape 8 — Provoquer la panne**
+
+Éteins brutalement FGT-01 depuis l'hyperviseur (pas un arrêt propre — on simule une panne).
+
+Sur le PC, observe le `ping` :
+
+```
+64 bytes from 192.168.20.10: icmp_seq=142 time=0.4 ms
+64 bytes from 192.168.20.10: icmp_seq=143 time=0.4 ms
+... quelques paquets perdus ...
+64 bytes from 192.168.20.10: icmp_seq=149 time=0.5 ms
+```
+
+**Compte les paquets perdus.** À 0,2 s d'intervalle, cinq paquets perdus font une seconde de coupure.
+
+**Étape 9 — Vérifier que l'esclave a pris la main**
+
+```
+FGT-02 # get system ha status
+```
+
+FGT-02 est maintenant `Master`.
+
+**Étape 10 — Mesurer l'apport de `session-pickup`**
+
+C'est l'expérience la plus instructive. Refais le test avec une **session TCP longue** :
+
+```bash
+user@pc-lan:~$ ssh user@192.168.20.10
+```
+
+Reste connecté, puis provoque la bascule. **Avec `session-pickup enable`, la session SSH survit.** Sans lui, elle se coupe.
+
+Pour le vérifier, désactive-le et recommence :
+
+```
+FGT-02 # config system ha
+FGT-02 (ha) # set session-pickup disable
+FGT-02 (ha) # end
+```
+
+> 🧠 **Comprendre** : sans `session-pickup`, l'esclave ne connaît pas les sessions en cours. Après la bascule, le trafic d'une connexion établie arrive sur un pare-feu qui n'en a jamais entendu parler — il tombe donc sur la règle du §11.3 ④ et se fait jeter. Le ping recommence à zéro sans problème (ICMP est sans état), mais SSH meurt.
+>
+> C'est pour ça que `session-pickup` est **le paramètre à ne jamais oublier**.
+
+**Étape 11 — Rallumer FGT-01**
+
+Rallume-le et observe :
+
+```
+FGT-02 # get system ha status
+```
+
+Avec `override disable`, **FGT-01 revient en esclave** et FGT-02 reste maître. C'est le comportement voulu (§22.3).
+
+---
+
+**✅ Résultat attendu**
+
+- `get system ha status` liste deux membres, `Health Status: OK`
+- Les empreintes de configuration sont identiques
+- La configuration est copiée automatiquement sur l'esclave
+- Une panne du maître coupe le trafic environ une seconde
+- Avec `session-pickup`, une session SSH survit à la bascule
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Actif-passif suffit presque toujours**, et se diagnostique bien plus facilement.
+2. **`session-pickup` décide si les connexions survivent** à une bascule.
+3. **`override disable` évite une seconde bascule inutile**, et protège d'un cluster qui oscille.
+4. **`monitor` fait basculer sur une interface morte** — sans lui, un cluster « en bonne santé » peut n'avoir plus d'Internet.
+5. **Deux liens de battement de cœur protègent du split-brain**, qui est pire qu'une panne.
+6. **Un basculement jamais testé est un basculement inconnu.**
+
+---
+
+# Partie IX — L'exploitation au quotidien
+
+---
+
+## 23. Journaux, FortiView et supervision
+
+Un pare-feu qui filtre sans journaliser est un pare-feu dont personne ne sait ce qu'il fait. Cette section transforme ton équipement en source d'information exploitable.
+
+### 23.1 Les catégories de journaux
+
+FortiOS sépare les journaux par nature, et cette séparation gouverne toutes les commandes de filtrage :
+
+| Catégorie | Contenu | Numéro |
+|---|---|---|
+| **Traffic** | Chaque session autorisée ou refusée | `0` |
+| **UTM** | Virus détecté, site bloqué, IPS déclenché | `1` |
+| **Event** | Administration, système, VPN, HA, routage | `2` |
+
+```
+FGT-01 # execute log filter category ?
+```
+
+### 23.2 Où vont les journaux
+
+| Destination | Capacité | Usage |
+|---|---|---|
+| **Mémoire** | Très faible, volatile | Lab, dépannage immédiat |
+| **Disque local** | Limitée | Petits sites, si le modèle a un disque |
+| **FortiAnalyzer** | ⭐ Grande, avec corrélation et rapports | Le standard en entreprise |
+| **Syslog** | Selon le collecteur | ⭐ Intégration dans un SIEM |
+| **FortiCloud** | Selon l'abonnement | Sites sans infrastructure |
+
+```
+config log memory setting
+    set status enable
+end
+
+config log syslogd setting
+    set status enable
+    set server "192.168.10.60"
+    set port 514
+    set facility local7
+    set format rfc5424
+    set mode reliable
+end
+```
+
+> 💡 **Astuce — `set mode reliable`** passe le syslog en **TCP** au lieu d'UDP. En UDP, un journal perdu l'est définitivement et personne ne le sait. Pour des journaux de sécurité — ceux dont on aura besoin justement le jour d'un incident — la fiabilité vaut le léger surcoût.
+
+> 🚨 **Danger — un pare-feu qui ne journalise nulle part**
+> Sur une VM ou un petit boîtier sans disque, les journaux vivent **en mémoire** et disparaissent au redémarrage. Si tu as un incident et que le pare-feu a redémarré entre-temps, tu n'as **rien**.
+>
+> En production, envoie toujours les journaux vers une destination externe. Ce n'est pas du confort : sans journaux externalisés, tu ne pourras répondre à aucune question après coup, et une analyse d'incident sans journaux ne mène nulle part.
+
+### 23.3 Lire les journaux en CLI
+
+La séquence est toujours la même : **filtrer**, puis **afficher**.
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field srcip 192.168.10.10
+FGT-01 # execute log filter field action deny
+FGT-01 # execute log filter start-line 1
+FGT-01 # execute log filter view-lines 20
+FGT-01 # execute log display
+```
+
+Les champs les plus utiles :
+
+| Champ | Contenu |
+|---|---|
+| `srcip` / `dstip` | Adresses source et destination |
+| `action` | `accept`, `deny`, `close`, `blocked` |
+| `policyid` | ⭐ Quelle politique a décidé |
+| `user` | L'utilisateur authentifié (§17) |
+| `service` | Le service |
+| `appid` / `app` | L'application reconnue |
+| `level` | Sévérité |
+
+> 💡 **Astuce** : `execute log filter reset` **avant chaque recherche**. Les filtres persistent d'une commande à l'autre, et une recherche qui ne rend rien est très souvent un filtre oublié qui restreint sans qu'on s'en souvienne.
+
+### 23.4 FortiView
+
+FortiView est la vue graphique des journaux, et c'est là qu'on répond aux questions qu'on se pose vraiment :
+
+| Vue | Question à laquelle elle répond |
+|---|---|
+| **Sources** | Qui consomme le plus ? |
+| **Destinations** | Vers où va le trafic ? |
+| **Applications** | Quelles applications sont utilisées ? |
+| **Web Sites** | Quels sites sont visités ? |
+| **Threats** | Quelles menaces ont été bloquées ? |
+| **Policies** | ⭐ Quelles règles servent, et lesquelles ne servent jamais ? |
+| **Sessions** | Que se passe-t-il maintenant ? |
+
+> 💡 **Astuce professionnelle** : la vue **Policies** est la plus sous-utilisée et la plus rentable. Elle montre les règles à compteur nul — celles qui ne servent à rien, ou qui sont masquées par une règle au-dessus (§9.2). C'est la base du ménage annuel dans un jeu de règles, et le premier réflexe d'un audit.
+
+### 23.5 Les alertes
+
+Le pare-feu peut prévenir plutôt que d'attendre qu'on le consulte :
+
+```
+config alertemail setting
+    set username "fortigate@entreprise.fr"
+    set mailto1 "admin@entreprise.fr"
+    set filter-mode category
+    set critical-interval 5
+    set FDS-license-expiring-warning enable
+    set FIPS-CC-error enable
+    set HA-mode-change enable
+    set configuration-changes-logs enable
+end
+```
+
+Et le SNMP, pour la supervision :
+
+```
+config system snmp sysinfo
+    set status enable
+    set description "Pare-feu principal - Paris"
+    set contact-info "admin@entreprise.fr"
+    set location "Salle serveur - Batiment A"
+end
+
+config system snmp community
+    edit 1
+        set name "supervision"
+        config hosts
+            edit 1
+                set ip 192.168.10.70 255.255.255.255
+            next
+        end
+        set query-v1-status disable
+        set query-v2c-status enable
+        set trap-v2c-status enable
+    next
+end
+```
+
+> ⚠️ **Attention** : n'utilise **jamais** `public` comme nom de communauté, et n'expose jamais SNMP sur une interface externe. SNMPv2c circule **en clair** — quiconque écoute lit toute ta topologie. Préfère SNMPv3 quand ton outil de supervision le gère.
+
+### 23.6 🧠 Ce qu'il faut surveiller vraiment
+
+Voici les indicateurs qui comptent, et pourquoi :
+
+| Indicateur | Commande | Pourquoi c'est important |
+|---|---|---|
+| Charge processeur | `get system performance status` | Une saturation dégrade tout le trafic |
+| Mémoire | `get system performance status` | ⭐ Voir *conserve mode* ci-dessous |
+| Nombre de sessions | `get system session status` | Une explosion signale un scan ou une infection |
+| État des tunnels VPN | `get vpn ipsec tunnel summary` | Un site coupé sans alerte |
+| État du cluster HA | `get system ha status` | Un cluster dégradé qui ne se voit pas |
+| Bases FortiGuard | `diagnose autoupdate versions` | Des signatures périmées ne protègent pas |
+| Espace disque de journaux | `diagnose sys logdisk usage` | Un disque plein arrête la journalisation |
+
+> 🚨 **Le *conserve mode*, à connaître absolument**
+> Quand la mémoire d'un FortiGate atteint un seuil critique, il entre en **conserve mode** : il **cesse d'inspecter** le trafic pour économiser des ressources. Selon le réglage `av-failopen`, il laisse alors passer le trafic **sans analyse**, ou le bloque.
+>
+> ```
+> FGT-01 # diagnose hardware sysinfo conserve
+> FGT-01 # get system performance status
+> ```
+>
+> **Le piège** : en `av-failopen pass` (souvent le défaut), ton pare-feu continue de laisser passer le trafic — mais **sans antivirus, sans IPS, sans filtrage**. Tout a l'air normal. Tes utilisateurs ne se plaignent pas. Et tu n'es plus protégé.
+>
+> C'est exactement le genre de panne silencieuse qu'un tableau de bord doit détecter. Surveille la mémoire.
+
+---
+
+### 🧪 TP 22 — Rendre ton pare-feu bavard
+
+**🎯 Objectif**
+Configurer la journalisation, produire du trafic de plusieurs natures, retrouver chaque événement en CLI, et repérer une règle inutile.
+
+**⏱️ Durée** : 30 minutes
+
+**📋 Prérequis** : TP 12 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Activer la journalisation mémoire**
+
+```
+FGT-01 # config log memory setting
+FGT-01 (setting) # set status enable
+FGT-01 (setting) # end
+
+FGT-01 # config log memory global-setting
+FGT-01 (global-setting) # set max-size 98304
+FGT-01 (global-setting) # end
+```
+
+**Étape 2 — S'assurer que les politiques journalisent**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set logtraffic all
+FGT-01 (1) # set logtraffic-start enable
+FGT-01 (1) # next
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set logtraffic all
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+**Étape 3 — Produire du trafic varié**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ping -c 5 192.168.20.10
+user@pc-lan:~$ curl -s -o /dev/null http://192.168.20.10
+user@pc-lan:~$ curl -m 5 http://example.com          ← bloqué (TP 12)
+user@pc-lan:~$ ssh user@192.168.20.10                ← refusé (service non autorisé)
+```
+
+**Étape 4 — Retrouver le trafic autorisé**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field srcip 192.168.10.10
+FGT-01 # execute log filter view-lines 20
+FGT-01 # execute log display
+```
+
+**Étape 5 — Retrouver le trafic refusé**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field action deny
+FGT-01 # execute log display
+```
+
+Tu retrouves la tentative SSH. Regarde le champ `policyid` : il vaut `0` — l'`Implicit Deny` du §11, TP 9.
+
+**Étape 6 — Retrouver le blocage UTM**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 1
+FGT-01 # execute log display
+```
+
+Tu retrouves le blocage de `example.com` par la liste locale.
+
+> 🧠 **Note la différence** : le refus de la politique est en catégorie `0` (trafic), le blocage du filtrage web en catégorie `1` (UTM). Chercher dans la mauvaise catégorie est la cause n°1 des « je ne trouve rien dans les journaux ».
+
+**Étape 7 — Les événements système**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 2
+FGT-01 # execute log display
+```
+
+Tu retrouves tes propres connexions d'administration et tes changements de configuration. **Un pare-feu journalise qui l'a modifié** — et c'est pour ça que les comptes nominatifs du §4.3 comptent.
+
+**Étape 8 — Trouver les règles inutiles**
+
+```
+FGT-01 # get firewall policy
+```
+
+Regarde les compteurs. Une politique à `0 bytes` depuis longtemps est suspecte : soit elle ne sert à rien, soit elle est masquée par une règle au-dessus.
+
+**Étape 9 — Surveiller les indicateurs**
+
+```
+FGT-01 # get system performance status
+FGT-01 # get system session status
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose autoupdate versions
+```
+
+Note la mémoire utilisée. Sur une VM à 2 Gio avec des profils actifs, elle monte vite — et tu sais maintenant ce que ça implique (§23.6).
+
+**Étape 10 — Configurer un syslog externe (facultatif)**
+
+Si tu as une machine Linux disponible :
+
+```bash
+root@collecteur:~# apt install -y rsyslog
+root@collecteur:~# echo '$ModLoad imudp
+$UDPServerRun 514
+:fromhost-ip, isequal, "192.168.10.1" /var/log/fortigate.log
+& stop' > /etc/rsyslog.d/10-fortigate.conf
+root@collecteur:~# systemctl restart rsyslog
+```
+
+```
+FGT-01 # config log syslogd setting
+FGT-01 (setting) # set status enable
+FGT-01 (setting) # set server "192.168.10.60"
+FGT-01 (setting) # set port 514
+FGT-01 (setting) # set facility local7
+FGT-01 (setting) # end
+```
+
+```bash
+root@collecteur:~# tail -f /var/log/fortigate.log
+```
+
+Génère du trafic et regarde les journaux arriver **en direct**.
+
+---
+
+**✅ Résultat attendu**
+
+- Le trafic autorisé apparaît en catégorie 0
+- Le trafic refusé porte `policyid=0`
+- Le blocage web apparaît en catégorie 1
+- Tes modifications apparaissent en catégorie 2
+- `get firewall policy` révèle les compteurs
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Trois catégories**, et chercher dans la mauvaise fait conclure à tort qu'il n'y a rien.
+2. **`execute log filter reset` avant chaque recherche** — les filtres persistent.
+3. **`policyid=0` dans un journal, c'est l'Implicit Deny.**
+4. **Les journaux en mémoire disparaissent au redémarrage.** En production, on externalise.
+5. **Un compteur à zéro est un signal** à investiguer.
+6. **Le conserve mode arrête l'inspection sans rien casser de visible.** C'est une panne silencieuse.
+
+---
+
+## 24. Diagnostic et dépannage
+
+Tu as croisé les outils au fil du tutoriel. Cette section les organise en **méthode** — parce que le dépannage n'est pas une collection de commandes, c'est une façon de réduire un problème.
+
+### 24.1 🧠 La méthode : diviser en deux, toujours
+
+Le réflexe qui distingue un dépanneur efficace, c'est de ne **jamais** chercher au hasard. À chaque étape, on pose une question dont la réponse **élimine la moitié des causes**.
+
+```
+« Ça ne marche pas »
+        │
+        ├─► Le paquet ARRIVE-t-il sur le pare-feu ?
+        │   └─ NON → le problème est EN AMONT (câble, VLAN, routage du client, R1)
+        │
+        ├─► Le pare-feu a-t-il une ROUTE ?
+        │   └─ NON → problème de routage (§7)
+        │
+        ├─► Une POLITIQUE l'autorise-t-elle ?
+        │   └─ NON → il manque une règle (§9)
+        │
+        ├─► Le NAT s'applique-t-il correctement ?
+        │   └─ NON → problème de VIP ou de SNAT (§10)
+        │
+        ├─► Le paquet RESSORT-il ?
+        │   └─ NON → un profil de sécurité l'a jeté (§14)
+        │
+        └─► Il ressort → LE PROBLÈME N'EST PAS SUR LE PARE-FEU
+```
+
+> 💡 **La dernière branche est la plus importante.** Savoir dire « le pare-feu laisse passer, va voir ailleurs » avec **une preuve** te fait gagner un temps considérable — et te sort des discussions où chaque équipe accuse l'autre.
+
+### 24.2 Les cinq outils, et la question de chacun
+
+| Outil | La question à laquelle il répond |
+|---|---|
+| `diagnose sniffer packet` | « Le paquet arrive-t-il ? Ressort-il ? » |
+| `diagnose debug flow` | « Que **décide** le pare-feu, et pourquoi ? » |
+| `diagnose sys session list` | « Quelle règle a autorisé ? Quel NAT s'applique ? » |
+| `execute log display` | « Que s'est-il passé **avant** que j'arrive ? » |
+| `get router info routing-table` | « Le pare-feu sait-il où envoyer ça ? » |
+
+### 24.3 L'aide-mémoire du sniffer
+
+```
+FGT-01 # diagnose sniffer packet <interface> '<filtre BPF>' <niveau> <nombre> <horodatage>
+```
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.10.10' 4 100
+FGT-01 # diagnose sniffer packet port1 'tcp port 443' 4 50
+FGT-01 # diagnose sniffer packet any 'icmp' 4 20
+FGT-01 # diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+FGT-01 # diagnose sniffer packet any 'host 10.0.0.5 and not port 22' 4 100 a
+```
+
+> 💡 **Astuce** : le dernier argument, `a`, ajoute un **horodatage absolu**. Indispensable quand tu compares une capture avec des journaux, ou avec la capture d'un autre équipement.
+
+**Le raisonnement du sniffer sur deux interfaces** :
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 50
+```
+
+Avec le niveau 4, chaque ligne indique l'interface. Tu cherches alors :
+- le paquet arrive sur `port2` **et** ressort sur `port3` → le pare-feu fait son travail ;
+- il arrive sur `port2` et **ne ressort pas** → il a été jeté à l'intérieur, passe à `debug flow` ;
+- il n'arrive **pas du tout** → le problème est en amont, ne cherche pas sur le pare-feu.
+
+### 24.4 L'aide-mémoire du debug flow
+
+```
+FGT-01 # diagnose debug reset
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow filter proto 6
+FGT-01 # diagnose debug flow filter port 443
+FGT-01 # diagnose debug flow show function-name enable
+FGT-01 # diagnose debug flow trace start 20
+FGT-01 # diagnose debug enable
+
+   ... reproduire le problème ...
+
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug flow trace stop
+FGT-01 # diagnose debug reset
+```
+
+**Les messages et leur traduction :**
+
+| Message | Ce qu'il veut dire | Où chercher |
+|---|---|---|
+| `Allowed by Policy-N` | Autorisé par la règle N | Nulle part, ça marche |
+| `Denied by forward policy check (policy 0)` | ⭐ **Aucune règle ne correspond** | Il en manque une |
+| `Denied by forward policy check (policy N)` | La règle N refuse | Va voir la règle N |
+| `no route to destination` | Pas de route | Section 7 |
+| `reverse path check fail, drop` | RPF | §11.4 |
+| `iprope_in_check() check failed` | Trafic **local-in** refusé | `allowaccess`, local-in policy |
+| `no session matched, drop` | Paquet hors session | Normal sur un scan |
+| `Denied by quota` | Quota atteint | Traffic shaping |
+
+### 24.5 Les commandes de santé
+
+```
+FGT-01 # get system performance status
+FGT-01 # get system performance top 5 20
+FGT-01 # diagnose sys top 5 20
+FGT-01 # get system session status
+FGT-01 # diagnose sys session stat
+FGT-01 # diagnose hardware sysinfo memory
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose sys logdisk usage
+FGT-01 # get system status
+```
+
+> 💡 **Astuce — `diagnose sys top`** liste les processus par consommation. Les noms qu'on rencontre :
+> - `wad` → le proxy (inspection en mode proxy, §13)
+> - `ipsengine` → l'IPS
+> - `scanunitd` → l'antivirus
+> - `ipsmonitor` → la supervision de l'IPS
+> - `sslvpnd` → le service VPN SSL (s'il existe encore, §2.6)
+> - `httpsd` → l'interface web d'administration
+>
+> Un processus qui monopolise le processeur te dit **quelle fonction** est en cause, ce qui est bien plus précis que « le pare-feu est lent ».
+
+### 24.6 Le paquet de diagnostic pour le support
+
+Quand tu ouvres un ticket chez Fortinet, ils demandent toujours la même chose. Autant l'avoir prêt :
+
+```
+FGT-01 # execute tac report
+```
+
+Cette commande collecte automatiquement l'ensemble des informations utiles. C'est long, et c'est ce qu'il faut joindre.
+
+> 💡 **Astuce** : joins **aussi** une description précise de ce que tu attendais, de ce que tu observes, et l'heure exacte d'une occurrence du problème. Un ticket qui dit « ça ne marche pas » avec un `tac report` prend une semaine ; un ticket qui dit « à 14 h 32, la session de `192.168.10.10` vers `203.0.113.7:443` est refusée avec `policy 0` alors que la politique 12 devrait correspondre » est traité dans la journée.
+
+---
+
+### 🧪 TP 23 — Dépanner trois pannes que tu ne connais pas
+
+**🎯 Objectif**
+Appliquer la méthode sur trois pannes **provoquées à l'aveugle**. L'exercice est de diagnostiquer **avant** de lire la cause.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : laboratoire fonctionnel
+
+> 💡 **Comment faire cet exercice** : lis l'énoncé de la panne, applique le script pour la provoquer **sans lire la cause**, puis diagnostique. Ne déplie la solution qu'après.
+
+---
+
+**🔧 Panne n°1 — « Le LAN n'accède plus à la DMZ »**
+
+Provoque :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set service "HTTPS"
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+Depuis le PC :
+
+```bash
+user@pc-lan:~$ curl -m 5 http://192.168.20.10
+```
+
+**À toi.** Diagnostique avant de lire.
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 10
+```
+Le paquet **arrive** sur `port2`. Il ne ressort pas sur `port3`.
+
+```
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="Denied by forward policy check (policy 0)"
+```
+
+`policy 0` = **aucune règle ne correspond** (§11, TP 9). Or la politique 2 existe. Donc elle ne correspond **plus** : un de ses critères a changé.
+
+```
+FGT-01 # show firewall policy 2
+```
+Le service est `HTTPS`, or on demande du HTTP. **Cause : le service de la politique ne couvre plus le trafic.**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set service "PING" "HTTP"
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+</details>
+
+---
+
+**🔧 Panne n°2 — « Plus d'accès Internet depuis le LAN »**
+
+Provoque :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set nat disable
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+```bash
+user@pc-lan:~$ ping -c 3 8.8.8.8
+```
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose debug flow filter addr 8.8.8.8
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="Allowed by Policy-1:"
+```
+
+**Le pare-feu AUTORISE.** C'est la branche la plus utile de la méthode : le problème n'est pas dans le filtrage.
+
+```
+FGT-01 # diagnose sniffer packet port1 'host 8.8.8.8' 4 10
+```
+```
+192.168.10.10 -> 8.8.8.8: icmp: echo request
+```
+
+**Le paquet sort avec son adresse PRIVÉE.** R1 le NATera peut-être, mais dans une vraie sortie Internet, `192.168.10.10` n'a aucun chemin de retour (§10.1).
+
+```
+FGT-01 # diagnose sys session filter dst 8.8.8.8
+FGT-01 # diagnose sys session list
+```
+Aucune ligne `act=snat`. **Cause : le NAT est désactivé sur la politique.**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set nat enable
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+</details>
+
+---
+
+**🔧 Panne n°3 — « Le serveur publié n'est plus joignable »**
+
+Provoque :
+
+```
+FGT-01 # config firewall vip
+FGT-01 (vip) # edit "VIP-Serveur-Web"
+FGT-01 (VIP-Serveur-Web) # set mappedip "192.168.20.99"
+FGT-01 (VIP-Serveur-Web) # next
+FGT-01 (vip) # end
+```
+
+Assure-toi qu'une politique de publication existe (TP 8), puis :
+
+```bash
+curl -m 5 http://192.168.100.200
+```
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose debug flow filter addr 192.168.100.200
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="VIP-... DNAT 192.168.100.200:80 -> 192.168.20.99:80"
+msg="Allowed by Policy-3:"
+...
+msg="Destination unreachable" ou pas de réponse
+```
+
+Le DNAT s'applique, la politique autorise — **mais la destination est `192.168.20.99`**, pas `192.168.20.10`.
+
+```
+FGT-01 # execute ping 192.168.20.99
+```
+Aucune réponse : cette machine n'existe pas.
+
+```
+FGT-01 # show firewall vip VIP-Serveur-Web
+```
+**Cause : le `mappedip` du VIP pointe vers une adresse inexistante.**
+
+```
+FGT-01 # config firewall vip
+FGT-01 (vip) # edit "VIP-Serveur-Web"
+FGT-01 (VIP-Serveur-Web) # set mappedip "192.168.20.10"
+FGT-01 (VIP-Serveur-Web) # next
+FGT-01 (vip) # end
+```
+</details>
+
+---
+
+**✅ Résultat attendu**
+
+Tu as diagnostiqué trois pannes de natures différentes — **politique**, **NAT**, **objet mal configuré** — avec la même méthode et sans deviner.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **La méthode ne change pas**, seule la branche où l'on s'arrête change.
+2. **`sniffer` d'abord** : si le paquet n'arrive pas, inutile de chercher sur le pare-feu.
+3. **`Allowed by Policy-N` est une information précieuse** — elle t'envoie chercher ailleurs, avec une preuve.
+4. **La table de sessions confirme le NAT** (`act=snat`, `act=dnat`).
+5. **Une panne peut venir d'un objet**, pas d'une règle. Vérifie ce que la règle **contient**, pas seulement qu'elle existe.
+
+---
+
+## 25. Sauvegarde, mise à jour et durcissement
+
+Les trois tâches qu'on repousse toujours, et qui décident de ce qui se passe le jour où ça tourne mal.
+
+### 25.1 La sauvegarde
+
+```
+FGT-01 # execute backup config tftp sauvegarde-2026-08-20.conf 192.168.10.50
+FGT-01 # execute backup config ftp sauvegarde.conf 192.168.10.50 utilisateur motdepasse
+FGT-01 # execute backup config usb sauvegarde.conf
+```
+
+Ou par l'interface web : `Dashboard` → menu utilisateur → `Configuration` → `Backup`.
+
+**Sauvegarder en chiffré** — indispensable, et voici pourquoi :
+
+```
+FGT-01 # execute backup config tftp sauvegarde.conf 192.168.10.50 MotDePasseDeChiffrement
+```
+
+> 🚨 **Danger — une sauvegarde en clair est un fichier de secrets**
+> Une configuration FortiGate contient : les clés partagées de tous tes VPN, les mots de passe des comptes de service LDAP et RADIUS, les communautés SNMP, les identifiants PPPoE, et parfois des certificats avec leur clé privée.
+>
+> **Un fichier de sauvegarde en clair qui traîne sur un partage réseau donne à qui le lit les clés de ton infrastructure entière.** Chiffre-les, et traite-les comme des secrets — pas comme des fichiers de configuration.
+
+> ⚠️ **Attention** : une sauvegarde chiffrée **ne peut être restaurée que sur le même modèle**, et il faut évidemment le mot de passe. Perdre ce mot de passe rend la sauvegarde inutile. Range-le dans le coffre-fort à mots de passe de l'entreprise, pas dans un fichier à côté de la sauvegarde.
+
+**Automatiser** — parce qu'une sauvegarde manuelle n'est jamais à jour :
+
+```
+config system automation-trigger
+    edit "Sauvegarde-Quotidienne"
+        set trigger-type scheduled
+        set trigger-frequency daily
+        set trigger-hour 2
+        set trigger-minute 0
+    next
+end
+```
+
+> 💡 **Astuce** : la meilleure automatisation reste un script externe qui se connecte en SSH, exécute `show`, et archive le résultat dans un dépôt Git. Tu obtiens ainsi **l'historique complet** de ta configuration, avec la possibilité de voir exactement ce qui a changé entre deux dates — et par qui, en croisant avec les journaux de catégorie 2 (§23).
+>
+> Ce n'est pas une astuce de confort : le jour où quelque chose casse après une modification, `git diff` te donne la réponse en dix secondes.
+
+### 25.2 La restauration
+
+```
+FGT-01 # execute restore config tftp sauvegarde.conf 192.168.10.50
+```
+
+> ⚠️ **Attention** : la restauration **redémarre** l'équipement et **écrase entièrement** la configuration. Ce n'est pas une fusion. Tout ce qui a été fait depuis la sauvegarde est perdu.
+
+### 25.3 La mise à jour de FortiOS
+
+**Avant** de mettre à jour, trois choses, dans cet ordre :
+
+1. **Lire les notes de version.** Pas les survoler : les lire. C'est là que sont signalés les changements de comportement — comme le retrait du SSL VPN du §2.6, qui a mis des entreprises dehors.
+2. **Vérifier le chemin de mise à jour.** On ne saute pas de 7.0 à 7.6 directement. Fortinet publie un outil de chemin de mise à jour, et le respecter n'est pas optionnel.
+3. **Sauvegarder.** Chiffrée, et vérifiée.
+
+```
+FGT-01 # get system status | grep Version
+FGT-01 # execute backup config tftp avant-maj.conf 192.168.10.50 MotDePasse
+FGT-01 # execute restore image tftp FGT_VM64-v7.6.3.out 192.168.10.50
+```
+
+> 🚨 **Danger — ne mets jamais à jour un pare-feu distant sans plan de secours**
+> Si la mise à jour se passe mal, tu perds l'accès et tu es à deux heures de route de l'équipement. Prévois **toujours** :
+> - un accès console hors bande (KVM, console série sur un serveur de terminaux) ;
+> - la version précédente disponible localement ;
+> - quelqu'un sur place, joignable.
+>
+> Et fais-le en fenêtre de maintenance, pas un vendredi à 17 h. Ce conseil fait sourire jusqu'à ce qu'on l'ait ignoré une fois.
+
+> 💡 **Astuce** : sur un cluster HA, FortiOS sait faire une mise à jour **en cascade** — il met à jour l'esclave, bascule, puis met à jour l'ancien maître. La coupure se limite à une bascule. C'est un des vrais bénéfices de la HA, souvent oublié dans le calcul de rentabilité.
+
+### 25.4 Le durcissement : la liste qui compte
+
+Voici ce qui distingue un pare-feu correctement déployé d'un pare-feu simplement fonctionnel.
+
+**① Fermer l'administration sur l'extérieur**
+
+C'est le point n°1, et on l'a laissé ouvert au TP 1 :
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess ping
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Encore mieux : rien du tout, et une local-in policy (§11.5) pour les rares cas où l'administration distante est nécessaire.
+
+**② Changer les ports d'administration**
+
+```
+config system global
+    set admin-sport 8443
+    set admin-ssh-port 2222
+end
+```
+
+> 🧠 Ce n'est **pas** une mesure de sécurité en soi — un scan trouve le nouveau port en quelques secondes. Mais ça élimine l'essentiel des tentatives automatisées, qui ne testent que les ports standard. Ça vaut le geste, à condition de ne pas croire que ça protège.
+
+**③ Désactiver ce qui ne sert pas**
+
+```
+config system global
+    set admin-telnet disable
+    set gui-certificates disable
+end
+```
+
+**④ Renforcer les mots de passe**
+
+```
+config system password-policy
+    set status enable
+    set apply-to admin-password
+    set minimum-length 12
+    set min-lower-case-letter 1
+    set min-upper-case-letter 1
+    set min-non-alphanumeric 1
+    set min-number 1
+    set expire-status enable
+    set expire-day 90
+end
+```
+
+**⑤ Limiter les tentatives**
+
+```
+config system global
+    set admin-lockout-threshold 3
+    set admin-lockout-duration 300
+end
+```
+
+**⑥ Le second facteur pour les administrateurs**
+
+```
+config system admin
+    edit "jdupont"
+        set two-factor fortitoken
+    next
+end
+```
+
+**⑦ Restreindre par adresse source**
+
+```
+config system admin
+    edit "jdupont"
+        set trusthost1 192.168.99.0 255.255.255.0
+    next
+end
+```
+
+> 🚨 Rappel du §4.4 : le `trusthost` t'enferme dehors si tu te trompes. Compte de test d'abord.
+
+**⑧ Bannière et bandeau**
+
+```
+config system global
+    set pre-login-banner enable
+    set post-login-banner enable
+end
+```
+
+> 💡 **Astuce** : la bannière n'est pas décorative. Dans beaucoup de juridictions, elle est ce qui rend un accès **explicitement non autorisé** — et donc poursuivable. Un système sans avertissement affaiblit les poursuites contre celui qui s'y introduit.
+
+**⑨ Journaliser tout ce qui est administratif**
+
+Déjà couvert au §23, mais c'est un point de durcissement : sans journaux d'administration, tu ne peux pas savoir qui a fait quoi.
+
+**⑩ Maintenir à jour**
+
+Le point qui résume tous les autres. Un pare-feu à jour avec une configuration moyenne vaut mieux qu'un pare-feu parfaitement configuré en version vulnérable.
+
+---
+
+### 🧪 TP 24 — Durcir et sauvegarder
+
+**🎯 Objectif**
+Appliquer la liste de durcissement, sauvegarder en chiffré, vérifier la restauration, et mettre en place un suivi de configuration en Git.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : laboratoire fonctionnel
+
+> 🚨 **Attention** : ce TP touche à ton propre accès. **Garde la console de l'hyperviseur ouverte** pendant toute sa durée.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Sauvegarder AVANT de durcir**
+
+```
+FGT-01 # execute backup config tftp avant-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+```
+
+Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
+
+> 💡 Un serveur TFTP en une commande sur ta machine Linux :
+> ```bash
+> user@pc-lan:~$ sudo apt install -y tftpd-hpa
+> user@pc-lan:~$ sudo chmod 777 /srv/tftp
+> ```
+
+**Étape 2 — Vérifier que la sauvegarde est chiffrée**
+
+```bash
+user@pc-lan:~$ head -c 200 /srv/tftp/avant-durcissement.conf
+```
+
+Tu dois voir du contenu **illisible**. Compare avec une sauvegarde non chiffrée : tu y liras `config system global`, `set psksecret`… en clair.
+
+**Fais l'expérience.** C'est ce qui convainc de toujours chiffrer.
+
+**Étape 3 — Politique de mots de passe**
+
+```
+FGT-01 # config system password-policy
+FGT-01 (password-policy) # set status enable
+FGT-01 (password-policy) # set apply-to admin-password
+FGT-01 (password-policy) # set minimum-length 12
+FGT-01 (password-policy) # set min-lower-case-letter 1
+FGT-01 (password-policy) # set min-upper-case-letter 1
+FGT-01 (password-policy) # set min-non-alphanumeric 1
+FGT-01 (password-policy) # set min-number 1
+FGT-01 (password-policy) # end
+```
+
+Teste-la :
+
+```
+FGT-01 # config system admin
+FGT-01 (admin) # edit "test-faible"
+FGT-01 (test-faible) # set password "1234"
+```
+
+FortiOS **refuse**. Supprime le compte de test :
+
+```
+FGT-01 (test-faible) # abort
+```
+
+**Étape 4 — Verrouillage après échecs**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set admin-lockout-threshold 3
+FGT-01 (global) # set admin-lockout-duration 300
+FGT-01 (global) # end
+```
+
+**Étape 5 — Changer les ports d'administration**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set admin-sport 8443
+FGT-01 (global) # set admin-ssh-port 2222
+FGT-01 (global) # end
+```
+
+> ⚠️ **Ta session en cours n'est pas coupée**, mais la prochaine connexion devra utiliser les nouveaux ports :
+> ```bash
+> user@pc-lan:~$ ssh -p 2222 admin@192.168.10.1
+> ```
+> **Teste immédiatement depuis une seconde session** avant de fermer celle-ci.
+
+**Étape 6 — Fermer l'administration sur le WAN**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess ping
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Vérifie que tu es toujours joignable **depuis le LAN** :
+
+```bash
+user@pc-lan:~$ ssh -p 2222 admin@192.168.10.1
+```
+
+**Étape 7 — La bannière**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set pre-login-banner enable
+FGT-01 (global) # end
+
+FGT-01 # config system replacemsg admin "pre_admin-disclaimer-text"
+FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES.
+Toute connexion est journalisee. Tout acces non autorise fera l objet de poursuites."
+FGT-01 (pre_admin-discl~t) # next
+FGT-01 # end
+```
+
+Déconnecte-toi et reconnecte-toi : la bannière s'affiche avant l'invite.
+
+**Étape 8 — Le suivi en Git**
+
+Sur ta machine :
+
+```bash
+user@pc-lan:~$ mkdir -p ~/config-fortigate && cd ~/config-fortigate
+user@pc-lan:~$ git init
+user@pc-lan:~$ cat > sauvegarde.sh <<'SCRIPT'
+#!/bin/bash
+FGT=192.168.10.1
+PORT=2222
+USER=admin
+ssh -p $PORT $USER@$FGT "show" > fgt-01.conf
+git add fgt-01.conf
+git commit -m "Configuration du $(date +%Y-%m-%d\ %H:%M)" || echo "Aucun changement"
+SCRIPT
+user@pc-lan:~$ chmod +x sauvegarde.sh
+user@pc-lan:~$ ./sauvegarde.sh
+```
+
+Fais une modification sur le pare-feu, relance le script, puis :
+
+```bash
+user@pc-lan:~$ git log --oneline
+user@pc-lan:~$ git diff HEAD~1
+```
+
+**Tu vois exactement ce qui a changé.** C'est le §25.1 en pratique, et c'est ce qui te sauvera lors d'un incident après modification.
+
+**Étape 9 — Vérifier l'état général**
+
+```
+FGT-01 # get system status
+FGT-01 # diagnose autoupdate versions
+FGT-01 # get system performance status
+FGT-01 # show system global
+```
+
+**Étape 10 — Sauvegarder l'état durci**
+
+```
+FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+```
+
+---
+
+**✅ Résultat attendu**
+
+- La sauvegarde chiffrée est illisible, la non chiffrée révèle les secrets
+- Un mot de passe faible est refusé
+- L'administration écoute sur les nouveaux ports
+- Le WAN n'accepte plus que le ping
+- La bannière s'affiche
+- `git diff` montre les changements de configuration
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux.
+2. **La restauration écrase tout** et redémarre. Ce n'est pas une fusion.
+3. **On lit les notes de version avant de mettre à jour** — le §2.6 en est la preuve.
+4. **Le durcissement se teste depuis une seconde session**, toujours.
+5. **Git donne l'historique de configuration** qu'aucune sauvegarde périodique ne remplace.
+6. **Un pare-feu à jour mal configuré vaut mieux qu'un pare-feu parfait en version vulnérable.**
+
+---
