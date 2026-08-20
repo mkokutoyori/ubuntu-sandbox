@@ -16,6 +16,25 @@ export interface EgressDeps {
   readonly portMac: (iface: string) => MACAddress;
 }
 
+export interface EgressHost {
+  nextHopFor(iface: string, destination: string): string | undefined;
+  resolvedMac(ip: string): MACAddress | undefined;
+  buildRequest(ip: string, iface: string): ARPPacket | undefined;
+  portMac(iface: string): MACAddress;
+  sendFrame(iface: string, frame: EthernetFrame): void;
+}
+
+export function egressDepsOf(host: EgressHost): EgressDeps {
+  return {
+    nextHopFor: (iface, to) => host.nextHopFor(iface, to),
+    resolvedMac: (ip) => host.resolvedMac(ip),
+    buildRequest: (ip, iface) => host.buildRequest(ip, iface),
+    emitArp: (request, iface) =>
+      { host.sendFrame(iface, arpFrame(host.portMac(iface), request)); },
+    portMac: (iface) => host.portMac(iface),
+  };
+}
+
 export function buildEgressFrame(
   deps: EgressDeps, egressPort: string, packet: IPv4Packet,
   gateway?: string, bridged?: BridgedFrame,

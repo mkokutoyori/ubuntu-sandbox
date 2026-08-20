@@ -64,8 +64,9 @@ export class FortiNavigator {
   label(): string | null {
     const frame = this.top();
     if (!frame) return null;
-    if (frame.kind === 'object') return frame.object.key;
-    return frame.table.spec.path[frame.table.spec.path.length - 1];
+    if (frame.kind === 'table') return lastPathWord(frame.table.spec);
+    const spec = frame.object.spec;
+    return spec.kind === 'object' ? lastPathWord(spec) : frame.object.key;
   }
 
   descend(words: readonly string[]): string {
@@ -372,4 +373,8 @@ function parsePair(
   const at = words.indexOf(keyword);
   if (at !== 1 || words.length !== 3) return null;
   return { from: unquote(words[0]), to: unquote(words[2]) };
+}
+
+function lastPathWord(spec: { path: readonly string[] }): string {
+  return spec.path[spec.path.length - 1];
 }

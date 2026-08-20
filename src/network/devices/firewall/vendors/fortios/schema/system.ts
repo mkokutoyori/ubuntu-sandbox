@@ -2,15 +2,22 @@ import {
   address, addressMask, choice, count, enable, reference, refList, text, word,
   type FortiObjectView, type FortiTableSpec,
 } from './types';
+import {
+  MANAGEMENT_SERVICES, type ManagementService,
+} from '../../../mgmt/ManagementAccess';
 
-const ACCESS_SERVICES = [
-  { keyword: 'ping', description: 'PING access.' },
-  { keyword: 'https', description: 'HTTPS access.' },
-  { keyword: 'http', description: 'HTTP access.' },
-  { keyword: 'ssh', description: 'SSH access.' },
-  { keyword: 'telnet', description: 'TELNET access.' },
-  { keyword: 'snmp', description: 'SNMP access.' },
-];
+const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
+  ping: 'PING access.',
+  https: 'HTTPS access.',
+  http: 'HTTP access.',
+  ssh: 'SSH access.',
+  telnet: 'TELNET access.',
+  snmp: 'SNMP access.',
+});
+
+const ACCESS_SERVICES = MANAGEMENT_SERVICES.map(service => ({
+  keyword: service, description: ACCESS_SERVICE_HELP[service],
+}));
 
 function isStatic(object: FortiObjectView): boolean {
   return object.effective('mode')[0] === 'static' && isRouted(object);
@@ -68,11 +75,21 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     },
   ],
   onCommit(object, context) {
+    const number = (name: string, fallback: number) =>
+      Number.parseInt(object.effective(name)[0] ?? '', 10) || fallback;
+
     context.device.applyGlobalSettings({
       hostname: object.effective('hostname')[0],
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
-      authHttpPort: Number.parseInt(object.effective('auth-http-port')[0] ?? '1000', 10),
-      authHttpsPort: Number.parseInt(object.effective('auth-https-port')[0] ?? '1003', 10),
+      authHttpPort: number('auth-http-port', 1000),
+      authHttpsPort: number('auth-https-port', 1003),
+      adminSshPort: number('admin-ssh-port', 22),
+      adminTelnetPort: number('admin-telnet-port', 23),
+      adminHttpPort: number('admin-port', 80),
+      adminHttpsPort: number('admin-sport', 443),
+      adminTimeoutMin: number('admintimeout', 5),
+      adminLockoutThreshold: number('admin-lockout-threshold', 3),
+      adminLockoutDurationSec: number('admin-lockout-duration', 60),
     });
   },
 };

@@ -10,6 +10,8 @@ import { buildFirewallPortals, type FirewallPortals } from '../auth/FirewallPort
 import { buildFirewallHa, type FirewallHa } from '../ha/FirewallHa';
 import { buildFirewallNtp, type FirewallNtp } from './FirewallNtp';
 import { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
+import { FirewallCliServer, type ManagementCli } from './FirewallCliServer';
+import type { ManagementPorts } from './ManagementAccess';
 
 export interface ManagementHost {
   readonly deviceId: string;
@@ -32,6 +34,15 @@ export interface ManagementHost {
   addressOf(iface: string): string | undefined;
   authenticated(iface: string, address: string): boolean;
   authRequiredByPolicy(): boolean;
+  managementPorts(): ManagementPorts;
+  createManagementCli(user: string): ManagementCli | null;
+  authenticateAdmin(user: string, password: string, source: string): boolean;
+  knownAdmin(user: string): boolean;
+  refuseManagementSource(source: string): boolean;
+  managementIdleTimeoutMs(): number | null;
+  runningConfig(): string;
+  onManagementLogin(user: string, source: string): void;
+  onManagementAuthFailure(user: string, source: string): void;
 }
 
 export interface ManagementServices {
@@ -39,6 +50,7 @@ export interface ManagementServices {
   readonly ha: FirewallHa;
   readonly ntp: FirewallNtp;
   readonly captivePortal: CaptivePortalRedirect;
+  readonly cli: FirewallCliServer;
 }
 
 export function buildManagementServices(host: ManagementHost): ManagementServices {
@@ -78,7 +90,22 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     authRequiredByPolicy: () => host.authRequiredByPolicy(),
   });
 
-  return Object.freeze({ portals, ha, ntp, captivePortal });
+  const cli = new FirewallCliServer({
+    tcp: () => host.tcp(),
+    hostname: () => host.hostname(),
+    ports: () => host.managementPorts(),
+    createCli: (user) => host.createManagementCli(user),
+    authenticate: (user, password, source) =>
+      host.authenticateAdmin(user, password, source),
+    knownAdmin: (user) => host.knownAdmin(user),
+    refuseSource: (source) => host.refuseManagementSource(source),
+    idleTimeoutMs: () => host.managementIdleTimeoutMs(),
+    runningConfig: () => host.runningConfig(),
+    onLogin: (user, source) => { host.onManagementLogin(user, source); },
+    onAuthFailure: (user, source) => { host.onManagementAuthFailure(user, source); },
+  });
+
+  return Object.freeze({ portals, ha, ntp, captivePortal, cli });
 }
 
 export function ipv4Claimed(

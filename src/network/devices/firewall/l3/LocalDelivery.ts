@@ -6,6 +6,7 @@ export interface LocalDeliveryDeps {
   handleIke(iface: string, packet: IPv4Packet, datagram: unknown): void;
   observedBySdwan(packet: IPv4Packet): boolean;
   handleTcp(iface: string, packet: IPv4Packet): void;
+  admitsTcp(iface: string, packet: IPv4Packet): boolean;
   allowsPing(iface: string): boolean;
   reply(iface: string, packet: IPv4Packet): void;
 }
@@ -17,7 +18,10 @@ export function deliverLocally(
   if (ike) { deps.handleIke(iface, packet, ike); return; }
   if (deps.observedBySdwan(packet)) return;
 
-  if (packet.protocol === IP_PROTO_TCP) { deps.handleTcp(iface, packet); return; }
+  if (packet.protocol === IP_PROTO_TCP) {
+    if (deps.admitsTcp(iface, packet)) deps.handleTcp(iface, packet);
+    return;
+  }
   if (!deps.allowsPing(iface)) return;
 
   const echo = icmpEchoReply(packet);
