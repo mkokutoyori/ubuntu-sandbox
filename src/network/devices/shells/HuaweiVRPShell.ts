@@ -119,6 +119,7 @@ import { collectListeningSockets } from '../router/management/SocketInventory';
 import { getVrrpAgent, getSessionRegistry, getVtyLineConfig } from '../../equipment/RouterServiceCapabilities';
 import { registerUserInterfaceCommands } from './huawei/HuaweiUserInterfaceCommands';
 import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
+import { parseVrpCarRule } from '../router/qos/CarPolicer';
 
 const JOURS_VRP: Record<string, string> = {
   daily: 'daily', 'working-day': 'weekdays', 'off-day': 'weekend',
@@ -2345,31 +2346,30 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     t.registerGreedy('sflow flow-sampling', 'sFlow flow sampling', sflowIf('flowSampling'));
     t.registerGreedy('sflow counter-sampling', 'sFlow counter sampling', sflowIf('counterSampling'));
 
-    const qosIf = (key: string) => (args: string[], raw?: string) => {
+    t.registerGreedy('qos car', 'CAR on interface', (args, raw) => {
       const ifName = this.selectedInterface;
       if (!ifName) return '';
-      vrpSetInterfaceAttr(this.r(), '_huaweiQosIf', ifName, key, raw ?? args.join(' '));
-      return '';
-    };
-    t.registerGreedy('qos lr', 'QoS line rate', qosIf('lr'));
-    t.registerGreedy('qos gts', 'QoS generic traffic shaping', qosIf('gts'));
-    t.registerGreedy('qos queue', 'QoS queue length', qosIf('queueLength'));
-    t.register('qos wfq', 'Enable WFQ on interface', () => { qosIf('wfq')(['on']); return ''; });
-    t.registerGreedy('qos wred', 'Configure WRED on interface', qosIf('wred'));
-    t.registerGreedy('trust', 'Trust DSCP / 802.1p', qosIf('trust'));
-    t.registerGreedy('qos queue-profile', 'Bind queue profile to interface', qosIf('queueProfile'));
-    t.registerGreedy('qos car', 'CAR on interface', qosIf('car'));
-    t.register('qos pq', 'Enable priority queueing', () => { qosIf('pq')(['on']); return ''; });
-    t.register('qos cq', 'Enable custom queueing', () => { qosIf('cq')(['on']); return ''; });
-    t.register('qos wrr', 'Enable WRR queueing', () => { qosIf('wrr')(['on']); return ''; });
-    t.registerGreedy('qos priority', 'Set QoS priority', qosIf('priority'));
-    t.register('undo qos pq', 'Disable priority queueing', () => {
-      const r = vrpStores(this.r());
-      const ifName = this.selectedInterface;
-      const ext = r._huaweiQosIf;
-      if (ifName && ext?.has(ifName)) delete ext.get(ifName).pq;
+      const ligne = raw ?? `qos car ${args.join(' ')}`;
+      const regle = parseVrpCarRule(args, ligne);
+      if (!regle) return HUAWEI_ERRORS.WRONG(ligne);
+      this.r().getCarPolicer(ifName, true)!.add(regle);
       return '';
     });
+    t.registerGreedy('undo qos car', 'Remove CAR from interface', () => {
+      const ifName = this.selectedInterface;
+      if (ifName) this.r().getCarPolicer(ifName)?.clear();
+      return '';
+    });
+    const qosSansMoteur = (nom: string) => (args: string[]) =>
+      `Error: This simulator carries no ${nom} scheduler, so this command would be `
+      + `stored without effect.\nqos ${nom} ${args.join(' ')}`.trimEnd();
+    for (const nom of ['lr', 'gts', 'queue', 'wfq', 'wred', 'queue-profile',
+      'pq', 'cq', 'wrr', 'priority']) {
+      t.registerGreedy(`qos ${nom}`, `QoS ${nom} on interface`, qosSansMoteur(nom));
+    }
+    t.registerGreedy('trust', 'Trust DSCP / 802.1p', (args) =>
+      'Error: This simulator carries no QoS trust boundary, so this command would be '
+      + `stored without effect.\ntrust ${args.join(' ')}`.trimEnd());
   }
 
   // ─── DHCP Pool View ([hostname-ip-pool-name]) ────────────────────

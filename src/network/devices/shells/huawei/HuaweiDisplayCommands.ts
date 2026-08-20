@@ -54,6 +54,7 @@ import {
 import { normVrpSeverity, VRP_SEVERITIES } from '../../router/management/InfoCenterConfig';
 import { renderDisplayUserInterface } from './HuaweiUserInterfaceCommands';
 import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterServiceCapabilities';
+import { interfacePoolName } from './HuaweiDhcpCommands';
 
 // ─── Display State Accessor (passed from shell) ─────────────────────
 export interface HuaweiDisplayState {
@@ -1348,6 +1349,10 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   if (dhcpMode === 'global' || dhcpMode === 'relay' || dhcpMode === 'interface') {
     lines.push(` dhcp select ${dhcpMode}`);
   }
+  if (dhcpMode === 'interface') {
+    const dns = dhcp.getPool(interfacePoolName(portName))?.dnsServers ?? [];
+    if (dns.length > 0) lines.push(` dhcp server dns-list ${dns.join(' ')}`);
+  }
   for (const h of dhcp.getHelperAddresses(portName)) lines.push(` dhcp relay server-ip ${h}`);
   if (dhcp.isSnoopingEnabled(portName)) lines.push(' dhcp snooping enable');
   const ipsecEngine = (router as any)._getIPSecEngineInternal?.();
@@ -1356,6 +1361,9 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
     if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
     const tp = ipsecEngine.tunnelProtection?.get(portName);
     if (tp) lines.push(` ipsec profile ${tp.profileName}`);
+  }
+  for (const regle of router.getCarPolicer(portName)?.list() ?? []) {
+    lines.push(` ${regle.raw.trim()}`);
   }
   lines.push(...runningConfigInterfaceACL(router, portName));
   lines.push(...vrpNatInterfaceLines(router, portName));

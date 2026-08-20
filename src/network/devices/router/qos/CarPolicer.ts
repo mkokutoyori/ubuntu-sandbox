@@ -84,6 +84,33 @@ export function parseRateLimitRule(args: string[], raw: string): CarRule | null 
   };
 }
 
+export function parseVrpCarRule(args: string[], raw: string): CarRule | null {
+  const dir = (args[0] ?? '').toLowerCase();
+  if (dir !== 'inbound' && dir !== 'outbound') return null;
+  const lireNombre = (mot: string): number | null => {
+    const i = args.indexOf(mot);
+    if (i < 0 || !args[i + 1]) return null;
+    const n = parseInt(args[i + 1], 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const cirKbps = lireNombre('cir');
+  if (cirKbps === null) return null;
+  const pirKbps = lireNombre('pir');
+  if (pirKbps !== null && pirKbps < cirKbps) return null;
+  const bitsPerSecond = cirKbps * 1000;
+  const cbs = lireNombre('cbs') ?? Math.max(1, Math.round(bitsPerSecond / 8 / 8));
+  const pbs = lireNombre('pbs') ?? cbs * 2;
+  if (pbs < cbs) return null;
+  return {
+    direction: dir === 'inbound' ? 'input' : 'output',
+    bitsPerSecond, normalBurstBytes: cbs, maxBurstBytes: pbs,
+    conformAction: 'transmit', exceedAction: 'drop', raw,
+    tokens: cbs, lastRefillMs: Date.now(),
+    conformedPackets: 0, conformedBytes: 0,
+    exceededPackets: 0, exceededBytes: 0, lastPacketMs: null,
+  };
+}
+
 /** Une action laisse-t-elle passer le paquet ? */
 export function actionTransmits(a: CarAction): boolean {
   return a !== 'drop';
