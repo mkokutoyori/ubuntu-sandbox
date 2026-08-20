@@ -2700,6 +2700,50 @@ refusé sont remplacés par un cas qui l'affirme disponible.
 
 ---
 
+## Périmètre pris — FortiOS phase 15 (le type du VIP gouverne, un bloc expire)
+
+**Agent `mandeng`.** §6.4 du carnet nomme les deux points, et ce sont les
+deux mêmes familles que ce module referme depuis quatorze phases.
+
+Mesure de départ :
+
+- **`config firewall vip` : `set type` est accepté, rendu par `show`, et
+  commis à personne dès qu'il vaut autre chose que `static-nat`.**
+  L'`onCommit` commence littéralement par
+  `if (object.effective('type')[0] !== 'static-nat') return;` — donc un
+  VIP `fqdn` ou `dns-translation` existe dans la configuration, se
+  relit, et ne traduit rien. Il manque aussi `mapped-addr`, l'attribut
+  que la documentation Fortinet donne comme LE mappage du type `fqdn`.
+- **`pba-timeout` est stocké et ne périme rien** : `nat/IpPool.ts` n'a
+  pas d'horloge, alors que le pare-feu en porte une (`services.now`).
+
+**Fichiers que la phase 15 prendra** :
+
+```
+vendors/fortios/schema/firewallNat.ts   ← mapped-addr, le commit par type
+firewall/nat/VipTable.ts                ← le VIP résolu à la traduction
+firewall/nat/IpPool.ts                  ← l'horloge et l'expiration des blocs
+```
+
+**Ce qui existe déjà et ne sera pas réécrit** : `AddressObject` porte
+`kind: 'fqdn'` et sa résolution, `VipTable` porte la traduction
+statique, `IpPool` porte l'allocation par blocs.
+
+**Décision de découpage, écrite ici pour ne pas être découverte** :
+`dns-translation` est un VRAI relais applicatif DNS (il observe les
+réponses qui traversent, réécrit un enregistrement A et retient le
+mappage avec un TTL). La brique existe — `decodeDnsMessage` est déjà
+utilisé par l'inspecteur du pare-feu — mais c'est un sujet à lui seul,
+et il fera la phase 16. **En attendant il est REFUSÉ** par
+`unimplementedValues` en nommant la brique manquante, comme
+`two-factor` : il n'existe à aucun moment un mot-clé accepté et inerte.
+
+**Critère de sortie** : un VIP `fqdn` traduit vraiment vers l'adresse que
+l'objet FQDN résout, un bloc de ports rendu redevient disponible après
+`pba-timeout`, et `dns-translation` est refusé avec sa raison.
+
+---
+
 ## Périmètre pris — FortiOS phase 14 (le plan de gestion a une porte)
 
 **Agent `mandeng`.** §6.8 du carnet nomme le point : « l'authentification
