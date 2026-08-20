@@ -1212,18 +1212,12 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
     this.interfaceTrie.register('port link-type hybrid', 'Set port to hybrid mode', () => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Wrong parameter.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push('port link-type hybrid');
-      this.ifCfg.set(this.selectedInterface, list);
       this.swRef.setHybridMode(this.selectedInterface);
       return '';
     });
 
     this.interfaceTrie.registerGreedy('port hybrid', 'Configure hybrid port VLANs', (args) => {
       if (!this.selectedInterface || !this.swRef) return 'Error: Incomplete command.';
-      const list = this.ifCfg.get(this.selectedInterface) ?? [];
-      list.push(`port hybrid ${args.join(' ')}`.trim());
-      this.ifCfg.set(this.selectedInterface, list);
       const sub = args[0]?.toLowerCase();
       if (sub === 'pvid' && args[1]?.toLowerCase() === 'vlan') {
         const id = parseInt(args[2] ?? '', 10);
@@ -2666,8 +2660,44 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Simple keyword commands that take the rest of the line verbatim.
     // L2/physical interface keywords only — an L2 switch port must NOT
     // accept L3 (ip/arp) config, so those are deliberately excluded.
+    const portSelectionne = () =>
+      this.selectedInterface ? this.swRef?.getPort(this.selectedInterface) : undefined;
+    trie.registerGreedy('speed', 'Interface speed', (args) => {
+      const port = portSelectionne();
+      if (!port) return 'Error: Incomplete command.';
+      if (args[0]?.toLowerCase() === 'auto') { port.setNegotiationAuto(true); return ''; }
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n)) return HUAWEI_ERRORS.WRONG(`speed ${args.join(' ')}`);
+      try { port.setSpeed(n); } catch { return HUAWEI_ERRORS.WRONG(`speed ${args.join(' ')}`); }
+      port.setNegotiationAuto(false);
+      return '';
+    });
+    trie.registerGreedy('duplex', 'Interface duplex', (args) => {
+      const port = portSelectionne();
+      if (!port) return 'Error: Incomplete command.';
+      const a = (args[0] ?? '').toLowerCase();
+      if (a === 'auto') { port.setNegotiationAuto(true); return ''; }
+      if (a !== 'full' && a !== 'half') return HUAWEI_ERRORS.WRONG(`duplex ${args.join(' ')}`);
+      port.setDuplex(a);
+      port.setNegotiationAuto(false);
+      return '';
+    });
+    trie.registerGreedy('mtu', 'Interface MTU', (args) => {
+      const port = portSelectionne();
+      if (!port) return 'Error: Incomplete command.';
+      const n = parseInt(args[0] ?? '', 10);
+      if (isNaN(n)) return HUAWEI_ERRORS.WRONG(`mtu ${args.join(' ')}`);
+      try { port.setMTU(n); } catch { return HUAWEI_ERRORS.WRONG(`mtu ${args.join(' ')}`); }
+      return '';
+    });
+    trie.registerGreedy('negotiation', 'Auto-negotiation', (args) => {
+      const port = portSelectionne();
+      if (!port) return 'Error: Incomplete command.';
+      port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+      return '';
+    });
     for (const kw of [
-      'speed', 'duplex', 'negotiation', 'mtu', 'jumboframe', 'flow-control',
+      'jumboframe', 'flow-control',
       'loopback-detect', 'port-security', 'storm-control',
       'broadcast-suppression', 'port-mirroring',
       'qos', 'traffic-policy', 'am',
@@ -3391,7 +3421,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lines.join('\n');
   }
 
-  private displayCurrentConfig(sw: Switch): string {
+  private displayCurrentConfig(sw: HuaweiSwitchDevice): string {
     const lines = [
       '#',
       `sysname ${sw.getHostname()}`,
@@ -3410,6 +3440,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     // Interfaces
+    const lldpGlobal = sw.getLldpAgent?.()?.asRunningConfigLinesVrp() ?? [];
+    if (lldpGlobal.length > 0) { lines.push(...lldpGlobal); lines.push('#'); }
+
     const ports = sw._getPortsInternal();
     const configs = sw._getSwitchportConfigs();
     const descs = sw._getInterfaceDescriptions();
@@ -3418,29 +3451,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       if (!cfg) continue;
 
       lines.push(`interface ${portName}`);
-      const desc = descs.get(portName);
-      if (desc) lines.push(` description ${desc}`);
-      if (cfg.mode === 'trunk') {
-        lines.push(` port link-type trunk`);
-        if (cfg.trunkNativeVlan !== 1) {
-          lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
-        }
-        const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-        if (allowedArr.length >= 4094) {
-          lines.push(` port trunk allow-pass vlan all`);
-        } else if (allowedArr.length === 0) {
-          lines.push(` port trunk allow-pass vlan none`);
-        } else {
-          lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
-        }
-      } else {
-        lines.push(` port link-type access`);
-        if (cfg.accessVlan !== 1) {
-          lines.push(` port default vlan ${cfg.accessVlan}`);
-        }
-      }
-      if (!port.getIsUp()) lines.push(` shutdown`);
-      for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
+      lines.push(...this.renderSwitchPortLines(sw, portName, port, cfg));
       lines.push('#');
     }
 
@@ -3481,7 +3492,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     return lignesConfigVrrp(sw.getVrrpAgent().listGroups(), iface);
   }
 
-  private displayCurrentConfigInterface(sw: Switch, ifName: string): string {
+  private displayCurrentConfigInterface(sw: HuaweiSwitchDevice, ifName: string): string {
     const portName = this.resolveInterfaceName(ifName) || ifName;
     const vlanIfMatch = portName.match(/^Vlanif(\d+)$/i);
     if (vlanIfMatch) {
@@ -3502,39 +3513,56 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const cfg = sw.getSwitchportConfig(portName);
     if (!port || !cfg) return `Error: Wrong parameter found at '^' position.`;
 
-    const lines = [`interface ${portName}`];
+    return [
+      `interface ${portName}`,
+      ...this.renderSwitchPortLines(sw, portName, port, cfg),
+      '#',
+    ].join('\n');
+  }
+
+  private renderSwitchPortLines(
+    sw: HuaweiSwitchDevice, portName: string,
+    port: import('../../hardware/Port').Port,
+    cfg: import('../Switch').SwitchportConfig,
+  ): string[] {
+    const lines: string[] = [];
     const desc = sw.getInterfaceDescription(portName);
     if (desc) lines.push(` description ${desc}`);
+    const vlanListe = (ids: Set<number> | undefined) =>
+      Array.from(ids ?? []).sort((a, b) => a - b).join(' ');
+
     if (cfg.mode === 'trunk') {
-      lines.push(` port link-type trunk`);
-      if (cfg.trunkNativeVlan !== 1) {
-        lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
-      }
+      lines.push(' port link-type trunk');
+      if (cfg.trunkNativeVlan !== 1) lines.push(` port trunk pvid vlan ${cfg.trunkNativeVlan}`);
       const allowedArr = Array.from(cfg.trunkAllowedVlans).sort((a, b) => a - b);
-      if (allowedArr.length >= 4094) {
-        lines.push(` port trunk allow-pass vlan all`);
-      } else if (allowedArr.length === 0) {
-        lines.push(` port trunk allow-pass vlan none`);
-      } else {
-        lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
-      }
+      if (allowedArr.length >= 4094) lines.push(' port trunk allow-pass vlan all');
+      else if (allowedArr.length === 0) lines.push(' port trunk allow-pass vlan none');
+      else lines.push(` port trunk allow-pass vlan ${allowedArr.join(' ')}`);
+    } else if (cfg.mode === 'hybrid') {
+      lines.push(' port link-type hybrid');
+      if ((cfg.hybridPvid ?? 1) !== 1) lines.push(` port hybrid pvid vlan ${cfg.hybridPvid}`);
+      const tagged = vlanListe(cfg.hybridTaggedVlans);
+      if (tagged) lines.push(` port hybrid tagged vlan ${tagged}`);
+      const untagged = vlanListe(cfg.hybridUntaggedVlans);
+      if (untagged) lines.push(` port hybrid untagged vlan ${untagged}`);
     } else {
-      lines.push(` port link-type access`);
-      if (cfg.accessVlan !== 1) {
-        lines.push(` port default vlan ${cfg.accessVlan}`);
-      }
+      lines.push(' port link-type access');
+      if (cfg.accessVlan !== 1) lines.push(` port default vlan ${cfg.accessVlan}`);
     }
-    for (const cfgLine of this.ifCfg.get(portName) ?? []) {
-      lines.push(` ${cfgLine}`);
+
+    for (const l of this.ifCfg.get(portName) ?? []) lines.push(` ${l}`);
+    for (const l of this.ifStp.get(portName) ?? []) lines.push(` ${l}`);
+    for (const l of sw.getLldpAgent?.()?.vrpInterfaceLines(portName) ?? []) lines.push(` ${l}`);
+    if (!port.isNegotiationAuto()) {
+      lines.push(` speed ${port.getSpeed()}`);
+      lines.push(` duplex ${port.getDuplex()}`);
     }
-    for (const stpLine of this.ifStp.get(portName) ?? []) {
-      lines.push(` ${stpLine}`);
-    }
-    if (!port.getIsUp()) lines.push(` shutdown`);
-    for (const natLine of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(natLine);
-    lines.push('#');
-    return lines.join('\n');
+    if (port.getMTU() !== 1500) lines.push(` mtu ${port.getMTU()}`);
+    if (!port.getIsUp()) lines.push(' shutdown');
+    for (const l of runningConfigNATHuawei(commeRouteur(sw), portName)) lines.push(l);
+    return lines;
   }
+
 
   // ─── Interface Name Resolution ──────────────────────────────────
 

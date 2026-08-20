@@ -38,6 +38,24 @@ export class LldpAgent extends ReactiveAgentBase {
 
   getConfig(): Readonly<LldpConfig> { return this.config; }
 
+  asRunningConfigLinesVrp(): string[] {
+    const lines: string[] = [];
+    if (this.config.enabled) lines.push('lldp enable');
+    if (this.config.timerSec !== 30) {
+      lines.push(`lldp message-transmission interval ${this.config.timerSec}`);
+    }
+    if (this.config.holdtimeMultiplier !== 4) {
+      lines.push(`lldp message-transmission hold-multiplier ${this.config.holdtimeMultiplier}`);
+    }
+    return lines;
+  }
+
+  vrpInterfaceLines(portName: string): string[] {
+    const cfg = this.config.ports.get(portName);
+    if (!cfg) return [];
+    return cfg.transmit || cfg.receive ? ['lldp enable'] : ['undo lldp enable'];
+  }
+
   asRunningConfigLines(): string[] {
     const lines: string[] = [];
     if (this.config.enabled) lines.push('lldp run');
