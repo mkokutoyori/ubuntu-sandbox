@@ -10,6 +10,7 @@ A browser-based network simulator (Ubuntu Sandbox) built with React + TypeScript
 
 ```bash
 npm run dev              # Start dev server on port 8080
+npm run typecheck        # TypeScript check — the ONLY command that checks anything
 npm run build            # Production build
 npm run lint             # ESLint (flat config)
 npm run test             # Vitest in watch mode
@@ -19,6 +20,16 @@ npx vitest run src/__tests__/unit/network-v2/ospf.test.ts   # Run a single test 
 npm run test:e2e         # Playwright e2e tests (spins up dev server on :8080)
 npm run test:e2e:ui      # Playwright with UI mode
 ```
+
+**`tsc --noEmit -p tsconfig.json` checks NOTHING.** The root `tsconfig.json`
+is a solution-style file (`"files": []` plus `references`), so pointing
+`tsc` at it succeeds instantly having compiled zero files — a green
+typecheck that means nothing. Use `npm run typecheck`
+(`tsc --noEmit -p tsconfig.app.json`). The repo carries a standing backlog
+of type errors, almost all in tests; the rule is not "zero errors" but
+**no more than before your change** — count with
+`npm run typecheck 2>&1 | grep -c "error TS"` on your branch and on its
+base.
 
 ## Architecture
 

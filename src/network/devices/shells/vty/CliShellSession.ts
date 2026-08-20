@@ -47,7 +47,7 @@ export interface VtySnapshot {
   /** Huawei switch-only: traffic-classifier/behavior/policy (MQC) name context. */
   selectedMqcName: string | null;
   /** Huawei switch-only: active `port-group` bulk-config member range. */
-  selectedPortGroup: string | null;
+  selectedPortGroup: string[] | string | null;
   selectedRoutingProto: unknown;
   selectedTrack: number | null;
   selectedIpSla: number | null;

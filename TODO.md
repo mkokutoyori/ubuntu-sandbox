@@ -77,13 +77,15 @@ converger le voisin, donc le symptôme est refermé côté VRP.
 
 ---
 
-### [interface range] la vue de plage n'a pas été mesurée
-`interface range <a> to <b>` entre dans une vue et n'y dérive pas
-(`huawei-eth-trunk.test.ts` le vérifie), mais rien ne dit que ses
-commandes atteignent les membres — la vue `port-group`, qui vient d'être
-fermée, avait exactement cette forme.
-**Report** : à passer au banc ; si le défaut est le même, la sortie est
-la même (`executerSurMembres`).
+## Outillage
+
+### [typecheck] 347 erreurs de type au compteur
+`npm run typecheck` (ajouté) en compte 347, presque toutes dans les
+tests : arguments de `DeviceType` passés à l'envers, `MACAddress` là où
+un nombre est attendu, signatures de constructeur périmées.
+**Mesure** : `npm run typecheck 2>&1 | grep -c "error TS"`.
+**Report** : dette réelle mais indépendante ; la règle en vigueur est
+« pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
 
@@ -98,3 +100,9 @@ la même (`executerSurMembres`).
 - `#` ne ramenait pas en vue de base au REJEU d'une configuration VRP —
   fermé dans `replayVendorConfig` ; un bloc d'interface vide faisait
   perdre tout ce qui le suivait.
+- `interface range` sur les DEUX constructeurs — fermé : la diffusion
+  aux membres n'est plus déclarée commande par commande, la liste
+  séparée par des virgules est admise, une borne inexistante est refusée.
+- `tsc --noEmit -p tsconfig.json` ne vérifiait RIEN (fichier de solution,
+  `"files": []`) — `npm run typecheck` ajouté et le piège écrit dans
+  `CLAUDE.md`.

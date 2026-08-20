@@ -29,4 +29,6 @@ export interface ISwitchShell {
   tabCandidates(input: string, sw: Switch): string[];
   /** Reset the CLI to its initial mode (new terminal session opened). */
   resetCliMode?(): void;
+  getSelectedInterface?(): string | null;
+  getSelectedInterfaceRange?(): string[];
 }

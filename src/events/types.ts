@@ -329,6 +329,7 @@ export type DomainEvent =
   | { topic: 'switch.mac.aged'; payload: SwitchMacEntryPayload }
   | { topic: 'switch.mac.flushed'; payload: SwitchMacFlushedPayload }
   | { topic: 'switch.mac.cleared'; payload: { deviceId: string; hostname: string } }
+  | { topic: 'switch.mac.learning-discard'; payload: SwitchMacEntryPayload }
   // Cable
   | { topic: 'cable.connected'; payload: CableConnectedPayload }
   | { topic: 'cable.disconnected'; payload: CableDisconnectedPayload }

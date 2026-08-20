@@ -30,6 +30,7 @@ import type { PromptMap } from './PromptBuilder';
 import { CISCO_SWITCH_PROMPTS } from './PromptBuilder';
 import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
+import { decouperPlages, completerBorne, etendreEntre } from './cli/interfaceRange';
 import { renderSecretField, renderPasswordField, renderCiscoUsernameLines } from './cisco/ciscoPasswordRender';
 import { parsePingArgs, formatCiscoPing } from './cisco/ciscoPing';
 import {
@@ -290,7 +291,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     const before = dbg?.isStpEnabled() ? new Map(sw._getSTPStates()) : null;
     let out: string;
     try {
-      out = this.executeOnDevice(sw, input) as string;
+      out = this.diffuserSurPlage(sw, input) ?? (this.executeOnDevice(sw, input) as string);
     } catch (e) {
       // The one place a `require*` refusal becomes an answer. IOS's own
       // wording for a command the platform does not have — an unmanaged
@@ -5635,42 +5636,21 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   private handleInterfaceRange(args: string[]): string {
     if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
 
-    const rangeStr = args.join(' ').replace(/\s*-\s*/g, '-');
-    const rangeMatch = rangeStr.match(/^([a-zA-Z]+)\s*([\d/]+)-([\d/]+)$/);
+    const segments = decouperPlages(args.join(' '), '-');
+    if (!segments) return '% Invalid interface range.';
 
-    if (!rangeMatch) {
-      const simpleMatch = rangeStr.match(/^([a-zA-Z]+)([\d]+\/[\d]+)-([\d]+)$/);
-      if (!simpleMatch) return '% Invalid interface range.';
-
-      const [, prefix, start, endNum] = simpleMatch;
-      const slashIdx = start.lastIndexOf('/');
-      const baseNum = start.substring(0, slashIdx + 1);
-      const startNum = parseInt(start.substring(slashIdx + 1), 10);
-      const end = parseInt(endNum, 10);
-
-      const interfaces: string[] = [];
-      for (let i = startNum; i <= end; i++) {
-        const name = this.resolveInterfaceName(`${prefix}${baseNum}${i}`);
-        if (name) interfaces.push(name);
-      }
-
-      if (interfaces.length === 0) return '% No valid interfaces in range.';
-      this.selectedInterface = interfaces[0];
-      this.selectedInterfaceRange = interfaces;
-      this.mode = 'config-if';
-      return '';
-    }
-
-    const [, prefix, startSlot, endSlot] = rangeMatch;
-    const slashIdx = startSlot.lastIndexOf('/');
-    const baseSlot = startSlot.substring(0, slashIdx + 1);
-    const startNum = parseInt(startSlot.substring(slashIdx + 1), 10);
-    const endNum = parseInt(endSlot, 10);
-
+    const noms = this.d().getPortNames();
     const interfaces: string[] = [];
-    for (let i = startNum; i <= endNum; i++) {
-      const name = this.resolveInterfaceName(`${prefix}${baseSlot}${i}`);
-      if (name) interfaces.push(name);
+    for (const segment of segments) {
+      const premier = this.resolveInterfaceName(segment.premier);
+      if (!premier) return '% Invalid interface range.';
+      const dernier = segment.dernier === null
+        ? null
+        : this.resolveInterfaceName(completerBorne(segment.premier, segment.dernier));
+      if (segment.dernier !== null && !dernier) return '% Invalid interface range.';
+      const etendue = etendreEntre(noms, premier, dernier);
+      if (!etendue) return '% No valid interfaces in range.';
+      for (const nom of etendue) if (!interfaces.includes(nom)) interfaces.push(nom);
     }
 
     if (interfaces.length === 0) return '% No valid interfaces in range.';
@@ -5678,6 +5658,35 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     this.selectedInterfaceRange = interfaces;
     this.mode = 'config-if';
     return '';
+  }
+
+  private static readonly HORS_PLAGE = new Set(['exit', 'end', 'interface', 'do']);
+
+  private diffuserSurPlage(sw: CiscoSwitch, input: string): string | null {
+    if (this.mode !== 'config-if') return null;
+    const membres = [...this.selectedInterfaceRange];
+    if (membres.length < 2) return null;
+    const trimmed = input.trim();
+    if (!trimmed || trimmed.endsWith('?')) return null;
+    const tete = trimmed.replace(/^no\s+/i, '').split(/\s+/)[0].toLowerCase();
+    if (CiscoSwitchShell.HORS_PLAGE.has(tete)) return null;
+
+    const modeAvant = this.mode;
+    const sorties: string[] = [];
+    try {
+      for (const membre of membres) {
+        this.selectedInterface = membre;
+        this.selectedInterfaceRange = [membre];
+        this.mode = modeAvant;
+        const sortie = this.executeOnDevice(sw, input) as string;
+        if (sortie && sortie.trim()) sorties.push(sortie);
+      }
+    } finally {
+      this.selectedInterface = membres[0];
+      this.selectedInterfaceRange = membres;
+      this.mode = modeAvant;
+    }
+    return [...new Set(sorties)].join('\n');
   }
 
   private applyToSelectedInterfaces(fn: (portName: string) => string): string {

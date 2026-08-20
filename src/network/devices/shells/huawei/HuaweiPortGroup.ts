@@ -1,28 +1,21 @@
+import { decouperPlages, etendreEntre, type SegmentPlage } from '../cli/interfaceRange';
+
 export type PlageAnalyse =
-  | { statut: 'ok'; premier: string; dernier: string | null }
+  | { statut: 'ok'; segments: SegmentPlage[] }
   | { statut: 'refus'; token: string | null };
 
 export function analyserPlagePorts(args: readonly string[]): PlageAnalyse {
   const mots = args.filter(a => a.length > 0);
   if (mots.length === 0) return { statut: 'refus', token: null };
-  const at = mots.findIndex(m => m.toLowerCase() === 'to');
-  if (at < 0) return { statut: 'ok', premier: mots.join(''), dernier: null };
-  const premier = mots.slice(0, at).join('');
-  const dernier = mots.slice(at + 1).join('');
-  if (!premier) return { statut: 'refus', token: mots[0] };
-  if (!dernier) return { statut: 'refus', token: null };
-  return { statut: 'ok', premier, dernier };
+  const segments = decouperPlages(mots.join(' ').replace(/\s*,\s*/g, ','), 'to');
+  if (!segments) return { statut: 'refus', token: null };
+  return { statut: 'ok', segments };
 }
 
 export function etendrePlage(
   noms: readonly string[], premier: string, dernier: string | null,
 ): string[] | null {
-  const debut = noms.indexOf(premier);
-  if (debut < 0) return null;
-  if (dernier === null) return [premier];
-  const fin = noms.indexOf(dernier);
-  if (fin < 0 || fin < debut) return null;
-  return noms.slice(debut, fin + 1);
+  return etendreEntre(noms, premier, dernier);
 }
 
 export function portGroupRunningConfigLines(

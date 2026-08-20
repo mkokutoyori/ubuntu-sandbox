@@ -47,6 +47,7 @@ import {
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
 import { analyserPlagePorts, etendrePlage, portGroupRunningConfigLines, renduDisplayPortGroup } from './huawei/HuaweiPortGroup';
+import { completerBorne } from './cli/interfaceRange';
 import { analyserMacAddress, analyserApprentissageMac, ligneApprentissageMac, macRunningConfigLines, normaliserMacVrp, VRP_MAC_AGING_DEFAUT } from './huawei/HuaweiMacCommands';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -373,7 +374,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.selectedAcl = null;
     this.selectedPool = null;
     this.selectedMqcName = null;
-    this.portGroupMembers = null;
+    this.portGroupMembers = [];
   }
 
   // ─── Per-vty state snapshot / swap (mirrors HuaweiVRPShell — the switch
@@ -433,7 +434,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.selectedInterface = s.selectedInterface;
     this.selectedVlan = s.selectedVlan;
     this.selectedMqcName = s.selectedMqcName;
-    this.portGroupMembers = s.selectedPortGroup;
+    this.portGroupMembers = Array.isArray(s.selectedPortGroup) ? [...s.selectedPortGroup] : [];
     this.selectedPool = s.selectedDHCPPool;
     this.selectedAcl = s.selectedACL;
     this.history = [...s.cmdHistory];
@@ -1024,7 +1025,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.addCompletionKeywords('interface', [
       { keyword: 'range', description: 'Configure a range of interfaces' },
     ]);
-    this.systemTrie.registerGreedy('interface', 'Enter interface view', (args) => {
+    this.systemTrie.registerGreedy('interface', 'Enter interface view', (args, ligne) => {
       if (!this.swRef || args.length < 1) return 'Error: Incomplete command.';
       // Eth-Trunk <id>  /  Eth-TrunkN  → link-aggregation virtual interface
       const joined = args.join(' ');
@@ -1038,11 +1039,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'interface';
         return '';
       }
-      // `interface range <a> [to <b>]` — Cisco-ism the suites use; treat
-      // as a bulk-config view like port-group (Huawei has no per-port
-      // datapath difference here).
       if (args[0].toLowerCase() === 'range') {
-        this.portGroupMembers = args.slice(1).join(' ');
+        const membres = this.resoudrePlage(args.slice(1), ligne ?? `interface ${args.join(' ')}`);
+        if (typeof membres === 'string') return membres;
+        this.portGroupMembers = membres;
+        this.portGroupName = null;
         this.mode = 'port-group';
         return '';
       }
@@ -1763,17 +1764,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
         ? HUAWEI_ERRORS.INCOMPLETE(brut)
         : refuseMotInattenduVrp(brut, a.token);
     }
-    const premier = this.resolveInterfaceName(a.premier);
-    if (!premier || !this.swRef?.getPort(premier)) {
-      return refuseMotInattenduVrp(brut, a.premier);
+    const noms = this.swRef?.getPortNames() ?? [];
+    const membres: string[] = [];
+    for (const segment of a.segments) {
+      const premier = this.resolveInterfaceName(segment.premier);
+      if (!premier || !this.swRef?.getPort(premier)) {
+        return refuseMotInattenduVrp(brut, segment.premier);
+      }
+      const dernier = segment.dernier === null
+        ? null
+        : this.resolveInterfaceName(completerBorne(segment.premier, segment.dernier));
+      if (segment.dernier !== null && (!dernier || !this.swRef?.getPort(dernier))) {
+        return refuseMotInattenduVrp(brut, segment.dernier);
+      }
+      const etendue = etendrePlage(noms, premier, dernier);
+      if (!etendue) return refuseMotInattenduVrp(brut, segment.dernier ?? segment.premier);
+      for (const nom of etendue) if (!membres.includes(nom)) membres.push(nom);
     }
-    const dernier = a.dernier === null ? null : this.resolveInterfaceName(a.dernier);
-    if (a.dernier !== null && (!dernier || !this.swRef?.getPort(dernier))) {
-      return refuseMotInattenduVrp(brut, a.dernier);
-    }
-    const etendue = etendrePlage(this.swRef?.getPortNames() ?? [], premier, dernier);
-    if (!etendue) return refuseMotInattenduVrp(brut, a.dernier ?? a.premier);
-    return etendue;
+    return membres;
   }
 
   private executerSurMembres(sw: Switch, input: string): string {
