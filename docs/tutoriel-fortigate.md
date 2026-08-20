@@ -8505,3 +8505,327 @@ root@r1-edge:~# tc qdisc del dev eth1 root netem
 5. **Un lien peut être vivant et inutilisable.** C'est le cas que le SD-WAN existe pour traiter.
 
 ---
+
+## 22. La haute disponibilité
+
+Ton pare-feu est le point de passage obligé de tout le trafic. S'il tombe, **l'entreprise s'arrête**. La haute disponibilité (HA) consiste à en mettre deux, pour qu'une panne ne se voie pas.
+
+### 22.1 Les deux modes
+
+**Actif-passif (A-P)** — un pare-feu travaille, l'autre attend en miroir. Si le premier tombe, le second prend la main en quelques secondes.
+
+- ✅ Simple, prévisible, facile à diagnostiquer
+- ✅ **C'est ce qu'on déploie dans 90 % des cas**
+- ❌ Le second équipement ne sert à rien tant que tout va bien
+
+**Actif-actif (A-A)** — les deux traitent du trafic, la charge est répartie.
+
+- ✅ Utilise les deux machines
+- ❌ Plus complexe, la répartition ne concerne en pratique que le trafic inspecté
+- ❌ Diagnostic plus difficile
+
+> 💡 **Astuce** : si tu hésites, prends **actif-passif**. Le gain de performance de l'actif-actif est plus limité qu'on ne le croit — le trafic à état reste traité par le maître — et la complexité supplémentaire coûte cher le jour où quelque chose ne va pas.
+
+### 22.2 Le protocole FGCP
+
+Fortinet utilise son propre protocole, **FGCP** (*FortiGate Clustering Protocol*), qui gère :
+
+- l'**élection** du maître ;
+- la **synchronisation** de la configuration ;
+- la **synchronisation des sessions**, pour qu'une bascule ne coupe pas les connexions en cours ;
+- la **surveillance** des liens et des équipements.
+
+### 22.3 La configuration
+
+```
+config system ha
+    set group-name "CLUSTER-PARIS"
+    set mode a-p
+    set password "MotDePasseHA2026"
+    set hbdev "port5" 50 "port6" 100
+    set session-pickup enable
+    set session-pickup-connectionless enable
+    set ha-mgmt-status enable
+    config ha-mgmt-interfaces
+        edit 1
+            set interface "port7"
+            set gateway 192.168.99.254
+        next
+    end
+    set override disable
+    set priority 200
+    set monitor "port1" "port2" "port3"
+end
+```
+
+Les paramètres décisifs, un par un :
+
+| Paramètre | Rôle |
+|---|---|
+| `group-name` | Doit être **identique** sur les deux |
+| `password` | Idem — c'est ce qui authentifie le cluster |
+| `hbdev` | ⭐ Les interfaces de **battement de cœur**, avec leur priorité |
+| `session-pickup` | ⭐ Synchronise les sessions — sans lui, la bascule **coupe** toutes les connexions |
+| `priority` | La plus **haute** devient maître |
+| `override` | Voir l'avertissement ci-dessous |
+| `monitor` | ⭐ Les interfaces surveillées : si l'une tombe, le cluster bascule |
+| `ha-mgmt-interfaces` | Une interface d'administration **par équipement**, indépendante du cluster |
+
+> 🚨 **Danger — `set override enable` est un piège**
+> Avec `override disable` (le défaut), quand le maître tombé revient, **il reste esclave**. Le cluster ne bouge plus.
+>
+> Avec `override enable`, le maître d'origine **reprend la main** dès son retour — ce qui provoque une **seconde bascule**, donc une seconde micro-coupure, pour rien.
+>
+> **Laisse `override disable`.** Un équipement qui vient de redémarrer n'a aucune raison de reprendre la main immédiatement : s'il redémarre en boucle, `override enable` fait basculer le cluster à chaque cycle. On appelle ça un *flapping*, et c'est bien pire qu'une panne franche.
+
+> ⚠️ **Attention — `monitor` est indispensable, et il est dangereux mal réglé**
+> Sans lui, le pare-feu maître peut perdre son interface WAN et **rester maître** : le cluster est en parfaite santé, et plus personne n'a Internet.
+>
+> Mais ne surveille **que** les interfaces réellement critiques. Surveiller une interface de laboratoire débranchée fait basculer le cluster en permanence.
+
+### 22.4 🧠 Comprendre : le split-brain
+
+C'est le pire scénario d'un cluster, et il faut savoir ce que c'est.
+
+Si **tous** les liens de battement de cœur tombent alors que les deux équipements fonctionnent, chacun croit que l'autre est mort. Chacun se déclare maître. **Deux équipements prennent la même adresse IP et la même adresse MAC virtuelle** sur le réseau.
+
+Résultat : conflits d'adresses, table MAC du switch qui oscille, trafic erratique. **C'est pire qu'une panne**, parce que rien n'est franchement cassé et que le diagnostic est difficile.
+
+**Comment l'éviter :**
+
+- **Deux liens de battement de cœur minimum**, sur des interfaces physiques différentes (`set hbdev "port5" 50 "port6" 100`) ;
+- Les relier en **direct**, sans passer par un switch, quand c'est possible ;
+- Si un switch est nécessaire, éviter que les deux liens passent par le **même** switch.
+
+> 💡 **Astuce** : c'est exactement la raison pour laquelle `hbdev` accepte plusieurs interfaces avec une priorité. Ce n'est pas une redondance décorative : c'est la protection contre le split-brain.
+
+### 22.5 Vérifier et exploiter
+
+```
+FGT-01 # get system ha status
+FGT-01 # diagnose sys ha status
+FGT-01 # diagnose sys ha checksum cluster
+FGT-01 # execute ha manage 1 admin
+```
+
+`diagnose sys ha checksum cluster` mérite une explication : il compare les **empreintes de configuration** des membres. Si elles diffèrent, la synchronisation a échoué — et un cluster désynchronisé bascule vers une configuration qui n'est pas celle que tu crois.
+
+```
+FGT-01 # diagnose sys ha checksum cluster
+```
+```
+================== FGVMEV0000000001 ==================
+is_manage_master()=1, is_root_master()=1
+debugzone
+global: a1b2c3d4 e5f6a7b8 ...
+root: 1a2b3c4d 5e6f7a8b ...
+
+================== FGVMEV0000000002 ==================
+is_manage_master()=0, is_root_master()=0
+debugzone
+global: a1b2c3d4 e5f6a7b8 ...     ← doit être IDENTIQUE
+root: 1a2b3c4d 5e6f7a8b ...       ← doit être IDENTIQUE
+```
+
+> 💡 **Astuce — `execute ha manage`** permet de se connecter au **membre esclave** depuis le maître, sans avoir à s'y brancher physiquement. Indispensable pour vérifier son état.
+
+**Forcer une bascule pour tester :**
+
+```
+FGT-01 # diagnose sys ha reset-uptime
+```
+
+> ⚠️ **Attention** : c'est la bonne façon de tester une bascule, mais **teste-la en fenêtre de maintenance**. Un cluster HA se teste avant la panne — un basculement jamais éprouvé est un basculement dont personne ne sait s'il fonctionne.
+
+---
+
+### 🧪 TP 21 — Monter un cluster et le faire basculer
+
+**🎯 Objectif**
+Créer un cluster actif-passif, vérifier la synchronisation, provoquer une panne du maître, et **mesurer si les sessions survivent**.
+
+**⏱️ Durée** : 45 minutes
+
+**📋 Prérequis** : deux FortiGate identiques (même version, même modèle)
+
+> ⚠️ **Attention** : les deux membres doivent avoir **la même version de FortiOS** et le **même modèle**. Un cluster entre versions différentes ne se forme pas, ou se forme mal.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Préparer les interfaces de battement de cœur**
+
+Sur les deux équipements, réserve deux interfaces dédiées. Elles ne doivent porter **aucune configuration IP** : FGCP s'en charge.
+
+**Étape 2 — Configurer le maître**
+
+```
+FGT-01 # config system ha
+FGT-01 (ha) # set group-name "CLUSTER-LAB"
+FGT-01 (ha) # set mode a-p
+FGT-01 (ha) # set password "HALab2026!"
+FGT-01 (ha) # set hbdev "port5" 50 "port6" 100
+FGT-01 (ha) # set session-pickup enable
+FGT-01 (ha) # set priority 200
+FGT-01 (ha) # set override disable
+FGT-01 (ha) # set monitor "port1" "port2"
+FGT-01 (ha) # end
+```
+
+> ⚠️ La session se coupe brièvement : le pare-feu recalcule ses adresses MAC virtuelles. C'est normal.
+
+**Étape 3 — Configurer le second**
+
+Identique, à une seule différence — la priorité :
+
+```
+FGT-02 # config system ha
+FGT-02 (ha) # set group-name "CLUSTER-LAB"
+FGT-02 (ha) # set mode a-p
+FGT-02 (ha) # set password "HALab2026!"
+FGT-02 (ha) # set hbdev "port5" 50 "port6" 100
+FGT-02 (ha) # set session-pickup enable
+FGT-02 (ha) # set priority 100
+FGT-02 (ha) # set override disable
+FGT-02 (ha) # set monitor "port1" "port2"
+FGT-02 (ha) # end
+```
+
+**Étape 4 — Vérifier la formation du cluster**
+
+```
+FGT-01 # get system ha status
+```
+```
+HA Health Status: OK
+Model: FortiGate-VM64
+Mode: HA A-P
+Group: CLUSTER-LAB
+Debug: 0
+Cluster Uptime: 0 days 0:3:12
+...
+Master: FGT-01, FGVMEV0000000001, HA cluster index = 0
+Slave : FGT-02, FGVMEV0000000002, HA cluster index = 1
+```
+
+**`HA Health Status: OK`** et deux membres listés : le cluster est formé. 🎉
+
+**Étape 5 — Vérifier la synchronisation**
+
+```
+FGT-01 # diagnose sys ha checksum cluster
+```
+
+Les empreintes doivent être **identiques** entre les deux membres.
+
+> 🧠 Si elles diffèrent, force une resynchronisation :
+> ```
+> FGT-01 # execute ha synchronize start
+> ```
+
+**Étape 6 — Se connecter à l'esclave**
+
+```
+FGT-01 # execute ha manage 1 admin
+```
+
+Tu es maintenant sur FGT-02. Vérifie qu'il porte bien la configuration du maître :
+
+```
+FGT-02 # show firewall policy | grep "set name"
+```
+
+**La configuration a été copiée automatiquement.** Tu n'as rien fait pour ça.
+
+```
+FGT-02 # exit
+```
+
+**Étape 7 — Lancer un trafic continu**
+
+Depuis le PC du LAN, quelque chose de mesurable :
+
+```bash
+user@pc-lan:~$ ping -i 0.2 192.168.20.10
+```
+
+Laisse tourner. C'est ce qui va nous dire combien de temps dure la bascule.
+
+**Étape 8 — Provoquer la panne**
+
+Éteins brutalement FGT-01 depuis l'hyperviseur (pas un arrêt propre — on simule une panne).
+
+Sur le PC, observe le `ping` :
+
+```
+64 bytes from 192.168.20.10: icmp_seq=142 time=0.4 ms
+64 bytes from 192.168.20.10: icmp_seq=143 time=0.4 ms
+... quelques paquets perdus ...
+64 bytes from 192.168.20.10: icmp_seq=149 time=0.5 ms
+```
+
+**Compte les paquets perdus.** À 0,2 s d'intervalle, cinq paquets perdus font une seconde de coupure.
+
+**Étape 9 — Vérifier que l'esclave a pris la main**
+
+```
+FGT-02 # get system ha status
+```
+
+FGT-02 est maintenant `Master`.
+
+**Étape 10 — Mesurer l'apport de `session-pickup`**
+
+C'est l'expérience la plus instructive. Refais le test avec une **session TCP longue** :
+
+```bash
+user@pc-lan:~$ ssh user@192.168.20.10
+```
+
+Reste connecté, puis provoque la bascule. **Avec `session-pickup enable`, la session SSH survit.** Sans lui, elle se coupe.
+
+Pour le vérifier, désactive-le et recommence :
+
+```
+FGT-02 # config system ha
+FGT-02 (ha) # set session-pickup disable
+FGT-02 (ha) # end
+```
+
+> 🧠 **Comprendre** : sans `session-pickup`, l'esclave ne connaît pas les sessions en cours. Après la bascule, le trafic d'une connexion établie arrive sur un pare-feu qui n'en a jamais entendu parler — il tombe donc sur la règle du §11.3 ④ et se fait jeter. Le ping recommence à zéro sans problème (ICMP est sans état), mais SSH meurt.
+>
+> C'est pour ça que `session-pickup` est **le paramètre à ne jamais oublier**.
+
+**Étape 11 — Rallumer FGT-01**
+
+Rallume-le et observe :
+
+```
+FGT-02 # get system ha status
+```
+
+Avec `override disable`, **FGT-01 revient en esclave** et FGT-02 reste maître. C'est le comportement voulu (§22.3).
+
+---
+
+**✅ Résultat attendu**
+
+- `get system ha status` liste deux membres, `Health Status: OK`
+- Les empreintes de configuration sont identiques
+- La configuration est copiée automatiquement sur l'esclave
+- Une panne du maître coupe le trafic environ une seconde
+- Avec `session-pickup`, une session SSH survit à la bascule
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Actif-passif suffit presque toujours**, et se diagnostique bien plus facilement.
+2. **`session-pickup` décide si les connexions survivent** à une bascule.
+3. **`override disable` évite une seconde bascule inutile**, et protège d'un cluster qui oscille.
+4. **`monitor` fait basculer sur une interface morte** — sans lui, un cluster « en bonne santé » peut n'avoir plus d'Internet.
+5. **Deux liens de battement de cœur protègent du split-brain**, qui est pire qu'une panne.
+6. **Un basculement jamais testé est un basculement inconnu.**
+
+---
