@@ -173,8 +173,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   private selectedPool: string | null = null;
   private dhcpEnabled: boolean = false;
   private dhcpSnoopingEnabled: boolean = false;
-  /** Track which interfaces have 'dhcp select global' */
-  private dhcpSelectGlobalSet: Set<string> = new Set();
   /** OSPF area currently being configured */
   private ospfArea: string | null = null;
 
@@ -353,7 +351,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   /** `display current-configuration` text — source for `save` (Router.getRunningConfig). */
   getRunningConfigText(router: Router): string {
-    return displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    return displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled);
   }
 
   /** Re-apply saved config text onto live router state (VRP reboot). */
@@ -424,8 +422,6 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   getSelectedPool(): string | null { return this.selectedPool; }
   setSelectedPool(pool: string | null): void { this.selectedPool = pool; }
-
-  getDhcpSelectGlobal(): Set<string> { return this.dhcpSelectGlobalSet; }
 
   // ─── HuaweiIPSecContext Implementation ──────────────────────────────
 
@@ -1093,7 +1089,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   private renderDisplayThis(): string {
     const router = this.r();
-    const config = displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled, this.dhcpSelectGlobalSet);
+    const config = displayCurrentConfig(router, this.dhcpEnabled, this.dhcpSnoopingEnabled);
     const lines = config.split('\n');
     const selIface = this.selectedInterface;
     switch (this.mode) {

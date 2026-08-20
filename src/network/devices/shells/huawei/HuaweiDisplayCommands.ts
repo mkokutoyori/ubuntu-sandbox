@@ -59,7 +59,6 @@ import { getSessionRegistry, getVtyLineConfig } from '../../../equipment/RouterS
 export interface HuaweiDisplayState {
   isDhcpEnabled(): boolean;
   isDhcpSnoopingEnabled(): boolean;
-  getDhcpSelectGlobal(): Set<string>;
   renderLogbuffer?(seuil?: number | null): string;
 }
 
@@ -523,7 +522,6 @@ export function displayCurrentConfig(
   router: Router,
   dhcpEnabled: boolean,
   dhcpSnoopingEnabled: boolean,
-  dhcpSelectGlobal: Set<string>,
 ): string {
   const ports = router._getPortsInternal();
   const table = router._getRoutingTableInternal();
@@ -609,27 +607,7 @@ export function displayCurrentConfig(
     } else {
       lines.push(` shutdown`);
     }
-    if (dhcpSelectGlobal.has(name)) {
-      lines.push(` dhcp select global`);
-    }
-    // DHCP relay helper addresses
-    const helpers = dhcp.getHelperAddresses(name);
-    for (const h of helpers) {
-      lines.push(` dhcp relay server-ip ${h}`);
-    }
-    if (dhcp.isSnoopingEnabled(name)) {
-      lines.push(` dhcp snooping enable`);
-    }
     lines.push(...renderHuaweiInterfaceExtras(router, port, name));
-    // IPSec policy/profile applied to interface
-    const ipsecEng2 = (router as any)._getIPSecEngineInternal?.();
-    if (ipsecEng2) {
-      const ifCrypto = (ipsecEng2 as any).ifaceCryptoMap?.get(name);
-      if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
-      const tp = (ipsecEng2 as any).tunnelProtection?.get(name);
-      if (tp) lines.push(` ipsec profile ${tp.profileName}`);
-    }
-    lines.push(...runningConfigInterfaceACL(router, name));
     lines.push('#');
   }
 
@@ -1303,6 +1281,21 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
     const kr = pending.tunnelKeepaliveRetry;
     lines.push(` keepalive period ${kp}${kr !== undefined ? ` retry-times ${kr}` : ''}`);
   }
+  const dhcp = router._getDHCPServerInternal();
+  const dhcpMode = dhcp.getInterfaceMode(portName);
+  if (dhcpMode === 'global' || dhcpMode === 'relay' || dhcpMode === 'interface') {
+    lines.push(` dhcp select ${dhcpMode}`);
+  }
+  for (const h of dhcp.getHelperAddresses(portName)) lines.push(` dhcp relay server-ip ${h}`);
+  if (dhcp.isSnoopingEnabled(portName)) lines.push(' dhcp snooping enable');
+  const ipsecEngine = (router as any)._getIPSecEngineInternal?.();
+  if (ipsecEngine) {
+    const ifCrypto = ipsecEngine.ifaceCryptoMap?.get(portName);
+    if (ifCrypto) lines.push(` ipsec policy ${ifCrypto}`);
+    const tp = ipsecEngine.tunnelProtection?.get(portName);
+    if (tp) lines.push(` ipsec profile ${tp.profileName}`);
+  }
+  lines.push(...runningConfigInterfaceACL(router, portName));
   if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
   if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
   if (typeof port.isProxyArpExplicit === 'function' && port.isProxyArpExplicit() && port.isProxyArpEnabled?.()) {
@@ -1360,12 +1353,12 @@ export function registerDisplayCommands(
     displayArpInterface(getRouter(), args.join(' ')));
   trie.register('display current-configuration', 'Display running configuration', () => {
     const s = getState();
-    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    return displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled());
   });
 
   trie.registerGreedy('display current-configuration configuration', 'Display module configuration', (args) => {
     const s = getState();
-    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled(), s.getDhcpSelectGlobal());
+    const full = displayCurrentConfig(getRouter(), s.isDhcpEnabled(), s.isDhcpSnoopingEnabled());
     const module = (args[0] ?? '').toLowerCase();
     if (!module) return full;
     const keywords = module === 'dhcp' ? ['dhcp', 'ip pool'] : [module];

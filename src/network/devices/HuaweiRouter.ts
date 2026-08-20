@@ -506,7 +506,7 @@ export class HuaweiRouter extends Router {
     // were captured by the shell hooks.
     const dispMatch = /^display\s+current-configuration(?:\s*\|\s*(include|exclude)\s+(.+))?$/i.exec(cmd);
     if (dispMatch) {
-      const base = displayCurrentConfig(this, false, false, new Set());
+      const base = displayCurrentConfig(this, false, false);
       const lines = base.split('\n');
       for (const u of this._listLocalUsers()) {
         lines.push(`local-user ${u.name} password cipher ${u.secret}`);

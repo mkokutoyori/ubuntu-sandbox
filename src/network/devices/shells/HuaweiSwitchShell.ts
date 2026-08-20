@@ -208,7 +208,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
       setSelectedInterface: (i) => { this.selectedInterface = i; },
       getSelectedPool: () => null,
       setSelectedPool: () => { /* unused on switch */ },
-      getDhcpSelectGlobal: () => new Set<string>(),
     };
   }
 
@@ -221,7 +220,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
       setSelectedInterface: (i) => { this.selectedInterface = i; },
       getSelectedPool: () => this.selectedPool,
       setSelectedPool: (n) => { this.selectedPool = n; },
-      getDhcpSelectGlobal: () => this.dhcpSelectGlobalIfaces,
     };
   }
 

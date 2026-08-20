@@ -51,6 +51,8 @@ function formatChaddr(mac: string | undefined): string {
   return `${hex.slice(0, 4)}.${hex.slice(4, 8)}.${hex.slice(8, 12)}`;
 }
 
+export type DhcpInterfaceMode = 'server' | 'relay' | 'none' | 'global' | 'interface';
+
 export class DHCPServer implements IProtocolEngine {
   /** Service enabled flag */
   private enabled: boolean = true;
@@ -1096,14 +1098,14 @@ export class DHCPServer implements IProtocolEngine {
     return true;
   }
 
-  private readonly interfaceModes: Map<string, 'server' | 'relay' | 'none'> = new Map();
+  private readonly interfaceModes: Map<string, DhcpInterfaceMode> = new Map();
   private readonly snoopingEnabledIfaces: Set<string> = new Set();
   private readonly forwardProtocolPorts: Map<string, Set<number>> = new Map();
 
-  setInterfaceMode(iface: string, mode: 'server' | 'relay' | 'none'): void {
+  setInterfaceMode(iface: string, mode: DhcpInterfaceMode): void {
     this.interfaceModes.set(iface, mode);
   }
-  getInterfaceMode(iface: string): 'server' | 'relay' | 'none' { return this.interfaceModes.get(iface) ?? 'server'; }
+  getInterfaceMode(iface: string): DhcpInterfaceMode { return this.interfaceModes.get(iface) ?? 'server'; }
 
   setSnoopingEnabled(iface: string, enabled: boolean): void {
     if (enabled) this.snoopingEnabledIfaces.add(iface);

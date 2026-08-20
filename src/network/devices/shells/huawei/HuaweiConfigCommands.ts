@@ -51,7 +51,6 @@ export interface HuaweiShellContext {
   setSelectedInterface(iface: string | null): void;
   getSelectedPool(): string | null;
   setSelectedPool(pool: string | null): void;
-  getDhcpSelectGlobal(): Set<string>;
 }
 
 // ─── IP Command ──────────────────────────────────────────────────────
@@ -439,7 +438,9 @@ function cmdIpAddress(
 }
 
 function cmdDhcpSelectGlobal(ctx: HuaweiShellContext): string {
-  ctx.getDhcpSelectGlobal().add(ctx.getSelectedInterface()!);
+  const ifName = ctx.getSelectedInterface();
+  if (!ifName) return 'Error: No interface selected';
+  ctx.r()._getDHCPServerInternal().setInterfaceMode(ifName, 'global');
   return '';
 }
 
@@ -662,8 +663,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
   trie.register('dhcp select relay', 'Set DHCP relay mode on interface', () => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return 'Error: No interface selected';
-    const dhcp = getRouter()._getDHCPServerInternal() as unknown as { setInterfaceMode?: (i: string, m: string) => void };
-    dhcp.setInterfaceMode?.(ifName, 'relay');
+    getRouter()._getDHCPServerInternal().setInterfaceMode(ifName, 'relay');
     return '';
   });
 
@@ -968,7 +968,7 @@ export function buildInterfaceCommands(trie: CommandTrie, ctx: HuaweiShellContex
       dhcp.configurePoolNetwork(poolName, ip.networkAddress(mask).toString(), mask.toString());
       dhcp.configurePoolRouter(poolName, ip.toString());
     }
-    (dhcp as unknown as { setInterfaceMode?: (i: string, m: string) => void }).setInterfaceMode?.(ifName, 'interface');
+    dhcp.setInterfaceMode(ifName, 'interface');
     return '';
   });
 
