@@ -388,7 +388,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             <input
               ref={hiddenInputRef}
+              name="terminalPassword"
               type="password"
+              autoComplete="off"
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -416,7 +418,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 whiteSpace: 'nowrap',
                 borderWidth: 0,
               }}
-              autoComplete="off"
             />
             {(inputMode as { promptText?: string }).promptText && (
               <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
@@ -437,7 +438,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             )}
             <input
               ref={interactiveInputRef}
+              name="terminalPrompt"
               type="text"
+              autoComplete="off"
               value={session.getInputBuf()}
               onChange={(e) => session.setInputBuf(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -445,7 +448,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               className="flex-1 bg-transparent outline-none border-none p-0 m-0"
               style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
               spellCheck={false}
-              autoComplete="off"
               autoFocus
             />
           </div>
@@ -472,7 +474,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           && hasAttachedStream && (
           <input
             ref={inputRef}
+            name="terminalStreamCapture"
             type="text"
+            autoComplete="off"
+            aria-hidden="true"
+            tabIndex={-1}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
             onPaste={handlePasteRaw}
@@ -499,7 +505,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               )}
               <input
                 ref={inputRef}
+                name="terminalInput"
                 type="text"
+                autoComplete="off"
                 value={session.input}
                 onChange={(e) => {
                   session.setInput(e.target.value);
@@ -509,7 +517,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 className="w-full bg-transparent outline-none border-none p-0 m-0"
                 style={{ color: theme.textColor, caretColor: theme.textColor, fontFamily: 'inherit', fontSize: 'inherit' }}
                 spellCheck={false}
-                autoComplete="off"
               />
             </div>
           </div>
@@ -521,6 +528,10 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         {isPager && !isBooting && (
           <input
             ref={inputRef}
+            name="terminalPagerCapture"
+            autoComplete="off"
+            aria-hidden="true"
+            tabIndex={-1}
             className="opacity-0 absolute w-0 h-0"
             onKeyDown={handleKeyDown}
             onPaste={handlePasteRaw}
@@ -648,6 +659,8 @@ const ReverseSearchBar: React.FC<{
       <span style={{ color: '#facc15', whiteSpace: 'pre' }}>(reverse-i-search)`</span>
       <input
         ref={inputRef}
+        name="terminalReverseSearch"
+        autoComplete="off"
         value={query}
         onChange={(e) => session.updateReverseSearch(e.target.value)}
         onKeyDown={onKeyDown}
@@ -661,7 +674,6 @@ const ReverseSearchBar: React.FC<{
           width: `${Math.max(1, query.length)}ch`,
         }}
         spellCheck={false}
-        autoComplete="off"
         autoFocus
       />
       <span style={{ color: '#facc15', whiteSpace: 'pre' }}>': </span>

@@ -262,10 +262,13 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           className="absolute top-1 right-1 z-20 p-3 rounded-lg border shadow-xl"
           style={{ backgroundColor: '#1e1e1e', borderColor: '#3f3f3f' }}
         >
-          <div className="text-[11px] text-white/60 mb-2">Scrollback limit</div>
+          <label htmlFor="scrollback-limit" className="block text-[11px] text-white/60 mb-2">Scrollback limit</label>
           <div className="flex items-center gap-2">
             <input
+              id="scrollback-limit"
+              name="scrollbackLimit"
               type="number"
+              autoComplete="off"
               value={scrollbackValue}
               onChange={(e) => setScrollbackValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') applyScrollback(); }}

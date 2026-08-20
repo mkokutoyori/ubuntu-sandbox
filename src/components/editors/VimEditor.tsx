@@ -136,6 +136,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
             : '[O]pen Read-Only, (Q)uit, (A)bort: '}
         </div>
         <input
+          name="vimSwapPrompt"
+          autoComplete="off"
           ref={swapPromptRef}
           onKeyDown={dispatch}
           className="absolute opacity-0 w-0 h-0"
@@ -159,6 +161,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
       >
         <div>{engine.pendingBinaryWarning}</div>
         <input
+          name="vimSwapPrompt"
+          autoComplete="off"
           ref={swapPromptRef}
           onKeyDown={dispatch}
           className="absolute opacity-0 w-0 h-0"
@@ -250,6 +254,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
             />
           )}
           <textarea
+            name="vimBuffer"
+            autoComplete="off"
             ref={textareaRef}
             value={engine.listMode ? engine.lines.map((l) => engine.renderListLine(l)).join('\n') : engine.content}
             onChange={() => { /* content is engine-authoritative; keys drive all mutation */ }}
@@ -267,7 +273,6 @@ export const VimEditor: React.FC<VimEditorProps> = ({
               tabSize: 8,
             }}
             spellCheck={false}
-            autoComplete="off"
           />
 
           {showSplash && (
@@ -339,6 +344,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           <div className="flex items-center">
             <span style={{ color: '#cdd6f4' }}>:</span>
             <input
+              name="vimCommand"
+              autoComplete="off"
               ref={commandRef}
               value={engine.commandLineText}
               onChange={() => { /* engine-authoritative */ }}
@@ -357,6 +364,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
           <div className="flex items-center">
             <span style={{ color: '#cdd6f4' }}>/</span>
             <input
+              name="vimSearch"
+              autoComplete="off"
               ref={searchRef}
               value={engine.searchText}
               onChange={() => { /* engine-authoritative */ }}
