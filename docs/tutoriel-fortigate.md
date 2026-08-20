@@ -8829,3 +8829,336 @@ Avec `override disable`, **FGT-01 revient en esclave** et FGT-02 reste maître. 
 6. **Un basculement jamais testé est un basculement inconnu.**
 
 ---
+
+# Partie IX — L'exploitation au quotidien
+
+---
+
+## 23. Journaux, FortiView et supervision
+
+Un pare-feu qui filtre sans journaliser est un pare-feu dont personne ne sait ce qu'il fait. Cette section transforme ton équipement en source d'information exploitable.
+
+### 23.1 Les catégories de journaux
+
+FortiOS sépare les journaux par nature, et cette séparation gouverne toutes les commandes de filtrage :
+
+| Catégorie | Contenu | Numéro |
+|---|---|---|
+| **Traffic** | Chaque session autorisée ou refusée | `0` |
+| **UTM** | Virus détecté, site bloqué, IPS déclenché | `1` |
+| **Event** | Administration, système, VPN, HA, routage | `2` |
+
+```
+FGT-01 # execute log filter category ?
+```
+
+### 23.2 Où vont les journaux
+
+| Destination | Capacité | Usage |
+|---|---|---|
+| **Mémoire** | Très faible, volatile | Lab, dépannage immédiat |
+| **Disque local** | Limitée | Petits sites, si le modèle a un disque |
+| **FortiAnalyzer** | ⭐ Grande, avec corrélation et rapports | Le standard en entreprise |
+| **Syslog** | Selon le collecteur | ⭐ Intégration dans un SIEM |
+| **FortiCloud** | Selon l'abonnement | Sites sans infrastructure |
+
+```
+config log memory setting
+    set status enable
+end
+
+config log syslogd setting
+    set status enable
+    set server "192.168.10.60"
+    set port 514
+    set facility local7
+    set format rfc5424
+    set mode reliable
+end
+```
+
+> 💡 **Astuce — `set mode reliable`** passe le syslog en **TCP** au lieu d'UDP. En UDP, un journal perdu l'est définitivement et personne ne le sait. Pour des journaux de sécurité — ceux dont on aura besoin justement le jour d'un incident — la fiabilité vaut le léger surcoût.
+
+> 🚨 **Danger — un pare-feu qui ne journalise nulle part**
+> Sur une VM ou un petit boîtier sans disque, les journaux vivent **en mémoire** et disparaissent au redémarrage. Si tu as un incident et que le pare-feu a redémarré entre-temps, tu n'as **rien**.
+>
+> En production, envoie toujours les journaux vers une destination externe. Ce n'est pas du confort : sans journaux externalisés, tu ne pourras répondre à aucune question après coup, et une analyse d'incident sans journaux ne mène nulle part.
+
+### 23.3 Lire les journaux en CLI
+
+La séquence est toujours la même : **filtrer**, puis **afficher**.
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field srcip 192.168.10.10
+FGT-01 # execute log filter field action deny
+FGT-01 # execute log filter start-line 1
+FGT-01 # execute log filter view-lines 20
+FGT-01 # execute log display
+```
+
+Les champs les plus utiles :
+
+| Champ | Contenu |
+|---|---|
+| `srcip` / `dstip` | Adresses source et destination |
+| `action` | `accept`, `deny`, `close`, `blocked` |
+| `policyid` | ⭐ Quelle politique a décidé |
+| `user` | L'utilisateur authentifié (§17) |
+| `service` | Le service |
+| `appid` / `app` | L'application reconnue |
+| `level` | Sévérité |
+
+> 💡 **Astuce** : `execute log filter reset` **avant chaque recherche**. Les filtres persistent d'une commande à l'autre, et une recherche qui ne rend rien est très souvent un filtre oublié qui restreint sans qu'on s'en souvienne.
+
+### 23.4 FortiView
+
+FortiView est la vue graphique des journaux, et c'est là qu'on répond aux questions qu'on se pose vraiment :
+
+| Vue | Question à laquelle elle répond |
+|---|---|
+| **Sources** | Qui consomme le plus ? |
+| **Destinations** | Vers où va le trafic ? |
+| **Applications** | Quelles applications sont utilisées ? |
+| **Web Sites** | Quels sites sont visités ? |
+| **Threats** | Quelles menaces ont été bloquées ? |
+| **Policies** | ⭐ Quelles règles servent, et lesquelles ne servent jamais ? |
+| **Sessions** | Que se passe-t-il maintenant ? |
+
+> 💡 **Astuce professionnelle** : la vue **Policies** est la plus sous-utilisée et la plus rentable. Elle montre les règles à compteur nul — celles qui ne servent à rien, ou qui sont masquées par une règle au-dessus (§9.2). C'est la base du ménage annuel dans un jeu de règles, et le premier réflexe d'un audit.
+
+### 23.5 Les alertes
+
+Le pare-feu peut prévenir plutôt que d'attendre qu'on le consulte :
+
+```
+config alertemail setting
+    set username "fortigate@entreprise.fr"
+    set mailto1 "admin@entreprise.fr"
+    set filter-mode category
+    set critical-interval 5
+    set FDS-license-expiring-warning enable
+    set FIPS-CC-error enable
+    set HA-mode-change enable
+    set configuration-changes-logs enable
+end
+```
+
+Et le SNMP, pour la supervision :
+
+```
+config system snmp sysinfo
+    set status enable
+    set description "Pare-feu principal - Paris"
+    set contact-info "admin@entreprise.fr"
+    set location "Salle serveur - Batiment A"
+end
+
+config system snmp community
+    edit 1
+        set name "supervision"
+        config hosts
+            edit 1
+                set ip 192.168.10.70 255.255.255.255
+            next
+        end
+        set query-v1-status disable
+        set query-v2c-status enable
+        set trap-v2c-status enable
+    next
+end
+```
+
+> ⚠️ **Attention** : n'utilise **jamais** `public` comme nom de communauté, et n'expose jamais SNMP sur une interface externe. SNMPv2c circule **en clair** — quiconque écoute lit toute ta topologie. Préfère SNMPv3 quand ton outil de supervision le gère.
+
+### 23.6 🧠 Ce qu'il faut surveiller vraiment
+
+Voici les indicateurs qui comptent, et pourquoi :
+
+| Indicateur | Commande | Pourquoi c'est important |
+|---|---|---|
+| Charge processeur | `get system performance status` | Une saturation dégrade tout le trafic |
+| Mémoire | `get system performance status` | ⭐ Voir *conserve mode* ci-dessous |
+| Nombre de sessions | `get system session status` | Une explosion signale un scan ou une infection |
+| État des tunnels VPN | `get vpn ipsec tunnel summary` | Un site coupé sans alerte |
+| État du cluster HA | `get system ha status` | Un cluster dégradé qui ne se voit pas |
+| Bases FortiGuard | `diagnose autoupdate versions` | Des signatures périmées ne protègent pas |
+| Espace disque de journaux | `diagnose sys logdisk usage` | Un disque plein arrête la journalisation |
+
+> 🚨 **Le *conserve mode*, à connaître absolument**
+> Quand la mémoire d'un FortiGate atteint un seuil critique, il entre en **conserve mode** : il **cesse d'inspecter** le trafic pour économiser des ressources. Selon le réglage `av-failopen`, il laisse alors passer le trafic **sans analyse**, ou le bloque.
+>
+> ```
+> FGT-01 # diagnose hardware sysinfo conserve
+> FGT-01 # get system performance status
+> ```
+>
+> **Le piège** : en `av-failopen pass` (souvent le défaut), ton pare-feu continue de laisser passer le trafic — mais **sans antivirus, sans IPS, sans filtrage**. Tout a l'air normal. Tes utilisateurs ne se plaignent pas. Et tu n'es plus protégé.
+>
+> C'est exactement le genre de panne silencieuse qu'un tableau de bord doit détecter. Surveille la mémoire.
+
+---
+
+### 🧪 TP 22 — Rendre ton pare-feu bavard
+
+**🎯 Objectif**
+Configurer la journalisation, produire du trafic de plusieurs natures, retrouver chaque événement en CLI, et repérer une règle inutile.
+
+**⏱️ Durée** : 30 minutes
+
+**📋 Prérequis** : TP 12 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Activer la journalisation mémoire**
+
+```
+FGT-01 # config log memory setting
+FGT-01 (setting) # set status enable
+FGT-01 (setting) # end
+
+FGT-01 # config log memory global-setting
+FGT-01 (global-setting) # set max-size 98304
+FGT-01 (global-setting) # end
+```
+
+**Étape 2 — S'assurer que les politiques journalisent**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set logtraffic all
+FGT-01 (1) # set logtraffic-start enable
+FGT-01 (1) # next
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set logtraffic all
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+**Étape 3 — Produire du trafic varié**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ping -c 5 192.168.20.10
+user@pc-lan:~$ curl -s -o /dev/null http://192.168.20.10
+user@pc-lan:~$ curl -m 5 http://example.com          ← bloqué (TP 12)
+user@pc-lan:~$ ssh user@192.168.20.10                ← refusé (service non autorisé)
+```
+
+**Étape 4 — Retrouver le trafic autorisé**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field srcip 192.168.10.10
+FGT-01 # execute log filter view-lines 20
+FGT-01 # execute log display
+```
+
+**Étape 5 — Retrouver le trafic refusé**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field action deny
+FGT-01 # execute log display
+```
+
+Tu retrouves la tentative SSH. Regarde le champ `policyid` : il vaut `0` — l'`Implicit Deny` du §11, TP 9.
+
+**Étape 6 — Retrouver le blocage UTM**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 1
+FGT-01 # execute log display
+```
+
+Tu retrouves le blocage de `example.com` par la liste locale.
+
+> 🧠 **Note la différence** : le refus de la politique est en catégorie `0` (trafic), le blocage du filtrage web en catégorie `1` (UTM). Chercher dans la mauvaise catégorie est la cause n°1 des « je ne trouve rien dans les journaux ».
+
+**Étape 7 — Les événements système**
+
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 2
+FGT-01 # execute log display
+```
+
+Tu retrouves tes propres connexions d'administration et tes changements de configuration. **Un pare-feu journalise qui l'a modifié** — et c'est pour ça que les comptes nominatifs du §4.3 comptent.
+
+**Étape 8 — Trouver les règles inutiles**
+
+```
+FGT-01 # get firewall policy
+```
+
+Regarde les compteurs. Une politique à `0 bytes` depuis longtemps est suspecte : soit elle ne sert à rien, soit elle est masquée par une règle au-dessus.
+
+**Étape 9 — Surveiller les indicateurs**
+
+```
+FGT-01 # get system performance status
+FGT-01 # get system session status
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose autoupdate versions
+```
+
+Note la mémoire utilisée. Sur une VM à 2 Gio avec des profils actifs, elle monte vite — et tu sais maintenant ce que ça implique (§23.6).
+
+**Étape 10 — Configurer un syslog externe (facultatif)**
+
+Si tu as une machine Linux disponible :
+
+```bash
+root@collecteur:~# apt install -y rsyslog
+root@collecteur:~# echo '$ModLoad imudp
+$UDPServerRun 514
+:fromhost-ip, isequal, "192.168.10.1" /var/log/fortigate.log
+& stop' > /etc/rsyslog.d/10-fortigate.conf
+root@collecteur:~# systemctl restart rsyslog
+```
+
+```
+FGT-01 # config log syslogd setting
+FGT-01 (setting) # set status enable
+FGT-01 (setting) # set server "192.168.10.60"
+FGT-01 (setting) # set port 514
+FGT-01 (setting) # set facility local7
+FGT-01 (setting) # end
+```
+
+```bash
+root@collecteur:~# tail -f /var/log/fortigate.log
+```
+
+Génère du trafic et regarde les journaux arriver **en direct**.
+
+---
+
+**✅ Résultat attendu**
+
+- Le trafic autorisé apparaît en catégorie 0
+- Le trafic refusé porte `policyid=0`
+- Le blocage web apparaît en catégorie 1
+- Tes modifications apparaissent en catégorie 2
+- `get firewall policy` révèle les compteurs
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Trois catégories**, et chercher dans la mauvaise fait conclure à tort qu'il n'y a rien.
+2. **`execute log filter reset` avant chaque recherche** — les filtres persistent.
+3. **`policyid=0` dans un journal, c'est l'Implicit Deny.**
+4. **Les journaux en mémoire disparaissent au redémarrage.** En production, on externalise.
+5. **Un compteur à zéro est un signal** à investiguer.
+6. **Le conserve mode arrête l'inspection sans rien casser de visible.** C'est une panne silencieuse.
+
+---
