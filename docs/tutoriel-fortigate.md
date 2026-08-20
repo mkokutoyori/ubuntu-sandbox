@@ -8169,3 +8169,339 @@ R1-EDGE(config-if)# ip ospf message-digest-key 1 md5 CleOspfLab2026
 5. **`Full` est le seul état acceptable durablement.**
 
 ---
+
+## 21. SD-WAN
+
+Le SD-WAN est la réponse propre au problème qu'on a effleuré au §7.4 : **utiliser intelligemment plusieurs liens Internet**.
+
+### 21.1 Le problème qu'il résout
+
+Tu as deux opérateurs. Avec du routage classique, tu as le choix entre deux mauvaises options :
+
+| Approche | Problème |
+|---|---|
+| Route flottante (distances différentes) | Le second lien ne sert **jamais**. Tu payes un abonnement pour rien |
+| ECMP (distances égales) | Les sessions d'un même utilisateur partent alternativement par deux adresses publiques, et **les sites qui vérifient l'adresse te déconnectent** |
+
+**Le SD-WAN résout les deux** : il utilise les deux liens, en gardant chaque session sur un seul, et il choisit le lien selon la **qualité mesurée** plutôt que selon une métrique statique.
+
+### 21.2 Les trois briques
+
+**① Les membres** — les interfaces qui participent :
+
+```
+config system sdwan
+    set status enable
+    config zone
+        edit "SDWAN-INTERNET"
+        next
+    end
+    config members
+        edit 1
+            set interface "port1"
+            set zone "SDWAN-INTERNET"
+            set gateway 192.168.100.1
+            set priority 1
+        next
+        edit 2
+            set interface "port4"
+            set zone "SDWAN-INTERNET"
+            set gateway 192.168.101.1
+            set priority 2
+        next
+    end
+end
+```
+
+**② Les moniteurs de performance** — ce qui **mesure** la qualité de chaque lien :
+
+```
+config system sdwan
+    config health-check
+        edit "Qualite-Internet"
+            set server "8.8.8.8" "1.1.1.1"
+            set protocol ping
+            set interval 500
+            set failtime 5
+            set recoverytime 5
+            set members 1 2
+            config sla
+                edit 1
+                    set latency-threshold 150
+                    set jitter-threshold 30
+                    set packetloss-threshold 2
+                next
+            end
+        next
+    end
+end
+```
+
+> 🧠 **C'est ici que le SD-WAN devient intéressant.** Il ne se contente pas de savoir si le lien est *up* : il mesure la **latence**, la **gigue** et la **perte de paquets**, en continu. Un lien peut être parfaitement actif et néanmoins inutilisable pour de la voix sur IP — 300 ms de latence, 5 % de perte. Le routage classique n'a aucun moyen de le voir.
+
+**③ Les règles** — quel trafic emprunte quel lien :
+
+```
+config system sdwan
+    config service
+        edit 1
+            set name "Voix-vers-lien-de-qualite"
+            set mode sla
+            set dst "all"
+            set src "NET-LAN"
+            set protocol 17
+            set start-port 5060
+            set end-port 5061
+            config sla
+                edit "Qualite-Internet"
+                    set id 1
+                next
+            end
+            set priority-members 1 2
+        next
+        edit 2
+            set name "Web-en-repartition"
+            set mode load-balance
+            set dst "all"
+            set src "NET-LAN"
+            set load-balance-mode source-ip-based
+        next
+    end
+end
+```
+
+### 21.3 Les modes de sélection
+
+| Mode | Comportement |
+|---|---|
+| `auto` | Suit la priorité des membres |
+| `manual` | Toujours le même membre |
+| `priority` | Le membre le mieux classé selon un critère mesuré |
+| **`sla`** | ⭐ Le premier membre qui **respecte le contrat de qualité** |
+| `load-balance` | Répartit selon un algorithme |
+
+Et les algorithmes de répartition :
+
+| Algorithme | Effet |
+|---|---|
+| `source-ip-based` | ⭐ Une même source garde le même lien — **évite le problème du §7.4** |
+| `weight-based` | Répartition proportionnelle |
+| `usage-based` | Selon la bande passante consommée |
+| `session` | Par session, en tourniquet |
+
+> 💡 **Astuce** : `source-ip-based` est le choix par défaut raisonnable. Un utilisateur donné sort toujours par le même lien, donc toujours par la même adresse publique — et les sites qui lient une session à une adresse cessent de le déconnecter.
+
+### 21.4 Vérifier
+
+```
+FGT-01 # diagnose sys sdwan member
+FGT-01 # diagnose sys sdwan health-check
+FGT-01 # diagnose sys sdwan service
+FGT-01 # get router info routing-table all
+```
+
+`diagnose sys sdwan health-check` est **la** commande à connaître :
+
+```
+Health Check(Qualite-Internet):
+Seq(1 port1): state(alive), packet-loss(0.000%) latency(12.456), jitter(1.234) sla_map=0x1
+Seq(2 port4): state(alive), packet-loss(3.500%) latency(180.221), jitter(45.100) sla_map=0x0
+```
+
+**Lis `sla_map`** : `0x1` signifie que le contrat n°1 est respecté, `0x0` qu'il ne l'est pas. Ici, `port4` a 3,5 % de perte et 180 ms de latence — il est vivant mais il **ne respecte pas le contrat**, donc le trafic sensible ne l'empruntera pas.
+
+> 🚨 **Danger — l'erreur qui casse tout un déploiement SD-WAN**
+> Quand une interface devient membre du SD-WAN, elle **ne peut plus être utilisée directement** dans les politiques et les routes statiques. Il faut référencer la **zone SD-WAN**.
+>
+> Toutes tes politiques existantes qui citent `port1` doivent être modifiées **avant** d'activer le SD-WAN. FortiOS refusera l'ajout du membre tant que des références subsistent — même protection qu'au §5, TP 3 étape 7, et c'est heureux.
+>
+> **La bonne méthode** : créer la zone, modifier les politiques pour qu'elles citent la zone, **puis** ajouter les membres.
+
+---
+
+### 🧪 TP 20 — Un SD-WAN à deux liens
+
+**🎯 Objectif**
+Créer une zone SD-WAN, y placer deux liens, mesurer leur qualité, écrire une règle avec contrat de service, puis **dégrader volontairement un lien** et observer la bascule.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 7 terminé, une seconde interface WAN (`port4`) — même sans vrai second opérateur
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Libérer les politiques**
+
+```
+FGT-01 # show firewall policy | grep -B3 "port1"
+```
+
+Note les politiques qui citent `port1`. On va devoir les modifier.
+
+**Étape 2 — Créer la zone et le premier membre**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # set status enable
+FGT-01 (sdwan) # config zone
+FGT-01 (zone) # edit "SDWAN-INTERNET"
+FGT-01 (SDWAN-INTERNET) # next
+FGT-01 (zone) # end
+FGT-01 (sdwan) # end
+```
+
+Si FortiOS refuse à cause de références sur `port1`, modifie d'abord les politiques :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set dstintf "SDWAN-INTERNET"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 3 — Ajouter les membres**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config members
+FGT-01 (members) # edit 1
+FGT-01 (1) # set interface "port1"
+FGT-01 (1) # set zone "SDWAN-INTERNET"
+FGT-01 (1) # set gateway 192.168.100.1
+FGT-01 (1) # set priority 1
+FGT-01 (1) # next
+FGT-01 (members) # edit 2
+FGT-01 (2) # set interface "port4"
+FGT-01 (2) # set zone "SDWAN-INTERNET"
+FGT-01 (2) # set gateway 192.168.101.1
+FGT-01 (2) # set priority 2
+FGT-01 (2) # next
+FGT-01 (members) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 4 — Le moniteur de qualité**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config health-check
+FGT-01 (health-check) # edit "Qualite"
+FGT-01 (Qualite) # set server "8.8.8.8" "1.1.1.1"
+FGT-01 (Qualite) # set protocol ping
+FGT-01 (Qualite) # set interval 500
+FGT-01 (Qualite) # set failtime 5
+FGT-01 (Qualite) # set recoverytime 5
+FGT-01 (Qualite) # set members 1 2
+FGT-01 (Qualite) # config sla
+FGT-01 (sla) # edit 1
+FGT-01 (1) # set latency-threshold 150
+FGT-01 (1) # set jitter-threshold 30
+FGT-01 (1) # set packetloss-threshold 2
+FGT-01 (1) # next
+FGT-01 (sla) # end
+FGT-01 (Qualite) # next
+FGT-01 (health-check) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 5 — Observer les mesures**
+
+```
+FGT-01 # diagnose sys sdwan health-check
+```
+
+Tu vois la latence, la gigue et la perte **mesurées en temps réel** sur chaque lien. C'est ce qu'aucune route statique ne peut savoir.
+
+**Étape 6 — La route par défaut du SD-WAN**
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 1
+FGT-01 (1) # set dst 0.0.0.0 0.0.0.0
+FGT-01 (1) # set device "SDWAN-INTERNET"
+FGT-01 (1) # next
+FGT-01 (static) # end
+
+FGT-01 # get router info routing-table all
+```
+
+**Étape 7 — Une règle avec contrat de service**
+
+```
+FGT-01 # config system sdwan
+FGT-01 (sdwan) # config service
+FGT-01 (service) # edit 1
+FGT-01 (1) # set name "Trafic-critique"
+FGT-01 (1) # set mode sla
+FGT-01 (1) # set dst "all"
+FGT-01 (1) # set src "NET-LAN"
+FGT-01 (1) # config sla
+FGT-01 (sla) # edit "Qualite"
+FGT-01 (Qualite) # set id 1
+FGT-01 (Qualite) # next
+FGT-01 (sla) # end
+FGT-01 (1) # set priority-members 1 2
+FGT-01 (1) # next
+FGT-01 (service) # end
+FGT-01 (sdwan) # end
+```
+
+**Étape 8 — Dégrader un lien volontairement**
+
+C'est l'étape qui apprend le plus. Sur R1, dégrade artificiellement le lien vers `port1` :
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# shutdown
+```
+
+Ou, sous Linux, ajoute de la latence et de la perte :
+
+```bash
+root@r1-edge:~# tc qdisc add dev eth1 root netem delay 300ms loss 10%
+```
+
+Puis observe :
+
+```
+FGT-01 # diagnose sys sdwan health-check
+```
+
+`sla_map` passe à `0x0` pour ce membre : il **ne respecte plus le contrat**.
+
+```
+FGT-01 # diagnose sys sdwan service
+```
+
+Le service bascule sur le membre 2.
+
+**Le trafic vient de changer de chemin non pas parce qu'un lien est tombé, mais parce qu'il est devenu MAUVAIS.** C'est toute la différence avec le routage classique.
+
+Rétablis :
+
+```bash
+root@r1-edge:~# tc qdisc del dev eth1 root netem
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `diagnose sys sdwan health-check` affiche latence, gigue et perte par lien
+- `sla_map` reflète le respect du contrat
+- Une dégradation fait basculer le trafic **sans coupure de lien**
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Le SD-WAN mesure la qualité**, là où le routage ne connaît que « up » ou « down ».
+2. **`sla_map` est la ligne à lire** pour savoir si un lien respecte son contrat.
+3. **`source-ip-based` évite le problème des sessions qui changent d'adresse publique.**
+4. **Un membre du SD-WAN ne peut plus être cité directement** dans les politiques — modifie-les avant.
+5. **Un lien peut être vivant et inutilisable.** C'est le cas que le SD-WAN existe pour traiter.
+
+---
