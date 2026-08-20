@@ -3,6 +3,10 @@ import type { ZoneTable } from '../../../model/ZoneTable';
 
 export const IPROPE_POLICY_GROUP = '00100004';
 
+export function isPolicyGroup(group: string): boolean {
+  return group.replace(/^0+/, '') === IPROPE_POLICY_GROUP.replace(/^0+/, '');
+}
+
 export interface IpropeDeps {
   readonly zones: ZoneTable;
   readonly vdom: number;
@@ -19,7 +23,7 @@ export function renderIpropeList(
 export function renderIpropeShow(
   group: string, index: string, rules: readonly SecurityRule[], deps: IpropeDeps,
 ): string | null {
-  if (group !== IPROPE_POLICY_GROUP) return null;
+  if (!isPolicyGroup(group)) return null;
 
   const rule = rules.find(candidate => candidate.id === index);
   if (!rule) return null;

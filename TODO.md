@@ -97,6 +97,20 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [politique] `get firewall policy` ne compte pas
+Le tutoriel ecrit que cette commande affiche les octets et les paquets de
+chaque politique. Elle rend la liste `== [ N ]` des cles, qui est la
+forme reelle d'un `get` sur une table sans cle, et les compteurs se
+lisent par `diagnose firewall iprope show`.
+**Mesure** : `get firewall policy` rend deux lignes par politique ;
+`diagnose firewall iprope show 100004 2` rend `hit count:` et il
+progresse.
+**Report** : je n'ai pas pu confronter la sortie reelle d'une machine
+(documentation Fortinet inaccessible depuis ce reseau), et inventer une
+sortie que le vrai produit ne rend pas serait pire que la difference.
+`renderFirewallPolicy`, un TROISIEME rendu de cette table qui n'avait
+aucun appelant, est supprime plutot que branche.
+
 ### [heure] la table des fuseaux FortiOS est incomplete
 `set timezone` accepte desormais un nom IANA (verifie contre la VRAIE
 base de fuseaux du moteur) et un indice historique <0-86>. La

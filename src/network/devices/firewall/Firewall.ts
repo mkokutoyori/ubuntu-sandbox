@@ -206,6 +206,8 @@ export class Firewall extends Equipment {
       applicationShift: profile.applicationShift,
       maxGroupNesting: profile.maxGroupNesting,
       resolveFqdn: (fqdn) => this.dnsClient.resolve(fqdn),
+      predefinedAddresses: profile.predefinedAddresses,
+      predefinedServices: profile.predefinedServices,
       connectedRoutes: (vdom) => this.interfaces.connectedRoutes()
         .filter(route => this.vdoms.vdomOfInterface(route.iface) === vdom),
       interfaceForDestination: (vdom, address) => {

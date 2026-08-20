@@ -226,27 +226,6 @@ export function renderOspfNeighbors(
   ], FIXED_TABLE)].join('\n');
 }
 
-export function renderFirewallPolicy(rules: readonly SecurityRule[]): string {
-  const lines: string[] = [];
-  for (const rule of rules) {
-    lines.push(
-      `policyid: ${rule.id}`,
-      `name: ${rule.name ?? ''}`,
-      `srcintf: ${rule.from.join(' ')}`,
-      `dstintf: ${rule.to.join(' ')}`,
-      `srcaddr: ${rule.source.join(' ')}`,
-      `dstaddr: ${rule.destination.join(' ')}`,
-      `service: ${rule.service.join(' ')}`,
-      `action: ${rule.action}`,
-      `status: ${rule.enabled ? 'enable' : 'disable'}`,
-      `nat: ${rule.natEnabled ? 'enable' : 'disable'}`,
-      `hit count: ${rule.hitCount}`,
-      `bytes: ${rule.byteCount}`,
-      '',
-    );
-  }
-  return lines.join('\n').trimEnd();
-}
 
 export function renderBgpSummary(facts: BgpSummaryFacts): string {
   const lines = [

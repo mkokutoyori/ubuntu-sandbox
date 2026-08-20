@@ -411,6 +411,7 @@ export class FortiShell {
         uptimeMs: this.fw.getUptimeMs(),
       });
     }
+
     if (path === 'system arp') return renderArpTable(this.fw.getArpService());
     if (path === 'system ha status') {
       return renderHaStatus(this.fw.getHa(), {

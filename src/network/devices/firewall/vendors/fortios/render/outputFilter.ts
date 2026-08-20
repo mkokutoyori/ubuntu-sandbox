@@ -1,5 +1,5 @@
 export interface OutputFilter {
-  readonly pattern: string;
+  readonly patterns: readonly string[];
   readonly ignoreCase: boolean;
   readonly invert: boolean;
   readonly countOnly: boolean;
@@ -36,10 +36,19 @@ function parseGrep(tail: string): OutputFilter {
   let before = 0;
   let after = 0;
 
+  const patterns: string[] = [];
   let rest = tail;
   for (;;) {
     const option = /^(-[A-Za-z]+)(\d*)\s*/.exec(rest);
     if (!option) break;
+    if (option[1] === '-e') {
+      rest = rest.slice(option[0].length);
+      const value = /^("[^"]*"|\S+)\s*/.exec(rest);
+      if (!value) break;
+      patterns.push(unquotePattern(value[1]));
+      rest = rest.slice(value[0].length);
+      continue;
+    }
     const context = /^-([ABC])$/.exec(option[1]);
     if (context) {
       rest = rest.slice(option[0].length);
@@ -60,10 +69,9 @@ function parseGrep(tail: string): OutputFilter {
     rest = rest.slice(option[0].length);
   }
 
-  return {
-    pattern: unquotePattern(rest.trim()),
-    ignoreCase, invert, countOnly, wholeBlock, before, after,
-  };
+  const trailing = rest.trim();
+  if (trailing.length > 0) patterns.push(unquotePattern(trailing));
+  return { patterns, ignoreCase, invert, countOnly, wholeBlock, before, after };
 }
 
 function unquotePattern(raw: string): string {
@@ -74,9 +82,9 @@ function unquotePattern(raw: string): string {
 }
 
 function matches(line: string, filter: OutputFilter): boolean {
-  const hit = filter.ignoreCase
-    ? line.toLowerCase().includes(filter.pattern.toLowerCase())
-    : line.includes(filter.pattern);
+  const subject = filter.ignoreCase ? line.toLowerCase() : line;
+  const hit = filter.patterns.some(pattern =>
+    subject.includes(filter.ignoreCase ? pattern.toLowerCase() : pattern));
   return filter.invert ? !hit : hit;
 }
 

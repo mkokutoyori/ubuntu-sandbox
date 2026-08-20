@@ -1,3 +1,5 @@
+import type { AddressObject } from '../model/AddressObject';
+import type { ServiceObject } from '../model/ServiceObject';
 import { ZoneTable } from '../model/ZoneTable';
 import { ObjectStore } from '../model/ObjectStore';
 import { PolicyStore } from '../model/PolicyStore';
@@ -64,6 +66,8 @@ export interface VdomRegistryDeps {
   readonly applicationShift: boolean;
   readonly maxGroupNesting: number;
   readonly resolveFqdn?: (fqdn: string) => readonly string[];
+  readonly predefinedAddresses?: readonly AddressObject[];
+  readonly predefinedServices?: readonly ServiceObject[];
   readonly connectedRoutes: (vdom: string) => readonly ConnectedRoute[];
   readonly interfaceForDestination: (vdom: string, address: string) => string | undefined;
   readonly isInterfaceUp: (iface: string) => boolean;
@@ -161,6 +165,9 @@ export class VdomRegistry {
       maxGroupNesting: deps.maxGroupNesting,
       resolveFqdn: (fqdn) => deps.resolveFqdn?.(fqdn) ?? [],
     });
+    for (const object of deps.predefinedAddresses ?? []) objects.addAddress(object);
+    for (const object of deps.predefinedServices ?? []) objects.addService(object);
+
     const policy = new PolicyStore();
     const natPolicy = new NatPolicyStore();
     const pools = new IpPoolAllocator(deps.now);

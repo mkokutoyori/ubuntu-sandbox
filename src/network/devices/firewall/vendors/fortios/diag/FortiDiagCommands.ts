@@ -189,7 +189,7 @@ function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
 
 function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string {
   const [name, value] = words;
-  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === undefined) return renderSessionFilter(deps);
   if (name === 'clear') { deps.state.clearSessionFilter(); return ''; }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
 
@@ -206,6 +206,24 @@ function setSessionFilter(words: readonly string[], deps: FortiDiagDeps): string
       return FortiMessages.parseError(name,
         'known filters: src, dst, sport, dport, proto, policy, vd, clear.');
   }
+}
+
+function renderSessionFilter(deps: FortiDiagDeps): string {
+  const filter = deps.state.sessionFilter;
+  const shown = (value: unknown): string =>
+    value === undefined || value === null || Number.isNaN(value) ? 'any' : String(value);
+
+  return [
+    `vd: ${shown(filter.vd)}`,
+    `sintf: any`,
+    `dintf: any`,
+    `src: ${shown(filter.src)}`,
+    `dst: ${shown(filter.dst)}`,
+    `src-port: ${shown(filter.sport)}`,
+    `dst-port: ${shown(filter.dport)}`,
+    `proto: ${shown(filter.proto)}`,
+    `policy: ${shown(filter.policy)}`,
+  ].join('\n');
 }
 
 function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -237,7 +255,7 @@ function diagnoseDebug(rest: readonly string[], deps: FortiDiagDeps): string {
 
 function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
   const [name, value] = words;
-  if (name === undefined) return FortiMessages.incomplete('a filter criterion');
+  if (name === undefined) return renderSessionFilter(deps);
   if (name === 'clear') { deps.state.debugFlow.filter = {}; return ''; }
   if (value === undefined) return FortiMessages.incomplete('the filter value');
 
