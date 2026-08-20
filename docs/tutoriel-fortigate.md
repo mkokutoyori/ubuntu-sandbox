@@ -9869,3 +9869,747 @@ FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDeP
 6. **Un pare-feu à jour mal configuré vaut mieux qu'un pare-feu parfait en version vulnérable.**
 
 ---
+
+## 26. Les erreurs classiques
+
+Voici les pièges qui font perdre le plus de temps. Certains, tu les as déjà rencontrés dans les TP — c'était volontaire. Les autres t'attendent.
+
+Chaque erreur suit le même format : **symptôme**, **cause**, **vérification**, **correction**.
+
+---
+
+### Erreur #1 — La règle est écrite, et elle ne s'applique pas
+
+**Symptôme** : tu as créé une politique qui autorise le trafic, et il est quand même refusé.
+
+**Cause n°1 — Une règle plus large est au-dessus.** Première correspondance gagne (§9.2), et l'identifiant n'est pas la position.
+
+**Vérification :**
+```
+FGT-01 # show firewall policy | grep -e "edit " -e "set name"
+FGT-01 # diagnose debug flow filter addr <destination>
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Si tu lis `Denied by forward policy check (policy 0)` → **aucune** règle ne correspond, il en manque une.
+Si tu lis `Denied by forward policy check (policy N)` → la règle N refuse, va la voir.
+Si tu lis `Allowed by Policy-N` alors que ça ne marche pas → **le problème n'est pas le pare-feu**.
+
+**Cause n°2 — Un critère ne correspond pas.** L'interface, le service, l'horaire, ou un objet dont le contenu a changé.
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # move <ta-regle> before <la-regle-large>
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #2 — Le changement de règle ne produit aucun effet
+
+**Symptôme** : tu modifies une politique, et le comportement reste identique.
+
+**Cause** : les sessions **déjà établies** ne repassent pas par l'évaluation (§11.3 ④).
+
+**Vérification :**
+```
+FGT-01 # diagnose sys session filter dst <destination>
+FGT-01 # diagnose sys session list
+```
+
+**Correction :**
+```
+FGT-01 # diagnose sys session filter dst <destination>
+FGT-01 # diagnose sys session clear
+```
+
+> 🚨 **Toujours poser le filtre avant.** Un `session clear` sans filtre coupe **toutes** les connexions de tous les utilisateurs.
+
+---
+
+### Erreur #3 — Le VIP ne fonctionne pas
+
+**Symptôme** : le serveur publié est injoignable depuis l'extérieur.
+
+**Cause n°1 — La destination de la politique est l'adresse interne** au lieu du VIP (§10.5).
+
+**Cause n°2 — `set nat enable` sur la politique de publication.** Le serveur voit alors toutes les connexions venir du pare-feu.
+
+**Cause n°3 — Le `mappedip` pointe vers une adresse inexistante.**
+
+**Vérification :**
+```
+FGT-01 # show firewall vip <nom>
+FGT-01 # show firewall policy <id>
+FGT-01 # execute ping <mappedip>
+FGT-01 # diagnose debug flow filter addr <extip>
+```
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit <id>
+FGT-01 (id) # set dstaddr "<nom-du-VIP>"
+FGT-01 (id) # set nat disable
+FGT-01 (id) # next
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #4 — `set` a effacé la moitié de la configuration
+
+**Symptôme** : tu ajoutes une valeur à un attribut de liste, et les autres ont disparu. Parfois, tu perds ton accès.
+
+**Cause** : `set` **remplace** la liste entière (§5.9). `set allowaccess ssh` sur une interface qui avait `ping https ssh` ne laisse que `ssh`.
+
+**Vérification :**
+```
+FGT-01 # show system interface <nom>
+```
+
+**Correction** : énumère **toujours** la liste complète voulue.
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port2
+FGT-01 (port2) # set allowaccess ping https ssh
+FGT-01 (port2) # next
+FGT-01 (interface) # end
+```
+
+Les attributs concernés : `allowaccess`, `srcaddr`, `dstaddr`, `service`, `member`, `srcintf`, `dstintf`, `groups`.
+
+---
+
+### Erreur #5 — Le tunnel IPsec « est up » et ne transporte rien
+
+**Symptôme** : la GUI affiche le tunnel comme actif, aucun trafic ne passe.
+
+**Cause** : la phase 1 est montée, la phase 2 non. Les sélecteurs ne sont pas le miroir exact (§18.5).
+
+**Vérification :**
+```
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' ... selectors(total,up): 1/0     ← le 0 est le symptôme
+```
+
+**Correction** : vérifie que `src-subnet` et `dst-subnet` sont **inversés** entre les deux sites.
+```
+FGT-01 # show vpn ipsec phase2-interface
+```
+
+---
+
+### Erreur #6 — Le profil de sécurité ne bloque rien
+
+**Symptôme** : tu as configuré un antivirus ou un filtrage web, il est attaché, et rien n'est bloqué.
+
+**Cause n°1 — `utm-status` n'est pas activé** (§13, TP 11).
+**Cause n°2 — Le mode du profil ne correspond pas à celui de la politique** (flow/proxy).
+**Cause n°3 — En HTTPS, il faut l'inspection SSL** (§16).
+**Cause n°4 — Sans abonnement FortiGuard, la base est figée** (§2.7).
+
+**Vérification :**
+```
+FGT-01 # show firewall policy <id> | grep -e utm -e profile -e inspection
+FGT-01 # diagnose autoupdate versions
+```
+
+**Correction :**
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit <id>
+FGT-01 (id) # set utm-status enable
+FGT-01 (id) # set inspection-mode flow
+FGT-01 (id) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (id) # next
+FGT-01 (policy) # end
+```
+
+---
+
+### Erreur #7 — Je me suis enfermé dehors
+
+**Symptôme** : plus d'accès à l'administration.
+
+**Causes classiques** :
+- `set trusthost` posé sur son propre compte depuis une adresse non listée (§4.4) ;
+- `set allowaccess` réécrit sans le protocole qu'on utilisait (§5.9) ;
+- `set status down` sur l'interface d'administration ;
+- une local-in policy trop stricte (§11.5) ;
+- un changement de port d'administration non testé (§25.4).
+
+**Correction** : la **console** de l'hyperviseur ou le port console physique. Ils ne sont filtrés par aucun de ces mécanismes.
+
+> 💡 **La prévention vaut mieux** : garde **toujours** une seconde session ouverte quand tu touches à l'accès, et teste depuis cette seconde session **avant** de fermer la première. C'est un réflexe qui s'acquiert après s'être enfermé dehors une fois — autant l'acquérir sans y passer.
+
+---
+
+### Erreur #8 — L'objet FQDN ne correspond plus à rien
+
+**Symptôme** : une règle utilisant un nom de domaine a cessé de fonctionner, sans qu'on ait rien changé.
+
+**Cause** : le DNS du pare-feu ne répond plus, donc l'objet est **vide** (§8.4).
+
+**Vérification :**
+```
+FGT-01 # diagnose firewall fqdn list
+FGT-01 # show system dns
+FGT-01 # execute ping <un-nom-de-domaine>
+```
+
+**Correction** : réparer le DNS du pare-feu. Et pour du **blocage**, utiliser le filtrage web plutôt qu'un FQDN.
+
+---
+
+### Erreur #9 — Le pare-feu répond au ping depuis Internet malgré la règle qui l'interdit
+
+**Symptôme** : une politique refuse tout depuis le WAN, et le pare-feu répond quand même.
+
+**Cause** : ce trafic est **local-in** (§11.5). Il ne traverse rien, il est destiné au pare-feu. Il est gouverné par `allowaccess`, pas par tes politiques.
+
+**Vérification :**
+```
+FGT-01 # show system interface port1 | grep allowaccess
+```
+
+**Correction :**
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+---
+
+### Erreur #10 — `service ALL` partout
+
+**Symptôme** : aucun. C'est ce qui la rend dangereuse.
+
+**Cause** : on met `ALL` pour tester, ça marche, et on ne revient jamais le restreindre.
+
+**Vérification :**
+```
+FGT-01 # show firewall policy | grep -B8 'set service "ALL"'
+```
+
+**Correction** : restreindre au strict nécessaire. Pour savoir **quels** services sont réellement utilisés, la vue FortiView Applications ou les journaux te le disent (§23) — tu restreins alors sur des faits et non sur des suppositions.
+
+---
+
+### Erreur #11 — Le SD-WAN refuse de se configurer
+
+**Symptôme** : impossible d'ajouter une interface comme membre.
+
+**Cause** : l'interface est encore référencée dans une politique ou une route statique (§21.4).
+
+**Vérification :**
+```
+FGT-01 # diagnose sys checkused system.interface.name port1
+```
+
+**Correction** : modifier toutes les références pour qu'elles citent la **zone** SD-WAN, puis ajouter le membre.
+
+---
+
+### Erreur #12 — Le cluster HA ne se forme pas
+
+**Symptôme** : les deux équipements restent indépendants.
+
+**Causes** :
+- versions de FortiOS différentes ;
+- modèles différents ;
+- `group-name` ou `password` différents ;
+- interfaces de battement de cœur non reliées ;
+- interfaces de battement de cœur portant une configuration IP.
+
+**Vérification :**
+```
+FGT-01 # get system ha status
+FGT-01 # diagnose sys ha status
+FGT-01 # get system status | grep Version
+```
+
+---
+
+### Erreur #13 — Les journaux ne montrent rien
+
+**Symptôme** : tu cherches un événement, tu ne trouves rien.
+
+**Causes** :
+- mauvaise **catégorie** (§23.1) — un refus de politique est en `0`, un blocage web en `1` ;
+- un **filtre persistant** d'une recherche précédente ;
+- `logtraffic` désactivé sur la politique ;
+- les journaux étaient en mémoire et le pare-feu a redémarré.
+
+**Correction :**
+```
+FGT-01 # execute log filter reset
+FGT-01 # execute log filter category 0
+FGT-01 # execute log display
+```
+
+---
+
+### Erreur #14 — Tout est lent, sans erreur
+
+**Symptôme** : le réseau fonctionne mais tout traîne, et rien n'est signalé.
+
+**Cause n°1 — Le conserve mode** (§23.6). L'inspection est arrêtée, ou le trafic est ralenti.
+**Cause n°2 — L'inspection profonde sur un équipement sous-dimensionné.**
+**Cause n°3 — Trop de journalisation** sur un petit boîtier.
+
+**Vérification :**
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose sys top 5 20
+```
+
+---
+
+### Erreur #15 — On a mis à jour, et les télétravailleurs sont dehors
+
+**Symptôme** : après une montée en 7.6.3, plus personne ne se connecte en VPN.
+
+**Cause** : le SSL VPN en mode tunnel est **retiré** (§2.6, §19.1).
+
+**Correction** : migrer vers IPsec dial-up — ce qui aurait dû être fait **avant** la mise à jour.
+
+> 🧠 **La leçon générale** : lire les notes de version n'est pas une formalité. C'est là que sont annoncés les changements qui cassent, et ils sont annoncés à l'avance.
+
+---
+
+### 26.1 La liste de contrôle avant de dire « ça ne marche pas »
+
+Avant d'appeler quelqu'un ou d'ouvrir un ticket, passe ces huit points :
+
+- [ ] L'interface est-elle `up`, avec une adresse ? → `get system interface physical`
+- [ ] Y a-t-il une route ? → `get router info routing-table all`
+- [ ] Le paquet arrive-t-il ? → `diagnose sniffer packet`
+- [ ] Que décide le pare-feu ? → `diagnose debug flow`
+- [ ] Quelle politique correspond ? → `diagnose sys session list`
+- [ ] Le NAT s'applique-t-il ? → `hook=pre` / `hook=post`
+- [ ] Les sessions ont-elles été vidées après le changement ?
+- [ ] Les journaux disent-ils quelque chose ? → `execute log display`
+
+**Huit questions.** Si tu peux répondre aux huit, tu sais où est le problème — ou tu sais qu'il n'est pas sur le pare-feu, ce qui est une réponse tout aussi utile.
+
+---
+
+## 27. Aide-mémoire : toutes les commandes
+
+À imprimer, à garder ouvert, à consulter sans honte. Personne ne retient tout ça.
+
+### 27.1 La grammaire CLI
+
+```
+config <table>                   Entrer dans une table
+    edit <objet>                 Créer ou modifier un objet
+        set <attribut> <valeur>  Régler un attribut
+        unset <attribut>         Revenir à la valeur par défaut
+        get                      Valeurs effectives de l'objet
+        show                     Configuration de l'objet
+    next                         Valider l'objet, rester dans la table
+    delete <objet>               Supprimer
+    clone <a> to <b>             Dupliquer
+    rename <a> to <b>            Renommer
+    move <a> after|before <b>    Réordonner
+    purge                        🚨 Tout supprimer
+end                              Valider et sortir
+abort                            Sortir en annulant
+?                                Aide contextuelle, partout
+```
+
+### 27.2 Les cinq familles
+
+| Verbe | Rôle |
+|---|---|
+| `config` | Modifier la configuration |
+| `get` | Lire un **état** |
+| `show` | Afficher la **configuration** |
+| `execute` | Action immédiate |
+| `diagnose` | Diagnostic approfondi |
+
+### 27.3 Système
+
+```
+get system status                          Version, modèle, mode, HA
+get system performance status              Processeur, mémoire, sessions
+get system performance top 5 20            Processus les plus gourmands
+diagnose sys top 5 20                      Idem, plus détaillé
+get system session status                  Nombre de sessions
+diagnose hardware sysinfo memory           Mémoire détaillée
+diagnose hardware sysinfo conserve         🚨 Conserve mode
+diagnose sys logdisk usage                 Espace de journaux
+execute date                               Heure
+execute time                               Voir/régler l'heure
+diagnose sys ntp status                    Synchronisation NTP
+execute reboot                             Redémarrer
+execute shutdown                           Éteindre
+execute factoryreset                       🚨 Remise à zéro
+```
+
+### 27.4 Interfaces et routage
+
+```
+get system interface physical              État des interfaces
+diagnose ip address list                   Adresses IP
+show system interface <nom>                Configuration d'une interface
+get router info routing-table all          Table de routage (FIB)
+get router info routing-table database     Base de routage (RIB)
+get router info routing-table static       Routes statiques
+diagnose firewall proute list              Routes par politique
+diagnose sys link-monitor status           État du suivi de lien
+get router info ospf neighbor              Voisins OSPF
+get router info ospf database brief        Base OSPF
+get router info bgp summary                Résumé BGP
+get router info bgp neighbors <ip>         Détail d'un voisin BGP
+```
+
+### 27.5 Politiques et objets
+
+```
+show firewall policy                       Toutes les politiques
+show firewall policy <id>                  Une politique
+show firewall policy | grep -e "edit " -e "set name"    ⭐ L'ordre réel
+get firewall policy                        Compteurs par politique
+show firewall address                      Objets adresse
+show firewall addrgrp                      Groupes d'adresses
+show firewall service custom               Services personnalisés
+show firewall vip                          VIP
+diagnose firewall vip list                 VIP actifs
+show firewall ippool                       IP Pools
+diagnose firewall ippool-all stats         Utilisation des pools
+diagnose firewall fqdn list                ⭐ Résolution des objets FQDN
+diagnose sys checkused <table> <objet>     Qui référence cet objet
+```
+
+### 27.6 Sessions et NAT
+
+```
+diagnose sys session filter clear          Effacer le filtre
+diagnose sys session filter dst <ip>       Filtrer par destination
+diagnose sys session filter src <ip>       Filtrer par source
+diagnose sys session filter proto 6        Filtrer par protocole
+diagnose sys session filter                Voir le filtre courant
+diagnose sys session list                  ⭐ Lister les sessions
+diagnose sys session stat                  Statistiques
+diagnose sys session clear                 🚨 Vider (POSE UN FILTRE AVANT)
+```
+
+**Lire une session :**
+
+| Champ | Signification |
+|---|---|
+| `proto=6` | 1 = ICMP, 6 = TCP, 17 = UDP |
+| `policy_id=N` | ⭐ La politique qui a autorisé |
+| `hook=pre ... act=dnat` | NAT destination |
+| `hook=post ... act=snat` | NAT source |
+| `org=` / `reply=` | Octets aller / retour |
+
+### 27.7 Diagnostic
+
+```
+diagnose debug reset                            Repartir propre
+diagnose debug flow filter clear                Effacer le filtre
+diagnose debug flow filter addr <ip>            Filtrer
+diagnose debug flow filter saddr <ip>           Source uniquement
+diagnose debug flow filter daddr <ip>           Destination uniquement
+diagnose debug flow filter proto <n>            Protocole
+diagnose debug flow filter port <n>             Port
+diagnose debug flow show function-name enable   Afficher la fonction
+diagnose debug flow trace start <n>             Tracer n paquets
+diagnose debug enable                           ⭐ Démarrer
+diagnose debug disable                          🚨 ARRÊTER
+```
+
+```
+diagnose sniffer packet <if> '<bpf>' <niveau> <nb> [a]
+```
+
+| Niveau | Contenu |
+|---|---|
+| 1 | En-tête IP |
+| 2 | + données |
+| 3 | + en-tête Ethernet |
+| **4** | ⭐ En-tête + **nom de l'interface** |
+| 5 | Niveau 4 + données |
+| 6 | Tout |
+
+```
+diagnose sniffer packet any 'host 10.0.0.5' 4 20
+diagnose sniffer packet port1 'tcp port 443' 4 50
+diagnose sniffer packet any 'icmp' 4 20
+diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+```
+
+**Messages de `debug flow` :**
+
+| Message | Signification |
+|---|---|
+| `Allowed by Policy-N` | Autorisé par N |
+| `Denied by ... (policy 0)` | ⭐ **Aucune règle ne correspond** |
+| `Denied by ... (policy N)` | La règle N refuse |
+| `no route to destination` | Pas de route |
+| `reverse path check fail` | RPF |
+| `iprope_in_check() check failed` | Local-in refusé |
+
+### 27.8 Journaux
+
+```
+execute log filter reset                   ⭐ TOUJOURS commencer par là
+execute log filter category 0              Trafic
+execute log filter category 1              UTM
+execute log filter category 2              Événements
+execute log filter field srcip <ip>        Filtrer par source
+execute log filter field action deny       Filtrer par action
+execute log filter field policyid <n>      Filtrer par politique
+execute log filter field user <nom>        Filtrer par utilisateur
+execute log filter view-lines 20           Nombre de lignes
+execute log display                        Afficher
+```
+
+### 27.9 VPN
+
+```
+get vpn ipsec tunnel summary               ⭐ selectors(total,up)
+diagnose vpn ike gateway list              Passerelles IKE
+diagnose vpn tunnel list                   Détail des tunnels
+diagnose vpn ike gateway clear name <nom>  Forcer une renégociation
+diagnose vpn ike log filter clear          Effacer le filtre IKE
+diagnose debug application ike -1          Débogage IKE
+```
+
+### 27.10 Utilisateurs
+
+```
+diagnose firewall auth list                ⭐ Utilisateurs authentifiés
+diagnose firewall auth clear               Déconnecter tout le monde
+diagnose debug authd fsso list             Table FSSO
+diagnose test authserver ldap <srv> <user> <pass>      Tester LDAP
+diagnose test authserver radius <srv> pap <user> <pass>  Tester RADIUS
+```
+
+### 27.11 Sécurité et FortiGuard
+
+```
+diagnose autoupdate versions               ⭐ Version des bases
+get system fortiguard-service status       État des services
+execute update-now                         Forcer une mise à jour
+diagnose test application dnsproxy 3       Diagnostic DNS
+diagnose application-control list          Applications reconnues
+```
+
+### 27.12 HA et SD-WAN
+
+```
+get system ha status                       ⭐ État du cluster
+diagnose sys ha status                     Détail
+diagnose sys ha checksum cluster           ⭐ Synchronisation
+execute ha manage <index> admin            Se connecter à l'autre membre
+execute ha synchronize start               Forcer la synchronisation
+diagnose sys ha reset-uptime               Forcer une bascule
+
+diagnose sys sdwan member                  Membres
+diagnose sys sdwan health-check            ⭐ Qualité mesurée (sla_map)
+diagnose sys sdwan service                 Règles SD-WAN
+```
+
+### 27.13 DHCP et DNS
+
+```
+execute dhcp lease-list                    Baux DHCP
+execute dhcp lease-list <interface>        Baux d'une interface
+execute dhcp lease-clear <ip>              Libérer un bail
+show system dns                            DNS du pare-feu
+show system dns-database                   Zones locales
+```
+
+### 27.14 Sauvegarde
+
+```
+execute backup config tftp <fichier> <srv> [motdepasse]
+execute restore config tftp <fichier> <srv>
+execute restore image tftp <image> <srv>
+execute tac report                         Paquet pour le support
+```
+
+### 27.15 Les dix commandes à connaître par cœur
+
+Si tu ne devais en retenir que dix :
+
+```
+1.  get system status
+2.  get system interface physical
+3.  get router info routing-table all
+4.  show firewall policy | grep -e "edit " -e "set name"
+5.  diagnose sys session filter dst <ip> && diagnose sys session list
+6.  diagnose debug flow filter addr <ip> && diagnose debug flow trace start 20 && diagnose debug enable
+7.  diagnose debug disable && diagnose debug reset
+8.  diagnose sniffer packet any 'host <ip>' 4 20
+9.  execute log filter reset && execute log filter category 0 && execute log display
+10. get system performance status
+```
+
+### 27.16 Correspondance Cisco → FortiGate
+
+Pour qui vient du monde Cisco :
+
+| Cisco IOS | FortiOS |
+|---|---|
+| `show running-config` | `show` |
+| `show ip interface brief` | `get system interface physical` |
+| `show ip route` | `get router info routing-table all` |
+| `show access-lists` | `show firewall policy` |
+| `configure terminal` | `config <table>` |
+| `write memory` | *(implicite : `end` valide)* |
+| `no shutdown` | `set status up` |
+| `show version` | `get system status` |
+| `ping` | `execute ping` |
+| `traceroute` | `execute traceroute` |
+| `debug ip packet` | `diagnose debug flow` |
+| `show ip ospf neighbor` | `get router info ospf neighbor` |
+| `copy running-config tftp` | `execute backup config tftp` |
+| `reload` | `execute reboot` |
+
+> 💡 **La différence la plus déroutante** : sur IOS, on écrit `write memory` pour rendre la configuration persistante. **Sur FortiOS, le `end` enregistre immédiatement et définitivement.** Il n'y a pas de configuration « en cours » distincte de la configuration démarrée.
+>
+> C'est plus simple, et c'est plus dangereux : il n'y a pas de filet du type « je redémarre sans sauvegarder et tout revient ». D'où l'importance de `abort` (§5.3) et des sauvegardes (§25.1).
+
+---
+
+## 28. Conclusion et pour aller plus loin
+
+### 28.1 Ce que tu sais faire maintenant
+
+Si tu as fait les 24 TP, tu n'as pas « lu un tutoriel ». Tu as monté une infrastructure complète et tu l'as cassée assez souvent pour savoir la réparer.
+
+Regarde le chemin :
+
+| Partie | Ce que tu as construit |
+|---|---|
+| **I** | Un laboratoire avec un routeur Cisco et un pare-feu |
+| **II** | Interfaces, routage, et la grammaire CLI en réflexe |
+| **III** | Politiques, NAT, publication d'un serveur, et l'ordre de traitement |
+| **IV** | DHCP, DNS, une résolution locale qui marche |
+| **V** | Profils de sécurité, inspection TLS, **et la preuve qu'un routeur ne suffit pas** |
+| **VI** | Des règles qui parlent de personnes |
+| **VII** | Un tunnel site-à-site et un accès télétravailleur |
+| **VIII** | Routage dynamique, SD-WAN, cluster HA |
+| **IX** | Journaux, méthode de dépannage, durcissement |
+
+Et surtout, **tu sais diagnostiquer**. C'est ce qui distingue quelqu'un qui a suivi une formation de quelqu'un qui peut travailler.
+
+### 28.2 Les dix idées à ne pas oublier
+
+Si tout le reste s'efface avec le temps, garde ces dix-là :
+
+**1. Une politique n'autorise que le sens de l'OUVERTURE.** Le retour est géré par la table de sessions. Écrire la règle inverse est un trou de sécurité, pas une précaution.
+
+**2. Première correspondance gagne.** Du plus spécifique au plus général, et l'identifiant n'est pas la position.
+
+**3. `policy 0` veut dire qu'il MANQUE une règle**, pas qu'une règle bloque.
+
+**4. DNAT avant les politiques, SNAT après.** D'où le VIP en destination, l'adresse privée en source.
+
+**5. `set` sur une liste REMPLACE.** Énumère toujours la liste complète.
+
+**6. Le routage vient avant le filtrage.** Pas de route, pas de paquet à filtrer.
+
+**7. Les sessions établies survivent aux changements de règles.** D'où `session clear`, avec un filtre.
+
+**8. Sans inspection TLS, l'antivirus et l'IPS ne voient presque rien.** Et l'inspection TLS a un coût technique, humain et juridique.
+
+**9. Un VPN sans second facteur est une porte d'entrée.**
+
+**10. Toujours une seconde session ouverte quand tu touches à l'accès.**
+
+### 28.3 La réponse à la question qui a motivé la section 15
+
+Tu peux maintenant y répondre avec tes propres mesures :
+
+> Un routeur avec des ACL sait dire **d'où vient** un paquet et **où il va**. Il couvre environ 30 % du besoin de sécurité d'une PME, et ce n'est pas rien — c'est même une bonne première ligne, à coût nul en performance.
+>
+> Ce qu'il ne sait pas faire, ce sont précisément les menaces d'aujourd'hui : une application qui se camoufle sur le port 443, un fichier malveillant dans un téléchargement, un utilisateur qui n'est pas celui que son adresse IP prétend.
+>
+> On garde donc le routeur, et on ajoute le pare-feu. Chacun à son étage.
+
+Cette réponse, tu l'as **mesurée** au TP 13 et au TP 14. C'est la différence entre réciter un argumentaire et défendre une position.
+
+### 28.4 Ce que ce tutoriel n'a pas couvert
+
+Par honnêteté, voici ce qui reste :
+
+| Sujet | Pourquoi c'est hors périmètre |
+|---|---|
+| **VDOM** | Découper un pare-feu en pare-feux virtuels — sujet entier, utile surtout en hébergement |
+| **Security Fabric complète** | FortiSwitch, FortiAP, FortiAnalyzer, FortiManager |
+| **ZTNA** | L'accès conditionnel par application, qui remplace progressivement le VPN |
+| **SD-WAN avancé** | Overlay ADVPN, orchestration multi-sites |
+| **Traffic shaping** | Garantir de la bande passante à la voix |
+| **DLP** | Empêcher la fuite de données |
+| **Automatisation** | API REST, Ansible, Terraform |
+| **FortiManager** | Administrer des centaines de pare-feux |
+| **IPv6** | Tout ce qu'on a fait a un équivalent v6 |
+
+> 💡 **Le suivant à apprendre, selon où tu vas** :
+> - Tu administres **un site** → traffic shaping, puis IPv6
+> - Tu administres **plusieurs sites** → FortiManager et FortiAnalyzer
+> - Tu vas vers la **sécurité** → ZTNA, DLP, et l'analyse de journaux
+> - Tu vas vers l'**infrastructure** → VDOM, ADVPN, automatisation
+
+### 28.5 Pour continuer
+
+**Les sources qui valent la peine :**
+
+| Source | Ce qu'on y trouve |
+|---|---|
+| **Fortinet Document Library** (`docs.fortinet.com`) | ⭐ La référence. Guides d'administration, référence CLI, notes de version |
+| **Fortinet Community** | Les *Technical Tips*, souvent plus utiles que la doc officielle |
+| **Fortinet Training Institute** | Formations gratuites et labs, jusqu'à la certification |
+| **Notes de version** | ⭐ À lire avant chaque mise à jour. Sans exception |
+
+**Les certifications** :
+
+| Niveau | Nom | Contenu |
+|---|---|---|
+| Associate | **FCA** | Les bases de la cybersécurité |
+| Professional | **FCP** (ex-NSE 4) | ⭐ L'administration FortiGate — ce tutoriel en couvre une bonne part |
+| Solution Specialist | **FCSS** | Spécialisations : SD-WAN, sécurité réseau, opérations |
+| Expert | **FCX** (ex-NSE 8) | Examen pratique, très exigeant |
+
+> 💡 **Astuce** : si tu vises le FCP, refais les TP de ce tutoriel **sans regarder les commandes**. L'examen teste la compréhension du comportement — l'ordre des politiques, le cheminement d'un paquet, ce que fait le NAT — bien plus que la mémorisation de syntaxe.
+
+### 28.6 Trois conseils pour la suite
+
+**1. Garde ton laboratoire.** Ne le démonte pas. La prochaine fois que tu devras faire quelque chose en production, essaie-le d'abord là. C'est l'écart entre un administrateur serein et un administrateur qui croise les doigts.
+
+**2. Documente ce que tu fais.** Le champ `comments` d'une politique, le `description` d'une interface, un dépôt Git de configurations (§25.1). Ton successeur te remerciera, et ton toi-même dans six mois aussi.
+
+**3. Lis les journaux même quand tout va bien.** C'est comme ça qu'on apprend à quoi ressemble la normale — et donc à repérer ce qui ne l'est pas. Un administrateur qui ne consulte ses journaux qu'en cas de panne ne sait pas ce qu'il regarde.
+
+### 28.7 Un dernier mot
+
+Un pare-feu n'est pas un produit qu'on installe. C'est une **politique de sécurité** qu'on écrit, qu'on mesure et qu'on révise.
+
+Les commandes de ce document changeront — FortiOS 9 arrivera, des fonctions disparaîtront comme le SSL VPN, d'autres apparaîtront. Ce qui ne changera pas, c'est la façon de raisonner : diviser un problème en deux, mesurer plutôt que supposer, et savoir dire « ce n'est pas là » avec une preuve.
+
+C'est ce que tu as vraiment appris ici. 🛡️
+
+---
+
+> **Ce tutoriel fait partie du projet Ubuntu Sandbox.**
+> Il est écrit dans le même esprit que `docs/tutoriel-ospf.md` : partir de zéro, expliquer le *pourquoi* avant le *comment*, et ne jamais affirmer sans montrer.
+>
+> Une erreur, une imprécision, une commande qui a changé de version ? Ouvre une issue ou une pull request. Un tutoriel qui ne se corrige pas devient faux avec le temps — c'est exactement ce qu'on lui reproche quand on le trouve périmé sur Internet.
+
+---
+
+*Bon courage, et surtout : casse des choses dans ton laboratoire. C'est là que ça s'apprend.* 🚀
