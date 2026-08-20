@@ -3728,3 +3728,413 @@ Garde le VIP, on le réutilisera en section 14.
 6. **`hook=pre` = DNAT, `hook=post` = SNAT.** Deux mots qui te font gagner du temps à chaque diagnostic.
 
 ---
+
+## 11. Le cheminement d'un paquet dans FortiOS
+
+Cette section n'ajoute aucune fonctionnalité. Elle t'apprend **dans quel ordre** le pare-feu fait ce qu'il fait — et c'est ce qui transforme un administrateur qui devine en un administrateur qui sait.
+
+Presque tous les problèmes qu'on croit inexplicables s'expliquent par l'ordre des étapes.
+
+### 11.1 Pourquoi l'ordre compte
+
+Trois questions qu'on entend tout le temps, et dont la réponse est uniquement dans l'ordre :
+
+- « Ma politique cite l'adresse publique ou l'adresse privée du serveur ? »
+- « Le routage se fait avant ou après le NAT ? »
+- « Mon antivirus voit-il le trafic avant ou après le filtrage ? »
+
+Sans la carte, on répond au hasard. Avec elle, on répond en une seconde.
+
+### 11.2 Le parcours, étape par étape
+
+Voici le cheminement d'un paquet qui **traverse** le pare-feu, dans l'ordre réel :
+
+```
+   ①  ARRIVÉE SUR L'INTERFACE
+              │
+   ②  VÉRIFICATION D'INTÉGRITÉ (en-têtes IP corrects ?)
+              │
+   ③  DoS POLICY  (protection contre les inondations)
+              │
+   ④  IP INTEGRITY / defense anti-spoofing (RPF)
+              │
+   ⑤  ══ DNAT / VIP ══         ← la destination est réécrite ICI
+              │
+   ⑥  SESSION EXISTANTE ?
+              │
+       ┌──────┴───────┐
+      OUI            NON
+       │              │
+       │      ⑦  ROUTAGE (par où sortir ?)
+       │              │
+       │      ⑧  ══ POLITIQUES DE SÉCURITÉ ══
+       │              │           accept / deny
+       │      ⑨  AUTHENTIFICATION (si exigée)
+       │              │
+       │      ⑩  CRÉATION DE LA SESSION
+       │              │
+       └──────┬───────┘
+              │
+   ⑪  PROFILS DE SÉCURITÉ (antivirus, filtrage web, IPS…)
+              │
+   ⑫  ══ SNAT ══              ← la source est réécrite ICI
+              │
+   ⑬  MISE EN FORME DU TRAFIC (traffic shaping)
+              │
+   ⑭  SORTIE PAR L'INTERFACE
+```
+
+### 11.3 🧠 Les cinq conséquences à retenir
+
+Le schéma est joli, mais ce sont ces cinq déductions qui te serviront vraiment.
+
+**① Le DNAT est AVANT les politiques (étape 5 avant 8)**
+
+Donc, quand la politique est évaluée, la destination a **déjà** été réécrite… mais le pare-feu garde la trace de l'adresse d'origine, et c'est celle-là qu'il compare. **C'est pour ça que la destination d'une politique de publication est le VIP** (§10.5). Tu as maintenant la vraie raison, pas seulement la règle.
+
+**② Le routage est AVANT les politiques (étape 7 avant 8)**
+
+Donc, si aucune route n'existe vers la destination, **le paquet meurt avant même d'être filtré**. C'est capital pour le diagnostic : quand un trafic ne passe pas, la question n'est pas seulement « ai-je la bonne politique ? » mais aussi « ai-je une route ? ».
+
+Et ça explique un message que tu verras au TP 9 :
+```
+no route to destination
+```
+Aucune politique n'est en cause. Il manque une route.
+
+**③ Le SNAT est APRÈS les politiques (étape 12 après 8)**
+
+Donc, dans une politique, la **source** est toujours l'adresse **privée d'origine**. Tu n'écris jamais l'adresse publique en `srcaddr`. Le SNAT n'a pas encore eu lieu au moment où la règle est lue.
+
+**④ Une session existante court-circuite tout (étape 6)**
+
+Si la session est déjà connue, le paquet **saute** le routage et les politiques. C'est pourquoi :
+- le trafic retour ne demande aucune politique (§1.6) ;
+- modifier une règle ne change rien aux sessions en cours (§9, TP 7 étape 7).
+
+Tu as maintenant l'explication mécanique de deux comportements que tu avais admis sur parole.
+
+**⑤ Les profils de sécurité sont APRÈS la décision d'autorisation (étape 11 après 8)**
+
+Donc l'antivirus et le filtrage web ne voient **que le trafic déjà autorisé**. Un profil de sécurité attaché à une politique qui refuse ne sert à rien : le paquet n'arrive jamais jusqu'à lui.
+
+### 11.4 Le RPF, ou pourquoi un paquet parfaitement valide est jeté
+
+L'étape 4 mérite qu'on s'y arrête, parce qu'elle provoque des diagnostics très frustrants.
+
+**RPF** signifie *Reverse Path Forwarding*. À la réception d'un paquet, le pare-feu se pose cette question :
+
+> « Si je devais répondre à cette adresse source, est-ce que je passerais par l'interface d'où le paquet arrive ? »
+
+Si la réponse est non, le paquet est jeté — parce que c'est la signature d'une adresse source usurpée.
+
+**L'exemple qui arrive vraiment :** ton pare-feu a une route vers `172.16.50.0/24` par `port2`. Un paquet venant de `172.16.50.10` arrive sur `port1`. Le pare-feu répondrait par `port2`, donc l'arrivée par `port1` est incohérente : il jette.
+
+Le message dans le journal de diagnostic est celui-ci, et il est déroutant tant qu'on ne connaît pas le mécanisme :
+
+```
+reverse path check fail, drop
+```
+
+**Quand est-ce un faux positif ?** Dans les réseaux à **routage asymétrique**, où l'aller et le retour empruntent légitimement des chemins différents — cas fréquent avec plusieurs opérateurs.
+
+Deux modes existent :
+
+```
+config system settings
+    set strict-src-check enable       ← mode strict : la route doit être LA meilleure
+end
+```
+
+Par défaut, FortiOS est en mode *loose* : il suffit qu'**une** route existe vers la source, peu importe l'interface. C'est le bon réglage dans presque tous les cas.
+
+> ⚠️ **Attention** : n'active `strict-src-check` que si tu sais exactement pourquoi. En environnement multi-opérateur, il casse des flux parfaitement légitimes, et le diagnostic est pénible parce que tout le reste semble correct.
+
+### 11.5 Flux d'entrée, flux de sortie, flux local
+
+Trois chemins différents, qu'il ne faut pas confondre :
+
+| Type de flux | Description | Politiques concernées |
+|---|---|---|
+| **Traversant** | Entre par une interface, sort par une autre | ⭐ Les politiques de sécurité |
+| **Local-in** | **Destiné au pare-feu lui-même** (administration, VPN, ping) | `config firewall local-in-policy` |
+| **Local-out** | **Émis par le pare-feu** (journaux, NTP, FortiGuard) | Aucune politique |
+
+> 🧠 **Comprendre — le trafic local-in est une catégorie à part**
+> Quand tu te connectes en SSH **sur** le pare-feu, ce trafic ne traverse rien : il s'arrête au pare-feu. Il n'est donc **pas** filtré par tes politiques de sécurité, mais par `allowaccess` (§6.2) et, si tu veux plus fin, par les **local-in policies**.
+>
+> C'est une source de confusion classique : « j'ai une règle qui interdit tout depuis Internet, et pourtant le pare-feu répond au ping depuis Internet ». Bien sûr : ce ping ne traverse pas, il est destiné au pare-feu. C'est `allowaccess` qui décide, pas tes politiques.
+
+Une local-in policy, pour restreindre finement l'administration :
+
+```
+config firewall local-in-policy
+    edit 1
+        set intf "port1"
+        set srcaddr "NET-Admin-Autorise"
+        set dstaddr "all"
+        set service "HTTPS" "SSH"
+        set action accept
+        set schedule "always"
+    next
+    edit 2
+        set intf "port1"
+        set srcaddr "all"
+        set dstaddr "all"
+        set service "HTTPS" "SSH"
+        set action deny
+        set schedule "always"
+    next
+end
+```
+
+> 🚨 **Danger** : les local-in policies peuvent te couper l'accès instantanément et **sans confirmation**. Teste toujours depuis une seconde session ouverte, et garde la console de l'hyperviseur sous la main.
+
+---
+
+### 🧪 TP 9 — Voir le pare-feu penser avec `debug flow`
+
+**🎯 Objectif**
+Utiliser `diagnose debug flow`, l'outil de diagnostic le plus puissant de FortiOS. Tu vas **lire les décisions du pare-feu en temps réel**, sur un trafic qui marche puis sur un trafic qui ne marche pas.
+
+C'est le TP qui te rendra autonome en dépannage.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 8 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — La séquence de base**
+
+`debug flow` s'active toujours de la même façon, en cinq commandes. Apprends-les dans cet ordre :
+
+```
+FGT-01 # diagnose debug reset
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow show function-name enable
+FGT-01 # diagnose debug flow trace start 20
+FGT-01 # diagnose debug enable
+```
+
+| Commande | Rôle |
+|---|---|
+| `debug reset` | Repart d'un état propre |
+| `flow filter clear` | Efface un filtre précédent — **le plus oublié** |
+| `flow filter addr` | Ne trace que le trafic concernant cette adresse |
+| `show function-name enable` | Affiche la fonction interne, très utile |
+| `flow trace start 20` | Trace 20 paquets puis s'arrête tout seul |
+| `debug enable` | ⭐ **Démarre réellement l'affichage** |
+
+> 🚨 **Danger — TOUJOURS mettre un filtre**
+> Sans `flow filter addr`, tu traces **tout le trafic du pare-feu**. Sur une machine chargée, ça sature la console, ça consomme du processeur, et tu ne peux plus rien lire. Sur un pare-feu de production, c'est une façon de provoquer un incident en voulant en diagnostiquer un.
+>
+> **Le filtre d'abord, l'activation ensuite. Toujours.**
+
+**Étape 2 — Tracer un trafic qui fonctionne**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl http://192.168.20.10
+```
+
+Sur la console du pare-feu, tu vois défiler quelque chose comme :
+
+```
+id=65308 trace_id=1 func=print_pkt_detail line=5892 msg="vd-root:0 received a packet(proto=6,
+   192.168.10.10:47238->192.168.20.10:80) tun_id=0.0.0.0 from port2. flag [S], seq 2847..."
+id=65308 trace_id=1 func=init_ip_session_common line=6073 msg="allocate a new session-0000a1b2"
+id=65308 trace_id=1 func=vf_ip4_route_input_common line=2621 msg="find a route: flag=00000000
+   gw-192.168.20.10 via port3"
+id=65308 trace_id=1 func=fw_forward_handler line=881 msg="Allowed by Policy-2:"
+```
+
+**Lis les quatre lignes** — c'est exactement le §11.2 qui se déroule sous tes yeux :
+
+| Ligne | Étape du schéma |
+|---|---|
+| `received a packet ... from port2` | ① Arrivée |
+| `allocate a new session` | ⑩ Nouvelle session |
+| `find a route: ... via port3` | ⑦ Routage |
+| **`Allowed by Policy-2`** | ⑧ ⭐ **La décision, et par quelle règle** |
+
+> 💡 **`Allowed by Policy-N` est la ligne qui répond à 80 % des questions.** Elle te dit non seulement que ça passe, mais **quelle règle** l'a décidé.
+
+**Étape 3 — Tracer un trafic qui NE fonctionne PAS**
+
+Rappelle-toi : le service SSH n'est pas autorisé vers la DMZ (TP 7 étape 3).
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ssh user@192.168.20.10
+```
+
+Sur le pare-feu :
+
+```
+id=65308 trace_id=3 func=print_pkt_detail line=5892 msg="vd-root:0 received a packet(proto=6,
+   192.168.10.10:51022->192.168.20.10:22) from port2. flag [S], seq 918..."
+id=65308 trace_id=3 func=init_ip_session_common line=6073 msg="allocate a new session-0000a1c9"
+id=65308 trace_id=3 func=vf_ip4_route_input_common line=2621 msg="find a route: ... via port3"
+id=65308 trace_id=3 func=fw_forward_handler line=784 msg="Denied by forward policy check
+   (policy 0)"
+```
+
+**La ligne qui compte :**
+
+```
+Denied by forward policy check (policy 0)
+```
+
+> 🧠 **Comprendre — `policy 0`, c'est l'Implicit Deny**
+> La politique numéro 0 n'existe pas dans ta configuration. **C'est le nom interne de la règle implicite de refus.**
+>
+> Donc `Denied by forward policy check (policy 0)` se traduit par : « aucune de tes politiques n'a correspondu, le paquet est tombé au bout de la liste ».
+>
+> **Ce message signifie qu'il te manque une règle**, pas qu'une règle te bloque. La nuance est capitale : si le message citait `policy 5`, il faudrait aller corriger la politique 5. Là, il faut en **écrire** une.
+
+**Étape 4 — Arrêter le débogage (impératif)**
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug flow trace stop
+FGT-01 # diagnose debug reset
+```
+
+> 🚨 **Danger** : oublier d'arrêter le débogage laisse le pare-feu tracer en continu. Ça consomme du processeur, ça pollue les consoles, et sur un équipement chargé ça dégrade réellement les performances. **Prends le réflexe de terminer chaque session de diagnostic par ces trois commandes.**
+>
+> Astuce pour ne pas oublier : `diagnose debug flow trace start 20` s'arrête tout seul après 20 paquets. Mets toujours un nombre.
+
+**Étape 5 — Tracer une absence de route**
+
+Provoquons le cas du §11.3 ②. Essaie de joindre un réseau inexistant :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 10.99.99.99
+FGT-01 # diagnose debug flow trace start 5
+FGT-01 # diagnose debug enable
+FGT-01 # execute ping 10.99.99.99
+```
+
+Selon ta configuration, tu verras :
+
+```
+msg="no route to destination"
+```
+
+ou, si tu as une route par défaut, le paquet partira vers l'opérateur et se perdra plus loin.
+
+> 💡 **Astuce** : dans un réseau sans route par défaut, `no route to destination` est un message qui fait gagner un temps fou. Il dit clairement : **le problème n'est pas dans les politiques**.
+
+**Étape 6 — Filtrer plus finement**
+
+Le filtre accepte plusieurs critères, qui se combinent :
+
+```
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter saddr 192.168.10.10     ← source uniquement
+FGT-01 # diagnose debug flow filter daddr 192.168.20.10     ← destination uniquement
+FGT-01 # diagnose debug flow filter proto 6                 ← TCP (1=ICMP, 17=UDP)
+FGT-01 # diagnose debug flow filter port 80                 ← le port
+FGT-01 # diagnose debug flow filter
+```
+
+La dernière commande, sans argument, **affiche le filtre courant**. Prends l'habitude de la taper avant d'activer : c'est ce qui t'évite de tracer tout le pare-feu par erreur.
+
+**Étape 7 — La capture de paquets**
+
+`debug flow` montre les **décisions**. Parfois tu veux voir les **paquets** eux-mêmes. C'est `sniffer` :
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 10
+```
+
+Les quatre arguments, dans l'ordre :
+
+| Argument | Signification |
+|---|---|
+| `any` | L'interface (`any` = toutes, ou `port2`, `port3`…) |
+| `'host 192.168.20.10'` | Un filtre au format BPF, comme tcpdump |
+| `4` | Le niveau de détail (voir ci-dessous) |
+| `10` | Nombre de paquets, puis arrêt |
+
+**Les niveaux de détail :**
+
+| Niveau | Contenu |
+|---|---|
+| `1` | En-tête IP seulement |
+| `2` | En-tête + données |
+| `3` | En-tête + données + en-tête Ethernet |
+| **`4`** | ⭐ En-tête + **nom de l'interface** |
+| `5` | Niveau 4 + données |
+| `6` | Tout |
+
+> 💡 **Astuce professionnelle — le niveau 4 est celui qu'il faut retenir**
+> Parce qu'il affiche **par quelle interface** chaque paquet passe. Sur un pare-feu, c'est exactement l'information qu'on cherche : voir un paquet arriver sur `port2` et **ne pas** ressortir sur `port3` te dit immédiatement qu'il a été jeté à l'intérieur.
+
+Exemples de filtres BPF utiles :
+
+```
+FGT-01 # diagnose sniffer packet any 'icmp' 4 20
+FGT-01 # diagnose sniffer packet port1 'tcp port 443' 4 20
+FGT-01 # diagnose sniffer packet any 'host 192.168.10.10 and not port 22' 4 50
+FGT-01 # diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+```
+
+> 💡 **Astuce — exporter vers Wireshark**
+> Avec le niveau `3` ou `6`, la sortie contient les octets bruts. On peut la convertir en fichier `.pcap` avec le script `fgt2eth.pl` fourni par Fortinet, puis l'ouvrir dans Wireshark. Indispensable pour analyser un problème complexe.
+
+**Étape 8 — Choisir le bon outil**
+
+Récapitulons, parce que c'est le vrai enseignement du TP :
+
+| Ta question | L'outil |
+|---|---|
+| « Le paquet arrive-t-il seulement ? » | `diagnose sniffer packet` |
+| « Pourquoi est-il refusé ? » | `diagnose debug flow` |
+| « Quelle règle l'a autorisé ? » | `diagnose sys session list` (`policy_id`) |
+| « Quel est l'état de la connexion ? » | `diagnose sys session list` |
+| « Le NAT s'applique-t-il ? » | `diagnose sys session list` (`hook=pre/post`) |
+
+**Le raisonnement type d'un dépannage** :
+1. `sniffer` sur l'interface d'entrée → le paquet arrive-t-il ? **Non** → problème en amont (câble, VLAN, routage du client)
+2. Il arrive → `debug flow` → que décide le pare-feu ?
+3. `Denied by policy 0` → il manque une règle
+4. `Denied by policy N` → la règle N bloque, va la voir
+5. `Allowed by policy N` → le pare-feu laisse passer, le problème est **ailleurs** (côté serveur)
+
+---
+
+**✅ Résultat attendu**
+
+- Tu lis `Allowed by Policy-2` sur un trafic autorisé
+- Tu lis `Denied by forward policy check (policy 0)` sur un trafic refusé
+- Tu sais que `policy 0` = Implicit Deny = **règle manquante**
+- Tu captures des paquets avec `sniffer` niveau 4
+- Tu arrêtes proprement le débogage
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **L'ordre du traitement explique les règles** que tu appliquais sans les comprendre.
+2. **DNAT avant les politiques, SNAT après.** D'où le VIP en destination et l'adresse privée en source.
+3. **Le routage est avant les politiques** — pas de route, pas de filtrage, le paquet meurt avant.
+4. **`debug flow` te montre la décision, `sniffer` te montre le paquet.** Deux outils, deux questions.
+5. **`policy 0` veut dire « il manque une règle »**, pas « une règle bloque ».
+6. **On met toujours un filtre, et on arrête toujours le débogage.**
+
+---
