@@ -65,8 +65,10 @@ import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hard
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
 import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
-import type { TcpStream } from '../tcp/types';
-import { verifyUdpChecksum } from '../tcp/types';
+import type { TcpStream, TcpDialFailure } from '../tcp/types';
+import { isDialFailure, verifyUdpChecksum } from '../tcp/types';
+import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
+import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
 import type { RouterSftpSource } from '../protocols/ssh/sftp/RouterSftpFileSystem';
@@ -1062,15 +1064,17 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
    * another device's VTY) had no way to reach the wire.
    */
   public async tcpConnect(dstIp: string, dstPort: number): Promise<TcpSocket | null> {
-    const socket = this.tcpv2.connect(dstIp, dstPort);
-    if (!socket) return null;
-    if (socket.state === 'established') return socket;
-    return new Promise((resolve) => {
-      let offOpen: () => void = () => {};
-      let offClose: () => void = () => {};
-      offOpen = socket.onOpen(() => { offOpen(); offClose(); resolve(socket); });
-      offClose = socket.onClose(() => { offOpen(); offClose(); resolve(null); });
-    });
+    const destination = parseDialAddress(dstIp);
+    const port = PortNumber.isValid(dstPort) ? PortNumber.of(dstPort) : null;
+    if (!destination || !port) return null;
+    const outcome = await this.tcpDial(destination, port);
+    return isDialFailure(outcome) ? null : outcome;
+  }
+
+  public tcpDial(
+    destination: DialAddress, port: PortNumber,
+  ): Promise<TcpSocket | TcpDialFailure> {
+    return dialTcp(this.tcpv2, destination, port);
   }
 
   private createPorts(): void {

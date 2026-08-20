@@ -287,6 +287,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
         )}
         <div className="flex-1 relative overflow-hidden">
         <textarea
+          name="nanoBuffer"
+          autoComplete="off"
           ref={textareaRef}
           data-testid="nano-textarea"
           value={engine.mode === 'help' ? engine.helpText : engine.displayContent}
@@ -308,7 +310,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             tabSize: 8,
           }}
           spellCheck={false}
-          autoComplete="off"
         />
         {engine.mode === 'edit' && (
           <div
@@ -362,6 +363,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>File Name to Write: </span>
             <input
+              name="nanoSave"
+              autoComplete="off"
               ref={saveInputRef}
               value={engine.saveFileName}
               onChange={() => { /* engine-authoritative */ }}
@@ -375,7 +378,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -383,6 +385,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>Execute Command: </span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.executeCommandQuery}
               onChange={() => { /* engine-authoritative */ }}
@@ -396,7 +400,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -404,6 +407,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>File to insert: </span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.readFileQuery}
               onChange={() => { /* engine-authoritative */ }}
@@ -417,7 +422,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -433,6 +437,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             <span style={{ color: '#ffffff', fontWeight: 'bold' }}> ^C</span>
             <span style={{ color: '#d3d7cf' }}> Cancel</span>
             <input
+              name="nanoSave"
+              autoComplete="off"
               ref={saveInputRef}
               onKeyDown={handlePromptKeyDown}
               className="absolute opacity-0 w-0 h-0"
@@ -444,6 +450,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>{engine.regexSearchEnabled ? 'Search [Regexp]: ' : 'Search: '}</span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.searchQuery}
               onChange={() => { /* engine-authoritative */ }}
@@ -457,7 +465,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -467,6 +474,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
               {engine.regexSearchEnabled ? 'Search (to replace) [Regexp]: ' : 'Search (to replace): '}
             </span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.replaceSearchQuery}
               onChange={() => { /* engine-authoritative */ }}
@@ -480,7 +489,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -488,6 +496,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>Replace with: </span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.replaceWithText}
               onChange={() => { /* engine-authoritative */ }}
@@ -501,7 +511,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -509,6 +518,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
           <div className="flex items-center px-1">
             <span style={{ color: '#d3d7cf' }}>Enter line number, column number: </span>
             <input
+              name="nanoSearch"
+              autoComplete="off"
               ref={searchInputRef}
               value={engine.gotoLineQuery}
               onChange={() => { /* engine-authoritative */ }}
@@ -522,7 +533,6 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
                 fontSize: 'inherit',
               }}
               spellCheck={false}
-              autoComplete="off"
             />
           </div>
         )}
@@ -538,6 +548,8 @@ export const NanoEditor: React.FC<NanoEditorProps> = ({
             <span style={{ color: '#ffffff', fontWeight: 'bold' }}> A</span>
             <span style={{ color: '#d3d7cf' }}>ll</span>
             <input
+              name="nanoSave"
+              autoComplete="off"
               ref={saveInputRef}
               onKeyDown={handlePromptKeyDown}
               className="absolute opacity-0 w-0 h-0"

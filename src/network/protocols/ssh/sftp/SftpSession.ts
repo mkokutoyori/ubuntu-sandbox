@@ -491,7 +491,9 @@ function formatConnectError(
 ): string {
   switch (error.kind) {
     case 'CONNECTION_REFUSED':
-      return `ssh: connect to host ${host} port 22: No route to host`;
+      return `ssh: connect to host ${host} port 22: Connection refused`;
+    case 'CONNECTION_TIMEOUT':
+      return `ssh: connect to host ${host} port 22: Connection timed out`;
     case 'HOST_KEY_REJECTED':
       return `Host key verification failed.`;
     case 'HOST_KEY_CHANGED':

@@ -40,7 +40,11 @@ export function Toolbar({
             </svg>
           </div>
           <input
+            id="project-name"
+            name="projectName"
             type="text"
+            autoComplete="off"
+            aria-label="Project name"
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
             className="bg-transparent text-lg font-semibold text-foreground border-none focus:outline-none focus:ring-0 w-48"

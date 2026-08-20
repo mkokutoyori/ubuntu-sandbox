@@ -23,8 +23,10 @@ import { Port } from '../hardware/Port';
 import type { IPv4AddressOrigin } from '../hardware/Port';
 import { SocketTable } from '../core/SocketTable';
 import { TcpStack } from '../tcp/TcpStack';
-import type { TcpSegment, UdpChecksumInput } from '../tcp/types';
-import { computeTcpChecksum, computeUdpChecksum, verifyUdpChecksum } from '../tcp/types';
+import type { TcpSegment, TcpDialFailure, UdpChecksumInput } from '../tcp/types';
+import { computeTcpChecksum, computeUdpChecksum, isDialFailure, verifyUdpChecksum } from '../tcp/types';
+import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
+import { PortNumber } from '../core/ports/PortNumber';
 import { TimerSet } from '@/events/TimerSet';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
@@ -2535,15 +2537,24 @@ export abstract class EndHost extends Equipment {
    * same tick — this is additive latency for the failure path only.
    */
   public async tcpConnect(dstIp: string, dstPort: number): Promise<import('../tcp/TcpStack').TcpSocket | null> {
-    const socket = this.tcpv2.connect(dstIp, dstPort);
-    if (!socket) return null;
-    if (socket.state === 'established') return socket;
-    return new Promise((resolve) => {
-      let offOpen: () => void = () => {};
-      let offClose: () => void = () => {};
-      offOpen = socket.onOpen(() => { offOpen(); offClose(); resolve(socket); });
-      offClose = socket.onClose(() => { offOpen(); offClose(); resolve(null); });
-    });
+    const destination = parseDialAddress(dstIp);
+    const port = PortNumber.isValid(dstPort) ? PortNumber.of(dstPort) : null;
+    if (!destination || !port) return null;
+    const outcome = await this.tcpDial(destination, port);
+    return isDialFailure(outcome) ? null : outcome;
+  }
+
+  /**
+   * Le meme appel que `tcpConnect`, qui NOMME l'echec au lieu de rendre un
+   * `null` muet. Un RST et un paquet jete ne se diagnostiquent pas de la
+   * meme facon — la distinction est celle que `connectOutcome` tire deja,
+   * et `refused`/`timeout` sont lus au meme endroit pour que les deux ne
+   * puissent pas se contredire.
+   */
+  public tcpDial(
+    destination: DialAddress, port: PortNumber,
+  ): Promise<import('../tcp/TcpStack').TcpSocket | TcpDialFailure> {
+    return dialTcp(this.tcpv2, destination, port);
   }
 
   // ─── UDP Transport (RFC 768) ───────────────────────────────────

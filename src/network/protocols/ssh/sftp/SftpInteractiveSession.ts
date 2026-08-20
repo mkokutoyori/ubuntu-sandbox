@@ -19,6 +19,7 @@ function sshErrorMessage(e: SshError): string {
     case 'PERMISSION_DENIED':  return 'Permission denied';
     case 'INVALID_ARGUMENT':   return e.message;
     case 'CONNECTION_REFUSED': return 'Connection refused';
+    case 'CONNECTION_TIMEOUT': return 'Connection timed out';
     case 'NOT_AUTHENTICATED':  return 'Not authenticated';
     case 'AUTH_FAILED':        return 'Authentication failed';
     case 'CHANNEL_ERROR':      return e.message;

@@ -13,6 +13,7 @@ import type {
   TcpStream as TcpConnection,
   TcpConnector,
 } from '@/network/tcp/types';
+import { isDialFailure } from '@/network/tcp/types';
 import { AuthChain, createAuthMethods } from '../auth/AuthChain';
 import type { ISshAuthContext } from '../auth/ISshAuthMethod';
 import type {
@@ -89,15 +90,18 @@ export class SshSession implements ISshSession {
   ): Promise<Result<SshConnectionInfo>> {
     this.transition(connecting(opts.host, opts.port));
 
-    const conn = await this.deps.tcpConnector(opts.host, opts.port);
-    if (!conn) {
-      this.transition(disconnected('connection refused'));
+    const dialed = await this.deps.tcpConnector(opts.host, opts.port);
+    if (!dialed || isDialFailure(dialed)) {
+      const silent = isDialFailure(dialed) && dialed.dialFailed === 'timeout';
+      this.transition(disconnected(
+        silent ? 'connection timed out' : 'connection refused'));
       return err({
-        kind: 'CONNECTION_REFUSED',
+        kind: silent ? 'CONNECTION_TIMEOUT' : 'CONNECTION_REFUSED',
         host: opts.host,
         port: opts.port,
       });
     }
+    const conn = dialed;
     this.conn = conn;
 
     const banner = await this.exchangeBanner(conn);

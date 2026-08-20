@@ -227,7 +227,11 @@ export function NetworkLogsPanel(): JSX.Element {
           ))}
         </div>
         <input
+          id="logs-filter"
+          name="logsFilter"
           type="text"
+          autoComplete="off"
+          aria-label="Filter network logs"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by source / event / message…"

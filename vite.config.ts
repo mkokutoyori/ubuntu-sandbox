@@ -22,17 +22,7 @@ export default defineConfig(({ mode }) => ({
   define: {
     global: 'globalThis',
   },
-  // Preserve class/function names through minification. The vendor
-  // dispatch that used to rely on `instance.constructor.name` has been
-  // replaced by the polymorphic `Equipment.getOSType()` hook (see
-  // src/shell/shellKind.ts), so this is now only a defensive guard for
-  // debugging/log readability — kept until a minified production build
-  // has been regression-checked without it.
-  esbuild: {
-    keepNames: true,
-  },
   build: {
-    // Same guard for the rollup/esbuild minifier used by `vite build`.
     minify: 'esbuild',
   },
   test: {
