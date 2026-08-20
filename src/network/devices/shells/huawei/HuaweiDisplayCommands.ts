@@ -591,6 +591,15 @@ export function displayCurrentConfig(
     }
   }
 
+  const prefixV4 = router.getIpPrefixListStore().renderHuawei('ipv4');
+  if (prefixV4) { lines.push(...prefixV4.split('\n')); lines.push('#'); }
+  const prefixV6 = router.getIpPrefixListStore().renderHuawei('ipv6');
+  if (prefixV6) { lines.push(...prefixV6.split('\n')); lines.push('#'); }
+  const politiques = router.getRoutePolicyStore().renderHuawei();
+  if (politiques) { lines.push(...politiques.split('\n')); lines.push('#'); }
+  const mqc = router.getTrafficPolicyStore().renderHuawei();
+  if (mqc.length > 0) lines.push(...mqc);
+
   const aclAvant = runningConfigACL(router);
   if (aclAvant.length > 0) lines.push(...aclAvant);
   const natAvant = vrpNatGlobalLines(router);
@@ -1109,19 +1118,8 @@ function appendManagementConfig(lines: string[], router: Router): void {
     lines.push('ssh server enable');
     if (ssh.port !== 22) lines.push(`ssh server port ${ssh.port}`);
   }
-  const snmp = mgmt.getSnmp();
-  if (snmp.enabled) {
-    lines.push('#');
-    if (snmp.sysContact) lines.push(`snmp-agent sys-info contact ${snmp.sysContact}`);
-    if (snmp.sysLocation) lines.push(`snmp-agent sys-info location ${snmp.sysLocation}`);
-    for (const [, c] of snmp.communities) {
-      lines.push(`snmp-agent community ${c.access} ${c.name}${c.aclName ? ' acl ' + c.aclName : ''}`);
-    }
-    for (const t of snmp.trapHosts) {
-      lines.push(`snmp-agent target-host ${t.host} params securityname ${t.community} ${t.version}`);
-    }
-    for (const r of mgmt.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
-  }
+  const snmpLines = mgmt.snmpRunningConfigLines();
+  if (snmpLines.length > 0) { lines.push('#'); lines.push(...snmpLines); }
   // Lot N2 : ces lignes sortaient d'un sac de chaines brutes, donc elles
   // reproduisaient la saisie sans decrire l'etat — deux lignes pour une
   // adresse configuree deux fois, et un `authentication-mode` ecrit deux

@@ -27,8 +27,28 @@ export class RouterManagementService {
     sysContact: '',
     sysLocation: '',
     sysName: '',
+    versions: [] as string[],
     trapHosts: [] as Array<{ host: string; community: string; version: string }>,
   };
+
+  snmpRunningConfigLines(): string[] {
+    const s = this.snmpAgent;
+    if (!s.enabled) return [];
+    const lines: string[] = [];
+    for (const c of s.communities.values()) {
+      lines.push(`snmp-agent community ${c.access === 'rw' ? 'write' : 'read'} ${c.name}`
+        + (c.aclName ? ` acl ${c.aclName}` : ''));
+    }
+    if (s.versions.length > 0) lines.push(`snmp-agent sys-info version ${s.versions.join(' ')}`);
+    if (s.sysContact) lines.push(`snmp-agent sys-info contact ${s.sysContact}`);
+    if (s.sysLocation) lines.push(`snmp-agent sys-info location ${s.sysLocation}`);
+    for (const t of s.trapHosts) {
+      lines.push(`snmp-agent target-host ${t.host} params securityname ${t.community} ${t.version}`.trimEnd());
+    }
+    for (const r of this.getRawEntries('snmp')) lines.push(`snmp-agent ${r.line}`);
+    if (lines.length === 0) lines.push('snmp-agent');
+    return lines;
+  }
   private readonly ntpService = {
     enabled: true,
     sourceInterface: '',
@@ -98,11 +118,18 @@ export class RouterManagementService {
       this.snmpAgent.sysContact = args.slice(2).join(' ');
     } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'location' && args[2]) {
       this.snmpAgent.sysLocation = args.slice(2).join(' ');
-    } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'version') {
-      /* version flags */
+    } else if (head === 'sys-info' && args[1]?.toLowerCase() === 'version' && args[2]) {
+      this.snmpAgent.versions = args.slice(2).map((v) => v.toLowerCase());
     } else if (head === 'community' && args[1]) {
-      const access = args[2]?.toLowerCase() === 'rw' ? 'rw' : 'ro';
-      this.snmpAgent.communities.set(args[1], { name: args[1], access, aclName: args[3] });
+      const mode = args[1].toLowerCase();
+      const named = mode === 'read' || mode === 'write';
+      const name = named ? args[2] : args[1];
+      if (!name) return;
+      const access = named
+        ? (mode === 'write' ? 'rw' : 'ro')
+        : (args[2]?.toLowerCase() === 'rw' ? 'rw' : 'ro');
+      const aclName = named ? args[4] : args[3];
+      this.snmpAgent.communities.set(name, { name, access, aclName });
     } else if (head === 'target-host' || head === 'trap-source') {
       this.snmpAgent.trapHosts.push({
         host: args[1] ?? 'unknown', community: args[2] ?? '', version: args[3] ?? 'v2c',

@@ -2077,7 +2077,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // l'arbre `info-center`, et le traiter comme `telnet server enable`
     // était ce qui faisait proposer `enable` — décrit `Toggle:
     // info-center enable` — derrière chacun de ses sous-mots.
-    for (const kw of ['snmp-agent',
+    for (const kw of [
       'ntp-service enable', 'telnet server enable', 'http server',
       'icmp ttl-exceeded send', 'icmp host-unreachable send']) {
       t.register(kw, `Toggle: ${kw}`, () => {
