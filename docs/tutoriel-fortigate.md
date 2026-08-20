@@ -9162,3 +9162,337 @@ Génère du trafic et regarde les journaux arriver **en direct**.
 6. **Le conserve mode arrête l'inspection sans rien casser de visible.** C'est une panne silencieuse.
 
 ---
+
+## 24. Diagnostic et dépannage
+
+Tu as croisé les outils au fil du tutoriel. Cette section les organise en **méthode** — parce que le dépannage n'est pas une collection de commandes, c'est une façon de réduire un problème.
+
+### 24.1 🧠 La méthode : diviser en deux, toujours
+
+Le réflexe qui distingue un dépanneur efficace, c'est de ne **jamais** chercher au hasard. À chaque étape, on pose une question dont la réponse **élimine la moitié des causes**.
+
+```
+« Ça ne marche pas »
+        │
+        ├─► Le paquet ARRIVE-t-il sur le pare-feu ?
+        │   └─ NON → le problème est EN AMONT (câble, VLAN, routage du client, R1)
+        │
+        ├─► Le pare-feu a-t-il une ROUTE ?
+        │   └─ NON → problème de routage (§7)
+        │
+        ├─► Une POLITIQUE l'autorise-t-elle ?
+        │   └─ NON → il manque une règle (§9)
+        │
+        ├─► Le NAT s'applique-t-il correctement ?
+        │   └─ NON → problème de VIP ou de SNAT (§10)
+        │
+        ├─► Le paquet RESSORT-il ?
+        │   └─ NON → un profil de sécurité l'a jeté (§14)
+        │
+        └─► Il ressort → LE PROBLÈME N'EST PAS SUR LE PARE-FEU
+```
+
+> 💡 **La dernière branche est la plus importante.** Savoir dire « le pare-feu laisse passer, va voir ailleurs » avec **une preuve** te fait gagner un temps considérable — et te sort des discussions où chaque équipe accuse l'autre.
+
+### 24.2 Les cinq outils, et la question de chacun
+
+| Outil | La question à laquelle il répond |
+|---|---|
+| `diagnose sniffer packet` | « Le paquet arrive-t-il ? Ressort-il ? » |
+| `diagnose debug flow` | « Que **décide** le pare-feu, et pourquoi ? » |
+| `diagnose sys session list` | « Quelle règle a autorisé ? Quel NAT s'applique ? » |
+| `execute log display` | « Que s'est-il passé **avant** que j'arrive ? » |
+| `get router info routing-table` | « Le pare-feu sait-il où envoyer ça ? » |
+
+### 24.3 L'aide-mémoire du sniffer
+
+```
+FGT-01 # diagnose sniffer packet <interface> '<filtre BPF>' <niveau> <nombre> <horodatage>
+```
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.10.10' 4 100
+FGT-01 # diagnose sniffer packet port1 'tcp port 443' 4 50
+FGT-01 # diagnose sniffer packet any 'icmp' 4 20
+FGT-01 # diagnose sniffer packet any 'udp port 500 or udp port 4500' 4 30
+FGT-01 # diagnose sniffer packet any 'host 10.0.0.5 and not port 22' 4 100 a
+```
+
+> 💡 **Astuce** : le dernier argument, `a`, ajoute un **horodatage absolu**. Indispensable quand tu compares une capture avec des journaux, ou avec la capture d'un autre équipement.
+
+**Le raisonnement du sniffer sur deux interfaces** :
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 50
+```
+
+Avec le niveau 4, chaque ligne indique l'interface. Tu cherches alors :
+- le paquet arrive sur `port2` **et** ressort sur `port3` → le pare-feu fait son travail ;
+- il arrive sur `port2` et **ne ressort pas** → il a été jeté à l'intérieur, passe à `debug flow` ;
+- il n'arrive **pas du tout** → le problème est en amont, ne cherche pas sur le pare-feu.
+
+### 24.4 L'aide-mémoire du debug flow
+
+```
+FGT-01 # diagnose debug reset
+FGT-01 # diagnose debug flow filter clear
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow filter proto 6
+FGT-01 # diagnose debug flow filter port 443
+FGT-01 # diagnose debug flow show function-name enable
+FGT-01 # diagnose debug flow trace start 20
+FGT-01 # diagnose debug enable
+
+   ... reproduire le problème ...
+
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug flow trace stop
+FGT-01 # diagnose debug reset
+```
+
+**Les messages et leur traduction :**
+
+| Message | Ce qu'il veut dire | Où chercher |
+|---|---|---|
+| `Allowed by Policy-N` | Autorisé par la règle N | Nulle part, ça marche |
+| `Denied by forward policy check (policy 0)` | ⭐ **Aucune règle ne correspond** | Il en manque une |
+| `Denied by forward policy check (policy N)` | La règle N refuse | Va voir la règle N |
+| `no route to destination` | Pas de route | Section 7 |
+| `reverse path check fail, drop` | RPF | §11.4 |
+| `iprope_in_check() check failed` | Trafic **local-in** refusé | `allowaccess`, local-in policy |
+| `no session matched, drop` | Paquet hors session | Normal sur un scan |
+| `Denied by quota` | Quota atteint | Traffic shaping |
+
+### 24.5 Les commandes de santé
+
+```
+FGT-01 # get system performance status
+FGT-01 # get system performance top 5 20
+FGT-01 # diagnose sys top 5 20
+FGT-01 # get system session status
+FGT-01 # diagnose sys session stat
+FGT-01 # diagnose hardware sysinfo memory
+FGT-01 # diagnose hardware sysinfo conserve
+FGT-01 # diagnose sys logdisk usage
+FGT-01 # get system status
+```
+
+> 💡 **Astuce — `diagnose sys top`** liste les processus par consommation. Les noms qu'on rencontre :
+> - `wad` → le proxy (inspection en mode proxy, §13)
+> - `ipsengine` → l'IPS
+> - `scanunitd` → l'antivirus
+> - `ipsmonitor` → la supervision de l'IPS
+> - `sslvpnd` → le service VPN SSL (s'il existe encore, §2.6)
+> - `httpsd` → l'interface web d'administration
+>
+> Un processus qui monopolise le processeur te dit **quelle fonction** est en cause, ce qui est bien plus précis que « le pare-feu est lent ».
+
+### 24.6 Le paquet de diagnostic pour le support
+
+Quand tu ouvres un ticket chez Fortinet, ils demandent toujours la même chose. Autant l'avoir prêt :
+
+```
+FGT-01 # execute tac report
+```
+
+Cette commande collecte automatiquement l'ensemble des informations utiles. C'est long, et c'est ce qu'il faut joindre.
+
+> 💡 **Astuce** : joins **aussi** une description précise de ce que tu attendais, de ce que tu observes, et l'heure exacte d'une occurrence du problème. Un ticket qui dit « ça ne marche pas » avec un `tac report` prend une semaine ; un ticket qui dit « à 14 h 32, la session de `192.168.10.10` vers `203.0.113.7:443` est refusée avec `policy 0` alors que la politique 12 devrait correspondre » est traité dans la journée.
+
+---
+
+### 🧪 TP 23 — Dépanner trois pannes que tu ne connais pas
+
+**🎯 Objectif**
+Appliquer la méthode sur trois pannes **provoquées à l'aveugle**. L'exercice est de diagnostiquer **avant** de lire la cause.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : laboratoire fonctionnel
+
+> 💡 **Comment faire cet exercice** : lis l'énoncé de la panne, applique le script pour la provoquer **sans lire la cause**, puis diagnostique. Ne déplie la solution qu'après.
+
+---
+
+**🔧 Panne n°1 — « Le LAN n'accède plus à la DMZ »**
+
+Provoque :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set service "HTTPS"
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+Depuis le PC :
+
+```bash
+user@pc-lan:~$ curl -m 5 http://192.168.20.10
+```
+
+**À toi.** Diagnostique avant de lire.
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose sniffer packet any 'host 192.168.20.10' 4 10
+```
+Le paquet **arrive** sur `port2`. Il ne ressort pas sur `port3`.
+
+```
+FGT-01 # diagnose debug flow filter addr 192.168.20.10
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="Denied by forward policy check (policy 0)"
+```
+
+`policy 0` = **aucune règle ne correspond** (§11, TP 9). Or la politique 2 existe. Donc elle ne correspond **plus** : un de ses critères a changé.
+
+```
+FGT-01 # show firewall policy 2
+```
+Le service est `HTTPS`, or on demande du HTTP. **Cause : le service de la politique ne couvre plus le trafic.**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set service "PING" "HTTP"
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+</details>
+
+---
+
+**🔧 Panne n°2 — « Plus d'accès Internet depuis le LAN »**
+
+Provoque :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set nat disable
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+```bash
+user@pc-lan:~$ ping -c 3 8.8.8.8
+```
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose debug flow filter addr 8.8.8.8
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="Allowed by Policy-1:"
+```
+
+**Le pare-feu AUTORISE.** C'est la branche la plus utile de la méthode : le problème n'est pas dans le filtrage.
+
+```
+FGT-01 # diagnose sniffer packet port1 'host 8.8.8.8' 4 10
+```
+```
+192.168.10.10 -> 8.8.8.8: icmp: echo request
+```
+
+**Le paquet sort avec son adresse PRIVÉE.** R1 le NATera peut-être, mais dans une vraie sortie Internet, `192.168.10.10` n'a aucun chemin de retour (§10.1).
+
+```
+FGT-01 # diagnose sys session filter dst 8.8.8.8
+FGT-01 # diagnose sys session list
+```
+Aucune ligne `act=snat`. **Cause : le NAT est désactivé sur la politique.**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set nat enable
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+</details>
+
+---
+
+**🔧 Panne n°3 — « Le serveur publié n'est plus joignable »**
+
+Provoque :
+
+```
+FGT-01 # config firewall vip
+FGT-01 (vip) # edit "VIP-Serveur-Web"
+FGT-01 (VIP-Serveur-Web) # set mappedip "192.168.20.99"
+FGT-01 (VIP-Serveur-Web) # next
+FGT-01 (vip) # end
+```
+
+Assure-toi qu'une politique de publication existe (TP 8), puis :
+
+```bash
+curl -m 5 http://192.168.100.200
+```
+
+<details>
+<summary>👉 La démarche et la cause</summary>
+
+```
+FGT-01 # diagnose debug flow filter addr 192.168.100.200
+FGT-01 # diagnose debug flow trace start 10
+FGT-01 # diagnose debug enable
+```
+```
+msg="VIP-... DNAT 192.168.100.200:80 -> 192.168.20.99:80"
+msg="Allowed by Policy-3:"
+...
+msg="Destination unreachable" ou pas de réponse
+```
+
+Le DNAT s'applique, la politique autorise — **mais la destination est `192.168.20.99`**, pas `192.168.20.10`.
+
+```
+FGT-01 # execute ping 192.168.20.99
+```
+Aucune réponse : cette machine n'existe pas.
+
+```
+FGT-01 # show firewall vip VIP-Serveur-Web
+```
+**Cause : le `mappedip` du VIP pointe vers une adresse inexistante.**
+
+```
+FGT-01 # config firewall vip
+FGT-01 (vip) # edit "VIP-Serveur-Web"
+FGT-01 (VIP-Serveur-Web) # set mappedip "192.168.20.10"
+FGT-01 (VIP-Serveur-Web) # next
+FGT-01 (vip) # end
+```
+</details>
+
+---
+
+**✅ Résultat attendu**
+
+Tu as diagnostiqué trois pannes de natures différentes — **politique**, **NAT**, **objet mal configuré** — avec la même méthode et sans deviner.
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **La méthode ne change pas**, seule la branche où l'on s'arrête change.
+2. **`sniffer` d'abord** : si le paquet n'arrive pas, inutile de chercher sur le pare-feu.
+3. **`Allowed by Policy-N` est une information précieuse** — elle t'envoie chercher ailleurs, avec une preuve.
+4. **La table de sessions confirme le NAT** (`act=snat`, `act=dnat`).
+5. **Une panne peut venir d'un objet**, pas d'une règle. Vérifie ce que la règle **contient**, pas seulement qu'elle existe.
+
+---
