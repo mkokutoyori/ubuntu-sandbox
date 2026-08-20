@@ -547,6 +547,13 @@ describe('la configuration rendue reproduit ce qui a ete tape', () => {
     await fw.getAuthPortal().authenticate(
       CLIENT_IP, { username: 'jdupont', password: 'Secret2026!' });
 
+    run(sh, 'config user local');
+    const refus = sh.execute('delete "jdupont"');
+    run(sh, 'end');
+    expect(refus).toMatch(/used by other entries/i);
+    expect(fw.getIdentityTable().lookup(CLIENT_IP)).toBeDefined();
+
+    run(sh, 'config user group', 'delete "COMMERCIAUX"', 'end');
     run(sh, 'config user local', 'delete "jdupont"', 'end');
 
     expect(fw.getIdentityTable().lookup(CLIENT_IP)).toBeUndefined();

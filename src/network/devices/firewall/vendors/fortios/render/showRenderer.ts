@@ -79,9 +79,12 @@ function objectLines(object: FortiObject, options: ShowOptions, indent: string):
   return [...attributeLines(object, options, indent), ...childLines(object, options, indent)];
 }
 
-function tableBody(table: FortiTable, options: ShowOptions, indent: string): string[] {
+function tableBody(
+  table: FortiTable, options: ShowOptions, indent: string, only?: string,
+): string[] {
   const out: string[] = [];
   for (const object of table.all()) {
+    if (only !== undefined && object.key !== only) continue;
     out.push(`${indent}edit ${renderKey(table.spec, object.key)}`);
     out.push(...objectLines(object, options, indent + STEP));
     out.push(`${indent}next`);
@@ -90,10 +93,10 @@ function tableBody(table: FortiTable, options: ShowOptions, indent: string): str
 }
 
 export function renderTableConfig(
-  table: FortiTable, options: ShowOptions,
+  table: FortiTable, options: ShowOptions, only?: string,
 ): string[] {
   const path = table.spec.path.join(' ');
-  return [`config ${path}`, ...tableBody(table, options, STEP), 'end'];
+  return [`config ${path}`, ...tableBody(table, options, STEP, only), 'end'];
 }
 
 export function renderSingletonConfig(
@@ -105,11 +108,17 @@ export function renderSingletonConfig(
 
 export function renderPath(
   tree: FortiConfigTree, path: readonly string[], options: ShowOptions,
+  key?: string,
 ): string[] | null {
   const spec = tree.spec(path);
   if (!spec) return null;
 
-  if (spec.kind === 'table') return renderTableConfig(tree.table(spec), options);
+  if (spec.kind === 'table') {
+    const table = tree.table(spec);
+    if (key !== undefined && !table.has(key)) return null;
+    return renderTableConfig(table, options, key);
+  }
+  if (key !== undefined) return null;
   return renderSingletonConfig(tree.singleton(spec), options);
 }
 

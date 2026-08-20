@@ -1,4 +1,5 @@
 import { FortiMessages } from '../FortiMessages';
+import { referencesTo } from './references';
 import type { FortiCommitContext, FortiTableSpec } from '../schema/types';
 import { FortiConfigTree } from './FortiConfigTree';
 import { FortiObject, type FortiObjectSnapshot } from './FortiObject';
@@ -271,7 +272,12 @@ export class FortiNavigator {
     if (key === undefined) return FortiMessages.incomplete('the key to delete');
 
     const resolved = unquote(key);
-    if (!table.remove(resolved)) return FortiMessages.unknownKey(resolved);
+    if (!table.has(resolved)) return FortiMessages.unknownKey(resolved);
+    if (referencesTo(this.deps.tree, table.spec.path, resolved).length > 0) {
+      return FortiMessages.commandFail(
+        'Entry is used by other entries. Cannot be deleted.');
+    }
+    table.remove(resolved);
 
     table.spec.onDelete?.(resolved, this.deps.commitContext());
     return EMPTY;

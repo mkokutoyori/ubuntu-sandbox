@@ -7,6 +7,7 @@ import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessa
 import {
   fortiSystemTime, runExecuteDate, runExecuteTime,
 } from './diag/timeCommands';
+import { applyFilter, splitPipe } from './render/outputFilter';
 import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
 import type {
@@ -163,7 +164,13 @@ export class FortiShell {
   }
 
   execute(rawLine: string): string {
-    const line = rawLine.trim();
+    const piped = splitPipe(rawLine.trim());
+    if (piped.error !== null) return piped.error;
+    if (piped.filter === null) return this.runLine(piped.command);
+    return applyFilter(this.runLine(piped.command), piped.filter);
+  }
+
+  private runLine(line: string): string {
     if (line.length === 0) return '';
     if (line.endsWith('?')) {
       return this.help(line.slice(0, -1)).join('\n');
@@ -358,9 +365,15 @@ export class FortiShell {
       return renderWholeConfig(this.tree, options).join('\n');
     }
 
-    const lines = renderPath(this.tree, words, options);
-    if (lines === null) return FortiMessages.unknownPath(words.join(' '));
-    return lines.join('\n');
+    for (let take = Math.min(words.length, 4); take >= 1; take--) {
+      const path = words.slice(0, take);
+      if (!this.tree.spec(path)) continue;
+      const key = words[take] === undefined ? undefined : unquote(words[take]);
+      const lines = renderPath(this.tree, path, options, key);
+      if (lines === null) return FortiMessages.unknownKey(key ?? '');
+      return lines.join('\n');
+    }
+    return FortiMessages.unknownPath(words.join(' '));
   }
 
   private get(rest: readonly string[]): string {
@@ -456,6 +469,7 @@ export class FortiShell {
       vdom: () => this.vdom,
       logFormat: () => this.logFormat(),
       logContext: () => this.logContext(),
+      configTree: () => this.tree,
     };
   }
 

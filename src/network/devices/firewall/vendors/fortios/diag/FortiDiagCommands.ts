@@ -7,6 +7,8 @@ import { FortiMessages } from '../FortiMessages';
 import { parseAuthFilter, renderAuthList } from './authListRenderer';
 import { renderVpnTunnelList, renderVpnTunnelSummary } from './vpnTunnelRenderer';
 import { unquote } from '../runtime/FortiNavigator';
+import { referencesTo, renderReference } from '../runtime/references';
+import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import { formatLogRecord, type FortiLogContext, type FortiLogFormat } from '../log/fortiLogFormat';
 import { trafficDenyLog } from '../log/trafficLog';
 import type { FortiDiagnostics } from './FortiDiagnostics';
@@ -23,6 +25,7 @@ export interface FortiDiagDeps {
   readonly vdom: () => string;
   readonly logFormat: () => FortiLogFormat;
   readonly logContext: () => FortiLogContext;
+  readonly configTree: () => FortiConfigTree;
 }
 
 import {
@@ -40,6 +43,24 @@ export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): strin
   if (family === 'vpn') return diagnoseVpn(tail, deps);
   if (family === 'ip') return diagnoseIp(tail, deps);
   return FortiMessages.unknownPath(rest.join(' '));
+}
+
+function diagnoseCheckused(rest: readonly string[], deps: FortiDiagDeps): string {
+  const datasource = unquote(rest[0] ?? '');
+  const key = unquote(rest[1] ?? '');
+  if (datasource.length === 0 || key.length === 0) {
+    return FortiMessages.incomplete('`<path.object.mkey> <value>`');
+  }
+
+  const words = datasource.split('.');
+  const tree = deps.configTree();
+  for (let take = Math.min(words.length, 4); take >= 1; take--) {
+    const path = words.slice(0, take);
+    if (!tree.spec(path)) continue;
+    const found = referencesTo(tree, path, key).map(renderReference);
+    return found.join('\n');
+  }
+  return FortiMessages.unknownPath(datasource);
 }
 
 function diagnoseIp(rest: readonly string[], deps: FortiDiagDeps): string {
@@ -129,6 +150,7 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
+  if (rest[0] === 'checkused') return diagnoseCheckused(rest.slice(1), deps);
   if (rest[0] === 'ntp') {
     if (rest[1] !== 'status') return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);
     return renderNtpStatus(deps.fw);

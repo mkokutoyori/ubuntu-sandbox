@@ -173,14 +173,29 @@ describe('phase 2 : les selecteurs', () => {
     expect(fw.getTunnelTable().selectorsOf('vers_site_b')).toHaveLength(1);
   });
 
-  it('supprimer la phase 1 emporte ses selecteurs', () => {
+  it('supprimer une phase 1 PORTEUSE de selecteurs est refuse', () => {
     const { fw, sh } = shell();
     tunnel(sh);
     selector(sh);
 
+    run(sh, 'config vpn ipsec phase1-interface');
+    const refus = sh.execute('delete "vers_site_b"');
+    run(sh, 'end');
+
+    expect(refus).toMatch(/used by other entries/i);
+    expect(fw.getTunnelTable().getPhase2('vers_site_b_p2')).toBeDefined();
+  });
+
+  it('le selecteur retire, la phase 1 se supprime et emporte le sien', () => {
+    const { fw, sh } = shell();
+    tunnel(sh);
+    selector(sh);
+
+    run(sh, 'config vpn ipsec phase2-interface', 'delete "vers_site_b_p2"', 'end');
     run(sh, 'config vpn ipsec phase1-interface', 'delete "vers_site_b"', 'end');
 
     expect(fw.getTunnelTable().getPhase2('vers_site_b_p2')).toBeUndefined();
+    expect(fw.getTunnelTable().getPhase1('vers_site_b')).toBeUndefined();
   });
 
   it('`pfs` est actif par defaut, comme sur un vrai FortiGate', () => {
