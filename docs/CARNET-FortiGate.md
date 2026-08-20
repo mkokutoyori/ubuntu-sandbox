@@ -191,6 +191,8 @@ Un agent qui reprend gagnera du temps à les connaître.
 | **P13** | Un argument `REST` est découpé aux espaces | `diagnose sniffer packet any 'host 1.2.3.4' 4 10` arrive en cinq mots : l'expression entre apostrophes doit être recollée avant lecture (`splitSnifferArguments`). |
 | ~~**P14**~~ | ~~Le garde-fou G1 borne un fichier vendeur à 800 lignes~~ | **Retiré.** Le comptage de lignes s'est révélé un mauvais indicateur de couplage : il imposait des extractions dictées par un compteur plutôt que par la cohésion, pour un coût en temps supérieur à ce qu'il faisait gagner. Les extractions déjà faites restent — elles étaient justes ; c'est l'obligation qui disparaît. |
 | **P15** | G6 interdit un `new Set(['…'])` littéral hors du schéma | Même pour une liste qui n'est pas des attributs de configuration. Nommer une constante `readonly string[]` et construire le `Set` à partir d'elle. |
+| **P16** | `allowaccess` JETTE le paquet, il ne le rejette pas | Une interface qui n'admet pas un service ne répond RIEN — le client attend puis conclut « Connection timed out », jamais « Connection refused ». Une sonde qui attend un refus explicite teste le mauvais comportement ; c'est l'ABSENCE d'invite de mot de passe qui prouve le rejet. |
+| **P17** | Une adresse et un port ne se passent pas en `string`/`number` | Le dépôt a déjà `IPAddress` et `core/ports/PortNumber` (RFC 6335, utilisé par les services Linux et le gestionnaire de services Windows). Toute nouvelle signature les prend ; la conversion se fait à la frontière qui lit l'argument. Chercher AVANT d'écrire un type de valeur — il existe probablement déjà. |
 
 ---
 

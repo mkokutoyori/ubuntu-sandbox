@@ -1,0 +1,37 @@
+import { IPAddress, IPv6Address } from '../core/types';
+import type { PortNumber } from '../core/ports/PortNumber';
+import type { TcpSocket, TcpStack } from './TcpStack';
+import type { TcpDialFailure } from './types';
+
+export type DialAddress = IPAddress | IPv6Address;
+
+export function parseDialAddress(literal: string): DialAddress | null {
+  if (!literal.includes(':')) return IPAddress.tryParse(literal);
+  try {
+    return new IPv6Address(literal);
+  } catch {
+    return null;
+  }
+}
+
+export async function dialTcp(
+  stack: TcpStack, destination: DialAddress, port: PortNumber,
+): Promise<TcpSocket | TcpDialFailure> {
+  const socket = stack.connect(destination.toString(), port.value);
+  if (!socket) return { dialFailed: 'timeout' };
+  if (socket.state === 'established') return socket;
+  if (socket.closed) return dialFailureOf(socket);
+
+  return new Promise((resolve) => {
+    let offOpen: () => void = () => {};
+    let offClose: () => void = () => {};
+    offOpen = socket.onOpen(() => { offOpen(); offClose(); resolve(socket); });
+    offClose = socket.onClose(() => {
+      offOpen(); offClose(); resolve(dialFailureOf(socket));
+    });
+  });
+}
+
+function dialFailureOf(socket: { connectRefused?: boolean }): TcpDialFailure {
+  return { dialFailed: socket.connectRefused ? 'refused' : 'timeout' };
+}

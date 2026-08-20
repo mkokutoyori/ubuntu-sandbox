@@ -11,6 +11,8 @@
 
 import { Equipment, type HostCapableDevice } from '@/network';
 import { IPAddress } from '@/network/core/types';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { HostsFile } from '@/network/devices/HostsFile';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { parsePingArgs } from '@/network/devices/linux/commands/net/Ping';
@@ -2563,8 +2565,7 @@ export class LinuxTerminalSession extends TerminalSession {
       return;
     }
 
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
 
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
@@ -2869,8 +2870,7 @@ export class LinuxTerminalSession extends TerminalSession {
       this.notify();
       return;
     }
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = meta.userAtHost.includes('@')
@@ -2974,6 +2974,8 @@ export class LinuxTerminalSession extends TerminalSession {
           // routing failure sends the operator to check cables instead.
           errKind === 'CONNECTION_REFUSED'
             ? `ssh: connect to host ${host} port ${meta.port}: Connection refused`
+            : errKind === 'CONNECTION_TIMEOUT'
+            ? `ssh: connect to host ${host} port ${meta.port}: Connection timed out`
             : errKind === 'HOST_KEY_REJECTED' || errKind === 'HOST_KEY_CHANGED'
             ? 'Host key verification failed.'
             : `${user}@${host}: Permission denied (publickey,password).`;
@@ -3485,8 +3487,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
 
     const sftp = new SftpSession({
       tcpConnector,
@@ -3539,8 +3540,7 @@ export class LinuxTerminalSession extends TerminalSession {
     };
     const localVfs = dev.executor?.vfs;
     if (!localVfs) return null;
-    const tcpConnector: TcpConnector = (host, port) =>
-      (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+    const tcpConnector: TcpConnector = dialConnector(this.device);
     const userEntry = dev.executor?.userMgr?.getUser(this.currentUser);
     const homeDir = userEntry?.home ?? `/home/${this.currentUser}`;
     const user = userAtHost.split('@')[0];
@@ -4388,4 +4388,19 @@ function hasSftpError(output: readonly string[]): boolean {
       line,
     ),
   );
+}
+
+function dialConnector(device: unknown): TcpConnector {
+  const dev = device as {
+    tcpDial?(destination: DialAddress, port: PortNumber): Promise<unknown>;
+    tcpConnect?(host: string, port: number): Promise<unknown>;
+  };
+  return (host, port) => {
+    const destination = parseDialAddress(host);
+    const dialled = PortNumber.isValid(port) ? PortNumber.of(port) : null;
+    if (destination && dialled && dev.tcpDial) {
+      return dev.tcpDial(destination, dialled) as ReturnType<TcpConnector>;
+    }
+    return (dev.tcpConnect?.(host, port) ?? Promise.resolve(null)) as ReturnType<TcpConnector>;
+  };
 }

@@ -2756,12 +2756,24 @@ libellé d'IOS). Deux points appris en mesurant :
   CLÉ de l'objet, ce qui est juste pour une entrée de table (`edit port1`
   → `(port1)`) et faux pour un objet unique, dont la clé EST le chemin.
 
-**Trouvé en mesurant et laissé au socle TCP**, parce que c'est un défaut
-général et non un défaut du pare-feu : `EndHost.tcpConnect` rend une
-promesse qui ne se résout JAMAIS quand le SYN est jeté en silence. La pile
-a bien ses minuteurs de retransmission (`onRtoFired` →
-`_teardown(socket, 'timeout')`), mais aucun test à horloge réelle ne les
-atteint — c'est ce qui rend le refus muet plutôt que « timed out ».
+**Trouvé en mesurant, annoncé faux, puis corrigé.** Cette entrée disait
+d'abord que `EndHost.tcpConnect` rendait une promesse qui ne se résout
+JAMAIS quand le SYN est jeté. **La mesure sous horloge virtuelle a
+contredit cette affirmation** : elle se résout à ~63 s, le repli RFC 6298
+avec `TCP_MAX_RETRANSMITS = 5` — aucun test à horloge réelle ne l'atteint,
+et c'est tout.
+
+Le vrai défaut était ailleurs et il était plus large : **un REFUS et un
+SILENCE donnaient le même diagnostic**. `connectOutcome` distinguait déjà
+`refused` de `timeout` une couche plus bas, et `tcpConnect` rendait un
+`null` sans motif, donc `SshSession` appelait les deux
+`CONNECTION_REFUSED`. Un pare-feu qui JETTE — ce que fait `allowaccess` —
+répondait « Connection refused », c'est-à-dire le diagnostic qui envoie
+vérifier un service au lieu d'une règle de filtrage. Corrigé pour les
+quatre plateformes (`TcpDialFailure`, `dialTcp`, `CONNECTION_TIMEOUT`,
+`TelnetDialect.timedOut`), avec `tcpConnect` réduit à une enveloppe sur
+`tcpDial` sur `EndHost` ET `Router`, qui en portaient deux copies
+identiques.
 
 **Contrainte retirée dans la même livraison** : la limite de 800 lignes par
 fichier (NFR-M3, garde-fous G1 et G3). Le comptage de lignes s'est révélé un

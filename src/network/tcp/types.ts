@@ -72,7 +72,16 @@ export interface TcpStream {
   onClose?(handler: (reason: string) => void): () => void;
 }
 
-export type TcpConnector = (host: string, port: number) => Promise<TcpStream | null>;
+export interface TcpDialFailure {
+  readonly dialFailed: 'refused' | 'timeout';
+}
+
+export function isDialFailure(outcome: unknown): outcome is TcpDialFailure {
+  return typeof outcome === 'object' && outcome !== null && 'dialFailed' in outcome;
+}
+
+export type TcpConnector =
+  (host: string, port: number) => Promise<TcpStream | TcpDialFailure | null>;
 
 /**
  * A sent segment that consumed sequence space (SYN, FIN, or data) and is

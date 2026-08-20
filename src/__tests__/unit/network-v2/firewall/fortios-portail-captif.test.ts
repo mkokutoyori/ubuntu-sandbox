@@ -131,7 +131,7 @@ describe('portail captif — le detournement', () => {
     const { fw, sh, poste } = await laboratoire();
     politiqueAuthentifiee(sh);
     fw.getIdentityTable().bind({
-      address: '192.168.1.10', user: 'alice', source: 'firewall',
+      address: '192.168.1.10', user: 'alice', source: 'local',
       groups: ['employes'], timeoutSec: 300,
     });
 
