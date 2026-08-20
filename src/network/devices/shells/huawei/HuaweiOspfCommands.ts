@@ -707,10 +707,11 @@ export function registerOSPFInterfaceCommands(
     if (args.length < 1) return 'Error: Incomplete command.';
 
     const subCmd = args[0].toLowerCase();
-    if (subCmd === 'cost' && args.length >= 2) return '';
-    if (subCmd === 'priority' && args.length >= 2) return '';
-    if (subCmd === 'network-type' && args.length >= 2) return '';
-    if (subCmd === 'authentication') return '';
+    for (const inerte of ['cost', 'priority', 'network-type', 'authentication']) {
+      if (subCmd !== inerte) continue;
+      return `Error: This simulator's OSPFv3 engine carries no per-interface ${inerte}, `
+        + `so this command would be stored without effect.\nospfv3 ${args.join(' ')}`;
+    }
 
     // ospfv3 <process-id> area <area-id>
     if (args.length < 3) return 'Error: Incomplete command.';

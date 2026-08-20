@@ -938,28 +938,28 @@ describe('Batch 36: OSPFv3 advanced commands', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('Batch 37: OSPF interface advanced', () => {
-  it('should accept ospfv3 cost on interface', async () => {
+  it('refuses ospfv3 cost, naming the state this engine does not carry', async () => {
     const r = new HuaweiRouter('R1');
     await r.executeCommand('system-view');
     await r.executeCommand('interface GE0/0/0');
     const result = await r.executeCommand('ospfv3 cost 100');
-    expect(result).toBe('');
+    expect(result).toMatch(/^Error: /);
   });
 
-  it('should accept ospfv3 priority on interface', async () => {
+  it('refuses ospfv3 priority, naming the state this engine does not carry', async () => {
     const r = new HuaweiRouter('R1');
     await r.executeCommand('system-view');
     await r.executeCommand('interface GE0/0/0');
     const result = await r.executeCommand('ospfv3 priority 200');
-    expect(result).toBe('');
+    expect(result).toMatch(/^Error: /);
   });
 
-  it('should accept ospfv3 network-type on interface', async () => {
+  it('refuses ospfv3 network-type, naming the state this engine does not carry', async () => {
     const r = new HuaweiRouter('R1');
     await r.executeCommand('system-view');
     await r.executeCommand('interface GE0/0/0');
     const result = await r.executeCommand('ospfv3 network-type broadcast');
-    expect(result).toBe('');
+    expect(result).toMatch(/^Error: /);
   });
 });
 

@@ -591,6 +591,11 @@ export function displayCurrentConfig(
     }
   }
 
+  const aclAvant = runningConfigACL(router);
+  if (aclAvant.length > 0) lines.push(...aclAvant);
+  const natAvant = vrpNatGlobalLines(router);
+  if (natAvant.length > 0) { lines.push(...natAvant); lines.push('#'); }
+
   const descs = router._getInterfaceDescriptions();
   const ospfExtra = router._getOSPFExtraConfig();
   for (const [name, port] of ports) {
@@ -609,12 +614,6 @@ export function displayCurrentConfig(
     }
     lines.push(...renderHuaweiInterfaceExtras(router, port, name));
     lines.push('#');
-  }
-
-  // ACL configuration
-  const aclLines = runningConfigACL(router);
-  if (aclLines.length > 0) {
-    lines.push(...aclLines);
   }
 
   for (const r of table) {
@@ -1208,6 +1207,40 @@ export function displayCurrentConfigInterface(router: Router, ifName: string): s
  * rendait AUCUNE, celui par interface les rendait toutes. Les mettre ici
  * est ce qui rend le desaccord impossible plutot que rattrape.
  */
+export function vrpNatInterfaceLines(router: Router, portName: string): string[] {
+  const engine = (router as any)._getNATEngine?.();
+  if (!engine) return [];
+  const lines: string[] = [];
+  for (const rule of engine.getDynamicRules() as Array<{
+    aclId: string | number; type: string; poolName?: string;
+    interfaceName?: string; noPat?: boolean;
+  }>) {
+    if (rule.interfaceName !== portName) continue;
+    const groupe = rule.type === 'pool' && rule.poolName ? ` address-group ${rule.poolName}` : '';
+    lines.push(` nat outbound ${rule.aclId}${groupe}${rule.noPat ? ' no-pat' : ''}`);
+  }
+  if (!engine.getOutsideInterfaces().has(portName)) return lines;
+  for (const e of engine.getStaticEntries() as Array<{
+    localIP: string; globalIP: string; protocol?: string;
+    localPort?: number; globalPort?: number;
+  }>) {
+    if (!e.protocol || e.globalPort === undefined || e.localPort === undefined) continue;
+    lines.push(` nat server protocol ${e.protocol} global ${e.globalIP} ${e.globalPort}`
+      + ` inside ${e.localIP} ${e.localPort}`);
+  }
+  return lines;
+}
+
+export function vrpNatGlobalLines(router: Router): string[] {
+  const engine = (router as any)._getNATEngine?.();
+  if (!engine) return [];
+  const lines: string[] = [];
+  for (const [, pool] of engine.getPools() as Map<string, { name: string; startIP: string; endIP: string }>) {
+    lines.push(`nat address-group ${pool.name} ${pool.startIP} ${pool.endIP}`);
+  }
+  return lines;
+}
+
 const VRP_OSPF_IF_DEFAULTS: Record<string, unknown> = {
   priority: 1, helloInterval: 10, deadInterval: 40,
   networkType: 'broadcast', authType: 0,
@@ -1296,6 +1329,7 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
     if (tp) lines.push(` ipsec profile ${tp.profileName}`);
   }
   lines.push(...runningConfigInterfaceACL(router, portName));
+  lines.push(...vrpNatInterfaceLines(router, portName));
   if (port.dot1qVlan !== undefined) lines.push(` dot1q termination vid ${port.dot1qVlan}`);
   if (port.arpBroadcastEnabled) lines.push(` arp broadcast enable`);
   if (typeof port.isProxyArpExplicit === 'function' && port.isProxyArpExplicit() && port.isProxyArpEnabled?.()) {
@@ -1310,6 +1344,13 @@ export function renderHuaweiInterfaceExtras(router: Router, port: any, portName:
   if (port.loopbackInternal) lines.push(` loopback internal`);
   if (port.flowControl) lines.push(` flow-control`);
   if (port.ipv6Enabled) lines.push(` ipv6 enable`);
+  for (const entry of port.getIPv6Addresses?.() ?? []) {
+    if (entry.origin !== 'static') continue;
+    lines.push(` ipv6 address ${entry.address}/${entry.prefixLength}`);
+  }
+  const v3 = (router as any)._getOSPFv3EngineInternal?.();
+  const v3Iface = v3?.getInterface?.(portName);
+  if (v3Iface) lines.push(` ospfv3 ${v3.getProcessId?.() ?? 1} area ${v3Iface.areaId}`);
   if (port.ipv6Mtu) lines.push(` ipv6 mtu ${port.ipv6Mtu}`);
   if (port.ipv6NdRaHalt) lines.push(` ipv6 nd ra halt`);
   return lines;
