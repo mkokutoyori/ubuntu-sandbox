@@ -1,6 +1,6 @@
 import {
   choice, count, enable, reference, refList, text, word,
-  type FortiObjectView, type FortiTableSpec,
+  type FortiCommitContext, type FortiObjectView, type FortiTableSpec,
 } from './types';
 
 const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
@@ -155,6 +155,9 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     },
   ],
   onCommit(object, context) {
+    const mismatch = profileModeMismatch(object, context);
+    if (mismatch) return mismatch;
+
     const action = object.effective('action')[0] === 'deny' ? 'deny' : 'allow';
     const comment = object.effective('comments')[0];
     const name = object.effective('name')[0];
@@ -184,6 +187,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
       logStart: object.effective('logtraffic-start')[0] === 'enable',
       logEnd: object.effective('logtraffic')[0] === 'all',
       utmEnabled: usesUtm(object),
+      inspectionMode: object.effective('inspection-mode')[0] ?? 'flow',
       authGroups: [...object.effective('groups')],
       authUsers: [...object.effective('users')],
       antivirusProfile: named(object, 'av-profile'),
@@ -202,6 +206,22 @@ export const FIREWALL_POLICY: FortiTableSpec = {
     context.device.refreshCaptivePortal();
   },
 };
+
+function profileModeMismatch(
+  object: FortiObjectView, context: FortiCommitContext,
+): string | undefined {
+  if (!usesUtm(object)) return undefined;
+
+  const mode = object.effective('inspection-mode')[0] ?? 'flow';
+  const profile = object.effective('webfilter-profile')[0];
+  if (!profile) return undefined;
+
+  const featureSet = context.device.webFilterFeatureSet(profile);
+  if (featureSet === undefined || featureSet === mode) return undefined;
+
+  return `webfilter profile ${profile} has feature-set ${featureSet},`
+    + ` which does not apply to a policy in inspection-mode ${mode}.`;
+}
 
 function listOrAny(values: readonly string[]): string[] {
   return values.length === 0 ? ['any'] : [...values];

@@ -60,7 +60,10 @@ export const ANTIVIRUS_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
-    enable('feature-set', 'Flow/proxy feature set.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
   ],
   children: [
     scanChannel('http', 'Configure HTTP AntiVirus options.'),
@@ -93,6 +96,10 @@ export const WEBFILTER_PROFILE: FortiTableSpec = {
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),
+    choice('feature-set', 'Flow/proxy feature set.', [
+      { keyword: 'flow', description: 'Flow-based inspection.' },
+      { keyword: 'proxy', description: 'Proxy-based inspection.' },
+    ], 'flow'),
     enable('log-all-url', 'Enable/disable logging all URLs visited.'),
     choice('unclassified-action', 'Action for domains this build cannot classify.',
       FILTER_ACTIONS, 'allow'),
@@ -129,6 +136,7 @@ export const WEBFILTER_PROFILE: FortiTableSpec = {
       categoryFilters: categoryEntries(object, 'ftgd-wf'),
       unclassifiedAction: object.effective('unclassified-action')[0] ?? 'allow',
       logAllUrl: object.effective('log-all-url')[0] === 'enable',
+      featureSet: object.effective('feature-set')[0] ?? 'flow',
       comment: object.effective('comment')[0] || undefined,
     });
   },
@@ -279,6 +287,10 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
   accessGroup: 'utmgrp',
   renderOrder: 440,
   help: 'Configure SSL/SSH protocol options.',
+  predefined: [
+    'certificate-inspection', 'deep-inspection',
+    'no-inspection', 'custom-deep-inspection',
+  ],
   attributes: [
     { ...word('name', 'Profile name.'), readOnly: true },
     text('comment', 'Comment.'),

@@ -35,6 +35,7 @@ import { renderHaChecksum, renderHaStatus } from './haRenderer';
 import { renderNtpStatus } from './ntpStatusRenderer';
 import { renderVipList } from './vipListRenderer';
 import { renderDnsProxy } from './dnsProxyRenderer';
+import { renderSysTop } from './sysTopRenderer';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -162,6 +163,7 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
+  if (rest[0] === 'top') return renderSysTop(deps.fw);
   if (rest[0] === 'checkused') return diagnoseCheckused(rest.slice(1), deps);
   if (rest[0] === 'ntp') {
     if (rest[1] !== 'status') return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);

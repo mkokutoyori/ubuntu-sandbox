@@ -237,6 +237,7 @@ export interface FortiCommitDevice {
   applyAntivirusProfile(profile: FortiAntivirusPatch): void;
   removeAntivirusProfile(name: string): void;
   applyWebFilterProfile(profile: FortiWebFilterPatch): void;
+  webFilterFeatureSet(name: string): string | undefined;
   removeWebFilterProfile(name: string): void;
   applyDnsFilterProfile(profile: FortiDnsFilterPatch): void;
   removeDnsFilterProfile(name: string): void;
@@ -457,6 +458,7 @@ export interface FortiWebFilterPatch {
   readonly categoryFilters: readonly FortiCategoryFilterPatch[];
   readonly unclassifiedAction: string;
   readonly logAllUrl: boolean;
+  readonly featureSet: string;
   readonly comment?: string;
 }
 

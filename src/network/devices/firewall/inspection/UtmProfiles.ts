@@ -35,6 +35,7 @@ export interface WebFilterProfile {
   readonly categoryFilters: readonly CategoryFilterEntry[];
   readonly unclassifiedAction: UtmAction;
   readonly logAllUrl: boolean;
+  readonly featureSet?: string;
   readonly comment?: string;
 }
 

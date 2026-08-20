@@ -200,8 +200,12 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
           categoryFilters: profile.categoryFilters.map(categoryEntry),
           unclassifiedAction: utmAction(profile.unclassifiedAction),
           logAllUrl: profile.logAllUrl,
+          featureSet: profile.featureSet,
           comment: profile.comment,
         });
+      },
+      webFilterFeatureSet(name) {
+        return fw.getUtmProfiles().getWebFilter(name)?.featureSet;
       },
       removeWebFilterProfile(name) {
         fw.getUtmProfiles().removeWebFilter(name);
