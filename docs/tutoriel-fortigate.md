@@ -6975,3 +6975,467 @@ FGT-01 (policy) # end
 6. **Les journaux nommés sont exploitables**, les journaux d'adresses ne le sont pas.
 
 ---
+
+# Partie VII — Les VPN
+
+---
+
+## 18. VPN IPsec site-à-site
+
+Relier deux sites distants par un tunnel chiffré à travers Internet. C'est l'usage historique du VPN, et il reste le plus courant.
+
+### 18.1 Le principe
+
+```
+   Site A (Paris)                              Site B (Lyon)
+   192.168.10.0/24                             192.168.50.0/24
+        │                                            │
+   ┌────┴─────┐                                ┌─────┴────┐
+   │  FGT-01  │═══════ tunnel chiffré ═════════│  FGT-02  │
+   └────┬─────┘        à travers Internet      └─────┬────┘
+        │                                            │
+    R1-EDGE ──────────── Internet ──────────────── R2-EDGE
+```
+
+Les postes de Paris joignent ceux de Lyon **comme s'ils étaient sur le même réseau**, alors que le trafic traverse Internet — chiffré, authentifié, et illisible pour quiconque l'intercepte.
+
+### 18.2 🧠 Comprendre : les deux phases d'IPsec
+
+IPsec négocie en **deux temps**, et savoir lequel échoue est 80 % du diagnostic.
+
+**Phase 1 (IKE) — « qui es-tu ? »**
+
+Les deux pare-feux s'authentifient mutuellement et établissent un canal sécurisé pour discuter. Ils se mettent d'accord sur :
+
+| Paramètre | Rôle |
+|---|---|
+| Méthode d'authentification | Clé partagée (PSK) ou certificat |
+| Chiffrement | AES-256, AES-128… |
+| Hachage | SHA-256, SHA-512… |
+| Groupe Diffie-Hellman | 14, 19, 20… — la robustesse de l'échange de clés |
+| Durée de vie | 86400 s par défaut |
+
+**Phase 2 (IPsec) — « que transporte-t-on ? »**
+
+Une fois qu'ils se font confiance, ils négocient le tunnel de données lui-même :
+
+| Paramètre | Rôle |
+|---|---|
+| Sélecteurs | **Quels réseaux** passent dans le tunnel |
+| Chiffrement / hachage | Ceux du transport |
+| PFS | Renégocie une clé neuve à chaque renouvellement |
+| Durée de vie | 43200 s par défaut |
+
+> 🧠 **La règle d'or du diagnostic IPsec**
+> **Les deux côtés doivent être d'accord sur TOUT.** Un seul paramètre qui diffère et le tunnel ne monte pas.
+>
+> Et surtout : **savoir quelle phase échoue divise le problème en deux.**
+> - La **phase 1** échoue → problème d'**authentification** ou de **joignabilité** : clé partagée différente, identifiants qui ne correspondent pas, UDP/500 filtré.
+> - La **phase 2** échoue → problème de **sélecteurs** ou d'algorithmes de transport : les réseaux déclarés ne correspondent pas de part et d'autre.
+>
+> Ne cherche jamais au hasard : regarde d'abord **où** ça casse.
+
+### 18.3 Les ports à laisser passer
+
+| Port / protocole | Rôle |
+|---|---|
+| **UDP 500** | IKE — la négociation |
+| **UDP 4500** | NAT-Traversal — quand un routeur NAT est sur le chemin |
+| **Protocole IP 50** | ESP — les données chiffrées |
+
+> ⚠️ **Attention** : dans notre laboratoire, R1 fait du NAT (§3.8). Le trafic IPsec devra donc utiliser **NAT-T** (UDP 4500), qui encapsule ESP dans de l'UDP — parce qu'ESP est un protocole IP à part entière, sans numéro de port, et qu'un NAT ne sait pas quoi en faire.
+>
+> C'est la cause n°1 des tunnels qui montent en laboratoire mais pas en production, ou l'inverse. FortiOS active NAT-T automatiquement quand il détecte un NAT, mais il faut que le routeur laisse passer UDP 4500.
+
+### 18.4 La configuration, côté Paris
+
+**Phase 1 :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-vers-Lyon"
+        set interface "port1"
+        set ike-version 2
+        set peertype any
+        set net-device disable
+        set proposal aes256-sha256
+        set dhgrp 14
+        set remote-gw 203.0.113.50
+        set psksecret "UneCleTresLongueEtAleatoire2026!"
+        set dpd on-idle
+        set dpd-retryinterval 60
+    next
+end
+```
+
+**Phase 2 :**
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-vers-Lyon-P2"
+        set phase1name "VPN-vers-Lyon"
+        set proposal aes256-sha256
+        set pfs enable
+        set dhgrp 14
+        set src-subnet 192.168.10.0 255.255.255.0
+        set dst-subnet 192.168.50.0 255.255.255.0
+        set auto-negotiate enable
+    next
+end
+```
+
+**La route vers le site distant :**
+
+```
+config router static
+    edit 10
+        set dst 192.168.50.0 255.255.255.0
+        set device "VPN-vers-Lyon"
+        set comment "Reseau de Lyon via le tunnel"
+    next
+end
+```
+
+**Et les politiques — dans les DEUX sens :**
+
+```
+config firewall policy
+    edit 20
+        set name "Paris-vers-Lyon"
+        set srcintf "port2"
+        set dstintf "VPN-vers-Lyon"
+        set srcaddr "NET-LAN"
+        set dstaddr "NET-LYON"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+    edit 21
+        set name "Lyon-vers-Paris"
+        set srcintf "VPN-vers-Lyon"
+        set dstintf "port2"
+        set srcaddr "NET-LYON"
+        set dstaddr "NET-LAN"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+end
+```
+
+> ⚠️ **Attention — ici, DEUX politiques sont nécessaires**
+> Ça semble contredire la règle d'or du §1.6. Ce n'est pas le cas, et la nuance est importante.
+>
+> La table de sessions gère le **retour d'une connexion ouverte**. Mais dans un VPN site-à-site, **les deux sites initient des connexions** : Paris consulte un serveur de Lyon, et Lyon consulte un serveur de Paris. Ce sont deux **ouvertures** distinctes, pas un aller-retour.
+>
+> Si tu n'écris que `Paris → Lyon`, un utilisateur de Lyon ne pourra rien ouvrir vers Paris. **Une politique par sens d'ouverture**, toujours.
+
+> 🚨 **Danger — n'active JAMAIS le NAT sur une politique VPN**
+> `set nat enable` réécrirait les adresses source, et le site distant verrait tout le trafic arriver depuis l'adresse du pare-feu. Les sélecteurs de phase 2 ne correspondraient plus, et le tunnel rejetterait le trafic. Laisse `nat disable`.
+
+### 18.5 Côté Lyon : le miroir exact
+
+Tout est symétrique. `remote-gw` pointe vers Paris, et les sous-réseaux de phase 2 sont **inversés** :
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-vers-Paris-P2"
+        set src-subnet 192.168.50.0 255.255.255.0     ← inversé
+        set dst-subnet 192.168.10.0 255.255.255.0     ← inversé
+    next
+end
+```
+
+> ⚠️ **C'est l'erreur n°1 des tunnels qui ne montent pas en phase 2.** Les sélecteurs doivent être **le miroir exact** l'un de l'autre. Si Paris déclare `src=10.0/24, dst=50.0/24`, Lyon doit déclarer `src=50.0/24, dst=10.0/24`. Une inversion oubliée, et la phase 1 monte parfaitement pendant que la phase 2 échoue — ce qui déroute, parce que « le tunnel est up » dans l'affichage.
+
+### 18.6 Le diagnostic IPsec
+
+Les commandes, dans l'ordre où on les utilise :
+
+```
+FGT-01 # get vpn ipsec tunnel summary
+FGT-01 # diagnose vpn ike gateway list
+FGT-01 # diagnose vpn tunnel list
+```
+
+Et le débogage détaillé, quand rien ne monte :
+
+```
+FGT-01 # diagnose vpn ike log filter clear
+FGT-01 # diagnose vpn ike log filter dst-addr4 203.0.113.50
+FGT-01 # diagnose debug application ike -1
+FGT-01 # diagnose debug enable
+```
+
+Puis on force la négociation :
+
+```
+FGT-01 # diagnose vpn ike gateway clear name VPN-vers-Lyon
+```
+
+Et on arrête, **toujours** :
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+**Les messages qu'on rencontre le plus, et ce qu'ils veulent dire :**
+
+| Message | Cause réelle |
+|---|---|
+| `no SA proposal chosen` | Les propositions de chiffrement ne correspondent pas |
+| `probable pre-shared secret mismatch` | La clé partagée diffère |
+| `peer SA proposal not match local policy` | Sélecteurs de phase 2 non miroir |
+| `negotiation timeout` | Le pair ne répond pas — UDP/500 filtré, adresse fausse |
+| `IPsec SA connect... failure` | Phase 1 réussie, phase 2 échouée |
+
+---
+
+### 🧪 TP 17 — Monter un tunnel entre deux sites
+
+**🎯 Objectif**
+Créer un second FortiGate, monter le tunnel, faire communiquer les deux LAN, puis **casser volontairement** un paramètre pour apprendre à lire un échec.
+
+**⏱️ Durée** : 60 minutes
+
+**📋 Prérequis** : un second FortiGate (§2.7 sur les licences), les deux joignables entre eux
+
+> 💡 **Astuce** : si tu ne peux avoir qu'un seul FortiGate, lis ce TP sans l'exécuter — mais **fais absolument l'étape 8**, qui t'apprend à lire un journal IKE. C'est ce qu'on te demandera en entretien.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Préparer FGT-02**
+
+Configure un second pare-feu selon le même schéma : `port1` vers le transit, `port2` en `192.168.50.1/24`.
+
+```
+FGT-02 # config system global
+FGT-02 (global) # set hostname FGT-02
+FGT-02 (global) # end
+
+FGT-02 # config system interface
+FGT-02 (interface) # edit port2
+FGT-02 (port2) # set alias "LAN-Lyon"
+FGT-02 (port2) # set ip 192.168.50.1 255.255.255.0
+FGT-02 (port2) # set allowaccess ping https ssh
+FGT-02 (port2) # next
+FGT-02 (interface) # end
+```
+
+**Étape 2 — Vérifier la joignabilité AVANT de configurer le VPN**
+
+```
+FGT-01 # execute ping <adresse-port1-de-FGT-02>
+```
+
+> 🧠 **Ne saute pas cette étape.** Un tunnel ne peut pas monter si les deux extrémités ne se voient pas. Vérifier d'abord évite de chercher un problème IPsec là où il n'y a qu'un problème de routage.
+
+**Étape 3 — Les objets adresse**
+
+Sur FGT-01 :
+
+```
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-LYON"
+FGT-01 (NET-LYON) # set subnet 192.168.50.0 255.255.255.0
+FGT-01 (NET-LYON) # next
+FGT-01 (address) # end
+```
+
+Sur FGT-02, l'équivalent pour `NET-PARIS` en `192.168.10.0/24`.
+
+**Étape 4 — Phase 1 sur FGT-01**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Lyon"
+FGT-01 (VPN-Lyon) # set interface "port1"
+FGT-01 (VPN-Lyon) # set ike-version 2
+FGT-01 (VPN-Lyon) # set peertype any
+FGT-01 (VPN-Lyon) # set net-device disable
+FGT-01 (VPN-Lyon) # set proposal aes256-sha256
+FGT-01 (VPN-Lyon) # set dhgrp 14
+FGT-01 (VPN-Lyon) # set remote-gw <adresse-port1-de-FGT-02>
+FGT-01 (VPN-Lyon) # set psksecret "CleLabFortiGate2026!"
+FGT-01 (VPN-Lyon) # set dpd on-idle
+FGT-01 (VPN-Lyon) # next
+FGT-01 (phase1-interface) # end
+```
+
+**Étape 5 — Phase 2 sur FGT-01**
+
+```
+FGT-01 # config vpn ipsec phase2-interface
+FGT-01 (phase2-interface) # edit "VPN-Lyon-P2"
+FGT-01 (VPN-Lyon-P2) # set phase1name "VPN-Lyon"
+FGT-01 (VPN-Lyon-P2) # set proposal aes256-sha256
+FGT-01 (VPN-Lyon-P2) # set pfs enable
+FGT-01 (VPN-Lyon-P2) # set dhgrp 14
+FGT-01 (VPN-Lyon-P2) # set src-subnet 192.168.10.0 255.255.255.0
+FGT-01 (VPN-Lyon-P2) # set dst-subnet 192.168.50.0 255.255.255.0
+FGT-01 (VPN-Lyon-P2) # set auto-negotiate enable
+FGT-01 (VPN-Lyon-P2) # next
+FGT-01 (phase2-interface) # end
+```
+
+**Étape 6 — Le miroir sur FGT-02**
+
+Identique, sauf `remote-gw` (qui pointe vers FGT-01) et les sous-réseaux **inversés**. La clé partagée doit être **rigoureusement identique**.
+
+**Étape 7 — Route et politiques**
+
+Sur FGT-01 :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # edit 10
+FGT-01 (10) # set dst 192.168.50.0 255.255.255.0
+FGT-01 (10) # set device "VPN-Lyon"
+FGT-01 (10) # next
+FGT-01 (static) # end
+
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 20
+FGT-01 (20) # set name "Paris-vers-Lyon"
+FGT-01 (20) # set srcintf "port2"
+FGT-01 (20) # set dstintf "VPN-Lyon"
+FGT-01 (20) # set srcaddr "NET-LAN"
+FGT-01 (20) # set dstaddr "NET-LYON"
+FGT-01 (20) # set action accept
+FGT-01 (20) # set schedule "always"
+FGT-01 (20) # set service "ALL"
+FGT-01 (20) # set logtraffic all
+FGT-01 (20) # next
+FGT-01 (policy) # edit 21
+FGT-01 (21) # set name "Lyon-vers-Paris"
+FGT-01 (21) # set srcintf "VPN-Lyon"
+FGT-01 (21) # set dstintf "port2"
+FGT-01 (21) # set srcaddr "NET-LYON"
+FGT-01 (21) # set dstaddr "NET-LAN"
+FGT-01 (21) # set action accept
+FGT-01 (21) # set schedule "always"
+FGT-01 (21) # set service "ALL"
+FGT-01 (21) # set logtraffic all
+FGT-01 (21) # next
+FGT-01 (policy) # end
+```
+
+Fais l'équivalent, en miroir, sur FGT-02.
+
+**Étape 8 — Monter le tunnel et le lire**
+
+```
+FGT-01 # diagnose vpn ike gateway clear name VPN-Lyon
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' 203.0.113.50:0  selectors(total,up): 1/1  rx(pkt,err): 24/0  tx(pkt,err): 24/0
+```
+
+`selectors(total,up): 1/1` signifie que la phase 2 est établie. C'est **la ligne à regarder**.
+
+```
+FGT-01 # diagnose vpn tunnel list
+```
+
+Tu obtiens le détail : algorithmes retenus, compteurs, durée de vie restante.
+
+**Étape 9 — Tester de bout en bout**
+
+```bash
+user@pc-lan:~$ ping -c 5 192.168.50.10
+```
+
+**Le trafic traverse Internet, chiffré.** 🎉
+
+Vérifie-le :
+
+```
+FGT-01 # diagnose sniffer packet port1 'udp port 4500 or esp' 4 20
+```
+
+Tu vois passer des paquets **chiffrés** — impossible d'y lire les adresses internes ou le contenu.
+
+**Étape 10 — Casser volontairement, et diagnostiquer**
+
+Change la clé partagée sur **un seul** côté :
+
+```
+FGT-02 # config vpn ipsec phase1-interface
+FGT-02 (phase1-interface) # edit "VPN-Paris"
+FGT-02 (VPN-Paris) # set psksecret "MauvaiseCle"
+FGT-02 (VPN-Paris) # next
+FGT-02 (phase1-interface) # end
+```
+
+Sur FGT-01 :
+
+```
+FGT-01 # diagnose vpn ike log filter clear
+FGT-01 # diagnose debug application ike -1
+FGT-01 # diagnose debug enable
+FGT-01 # diagnose vpn ike gateway clear name VPN-Lyon
+```
+
+Tu vois défiler les tentatives, avec un message parlant de secret partagé ou d'échec d'authentification.
+
+**Tu viens d'apprendre à reconnaître un échec de phase 1.**
+
+```
+FGT-01 # diagnose debug disable
+FGT-01 # diagnose debug reset
+```
+
+**Étape 11 — Casser la phase 2 (le plus instructif)**
+
+Remets la bonne clé, puis change un **sélecteur** :
+
+```
+FGT-02 # config vpn ipsec phase2-interface
+FGT-02 (phase2-interface) # edit "VPN-Paris-P2"
+FGT-02 (VPN-Paris-P2) # set dst-subnet 192.168.99.0 255.255.255.0
+FGT-02 (VPN-Paris-P2) # next
+FGT-02 (phase2-interface) # end
+```
+
+```
+FGT-01 # get vpn ipsec tunnel summary
+```
+```
+'VPN-Lyon' 203.0.113.50:0  selectors(total,up): 1/0
+```
+
+**Regarde bien : `1/0`.** La phase 1 est montée — la passerelle est là, authentifiée — mais **aucun sélecteur n'est établi**.
+
+> 🧠 **C'est le cas qui déroute tout le monde.** La GUI peut afficher le tunnel comme « up » parce que la phase 1 fonctionne, et pourtant rien ne passe. La ligne `selectors(total,up)` est la seule qui dise la vérité.
+>
+> Retiens : **`x/0` = phase 2 en échec = sélecteurs non miroir.**
+
+Remets la bonne valeur.
+
+---
+
+**✅ Résultat attendu**
+
+- `get vpn ipsec tunnel summary` affiche `selectors(total,up): 1/1`
+- Un ping traverse le tunnel entre les deux LAN
+- Une capture sur `port1` ne montre que du chiffré
+- Tu reconnais un échec de phase 1 et un échec de phase 2
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Deux phases, deux familles de pannes.** Savoir laquelle échoue divise le problème en deux.
+2. **Les sélecteurs de phase 2 doivent être le miroir exact.**
+3. **`selectors(total,up): x/0` est le symptôme du tunnel qui a l'air up et ne transporte rien.**
+4. **Un VPN site-à-site demande une politique par sens d'ouverture** — ce n'est pas une contradiction avec le §1.6.
+5. **Jamais de NAT sur une politique VPN.**
+6. **On vérifie la joignabilité avant de soupçonner IPsec.**
+
+---
