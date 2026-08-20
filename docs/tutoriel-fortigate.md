@@ -2778,3 +2778,485 @@ FGT-01 # show firewall schedule recurring
 5. **Un horaire `onetime` ferme un accès temporaire tout seul**, ce qu'aucun rappel mental ne fait de façon fiable.
 
 ---
+
+## 9. Les politiques de sécurité
+
+Nous y voilà. C'est **la** section du tutoriel. Tout ce qu'on a fait jusqu'ici — interfaces, routes, objets — n'était que la préparation de ce moment : écrire les règles qui décident de ce qui passe.
+
+Et on va enfin lever le blocage du TP 4.
+
+### 9.1 Ce qu'est une politique
+
+Une politique répond à six questions, toujours les mêmes :
+
+| Question | Champ FortiOS |
+|---|---|
+| Le trafic **arrive** par où ? | `srcintf` (interface source) |
+| Il **repart** par où ? | `dstintf` (interface destination) |
+| Il **vient** de quelle adresse ? | `srcaddr` |
+| Il **va** vers quelle adresse ? | `dstaddr` |
+| C'est **quel** trafic ? | `service` |
+| **Quand** ? | `schedule` |
+
+Et une fois qu'on a répondu à ces six questions, on prend **une décision** : `accept` ou `deny`.
+
+Voici la forme complète :
+
+```
+config firewall policy
+    edit 1
+        set name "LAN vers Internet"
+        set srcintf "port2"
+        set dstintf "port1"
+        set srcaddr "NET-LAN"
+        set dstaddr "all"
+        set service "ALL"
+        set schedule "always"
+        set action accept
+        set nat enable
+        set logtraffic all
+        set comments "Acces Internet des postes utilisateurs"
+    next
+end
+```
+
+> 💡 **Astuce** : donne **toujours** un `name` à tes politiques. Ce n'est pas obligatoire, mais une liste de règles numérotées sans nom devient illisible au-delà de dix. La GUI l'exige d'ailleurs depuis plusieurs versions.
+
+### 9.2 🧠 Comprendre : l'ordre des politiques est TOUT
+
+Si tu ne retiens qu'une chose de cette section, que ce soit celle-ci.
+
+**FortiOS évalue les politiques de haut en bas, et s'arrête à la PREMIÈRE qui correspond.**
+
+Pas la plus précise. Pas la plus restrictive. **La première rencontrée.** Toutes celles d'en dessous ne sont jamais évaluées.
+
+Prenons un exemple qui fait mal :
+
+```
+Politique 1 : LAN → WAN, tout, ACCEPT
+Politique 2 : LAN → WAN, service SSH, DENY
+```
+
+Question : le SSH est-il bloqué ?
+
+**Non.** Le trafic SSH correspond à la politique 1 (qui autorise tout), la décision est prise, et la politique 2 n'est **jamais lue**. Elle est morte, sans que rien ne le signale.
+
+Dans le bon ordre :
+
+```
+Politique 1 : LAN → WAN, service SSH, DENY
+Politique 2 : LAN → WAN, tout, ACCEPT
+```
+
+Là, le SSH tombe sur la règle 1 et se fait bloquer. Le reste continue vers la 2.
+
+> ### 🔒 La règle d'or de l'ordonnancement
+> **Du plus spécifique au plus général.**
+> Les exceptions en haut, les règles larges en bas, et l'`Implicit Deny` tout en bas qui ramasse le reste.
+
+**Comment réordonner :**
+
+```
+config firewall policy
+    move 5 before 2
+    move 3 after 7
+end
+```
+
+Et pour vérifier l'ordre réel :
+
+```
+FGT-01 # show firewall policy | grep -e "edit" -e "set name"
+```
+
+> ⚠️ **Attention — l'identifiant n'est PAS l'ordre**
+> Piège classique : le numéro après `edit` est un **identifiant**, pas une position. La politique 10 peut très bien être évaluée avant la politique 3, si quelqu'un l'a déplacée.
+>
+> **Ne déduis jamais l'ordre des numéros.** Regarde la liste, dans la GUI (qui l'affiche dans l'ordre réel) ou avec la commande ci-dessus.
+
+### 9.3 L'`Implicit Deny`
+
+Tout en bas de la liste se trouve une règle que tu ne peux ni voir dans la configuration, ni modifier, ni supprimer :
+
+```
+Implicit Deny : tout → tout, tout, tout, DENY
+```
+
+C'est elle qui bloquait ton ping du TP 4. Tout paquet qui arrive au bout de la liste sans avoir trouvé de règle meurt ici.
+
+> 💡 **Astuce — journaliser l'Implicit Deny**
+> Par défaut, il ne journalise pas. C'est dommage : c'est **la** source d'information sur ce que ton pare-feu refuse.
+> ```
+> config system settings
+>     set gui-implicit-policy enable
+> end
+> ```
+> Puis, dans la GUI, la règle implicite devient visible et on peut activer sa journalisation. En CLI, on obtient le même effet en créant une **politique explicite de refus** en dernière position, avec `set logtraffic all` — c'est d'ailleurs la bonne pratique, parce qu'une règle explicite est visible, documentable et modifiable.
+>
+> ```
+> config firewall policy
+>     edit 999
+>         set name "DENY-ALL-Explicite"
+>         set srcintf "any"
+>         set dstintf "any"
+>         set srcaddr "all"
+>         set dstaddr "all"
+>         set service "ALL"
+>         set schedule "always"
+>         set action deny
+>         set logtraffic all
+>     next
+> end
+> ```
+
+### 9.4 Les champs importants au-delà des six
+
+**`nat`** — active la traduction d'adresse source. Indispensable pour sortir vers Internet. C'est le sujet de la section 10.
+
+**`logtraffic`** — trois valeurs, et le choix compte :
+
+| Valeur | Effet |
+|---|---|
+| `disable` | Aucun journal. À éviter |
+| `utm` | Journalise uniquement les événements de sécurité (virus détecté, site bloqué…) |
+| `all` | ⭐ Journalise **toutes** les sessions |
+
+> ⚠️ **Attention** : `logtraffic all` génère beaucoup de journaux. Sur un petit boîtier sans disque, la mémoire se remplit vite et les entrées les plus anciennes disparaissent. En production, on envoie les journaux vers un FortiAnalyzer ou un syslog externe (section 22).
+>
+> Mais en apprentissage, **mets `all` partout**. Tu as besoin de voir ce qui se passe, et c'est ce qui rendra les diagnostics possibles.
+
+**`logtraffic-start`** — journalise **au début** de la session en plus de la fin. Utile pour voir les sessions longues qui n'ont pas encore fini.
+
+**`inspection-mode`** — `flow` ou `proxy` (section 13).
+
+**`status`** — `enable` ou `disable`. Désactiver une politique plutôt que la supprimer est souvent plus sage : tu peux la réactiver en une commande si tu t'es trompé.
+
+**`action`** — `accept` ou `deny`.
+
+> 💡 **Astuce** : sur une politique en `deny`, un champ supplémentaire apparaît :
+> ```
+> set send-deny-packet enable
+> ```
+> Par défaut, un refus est **silencieux** : le paquet est jeté, l'émetteur n'apprend rien et attend jusqu'à expiration. Avec `send-deny-packet`, le pare-feu renvoie un TCP RST, et l'application côté client reçoit un refus **immédiat**.
+>
+> Lequel choisir ? Pour du trafic **interne**, active-le : tes utilisateurs auront une erreur nette au lieu d'un gel de trente secondes, et ton support te remerciera. Depuis **Internet**, laisse-le désactivé : un silence n'apprend rien à un scanner, alors qu'un RST confirme qu'un équipement est là.
+
+### 9.5 Le champ `srcintf` : `any` et les zones
+
+Tu peux mettre `any` comme interface :
+
+```
+set srcintf "any"
+```
+
+C'est pratique et c'est dangereux. `any` signifie littéralement *n'importe quelle interface*, y compris celles que tu ajouteras dans six mois, y compris `port1` qui donne sur Internet.
+
+> ⚠️ **Attention** : n'utilise `any` que dans des politiques de **refus**, ou dans des cas où tu as vraiment réfléchi. Pour une politique d'autorisation, **nomme explicitement les interfaces**. C'est une des différences entre une configuration écrite par quelqu'un qui sait et une configuration écrite par quelqu'un qui a suivi un tutoriel trop vite. 😉
+
+---
+
+### 🧪 TP 7 — Ta première politique, et lever le blocage
+
+**🎯 Objectif**
+Écrire les politiques qui font fonctionner le laboratoire : LAN vers Internet, LAN vers DMZ. Puis **prouver** l'ordonnancement en créant une exception. Et enfin voir la table de sessions.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 6 terminé (les objets doivent exister)
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — La politique d'accès à Internet**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set name "LAN-vers-Internet"
+FGT-01 (1) # set srcintf "port2"
+FGT-01 (1) # set dstintf "port1"
+FGT-01 (1) # set srcaddr "NET-LAN"
+FGT-01 (1) # set dstaddr "all"
+FGT-01 (1) # set service "ALL"
+FGT-01 (1) # set schedule "always"
+FGT-01 (1) # set action accept
+FGT-01 (1) # set nat enable
+FGT-01 (1) # set logtraffic all
+FGT-01 (1) # set comments "Acces Internet des postes"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ping -c 3 8.8.8.8
+user@pc-lan:~$ curl -I http://www.fortinet.com
+```
+
+Si ton lab a un accès Internet, ça fonctionne. **Tu viens d'écrire ta première politique de sécurité.** 🎉
+
+> 🧠 **Comprendre** : remarque qu'il n'y a **aucune** politique `port1 → port2`. Le trafic retour passe grâce à la table de sessions (§1.6). Tu vérifies à l'instant que la règle d'or est vraie.
+
+**Étape 2 — Lever le blocage LAN → DMZ**
+
+Souviens-toi : au TP 4 étape 6, `ping 192.168.20.10` échouait.
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set name "LAN-vers-DMZ"
+FGT-01 (2) # set srcintf "port2"
+FGT-01 (2) # set dstintf "port3"
+FGT-01 (2) # set srcaddr "NET-LAN"
+FGT-01 (2) # set dstaddr "NET-DMZ"
+FGT-01 (2) # set service "PING" "HTTP"
+FGT-01 (2) # set schedule "always"
+FGT-01 (2) # set action accept
+FGT-01 (2) # set logtraffic all
+FGT-01 (2) # set comments "Le LAN consulte les serveurs de la DMZ"
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+Retente depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10
+user@pc-lan:~$ curl http://192.168.20.10
+```
+
+**Ça marche.** 🎉
+
+> 🧠 **Comprendre — pourquoi pas de `nat` ici ?**
+> Parce que la DMZ est un réseau **interne**, joignable directement. Le serveur `192.168.20.10` sait répondre à `192.168.10.10` : le pare-feu route entre les deux, point.
+>
+> Le NAT ne sert que quand la destination **ne sait pas** revenir vers la source — typiquement Internet, qui ne connaît pas tes adresses privées. C'est tout le sujet de la section 10.
+
+**Étape 3 — Vérifier que le service est bien restrictif**
+
+On a autorisé `PING` et `HTTP` seulement. Teste autre chose :
+
+```bash
+user@pc-lan:~$ curl https://192.168.20.10
+user@pc-lan:~$ ssh user@192.168.20.10
+```
+
+Ces deux commandes **échouent** (ou restent bloquées). C'est le résultat attendu : le service n'est pas dans la liste, donc la politique ne s'applique pas, donc `Implicit Deny`.
+
+**Tu viens de vérifier qu'un pare-feu filtre vraiment par service.**
+
+**Étape 4 — La démonstration de l'ordonnancement**
+
+C'est l'étape la plus instructive du TP. On va bloquer le ping tout en laissant HTTP, **et se tromper d'ordre exprès**.
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 3
+FGT-01 (3) # set name "BLOQUER-Ping-vers-DMZ"
+FGT-01 (3) # set srcintf "port2"
+FGT-01 (3) # set dstintf "port3"
+FGT-01 (3) # set srcaddr "NET-LAN"
+FGT-01 (3) # set dstaddr "NET-DMZ"
+FGT-01 (3) # set service "PING"
+FGT-01 (3) # set schedule "always"
+FGT-01 (3) # set action deny
+FGT-01 (3) # set logtraffic all
+FGT-01 (3) # next
+FGT-01 (policy) # end
+```
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10
+```
+
+**Le ping passe toujours !** Alors qu'on vient d'écrire une règle qui l'interdit.
+
+> 🧠 **Comprendre — pourquoi ?**
+> Parce que la politique 2 (`LAN-vers-DMZ`, qui autorise `PING` et `HTTP`) est **avant** la politique 3. Le paquet ICMP tombe sur la 2, elle correspond, la décision est prise : `accept`. La politique 3 n'est **jamais lue**.
+>
+> C'est exactement l'exemple du §9.2, et tu viens de le reproduire de tes mains.
+
+**Étape 5 — Corriger l'ordre**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # move 3 before 2
+FGT-01 (policy) # end
+```
+
+Vérifie l'ordre réel :
+
+```
+FGT-01 # show firewall policy | grep -e "edit " -e "set name"
+```
+```
+    edit 1
+        set name "LAN-vers-Internet"
+    edit 3
+        set name "BLOQUER-Ping-vers-DMZ"
+    edit 2
+        set name "LAN-vers-DMZ"
+```
+
+Note bien : **3 est maintenant avant 2**, alors que son numéro est plus grand. Preuve que l'identifiant n'est pas l'ordre (§9.2).
+
+Retente :
+
+```bash
+user@pc-lan:~$ ping -c 3 192.168.20.10       ← bloqué maintenant ❌
+user@pc-lan:~$ curl http://192.168.20.10     ← fonctionne toujours ✅
+```
+
+**Le ping est bloqué, le HTTP passe.** Tu viens de faire fonctionner une exception, et surtout tu as vu de tes yeux que **seul l'ordre a changé**, pas les règles.
+
+**Étape 6 — Regarder la table de sessions**
+
+C'est le moment de vérifier ce qu'on affirme depuis le §1.6.
+
+Depuis le PC du LAN, lance quelque chose de durable :
+
+```bash
+user@pc-lan:~$ curl http://192.168.20.10 --max-time 30
+```
+
+Pendant ce temps, sur le pare-feu :
+
+```
+FGT-01 # diagnose sys session filter dst 192.168.20.10
+FGT-01 # diagnose sys session list
+```
+
+Tu obtiens une entrée du genre :
+
+```
+session info: proto=6 proto_state=01 duration=3 expire=3597 timeout=3600
+state=log may_dirty
+statistic(bytes/packets/allow_err): org=284/4/1 reply=1580/4/1
+hook=post dir=org act=noop
+policy_id=2 pol_uuid_idx=xxx auth_info=0 chk_client_info=0 vd=0
+serial=00001a2b tos=ff/ff app_list=0 app=0
+```
+
+Décryptage des lignes qui comptent :
+
+| Champ | Signification |
+|---|---|
+| `proto=6` | TCP (1 = ICMP, 17 = UDP) |
+| `duration` | Depuis combien de secondes la session existe |
+| `expire` / `timeout` | Quand elle sera oubliée |
+| `org=` / `reply=` | Octets/paquets **aller** et **retour** — la preuve que le retour est suivi |
+| **`policy_id=2`** | ⭐ **Quelle politique a autorisé cette session** |
+
+> 🧠 **`policy_id` est la commande de diagnostic la plus utile de tout FortiOS.**
+> Quand un utilisateur te dit « ça ne marche pas » ou « ça ne devrait pas marcher », cette ligne te dit **exactement quelle règle a décidé**. Plus de supposition, plus de lecture de la liste à l'œil : le pare-feu te donne la réponse.
+>
+> Retiens ces deux commandes, tu les taperas toute ta carrière :
+> ```
+> diagnose sys session filter dst <adresse>
+> diagnose sys session list
+> ```
+
+**Étape 7 — Vider la table de sessions**
+
+Après un changement de politique, les sessions **déjà établies** continuent selon l'ancienne règle. C'est normal — elles sont dans la table, elles ne repassent pas par l'évaluation.
+
+D'où un symptôme déroutant : « j'ai modifié la règle et ça n'a rien changé ». Il faut vider :
+
+```
+FGT-01 # diagnose sys session filter dst 192.168.20.10
+FGT-01 # diagnose sys session clear
+```
+
+> 🚨 **Danger** : `diagnose sys session clear` **sans filtre préalable** vide **TOUTE** la table de sessions du pare-feu. Toutes les connexions de tous les utilisateurs sont coupées d'un coup. En production, c'est une interruption de service.
+>
+> **Prends le réflexe de toujours poser un filtre avant.** Et vérifie le filtre :
+> ```
+> FGT-01 # diagnose sys session filter
+> ```
+
+**Étape 8 — Lire les journaux**
+
+```
+FGT-01 # execute log filter category 0
+FGT-01 # execute log filter field policyid 3
+FGT-01 # execute log display
+```
+
+Tu vois les paquets refusés par la politique 3 : la preuve que ton blocage travaille.
+
+**Étape 9 — Compter les correspondances**
+
+Il existe un compteur par politique :
+
+```
+FGT-01 # diagnose firewall iprope show 100004 1
+```
+
+Plus simple et plus lisible :
+
+```
+FGT-01 # get firewall policy
+```
+
+Chaque politique affiche ses octets et paquets.
+
+> 💡 **Astuce professionnelle** : une politique dont le compteur reste à **zéro** depuis des mois est probablement **inutile** — ou bien elle est masquée par une règle placée au-dessus. Dans les deux cas, il faut aller voir. C'est la base du ménage annuel dans un jeu de règles, et le premier réflexe d'un audit.
+
+**Étape 10 — Nettoyer pour la suite**
+
+Rappel du §3.3 : avec la licence d'évaluation, tu es limité à trois politiques. Supprime la règle de blocage, on n'en a plus besoin :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # delete 3
+FGT-01 (policy) # end
+```
+
+Garde les politiques 1 et 2.
+
+---
+
+**✅ Résultat attendu**
+
+- PC-LAN atteint Internet ✅
+- PC-LAN atteint le serveur DMZ en HTTP ✅
+- PC-LAN ne peut PAS faire de SSH vers la DMZ ❌ (service non autorisé)
+- Tu as vu une règle **ignorée** parce qu'elle était mal placée
+- Tu as vu `move` corriger le comportement **sans changer les règles**
+- `diagnose sys session list` te montre `policy_id`
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Une politique répond à six questions**, puis prend une décision.
+2. **L'ordre est tout.** Première correspondance gagne, le reste n'est jamais lu.
+3. **L'identifiant n'est pas la position.** Ne déduis jamais l'ordre des numéros.
+4. **Le trafic retour ne demande aucune politique**, et tu l'as vérifié.
+5. **`policy_id` dans la table de sessions te dit qui a décidé.** C'est le diagnostic le plus direct de FortiOS.
+6. **Les sessions établies survivent aux changements de règles.** D'où `session clear` — avec un filtre.
+7. **Un compteur à zéro est un signal**, pas un détail.
+
+---
+
+### 9.6 Bonnes pratiques pour un jeu de règles tenable
+
+Quelques principes qui font la différence entre une configuration qu'on maintient et une configuration qu'on n'ose plus toucher :
+
+**1. Nomme tout.** Politiques, objets, services. Un nom explicite vaut dix commentaires.
+
+**2. Commente le POURQUOI, pas le QUOI.** `set comments "Autorise HTTP"` est inutile : on le voit dans la règle. `set comments "Ticket 4471 - acces ERP demande par la DAF le 12/03"` te sauve dans deux ans, quand quelqu'un demandera si on peut supprimer cette règle.
+
+**3. Du spécifique au général**, toujours.
+
+**4. Une règle = un besoin.** Résiste à la tentation d'élargir une règle existante pour couvrir un nouveau cas : tu perds la trace de qui a besoin de quoi, et tu ne pourras plus la supprimer sans risque.
+
+**5. Journalise.** Une règle sans journal est une règle dont tu ne sauras jamais si elle sert.
+
+**6. Date la revue.** Un jeu de règles se relit une fois par an. Sans quoi tu accumules des autorisations pour des projets terminés depuis longtemps — et c'est exactement là que les attaquants trouvent leur chemin.
+
+---
