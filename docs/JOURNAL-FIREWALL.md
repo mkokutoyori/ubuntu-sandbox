@@ -2741,6 +2741,34 @@ ouvre une vraie session, les trames sont comptées sur le câble, une
 interface sans `allowaccess ssh` refuse, un `trusthost` qui ne couvre pas
 la source refuse, et `admin-ssh-port` déplace vraiment la porte.
 
+**Livrée.** Les six points du critère sont tenus, et telnet est monté par
+le même chemin avec sa propre invite (`credentialPrompts()`, crochet
+optionnel du contexte telnet partagé, donc Cisco et Huawei gardent le
+libellé d'IOS). Deux points appris en mesurant :
+
+- **le refus est un rejet SILENCIEUX**, pas un refus — la documentation
+  Fortinet décrit le paquet jeté avant que le serveur ne le voie, donc le
+  client n'obtient pas même une invite de mot de passe. La sonde l'affirme
+  par l'absence d'invite plutôt que par un message ;
+- **l'invite de configuration reproduisait le CHEMIN et non le dernier
+  mot** — `config system global` rendait `FGT (system global) #` là où une
+  vraie machine rend `FGT (global) #`. `FortiNavigator.label()` prenait la
+  CLÉ de l'objet, ce qui est juste pour une entrée de table (`edit port1`
+  → `(port1)`) et faux pour un objet unique, dont la clé EST le chemin.
+
+**Trouvé en mesurant et laissé au socle TCP**, parce que c'est un défaut
+général et non un défaut du pare-feu : `EndHost.tcpConnect` rend une
+promesse qui ne se résout JAMAIS quand le SYN est jeté en silence. La pile
+a bien ses minuteurs de retransmission (`onRtoFired` →
+`_teardown(socket, 'timeout')`), mais aucun test à horloge réelle ne les
+atteint — c'est ce qui rend le refus muet plutôt que « timed out ».
+
+**Contrainte retirée dans la même livraison** : la limite de 800 lignes par
+fichier (NFR-M3, garde-fous G1 et G3). Le comptage de lignes s'est révélé un
+mauvais indicateur de couplage — il imposait des extractions dictées par un
+compteur plutôt que par la cohésion. Ce qui gouverne le découpage reste
+NFR-M1, NFR-M2, NFR-M4 et NFR-M6, qui parlent tous de dépendances.
+
 ---
 
 ## Périmètre pris — FortiOS phase 13 (les collecteurs syslog émettent)

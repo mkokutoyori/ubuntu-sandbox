@@ -430,9 +430,14 @@ second facteur toujours accepté serait pire que pas de second facteur).
   et `security-mode captive-portal` sur une interface existe. HTTPS n'est
   pas capturé (il faudrait présenter un certificat pour un nom qu'on n'a
   pas — même brique manquante que `deep-inspection`) ;
-- l'authentification d'un compte administrateur à l'ouverture de session
-  n'est pas branchée sur une vraie connexion SSH au pare-feu — le
-  pare-feu n'a pas encore de serveur SSH ;
+- ~~l'authentification d'un compte administrateur n'est pas branchée sur
+  une vraie connexion SSH~~ **fermé en E51** : le pare-feu héberge un
+  vrai serveur SSH (et telnet) sur sa propre pile TCP, par le
+  `SshServerHandler` que le dépôt sert déjà à quatre familles
+  d'appareils. `ssh admin@<pare-feu>` depuis un `LinuxPC` ouvre une vraie
+  session, les trames sont comptées sur le câble, chaque session a sa
+  propre CLI portant l'identité de l'administrateur — donc son profil
+  d'accès — et `trusthost` refuse au niveau du paquet ;
 - `two-factor` est refusé, donc `email-to` est stocké sans emploi.
 
 ### 6.9 Phase 8 — VPN — ✅ livrée
@@ -538,6 +543,7 @@ comparer, jamais le supposer).
 | 2026-08-18 | agent `mandeng` | Phase 7 livrée (E37). §6.8. Pile TCP sur le pare-feu. **LDAP était déjà écrit (chantier AD) — le BRD se trompait, corrigé.** |
 | 2026-08-18 | agent `mandeng` | Phase 6 livrée (E36). §6.7 (refus assumés, ce qui reste). Trois défauts de socle corrigés (clé de session post-NAT, inspection hors du premier paquet, enfants de type objet). |
 | 2026-08-19 | agent `mandeng` | Phase 13 livrée (E50). **Les collecteurs syslog émettent pour de bon**, et leur chemin CLI était faux (`setting`/`filter` sont frères). |
+| 2026-08-20 | agent `mandeng` | Phase 14 livrée (E51). **Le pare-feu héberge un vrai serveur SSH et telnet**, et `allowaccess` devient un filtre local-in par port de destination — il était stocké et lu par personne, comme les sept réglages d'administration de `config system global`. Piège P14 retiré : la limite de 800 lignes par fichier (NFR-M3, garde-fous G1 et G3) est supprimée. |
 | 2026-08-19 | agent `mandeng` | Phase 12 livrée (E49). **Le portail captif détourne pour de bon**, et un défaut du socle TCP tombe avec : `transmit` sourçait un segment par le ROUTAGE au lieu de `socket.localIp`. |
 | 2026-08-19 | agent `mandeng` | Phase 11 livrée (E46 à E48). **Tous les points ouverts de la phase 2 sont fermés.** **BGP : le refus de la phase 10 reposait sur une prémisse fausse de ma part** — le pare-feu a un `TcpStack` depuis la phase 7. **DHCP : `onCommit` était vide**, le serveur sert maintenant de vrais baux et `mode dhcp` est un vrai client. |
 | 2026-08-19 | agent `mandeng` | Phases 9a/9b/10 livrées (E43, E44, E45). **`OSPFEngine.activateInterface` rendu idempotent dans le socle partagé** — quatre appelants portaient la même garde, donc c'était au moteur de la porter. **`convergeDynamicRouting()` écrit puis supprimé** : les deux bouts ont de vrais minuteurs, la sonde avance une horloge. **Prémisse fausse corrigée, et elle était la mienne** : une note de périmètre attribuait au BRD §22.3 un refus de RIP/OSPF qu'il ne contient pas (§19.3 disait déjà « les moteurs existent, le travail est de les brancher »). Jumelle de la leçon LDAP/DH : on vérifie une citation avant de la répéter. Format de `get router info routing-table all` corrigé en CIDR après vérification chez Fortinet. |
