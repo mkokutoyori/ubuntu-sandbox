@@ -6245,3 +6245,345 @@ Pour finir, la version courte, celle qui tient en réunion :
 > On garde le routeur : il achemine vite et il fait le tri grossier. On ajoute le pare-feu : il fait le travail que le routeur ne peut structurellement pas faire. »
 
 ---
+
+## 16. L'inspection SSL/TLS
+
+Plus de 90 % du trafic web est aujourd'hui chiffré. Cela veut dire une chose simple et brutale : **sans inspection SSL, la moitié des profils de la section 14 ne voient presque rien**.
+
+C'est aussi le sujet le plus délicat du tutoriel, parce qu'il touche à la vie privée et qu'il casse des choses si on le déploie mal. On va donc être précis.
+
+### 16.1 Le problème
+
+Quand ton utilisateur consulte `https://exemple.com`, le pare-feu voit passer un flux chiffré. Il ne peut pas savoir :
+
+- quelle **page** est consultée (il voit `exemple.com`, pas `/page-interdite`) ;
+- quel **fichier** est téléchargé ;
+- si ce fichier contient un **virus** ;
+- si la requête est une **injection SQL**.
+
+Le chiffrement protège l'utilisateur des regards indiscrets — y compris celui de son propre pare-feu.
+
+### 16.2 Les deux niveaux d'inspection
+
+**① L'inspection de certificat** (*certificate-inspection*)
+
+Le pare-feu **ne déchiffre rien**. Il lit uniquement les parties **en clair** de la négociation TLS :
+- le **SNI** (*Server Name Indication*), c'est-à-dire le nom du site demandé ;
+- le **certificat** présenté par le serveur.
+
+| ✅ Ce qu'elle permet | ❌ Ce qu'elle ne permet pas |
+|---|---|
+| Filtrage web par **domaine** | Filtrage par URL complète |
+| Contrôle applicatif partiel | Antivirus |
+| Blocage de certificats invalides | IPS sur le contenu |
+| **Aucun impact sur la vie privée** | DLP |
+
+**② L'inspection profonde** (*deep-inspection*)
+
+Le pare-feu **déchiffre**, inspecte, puis **rechiffre**. Techniquement, il réalise une interception au milieu — un *man-in-the-middle* — mais **avec ton autorisation** et avec un certificat que tes postes ont appris à considérer comme fiable.
+
+```
+Poste ──TLS 1──► [FortiGate déchiffre / inspecte / rechiffre] ──TLS 2──► Serveur
+```
+
+| ✅ Ce qu'elle permet | ❌ Ce qu'elle coûte |
+|---|---|
+| **Tout** : antivirus, IPS, DLP, URL complète | Consommation processeur importante |
+| Visibilité totale sur le trafic | Déploiement d'un certificat sur tous les postes |
+| | Casse les applications à épinglage de certificat |
+| | **Questions juridiques et éthiques réelles** |
+
+### 16.3 🧠 Comprendre : comment ça marche vraiment
+
+Le mécanisme mérite d'être compris, parce qu'il explique tous les problèmes qu'on rencontre ensuite.
+
+**Sans inspection** : ton navigateur vérifie que le certificat de `exemple.com` est signé par une autorité de certification (AC) qu'il connaît. Si oui, cadenas vert.
+
+**Avec inspection profonde** :
+1. Ton navigateur demande `exemple.com`
+2. Le FortiGate intercepte, et va **lui-même** chercher le vrai certificat auprès du serveur
+3. Il vérifie ce certificat pour son propre compte
+4. Il **fabrique à la volée** un certificat pour `exemple.com`, qu'il signe **avec sa propre AC**
+5. Il présente ce faux certificat à ton navigateur
+
+**D'où la condition indispensable** : ton navigateur doit **faire confiance à l'AC du FortiGate**. Sinon il affiche une grosse alerte de sécurité — ce qui est exactement son travail.
+
+> ⚠️ **Attention — c'est la source n°1 des problèmes en déploiement**
+> Si tu actives l'inspection profonde **sans avoir d'abord déployé le certificat de l'AC** sur les postes, **tous tes utilisateurs reçoivent une alerte de sécurité sur tous les sites**. Le standard téléphonique explose en dix minutes.
+>
+> **L'ordre est impératif :**
+> 1. Déployer le certificat de l'AC sur les postes
+> 2. Vérifier sur quelques machines pilotes
+> 3. **Ensuite seulement** activer l'inspection
+
+### 16.4 L'épinglage de certificat : ce qui va casser
+
+Certaines applications **refusent** par principe tout certificat qui n'est pas celui qu'elles attendent, même signé par une AC de confiance. C'est le *certificate pinning*, et c'est une bonne pratique de sécurité — qui entre en collision frontale avec l'inspection.
+
+**Ce qui casse en général :**
+
+| Catégorie | Exemples |
+|---|---|
+| Banque et paiement | Applications bancaires, PayPal |
+| Systèmes d'exploitation | Windows Update, Apple, mises à jour Android |
+| Messageries | WhatsApp, Signal, Telegram |
+| Outils de développement | `git`, `npm`, `pip`, Docker |
+| Antivirus et sécurité | Leurs propres mises à jour |
+
+**La solution est l'exemption**, et FortiOS fournit une liste maintenue par Fortinet :
+
+```
+config firewall ssl-ssh-profile
+    edit "Inspection-Profonde"
+        set ssl-exempt-webserver enable
+        config ssl-exempt
+            edit 1
+                set type fortiguard-category
+                set fortiguard-category 31       ← Finance et banque
+            next
+            edit 2
+                set type address
+                set address "FQDN-Windows-Update"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce professionnelle** : commence toujours par exempter les catégories **Finance**, **Santé** et **Administration publique**. C'est à la fois une nécessité technique et, dans beaucoup de pays, une **obligation légale** — inspecter les échanges bancaires ou médicaux de tes salariés t'expose personnellement.
+
+### 16.5 ⚖️ Le volet juridique et éthique
+
+Je ne peux pas traiter cette section sans en parler, parce que c'est un sujet où un administrateur peut se mettre en tort sans le savoir.
+
+Déchiffrer le trafic de tes utilisateurs, c'est **lire leurs communications**. Dans la plupart des pays, y compris en France et dans l'Union européenne, cela implique :
+
+- **Informer** les utilisateurs, formellement et par écrit (charte informatique, note de service, règlement intérieur) ;
+- **Consulter** les instances représentatives du personnel quand elles existent ;
+- **Justifier** la mesure par un objectif de sécurité légitime et proportionné ;
+- **Exempter** ce qui relève de la vie privée et du secret : banque, santé, messageries personnelles, activité syndicale ;
+- **Documenter** le traitement (au titre du RGPD en Europe).
+
+> 🚨 **Danger** : activer l'inspection profonde sans ces précautions expose l'entreprise **et toi personnellement**. « J'ai fait ce qu'on m'a demandé » n'est pas une défense solide.
+>
+> Ce n'est pas une raison de ne pas le faire — c'est une raison de le faire **correctement**, avec une trace écrite de la décision. Demande la validation par écrit, et garde-la.
+
+### 16.6 Les profils prédéfinis
+
+FortiOS fournit deux profils prêts à l'emploi :
+
+| Profil | Ce qu'il fait |
+|---|---|
+| `certificate-inspection` | Inspection de certificat uniquement. ⭐ Le défaut sûr |
+| `deep-inspection` | Inspection profonde, avec les exemptions Fortinet de base |
+
+C'est `certificate-inspection` que tu as attaché à tes politiques depuis le TP 11 — ce qui explique pourquoi le filtrage d'URL du TP 12 ne fonctionnait qu'en HTTP.
+
+---
+
+### 🧪 TP 15 — Activer l'inspection profonde proprement
+
+**🎯 Objectif**
+Exporter l'AC du FortiGate, l'installer sur le PC, activer l'inspection profonde, vérifier qu'elle fonctionne, et observer le certificat substitué. Puis constater ce qui casse.
+
+**⏱️ Durée** : 40 minutes
+
+**📋 Prérequis** : TP 12 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Voir l'AC du pare-feu**
+
+```
+FGT-01 # config vpn certificate local
+FGT-01 (local) # show | grep "edit"
+FGT-01 (local) # end
+```
+
+Tu trouves `Fortinet_CA_SSL`, l'autorité utilisée par défaut pour signer les certificats substitués.
+
+**Étape 2 — Exporter le certificat de l'AC**
+
+En CLI :
+
+```
+FGT-01 # execute vpn certificate local export tftp Fortinet_CA_SSL fortinet_ca.cer 192.168.10.10
+```
+
+Ou, bien plus simple, **par l'interface web** : `System → Certificates`, sélectionne `Fortinet_CA_SSL`, puis `Download`.
+
+> ⚠️ **Attention** : en production, **on n'utilise pas l'AC d'usine**. Chaque FortiGate sort avec la même, ce qui veut dire que n'importe qui possédant un FortiGate peut forger un certificat que tes postes accepteront. On génère sa propre AC, ou on utilise celle de son domaine Active Directory. C'est une différence majeure entre un lab et une production.
+
+**Étape 3 — Installer l'AC sur le PC**
+
+Sur Linux :
+
+```bash
+user@pc-lan:~$ sudo cp fortinet_ca.cer /usr/local/share/ca-certificates/fortinet_ca.crt
+user@pc-lan:~$ sudo update-ca-certificates
+```
+
+Sur Windows :
+
+```cmd
+C:\Users\Lab> certutil -addstore -f "Root" fortinet_ca.cer
+```
+
+> 💡 **Astuce en production** : on ne fait évidemment pas ça poste par poste. On déploie par **GPO** dans un domaine Active Directory, ou par la solution de gestion de parc. Sans automatisation, l'inspection profonde n'est pas déployable au-delà de vingt machines.
+
+**Étape 4 — Créer un profil d'inspection profonde**
+
+```
+FGT-01 # config firewall ssl-ssh-profile
+FGT-01 (ssl-ssh-profile) # edit "Deep-Lab"
+FGT-01 (Deep-Lab) # set comment "Inspection profonde du laboratoire"
+FGT-01 (Deep-Lab) # config https
+FGT-01 (https) # set ports 443
+FGT-01 (https) # set status deep-inspection
+FGT-01 (https) # end
+FGT-01 (Deep-Lab) # set server-cert-mode re-sign
+FGT-01 (Deep-Lab) # set caname "Fortinet_CA_SSL"
+FGT-01 (Deep-Lab) # set untrusted-caname "Fortinet_CA_Untrusted"
+FGT-01 (Deep-Lab) # next
+FGT-01 (ssl-ssh-profile) # end
+```
+
+**Étape 5 — Ajouter les exemptions indispensables**
+
+```
+FGT-01 # config firewall ssl-ssh-profile
+FGT-01 (ssl-ssh-profile) # edit "Deep-Lab"
+FGT-01 (Deep-Lab) # config ssl-exempt
+FGT-01 (ssl-exempt) # edit 1
+FGT-01 (1) # set type fortiguard-category
+FGT-01 (1) # set fortiguard-category 31
+FGT-01 (1) # next
+FGT-01 (ssl-exempt) # end
+FGT-01 (Deep-Lab) # next
+FGT-01 (ssl-ssh-profile) # end
+```
+
+**Étape 6 — L'attacher à la politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set ssl-ssh-profile "Deep-Lab"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 7 — Observer le certificat substitué**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ echo | openssl s_client -connect www.fortinet.com:443 2>/dev/null | openssl x509 -noout -issuer -subject
+```
+```
+issuer=C = US, ST = California, L = Sunnyvale, O = Fortinet, OU = Certificate Authority, CN = FortiGate CA
+subject=CN = www.fortinet.com
+```
+
+**Regarde bien l'émetteur.** Le sujet est bien `www.fortinet.com`, mais le certificat est signé par **ton FortiGate**, pas par l'autorité d'origine.
+
+**Tu viens de voir l'interception se produire.** Et ton navigateur l'accepte, parce que tu lui as appris à faire confiance à cette AC à l'étape 3.
+
+**Étape 8 — Vérifier que le filtrage HTTPS fonctionne maintenant**
+
+Reprends la liste d'URL du TP 12, mais teste en **HTTPS** cette fois :
+
+```bash
+user@pc-lan:~$ curl -m 10 https://example.com
+```
+
+Avec `certificate-inspection`, le blocage par domaine fonctionnait déjà. Avec `deep-inspection`, tu peux maintenant bloquer par **chemin complet** :
+
+```
+FGT-01 # config webfilter urlfilter
+FGT-01 (urlfilter) # edit 1
+FGT-01 (1) # config entries
+FGT-01 (entries) # edit 3
+FGT-01 (3) # set url "example.com/chemin-interdit"
+FGT-01 (3) # set type simple
+FGT-01 (3) # set action block
+FGT-01 (3) # next
+FGT-01 (entries) # end
+FGT-01 (1) # next
+FGT-01 (urlfilter) # end
+```
+
+**Étape 9 — Constater ce qui casse**
+
+Depuis le PC du LAN, essaie un outil à épinglage :
+
+```bash
+user@pc-lan:~$ git clone https://github.com/torvalds/linux.git --depth 1
+```
+```
+fatal: unable to access '...': SSL certificate problem: unable to get local issuer certificate
+```
+
+**C'est le §16.4 en direct.** `git` refuse le certificat substitué.
+
+Deux solutions, et l'une des deux est mauvaise :
+
+```bash
+# ✅ Bonne solution : faire confiance à l'AC (déjà fait à l'étape 3 pour le système,
+#    mais git peut avoir son propre magasin)
+user@pc-lan:~$ git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
+
+# ❌ Mauvaise solution, à ne JAMAIS faire en production
+user@pc-lan:~$ git config --global http.sslVerify false
+```
+
+> 🚨 **Danger** : `sslVerify false` désactive **toute** vérification, y compris contre une vraie attaque. C'est ce que font beaucoup de développeurs quand l'inspection les gêne — et c'est ainsi qu'une mesure de sécurité en détruit une autre.
+>
+> Si tes développeurs commencent à désactiver la vérification TLS partout, **exempte-les** plutôt : l'inspection qui pousse les gens à se rendre vulnérables est une inspection contre-productive.
+
+**Étape 10 — Mesurer le coût**
+
+```
+FGT-01 # get system performance status
+FGT-01 # diagnose sys top 5 20
+```
+
+Génère du trafic HTTPS et observe la charge. Sur une VM à 1 vCPU, l'inspection profonde est très visible.
+
+**Étape 11 — Revenir à l'inspection de certificat**
+
+Pour la suite du tutoriel, on repasse au profil léger :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- L'AC du FortiGate est installée sur le PC
+- `openssl s_client` montre un certificat émis par **FortiGate CA**
+- Le blocage par URL complète fonctionne en HTTPS
+- `git clone` échoue, et tu sais pourquoi
+- La charge processeur monte visiblement
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Sans inspection SSL, l'antivirus et l'IPS ne voient presque rien** du trafic web moderne.
+2. **Deux niveaux** : certificat (léger, sans déchiffrement) et profond (tout voir, tout casser).
+3. **L'ordre de déploiement est impératif** : le certificat sur les postes AVANT l'activation.
+4. **L'épinglage casse**, et la liste des victimes est prévisible.
+5. **On n'utilise jamais l'AC d'usine en production.**
+6. **Il y a un volet juridique**, et il n'est pas optionnel.
+7. **Une inspection trop agressive pousse les gens à désactiver leur propre sécurité.**
+
+---
