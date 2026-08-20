@@ -40,6 +40,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
   private config: StpConfig;
   private readonly mstRegion: MstRegion = createDefaultMstRegion();
   private readonly mstInstancePriority = new Map<number, number>();
+  private readonly rootRole = new Map<number, 'primary' | 'secondary'>();
   private readonly vlanPriority = new Map<number, number>();
   private readonly vlanHello = new Map<number, number>();
   private readonly vlanMaxAge = new Map<number, number>();
@@ -481,6 +482,38 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     this.instanceForKey(instanceId).runElection();
     this.emitBpduOnAllPorts();
   }
+  getConfiguredMstInstancePriorities(): [number, number][] {
+    return [...this.mstInstancePriority].sort((a, b) => a[0] - b[0]);
+  }
+  clearMstInstancePriority(instanceId: number): void {
+    this.mstInstancePriority.delete(instanceId);
+    if (this.config.mode !== 'mstp') return;
+    this.instanceForKey(instanceId).runElection();
+    this.emitBpduOnAllPorts();
+  }
+
+  setCistPriority(priority: number): void {
+    this.setBridgePriority(priority);
+    this.setMstInstancePriority(0, priority);
+  }
+
+  getRootRole(instanceId: number): 'primary' | 'secondary' | null {
+    return this.rootRole.get(instanceId) ?? null;
+  }
+  getConfiguredRootRoles(): [number, 'primary' | 'secondary'][] {
+    return [...this.rootRole].sort((a, b) => a[0] - b[0]);
+  }
+  setRootRole(instanceId: number, role: 'primary' | 'secondary' | null): void {
+    if (role === null) this.rootRole.delete(instanceId);
+    else this.rootRole.set(instanceId, role);
+    const priority = role === 'primary' ? 0 : role === 'secondary' ? 4096 : 32768;
+    if (instanceId !== 0) {
+      if (role === null) this.clearMstInstancePriority(instanceId);
+      else this.setMstInstancePriority(instanceId, priority);
+      return;
+    }
+    this.setCistPriority(priority);
+  }
 
   getPortLinkType(portName: string): 'p2p' | 'shared' {
     return this.getPort(portName)?.getDuplex() === 'half'
@@ -759,6 +792,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
 
   handleFrame(physicalPort: string, frame: EthernetFrame): void {
     if (!this.config.enabled) return;
+    if (!this.isRunning()) return;
     const payload = frame.payload as StpBpdu | undefined;
     if (!payload || payload.type !== 'stp') return;
     const port = this.host.getPort(physicalPort);
@@ -806,7 +840,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     }
     if (payload.bpduType !== 'config') return;
 
-    const key = payload.vlan ?? 1;
+    const key = payload.cist ? this.cstKey() : (payload.vlan ?? 1);
     const inst = this.instanceForKey(key);
     // 802.1D: a BPDU whose Message Age has already reached Max Age is past
     // its useful life and is discarded rather than acted on — this is what
@@ -890,8 +924,26 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
       }
     }
 
+    const rootAvant = inst.getRootBridge();
+    const coutAvant = inst.getRootPathCost();
     inst.runElection();
 
+    this.finirBpduConfig(payload, portName, key, inst);
+
+    if (inst.receivedIsInferiorOnDesignated(portName, {
+      root: payload.rootBridge, cost: payload.rootPathCost,
+      bridge: payload.senderBridge, port: payload.portId,
+    })) {
+      this.sendBpdu(portName, key);
+    } else if (!bridgeEquals(rootAvant, inst.getRootBridge())
+      || coutAvant !== inst.getRootPathCost()) {
+      this.emitBpduOnAllPorts();
+    }
+  }
+
+  private finirBpduConfig(
+    payload: StpBpdu, portName: string, key: number, inst: StpVlanInstance,
+  ): void {
     if ((this.config.mode === 'rstp' || this.config.mode === 'mstp') && payload.version === 2) {
       if (payload.proposal && portName === inst.getRootPort()) {
         this.pendingAgreement.add(this.vkey(key, portName));
@@ -1055,7 +1107,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     const inst = this.instanceForKey(key);
     const rapid = this.config.mode !== 'stp';
     const bpdu: StpBpdu = {
-      type: 'stp', bpduType: 'config', vlan: key,
+      type: 'stp', bpduType: 'config', vlan: key, cist: key === this.cstKey(),
       protocolId: 0x0000,
       version: rapid ? 2 : 0,
       flags: 0,

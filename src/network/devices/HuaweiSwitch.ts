@@ -73,6 +73,8 @@ export class HuaweiSwitch extends Switch {
       onLacpBundleChanged: (port, groupId, bundled) =>
         this.stpAgent.onBundleChanged(port, `Eth-Trunk${groupId}`, bundled),
     }, () => this.getBus(), baseMac);
+    this.stpAgent.setMode('mstp');
+    this.stpAgent.setPathcostMethod('long');
     this.igmpSnoopingAgent = new IgmpSnoopingAgent({
       ...hostBase,
       resolveIngressVlan: (p: string) => this.resolveSnoopingVlan(p),

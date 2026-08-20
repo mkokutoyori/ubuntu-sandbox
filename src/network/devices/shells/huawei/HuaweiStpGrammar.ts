@@ -25,7 +25,8 @@ type Attendu =
   | { forme: 'rien' }
   | { forme: 'enum'; valeurs: readonly string[] }
   | { forme: 'entier'; min: number; max: number; multiple?: number }
-  | { forme: 'sequence'; parties: readonly Attendu[]; mots: readonly (string | null)[] };
+  | { forme: 'sequence'; parties: readonly Attendu[]; mots: readonly (string | null)[] }
+  | { forme: 'alternative'; options: readonly Attendu[] };
 
 interface RegleStp {
   mot: string;
@@ -51,12 +52,26 @@ export const STP_SYSTEME: readonly RegleStp[] = [
   {
     mot: 'instance',
     attendu: {
-      forme: 'sequence',
-      mots: [null, 'priority', null],
-      parties: [
-        { forme: 'entier', min: 0, max: 4094 },
-        RIEN,
-        { forme: 'entier', min: 0, max: 61440, multiple: 4096 },
+      forme: 'alternative',
+      options: [
+        {
+          forme: 'sequence',
+          mots: [null, 'priority', null],
+          parties: [
+            { forme: 'entier', min: 0, max: 4094 },
+            RIEN,
+            { forme: 'entier', min: 0, max: 61440, multiple: 4096 },
+          ],
+        },
+        {
+          forme: 'sequence',
+          mots: [null, 'root', null],
+          parties: [
+            { forme: 'entier', min: 0, max: 4094 },
+            RIEN,
+            { forme: 'enum', valeurs: ['primary', 'secondary'] },
+          ],
+        },
       ],
     },
   },
@@ -165,7 +180,37 @@ function verifier(
       }
       return { consomme: curseur - depuis };
     }
+    case 'alternative': {
+      let dernier: ErreurGrammaireVrp = { kind: 'incomplete' };
+      let profondeur = -1;
+      for (const option of attendu.options) {
+        const r = verifier(option, mots, depuis);
+        if (!('err' in r)) return r;
+        const atteint = motsConsommables(option, mots, depuis);
+        if (atteint > profondeur) { profondeur = atteint; dernier = r.err; }
+      }
+      return { err: dernier };
+    }
   }
+}
+
+function motsConsommables(
+  attendu: Attendu, mots: readonly string[], depuis: number,
+): number {
+  if (attendu.forme !== 'sequence') return 0;
+  let curseur = depuis;
+  for (const [i, partie] of attendu.parties.entries()) {
+    const litteral = attendu.mots[i];
+    if (litteral !== null && litteral !== undefined) {
+      if (mots[curseur]?.toLowerCase() !== litteral) return curseur - depuis;
+      curseur += 1;
+      continue;
+    }
+    const r = verifier(partie, mots, curseur);
+    if ('err' in r) return curseur - depuis;
+    curseur += r.consomme;
+  }
+  return curseur - depuis;
 }
 
 /**

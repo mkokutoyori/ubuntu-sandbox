@@ -213,6 +213,19 @@ export class StpVlanInstance {
     return this.agent.portIdFor(aPort, this.vlanId) - this.agent.portIdFor(bPort, this.vlanId);
   }
 
+  receivedIsInferiorOnDesignated(
+    portName: string,
+    received: { root: BridgeId; cost: number; bridge: BridgeId; port: number },
+  ): boolean {
+    if (this.getPortRole(portName) !== 'designated') return false;
+    return this.bpduSuperiority(received, {
+      root: this.getRootBridge(),
+      cost: this.getRootPathCost(),
+      bridge: this.agent.ownBridgeId(this.vlanId),
+      port: this.agent.portIdFor(portName, this.vlanId),
+    }) > 0;
+  }
+
   private bpduSuperiority(
     a: { root: BridgeId; cost: number; bridge: BridgeId; port: number },
     b: { root: BridgeId; cost: number; bridge: BridgeId; port: number },

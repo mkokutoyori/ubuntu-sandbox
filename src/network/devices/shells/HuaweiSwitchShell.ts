@@ -45,6 +45,7 @@ import {
   type LigneArp, rendreArpSwitch, rendreMacAddress,
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
+import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
 import {
   registerHuaweiNATInterfaceCommands,
   registerHuaweiNATSystemCommands,
@@ -158,16 +159,6 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private history: string[] = [];
 
   getCmdHistory(): readonly string[] { return [...this.history]; }
-
-  // STP/RSTP/MSTP global config (switch-only, L2). Default: VRP MSTP.
-  private stp: {
-    enabled: boolean;
-    mode: 'stp' | 'rstp' | 'mstp';
-    priority: number;
-    root: '' | 'primary' | 'secondary';
-    bpduProtection: boolean;
-    edgedPortDefault: boolean;
-  } = { enabled: true, mode: 'mstp', priority: 32768, root: '', bpduProtection: false, edgedPortDefault: false };
 
   /** Per-interface STP config lines (rendered verbatim in `display this`). */
   private ifStp = new Map<string, string[]>();
@@ -2512,40 +2503,43 @@ export class HuaweiSwitchShell implements ISwitchShell {
         case 'enable':
         case 'disable': {
           const on = g.mot === 'enable';
-          this.stp.enabled = on;
           this.applyToStpAgent(ag => ag.setEnabled(on));
           return '';
         }
         case 'mode': {
           const m = a[0] as 'stp' | 'rstp' | 'mstp';
-          this.stp.mode = m;
           this.applyToStpAgent(ag => ag.setMode(m));
           return '';
         }
         case 'priority': {
           const p = parseInt(a[0], 10);
-          this.stp.priority = p;
-          this.applyToStpAgent(ag => ag.setBridgePriority(p));
+          this.applyToStpAgent(ag => { ag.setRootRole(0, null); ag.setCistPriority(p); });
           return '';
         }
         case 'root': {
-          const p = a[0] === 'primary' ? 0 : 4096;
-          this.stp.root = a[0] as 'primary' | 'secondary';
-          this.stp.priority = p;
-          this.applyToStpAgent(ag => ag.setBridgePriority(p));
+          this.applyToStpAgent(ag => ag.setRootRole(0, a[0] as 'primary' | 'secondary'));
           return '';
         }
         case 'instance': {
           const instId = parseInt(a[0], 10);
+          if (a[1] === 'root') {
+            this.applyToStpAgent(ag =>
+              ag.setRootRole(instId, a[2] as 'primary' | 'secondary'));
+            return '';
+          }
           const p = parseInt(a[2], 10);
-          this.applyToStpAgent(ag => ag.setMstInstancePriority(instId, p));
+          this.applyToStpAgent(ag => {
+            ag.setRootRole(instId, null);
+            if (instId === 0) ag.setCistPriority(p);
+            else ag.setMstInstancePriority(instId, p);
+          });
           return '';
         }
         case 'bpdu-protection':
-          this.stp.bpduProtection = true;
+          this.applyToStpAgent(ag => ag.setBpduGuardGlobal(true));
           return '';
         case 'edged-port':
-          this.stp.edgedPortDefault = true;
+          this.applyToStpAgent(ag => ag.setPortfastDefault(true));
           return '';
         case 'pathcost-standard':
           // Le moteur porte deja ce reglage ; la commande l'ecartait.
@@ -2773,12 +2767,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return lines.join('\n');
     });
     t.register('display this', 'Display MST region configuration', () => {
-      const region = this.stpAgent()?.getMstRegion();
-      const lines = ['stp region-configuration'];
-      if (region?.name) lines.push(` region-name ${region.name}`);
-      for (const [id, v] of region?.instances ?? []) {
-        lines.push(` instance ${id} vlan ${v}`);
-      }
+      const lines = vrpStpRegionLines(this.stpAgent());
+      if (lines.length === 0) lines.push('stp region-configuration');
       lines.push('#');
       return lines.join('\n');
     });
@@ -2790,7 +2780,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.register('display stp global', 'Display STP global info', () => this.displayStp());
     trie.register('display stp brief', 'Display STP brief', () => this.displayStpBrief());
     trie.register('display stp mode', 'Display STP working mode', () =>
-      `STP mode: ${this.stp.mode.toUpperCase()}`);
+      `STP mode: ${(this.stpAgent()?.getMode() ?? 'mstp').toUpperCase()}`);
     trie.register('display stp topology-change', 'Display STP topology changes', () => [
       'CIST topology change information',
       '  Number of topology changes        : 0',
@@ -2874,8 +2864,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   }
 
   private displayStp(): string {
-    const modeName = this.stp.mode.toUpperCase();
     const ag = this.swRef?.getStpAgent?.();
+    const modeName = (ag?.getMode() ?? 'mstp').toUpperCase();
     const root = ag?.getRootBridge();
     const cfg = ag?.getConfig();
     const rootPort = ag?.getRootPort();
@@ -2889,7 +2879,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // low bits to show. The engine carries it (802.1t, for the election
     // and the wire); this view takes it back off.
     const extId = ag?.extendedSystemId() ?? 0;
-    const localPrio = (own?.priority ?? this.stp.priority) - (own ? extId : 0);
+    const localPrio = (own?.priority ?? ag?.getVlanPriority(1) ?? 32768) - (own ? extId : 0);
     const localMacFmt = this.toHuaweiMac(own?.mac);
     const rootMacFmt = root ? this.toHuaweiMac(root.mac) : localMacFmt;
     const rootPrio = root ? root.priority - extId : localPrio;
@@ -2904,9 +2894,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       `CIST Root/ERPC      :${rootPrio}.${rootMacFmt} / ${rootCost}`,
       `CIST RegRoot/IRPC   :${rootPrio}.${rootMacFmt} / 0`,
       `CIST RootPortId     :${rootPortId}`,
-      `BPDU-Protection     :${this.stp.bpduProtection ? 'Enabled' : 'Disabled'}`,
+      `BPDU-Protection     :${ag?.getGlobalStp().bpduGuardGlobal ? 'Enabled' : 'Disabled'}`,
       `TC or TCN received  :0`,
-      `STP Status          :${this.stp.enabled ? 'Enabled' : 'Disabled'}`,
+      `STP Status          :${ag?.isEnabledStp() ? 'Enabled' : 'Disabled'}`,
     ].join('\n');
   }
 
@@ -3171,6 +3161,63 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Undo Command ────────────────────────────────────────────────
 
+  private undoStpSysteme(reste: readonly string[]): string {
+    const sub = (reste[0] ?? '').toLowerCase();
+    switch (sub) {
+      case '':
+      case 'enable':
+        this.applyToStpAgent(ag => ag.setEnabled(false));
+        return '';
+      case 'disable':
+        this.applyToStpAgent(ag => ag.setEnabled(true));
+        return '';
+      case 'mode':
+        this.applyToStpAgent(ag => ag.setMode('mstp'));
+        return '';
+      case 'priority':
+        this.applyToStpAgent(ag => { ag.setRootRole(0, null); ag.setCistPriority(32768); });
+        return '';
+      case 'root':
+        this.applyToStpAgent(ag => ag.setRootRole(0, null));
+        return '';
+      case 'instance': {
+        const id = parseInt(reste[1] ?? '', 10);
+        if (isNaN(id)) return HUAWEI_ERRORS.WRONG(`undo stp ${reste.join(' ')}`);
+        const quoi = (reste[2] ?? '').toLowerCase();
+        this.applyToStpAgent(ag => {
+          ag.setRootRole(id, null);
+          if (quoi === 'root') return;
+          if (id === 0) ag.setCistPriority(32768);
+          else ag.clearMstInstancePriority(id);
+        });
+        return '';
+      }
+      case 'bpdu-protection':
+        this.applyToStpAgent(ag => ag.setBpduGuardGlobal(false));
+        return '';
+      case 'edged-port':
+        this.applyToStpAgent(ag => ag.setPortfastDefault(false));
+        return '';
+      case 'pathcost-standard':
+        this.applyToStpAgent(ag => ag.setPathcostMethod('long'));
+        return '';
+      case 'timer': {
+        const quoi = (reste[1] ?? '').toLowerCase();
+        this.applyToStpAgent(ag => {
+          if (quoi === 'hello') ag.setHelloSec(2);
+          else if (quoi === 'forward-delay') ag.setForwardDelaySec(15);
+          else if (quoi === 'max-age') ag.setMaxAgeSec(20);
+        });
+        return '';
+      }
+      case 'region-configuration':
+        this.applyToStpAgent(ag => ag.applyMstRegion('', 0, []));
+        return '';
+      default:
+        return refuseMotInattenduVrp(`undo stp ${reste.join(' ')}`, reste[0] ?? 'stp');
+    }
+  }
+
   private cmdUndo(args: string[]): string {
     if (args.length < 1 || !this.swRef) return 'Error: Incomplete command.';
 
@@ -3200,7 +3247,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return '';
     }
 
-    if (args[0].toLowerCase() === 'stp' && this.selectedInterface) {
+    if (args[0].toLowerCase() === 'stp' && this.mode === 'interface' && this.selectedInterface) {
       const port = this.selectedInterface;
       const sub = (args[1] ?? '').toLowerCase();
       if (sub === 'edged-port') this.applyToStpAgent(ag => ag.setPortFast(port, false));
@@ -3208,7 +3255,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
       else if (sub === 'bpdu-filter') this.applyToStpAgent(ag => ag.setPortBpduFilter(port, false));
       else if (sub === 'root-protection') this.applyToStpAgent(ag => ag.setPortRootGuard(port, false));
       else if (sub === 'loop-protection') this.applyToStpAgent(ag => ag.setPortLoopGuard(port, false));
+      this.ifStp.set(port, (this.ifStp.get(port) ?? [])
+        .filter(l => l.split(/\s+/)[1]?.toLowerCase() !== sub));
       return '';
+    }
+
+    if (args[0].toLowerCase() === 'stp' && this.mode === 'system') {
+      return this.undoStpSysteme(args.slice(1));
     }
 
     // VRP accepts `undo` of essentially any prior config. The L2 sim
@@ -3440,6 +3493,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const extra of lignesDuVlan(vlan)) lines.push(` ${extra}`);
       lines.push('#');
     }
+
+    const stpLignes = vrpStpGlobalLines(sw.getStpAgent?.());
+    if (stpLignes.length > 0) { lines.push(...stpLignes); lines.push('#'); }
+    const regionLignes = vrpStpRegionLines(sw.getStpAgent?.());
+    if (regionLignes.length > 0) { lines.push(...regionLignes); lines.push('#'); }
 
     // Interfaces
     const mgmt = sw.getManagementService?.();
