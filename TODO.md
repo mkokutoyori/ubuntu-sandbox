@@ -12,18 +12,6 @@ Format : `[famille] intitulé` puis constat / mesure / raison du report.
 
 ## Commutateur Huawei (VRP)
 
-### [port-group] la vue entière est un no-op reconnu
-`buildPortGroupCommands` enregistre seize mots-clés (`port`, `speed`,
-`stp`, `port-security`, `broadcast-suppression`, …) sur un `accept = () => ''`.
-Une configuration de masse sur une plage de ports est donc acceptée,
-silencieuse, et absente de la configuration rendue : elle disparaît au
-rechargement de la topologie.
-**Mesure** : `port-group group-member GigabitEthernet0/0/1 to 0/0/4` puis
-`port link-type trunk` → `''`, aucun port modifié.
-**Report** : demande de rejouer chaque commande de la vue interface sur
-chaque membre de la plage, donc de partager le trie d'interface avec une
-cible multiple — refonte de la vue, pas un correctif borné.
-
 ### [suppression] `multicast-suppression` / `unicast-suppression` absentes, `broadcast-suppression` décorative
 Les deux premières sont refusées ; la troisième est acceptée et rangée en
 TEXTE dans `ifCfg`, sans moteur de limitation derrière.
@@ -89,6 +77,14 @@ converger le voisin, donc le symptôme est refermé côté VRP.
 
 ---
 
+### [interface range] la vue de plage n'a pas été mesurée
+`interface range <a> to <b>` entre dans une vue et n'y dérive pas
+(`huawei-eth-trunk.test.ts` le vérifie), mais rien ne dit que ses
+commandes atteignent les membres — la vue `port-group`, qui vient d'être
+fermée, avait exactement cette forme.
+**Report** : à passer au banc ; si le défaut est le même, la sortie est
+la même (`executerSurMembres`).
+
 ## Journal des entrées fermées
 
 - `mac-address learning disable` (VRP interface + VLAN) et
@@ -96,3 +92,9 @@ converger le voisin, donc le symptôme est refermé côté VRP.
   chemin de données, les deux actions `discard`/`forward`.
 - `mac-address static` / `blackhole` / `aging-time` sur VRP — fermé.
 - Famille `stp` du commutateur VRP — fermé.
+- Vue `port-group` (temporaire et permanente) — fermée : les commandes
+  atteignent vraiment chaque membre, les groupes permanents vivent sur
+  l'équipement et se rendent, `display port-group` existe.
+- `#` ne ramenait pas en vue de base au REJEU d'une configuration VRP —
+  fermé dans `replayVendorConfig` ; un bloc d'interface vide faisait
+  perdre tout ce qui le suivait.

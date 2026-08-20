@@ -915,8 +915,9 @@ export async function replayVendorConfig(device: Router | Switch, text: string):
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('Building configuration') || line.startsWith('Current configuration')) continue;
-    if (line === '!') {
+    if (line === '!' || line === '#') {
       if (!isBase) { for (const l of toBase) await device.executeCommand(l); isBase = true; }
+      wasIndented = false;
       continue;
     }
     const indented = /^\s/.test(raw);

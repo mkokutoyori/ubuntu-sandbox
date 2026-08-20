@@ -41,6 +41,12 @@ export interface HuaweiSwitchDevice extends Switch {
   getPimSnoopingAgent?(): PimSnoopingAgent;
   _getNATEngine?(): NATEngine;
   getHuaweiDebugService?(): HuaweiDebugService;
+  getPortGroups?(): [string, string[]][];
+  getPortGroupMembers?(name: string): string[] | null;
+  createPortGroup?(name: string): boolean;
+  deletePortGroup?(name: string): boolean;
+  addPortGroupMembers?(name: string, ports: readonly string[]): 'ok' | 'absent' | 'plein';
+  removePortGroupMembers?(name: string, ports: readonly string[]): boolean;
   addVoiceVlanOui?(macHex: string, maskHex: string, description?: string): void;
   /**
    * Declare et fourni par PERSONNE : `_setVtyTransportInput` vit sur

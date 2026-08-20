@@ -46,6 +46,7 @@ import {
 } from './huawei/huaweiTableLayouts';
 import { analyserStp, STP_SYSTEME, STP_INTERFACE, borneTimerStp } from './huawei/HuaweiStpGrammar';
 import { vrpStpGlobalLines, vrpStpRegionLines } from './huawei/HuaweiStpRender';
+import { analyserPlagePorts, etendrePlage, portGroupRunningConfigLines, renduDisplayPortGroup } from './huawei/HuaweiPortGroup';
 import { analyserMacAddress, analyserApprentissageMac, ligneApprentissageMac, macRunningConfigLines, normaliserMacVrp, VRP_MAC_AGING_DEFAUT } from './huawei/HuaweiMacCommands';
 import {
   registerHuaweiNATInterfaceCommands,
@@ -170,8 +171,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** Per-VLAN description (vlan-view `description …`). */
   private vlanDesc = new Map<number, string>();
 
-  /** Active `port-group` member range (port-group bulk-config view). */
-  private portGroupMembers: string | null = null;
+  private portGroupMembers: string[] = [];
+  private portGroupName: string | null = null;
 
   /** Eth-Trunk (link-aggregation) groups, keyed by trunk id. */
   private ethTrunks = new Map<number, {
@@ -446,7 +447,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
       case 'interface': return `[${host}-${this.selectedInterface}]`;
       case 'vlan':      return `[${host}-vlan${this.selectedVlan}]`;
       case 'mst-region': return `[${host}-mst-region]`;
-      case 'port-group': return `[${host}-port-group]`;
+      case 'port-group':
+        return this.portGroupName === null
+          ? `[${host}-port-group]`
+          : `[${host}-port-group-${this.portGroupName}]`;
       case 'aaa':       return `[${host}-aaa]`;
       case 'user-interface': return `[${host}-ui-${this.uiLabel}]`;
       case 'acl':
@@ -490,6 +494,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
       this.mode = 'user';
       this.selectedInterface = null;
       this.selectedVlan = null;
+      this.portGroupMembers = [];
+      this.portGroupName = null;
       return '';
     }
     if (nav === 'quit') return this.cmdQuit();
@@ -500,6 +506,13 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // Get the trie for current mode
     const trie = this.getActiveTrie();
     const result = trie.match(cmd);
+
+    if (this.mode === 'port-group' && result.status !== 'ok') {
+      this.swRef = null;
+      const relaye = this.executerSurMembres(sw, cmd);
+      return filter && !relaye.startsWith('Error:')
+        ? applyPipeFilter(relaye, filter) : relaye;
+    }
 
     let output: string;
     switch (result.status) {
@@ -598,7 +611,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         return '';
       case 'port-group':
         this.mode = 'system';
-        this.portGroupMembers = null;
+        this.portGroupMembers = [];
+        this.portGroupName = null;
         return '';
       case 'aaa':
       case 'user-interface':
@@ -779,11 +793,37 @@ export class HuaweiSwitchShell implements ISwitchShell {
       return refuseUnknownUndo(this.systemTrie, args, raw) ?? this.cmdUndo(args);
     });
 
-    // port-group {group-member <a> [to <b>] | <name>} → bulk-config view
-    this.systemTrie.registerGreedy('port-group', 'Enter port-group view', (args) => {
-      this.portGroupMembers = args.join(' ');
+    this.systemTrie.registerGreedy('port-group', 'Enter port-group view', (args, ligne) => {
+      const sw = this.swRef;
+      const brut = ligne ?? `port-group ${args.join(' ')}`;
+      if (!sw || args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(brut);
+      if (args[0].toLowerCase() === 'group-member') {
+        const membres = this.resoudrePlage(args.slice(1), brut);
+        if (typeof membres === 'string') return membres;
+        this.portGroupMembers = membres;
+        this.portGroupName = null;
+        this.mode = 'port-group';
+        return '';
+      }
+      if (args.length > 1) return refuseMotInattenduVrp(brut, args[1]);
+      const nom = args[0];
+      if (sw.getPortGroupMembers?.(nom) === null && sw.createPortGroup?.(nom) === false) {
+        return `Error: The number of port-groups reaches the upper limit.`;
+      }
+      this.portGroupName = nom;
+      this.portGroupMembers = sw.getPortGroupMembers?.(nom) ?? [];
       this.mode = 'port-group';
       return '';
+    });
+    this.systemTrie.addCompletionKeywords('port-group', [
+      { keyword: 'group-member', description: 'Temporary port group built from a member range' },
+    ]);
+    this.systemTrie.registerGreedy('undo port-group', 'Delete a permanent port group', (args, ligne) => {
+      const sw = this.swRef;
+      const brut = ligne ?? `undo port-group ${args.join(' ')}`;
+      if (!sw || args.length === 0) return HUAWEI_ERRORS.INCOMPLETE(brut);
+      return sw.deletePortGroup?.(args[0])
+        ? '' : `Error: The port-group ${args[0]} does not exist.`;
     });
 
     // aaa → AAA view
@@ -1678,18 +1718,82 @@ export class HuaweiSwitchShell implements ISwitchShell {
   /** `port-group` bulk-config sub-view ([host-port-group]). */
   private buildPortGroupCommands(): void {
     const t = this.portGroupTrie;
-    const accept = () => '';
-    // Same port/physical/stp keywords as interface view — applied to the
-    // member range. The L2 sim records nothing per-port here (the range
-    // is informational), so they are recognised no-ops.
-    for (const kw of ['port', 'speed', 'duplex', 'negotiation', 'mtu',
-      'flow-control', 'shutdown', 'stp', 'storm-control', 'description',
-      'loopback-detect', 'port-security', 'port-isolate', 'undo',
-      'group-member', 'eth-trunk', 'broadcast-suppression']) {
-      t.registerGreedy(kw, `port-group ${kw}`, accept);
+    t.registerGreedy('group-member', 'Add member interfaces to this port group', (args, ligne) => {
+      const sw = this.swRef;
+      const brut = ligne ?? `group-member ${args.join(' ')}`;
+      if (!sw) return HUAWEI_ERRORS.INCOMPLETE(brut);
+      if (this.portGroupName === null) {
+        return `Error: The temporary port-group does not support this command.`;
+      }
+      const membres = this.resoudrePlage(args, brut);
+      if (typeof membres === 'string') return membres;
+      const r = sw.addPortGroupMembers?.(this.portGroupName, membres);
+      if (r === 'plein') return 'Error: The number of member interfaces reaches the upper limit.';
+      this.portGroupMembers = sw.getPortGroupMembers?.(this.portGroupName) ?? [];
+      return '';
+    });
+    t.registerGreedy('undo group-member', 'Remove member interfaces', (args, ligne) => {
+      const sw = this.swRef;
+      const brut = ligne ?? `undo group-member ${args.join(' ')}`;
+      if (!sw) return HUAWEI_ERRORS.INCOMPLETE(brut);
+      if (this.portGroupName === null) {
+        return `Error: The temporary port-group does not support this command.`;
+      }
+      const membres = this.resoudrePlage(args, brut);
+      if (typeof membres === 'string') return membres;
+      sw.removePortGroupMembers?.(this.portGroupName, membres);
+      this.portGroupMembers = sw.getPortGroupMembers?.(this.portGroupName) ?? [];
+      return '';
+    });
+    t.register('display this', 'Display port-group configuration', () => {
+      const lignes = this.portGroupName === null
+        ? [`port-group group-member ${this.portGroupMembers.join(' ')}`]
+        : [`port-group ${this.portGroupName}`,
+           ...this.portGroupMembers.map(m => ` group-member ${m}`)];
+      lignes.push('#');
+      return lignes.join('\n');
+    });
+  }
+
+  private resoudrePlage(args: readonly string[], ligne?: string): string[] | string {
+    const brut = ligne ?? args.join(' ');
+    const a = analyserPlagePorts(args);
+    if (a.statut === 'refus') {
+      return a.token === null
+        ? HUAWEI_ERRORS.INCOMPLETE(brut)
+        : refuseMotInattenduVrp(brut, a.token);
     }
-    t.register('display this', 'Display port-group configuration', () =>
-      `port-group group-member ${this.portGroupMembers ?? ''}`.trim());
+    const premier = this.resolveInterfaceName(a.premier);
+    if (!premier || !this.swRef?.getPort(premier)) {
+      return refuseMotInattenduVrp(brut, a.premier);
+    }
+    const dernier = a.dernier === null ? null : this.resolveInterfaceName(a.dernier);
+    if (a.dernier !== null && (!dernier || !this.swRef?.getPort(dernier))) {
+      return refuseMotInattenduVrp(brut, a.dernier);
+    }
+    const etendue = etendrePlage(this.swRef?.getPortNames() ?? [], premier, dernier);
+    if (!etendue) return refuseMotInattenduVrp(brut, a.dernier ?? a.premier);
+    return etendue;
+  }
+
+  private executerSurMembres(sw: Switch, input: string): string {
+    const membres = [...this.portGroupMembers];
+    if (membres.length === 0) return '';
+    const modeAvant = this.mode;
+    const interfaceAvant = this.selectedInterface;
+    const sorties: string[] = [];
+    try {
+      for (const membre of membres) {
+        this.mode = 'interface';
+        this.selectedInterface = membre;
+        const sortie = this.execute(sw, input);
+        if (sortie.trim()) sorties.push(sortie);
+      }
+    } finally {
+      this.mode = modeAvant;
+      this.selectedInterface = interfaceAvant;
+    }
+    return [...new Set(sorties)].join('\n');
   }
 
   private magasinComptes(): {
@@ -2211,6 +2315,24 @@ export class HuaweiSwitchShell implements ISwitchShell {
       }
       return this.displayMacAddress(entries);
     });
+
+    trie.registerGreedy('display port-group', 'Display permanent port groups', (args, ligne) => {
+      const sw = this.swRef;
+      if (!sw) return '';
+      const groupes = sw.getPortGroups?.() ?? [];
+      const mots = args.filter(a => a.length > 0);
+      if (mots.length === 0) return renduDisplayPortGroup(groupes, false);
+      if (mots.length > 1) {
+        return refuseMotInattenduVrp(ligne ?? `display port-group ${args.join(' ')}`, mots[1]);
+      }
+      if (mots[0].toLowerCase() === 'all') return renduDisplayPortGroup(groupes, true);
+      const membres = sw.getPortGroupMembers?.(mots[0]);
+      if (!membres) return `Error: The port-group ${mots[0]} does not exist.`;
+      return renduDisplayPortGroup([[mots[0], membres]], true);
+    });
+    trie.addCompletionKeywords('display port-group', [
+      { keyword: 'all', description: 'All permanent port groups and their members' },
+    ]);
 
     trie.register('display current-configuration', 'Display running configuration', () => {
       if (!this.swRef) return '';
@@ -3687,6 +3809,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
         lines.push('#');
       }
     }
+
+    lines.push(...portGroupRunningConfigLines(sw.getPortGroups?.() ?? []));
 
     // Global NAT block — any NAT entries not bound to a per-interface section above.
     const engine = moteurNat(sw);

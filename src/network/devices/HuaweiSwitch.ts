@@ -22,6 +22,9 @@ import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
 import { RouterManagementService } from './router/management/RouterManagementService';
 
 export class HuaweiSwitch extends Switch {
+  static readonly MAX_PORT_GROUPS = 32;
+  static readonly MAX_PORT_GROUP_MEMBERS = 48;
+
   private readonly agents = new AgentRegistry();
   private readonly lldpAgent: LldpAgent;
   private readonly stpAgent: StpAgent;
@@ -215,6 +218,45 @@ export class HuaweiSwitch extends Switch {
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }
   getLldpNeighbors(): NeighborDTO[] { return lldpToNeighborDTO(this.lldpAgent.getNeighbors()); }
+  private readonly portGroups = new Map<string, string[]>();
+
+  getPortGroups(): [string, string[]][] {
+    return [...this.portGroups].map(([n, m]) => [n, [...m]] as [string, string[]])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  getPortGroupMembers(name: string): string[] | null {
+    const m = this.portGroups.get(name);
+    return m ? [...m] : null;
+  }
+
+  createPortGroup(name: string): boolean {
+    if (this.portGroups.has(name)) return true;
+    if (this.portGroups.size >= HuaweiSwitch.MAX_PORT_GROUPS) return false;
+    this.portGroups.set(name, []);
+    return true;
+  }
+
+  deletePortGroup(name: string): boolean {
+    return this.portGroups.delete(name);
+  }
+
+  addPortGroupMembers(name: string, ports: readonly string[]): 'ok' | 'absent' | 'plein' {
+    const membres = this.portGroups.get(name);
+    if (!membres) return 'absent';
+    const fusion = [...new Set([...membres, ...ports])];
+    if (fusion.length > HuaweiSwitch.MAX_PORT_GROUP_MEMBERS) return 'plein';
+    this.portGroups.set(name, fusion);
+    return 'ok';
+  }
+
+  removePortGroupMembers(name: string, ports: readonly string[]): boolean {
+    const membres = this.portGroups.get(name);
+    if (!membres) return false;
+    this.portGroups.set(name, membres.filter(m => !ports.includes(m)));
+    return true;
+  }
+
   getStpAgent(): StpAgent { return this.stpAgent; }
   getLacpAgent(): LacpAgent { return this.lacpAgent; }
   getIgmpSnoopingAgent(): IgmpSnoopingAgent { return this.igmpSnoopingAgent; }

@@ -80,7 +80,7 @@ describe('Huawei port-group / interface range (bulk config, no derail)', () => {
   it('port-group <name> then group-member … to … is recognized', async () => {
     const sw = await sysSwitch();
     expect(await sw.executeCommand('port-group pg1')).not.toMatch(/Unrecognized/);
-    expect(sw.getPrompt()).toBe('[SW1-port-group]');
+    expect(sw.getPrompt()).toBe('[SW1-port-group-pg1]');
     expect(await sw.executeCommand(
       'group-member GigabitEthernet0/0/6 to GigabitEthernet0/0/9'))
       .not.toMatch(/Unrecognized command/);
