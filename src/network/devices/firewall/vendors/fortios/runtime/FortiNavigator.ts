@@ -162,6 +162,9 @@ export class FortiNavigator {
     if (!verdict.ok) return verdict.error;
 
     object.set(attribute, verdict.values);
+    spec.appliesImmediately?.(verdict.values, {
+      ...this.deps.commitContext(), position: -1,
+    });
     return EMPTY;
   }
 

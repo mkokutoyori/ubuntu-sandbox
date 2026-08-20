@@ -97,6 +97,18 @@ famille reprise ferme une part de cette entrée.
 
 ## Pare-feu FortiGate
 
+### [heure] la table des fuseaux FortiOS est incomplete
+`set timezone` accepte desormais un nom IANA (verifie contre la VRAIE
+base de fuseaux du moteur) et un indice historique <0-86>. La
+correspondance indice -> nom n'est ecrite que pour les huit indices que
+la documentation publique atteste ; un autre indice est accepte, rendu,
+et resolu en UTC.
+**Mesure** : `set timezone 37` est accepte et `execute time` rend l'heure
+UTC.
+**Report** : la liste complete ne se lit que sur une vraie machine
+(`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
+pire que l'aveu.
+
 ### [admin] pas d'interface d'administration HTTP/HTTPS
 `set allowaccess http https` est accepte, rendu, et gouverne bien le
 filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN

@@ -4,6 +4,9 @@ import type { Suggestion } from '../../../../../cli/CompletionEngine';
 import type { FortiGate } from './FortiGate';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiMessages, FORTI_COMMAND_FAIL, setHintsEnabled } from './FortiMessages';
+import {
+  fortiSystemTime, runExecuteDate, runExecuteTime,
+} from './diag/timeCommands';
 import { FortiSocle } from './FortiSocle';
 import { schemaIndex } from './schema';
 import type {
@@ -440,7 +443,7 @@ export class FortiShell {
       vmCpus: 1,
       vmMemoryMb: 1985,
       logDisk: 'Available',
-      systemTime: new Date(this.fw.now()).toUTCString(),
+      systemTime: fortiSystemTime(this.fw),
     });
   }
 
@@ -467,6 +470,8 @@ export class FortiShell {
     if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
       return renderDhcpLeases(this.fw.getDhcp().leases());
     }
+    if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
+    if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
     if (rest[0] === 'ping') {
       if (rest.length < 2) return FortiMessages.incomplete('a destination');
       return this.fw.runPing(rest[1]);

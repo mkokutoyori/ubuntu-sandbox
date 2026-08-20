@@ -29,6 +29,7 @@ import {
   renderSdwanHealthCheck, renderSdwanMembers, renderSdwanService,
 } from './sdwanRenderer';
 import { renderHaChecksum, renderHaStatus } from './haRenderer';
+import { renderNtpStatus } from './ntpStatusRenderer';
 
 export function runDiagnose(rest: readonly string[], deps: FortiDiagDeps): string {
   const [family, ...tail] = rest;
@@ -128,6 +129,10 @@ export function deniedLog(context: PacketContext, now: number): FirewallLogDraft
 function diagnoseSession(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'sdwan') return diagnoseSdwan(rest.slice(1), deps);
   if (rest[0] === 'ha') return diagnoseHa(rest.slice(1), deps);
+  if (rest[0] === 'ntp') {
+    if (rest[1] !== 'status') return FortiMessages.unknownPath(`sys ${rest.join(' ')}`);
+    return renderNtpStatus(deps.fw);
+  }
 
   const verb = rest[1];
   const filter = deps.state.sessionFilter;

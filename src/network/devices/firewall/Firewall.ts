@@ -11,6 +11,8 @@ import {
   type EthernetFrame,
   type IPv4Packet,
 } from '../../core/types';
+import { SystemClock } from '../../core/SystemClock';
+import { localTimeMs, utcMsForLocal } from '../../core/Timezone';
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
@@ -124,6 +126,7 @@ export class Firewall extends Equipment {
   private readonly services: FirewallServices;
   protected readonly profile: FirewallProfile;
   private readonly logging = new LoggingConfig();
+  private readonly clock: SystemClock;
   private readonly syslog: SyslogAgent;
   private readonly syslogCollectors: SyslogCollectorTable;
   private readonly boundPolicyInterfaces = new Set<string>();
@@ -181,7 +184,8 @@ export class Firewall extends Equipment {
       },
     });
 
-    const now = options.now ?? (() => Date.now());
+    this.clock = new SystemClock(options.now ?? (() => Date.now()));
+    const now = () => this.clock.now();
     this.syslog = new SyslogAgent(this, () => this.getBus());
     this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
     this.vdoms = new VdomRegistry({
@@ -481,6 +485,22 @@ export class Firewall extends Equipment {
   }
 
   now(): number { return this.services.now(); }
+
+  getSystemClock(): SystemClock { return this.clock; }
+
+  private timezoneName = 'Europe/Paris';
+
+  setTimezone(name: string): void { this.timezoneName = name; }
+
+  getTimezone(): string { return this.timezoneName; }
+
+  localNow(): number { return localTimeMs(this.timezoneName, this.now()); }
+
+  setLocalClock(localMs: number): void {
+    this.clock.set(utcMsForLocal(this.timezoneName, localMs));
+  }
+
+  managementIdleTimeoutMs(): number { return this.management.idleTimeoutMs(); }
   getLoggingConfig(): LoggingConfig { return this.logging; }
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }

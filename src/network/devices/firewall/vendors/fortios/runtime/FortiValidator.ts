@@ -73,6 +73,11 @@ export class FortiValidator {
       if (attribute.referenceTo.some(target => this.resolve(target, value))) return null;
       return FortiMessages.unknownReference(attribute.name, value, attribute.referenceTo[0]);
     }
+    if (attribute.acceptsValue) {
+      if (attribute.acceptsValue(value)) return null;
+      return FortiMessages.valueError(
+        value, attribute.expectedValue ?? expected(part));
+    }
     if (argumentAccepts(part, value)) return null;
     return FortiMessages.valueError(value, expected(part));
   }

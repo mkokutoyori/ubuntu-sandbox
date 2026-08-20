@@ -122,7 +122,10 @@ export const USER_RADIUS: FortiTableSpec = {
   attributes: [
     { ...word('name', 'RADIUS server entry name.'), readOnly: true },
     address('server', 'Primary RADIUS server IP address.'),
-    { ...text('secret', 'Pre-shared secret to access the RADIUS server.'), quoted: true },
+    {
+      ...text('secret', 'Pre-shared secret to access the RADIUS server.'),
+      quoted: true, secret: true,
+    },
     count('radius-port', 'RADIUS service port number.', 0, 65535, 1812),
     choice('auth-type', 'Authentication methods.', [
       { keyword: 'auto', description: 'Try PAP, then MS-CHAPv2, then CHAP.' },
@@ -203,7 +206,7 @@ export const USER_LDAP: FortiTableSpec = {
       { keyword: 'anonymous', description: 'Bind anonymously, then search.' },
     ], 'simple'),
     { ...text('username', 'Username for a regular bind.'), quoted: true },
-    { ...text('password', 'Password for a regular bind.'), quoted: true },
+    { ...text('password', 'Password for a regular bind.'), quoted: true, secret: true },
   ],
   onCommit(object, context) {
     context.device.applyLdapServer({

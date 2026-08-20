@@ -5,6 +5,7 @@ import {
 import {
   MANAGEMENT_SERVICES, type ManagementService,
 } from '../../../mgmt/ManagementAccess';
+import { resolveFortiTimezone } from './timezones';
 
 const ACCESS_SERVICE_HELP: Readonly<Record<ManagementService, string>> = Object.freeze({
   ping: 'PING access.',
@@ -43,7 +44,12 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
   renderOrder: 10,
   help: 'Configure global attributes.',
   attributes: [
-    word('hostname', 'FortiGate unit name.', 'FortiGate'),
+    {
+      ...word('hostname', 'FortiGate unit name.', 'FortiGate'),
+      appliesImmediately: (values, context) => {
+        context.device.applyHostname(values[0] ?? '');
+      },
+    },
     word('alias', 'Alias for this FortiGate unit.'),
     count('admintimeout', 'Number of minutes before an idle administrator times out.',
       1, 480, 5),
@@ -66,7 +72,18 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     ], 'check-all'),
     count('auth-http-port', 'Port the captive portal answers HTTP on.', 1, 65535, 1000),
     count('auth-https-port', 'Port the captive portal answers HTTPS on.', 1, 65535, 1003),
-    count('timezone', 'Time zone index.', 0, 86, 4),
+    {
+      name: 'timezone',
+      help: 'Time zone.',
+      quoted: false,
+      parts: [{
+        name: 'timezone', type: 'WORD',
+        description: 'Time zone index or IANA name.',
+      }],
+      defaultValue: ['4'],
+      acceptsValue: (value) => resolveFortiTimezone(value) !== null,
+      expectedValue: 'a time zone index <0-86> or an IANA name such as `Europe/Paris`.',
+    },
     enable('simulator-hints',
       '[simulator] Add a diagnostic line to refusals.', true),
     {
@@ -79,7 +96,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       Number.parseInt(object.effective(name)[0] ?? '', 10) || fallback;
 
     context.device.applyGlobalSettings({
-      hostname: object.effective('hostname')[0],
+      hostname: object.isExplicit('hostname')
+        ? object.effective('hostname')[0] : undefined,
       multiVdom: object.effective('vdom-mode')[0] !== 'no-vdom',
       authHttpPort: number('auth-http-port', 1000),
       authHttpsPort: number('auth-https-port', 1003),
@@ -88,6 +106,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminHttpPort: number('admin-port', 80),
       adminHttpsPort: number('admin-sport', 443),
       adminTimeoutMin: number('admintimeout', 5),
+      timezone: object.isExplicit('timezone')
+        ? object.effective('timezone')[0] : undefined,
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
     });

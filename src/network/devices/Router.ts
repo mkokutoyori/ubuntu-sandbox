@@ -68,6 +68,7 @@ import { TcpStack, type TcpSocket } from '../tcp/TcpStack';
 import type { TcpStream, TcpDialFailure } from '../tcp/types';
 import { isDialFailure, verifyUdpChecksum } from '../tcp/types';
 import { dialTcp, parseDialAddress, type DialAddress } from '../tcp/dial';
+import { SystemClock } from '../core/SystemClock';
 import { PortNumber } from '../core/ports/PortNumber';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import { RouterSshServerContext } from '../protocols/ssh/server/RouterSshServerContext';
@@ -4134,8 +4135,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _setRipVersion(v: 1 | 2): void { this._ripVersion = v; }
 
   private readonly _unhandledConfigLines: string[] = [];
-  private _systemClockOverrideMs: number | null = null;
-  private _systemClockSetAtMs: number = 0;
+  private readonly _systemClock = new SystemClock();
 
   getUnhandledConfigLines(): readonly string[] { return [...this._unhandledConfigLines]; }
   _recordUnhandledConfigLine(line: string): void {
@@ -4162,12 +4162,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   _setSystemClock(epochMs: number): void {
-    this._systemClockOverrideMs = epochMs;
-    this._systemClockSetAtMs = Date.now();
+    this._systemClock.set(epochMs);
   }
   getSystemClockMs(): number {
-    if (this._systemClockOverrideMs === null) return Date.now();
-    return this._systemClockOverrideMs + (Date.now() - this._systemClockSetAtMs);
+    return this._systemClock.now();
   }
 
   /**

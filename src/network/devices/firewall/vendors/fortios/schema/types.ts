@@ -49,6 +49,11 @@ export interface FortiAttributeSpec {
   readonly unimplementedValues?: Readonly<Record<string, string>>;
   readonly readOnly?: boolean;
   readonly secret?: boolean;
+  readonly appliesImmediately?: (
+    values: readonly string[], context: FortiCommitContext,
+  ) => void;
+  readonly acceptsValue?: (value: string) => boolean;
+  readonly expectedValue?: string;
 }
 
 export interface FortiInterfacePatch {
@@ -164,6 +169,7 @@ export interface FortiGlobalSettings {
   readonly adminTimeoutMin?: number;
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
+  readonly timezone?: string;
 }
 
 export interface FortiVdomSettings {
@@ -198,6 +204,7 @@ export interface FortiCommitDevice {
   removePolicyRoute(id: string): void;
   applyMemoryLog(patch: FortiMemoryLogPatch): void;
   applyGlobalSettings(settings: FortiGlobalSettings): void;
+  applyHostname(hostname: string): void;
   setCaptivePortalInterface(iface: string, on: boolean): void;
   refreshCaptivePortal(): void;
   applySyslogCollector(settings: SyslogCollectorSettings): string | void;

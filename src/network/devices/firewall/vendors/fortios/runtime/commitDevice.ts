@@ -1,3 +1,4 @@
+import { resolveFortiTimezone } from '../schema/timezones';
 import type { Firewall } from '../../../Firewall';
 import type { FortiCommitDevice } from '../schema/types';
 import {
@@ -99,7 +100,16 @@ export function buildCommitDevice(fw: Firewall): FortiCommitDevice {
             settings.manageMask ?? '255.255.255.0', settings.gateway);
         }
       },
+      applyHostname(hostname) {
+        if (hostname.length > 0) fw.setName(hostname);
+      },
       applyGlobalSettings(settings) {
+        if (settings.hostname !== undefined && settings.hostname.length > 0) {
+          fw.setName(settings.hostname);
+        }
+        const zone = settings.timezone === undefined
+          ? null : resolveFortiTimezone(settings.timezone);
+        if (zone) fw.setTimezone(zone.name);
         fw.setMultiVdom(settings.multiVdom);
         if (settings.authHttpPort !== undefined && settings.authHttpsPort !== undefined) {
           fw.setAuthPortalPorts(settings.authHttpPort, settings.authHttpsPort);
