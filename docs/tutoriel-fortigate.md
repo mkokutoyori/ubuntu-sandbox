@@ -4929,3 +4929,519 @@ FGT-01 (profile) # end
 6. **`oversize-limit` est un trou de sécurité assumé**, pas un réglage de confort.
 
 ---
+
+## 14. Les profils de sécurité
+
+C'est ici que le pare-feu cesse de regarder des adresses et commence à regarder **ce qui circule**. Six profils, six angles d'attaque différents.
+
+> ⚠️ **Rappel important** : les profils de cette section s'appuient sur les bases FortiGuard. **Sans abonnement, ils se configurent mais ne bloquent rien de réel.** Tu apprends ici la logique et les commandes — qui sont exactement les mêmes en production. Je signale au passage ce qui fonctionne quand même sans licence.
+
+### 14.1 La vue d'ensemble
+
+| Profil | Ce qu'il regarde | Sans licence FortiGuard ? |
+|---|---|---|
+| **Antivirus** | Le contenu des fichiers | ❌ Base de signatures figée |
+| **Web Filter** | Les sites web visités | ⚠️ Catégories non, listes locales **oui** |
+| **Application Control** | L'application utilisée | ❌ Base de signatures figée |
+| **IPS** | Les motifs d'attaque | ❌ Base de signatures figée |
+| **DNS Filter** | Les noms résolus | ⚠️ Catégories non, listes locales **oui** |
+| **File Filter** | Le **type** de fichier | ✅ **Fonctionne** |
+
+> 💡 **Astuce** : retiens que le **filtrage par liste locale** et le **filtrage par type de fichier** fonctionnent sans abonnement. Ce sont eux qui te permettront de faire des TP réellement bloquants dans ton laboratoire.
+
+### 14.2 L'antivirus
+
+```
+config antivirus profile
+    edit "AV-Standard"
+        set feature-set flow
+        set comment "Antivirus standard"
+        config http
+            set av-scan block
+            set archive-block encrypted corrupted
+        end
+        config https
+            set av-scan block
+        end
+        config ftp
+            set av-scan block
+        end
+        config smtp
+            set av-scan block
+        end
+    next
+end
+```
+
+Les valeurs de `av-scan` :
+
+| Valeur | Effet |
+|---|---|
+| `disable` | Aucune analyse |
+| `monitor` | Analyse et **journalise**, mais laisse passer |
+| `block` | ⭐ Analyse et **bloque** |
+
+> 💡 **Astuce professionnelle — commence toujours en `monitor`**
+> Quand tu déploies un antivirus sur un réseau existant, mets-le d'abord en `monitor` pendant une ou deux semaines. Tu vois **ce qui serait bloqué** sans rien casser. Puis tu examines les journaux, tu traites les faux positifs, et tu passes en `block` en connaissance de cause.
+>
+> Passer directement en `block` sur un réseau en production, c'est se garantir un lundi matin difficile.
+
+**Les options avancées qui comptent :**
+
+```
+config antivirus profile
+    edit "AV-Standard"
+        set analytics-db enable            ← utilise la base FortiSandbox
+        config http
+            set av-scan block
+            set outbreak-prevention block  ← protection zéro-jour par empreinte
+            set content-disarm enable      ← ⭐ voir ci-dessous
+        end
+    next
+end
+```
+
+> 🧠 **Comprendre — `content-disarm`, la fonction la plus sous-estimée**
+> Le *Content Disarm and Reconstruction* (CDR) ne cherche **pas** de virus. Il fait autre chose : il prend un document Office ou un PDF, en **retire tout le contenu actif** (macros, JavaScript, objets embarqués) et reconstruit un document propre.
+>
+> Pourquoi c'est puissant ? Parce que ça fonctionne **même contre un code malveillant inconnu**. Un antivirus ne détecte que ce qu'il connaît. Le CDR ne cherche rien : il supprime la capacité même d'exécuter du code. Une macro zéro-jour dans un fichier Word est neutralisée sans jamais avoir été identifiée.
+>
+> Le prix : le document arrive **modifié**. Si tes utilisateurs échangent de vrais classeurs Excel avec des macros métier, ils vont te le faire savoir. À réserver aux flux entrants depuis l'extérieur, typiquement la messagerie.
+
+### 14.3 Le filtrage web
+
+C'est le profil le plus visible pour les utilisateurs, et celui qui génère le plus de demandes au support. 😄
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        set feature-set flow
+        set comment "Filtrage web standard"
+        config ftgd-wf
+            unset options
+            config filters
+                edit 1
+                    set category 26          ← Malicious Websites
+                    set action block
+                next
+                edit 2
+                    set category 61          ← Phishing
+                    set action block
+                next
+                edit 3
+                    set category divers
+                    set action warning
+                next
+            end
+        end
+        set log-all-url enable
+    next
+end
+```
+
+**Les quatre actions possibles :**
+
+| Action | Effet |
+|---|---|
+| `allow` | Autorise, sans journal |
+| `monitor` | Autorise et **journalise** |
+| `warning` | Affiche un avertissement, l'utilisateur peut **continuer** |
+| `block` | Bloque et affiche la page de refus |
+| `authenticate` | Demande une authentification pour continuer |
+
+> 💡 **Astuce — `warning` est très souvent le bon choix**
+> Bloquer sèchement les réseaux sociaux crée un rapport de force avec les utilisateurs, et une file d'attente devant ton bureau. `warning` affiche « ce site n'entre pas dans le cadre professionnel, cliquez pour continuer », journalise le passage, et laisse la responsabilité à l'utilisateur.
+>
+> Dans la plupart des organisations, la consommation baisse fortement **sans aucun blocage** — parce que les gens savent que c'est tracé. C'est plus efficace et politiquement infiniment plus simple à défendre.
+
+**Le filtrage par URL locale — et celui-ci marche sans licence :**
+
+```
+config webfilter urlfilter
+    edit 1
+        set name "Liste-Locale"
+        config entries
+            edit 1
+                set url "exemple-interdit.com"
+                set type simple
+                set action block
+            next
+            edit 2
+                set url "*.reseaux-sociaux.fr"
+                set type wildcard
+                set action block
+            next
+            edit 3
+                set url ".*\\.(exe|bat|scr)$"
+                set type regex
+                set action block
+            next
+        end
+    next
+end
+```
+
+Puis on le rattache au profil :
+
+```
+config webfilter profile
+    edit "WF-Entreprise"
+        config web
+            set urlfilter-table 1
+        end
+    next
+end
+```
+
+Les trois types :
+
+| Type | Syntaxe | Exemple |
+|---|---|---|
+| `simple` | Correspondance de sous-chaîne | `facebook.com` |
+| `wildcard` | Avec `*` | `*.facebook.com` |
+| `regex` | Expression régulière complète | `.*\.(exe\|bat)$` |
+
+> ⚠️ **Attention — l'ordre compte aussi ici**
+> La liste d'URL est évaluée de haut en bas, première correspondance gagnante — même logique que les politiques (§9.2). Une entrée `allow` sur `intranet.entreprise.fr` doit être **avant** l'entrée `block` sur `*.entreprise.fr`, sinon elle ne sert à rien.
+
+### 14.4 Le contrôle applicatif
+
+C'est le cœur du concept NGFW (§2.5). Il reconnaît **l'application** indépendamment du port.
+
+```
+config application list
+    edit "APP-Entreprise"
+        set comment "Controle applicatif standard"
+        config entries
+            edit 1
+                set category 2            ← P2P
+                set action block
+            next
+            edit 2
+                set application 15832     ← une application précise
+                set action block
+            next
+            edit 3
+                set category 6            ← Video/Audio
+                set action pass
+                set log enable
+            next
+        end
+        set other-application-action pass
+        set other-application-log enable
+        set unknown-application-action pass
+    next
+end
+```
+
+Trouver l'identifiant d'une application :
+
+```
+FGT-01 # diagnose application-control list | grep -i "bittorrent"
+```
+
+> 🧠 **Comprendre — pourquoi c'est plus fort qu'un filtrage de ports**
+> BitTorrent n'a pas de port fixe. Il utilise des ports aléatoires, sait passer en HTTPS sur le 443, et se camoufle. Un filtrage de ports ne l'attrapera jamais.
+>
+> Le contrôle applicatif reconnaît **la signature du protocole lui-même** — la façon dont les paquets sont structurés, la séquence des échanges. Peu importe le port utilisé.
+>
+> C'est exactement la promesse du §2.5 : « le 443 est ouvert, mais BitTorrent est refusé ».
+
+> ⚠️ **Attention** : `other-application-action` décide du sort des applications **reconnues mais non listées**, `unknown-application-action` de celles que le pare-feu **ne reconnaît pas du tout**. Mettre les deux en `block` donne une posture très stricte — et casse absolument tout ce que ta base d'applications ne connaît pas, y compris tes applications métier internes. À manier avec précaution.
+
+### 14.5 L'IPS
+
+L'**IPS** (*Intrusion Prevention System*) cherche des motifs d'**attaque** : tentatives d'exploitation de failles, scans, injections.
+
+```
+config ips sensor
+    edit "IPS-Standard"
+        set comment "Detection d intrusion"
+        config entries
+            edit 1
+                set severity high critical
+                set action block
+                set log enable
+                set status enable
+            next
+            edit 2
+                set severity medium
+                set action default
+                set log enable
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — filtrer par sévérité plutôt que d'activer toutes les signatures**
+> La base IPS contient des milliers de signatures. Les activer toutes coûte cher en processeur et génère beaucoup de bruit. Filtrer par `severity high critical` couvre l'essentiel du risque réel pour une fraction du coût.
+>
+> On peut aussi filtrer par système ciblé (`set os Linux Windows`) ou par application (`set application Apache`), pour ne charger que les signatures pertinentes pour ton parc. Un IPS ajusté vaut mieux qu'un IPS exhaustif que personne ne lit.
+
+### 14.6 Le filtrage DNS
+
+Il agit **avant** la connexion : la requête DNS est interceptée, et si le nom est interdit, l'adresse n'est jamais fournie.
+
+```
+config dnsfilter profile
+    edit "DNS-Standard"
+        config ftgd-dns
+            config filters
+                edit 1
+                    set category 26
+                    set action block
+                next
+            end
+        end
+        set block-botnet enable        ← ⭐ fonctionne bien et coûte peu
+        set log-all-domain enable
+    next
+end
+```
+
+> 🧠 **Comprendre — pourquoi filtrer au niveau DNS est très efficace**
+> Trois raisons qu'on n'apprécie qu'après coup :
+>
+> **1. C'est avant tout le reste.** Le poste n'obtient jamais l'adresse, donc aucune connexion n'est tentée. Rien à bloquer ensuite.
+>
+> **2. Ça marche même en HTTPS.** Le filtrage web classique doit inspecter le trafic chiffré pour connaître l'URL (section 15). La requête DNS, elle, est en clair — le filtrage DNS attrape ce que le filtrage web ne verrait qu'au prix d'un déchiffrement.
+>
+> **3. `block-botnet` est redoutablement rentable.** Un poste compromis contacte son serveur de commande par un nom de domaine. Bloquer ces noms **coupe le canal de commande** même si l'infection a déjà eu lieu. C'est la dernière ligne de défense, et elle fonctionne souvent quand tout le reste a échoué.
+
+### 14.7 Le filtrage de fichiers — et lui fonctionne sans licence
+
+```
+config file-filter profile
+    edit "FF-Standard"
+        set feature-set flow
+        set log enable
+        config rules
+            edit "Bloquer-Executables"
+                set protocol http-get http-post ftp
+                set action block
+                set direction any
+                set file-type "exe" "bat" "msi" "scr" "vbs" "js"
+            next
+            edit "Bloquer-Archives-Chiffrees"
+                set protocol http-get
+                set action block
+                set file-type "7z" "rar"
+            next
+        end
+    next
+end
+```
+
+> 💡 **Astuce — c'est le type RÉEL, pas l'extension**
+> FortiOS identifie le type de fichier par sa **signature interne** (les premiers octets, ce qu'on appelle le *magic number*), pas par son extension. Renommer `virus.exe` en `photo.jpg` ne trompe personne : le pare-feu voit que le contenu est un exécutable Windows.
+>
+> C'est ce qui rend ce filtre bien plus solide qu'une simple liste d'extensions, et c'est une des rares protections sérieuses disponibles sans abonnement.
+
+---
+
+### 🧪 TP 12 — Bloquer pour de vrai, sans licence
+
+**🎯 Objectif**
+Construire un filtrage qui **fonctionne réellement dans ton laboratoire** : liste d'URL locale et filtrage de fichiers par type. Puis vérifier le blocage dans les journaux.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 11 terminé
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Créer une liste d'URL locale**
+
+```
+FGT-01 # config webfilter urlfilter
+FGT-01 (urlfilter) # edit 1
+FGT-01 (1) # set name "Liste-Locale-Lab"
+FGT-01 (1) # config entries
+FGT-01 (entries) # edit 1
+FGT-01 (1) # set url "example.com"
+FGT-01 (1) # set type simple
+FGT-01 (1) # set action block
+FGT-01 (1) # next
+FGT-01 (entries) # edit 2
+FGT-01 (2) # set url "*.example.org"
+FGT-01 (2) # set type wildcard
+FGT-01 (2) # set action block
+FGT-01 (2) # next
+FGT-01 (entries) # end
+FGT-01 (1) # next
+FGT-01 (urlfilter) # end
+```
+
+**Étape 2 — Créer le profil de filtrage web et l'y rattacher**
+
+```
+FGT-01 # config webfilter profile
+FGT-01 (profile) # edit "WF-Lab"
+FGT-01 (WF-Lab) # set feature-set flow
+FGT-01 (WF-Lab) # set comment "Filtrage du laboratoire"
+FGT-01 (WF-Lab) # config web
+FGT-01 (web) # set urlfilter-table 1
+FGT-01 (web) # end
+FGT-01 (WF-Lab) # set log-all-url enable
+FGT-01 (WF-Lab) # next
+FGT-01 (profile) # end
+```
+
+**Étape 3 — L'attacher à la politique Internet**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 1
+FGT-01 (1) # set utm-status enable
+FGT-01 (1) # set inspection-mode flow
+FGT-01 (1) # set webfilter-profile "WF-Lab"
+FGT-01 (1) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (1) # set logtraffic all
+FGT-01 (1) # next
+FGT-01 (policy) # end
+```
+
+**Étape 4 — Tester**
+
+Depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -v http://example.com
+```
+
+Tu obtiens une page de blocage FortiGuard, ou une connexion coupée.
+
+> ⚠️ **Attention** : en HTTPS, le filtrage par URL ne voit que le **nom du serveur** (via le SNI), pas le chemin complet. Bloquer `example.com/page-precise` en HTTPS ne fonctionne **pas** sans inspection SSL profonde — c'est le sujet de la section 15. Teste en HTTP pour ce TP.
+
+**Étape 5 — Voir le blocage dans les journaux**
+
+```
+FGT-01 # execute log filter category 1
+FGT-01 # execute log filter field action "blocked"
+FGT-01 # execute log display
+```
+
+Tu vois l'événement, avec l'URL, l'utilisateur, la politique et l'heure.
+
+> 💡 **Astuce** : `category 1` correspond aux journaux **UTM**, `category 0` aux journaux de **trafic**. Cette distinction revient tout le temps :
+> ```
+> FGT-01 # execute log filter category ?
+> ```
+
+**Étape 6 — Créer un filtrage de fichiers**
+
+```
+FGT-01 # config file-filter profile
+FGT-01 (profile) # edit "FF-Lab"
+FGT-01 (FF-Lab) # set feature-set flow
+FGT-01 (FF-Lab) # set log enable
+FGT-01 (FF-Lab) # config rules
+FGT-01 (rules) # edit "Bloquer-Executables"
+FGT-01 (Bloquer-Executables) # set protocol http-get http-post
+FGT-01 (Bloquer-Executables) # set action block
+FGT-01 (Bloquer-Executables) # set direction any
+FGT-01 (Bloquer-Executables) # set file-type "exe" "bat" "msi"
+FGT-01 (Bloquer-Executables) # next
+FGT-01 (rules) # end
+FGT-01 (FF-Lab) # next
+FGT-01 (profile) # end
+```
+
+**Étape 7 — Le test qui prouve que c'est le TYPE, pas l'extension**
+
+Sur le serveur DMZ, fabrique un faux exécutable **avec une extension d'image** :
+
+```bash
+user@srv-dmz:~$ printf 'MZ\x90\x00\x03\x00\x00\x00\x04\x00' > photo.jpg
+user@srv-dmz:~$ head -c 2 photo.jpg
+MZ
+```
+
+> 🧠 `MZ` est la signature de tout exécutable Windows. Le fichier s'appelle `photo.jpg` mais son contenu dit « je suis un `.exe` ».
+
+Attache le profil à la politique LAN → DMZ :
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # set utm-status enable
+FGT-01 (2) # set inspection-mode flow
+FGT-01 (2) # set file-filter-profile "FF-Lab"
+FGT-01 (2) # set ssl-ssh-profile "certificate-inspection"
+FGT-01 (2) # set logtraffic all
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+Puis, depuis le PC du LAN :
+
+```bash
+user@pc-lan:~$ curl -O http://192.168.20.10/photo.jpg
+```
+
+**Le téléchargement est bloqué**, malgré l'extension `.jpg`. Le pare-feu a lu les octets, pas le nom.
+
+```
+FGT-01 # execute log filter category 1
+FGT-01 # execute log display
+```
+
+**Étape 8 — Créer un profil antivirus (pour la forme)**
+
+```
+FGT-01 # config antivirus profile
+FGT-01 (profile) # edit "AV-Lab"
+FGT-01 (AV-Lab) # set feature-set flow
+FGT-01 (AV-Lab) # config http
+FGT-01 (http) # set av-scan monitor
+FGT-01 (http) # end
+FGT-01 (AV-Lab) # next
+FGT-01 (profile) # end
+```
+
+> 💡 **Astuce** : `monitor` plutôt que `block`, conformément au conseil du §14.2. Sans licence, la base est figée de toute façon — mais tu prends le bon réflexe.
+
+**Étape 9 — Vérifier l'état des bases FortiGuard**
+
+```
+FGT-01 # diagnose autoupdate versions
+FGT-01 # get system fortiguard-service status
+```
+
+Tu verras les dates des bases. Sans abonnement, elles sont anciennes — et tu sais maintenant **le vérifier**, ce qui est un réflexe d'audit utile en production.
+
+**Étape 10 — Nettoyer**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 2
+FGT-01 (2) # unset file-filter-profile
+FGT-01 (2) # next
+FGT-01 (policy) # end
+```
+
+---
+
+**✅ Résultat attendu**
+
+- `curl http://example.com` est bloqué par la liste locale ✅
+- Le blocage apparaît dans les journaux UTM ✅
+- `photo.jpg` contenant un en-tête `MZ` est bloqué par le filtrage de fichiers ✅
+- `diagnose autoupdate versions` montre l'état des bases
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Six profils, six angles.** Fichier, site, application, attaque, nom résolu, type de fichier.
+2. **Listes locales et filtrage de type fonctionnent sans abonnement** — de quoi travailler en lab.
+3. **On déploie en `monitor` avant de passer en `block`.** Toujours.
+4. **Le contrôle applicatif reconnaît le protocole, pas le port.** C'est la promesse du NGFW.
+5. **Le filtrage DNS agit avant tout le reste**, et fonctionne même en HTTPS sans déchiffrement.
+6. **Le filtrage de fichiers lit les octets**, pas l'extension. Tu l'as prouvé toi-même.
+7. **En HTTPS, le filtrage d'URL ne voit que le nom du serveur** — ce qui amène directement la section suivante.
+
+---
