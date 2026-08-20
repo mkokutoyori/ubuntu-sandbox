@@ -62,6 +62,7 @@ import {
   AUCUN_GROUPE, analyserVrrp, appliquerVrrp, groupesDeLInterface, lignesConfigVrrp,
   rendreDisplayVrrp, rendreDisplayVrrpBrief, rendreDisplayVrrpStatistics,
 } from './huawei/huaweiVrrpViews';
+import { runningConfigAclLines } from './huawei/HuaweiAclCommands';
 import {
   describeHuaweiInterfaceArg, wordArg,
   STP_SYSTEM_KEYWORDS, STP_INTERFACE_KEYWORDS,
@@ -909,7 +910,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     });
 
     // Shared management commands (SSH/Telnet/SNMP/NTP/syslog/…) — DRY
-    registerHuaweiCommonSecurity(this.systemTrie, undefined,
+    registerHuaweiCommonSecurity(this.systemTrie,
+      () => commeRouteur(this.swRef),
       () => this.swRef?.getNtpAgent());
 
     this.systemTrie.register('dhcp enable', 'Enable DHCP', () => {
@@ -3440,6 +3442,18 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     // Interfaces
+    const mgmt = sw.getManagementService?.();
+    const snmpLignes = mgmt?.snmpRunningConfigLines() ?? [];
+    if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
+    const stelnet = mgmt?.getStelnet();
+    if (stelnet?.enabled) { lines.push('stelnet server enable'); lines.push('#'); }
+    const telnet = mgmt?.getTelnet();
+    if (telnet?.enabled) { lines.push('telnet server enable'); lines.push('#'); }
+
+    const aclLignes = runningConfigAclLines(
+      sw.getVaclEngine().getAccessLists(), sw.getVaclEngine().getDefaultStep?.() ?? 5);
+    if (aclLignes.length > 0) lines.push(...aclLignes);
+
     const lldpGlobal = sw.getLldpAgent?.()?.asRunningConfigLinesVrp() ?? [];
     if (lldpGlobal.length > 0) { lines.push(...lldpGlobal); lines.push('#'); }
 

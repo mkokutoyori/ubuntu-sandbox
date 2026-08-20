@@ -250,7 +250,13 @@ function formatAllACLs(router: Router): string {
 }
 
 export function runningConfigACL(router: Router): string[] {
-  const acls = router._getAccessListsInternal();
+  return runningConfigAclLines(router._getAccessListsInternal(), router._aclDefaultStep());
+}
+
+export function runningConfigAclLines(
+  acls: ReadonlyArray<import('../../router/ACLEngine').AccessList>,
+  pasParDefaut: number,
+): string[] {
   const lines: string[] = [];
 
   for (const acl of acls) {
@@ -264,7 +270,7 @@ export function runningConfigACL(router: Router): string[] {
     }
     // Une configuration rejouee doit reproduire la liste : le pas et la
     // description en font partie, et n'y figuraient pas.
-    if (acl.step !== undefined && acl.step !== router._aclDefaultStep()) {
+    if (acl.step !== undefined && acl.step !== pasParDefaut) {
       lines.push(` step ${acl.step}`);
     }
     if (acl.description) lines.push(` description ${acl.description}`);

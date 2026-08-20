@@ -19,6 +19,7 @@ import { ETHERTYPE_EAPOL } from '../dot1x/types';
 import type { NeighborDTO } from './inspection/DeviceStateView';
 import type { IEventBus } from '@/events/EventBus';
 import { HuaweiDebugService } from './router/diag/HuaweiDebugService';
+import { RouterManagementService } from './router/management/RouterManagementService';
 
 export class HuaweiSwitch extends Switch {
   private readonly agents = new AgentRegistry();
@@ -202,6 +203,12 @@ export class HuaweiSwitch extends Switch {
       if (match) return true;
     }
     return false;
+  }
+
+  private _managementService: RouterManagementService | null = null;
+  getManagementService(): RouterManagementService {
+    if (!this._managementService) this._managementService = new RouterManagementService();
+    return this._managementService;
   }
 
   getLldpAgent(): LldpAgent { return this.lldpAgent; }

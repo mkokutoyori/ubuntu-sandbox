@@ -33,6 +33,7 @@ export type VtyTransport = 'ssh' | 'telnet' | 'all' | 'none';
 
 export interface HuaweiSwitchDevice extends Switch {
   getStpAgent?(): StpAgent;
+  getManagementService?(): import('../../router/management/RouterManagementService').RouterManagementService;
   getLldpAgent?(): LldpAgent;
   getLacpAgent?(): LacpAgent;
   getDot1xAgent?(): Dot1xAgent;
