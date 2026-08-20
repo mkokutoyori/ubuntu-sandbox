@@ -7439,3 +7439,397 @@ Remets la bonne valeur.
 6. **On vérifie la joignabilité avant de soupçonner IPsec.**
 
 ---
+
+## 19. Accès distant : IPsec dial-up
+
+Connecter un télétravailleur au réseau de l'entreprise. C'est le besoin le plus demandé, et c'est **le sujet où la documentation d'Internet est la plus périmée** — pour la raison expliquée au §2.6.
+
+### 19.1 Rappel : pourquoi pas le SSL VPN ?
+
+| Version de FortiOS | État du SSL VPN tunnel |
+|---|---|
+| ≤ 7.4 | Fonctionne, c'était la méthode standard |
+| 7.6.0 | **Retiré** des modèles à 2 Go de RAM et des G d'entrée de gamme |
+| **7.6.3 et au-delà** | **Retiré de TOUS les modèles**, remplacé par IPsec |
+
+La solution officielle est le **VPN IPsec en mode dial-up**, configurable pour écouter sur **TCP 443** — précisément pour traverser les réseaux d'hôtel et de café qui ne laissent sortir que le web, ce qui était l'argument principal du SSL VPN.
+
+> 🚨 **Si tu administres un parc**
+> La migration se fait **AVANT** la montée en 7.6.3. Mettre à jour un pare-feu dont les télétravailleurs dépendent du SSL VPN les met tous dehors — et toi avec, si c'était ton accès distant.
+
+### 19.2 Ce que « dial-up » veut dire
+
+Dans un VPN site-à-site (§18), les deux extrémités ont une adresse **connue et fixe**. Chacune sait où joindre l'autre.
+
+Pour un télétravailleur, c'est impossible : il est chez lui, dans un train, à l'hôtel — son adresse change constamment. On configure donc un tunnel **dial-up** :
+
+- le pare-feu **écoute** et n'initie jamais ;
+- il accepte les connexions venant de **n'importe quelle adresse** (`set remote-gw 0.0.0.0`) ;
+- il **attribue** une adresse au client depuis une réserve, exactement comme un DHCP.
+
+### 19.3 La configuration
+
+**Phase 1 en mode dial-up :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set type dynamic                       ← ⭐ dial-up
+        set interface "port1"
+        set ike-version 2
+        set peertype dialup
+        set net-device disable
+        set mode-cfg enable                    ← ⭐ attribue une adresse au client
+        set proposal aes256-sha256
+        set dhgrp 14
+        set authusrgrp "GRP-Teletravailleurs"  ← ⭐ authentification par utilisateur
+        set psksecret "CleDuGroupeTeletravail2026!"
+        set ipv4-start-ip 192.168.200.10
+        set ipv4-end-ip 192.168.200.50
+        set ipv4-netmask 255.255.255.0
+        set ipv4-split-include "GRP-Reseaux-Internes"
+        set ipv4-dns-server1 192.168.10.1
+        set dpd on-idle
+    next
+end
+```
+
+Les paramètres décisifs :
+
+| Paramètre | Rôle |
+|---|---|
+| `type dynamic` | Le pare-feu accepte des pairs à adresse inconnue |
+| `mode-cfg enable` | Attribue adresse, masque et DNS au client |
+| `ipv4-start-ip` / `end-ip` | La réserve d'adresses des clients VPN |
+| `authusrgrp` | ⭐ Le groupe autorisé — **chaque utilisateur s'authentifie** |
+| `ipv4-split-include` | ⭐ Le *split tunneling* — voir §19.5 |
+
+**Phase 2 :**
+
+```
+config vpn ipsec phase2-interface
+    edit "VPN-Teletravail-P2"
+        set phase1name "VPN-Teletravail"
+        set proposal aes256-sha256
+        set pfs enable
+        set dhgrp 14
+    next
+end
+```
+
+**La politique :**
+
+```
+config firewall policy
+    edit 30
+        set name "Teletravail-vers-LAN"
+        set srcintf "VPN-Teletravail"
+        set dstintf "port2"
+        set srcaddr "NET-VPN-Clients"
+        set dstaddr "NET-LAN"
+        set groups "GRP-Teletravailleurs"
+        set action accept
+        set schedule "always"
+        set service "ALL"
+        set logtraffic all
+    next
+end
+```
+
+> 🧠 **Comprendre** : ici, **une seule** politique suffit — parce que c'est toujours le télétravailleur qui **ouvre** la connexion. Personne au bureau n'initie une session vers son poste. C'est la différence avec le site-à-site du §18.4.
+
+### 19.4 Faire écouter le VPN sur le port 443
+
+C'est ce qui remplace l'avantage du SSL VPN :
+
+```
+config system settings
+    set ike-tcp-port 443
+end
+```
+
+Puis, côté phase 1 :
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set transport tcp
+    next
+end
+```
+
+> ⚠️ **Attention** : si tu publies déjà un serveur web en 443 sur la même adresse (§10.4), il y a **conflit**. Utilise une adresse publique distincte, ou un port différent. C'est une contrainte à anticiper dans le plan d'adressage, pas au moment du déploiement.
+
+### 19.5 🧠 Le split tunneling : la décision qui compte
+
+C'est le choix le plus structurant du VPN distant, et il n'a pas de bonne réponse universelle.
+
+**Sans split tunneling** (`ipv4-split-include` absent) — **tout** le trafic du client passe par le tunnel, y compris sa navigation personnelle sur Internet.
+
+| ✅ Avantages | ❌ Inconvénients |
+|---|---|
+| Tout le trafic est **inspecté** par le pare-feu | Consomme la bande passante de l'entreprise |
+| La politique de sécurité s'applique partout | Ajoute de la latence sur tout |
+| Aucun contournement possible | La visioconférence en souffre beaucoup |
+
+**Avec split tunneling** — seuls les réseaux de l'entreprise passent par le tunnel, le reste sort directement chez le client.
+
+| ✅ Avantages | ❌ Inconvénients |
+|---|---|
+| Performance nettement meilleure | Le trafic Internet **n'est pas inspecté** |
+| Économise la bande passante du site | Le poste est exposé, et il est **connecté au LAN** |
+| Visio fluide | Un poste compromis devient un pont vers l'entreprise |
+
+> 🧠 **Comment trancher, en pratique**
+> La question n'est pas « lequel est le mieux » mais « **que protège le poste quand il n'est pas dans le tunnel ?** »
+>
+> - Si les postes ont un **EDR** ou un client de sécurité géré (FortiClient, ou équivalent) et sont maintenus à jour : **split tunneling**, la performance vaut le compromis.
+> - Si les postes sont peu maîtrisés, ou s'il s'agit de matériel personnel : **tunnel complet**, parce que le pare-feu est alors la seule protection.
+>
+> Et la solution mixte, qui est celle des organisations matures : split tunneling **plus** une exigence de conformité du poste avant l'accès. Ce n'est plus un choix binaire.
+
+### 19.6 Renforcer l'authentification
+
+Une clé partagée de groupe plus un mot de passe utilisateur, c'est le minimum. En 2026, ce n'est plus suffisant pour un accès depuis Internet.
+
+**Les certificats plutôt que la clé partagée :**
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Teletravail"
+        set authmethod signature
+        set certificate "Certificat-VPN"
+        set peer "Groupe-PKI-Utilisateurs"
+    next
+end
+```
+
+**Le second facteur (MFA)** via FortiToken ou un serveur RADIUS :
+
+```
+config user local
+    edit "marie.durand"
+        set two-factor fortitoken
+        set fortitoken "FTKMOB0000000000"
+    next
+end
+```
+
+> 🚨 **Danger — les VPN sont une cible de premier plan**
+> Les accès VPN sans second facteur sont **systématiquement** attaqués par pulvérisation de mots de passe (*password spraying*) et exploitation d'identifiants volés. Plusieurs compromissions majeures de ces dernières années sont entrées exactement par là.
+>
+> **Un accès VPN sans MFA en 2026 est une porte d'entrée, pas une protection.** Si tu ne dois retenir qu'une recommandation de sécurité de tout ce tutoriel, c'est celle-là.
+
+---
+
+### 🧪 TP 18 — Un accès télétravailleur
+
+**🎯 Objectif**
+Monter un VPN dial-up, connecter un client, vérifier l'adresse attribuée, tester l'accès au LAN, puis observer la différence entre split tunneling et tunnel complet.
+
+**⏱️ Durée** : 45 minutes
+
+**📋 Prérequis** : TP 16 (utilisateurs) terminé, une machine « externe » pour jouer le télétravailleur
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Le groupe et l'objet d'adresses**
+
+```
+FGT-01 # config user group
+FGT-01 (group) # edit "GRP-Teletravailleurs"
+FGT-01 (GRP-Teletravailleurs) # set member "marie.durand"
+FGT-01 (GRP-Teletravailleurs) # next
+FGT-01 (group) # end
+
+FGT-01 # config firewall address
+FGT-01 (address) # edit "NET-VPN-Clients"
+FGT-01 (NET-VPN-Clients) # set subnet 192.168.200.0 255.255.255.0
+FGT-01 (NET-VPN-Clients) # next
+FGT-01 (address) # end
+```
+
+**Étape 2 — Phase 1 dial-up**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Teletravail"
+FGT-01 (VPN-Teletravail) # set type dynamic
+FGT-01 (VPN-Teletravail) # set interface "port1"
+FGT-01 (VPN-Teletravail) # set ike-version 2
+FGT-01 (VPN-Teletravail) # set peertype dialup
+FGT-01 (VPN-Teletravail) # set net-device disable
+FGT-01 (VPN-Teletravail) # set mode-cfg enable
+FGT-01 (VPN-Teletravail) # set proposal aes256-sha256
+FGT-01 (VPN-Teletravail) # set dhgrp 14
+FGT-01 (VPN-Teletravail) # set authusrgrp "GRP-Teletravailleurs"
+FGT-01 (VPN-Teletravail) # set psksecret "CleLabTeletravail2026!"
+FGT-01 (VPN-Teletravail) # set ipv4-start-ip 192.168.200.10
+FGT-01 (VPN-Teletravail) # set ipv4-end-ip 192.168.200.50
+FGT-01 (VPN-Teletravail) # set ipv4-netmask 255.255.255.0
+FGT-01 (VPN-Teletravail) # set ipv4-split-include "NET-LAN"
+FGT-01 (VPN-Teletravail) # set ipv4-dns-server1 192.168.10.1
+FGT-01 (VPN-Teletravail) # set dpd on-idle
+FGT-01 (VPN-Teletravail) # next
+FGT-01 (phase1-interface) # end
+```
+
+**Étape 3 — Phase 2**
+
+```
+FGT-01 # config vpn ipsec phase2-interface
+FGT-01 (phase2-interface) # edit "VPN-Teletravail-P2"
+FGT-01 (VPN-Teletravail-P2) # set phase1name "VPN-Teletravail"
+FGT-01 (VPN-Teletravail-P2) # set proposal aes256-sha256
+FGT-01 (VPN-Teletravail-P2) # set pfs enable
+FGT-01 (VPN-Teletravail-P2) # set dhgrp 14
+FGT-01 (VPN-Teletravail-P2) # next
+FGT-01 (phase2-interface) # end
+```
+
+**Étape 4 — La politique**
+
+```
+FGT-01 # config firewall policy
+FGT-01 (policy) # edit 30
+FGT-01 (30) # set name "Teletravail-vers-LAN"
+FGT-01 (30) # set srcintf "VPN-Teletravail"
+FGT-01 (30) # set dstintf "port2"
+FGT-01 (30) # set srcaddr "NET-VPN-Clients"
+FGT-01 (30) # set dstaddr "NET-LAN"
+FGT-01 (30) # set groups "GRP-Teletravailleurs"
+FGT-01 (30) # set action accept
+FGT-01 (30) # set schedule "always"
+FGT-01 (30) # set service "ALL"
+FGT-01 (30) # set logtraffic all
+FGT-01 (30) # next
+FGT-01 (policy) # end
+```
+
+**Étape 5 — Connecter un client**
+
+Avec **FortiClient** (Windows, macOS, Linux) : créer une connexion IPsec, saisir l'adresse du pare-feu, la clé partagée et les identifiants de `marie.durand`.
+
+Avec **strongSwan** sous Linux, dans `/etc/ipsec.conf` :
+
+```
+conn teletravail
+    keyexchange=ikev2
+    right=<adresse-publique-du-FortiGate>
+    rightid=%any
+    rightsubnet=192.168.10.0/24
+    leftsourceip=%config
+    leftauth=psk
+    rightauth=psk
+    leftauth2=eap
+    auto=start
+```
+
+**Étape 6 — Vérifier côté pare-feu**
+
+```
+FGT-01 # diagnose vpn ike gateway list name VPN-Teletravail
+FGT-01 # get vpn ipsec tunnel summary
+FGT-01 # diagnose vpn tunnel list
+```
+
+Et la liste des utilisateurs connectés :
+
+```
+FGT-01 # diagnose vpn ike gateway list | grep -e "name" -e "assigned"
+FGT-01 # execute vpn sslvpn list
+```
+
+**Étape 7 — Vérifier l'adresse attribuée**
+
+Sur le client :
+
+```bash
+teletravailleur@portable:~$ ip addr show
+```
+
+Une nouvelle interface porte une adresse de la réserve `192.168.200.x`. **Le pare-feu vient de faire du DHCP à travers Internet.**
+
+**Étape 8 — Tester l'accès**
+
+```bash
+teletravailleur@portable:~$ ping -c 3 192.168.10.10
+teletravailleur@portable:~$ ping -c 3 192.168.10.1
+```
+
+**Étape 9 — Observer le split tunneling**
+
+C'est l'observation la plus parlante du TP :
+
+```bash
+teletravailleur@portable:~$ ip route show
+```
+
+Tu vois une route vers `192.168.10.0/24` par l'interface du tunnel, et **la route par défaut inchangée**. Autrement dit : le trafic de l'entreprise passe par le tunnel, le reste sort directement.
+
+```bash
+teletravailleur@portable:~$ traceroute 192.168.10.10     ← par le tunnel
+teletravailleur@portable:~$ traceroute 8.8.8.8           ← direct, hors tunnel
+```
+
+**Deux chemins différents, sur la même machine, au même instant.** C'est exactement le §19.5.
+
+**Étape 10 — Passer en tunnel complet**
+
+```
+FGT-01 # config vpn ipsec phase1-interface
+FGT-01 (phase1-interface) # edit "VPN-Teletravail"
+FGT-01 (VPN-Teletravail) # unset ipv4-split-include
+FGT-01 (VPN-Teletravail) # next
+FGT-01 (phase1-interface) # end
+```
+
+Reconnecte le client, puis :
+
+```bash
+teletravailleur@portable:~$ ip route show
+teletravailleur@portable:~$ traceroute 8.8.8.8
+```
+
+**La route par défaut passe maintenant par le tunnel.** Tout le trafic remonte à l'entreprise.
+
+> ⚠️ **Attention** : en tunnel complet, il faut une politique **VPN → Internet** avec NAT pour que le client puisse encore naviguer. Sinon tu viens de couper Internet à ton télétravailleur — panne classique et très mal vécue.
+> ```
+> config firewall policy
+>     edit 31
+>         set name "Teletravail-vers-Internet"
+>         set srcintf "VPN-Teletravail"
+>         set dstintf "port1"
+>         set srcaddr "NET-VPN-Clients"
+>         set dstaddr "all"
+>         set action accept
+>         set schedule "always"
+>         set service "ALL"
+>         set nat enable
+>     next
+> end
+> ```
+
+---
+
+**✅ Résultat attendu**
+
+- Le client obtient une adresse de la réserve VPN
+- Il joint le LAN de l'entreprise
+- En split tunneling, deux chemins coexistent — tu l'as vu au `traceroute`
+- En tunnel complet, tout remonte à l'entreprise
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Dial-up = le pare-feu écoute et attribue**, parce que le client n'a pas d'adresse fixe.
+2. **`mode-cfg` fait du DHCP à travers Internet.**
+3. **Une seule politique suffit**, contrairement au site-à-site : un seul côté ouvre.
+4. **Le split tunneling est un arbitrage entre performance et visibilité**, et il dépend de la protection du poste.
+5. **En tunnel complet, il faut une politique vers Internet** — sinon on coupe Internet au télétravailleur.
+6. **Un VPN sans second facteur est une porte d'entrée.**
+
+---
