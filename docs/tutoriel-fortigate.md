@@ -7833,3 +7833,339 @@ teletravailleur@portable:~$ traceroute 8.8.8.8
 6. **Un VPN sans second facteur est une porte d'entrée.**
 
 ---
+
+# Partie VIII — Aller plus loin
+
+---
+
+## 20. Le routage dynamique
+
+Au TP 5, tu as écrit des routes statiques à la main. Ça marche jusqu'à ce que le réseau grandisse — et là, comme l'explique le tutoriel OSPF de ce dépôt, ça devient ingérable.
+
+Un FortiGate parle **OSPF**, **BGP**, **RIP** et **IS-IS**. Voyons les deux qui comptent.
+
+### 20.1 Quand passer au dynamique
+
+| Situation | Statique | Dynamique |
+|---|---|---|
+| 2 ou 3 réseaux, une seule sortie | ✅ Suffit | Inutile |
+| 10 sites reliés en VPN | ❌ Cauchemar | ✅ OSPF |
+| Plusieurs opérateurs, adresses publiques | ❌ Impossible | ✅ BGP |
+| Un lien peut tomber, il faut basculer | ⚠️ Route flottante | ✅ Convergence automatique |
+
+### 20.2 OSPF sur FortiGate
+
+```
+config router ospf
+    set router-id 10.255.255.1
+    config area
+        edit 0.0.0.0
+        next
+    end
+    config ospf-interface
+        edit "vers-LAN"
+            set interface "port2"
+            set network-type point-to-point
+            set authentication md5
+            config md5-keys
+                edit 1
+                    set key "CleOspf2026"
+                next
+            end
+        next
+    end
+    config network
+        edit 1
+            set prefix 192.168.10.0 255.255.255.0
+            set area 0.0.0.0
+        next
+        edit 2
+            set prefix 192.168.100.0 255.255.255.0
+            set area 0.0.0.0
+        next
+    end
+    set passive-interface "port3"
+end
+```
+
+Les points qui comptent :
+
+**`router-id`** — l'identité du routeur dans OSPF. **Fixe-le explicitement**, avec une adresse de boucle locale (§6.1). Si tu le laisses se choisir tout seul, il prendra l'adresse la plus haute d'une interface — et changera si cette interface tombe, ce qui fait s'effondrer toutes les adjacences au pire moment.
+
+**`passive-interface`** — l'interface participe au routage (son réseau est annoncé) mais **n'envoie aucun message Hello**. C'est ce qu'on met sur toutes les interfaces où il n'y a pas d'autre routeur.
+
+> 🚨 **Danger** : une interface OSPF non passive côté LAN **annonce l'existence de ton routeur** à quiconque est branché dessus. N'importe qui peut alors tenter de former une adjacence et injecter des routes. Rends passive **toute** interface sans voisin légitime, et **authentifie** les adjacences. Ce sont deux lignes, et elles ferment une attaque réelle.
+
+**Vérification :**
+
+```
+FGT-01 # get router info ospf neighbor
+FGT-01 # get router info ospf interface
+FGT-01 # get router info ospf database brief
+FGT-01 # get router info routing-table ospf
+```
+
+> 💡 **Astuce** : `get router info ospf neighbor` doit montrer l'état **FULL**. Tout autre état durable (`INIT`, `EXSTART`, `2-WAY` sur un lien point-à-point) signale un problème : incompatibilité de MTU, de temporisateurs, d'aire, ou d'authentification. C'est le même diagnostic que sur un routeur Cisco — OSPF est un standard, et c'est tout son intérêt.
+
+### 20.3 BGP sur FortiGate
+
+BGP sert à dialoguer avec les opérateurs, et à porter des routes entre sites en grand nombre.
+
+```
+config router bgp
+    set as 65001
+    set router-id 10.255.255.1
+    set ebgp-multipath enable
+    config neighbor
+        edit "203.0.113.1"
+            set remote-as 65100
+            set description "Operateur principal"
+            set soft-reconfiguration enable
+            set connect-timer 10
+        next
+    end
+    config network
+        edit 1
+            set prefix 192.0.2.0 255.255.255.0
+        next
+    end
+end
+```
+
+**Vérification :**
+
+```
+FGT-01 # get router info bgp summary
+FGT-01 # get router info bgp neighbors 203.0.113.1
+FGT-01 # get router info bgp network
+```
+
+> ⚠️ **Attention — filtre TOUJOURS ce que tu annonces**
+> Un BGP mal filtré peut **réannoncer** vers un opérateur les routes reçues d'un autre. Ton entreprise devient alors, sans le vouloir, un opérateur de transit — et se retrouve à absorber du trafic qui n'a rien à y faire, jusqu'à saturation.
+>
+> Ce n'est pas théorique : c'est ce qu'on appelle une fuite de routes (*route leak*), et il s'en produit régulièrement, y compris chez de gros acteurs.
+>
+> ```
+> config router route-map
+>     edit "SORTANT-STRICT"
+>         config rule
+>             edit 1
+>                 set match-ip-address "NOS-PREFIXES-A-NOUS"
+>                 set action permit
+>             next
+>             edit 2
+>                 set action deny
+>             next
+>         end
+>     next
+> end
+> ```
+
+### 20.4 Le routage dynamique dans un VPN
+
+C'est le vrai cas d'usage d'OSPF sur un pare-feu : au lieu d'écrire une route statique par site distant (§18.4), on laisse OSPF découvrir.
+
+```
+config vpn ipsec phase1-interface
+    edit "VPN-Lyon"
+        set net-device disable
+        set add-route disable          ← on laisse OSPF gérer les routes
+    next
+end
+
+config router ospf
+    config ospf-interface
+        edit "vers-Lyon"
+            set interface "VPN-Lyon"
+            set network-type point-to-point
+            set cost 100
+        next
+    end
+end
+```
+
+> 💡 **Astuce** : `set network-type point-to-point` sur une interface de tunnel. Un tunnel n'est pas un réseau à diffusion : il n'y a pas d'élection de routeur désigné à faire, et forcer ce type évite une attente inutile à chaque montée de tunnel.
+
+---
+
+### 🧪 TP 19 — OSPF entre le pare-feu et R1
+
+**🎯 Objectif**
+Faire dialoguer FGT-01 et R1 en OSPF, remplacer les routes statiques, puis provoquer une panne et observer la convergence.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : TP 5 terminé, R1 opérationnel
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — OSPF sur R1**
+
+```cisco
+R1-EDGE# configure terminal
+R1-EDGE(config)# interface Loopback0
+R1-EDGE(config-if)# ip address 10.255.255.254 255.255.255.255
+R1-EDGE(config-if)# exit
+R1-EDGE(config)# router ospf 1
+R1-EDGE(config-router)# router-id 10.255.255.254
+R1-EDGE(config-router)# network 192.168.100.0 0.0.0.255 area 0
+R1-EDGE(config-router)# passive-interface GigabitEthernet0/0
+R1-EDGE(config-router)# default-information originate always
+R1-EDGE(config-router)# end
+```
+
+> 🧠 `default-information originate always` fait annoncer par R1 **la route par défaut** en OSPF. Le pare-feu n'aura donc plus besoin de sa route statique vers R1 : il l'apprendra.
+
+**Étape 2 — OSPF sur le FortiGate**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit "lo-ospf"
+FGT-01 (lo-ospf) # set vdom "root"
+FGT-01 (lo-ospf) # set type loopback
+FGT-01 (lo-ospf) # set ip 10.255.255.1 255.255.255.255
+FGT-01 (lo-ospf) # next
+FGT-01 (interface) # end
+
+FGT-01 # config router ospf
+FGT-01 (ospf) # set router-id 10.255.255.1
+FGT-01 (ospf) # config area
+FGT-01 (area) # edit 0.0.0.0
+FGT-01 (0.0.0.0) # next
+FGT-01 (area) # end
+FGT-01 (ospf) # config network
+FGT-01 (network) # edit 1
+FGT-01 (1) # set prefix 192.168.100.0 255.255.255.0
+FGT-01 (1) # set area 0.0.0.0
+FGT-01 (1) # next
+FGT-01 (network) # edit 2
+FGT-01 (2) # set prefix 192.168.10.0 255.255.255.0
+FGT-01 (2) # set area 0.0.0.0
+FGT-01 (2) # next
+FGT-01 (network) # edit 3
+FGT-01 (3) # set prefix 192.168.20.0 255.255.255.0
+FGT-01 (3) # set area 0.0.0.0
+FGT-01 (3) # next
+FGT-01 (network) # end
+FGT-01 (ospf) # set passive-interface "port2" "port3"
+FGT-01 (ospf) # end
+```
+
+**Étape 3 — Vérifier l'adjacence**
+
+```
+FGT-01 # get router info ospf neighbor
+```
+```
+OSPF process 0, VRF 0:
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+10.255.255.254    1   Full/DR          00:00:35   192.168.100.1   port1
+```
+
+**`Full`** : l'adjacence est complète. 🎉
+
+Côté R1 :
+
+```cisco
+R1-EDGE# show ip ospf neighbor
+R1-EDGE# show ip route ospf
+```
+
+R1 apprend `192.168.10.0/24` et `192.168.20.0/24` **sans qu'on lui ait écrit de route statique**. Tu peux d'ailleurs supprimer celles du §3.8 :
+
+```cisco
+R1-EDGE(config)# no ip route 192.168.10.0 255.255.255.0 192.168.100.99
+R1-EDGE(config)# no ip route 192.168.20.0 255.255.255.0 192.168.100.99
+```
+
+**Étape 4 — Vérifier côté pare-feu**
+
+```
+FGT-01 # get router info routing-table ospf
+```
+```
+O*E2  0.0.0.0/0 [110/10] via 192.168.100.1, port1, 00:02:14
+```
+
+La route par défaut est apprise **dynamiquement**. Tu peux retirer la statique du TP 5 :
+
+```
+FGT-01 # config router static
+FGT-01 (static) # delete 1
+FGT-01 (static) # end
+
+FGT-01 # execute ping 8.8.8.8
+```
+
+Ça marche toujours — mais plus aucune route n'a été écrite à la main.
+
+**Étape 5 — Observer une convergence**
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# shutdown
+```
+
+Sur le pare-feu :
+
+```
+FGT-01 # get router info ospf neighbor
+FGT-01 # get router info routing-table all
+```
+
+L'adjacence tombe, la route par défaut disparaît. Remets en service :
+
+```cisco
+R1-EDGE(config-if)# no shutdown
+```
+
+Et regarde l'adjacence se reformer, puis la route revenir. **Sans intervention humaine.** C'est tout l'intérêt du dynamique.
+
+**Étape 6 — Authentifier (bonne pratique)**
+
+```
+FGT-01 # config router ospf
+FGT-01 (ospf) # config ospf-interface
+FGT-01 (ospf-interface) # edit "vers-R1"
+FGT-01 (vers-R1) # set interface "port1"
+FGT-01 (vers-R1) # set authentication md5
+FGT-01 (vers-R1) # config md5-keys
+FGT-01 (md5-keys) # edit 1
+FGT-01 (1) # set key "CleOspfLab2026"
+FGT-01 (1) # next
+FGT-01 (md5-keys) # end
+FGT-01 (vers-R1) # next
+FGT-01 (ospf-interface) # end
+FGT-01 (ospf) # end
+```
+
+```cisco
+R1-EDGE(config)# interface GigabitEthernet0/1
+R1-EDGE(config-if)# ip ospf authentication message-digest
+R1-EDGE(config-if)# ip ospf message-digest-key 1 md5 CleOspfLab2026
+```
+
+> 🧠 **Observe l'ordre** : tant que **les deux** côtés ne sont pas configurés, l'adjacence **tombe**. C'est normal et c'est voulu. En production, ça implique de prévoir une courte coupure, ou d'utiliser une fenêtre de maintenance. Un administrateur qui active l'authentification d'un seul côté en pleine journée coupe le site.
+
+---
+
+**✅ Résultat attendu**
+
+- `get router info ospf neighbor` affiche `Full`
+- R1 apprend les réseaux internes sans route statique
+- Le pare-feu apprend la route par défaut en `O*E2`
+- Une coupure fait converger automatiquement
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **OSPF supprime les routes écrites à la main**, et se reconfigure tout seul.
+2. **`router-id` doit être fixé explicitement**, sur une boucle locale.
+3. **`passive-interface` sur toute interface sans voisin légitime** — sinon on annonce son routeur à qui veut l'entendre.
+4. **L'authentification est indispensable**, et elle coupe l'adjacence tant que les deux côtés ne l'ont pas.
+5. **`Full` est le seul état acceptable durablement.**
+
+---
