@@ -9496,3 +9496,376 @@ Tu as diagnostiqué trois pannes de natures différentes — **politique**, **NA
 5. **Une panne peut venir d'un objet**, pas d'une règle. Vérifie ce que la règle **contient**, pas seulement qu'elle existe.
 
 ---
+
+## 25. Sauvegarde, mise à jour et durcissement
+
+Les trois tâches qu'on repousse toujours, et qui décident de ce qui se passe le jour où ça tourne mal.
+
+### 25.1 La sauvegarde
+
+```
+FGT-01 # execute backup config tftp sauvegarde-2026-08-20.conf 192.168.10.50
+FGT-01 # execute backup config ftp sauvegarde.conf 192.168.10.50 utilisateur motdepasse
+FGT-01 # execute backup config usb sauvegarde.conf
+```
+
+Ou par l'interface web : `Dashboard` → menu utilisateur → `Configuration` → `Backup`.
+
+**Sauvegarder en chiffré** — indispensable, et voici pourquoi :
+
+```
+FGT-01 # execute backup config tftp sauvegarde.conf 192.168.10.50 MotDePasseDeChiffrement
+```
+
+> 🚨 **Danger — une sauvegarde en clair est un fichier de secrets**
+> Une configuration FortiGate contient : les clés partagées de tous tes VPN, les mots de passe des comptes de service LDAP et RADIUS, les communautés SNMP, les identifiants PPPoE, et parfois des certificats avec leur clé privée.
+>
+> **Un fichier de sauvegarde en clair qui traîne sur un partage réseau donne à qui le lit les clés de ton infrastructure entière.** Chiffre-les, et traite-les comme des secrets — pas comme des fichiers de configuration.
+
+> ⚠️ **Attention** : une sauvegarde chiffrée **ne peut être restaurée que sur le même modèle**, et il faut évidemment le mot de passe. Perdre ce mot de passe rend la sauvegarde inutile. Range-le dans le coffre-fort à mots de passe de l'entreprise, pas dans un fichier à côté de la sauvegarde.
+
+**Automatiser** — parce qu'une sauvegarde manuelle n'est jamais à jour :
+
+```
+config system automation-trigger
+    edit "Sauvegarde-Quotidienne"
+        set trigger-type scheduled
+        set trigger-frequency daily
+        set trigger-hour 2
+        set trigger-minute 0
+    next
+end
+```
+
+> 💡 **Astuce** : la meilleure automatisation reste un script externe qui se connecte en SSH, exécute `show`, et archive le résultat dans un dépôt Git. Tu obtiens ainsi **l'historique complet** de ta configuration, avec la possibilité de voir exactement ce qui a changé entre deux dates — et par qui, en croisant avec les journaux de catégorie 2 (§23).
+>
+> Ce n'est pas une astuce de confort : le jour où quelque chose casse après une modification, `git diff` te donne la réponse en dix secondes.
+
+### 25.2 La restauration
+
+```
+FGT-01 # execute restore config tftp sauvegarde.conf 192.168.10.50
+```
+
+> ⚠️ **Attention** : la restauration **redémarre** l'équipement et **écrase entièrement** la configuration. Ce n'est pas une fusion. Tout ce qui a été fait depuis la sauvegarde est perdu.
+
+### 25.3 La mise à jour de FortiOS
+
+**Avant** de mettre à jour, trois choses, dans cet ordre :
+
+1. **Lire les notes de version.** Pas les survoler : les lire. C'est là que sont signalés les changements de comportement — comme le retrait du SSL VPN du §2.6, qui a mis des entreprises dehors.
+2. **Vérifier le chemin de mise à jour.** On ne saute pas de 7.0 à 7.6 directement. Fortinet publie un outil de chemin de mise à jour, et le respecter n'est pas optionnel.
+3. **Sauvegarder.** Chiffrée, et vérifiée.
+
+```
+FGT-01 # get system status | grep Version
+FGT-01 # execute backup config tftp avant-maj.conf 192.168.10.50 MotDePasse
+FGT-01 # execute restore image tftp FGT_VM64-v7.6.3.out 192.168.10.50
+```
+
+> 🚨 **Danger — ne mets jamais à jour un pare-feu distant sans plan de secours**
+> Si la mise à jour se passe mal, tu perds l'accès et tu es à deux heures de route de l'équipement. Prévois **toujours** :
+> - un accès console hors bande (KVM, console série sur un serveur de terminaux) ;
+> - la version précédente disponible localement ;
+> - quelqu'un sur place, joignable.
+>
+> Et fais-le en fenêtre de maintenance, pas un vendredi à 17 h. Ce conseil fait sourire jusqu'à ce qu'on l'ait ignoré une fois.
+
+> 💡 **Astuce** : sur un cluster HA, FortiOS sait faire une mise à jour **en cascade** — il met à jour l'esclave, bascule, puis met à jour l'ancien maître. La coupure se limite à une bascule. C'est un des vrais bénéfices de la HA, souvent oublié dans le calcul de rentabilité.
+
+### 25.4 Le durcissement : la liste qui compte
+
+Voici ce qui distingue un pare-feu correctement déployé d'un pare-feu simplement fonctionnel.
+
+**① Fermer l'administration sur l'extérieur**
+
+C'est le point n°1, et on l'a laissé ouvert au TP 1 :
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess ping
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Encore mieux : rien du tout, et une local-in policy (§11.5) pour les rares cas où l'administration distante est nécessaire.
+
+**② Changer les ports d'administration**
+
+```
+config system global
+    set admin-sport 8443
+    set admin-ssh-port 2222
+end
+```
+
+> 🧠 Ce n'est **pas** une mesure de sécurité en soi — un scan trouve le nouveau port en quelques secondes. Mais ça élimine l'essentiel des tentatives automatisées, qui ne testent que les ports standard. Ça vaut le geste, à condition de ne pas croire que ça protège.
+
+**③ Désactiver ce qui ne sert pas**
+
+```
+config system global
+    set admin-telnet disable
+    set gui-certificates disable
+end
+```
+
+**④ Renforcer les mots de passe**
+
+```
+config system password-policy
+    set status enable
+    set apply-to admin-password
+    set minimum-length 12
+    set min-lower-case-letter 1
+    set min-upper-case-letter 1
+    set min-non-alphanumeric 1
+    set min-number 1
+    set expire-status enable
+    set expire-day 90
+end
+```
+
+**⑤ Limiter les tentatives**
+
+```
+config system global
+    set admin-lockout-threshold 3
+    set admin-lockout-duration 300
+end
+```
+
+**⑥ Le second facteur pour les administrateurs**
+
+```
+config system admin
+    edit "jdupont"
+        set two-factor fortitoken
+    next
+end
+```
+
+**⑦ Restreindre par adresse source**
+
+```
+config system admin
+    edit "jdupont"
+        set trusthost1 192.168.99.0 255.255.255.0
+    next
+end
+```
+
+> 🚨 Rappel du §4.4 : le `trusthost` t'enferme dehors si tu te trompes. Compte de test d'abord.
+
+**⑧ Bannière et bandeau**
+
+```
+config system global
+    set pre-login-banner enable
+    set post-login-banner enable
+end
+```
+
+> 💡 **Astuce** : la bannière n'est pas décorative. Dans beaucoup de juridictions, elle est ce qui rend un accès **explicitement non autorisé** — et donc poursuivable. Un système sans avertissement affaiblit les poursuites contre celui qui s'y introduit.
+
+**⑨ Journaliser tout ce qui est administratif**
+
+Déjà couvert au §23, mais c'est un point de durcissement : sans journaux d'administration, tu ne peux pas savoir qui a fait quoi.
+
+**⑩ Maintenir à jour**
+
+Le point qui résume tous les autres. Un pare-feu à jour avec une configuration moyenne vaut mieux qu'un pare-feu parfaitement configuré en version vulnérable.
+
+---
+
+### 🧪 TP 24 — Durcir et sauvegarder
+
+**🎯 Objectif**
+Appliquer la liste de durcissement, sauvegarder en chiffré, vérifier la restauration, et mettre en place un suivi de configuration en Git.
+
+**⏱️ Durée** : 35 minutes
+
+**📋 Prérequis** : laboratoire fonctionnel
+
+> 🚨 **Attention** : ce TP touche à ton propre accès. **Garde la console de l'hyperviseur ouverte** pendant toute sa durée.
+
+---
+
+**🔧 Manipulation**
+
+**Étape 1 — Sauvegarder AVANT de durcir**
+
+```
+FGT-01 # execute backup config tftp avant-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+```
+
+Sans serveur TFTP, utilise l'interface web pour télécharger le fichier.
+
+> 💡 Un serveur TFTP en une commande sur ta machine Linux :
+> ```bash
+> user@pc-lan:~$ sudo apt install -y tftpd-hpa
+> user@pc-lan:~$ sudo chmod 777 /srv/tftp
+> ```
+
+**Étape 2 — Vérifier que la sauvegarde est chiffrée**
+
+```bash
+user@pc-lan:~$ head -c 200 /srv/tftp/avant-durcissement.conf
+```
+
+Tu dois voir du contenu **illisible**. Compare avec une sauvegarde non chiffrée : tu y liras `config system global`, `set psksecret`… en clair.
+
+**Fais l'expérience.** C'est ce qui convainc de toujours chiffrer.
+
+**Étape 3 — Politique de mots de passe**
+
+```
+FGT-01 # config system password-policy
+FGT-01 (password-policy) # set status enable
+FGT-01 (password-policy) # set apply-to admin-password
+FGT-01 (password-policy) # set minimum-length 12
+FGT-01 (password-policy) # set min-lower-case-letter 1
+FGT-01 (password-policy) # set min-upper-case-letter 1
+FGT-01 (password-policy) # set min-non-alphanumeric 1
+FGT-01 (password-policy) # set min-number 1
+FGT-01 (password-policy) # end
+```
+
+Teste-la :
+
+```
+FGT-01 # config system admin
+FGT-01 (admin) # edit "test-faible"
+FGT-01 (test-faible) # set password "1234"
+```
+
+FortiOS **refuse**. Supprime le compte de test :
+
+```
+FGT-01 (test-faible) # abort
+```
+
+**Étape 4 — Verrouillage après échecs**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set admin-lockout-threshold 3
+FGT-01 (global) # set admin-lockout-duration 300
+FGT-01 (global) # end
+```
+
+**Étape 5 — Changer les ports d'administration**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set admin-sport 8443
+FGT-01 (global) # set admin-ssh-port 2222
+FGT-01 (global) # end
+```
+
+> ⚠️ **Ta session en cours n'est pas coupée**, mais la prochaine connexion devra utiliser les nouveaux ports :
+> ```bash
+> user@pc-lan:~$ ssh -p 2222 admin@192.168.10.1
+> ```
+> **Teste immédiatement depuis une seconde session** avant de fermer celle-ci.
+
+**Étape 6 — Fermer l'administration sur le WAN**
+
+```
+FGT-01 # config system interface
+FGT-01 (interface) # edit port1
+FGT-01 (port1) # set allowaccess ping
+FGT-01 (port1) # next
+FGT-01 (interface) # end
+```
+
+Vérifie que tu es toujours joignable **depuis le LAN** :
+
+```bash
+user@pc-lan:~$ ssh -p 2222 admin@192.168.10.1
+```
+
+**Étape 7 — La bannière**
+
+```
+FGT-01 # config system global
+FGT-01 (global) # set pre-login-banner enable
+FGT-01 (global) # end
+
+FGT-01 # config system replacemsg admin "pre_admin-disclaimer-text"
+FGT-01 (pre_admin-discl~t) # set buffer "ACCES RESERVE AUX PERSONNES AUTORISEES.
+Toute connexion est journalisee. Tout acces non autorise fera l objet de poursuites."
+FGT-01 (pre_admin-discl~t) # next
+FGT-01 # end
+```
+
+Déconnecte-toi et reconnecte-toi : la bannière s'affiche avant l'invite.
+
+**Étape 8 — Le suivi en Git**
+
+Sur ta machine :
+
+```bash
+user@pc-lan:~$ mkdir -p ~/config-fortigate && cd ~/config-fortigate
+user@pc-lan:~$ git init
+user@pc-lan:~$ cat > sauvegarde.sh <<'SCRIPT'
+#!/bin/bash
+FGT=192.168.10.1
+PORT=2222
+USER=admin
+ssh -p $PORT $USER@$FGT "show" > fgt-01.conf
+git add fgt-01.conf
+git commit -m "Configuration du $(date +%Y-%m-%d\ %H:%M)" || echo "Aucun changement"
+SCRIPT
+user@pc-lan:~$ chmod +x sauvegarde.sh
+user@pc-lan:~$ ./sauvegarde.sh
+```
+
+Fais une modification sur le pare-feu, relance le script, puis :
+
+```bash
+user@pc-lan:~$ git log --oneline
+user@pc-lan:~$ git diff HEAD~1
+```
+
+**Tu vois exactement ce qui a changé.** C'est le §25.1 en pratique, et c'est ce qui te sauvera lors d'un incident après modification.
+
+**Étape 9 — Vérifier l'état général**
+
+```
+FGT-01 # get system status
+FGT-01 # diagnose autoupdate versions
+FGT-01 # get system performance status
+FGT-01 # show system global
+```
+
+**Étape 10 — Sauvegarder l'état durci**
+
+```
+FGT-01 # execute backup config tftp apres-durcissement.conf 192.168.10.50 MotDePasseSauvegarde2026
+```
+
+---
+
+**✅ Résultat attendu**
+
+- La sauvegarde chiffrée est illisible, la non chiffrée révèle les secrets
+- Un mot de passe faible est refusé
+- L'administration écoute sur les nouveaux ports
+- Le WAN n'accepte plus que le ping
+- La bannière s'affiche
+- `git diff` montre les changements de configuration
+
+---
+
+**🧠 Ce que tu viens d'apprendre**
+
+1. **Une sauvegarde en clair est un fichier de secrets**, et tu l'as vérifié de tes yeux.
+2. **La restauration écrase tout** et redémarre. Ce n'est pas une fusion.
+3. **On lit les notes de version avant de mettre à jour** — le §2.6 en est la preuve.
+4. **Le durcissement se teste depuis une seconde session**, toujours.
+5. **Git donne l'historique de configuration** qu'aucune sauvegarde périodique ne remplace.
+6. **Un pare-feu à jour mal configuré vaut mieux qu'un pare-feu parfait en version vulnérable.**
+
+---
