@@ -246,10 +246,33 @@ export class FortiShell {
   completions(input: string): readonly string[] {
     const prefix = input.trimStart();
     const head = prefix.slice(0, prefix.lastIndexOf(' ') + 1);
-    return this.socle.suggestions(prefix, 'TAB')
-      .filter(s => !s.isArgument || s.completable === true)
-      .map(s => `${head}${s.value}`)
-      .filter(w => w.startsWith(prefix) && w !== prefix);
+    const typed = prefix.slice(head.length);
+    const quote = typed.startsWith('"') ? '"' : '';
+    const bare = typed.slice(quote.length);
+
+    const proposed = [
+      ...this.socle.suggestions(prefix.slice(0, head.length) + bare, 'TAB')
+        .filter(s => !s.isArgument || s.completable === true)
+        .map(s => s.value),
+      ...this.viewPathCompletions(head, bare),
+    ];
+
+    return [...new Set(proposed)]
+      .filter(value => value.startsWith(bare) && value !== bare)
+      .map(value => `${head}${quote}${value}${quote}`);
+  }
+
+  private viewPathCompletions(head: string, typed: string): readonly string[] {
+    const words = head.trim().split(/\s+/).filter(Boolean);
+    if (words[0] !== 'show' && words[0] !== 'get') return [];
+
+    const walked = words.slice(1);
+    const branches = this.tree.branchNames(walked);
+    if (branches.length > 0) return branches;
+
+    const spec = this.tree.spec(walked);
+    if (!spec || spec.kind !== 'table') return [];
+    return this.tree.table(spec).keys();
   }
 
   help(inputBeforeQuestion = ''): readonly string[] {

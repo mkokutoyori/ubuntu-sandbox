@@ -2844,6 +2844,44 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E52b — La complétion suit les guillemets, et descend le chemin
+
+Second passage sur le même périmètre, mesuré après le premier. Deux
+manques, et les deux portent sur ce qu'un opérateur tape le plus souvent.
+
+**Une valeur commencée entre guillemets ne se complétait pas.**
+`set srcaddr "N` + Tab ne proposait rien. La cause est simple et se voyait
+mal : le guillemet ouvrant fait partie du préfixe comparé, et aucun
+candidat ne commence par `"`. Or c'est la forme que le tutoriel écrit
+partout (`set srcaddr "NET-LAN"`), et celle que Fortinet emploie dans sa
+propre documentation. La complétion travaille désormais sur la valeur nue
+et rend les deux guillemets. Un guillemet ouvert qui ne correspond à rien
+ne propose toujours rien — la règle vaut dans les deux sens.
+
+**Le chemin d'un `show`/`get` ne se complétait qu'au premier niveau.**
+`show system ` ne proposait pas `interface`, et `show firewall address `
+aucune clé. C'est la conséquence directe de D32 : les `alternatives` d'un
+chemin libre sont une liste STATIQUE, donc les têtes de branche. La
+descente est faite dans `FortiShell.completions()` — la porte FortiOS, qui
+lit le même arbre — et non dans le socle : un chemin libre reste libre, et
+c'est le vendeur qui sait ce qu'il y a dessous.
+
+Les trois derniers cas vérifient tout cela **dans le terminal**, à travers
+`FortiTerminalSession` et de vraies touches Tab, et non seulement sur le
+shell : c'est là que l'opérateur tape. Ils confirment au passage que le
+terminal ajoute l'espace après le mot complété, comme le vrai.
+
+`fortigate-cli-resolution.test.ts` passe de 25 à 36 cas ; les 11 nouveaux
+sont discriminés par `git stash push -- src/network/ src/cli/` sur les
+seules modifications de ce passage : **7 tombent**, les 4 autres étant déjà
+servis par E52 (la valeur nue, la clé entre guillemets, le chemin qui n'est
+pas une table, la commande abrégée depuis le terminal).
+
+**Vérifié** : 1632 cas du module pare-feu (78 fichiers), 1224 du socle CLI
+(42 fichiers). Typecheck inchangé à 344.
+
+---
+
 ### E52 — Une commande s'abrège, `execute` connaît ses mots, `edit` propose ses clés
 
 **Ce qui a été mesuré avant d'écrire** est dans le périmètre pris

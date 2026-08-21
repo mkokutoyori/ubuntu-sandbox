@@ -32,7 +32,24 @@
  * décide vraiment, y compris qu'un mot EXACT l'emporte sur le préfixe
  * qu'il partage.
  *
- * Les trois derniers cas sont des GARDES : toute sous-commande déclarée
+ * Un second passage, mesuré après le premier, a trouvé trois choses de
+ * plus — et les deux premières sont ce qu'un opérateur tape le plus
+ * souvent, parce que le tutoriel lui-même écrit `set srcaddr "NET-LAN"` :
+ *
+ *   5. **Une valeur commencée ENTRE GUILLEMETS ne se complétait pas.**
+ *      `set srcaddr "N` + Tab ne proposait rien : le guillemet ouvrant
+ *      faisait partie du préfixe comparé, et aucun candidat ne commence
+ *      par `"`. La complétion travaille maintenant sur la valeur nue et
+ *      rend le guillemet — ouvrant ET fermant — comme un vrai FortiGate.
+ *   6. **`show firewall address ` ne proposait aucune CLÉ**, et
+ *      `show system ` aucune sous-branche : les alternatives d'un chemin
+ *      libre sont statiques, donc bornées au premier niveau. La
+ *      complétion descend désormais l'arbre au niveau déjà tapé, et
+ *      propose les entrées quand le chemin nomme une table.
+ *   7. Les trois derniers cas vérifient tout cela **dans le terminal**,
+ *      là où l'opérateur tape vraiment — pas seulement sur le shell.
+ *
+ * Les trois cas de GARDE : toute sous-commande déclarée
  * répond, toute vue déclarée rend quelque chose, et la liste proposée est
  * exactement la liste déclarée. Sans eux, les deux vocabulaires déclarés
  * ici pourraient dériver en silence vers une promesse fausse — ce qui est
@@ -45,6 +62,7 @@ import { FortiShell } from '@/network/devices/firewall/vendors/fortios/FortiShel
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
+import { FortiTerminalSession } from '@/terminal/sessions';
 import {
   FORTI_EXECUTE_COMMANDS,
 } from '@/network/devices/firewall/vendors/fortios/execute/executeVocabulary';
@@ -242,6 +260,73 @@ describe('ce que le premier volet a livre continue de valoir', () => {
   });
 });
 
+describe('une valeur ENTRE GUILLEMETS se complete quand meme', () => {
+  it('un nom d\'objet commence a etre tape entre guillemets', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address', 'edit "NET-LAN"',
+      'set subnet 192.168.10.0 255.255.255.0', 'next', 'end');
+    taper(sh, 'config firewall policy', 'edit 1');
+
+    expect(sh.completions('set srcaddr "N')).toContain('set srcaddr "NET-LAN"');
+  });
+
+  it('la meme valeur SANS guillemets se complete sans en ajouter', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address', 'edit "NET-LAN"',
+      'set subnet 192.168.10.0 255.255.255.0', 'next', 'end');
+    taper(sh, 'config firewall policy', 'edit 1');
+
+    expect(sh.completions('set srcaddr N')).toContain('set srcaddr NET-LAN');
+  });
+
+  it('une cle de table se complete aussi entre guillemets', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address', 'edit "SRV-WEB"',
+      'set subnet 10.0.0.1 255.255.255.255', 'next', 'end');
+    taper(sh, 'config firewall address');
+
+    expect(sh.completions('edit "SRV')).toContain('edit "SRV-WEB"');
+  });
+
+  it('un guillemet ouvert qui ne correspond a RIEN ne propose rien', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall policy', 'edit 1');
+    expect(sh.completions('set srcaddr "zzz')).toHaveLength(0);
+  });
+});
+
+describe('`show` et `get` proposent les CLES de la table nommee', () => {
+  it('les entrees de la table sont proposees apres son chemin', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address',
+      'edit "SRV-WEB"', 'set subnet 10.0.0.1 255.255.255.255', 'next',
+      'edit "SRV-MAIL"', 'set subnet 10.0.0.2 255.255.255.255', 'next', 'end');
+
+    const proposees = sh.completions('show firewall address ');
+    expect(proposees).toContain('show firewall address SRV-WEB');
+    expect(proposees).toContain('show firewall address SRV-MAIL');
+  });
+
+  it('`get` propose les memes cles', () => {
+    const { sh } = shell();
+    taper(sh, 'config firewall address', 'edit "SRV-WEB"',
+      'set subnet 10.0.0.1 255.255.255.255', 'next', 'end');
+
+    expect(sh.completions('get firewall address ')).toContain(
+      'get firewall address SRV-WEB');
+  });
+
+  it('un chemin qui n\'est pas une table ne propose pas de cle', () => {
+    const { sh } = shell();
+    expect(sh.completions('show system global ')).toHaveLength(0);
+  });
+
+  it('les BRANCHES continuent de se proposer sous un chemin partiel', () => {
+    const { sh } = shell();
+    expect(sh.completions('show system ')).toContain('show system interface');
+  });
+});
+
 describe('un vocabulaire declare ne ment pas', () => {
   it('chaque sous-commande d\'`execute` declaree REPOND', () => {
     for (const command of FORTI_EXECUTE_COMMANDS) {
@@ -269,5 +354,49 @@ describe('un vocabulaire declare ne ment pas', () => {
 
     for (const nom of declarees) expect(proposees).toContain(nom);
     for (const nom of proposees) expect(declarees).toContain(nom);
+  });
+});
+
+const touche = (k: string) => ({
+  key: k, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false,
+}) as never;
+
+const tick = () => new Promise<void>(resolve => { setTimeout(resolve, 0); });
+
+async function terminal(fgt: FortiGate): Promise<FortiTerminalSession> {
+  const session = new FortiTerminalSession('t1', fgt as never);
+  await session.init();
+  for (let tour = 0; tour < 40 && session.isBooting; tour++) await tick();
+  await tick();
+  return session;
+}
+
+async function tab(session: FortiTerminalSession, saisie: string): Promise<string> {
+  session.setInput(saisie);
+  session.handleKey(touche('Tab'));
+  await tick();
+  return session.input;
+}
+
+describe('la meme chose DANS LE TERMINAL, la ou l\'operateur tape', () => {
+  it('Tab complete un nom d\'objet entre guillemets', async () => {
+    const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
+    for (const ligne of ['config firewall address', 'edit "NET-LAN"',
+      'set subnet 192.168.10.0 255.255.255.0', 'next', 'end',
+      'config firewall policy', 'edit 1']) await fgt.executeCommand(ligne);
+
+    const session = await terminal(fgt);
+    expect(await tab(session, 'set srcaddr "N')).toBe('set srcaddr "NET-LAN" ');
+  });
+
+  it('Tab descend dans le chemin d\'un `show`', async () => {
+    const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
+    const session = await terminal(fgt);
+    expect(await tab(session, 'show system inte')).toBe('show system interface ');
+  });
+
+  it('une commande abregee s\'execute depuis le terminal', async () => {
+    const fgt = new FortiGate('firewall-fortinet', 'FGT-01', 0, 0);
+    expect(await fgt.executeCommand('g sy stat')).toContain('Version: FortiGate-VM64');
   });
 });
