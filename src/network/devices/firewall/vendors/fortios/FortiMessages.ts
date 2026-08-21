@@ -52,10 +52,17 @@ export const FortiMessages = {
     return fail(`value parse error before '${value}'\n${FORTI_COMMAND_FAIL}`, hint);
   },
 
-  unknownPath(path: string): string {
+  unknownPath(path: string, verb = 'config'): string {
     return fail(
       FORTI_COMMAND_FAIL,
-      `unknown configuration path "${path}". Type \`config ?\` for the list of branches.`,
+      `unknown configuration path "${path}". Type \`${verb} ?\` for the list of branches.`,
+    );
+  },
+
+  unknownAction(what: string): string {
+    return fail(
+      `${FORTI_UNKNOWN_ACTION}\n${FORTI_COMMAND_FAIL}`,
+      `unknown action "${what}". Type \`execute ?\` for the list.`,
     );
   },
 

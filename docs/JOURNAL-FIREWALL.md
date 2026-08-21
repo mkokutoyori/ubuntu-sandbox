@@ -2844,6 +2844,117 @@ pare-feu peut atterrir dans le `/var/log/syslog` d'une vraie machine.
 
 ---
 
+### E52 — Une commande s'abrège, `execute` connaît ses mots, `edit` propose ses clés
+
+**Ce qui a été mesuré avant d'écrire** est dans le périmètre pris
+ci-dessous. Ce qui a été livré :
+
+**L'abréviation du CHEMIN.** `resolvePathWords` (`view/pathResolution.ts`)
+résout mot à mot : correspondance exacte d'abord, préfixe unique ensuite,
+ambiguïté nommée sinon, et le mot tel que tapé quand rien ne correspond —
+pour que le message d'erreur nomme ce que l'opérateur a écrit. Le
+vocabulaire à chaque profondeur est l'union des branches de l'arbre et des
+vues déclarées, parce que `get system status` n'est pas un chemin de
+l'arbre : sans les vues, `sy stat` ne pouvait pas se résoudre. Mesuré au
+passage : l'union produisait `system` deux fois et l'annonçait « ambiguous:
+system, system » — les candidats sont dédoublonnés.
+
+**Le vocabulaire d'`execute`.** Neuf sous-commandes déclarées une fois,
+lues par la répartition (un `switch` sur le nom résolu), par la complétion
+et par l'aide. `execute pin` répondait « is not implemented in this
+simulator » ; il répond maintenant que le mot est ambigu entre `ping` et
+`ping-options`, ce qui est vrai. `execute zorglub` répond `unknown action`
+sans parler du simulateur.
+
+**Un défaut du SOCLE PARTAGÉ, trouvé en cherchant pourquoi `edit ` ne
+propose rien.** `argumentCompletableValues` filtrait les valeurs
+proposables sur `/^[a-z][a-z0-9:._-]*$/` : une valeur commençant par une
+majuscule n'était jamais proposée. Or les clés d'une table FortiOS —
+`SRV-WEB`, `NET-LAN`, `GRP-Direction` — en sont presque toujours. Le filtre
+visait les PLACEHOLDERS (`WORD`, `A.B.C.D`, `<1-4094>`) et se servait de la
+casse comme approximation. Il compare maintenant au placeholder réel de la
+place (`argumentPlaceholder(spec)`) et aux formes de placeholder connues.
+Conséquence sur les autres constructeurs : ils gagnent la même chose, et
+les 1221 cas du socle CLI comme les 181 cas de complétion Cisco/VRP passent
+sans changement.
+
+**`edit ?` liste les entrées ET garde la place libre.** `argumentSuggestions`
+n'émettait plus le placeholder dès qu'une place portait des `alternatives` ;
+une place non-`REST` le rend désormais en tête, comme un vrai `edit ?` qui
+montre `<string>` puis les entrées. Les places `REST` (`get`, `show`) ne le
+rendent pas : leurs alternatives SONT des formes, et annoncer une forme
+libre par-dessus n'apprendrait rien.
+
+**Supprimé** : `FirewallProfile.unimplemented`, déclaré, lu par personne, et
+faux — il rangeait `config vpn ipsec` et `diagnose debug flow` parmi les
+absents alors que les deux sont livrés depuis les phases 8 et 4.
+
+`fortigate-cli-resolution.test.ts` (25 cas) est discriminé par `git stash
+push -- src/network/ src/cli/` : **17 tombent**. Trois d'entre eux sont des
+GARDES — toute sous-commande déclarée répond, toute vue déclarée rend
+quelque chose, la liste proposée est exactement la liste déclarée — sans
+quoi les deux vocabulaires pourraient dériver en silence vers la promesse
+fausse que ce périmètre vient de fermer.
+
+**Vérifié** : 1624 cas du module pare-feu (78 fichiers), 1221 du socle CLI
+(42 fichiers), 181 des suites de complétion Cisco/VRP. Typecheck inchangé à
+344.
+
+---
+
+## Périmètre pris — FortiOS : résolution, suggestions, complétion (2e volet)
+
+**Agent `mandeng` (session tutoriel/TP).** Le premier volet du confort CLI
+est livré par l'autre agent (Tab qui défile — D31, `get`/`show` qui
+proposent l'arbre — D32, le ping au fil de l'eau — D33). Ce périmètre-ci
+ne le recouvre pas : il porte sur ce que la **mesure** trouve encore
+manquant en amont de la complétion, c'est-à-dire la RÉSOLUTION d'une
+commande abrégée et les propositions qui n'existent pas du tout.
+
+**Mesuré avant d'écrire** (sonde jetable, sur une machine neuve) :
+
+| Saisie | Résultat mesuré |
+|---|---|
+| `g system status` | ✅ le VERBE s'abrège |
+| `get sys status` | ❌ `unknown configuration path "sys status"` |
+| `show system glo` | ❌ idem |
+| `diag sy session stat` | ✅ (chemin de mots-clés) |
+| `execute pin 1.1.1.1` | ❌ **`execute pin` is not implemented in this simulator** |
+| `execute ` + Tab | ❌ 4 propositions sur ~15 sous-commandes réelles |
+| `edit ` + Tab dans une table peuplée | ❌ aucune proposition |
+
+**Ce que dit Fortinet**, et c'est son propre exemple : « You can
+abbreviate words in the command line to their smallest number of
+non-ambiguous characters. For example, the command `get system status`
+could be abbreviated to `g sy stat`. » Le simulateur abrège le verbe et
+pas le chemin.
+
+**Le message de refus d'`execute` est FAUX** et c'est le plus coûteux des
+quatre : `execute pin` répond que la commande n'est pas implémentée dans
+ce simulateur, alors que `execute ping` l'est. Il envoie chercher une
+limite de produit là où il n'y a qu'une abréviation non résolue.
+
+**Cause commune des deux dernières lignes** : `execute` est UNE seule
+`CommandSpec` dont l'argument `REST` avale toute la ligne, et le
+répartiteur est une chaîne de `if` dans `FortiShell.executeVerb`. Les noms
+des sous-commandes ne vivent donc nulle part où la complétion, l'aide ou
+la résolution puissent les lire.
+
+**Fichiers pris** :
+
+```
+vendors/fortios/FortiSocle.ts        ← alternatives d'`execute` et d'`edit`
+vendors/fortios/FortiShell.ts        ← répartition d'`execute`, résolution du chemin
+vendors/fortios/execute/…            ← la table déclarative des sous-commandes
+```
+
+**Critère de sortie** : `g sy stat`, `exe pin 1.1.1.1`, `execute ` + Tab et
+`edit ` + Tab se comportent comme sur une vraie machine, une abréviation
+ambiguë est refusée en le disant, et aucun message ne prétend qu'une
+commande implémentée ne l'est pas.
+
+---
+
 ## Périmètre pris — FortiOS phase 12 (le portail captif capture)
 
 **Agent `mandeng`.** §6.8 du carnet nomme le point : « le portail sert le

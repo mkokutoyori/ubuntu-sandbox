@@ -1,3 +1,4 @@
+import { FORTI_EXECUTE_COMMANDS } from './execute/executeVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec } from '../../../../../cli/CommandTable';
@@ -216,11 +217,26 @@ export class FortiSocle {
     out.push(...this.branchSpecs());
     out.push(...this.viewSpecs());
     out.push(...this.diagnoseSpecs());
+    out.push(...this.executeSpecs(new Set(out.map(spec => spec.id))));
     out.push(this.withArgument('execute', ['execute',
       { name: 'command', type: 'REST', description: 'Command to execute.' }],
       'Execute static commands.',
       (_s, args) => this.deps.runExecute((args.command ?? '').split(/\s+/).filter(Boolean))));
     return out;
+  }
+
+  private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
+    return FORTI_EXECUTE_COMMANDS
+      .filter(command => !declared.has(`execute ${command.name}`))
+      .map(command => this.withArgument(
+      `execute ${command.name}`,
+      ['execute', command.name, {
+        name: 'rest', type: 'REST', optional: true, description: command.help,
+      }],
+      command.help,
+      (_s, args) => this.deps.runExecute(
+        [command.name, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]),
+      ));
   }
 
   private diagnoseSpecs(): CommandSpec[] {

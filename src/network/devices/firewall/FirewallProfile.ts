@@ -71,7 +71,6 @@ export interface FirewallProfile {
   readonly portCount: number;
   readonly portFirstIndex: number;
 
-  readonly unimplemented: readonly string[];
 }
 
 export const GENERIC_PIPELINE: readonly string[] = Object.freeze([
@@ -135,5 +134,4 @@ export const GENERIC_PROFILE: FirewallProfile = Object.freeze({
   portCount: 8,
   portFirstIndex: 1,
 
-  unimplemented: Object.freeze([]),
 });

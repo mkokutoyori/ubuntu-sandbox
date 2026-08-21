@@ -97,9 +97,4 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
     'policy-deny': Object.freeze({ id: '0000000015', severity: 'warnings' as const }),
   }),
 
-  unimplemented: Object.freeze([
-    'config vpn ipsec',
-    'diagnose debug flow',
-    'execute backup',
-  ]),
 });

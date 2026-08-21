@@ -18,6 +18,10 @@ import { FortiConfigTree } from './runtime/FortiConfigTree';
 import {
   FortiNavigator, unquote, type FortiConfigChange,
 } from './runtime/FortiNavigator';
+import { executeNames, resolvePrefix } from './execute/executeVocabulary';
+import {
+  FORTI_GET_VIEWS, resolvePathWords, viewContinuations,
+} from './view/pathResolution';
 import { FortiValidator } from './runtime/FortiValidator';
 import { renderPath, renderWholeConfig } from './render/showRenderer';
 import { renderGet } from './render/getRenderer';
@@ -454,8 +458,15 @@ export class FortiShell {
   }
 
   private show(rest: readonly string[], full: boolean): string {
-    const words = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
+    const typed = rest[0] === 'full-configuration' ? rest.slice(1) : rest;
     const options = { full: full || rest[0] === 'full-configuration' };
+
+    const resolution = resolvePathWords(typed, (prefix) => this.tree.branchNames(prefix));
+    if (resolution.ambiguous) {
+      return FortiMessages.ambiguous(
+        resolution.ambiguous.typed, resolution.ambiguous.candidates);
+    }
+    const words = resolution.words;
 
     if (words.length === 0) {
       const object = this.nav.currentObject();
@@ -475,17 +486,27 @@ export class FortiShell {
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
     }
-    return FortiMessages.unknownPath(words.join(' '));
+    return FortiMessages.unknownPath(words.join(' '), 'show');
   }
 
-  private get(rest: readonly string[]): string {
-    if (rest.length === 0) {
+  private get(typed: readonly string[]): string {
+    if (typed.length === 0) {
       const object = this.nav.currentObject();
       if (object) return renderGet(this.tree, object.spec.path, object.key)?.join('\n') ?? '';
       const table = this.nav.currentTable();
       if (table) return renderGet(this.tree, table.spec.path)?.join('\n') ?? '';
       return FortiMessages.incomplete('a path');
     }
+
+    const resolution = resolvePathWords(typed, (prefix) => [
+      ...this.tree.branchNames(prefix),
+      ...viewContinuations(FORTI_GET_VIEWS, prefix),
+    ]);
+    if (resolution.ambiguous) {
+      return FortiMessages.ambiguous(
+        resolution.ambiguous.typed, resolution.ambiguous.candidates);
+    }
+    const rest = resolution.words;
 
     const view = this.getView(rest);
     if (view !== null) return view;
@@ -498,7 +519,7 @@ export class FortiShell {
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
     }
-    return FortiMessages.unknownPath(rest.join(' '));
+    return FortiMessages.unknownPath(rest.join(' '), 'get');
   }
 
   private getView(rest: readonly string[]): string | null {
@@ -653,33 +674,48 @@ export class FortiShell {
 
   private executeVerb(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('a command');
-    if (rest[0] === 'log') return runExecuteLog(rest.slice(1), this.diagDeps());
-    if (rest[0] === 'ha') return this.executeHa(rest.slice(1));
-    if (rest[0] === 'dhcp' && rest[1] === 'lease-list') {
-      return renderDhcpLeases(this.fw.getDhcp().leases());
+
+    const resolved = resolvePrefix(rest[0], executeNames());
+    if (resolved.name === undefined) {
+      return resolved.candidates.length > 1
+        ? FortiMessages.ambiguous(rest[0], resolved.candidates)
+        : FortiMessages.unknownAction(rest[0]);
     }
-    if (rest[0] === 'dhcp' && rest[1] === 'lease-clear') {
-      if (rest.length < 3) return FortiMessages.incomplete('an IP address');
-      return this.fw.getDhcp().clearLease(rest[2])
-        ? '' : FortiMessages.commandFail(`no lease held for ${rest[2]}.`);
+
+    const tail = rest.slice(1);
+    switch (resolved.name) {
+      case 'log': return runExecuteLog(tail, this.diagDeps());
+      case 'ha': return this.executeHa(tail);
+      case 'dhcp': return this.executeDhcp(tail);
+      case 'traceroute':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTraceroute(tail[0]);
+      case 'vpn':
+        if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
+        return tail[0] === 'certificate'
+          ? this.executeCertificate(tail.slice(1))
+          : FortiMessages.unknownAction(`vpn ${tail[0]}`);
+      case 'time': return runExecuteTime(tail, this.fw);
+      case 'date': return runExecuteDate(tail, this.fw);
+      case 'ping':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runPing(tail[0]);
+      case 'ping-options': return this.executePingOptions(tail);
+      default: return FortiMessages.unknownAction(resolved.name);
     }
-    if (rest[0] === 'traceroute') {
-      if (rest.length < 2) return FortiMessages.incomplete('a destination');
-      return this.fw.runTraceroute(rest[1]);
+  }
+
+  private executeDhcp(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('a DHCP operation');
+    if (rest[0] === 'lease-list') return renderDhcpLeases(this.fw.getDhcp().leases());
+    if (rest[0] === 'lease-clear') {
+      if (rest.length < 2) return FortiMessages.incomplete('an IP address');
+      return this.fw.getDhcp().clearLease(rest[1])
+        ? '' : FortiMessages.commandFail(`no lease held for ${rest[1]}.`);
     }
-    if (rest[0] === 'vpn' && rest[1] === 'certificate') {
-      return this.executeCertificate(rest.slice(2));
-    }
-    if (rest[0] === 'time') return runExecuteTime(rest.slice(1), this.fw);
-    if (rest[0] === 'date') return runExecuteDate(rest.slice(1), this.fw);
-    if (rest[0] === 'ping') {
-      if (rest.length < 2) return FortiMessages.incomplete('a destination');
-      return this.fw.runPing(rest[1]);
-    }
-    if (rest[0] === 'ping-options') return this.executePingOptions(rest.slice(1));
-    return FortiMessages.commandFail(
-      `\`execute ${rest[0]}\` is not implemented in this simulator.`,
-    );
+    return FortiMessages.unknownAction(`dhcp ${rest[0]}`);
   }
 
   private executePingOptions(rest: readonly string[]): string {

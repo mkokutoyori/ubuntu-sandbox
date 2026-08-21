@@ -71,11 +71,6 @@ export const ASA_PROFILE: FirewallProfile = Object.freeze({
     'translation-created': Object.freeze({ id: '305011', severity: 'informational' as const }),
   }),
 
-  unimplemented: Object.freeze([
-    'show module',
-    'verify /md5',
-    'threat-detection scanning-threat',
-  ]),
 });
 
 export const ASA_NAT_SECTIONS = Object.freeze({
