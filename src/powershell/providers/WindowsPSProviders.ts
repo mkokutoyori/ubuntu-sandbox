@@ -1072,7 +1072,8 @@ class WindowsDhcpServerAdapter implements IDhcpServerProvider {
   scopeStatistics(scopeName: string) { return this.role().scopeStatistics(scopeName); }
   serverStatistics() { return this.role().serverStatistics(); }
 
-  authorizeInDC(): DhcpOpResult { return this.role().authorizeInDC(); }
+  authorizeInDC(dnsName?: string, ipAddress?: string): DhcpOpResult { return this.role().authorizeInDC(dnsName, ipAddress); }
+  registeredIdentity(): { dnsName: string | null; ipAddress: string | null } { return this.role().registeredIdentity(); }
   isAuthorizedInDC(): boolean { return this.role().isAuthorizedInDC(); }
   isRegisteredInDC(): boolean { return this.role().isRegisteredInDC(); }
   revokeInDC(): DhcpOpResult { return this.role().revokeInDC(); }

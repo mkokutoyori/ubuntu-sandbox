@@ -31,13 +31,13 @@ function requireDhcp(ctx: CmdletContext, cmdletName: string): IDhcpServerProvide
 
 function scopeToPSObject(s: DhcpScopeInfo): Record<string, PSValue> {
   return {
-    ScopeId: s.name, Name: s.name, StartRange: s.startRange, EndRange: s.endRange,
+    ScopeId: s.scopeId || s.name, Name: s.name, StartRange: s.startRange, EndRange: s.endRange,
     SubnetMask: s.subnetMask, LeaseDuration: s.leaseDuration, State: s.state,
   };
 }
 function leaseToPSObject(l: DhcpLeaseInfo): Record<string, PSValue> {
   return {
-    IPAddress: l.ipAddress, ClientId: l.clientId, ScopeId: l.scopeName,
+    IPAddress: l.ipAddress, ClientId: l.clientId, ScopeId: l.scopeId || l.scopeName,
     LeaseExpiryTime: new Date(l.leaseExpiration).toString(),
     AddressState: l.type === 'manual' ? 'ActiveReservation' : 'Active',
   };
@@ -192,11 +192,13 @@ export class GetDhcpServerv4LeaseCmdlet implements ICmdlet {
 export class AddDhcpServerInDCCmdlet implements ICmdlet {
   readonly name = 'add-dhcpserverindc';
   readonly aliases = [] as const;
-  readonly parameters = ['DnsName'] as const;
+  readonly parameters = ['DnsName', 'IpAddress'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dhcp = requireDhcp(ctx, 'Add-DhcpServerInDC');
-    const res = dhcp.authorizeInDC();
+    const dnsName = ctx.named['dnsname'] !== undefined ? psValueToString(ctx.named['dnsname']) : undefined;
+    const ipAddress = ctx.named['ipaddress'] !== undefined ? psValueToString(ctx.named['ipaddress']) : undefined;
+    const res = dhcp.authorizeInDC(dnsName, ipAddress);
     if (!res.ok) { ctx.emitError(`Add-DhcpServerInDC : ${res.message}`); return null; }
     return null;
   }
@@ -405,7 +407,11 @@ export class GetDhcpServerInDCCmdlet implements ICmdlet {
   execute(ctx: CmdletContext): PSValue {
     const dhcp = requireDhcp(ctx, 'Get-DhcpServerInDC');
     if (!dhcp.isRegisteredInDC()) return [];
-    return [{ IPAddress: dhcp.serverAddress(), DnsName: dhcp.serverName() }];
+    const declared = dhcp.registeredIdentity();
+    return [{
+      IPAddress: declared.ipAddress ?? dhcp.serverAddress(),
+      DnsName: declared.dnsName ?? dhcp.serverName(),
+    }];
   }
 }
 

@@ -13,14 +13,13 @@
  * applied on the engine's single global excluded-address list (mirroring
  * Cisco `ip dhcp excluded-address`'s own global scope) rather than being
  * tracked per-Windows-scope — acceptable for the lab's single-scope-per-
- * server usage this PRD targets. No relay-agent (giaddr) forwarding: this
- * role serves only directly-attached clients on the host's own segments,
- * unlike `Router`'s DHCP relay/helper-address machinery.
+ * server usage this PRD targets.
  */
 
 import type { EndHost } from '@/network/devices/EndHost';
 import { DHCPServer } from '@/network/dhcp/DHCPServer';
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
+import { buildDhcpServerReply } from '@/network/dhcp/DhcpServerExchange';
 import type { DHCPBinding } from '@/network/dhcp/types';
 import {
   IPAddress, SubnetMask, MACAddress, createIPv4Packet, ETHERTYPE_IPV4, IP_PROTO_UDP,
@@ -30,6 +29,7 @@ import {
 export interface DhcpOpResult { ok: boolean; message: string }
 
 export interface DhcpScopeInfo {
+  scopeId: string;
   name: string;
   startRange: string;
   endRange: string;
@@ -42,6 +42,7 @@ export interface DhcpLeaseInfo {
   ipAddress: string;
   clientId: string;
   scopeName: string;
+  scopeId: string;
   leaseExpiration: number;
   type: 'automatic' | 'manual';
 }
@@ -49,10 +50,10 @@ export interface DhcpLeaseInfo {
 const DHCP_SERVER_PORT = 67;
 const DHCP_CLIENT_PORT = 68;
 
-function bindingToLease(binding: DHCPBinding): DhcpLeaseInfo {
+function bindingToLease(binding: DHCPBinding, scopeId: string): DhcpLeaseInfo {
   return {
     ipAddress: binding.ipAddress, clientId: binding.clientId,
-    scopeName: binding.poolName, leaseExpiration: binding.leaseExpiration,
+    scopeName: binding.poolName, scopeId, leaseExpiration: binding.leaseExpiration,
     type: binding.type,
   };
 }
@@ -66,6 +67,8 @@ export class WindowsDhcpServerRole {
   private running = false;
   private domainExists = false;
   private authorized = false;
+  private registeredDnsName: string | null = null;
+  private registeredIpAddress: string | null = null;
 
   constructor(private readonly host: EndHost) {}
 
@@ -89,9 +92,15 @@ export class WindowsDhcpServerRole {
   setDomainContext(domainExists: boolean): void { this.domainExists = domainExists; }
 
   /** `Add-DhcpServerInDC` — simulated AD authorization (PRD §5 P8: "autorisation AD simulée (flag) quand un domaine existe"). */
-  authorizeInDC(): DhcpOpResult {
+  authorizeInDC(dnsName?: string, ipAddress?: string): DhcpOpResult {
     this.authorized = true;
+    if (dnsName) this.registeredDnsName = dnsName;
+    if (ipAddress) this.registeredIpAddress = ipAddress;
     return { ok: true, message: '' };
+  }
+
+  registeredIdentity(): { dnsName: string | null; ipAddress: string | null } {
+    return { dnsName: this.registeredDnsName, ipAddress: this.registeredIpAddress };
   }
 
   /** An unauthorized DHCP server in a domain never leases addresses — real Windows shuts down leasing (Event 1042) rather than refusing the cmdlet calls that configure it. */
@@ -101,6 +110,8 @@ export class WindowsDhcpServerRole {
 
   revokeInDC(): DhcpOpResult {
     this.authorized = false;
+    this.registeredDnsName = null;
+    this.registeredIpAddress = null;
     return { ok: true, message: '' };
   }
 
@@ -111,57 +122,26 @@ export class WindowsDhcpServerRole {
     this.serveOnWire(dgram.inPort, pkt);
   };
 
+  private adoptServerIdentifierOf(inPort: string): void {
+    const own = this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString();
+    if (own && own !== '0.0.0.0') this.engine.setServerIdentifier(own);
+  }
+
   private serveOnWire(inPort: string, pkt: DHCPPacket): void {
-    const type = pkt.getMessageType();
-    let reply: DHCPPacket | null = null;
-    if (type === 'DHCPDISCOVER') {
-      const localGatewayIP = this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString();
-      const offer = this.engine.processDiscover({
-        clientMAC: pkt.chaddr, xid: pkt.xid, clientIdentifier: pkt.chaddr,
-        parameterRequestList: [], localGatewayIP,
-      });
-      if (!offer) return;
-      reply = DHCPPacket.createOffer(pkt.chaddr, pkt.xid, offer.ip, offer.serverIdentifier, {
-        mask: offer.pool.mask ?? '255.255.255.0', router: offer.pool.defaultRouter ?? '0.0.0.0',
-        dns: offer.pool.dnsServers, domainName: offer.pool.domainName ?? undefined,
-        leaseDuration: offer.pool.leaseDuration ?? 86400,
-        renewalTime: offer.renewalTime, rebindingTime: offer.rebindingTime,
-      });
-    } else if (type === 'DHCPREQUEST') {
-      const requested = String(pkt.getOption(50) ?? pkt.ciaddr);
-      const serverId = String(pkt.getOption(54) ?? '');
-      const result = this.engine.processRequestWithNak({
-        clientMAC: pkt.chaddr, xid: pkt.xid,
-        requestedIP: requested, clientIdentifier: pkt.chaddr, serverIdentifier: serverId,
-      });
-      if (!result) return;
-      if (result.type === 'NAK' || !result.binding) {
-        reply = DHCPPacket.createNak(pkt.chaddr, pkt.xid, result.serverIdentifier,
-          result.message ?? 'requested address not available');
-      } else {
-        const pool = this.engine.getPool(result.binding.poolName);
-        reply = DHCPPacket.createAck(pkt.chaddr, pkt.xid, result.binding.ipAddress, result.serverIdentifier, {
-          mask: pool?.mask ?? '255.255.255.0', router: pool?.defaultRouter ?? '0.0.0.0',
-          dns: pool?.dnsServers ?? [], domainName: pool?.domainName ?? undefined,
-          leaseDuration: pool?.leaseDuration ?? 86400,
-          renewalTime: pool?.renewalTime, rebindingTime: pool?.rebindingTime,
-        });
-      }
-    } else if (type === 'DHCPDECLINE') {
-      this.engine.processDecline({
-        clientMAC: pkt.chaddr, declinedIP: String(pkt.getOption(50) ?? ''),
-        serverIdentifier: String(pkt.getOption(54) ?? ''), clientIdentifier: pkt.chaddr,
-      });
-      return;
-    } else if (type === 'DHCPRELEASE') {
-      this.engine.processRelease({
-        clientMAC: pkt.chaddr, clientIP: pkt.ciaddr,
-        serverIdentifier: String(pkt.getOption(54) ?? ''), clientIdentifier: pkt.chaddr,
-      });
-      return;
-    }
+    this.adoptServerIdentifierOf(inPort);
+    const relayAgent = pkt.giaddr !== '0.0.0.0' ? pkt.giaddr : undefined;
+    const reply = buildDhcpServerReply(pkt, {
+      server: this.engine,
+      localGatewayIP: this.host.getPorts().find(p => p.getName() === inPort)?.getIPAddress()?.toString(),
+    });
     if (!reply) return;
-    this.sendReply(inPort, reply);
+    reply.giaddr = pkt.giaddr;
+    if (relayAgent) this.sendReplyToRelay(relayAgent, reply);
+    else this.sendReply(inPort, reply);
+  }
+
+  private sendReplyToRelay(relayAgent: string, reply: DHCPPacket): void {
+    this.host.sendUdpDatagram(new IPAddress(relayAgent), DHCP_SERVER_PORT, DHCP_SERVER_PORT, reply, 300);
   }
 
   private sendReply(inPort: string, reply: DHCPPacket): void {
@@ -211,11 +191,25 @@ export class WindowsDhcpServerRole {
     }
   }
 
-  getScope(name: string): DhcpScopeInfo | null {
+  private resolveScopeKey(idOrName: string): string {
+    if (this.engine.getPool(idOrName)) return idOrName;
+    for (const [poolName, pool] of this.engine.getAllPools()) {
+      if (pool.network === idOrName) return poolName;
+    }
+    return idOrName;
+  }
+
+  private scopeIdOfPool(poolName: string): string {
+    return this.engine.getPool(poolName)?.network ?? '';
+  }
+
+  getScope(idOrName: string): DhcpScopeInfo | null {
+    const name = this.resolveScopeKey(idOrName);
     const pool = this.engine.getPool(name);
     if (!pool) return null;
     const range = this.scopeRanges.get(name);
     return {
+      scopeId: pool.network ?? '',
       name: pool.name, startRange: range?.start ?? '', endRange: range?.end ?? '',
       subnetMask: pool.mask ?? '', leaseDuration: pool.leaseDuration,
       state: this.scopeState.get(name) === false ? 'Inactive' : 'Active',
@@ -237,7 +231,8 @@ export class WindowsDhcpServerRole {
 
   // ─── Reservations (Add-DhcpServerv4Reservation) ─────────────────────
 
-  addReservation(scopeName: string, ipAddress: string, clientId: string): DhcpOpResult {
+  addReservation(scopeIdOrName: string, ipAddress: string, clientId: string): DhcpOpResult {
+    const scopeName = this.resolveScopeKey(scopeIdOrName);
     if (!this.engine.getPool(scopeName)) {
       return { ok: false, message: `Add-DhcpServerv4Reservation : ScopeId "${scopeName}" does not exist on this DHCP server.` };
     }
@@ -248,7 +243,8 @@ export class WindowsDhcpServerRole {
 
   // ─── Options (Set-DhcpServerv4OptionValue) ──────────────────────────
 
-  setOptionValue(scopeName: string | undefined, optionId: number, values: string[]): DhcpOpResult {
+  setOptionValue(scopeIdOrName: string | undefined, optionId: number, values: string[]): DhcpOpResult {
+    const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
     if (scopeName !== undefined && !this.engine.getPool(scopeName)) {
       return { ok: false, message: `Set-DhcpServerv4OptionValue : ScopeId "${scopeName}" does not exist on this DHCP server.` };
     }
@@ -268,8 +264,10 @@ export class WindowsDhcpServerRole {
 
   // ─── Leases (Get-DhcpServerv4Lease) ──────────────────────────────────
 
-  getLeases(scopeName?: string): DhcpLeaseInfo[] {
-    const all = [...this.engine.getBindings().values()].map(bindingToLease);
+  getLeases(scopeIdOrName?: string): DhcpLeaseInfo[] {
+    const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
+    const all = [...this.engine.getBindings().values()]
+      .map(b => bindingToLease(b, this.scopeIdOfPool(b.poolName)));
     return scopeName ? all.filter(l => l.scopeName === scopeName) : all;
   }
 
@@ -317,7 +315,8 @@ export class WindowsDhcpServerRole {
       : { ok: false, message: `Remove-DhcpServerv4ExclusionRange : The specified exclusion range does not exist.` };
   }
 
-  listReservations(scopeName?: string): Array<{ scopeName: string; ipAddress: string; clientId: string }> {
+  listReservations(scopeIdOrName?: string): Array<{ scopeName: string; ipAddress: string; clientId: string }> {
+    const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
     const scopes = scopeName ? [scopeName] : [...this.engine.getAllPools().keys()];
     const out: Array<{ scopeName: string; ipAddress: string; clientId: string }> = [];
     for (const scope of scopes) {
@@ -328,7 +327,8 @@ export class WindowsDhcpServerRole {
     return out;
   }
 
-  removeReservation(scopeName: string, ipAddress: string): DhcpOpResult {
+  removeReservation(scopeIdOrName: string, ipAddress: string): DhcpOpResult {
+    const scopeName = this.resolveScopeKey(scopeIdOrName);
     if (!this.engine.removeStaticBinding(scopeName, ipAddress)) {
       return { ok: false, message: `Remove-DhcpServerv4Reservation : The reservation ${ipAddress} does not exist.` };
     }
@@ -342,7 +342,8 @@ export class WindowsDhcpServerRole {
       : { ok: false, message: `Remove-DhcpServerv4Lease : The lease ${ipAddress} does not exist.` };
   }
 
-  listOptionValues(scopeName?: string): Array<{ optionId: number; name: string; values: string[] }> {
+  listOptionValues(scopeIdOrName?: string): Array<{ optionId: number; name: string; values: string[] }> {
+    const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
     const source = scopeName
       ? this.scopeOptions.get(scopeName) ?? new Map<number, string[]>()
       : this.serverOptions;
@@ -353,7 +354,8 @@ export class WindowsDhcpServerRole {
       .map(([optionId, values]) => ({ optionId, name: OPTION_NAMES[optionId] ?? `Option ${optionId}`, values }));
   }
 
-  removeOptionValue(scopeName: string | undefined, optionId: number): DhcpOpResult {
+  removeOptionValue(scopeIdOrName: string | undefined, optionId: number): DhcpOpResult {
+    const scopeName = scopeIdOrName === undefined ? undefined : this.resolveScopeKey(scopeIdOrName);
     const store = scopeName ? this.scopeOptions.get(scopeName) : this.serverOptions;
     if (!store || !store.delete(optionId)) {
       return { ok: false, message: `Remove-DhcpServerv4OptionValue : Option ID ${optionId} is not configured.` };
@@ -362,7 +364,8 @@ export class WindowsDhcpServerRole {
     return { ok: true, message: '' };
   }
 
-  scopeStatistics(scopeName: string): { total: number; inUse: number; free: number; percentInUse: number } | null {
+  scopeStatistics(scopeIdOrName: string): { total: number; inUse: number; free: number; percentInUse: number } | null {
+    const scopeName = this.resolveScopeKey(scopeIdOrName);
     const range = this.scopeRanges.get(scopeName);
     if (!range) return null;
     const start = new IPAddress(range.start).toUint32();

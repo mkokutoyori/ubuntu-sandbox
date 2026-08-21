@@ -947,7 +947,8 @@ export interface IDhcpServerProvider {
   scopeStatistics(scopeName: string): DhcpScopeStats | null;
   serverStatistics(): DhcpServerStats;
 
-  authorizeInDC(): DhcpOpResult;
+  authorizeInDC(dnsName?: string, ipAddress?: string): DhcpOpResult;
+  registeredIdentity(): { dnsName: string | null; ipAddress: string | null };
   isAuthorizedInDC(): boolean;
   isRegisteredInDC(): boolean;
   revokeInDC(): DhcpOpResult;
