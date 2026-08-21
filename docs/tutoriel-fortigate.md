@@ -847,7 +847,7 @@ Connecte-toi avec :
 FortiOS t'oblige immédiatement à changer ce mot de passe vide :
 
 ```
-You are forced to change your password. Please input a new password.
+You are forced to change your password, please input a new password.
 New Password: ********
 Confirm Password: ********
 ```

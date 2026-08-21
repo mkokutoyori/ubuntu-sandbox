@@ -3,6 +3,8 @@ import { Firewall, type FirewallOptions } from '../../Firewall';
 import { FORTIOS_PROFILE } from './FortiProfile';
 import { FortiShell } from './FortiShell';
 
+const FACTORY_ADMIN = 'admin';
+
 export class FortiGate extends Firewall {
   private shellInstance?: FortiShell;
 
@@ -11,6 +13,9 @@ export class FortiGate extends Firewall {
     options: Omit<FirewallOptions, 'profile'> = {},
   ) {
     super(deviceType, name, x, y, { ...options, profile: FORTIOS_PROFILE });
+    this.applyAdminAccount({
+      name: FACTORY_ADMIN, profile: 'super_admin', vdoms: ['root'], trustHosts: [],
+    });
   }
 
   getShell(): FortiShell {

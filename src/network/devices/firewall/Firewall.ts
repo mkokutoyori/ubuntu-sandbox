@@ -645,6 +645,14 @@ export class Firewall extends Equipment {
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
 
+  adminNames(): readonly string[] { return this.access.adminNames(); }
+
+  getAdminAccount(name: string) { return this.access.getAdmin(name); }
+
+  adminMustChoosePassword(name: string): boolean {
+    return this.management.requiresPasswordChange(name);
+  }
+
   authenticateAdmin(name: string, password: string, source?: string): boolean {
     return this.management.authenticate(name, password, source);
   }

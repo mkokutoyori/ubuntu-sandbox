@@ -5,6 +5,8 @@ import { BSD_TELNET, type TelnetDialect } from '@/terminal/subshells/telnetDiale
 import { CyclingPolicy, type CompletionPolicy } from '@/terminal/completion';
 import { Firewall } from '@/network/devices/firewall/Firewall';
 import { PING_NO_ROUTE } from '@/network/devices/firewall/diag/FirewallPing';
+import type { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
+import type { InteractiveStep } from '@/terminal/core/types';
 
 const PING_INTERVAL_MS = 300;
 
@@ -25,6 +27,11 @@ const FORTI_THEME: TerminalTheme = {
 export class FortiTerminalSession extends CLITerminalSession {
   constructor(id: string, device: ICLIDevice) {
     super(id, device);
+  }
+
+  override async init(): Promise<void> {
+    await super.init();
+    this.startConsoleLogin();
   }
 
   override platformLabel(): string { return 'Fortinet FortiOS'; }
@@ -55,6 +62,84 @@ export class FortiTerminalSession extends CLITerminalSession {
       left: `${this.device.getHostname()} — FortiGate`,
       right: '? = help | Tab = complete',
     };
+  }
+
+  private startConsoleLogin(): void {
+    if (!(this.device instanceof Firewall)) return;
+    this.startFlowFromSteps(this.buildLoginSteps(), '', undefined, { authGate: true });
+  }
+
+  protected override restartAuthGate(): void { this.startConsoleLogin(); }
+
+  protected override onFlowComplete(): void {
+    super.onFlowComplete();
+    if (!this.lastFlowWasAuthGate || this.loggedIn) return;
+    this.startConsoleLogin();
+  }
+
+  private loggedIn = false;
+
+  private forti(): FortiGate { return this.device as unknown as FortiGate; }
+
+  private buildLoginSteps(): InteractiveStep[] {
+    return [
+      /* 0 */ {
+        type: 'text', prompt: `${this.device.getHostname()} login: `,
+        storeAs: 'forti_user', allowEmpty: true,
+      },
+      /* 1 */ { type: 'password', prompt: 'Password: ', mask: 'hidden', storeAs: 'forti_password' },
+      /* 2 */ {
+        type: 'execute',
+        action: async (ctx) => {
+          const user = (ctx.values.get('forti_user') ?? '').trim();
+          const password = ctx.values.get('forti_password') ?? '';
+          const accepted = this.forti().authenticateAdmin(user, password);
+          ctx.values.set('forti_accepted', accepted ? 'yes' : 'no');
+          if (!accepted) { this.addLine('Login incorrect'); this.addLine(''); }
+        },
+      },
+      /* 3 */ { type: 'branch', predicate: (ctx) => ctx.values.get('forti_accepted') === 'yes' ? 4 : 0 },
+      /* 4 */ {
+        type: 'branch',
+        predicate: (ctx) => {
+          const user = (ctx.values.get('forti_user') ?? '').trim();
+          this.loggedIn = true;
+          this.forti().getShell().setAdminIdentity(user);
+          return this.forti().adminMustChoosePassword(user) ? 5 : 9;
+        },
+      },
+      /* 5 */ {
+        type: 'output',
+        outputLines: ['You are forced to change your password, please input a new password.'],
+      },
+      /* 6 */ { type: 'password', prompt: 'New Password: ', mask: 'hidden', storeAs: 'forti_new' },
+      /* 7 */ { type: 'password', prompt: 'Confirm Password: ', mask: 'hidden', storeAs: 'forti_confirm' },
+      /* 8 */ {
+        type: 'branch',
+        predicate: (ctx) => {
+          const chosen = ctx.values.get('forti_new') ?? '';
+          const confirmed = ctx.values.get('forti_confirm') ?? '';
+          if (chosen.length === 0 || chosen !== confirmed) {
+            this.addLine('Passwords do not match.');
+            return 5;
+          }
+          this.applyNewPassword((ctx.values.get('forti_user') ?? '').trim(), chosen);
+          this.addLine('Welcome !');
+          this.addLine('');
+          return 9;
+        },
+      },
+      /* 9 */ { type: 'output', outputLines: [] },
+    ];
+  }
+
+  private applyNewPassword(user: string, password: string): void {
+    const account = this.forti().getAdminAccount(user);
+    if (!account) return;
+    this.forti().applyAdminAccount({
+      name: user, password, profile: account.profile,
+      vdoms: [...account.vdoms], trustHosts: account.trustHosts.map(h => ({ ...h })),
+    });
   }
 
   protected override tryInterceptAsyncCommand(command: string): boolean {

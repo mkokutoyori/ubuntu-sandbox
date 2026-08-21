@@ -33,6 +33,7 @@ async function laboratoire() {
   await taper(fgt, [
     'config system interface', 'edit port2', 'set mode static',
     'set ip 192.168.10.1 255.255.255.0', 'set allowaccess ping', 'next', 'end',
+    'config system admin', 'edit "admin"', 'set password "Fortinet123"', 'next', 'end',
   ]);
   return { fgt, pc };
 }
@@ -41,7 +42,13 @@ async function session(fgt: FortiGate): Promise<FortiTerminalSession> {
   const s = new FortiTerminalSession('t1', fgt as never);
   await s.init();
   for (let i = 0; i < 40 && s.isBooting; i++) await tick();
-  await tick();
+  for (let i = 0; i < 10; i++) await tick();
+  s.setInputBuf('admin');
+  s.handleKey(key('Enter'));
+  for (let i = 0; i < 25; i++) await tick();
+  s.setPasswordBuf('Fortinet123');
+  s.handleKey(key('Enter'));
+  for (let i = 0; i < 25; i++) await tick();
   return s;
 }
 

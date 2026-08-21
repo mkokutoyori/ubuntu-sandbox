@@ -1,7 +1,7 @@
 import type { IPv4Packet } from '../../../core/types';
 import type { AccessMatrix } from '../authz/AccessMatrix';
 import {
-  adminTrustsSource, applyAdminAccount, authenticateAdmin,
+  adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
 } from '../identity/AdminAccounts';
 import type { FirewallCliServer } from './FirewallCliServer';
@@ -97,6 +97,10 @@ export class ManagementPlane {
     if (accepted) this.lockout.recordSuccess(source);
     else this.lockout.recordFailure(source);
     return accepted;
+  }
+
+  requiresPasswordChange(name: string): boolean {
+    return adminHasNoPassword(this.access, this.secrets, name);
   }
 
   noteLogin(source: string): void { this.lockout.recordSuccess(source); }

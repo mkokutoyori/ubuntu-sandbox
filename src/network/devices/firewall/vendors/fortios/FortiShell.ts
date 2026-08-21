@@ -109,6 +109,18 @@ export class FortiShell {
     }
   }
 
+  private seedFactoryAdmin(): void {
+    const spec = this.tree.spec(['system', 'admin']);
+    if (!spec) return;
+    const table = this.tree.table(spec);
+    for (const name of this.fw.adminNames()) {
+      const admin = this.fw.getAdminAccount(name);
+      if (!admin) continue;
+      const object = table.ensure(name);
+      object.set('accprofile', [admin.profile]);
+    }
+  }
+
   private vdom = 'root';
   private adminName: string | null = null;
   private globalScope = false;
@@ -119,6 +131,7 @@ export class FortiShell {
     this.tree.bindScope(() => this.vdom);
     this.tree.bindPhysicalPorts((name) => this.fw.getPort(name) !== undefined);
     this.seedFactoryCertificates();
+    this.seedFactoryAdmin();
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name));
     this.nav = new FortiNavigator({

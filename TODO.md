@@ -373,6 +373,22 @@ UTC.
 (`set timezone ?`), et l'inventer donnerait 79 correspondances fausses —
 pire que l'aveu.
 
+### [admin] le verrouillage apres N essais ne compte pas la console
+`admin-lockout-threshold` et `admin-lockout-duration` sont acceptes et le
+compteur (`ManagementPlane.login`) fonctionne — mais il est indexe par
+SOURCE, et une connexion de console n'a pas d'adresse d'origine. La
+console appelle donc `authenticateAdmin` directement : trois mots de
+passe faux d'affilee sur la console ne verrouillent rien.
+**Mesure** : trois refus consecutifs dans le flux de console, puis le bon
+mot de passe — il est accepte, alors qu'une vraie machine aurait bloque
+la ligne pendant `admin-lockout-duration` (60 s par defaut).
+**Report** : donner une cle a la console (`console`, ou le nom du compte)
+n'est pas un detail — le vrai FortiOS verrouille le COMPTE et non la
+source, donc aligner le simulateur veut dire changer l'index du compteur
+pour tout le monde, SSH et telnet compris, et verifier que le compte
+`admin` ne peut pas etre verrouille depuis l'exterieur au point qu'on ne
+puisse plus entrer par la console. Sujet en soi.
+
 ### [admin] pas d'interface d'administration HTTP/HTTPS
 `set allowaccess http https` est accepte, rendu, et gouverne bien le
 filtrage TCP (`ManagementPlane.admitsTcp` refuse le port), mais RIEN
@@ -448,6 +464,15 @@ un nombre est attendu, signatures de constructeur périmées.
 « pas plus qu'avant ta modification », pas « zéro ».
 
 ## Journal des entrées fermées
+
+- Console FortiGate : login au demarrage et mot de passe force — fermee.
+  La mesure a trouve plus large que l'entree : `authenticateAdmin`
+  comparait `secrets.get(name) === password`, donc un compte sans entree
+  de secret n'acceptait AUCUN mot de passe, pas meme le vide — le compte
+  d'usine `admin` etait inauthentifiable par construction. Le forcage
+  repose sur le mot de passe VIDE et non sur un drapeau de premier
+  demarrage, donc `set password` le fait cesser et le vide le fait
+  revenir. Verrouillage apres N essais laisse ouvert ci-dessus.
 
 - Base OSPF du pare-feu — fermée, et la mesure d'origine était FAUSSE : la
   base n'était pas vide (elle portait les deux LSA de routeur), il y

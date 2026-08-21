@@ -41,7 +41,14 @@ export function authenticateAdmin(
   const admin = access.getAdmin(name);
   if (!admin) return false;
   if (source !== undefined && !trustHostAllows(admin.trustHosts, source)) return false;
-  return secrets.get(name) === password;
+  return (secrets.get(name) ?? '') === password;
+}
+
+export function adminHasNoPassword(
+  access: AccessMatrix, secrets: Map<string, string>, name: string,
+): boolean {
+  if (!access.getAdmin(name)) return false;
+  return (secrets.get(name) ?? '') === '';
 }
 
 export function adminTrustsSource(
